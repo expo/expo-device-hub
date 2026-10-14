@@ -43,20 +43,9 @@ jobs:
             echo "::error::$mitmdump is still quarantined"
             exit 1
           fi
-          # Output goes to a file, so a child that outlives mitmdump cannot hold the step open.
-          mitmdump --version > /tmp/mitmdump-version.txt 2>&1 &
-          pid=$!
-          for _ in $(seq 1 60); do
-            kill -0 "$pid" 2>/dev/null || break
-            sleep 1
-          done
-          if kill -0 "$pid" 2>/dev/null; then
-            kill -9 "$pid"
-            echo "::error::mitmdump --version did not return in 60 seconds"
-            exit 1
-          fi
-          wait "$pid" || { cat /tmp/mitmdump-version.txt; exit 1; }
-          cat /tmp/mitmdump-version.txt
+          # Check the exact binary capture will select, including SERVE_SIM_MITMDUMP.
+          cd packages/serve-sim
+          bun packages/serve-sim/scripts/test/check-mitmproxy.ts
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.

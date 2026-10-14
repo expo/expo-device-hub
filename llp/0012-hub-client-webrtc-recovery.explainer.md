@@ -5,6 +5,7 @@
 **Systems:** HubClient
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-13 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -80,7 +81,8 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 
 - The first-frame timeout stops while the tab is hidden, and starts again when the tab is visible. A grace period that was already used stays used [observed: `useWebRtcStream.ts`].
 - When no video RTP arrives before the first frame, the client asks serve-sim's per-session stats (2 s limit, cancelled on teardown) whether the encoder produced frames. If it did, the client retries the transport and keeps the codec [observed: `requestWebRtcServerStats` in `useWebRtcStream.ts`; `webRtcFailureDisposition` in `webrtc-fallback.ts`].
-- On iOS, paused video plays again when the tab returns [observed: `useIosDevice.ts`].
+- On iOS and Android, the currently owned paused video plays again when the tab returns; retired surfaces and rejected play attempts do not replace the peer [observed: the media attachment effects in `useIosDevice.ts` and `useAndroidDevice.ts`].
+- Replacing an iOS or Android video element reattaches the existing stream without renegotiating its peer or reconnecting input [observed: stateful `webRtcVideoElement` in both adapters].
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].
 

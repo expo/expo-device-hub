@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-08
+**Revised:** 2026-10-13 (recording reboot recovery)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -69,6 +69,9 @@ replacement with the same seed still reaches capture. [observed:
 Before the first frame, capture retries framebuffer wiring once per second.
 Afterward, a live read confirming at least one second without a selected surface
 starts recovery; retries continue once per second until a surface returns.
+While the simulator is not booted, capture makes neither the live read nor the
+retry; the loss still counts, and both resume at the next once-per-second check
+after it boots.
 Cached misses between live reads do not advance recovery. Unchanged pixels on
 a static screen do not trigger recovery while its surface is available.
 Capture logs the start and end of a loss. [observed: `Sources/SimNative/FrameCapture.swift`;
@@ -227,7 +230,48 @@ helper with a known active recording. If that outer wait expires, the CLI can
 still force-kill the helper and interrupt its writer [observed:
 `src/stop-process.ts`, `recordingShutdownGraceMs` and `stopProcess`].
 
+After replacing HID on reboot, the session repeats hinge capability discovery and
+hydration before admitting input, reading fresh native state even after this session
+controlled the hinge. Native getter fallbacks can still report unsupported or
+unknown hinge state; completion does not guarantee successful hinge readback
+[observed: `src/native.ts`, `NativeHid.guard` and `hingeState`].
+An unknown angle does not erase the saved hinge state; resetting old-boot control
+ownership permits the next command to retry native seeding and restore matching
+saved state [observed: `src/device-session.ts`, `resumeAfterReboot`,
+`hydrateHingeState`, and `queueHingeControl`].
+A completed native command whose old-boot result was discarded must not leave
+stale cached state. Reset old-boot rotation intent before admitting input, so
+late discovery preserves a rotation already accepted on the new boot. Old-boot discovery and reads are generation-fenced; cancellation of a
+startup read must not permanently hide supported controls [observed: `src/device-session.ts`,
+`discoverHingeCapabilities`, `hydrateHingeState`, and `resumeAfterReboot`].
+
+The reboot also pauses the WebRTC pump and clears its retained frame without
+closing peer sessions. Sender stats expose `capture.rebooting`; the preview
+first-frame and playback watchdogs defer their verdicts during this intentional
+pause. Acceptance generations reject old resize completions,
+and capture generations reject queued old-boot frames. Only fresh resumed
+capture can restart delivery. New recording starts are rejected while capture
+is suspended, while existing recording stop and lease renewal remain available.
+A start refused before writer creation is an expected cancellation during shutdown
+[observed: `CaptureEngine.swift`, `WebRTCPublisher.swift`, and `src/device-session.ts`].
+
 ## Control and shutdown
+
+The in-process preview server reports a recording-shutdown error after 65 seconds,
+including its PID. It keeps the writer, output and existing device state alive;
+it does not exit or tear down capture while recording finalization is pending.
+If finalization later completes, ordinary cleanup runs and the process exits with
+status 1 because the deadline expired. If it never completes, the process stays
+alive for recovery; this deadline reports the stall rather than cancelling the
+writer. The parent/helper force-kill policy above is separate [observed:
+`src/shutdown-budget.ts`, `runRecordingShutdown`; `src/index.ts`, `serve` shutdown].
+Once the in-process server installs its recording-aware signal handler, the
+earlier startup handler defers cleanup to it through an explicit ownership flag,
+so capture and capabilities stay active until recording finalization completes.
+Before that handler is installed, startup owns capture teardown and device
+disarming; a capture reaper or an unrelated signal listener cannot take that
+ownership [observed: `src/index.ts`,
+foreground startup and `serve` signal handlers].
 
 Start serve-sim for the device, then run:
 
@@ -241,26 +285,120 @@ different recording ID cannot stop that recording. When the session uses
 `--require-token`, the CLI sends its bearer token for recording control. An
 ungated session needs no token. Serve-sim attempts to finalize an active recording
 on SIGTERM, SIGINT, or SIGHUP before the process exits. The CLI also waits for
-the manifest when the server stops during recording. If a
+the manifest when the server stops during recording, including when a heartbeat
+loses its connection before the CLI receives a stop signal. A saved manifest
+without a requested stop is accepted only after the server exits; a lost lease
+while the server stays alive remains an error. A definitively lost lease first stops
+renewals and attempts an owned DELETE, so renewals cannot prevent finalization
+while the CLI waits for the manifest [observed: `src/index.ts`, `recordVideo`]. If a
 start request times out, the CLI cancels that recording ID so a late server
 start cannot leave an active recording. A finalization failure makes shutdown
 exit unsuccessfully after teardown. After an encoder or frame-transfer failure,
 the recorder tries to finalize any frames already written. If the writer completes,
 the error includes the path to a playable partial `recording.mp4`. No success
-manifest is written, and that session cannot start another recording until
-serve-sim restarts.
+manifest is written. Encoder or frame-transfer errors keep recording startup
+blocked until serve-sim restarts, except for the completed flush failure
+explicitly described under [Recording stall recovery](#recording-stall-recovery).
 The foreground CLI gives a helper with a known active recording up to 65 seconds
 to finalize after SIGTERM. Without a known active recording, it force-kills an
 unresponsive helper after 500 ms. A stream-settings change uses the same
 recording-aware wait before replacing the helper and reports a finalization
 error while still starting the replacement.
 
-The proposed build-tools integration lives in a separate eas-cli PR. Once
-deployed, it will use this command in place of record-sim: one recorder per
-booted device, retaining each completed recording for upload. A device restart
-can produce a second file with a new recording ID. Roll out the serve-sim
-version containing `record-video` before deploying that consumer; an older
-binary cannot satisfy the command. The upload schema is unchanged.
+### Recording reboot recovery
+
+The live shared H.264 encoder also drops pending completions and cached packets
+on suspension. A private capture-epoch attachment on each source pixel buffer
+rejects old frames that libwebrtc hands to the encoder after resume, even when
+libwebrtc translates timestamps or rewraps the native buffer. The in-flight encode slot drains
+before new work starts, and resumed delivery requests an IDR [observed:
+`Sources/SimNative/SharedWebRTCEncoder.swift`, `WebRTCPublisher.swift`].
+
+A capture reboot suspends boot-bound capture and disconnects input instead of
+closing `DeviceSession`. It waits for an in-flight recording start to settle;
+a rejected recording POST reports its own error without preventing reboot or
+leaving input suspended [observed: `src/device-session.ts`, `suspendForReboot`]. The recording lease, MP4 writer, fixed canvas, hardware
+H.264 session, and monotonic recording clock survive. Capture stops and the
+mailbox is cleared before shutdown. After `bootDevice` awaits successful
+`simctl bootstatus -b`, capture is started again; recording takes only new
+snapshots, and recovery waits up to 30 seconds for one through an independent
+readiness mailbox, so stopping the recording cannot clear the readiness signal. HID is recreated after
+capture resets boot-bound CoreDevice state. This avoids reusing the old boot's
+input connection. Suspension rejects queued hinge/rotation commands and waits
+for all accepted socket messages through native completion before shutting down,
+including messages whose client has already disconnected. Server-owned clipboard
+input follows the same admission and cleanup rule; Copy is refused while suspended
+and accepted in-flight chords drain before capture stops. Pending software-keyboard
+probes are invalidated and drained with native toggles before shutdown; the new
+boot resets the hidden-keyboard cache before admitting input. The replacement HID
+receives the current panel selection even if its ID is unchanged; input admission
+resumes only after routing completes [observed: `src/capture/reboot.ts`, `src/device-session.ts`,
+`Sources/SimNative/CaptureEngine.swift`].
+
+No samples are submitted while the mailbox is empty. The first resumed sample
+requests an IDR, timestamps retain elapsed monotonic time including the reboot
+gap, and finalization still occurs on explicit stop, lease expiry, or process
+shutdown. `session.json` optionally records `interruptions` with reason
+`simulatorReboot`, pause and first appended resume offsets in seconds relative
+to the first written sample; an interruption without resumed footage has no
+resume offset [observed: `NativeVideoRecorder.swift`, `RecordingManifest.swift`].
+
+Changed source dimensions are hardware-letterboxed onto the original fixed
+canvas. The recording codec remains H.264 even when the viewer changes codec;
+its encoder and format are not recreated by reboot. Thus these changes do not
+require a second MP4 or a new sample description [observed:
+`NativeVideoRecorder.swift`, `PixelBufferLetterboxer.swift`]. If boot or fresh
+capture fails, the reboot request reports failure and the recording remains
+paused, available for explicit finalization or another reboot attempt. If
+hardware transfer or encoding cannot continue, existing finalization preserves
+a playable partial MP4 where possible and reports an error with its path;
+there is no success manifest or silent replacement. Process replacement cannot
+append to an already finalized MP4; callers must preserve that artifact and
+start a separate recording if they require further footage [observed:
+`NativeVideoRecorder.swift`, `src/stop-process.ts`].
+
+### Recording stall recovery
+
+The client sends one owned heartbeat at a time, every five seconds when none is
+pending, with a 120-second request timeout. The server lease lasts 180 seconds.
+A transport error or server 5xx response does not establish loss of ownership;
+the client retries while its host process remains alive. Request-timeout and rate-limit responses also retry. A definitive 4xx
+response, host exit, or explicit stop ends the recording. A definitive response
+ends the lease as soon as its status arrives, even if its body stalls or fails.
+Stop aborts the pending
+heartbeat and uses the existing owned finalization path. A crashed client can
+therefore retain its recording resources for up to three minutes. An ambiguous
+owned DELETE waits up to 300 seconds for its manifest: the full 180-second
+lease plus the existing 120-second finalization allowance. Confirmed server
+errors still fail immediately. These budgets share pure constants so lease
+and CLI reconciliation cannot drift. Workers must cover this longer wait
+before deploying the longer lease [observed:
+`src/index.ts`, `recordVideo`; `src/device-session.ts`, `refreshRecordingLease`;
+`src/recording-timeouts.ts`].
+
+If writer finalization completes after an encoder error, the playable MP4 gets
+an atomic manifest with `status: failed` and `error`; the native operation still
+throws its original error. The CLI also rejects a failed manifest when it
+reconciles host exit or a lost stop response; a saved partial file does not
+turn a native failure into success [observed: `src/index.ts`, `recordVideo`].
+If failed-manifest publication also fails, that
+secondary error is retained as the underlying error; the original native error
+code still controls whether recording reuse is safe. A returned encoder-flush error permits a fresh
+compression session only after the old session was invalidated. A flush timeout
+or transfer/encode error still blocks reuse when native work may be outstanding. Earlier recording failures remain visible at
+shutdown even after a later segment succeeds
+[observed: `NativeVideoRecorder.swift`, `finishOnQueue`, `writeManifest`;
+`CaptureEngine.swift`, `RecordingAvailability`].
+
+The build-tools follow-up preserves an early finalized file and starts a new
+recording while the EAS session is live. This is a fallback because the original
+writer has already finalized; it cannot be appended safely. Artifacts retain
+first-frame wall-clock timestamps and carry `logicalRecordingId` and
+`segmentIndex` to identify ordered segments of one recording. A failed fallback
+is reported explicitly instead of treating the saved prefix as full-session
+success. This requires a separate build-tools deployment; local serve-sim
+validation alone does not establish worker behavior [observed: isolated
+build-tools `IosSimulatorRecordingUtils.ts`, `deviceRunSessionScreenRecordings.ts`].
 
 ## Performance and validation
 

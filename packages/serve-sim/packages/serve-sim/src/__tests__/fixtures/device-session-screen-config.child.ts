@@ -1,7 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createServer, type Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { NativeScreenInfo, MjpegFrame } from "../../native";
+import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-state";
+import { UDID, useTempStateDir } from "../helpers";
+
+const tempState = useTempStateDir();
+afterAll(() => tempState.restore());
 
 let screen: NativeScreenInfo;
 let screenReads = 0;
@@ -17,13 +22,21 @@ let hingePoseDelay = 0;
 let hingePoseGate: Promise<void> | undefined;
 let hingeResult = true;
 let hingeSupported = false;
+let hingeSupportGate: Promise<void> | undefined;
+let orientationResult = true;
 let physicalOrientationSupported = false;
 let physicalOrientationSupportGate: Promise<void> | undefined;
 let nativeHingeState: { hingeAngle?: number; physicalOrientation?: string; tableMode?: boolean } = {};
 let inputSetupError: Error | undefined;
+let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
+const pasteWrites: string[] = [];
+const pastedTexts: string[] = [];
+let clipboardText = "";
+let pasteGate: Promise<void> | undefined;
+let pasteboardLock: Promise<unknown> = Promise.resolve();
 const touchEvents: { kind: string; args: unknown[] }[] = [];
 const scrollEvents: unknown[][] = [];
 const scrollOperations: string[] = [];
@@ -64,6 +77,12 @@ const addon = {
     async key(type: string, usage: number) {
       inputCalls.push("key");
       keyEvents.push({ type, usage });
+      if (type === "down" && usage === 0x19) pastedTexts.push(clipboardText);
+      if (type === "up" && usage === 0x19 && failInputAfterPasteKeyUp) {
+        failInputAfterPasteKeyUp = false;
+        inputSetupError = new Error("Digitizer symbols unavailable");
+        await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      }
     }
     async scroll(...args: unknown[]) {
       inputCalls.push("scroll");
@@ -78,8 +97,8 @@ const addon = {
       scrollOperations.push("cancel-end");
     }
     async digitalCrown() { inputCalls.push("digitalCrown"); }
-    async orientation() { inputCalls.push("orientation"); return true; }
-    async supportsHingeAngle() { inputCalls.push("supportsHingeAngle"); return hingeSupported; }
+    async orientation() { inputCalls.push("orientation"); return orientationResult; }
+    async supportsHingeAngle() { inputCalls.push("supportsHingeAngle"); await hingeSupportGate; return hingeSupported; }
     async supportsPhysicalOrientation() {
       inputCalls.push("supportsPhysicalOrientation");
       await physicalOrientationSupportGate;
@@ -202,6 +221,20 @@ mock.module("../../ui-settings", () => ({
   },
 }));
 
+// Serialized like the real per-device pasteboard lock.
+mock.module("../../sim-pasteboard-paste", () => ({
+  pasteTextIntoSim: (_udid: string, text: string, sendPasteShortcut: () => Promise<unknown>) => {
+    const paste = pasteboardLock.then(async () => {
+      pasteWrites.push(text);
+      clipboardText = text;
+      await pasteGate;
+      return sendPasteShortcut();
+    });
+    pasteboardLock = paste.catch(() => {});
+    return paste;
+  },
+}));
+
 const { DeviceSession } = await import("../../device-session");
 let session: InstanceType<typeof DeviceSession> | undefined;
 let server: Server | undefined;
@@ -210,10 +243,17 @@ let ws: WebSocket | undefined;
 let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
+  writeSavedHingeState(UDID, {});
   inputSetupError = undefined;
+  failInputAfterPasteKeyUp = false;
   touchError = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
+  pasteWrites.length = 0;
+  pastedTexts.length = 0;
+  clipboardText = "";
+  pasteGate = undefined;
+  pasteboardLock = Promise.resolve();
   axCharacters.length = 0;
   axFailures = 0;
   touchEvents.length = 0;
@@ -240,6 +280,8 @@ beforeEach(() => {
   hingePoseGate = undefined;
   hingeResult = true;
   hingeSupported = true;
+  hingeSupportGate = undefined;
+  orientationResult = true;
   physicalOrientationSupported = true;
   physicalOrientationSupportGate = undefined;
 });
@@ -277,7 +319,7 @@ async function start(
   mjpeg = undefined;
   screenChanged = undefined;
   screenReadGate = undefined;
-  session = new DeviceSession("SCREEN-TEST");
+  session = new DeviceSession(UDID);
   await session.start();
   server = createServer((req, res) => req.url === "/config"
     ? session!.handleConfig(req, res)
@@ -291,6 +333,7 @@ async function start(
   const admissions: Buffer[] = [];
   const hingeResults: Record<string, unknown>[] = [];
   const controlResults: Record<string, unknown>[] = [];
+  const pasteResults: Array<{ requestId: number; ok: boolean; cleanupWarning?: string }> = [];
   ws = new WebSocket(`ws://127.0.0.1:${address.port}`);
   ws.on("message", (data) => {
     const buffer = Buffer.from(data as Buffer);
@@ -298,9 +341,10 @@ async function start(
     if (buffer[0] === 0x83) admissions.push(buffer);
     if (buffer[0] === 0x90) controlResults.push(JSON.parse(buffer.subarray(1).toString()));
     if (buffer[0] === 0x8f) hingeResults.push(JSON.parse(buffer.subarray(1).toString()));
+    if (buffer[0] === 0x92) pasteResults.push(JSON.parse(buffer.subarray(1).toString()));
   });
   await new Promise<void>((resolve, reject) => { ws!.once("open", resolve); ws!.once("error", reject); });
-  return { configs, admissions, hingeResults, controlResults, url: `http://127.0.0.1:${address.port}` };
+  return { configs, admissions, hingeResults, controlResults, pasteResults, url: `http://127.0.0.1:${address.port}` };
 }
 
 afterEach(async () => {
@@ -374,6 +418,133 @@ describe("native input failure isolation", () => {
     expect(routedScreens).toEqual([1, 3]);
     expect(errorLog).toHaveBeenCalledTimes(1);
     expect(errorLog.mock.calls.flat().join(" ")).toContain("touch ignored bad input");
+  });
+});
+
+describe("clipboard paste input", () => {
+  const sendTo = (socket: WebSocket, requestId: number, text: string) => socket.send(Buffer.concat([
+    Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId, text })),
+  ]));
+
+  test("keeps each viewer's pasteboard write with its acknowledged shortcut", async () => {
+    const { url, pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    second.on("message", (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let releaseFirst!: () => void;
+    pasteGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    try {
+      sendTo(ws!, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      sendTo(second, 2, "beta");
+      await Bun.sleep(20);
+      expect(pasteWrites).toEqual(["alpha"]);
+      releaseFirst();
+      await waitUntil(() => replies.length === 2);
+      expect(replies).toEqual([{ requestId: 1, ok: true }, { requestId: 2, ok: true }]);
+      expect(pasteWrites).toEqual(["alpha", "beta"]);
+      expect(pastedTexts).toEqual(["alpha", "beta"]);
+    } finally {
+      releaseFirst();
+      second.terminate();
+    }
+  });
+
+  test("rejects paste when native input setup has failed", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 }, false, new Error("Digitizer symbols unavailable"));
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+    expect(pasteWrites).toEqual([]);
+    expect(pastedTexts).toEqual([]);
+  });
+
+  test("holds other viewers' input until the paste chord is done", async () => {
+    const { url, pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(ws!, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      second.send(Buffer.concat([Buffer.from([0x06]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
+      await Bun.sleep(50);
+      expect(keyEvents.some((event) => event.type === "down" && event.usage === 4)).toBe(false);
+      release();
+      await waitUntil(() => replies.length === 1);
+      expect(replies).toEqual([{ requestId: 1, ok: true }]);
+      expect(pastedTexts).toEqual(["alpha"]);
+      await waitUntil(() => keyEvents.some((event) => event.type === "down" && event.usage === 4));
+    } finally {
+      release();
+      second.terminate();
+    }
+  });
+
+  test("drops the shortcut of a viewer that leaves while its pasteboard write waits", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(second, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      second.terminate();
+      await Bun.sleep(50);
+      ws!.send(Buffer.concat([Buffer.from([0x06]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
+      release();
+      await waitUntil(() => keyEvents.some((event) => event.type === "down" && event.usage === 4));
+      await waitUntil(() => errorLog!.mock.calls.length > 0);
+      expect(pastedTexts).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+
+  test("rejects paste when native input fails before the shortcut", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(ws!, 1, "hello");
+      await waitUntil(() => pasteWrites.length === 1);
+      inputSetupError = new Error("Digitizer symbols unavailable");
+      await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      release();
+      await waitUntil(() => replies.length === 1);
+      expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+      expect(pastedTexts).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+
+  test("acknowledges paste already delivered before native input fails", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    failInputAfterPasteKeyUp = true;
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: true }]);
+    expect(replies[0]?.cleanupWarning).toContain("key may still be held");
+    expect(pastedTexts).toEqual(["hello"]);
   });
 });
 
@@ -1304,14 +1475,61 @@ describe("native active screen config", () => {
   });
 
   test("waits for Duo's actual orientation instead of briefly rotating a locked app", async () => {
-    const { configs } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
+    const { configs, controlResults } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
     await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
-    const readsBefore = screenReads;
     ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
-    await waitUntil(() => screenReads > readsBefore);
+    // Table Mode is unavailable here; its queued rejection fences rotation and prior config delivery.
+    ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } }))]));
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toMatchObject({ requestId: 1, ok: false });
+    expect(tableModes).toEqual([]);
     expect(configs.every((config) => config.orientation === "portrait")).toBe(true);
     screen = { ...screen, orientation: "landscape_left" };
     await waitUntil(() => configs.at(-1)?.orientation === "landscape_left");
+  });
+
+  test("keeps regular-device framing rotated when returning to portrait-only Home", async () => {
+    const { configs, controlResults } = await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === false);
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+    // The unavailable Table Mode command acknowledges completion without changing the device.
+    const fence = async (requestId: number) => {
+      ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId, command: { control: "table", value: true } }))]));
+      await waitUntil(() => controlResults.length === requestId);
+      expect(controlResults.at(-1)).toMatchObject({ requestId, ok: false });
+    };
+    await fence(1);
+    expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    for (const orientation of ["landscape_left", "portrait"] as const) {
+      screen = { ...screen, orientation };
+      await screenChanged!();
+      await fence(controlResults.length + 1);
+      expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    }
+    orientationResult = false;
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_right" }))]));
+    await fence(controlResults.length + 1);
+    expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    expect(tableModes).toEqual([]);
+  });
+
+  test("uses Duo readback after hinge capability resolves following an early rotation", async () => {
+    let release!: () => void;
+    hingeSupportGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      const { configs, controlResults } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
+      ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+      ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } }))]));
+      await waitUntil(() => inputCalls.includes("orientation"));
+      await screenChanged!();
+      release();
+      await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+      await waitUntil(() => controlResults.length === 1);
+      expect(configs.find((config) => config.supportsHingeAngle === true)?.orientation).toBe("portrait");
+      expect(configs.every((config) => config.orientation === "portrait")).toBe(true);
+    } finally {
+      release();
+    }
   });
 
   test("forwards hinge degrees and acknowledges native success", async () => {
@@ -1404,6 +1622,194 @@ describe("physical hinge controls", () => {
     expect(physicalOrientations).toEqual([]);
   });
 
+  test("reports the native hinge state when a session starts", async () => {
+    let release!: () => void;
+    const { configs, controlResults } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
+    release();
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    expect(configs.at(-1)).toMatchObject({
+      supportsHingeAngle: true,
+      hingeAngle: 90,
+      hingePose: null,
+      physicalOrientation: "portrait",
+      tableMode: false,
+      tableModeAvailable: true,
+    });
+    expect(configs.filter((config) => config.supportsHingeAngle === true && config.hingeAngle === undefined)).toEqual([]);
+    send(1, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(tableModes).toEqual([true]);
+  });
+
+  test("leaves an angle-only endpoint unselected at startup", async () => {
+    let release!: () => void;
+    const { configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 0 };
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 0, hingePose: null });
+  });
+
+  test("restores only an explicitly saved pose at the matching native angle", async () => {
+    let release!: () => void;
+    const { configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+  });
+
+  test("keeps a hinge command's state over a slower startup read", async () => {
+    let release!: () => void;
+    const { configs, controlResults } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 180 };
+    ws!.send(Buffer.concat([Buffer.from([0x0f]), Buffer.from(JSON.stringify({ angle: 90 }))]));
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    send(1, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90 });
+  });
+
+  test("keeps the saved orientation through a Table Mode command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    send(1, { control: "table", value: false });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
+  test("keeps the saved orientation through an angle command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    send(1, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
+  test("keeps the saved orientation through a failed pose command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    hingeResult = false;
+    send(1, { control: "pose", value: "laptop" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toMatchObject({ requestId: 1, ok: false });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait" });
+    hingeResult = true;
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
+  test("does not restore a physical orientation that a startup rotation cleared", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+    await waitUntil(() => inputCalls.includes("orientation"));
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, tableMode: false });
+    expect(configs.at(-1)).not.toHaveProperty("physicalOrientation");
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, tableMode: false });
+    send(1, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]?.ok).toBe(false);
+    expect(tableModes).toEqual([]);
+  });
+
+  test("keeps a manually entered preset angle unselected after restart", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "book" });
+    send(2, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 2);
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+
+    session!.close();
+    nativeHingeState = { hingeAngle: 90 };
+    session = new DeviceSession(UDID);
+    await session.start();
+    await waitUntil(() => session!.screenConfig().supportsHingeAngle === true);
+    expect(session.screenConfig()).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableMode: false });
+  });
+
   test("rejects physical surface selection when Table Mode is unavailable", async () => {
     const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },
@@ -1428,7 +1834,7 @@ describe("physical hinge controls", () => {
   test("lets native capability validation handle commands while discovery is pending", async () => {
     let finishDiscovery!: () => void;
     const discovery = new Promise<void>((resolve) => { finishDiscovery = resolve; });
-    const { controlResults } = await start(
+    const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },
       true,
       undefined,
@@ -1436,12 +1842,15 @@ describe("physical hinge controls", () => {
       discovery,
     );
 
+    nativeHingeState = { hingeAngle: 90 };
     send(1, { control: "physical", value: "faceup" });
     await waitUntil(() => controlResults.length === 1);
     expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
     expect(physicalOrientations).toEqual(["faceup"]);
 
     finishDiscovery();
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "faceup", tableMode: false });
   });
 
   test("acknowledges distinct poses and broadcasts them to every client", async () => {

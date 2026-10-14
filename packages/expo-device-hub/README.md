@@ -76,11 +76,25 @@ Expo Device Hub ready
 Opening a link trades the token for an HttpOnly cookie and removes it from the address bar.
 After that, the dashboard, the Hub API, the iOS and Android backends, and every WebSocket
 need the token. A page load without it shows a form to enter it. Scripts send
-`Authorization: Bearer <token>`. `/readyz` stays open for liveness probes. Anyone who has
+`Authorization: Bearer <token>`. `/healthz` and `/readyz` stay open for probes. Anyone who has
 the token can control the devices, so share a link only with people who may.
 
 Only the Hub itself may frame a gated page. To let another site embed it, pass
 `--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
+
+### Allow another origin
+
+A page on another origin can show devices with `@expo/hub-client`. To let it read the Hub's
+responses and control the devices, pass `--cors-origin <origin>` once for each origin:
+
+```sh
+npx expo-device-hub --require-token --cors-origin https://example.com
+```
+
+The flag applies to iOS and Android, and takes the same values as serve-sim's `--cors-origin`:
+an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev`. A wildcard
+covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
+sends the token.
 
 ### Record an Android session
 

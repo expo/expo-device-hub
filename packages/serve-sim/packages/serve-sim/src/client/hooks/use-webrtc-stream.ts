@@ -30,24 +30,26 @@ const ICE_GATHERING_TIMEOUT_MS = 3_000;
 const SIGNALING_REQUEST_TIMEOUT_MS = 20_000;
 const FIRST_FRAME_TIMEOUT_MS = 4_000;
 
-/// Whether the sender says it is producing frames. Null on any doubt, because unknown keeps
-/// the fallback.
-async function senderIsEncoding(
+/// Sender progress and intentional capture pause. Unknown retains the normal fallback.
+async function senderProgress(
   statsUrl: string | undefined,
   sessionId: string,
-): Promise<boolean | null> {
-  if (!statsUrl) return null;
+): Promise<{ encoding: boolean | null; rebooting: boolean }> {
+  const unknown = { encoding: null, rebooting: false };
+  if (!statsUrl) return unknown;
   try {
     const response = await fetch(webrtcSessionStatsUrl(statsUrl, sessionId), {
       signal: AbortSignal.timeout(2_000),
     });
-    if (!response.ok) return null;
-    const body = (await response.json()) as { sessions?: { framesEncoded?: number }[] };
+    if (!response.ok) return unknown;
+    const body = (await response.json()) as { capture?: { rebooting?: boolean }; sessions?: { framesEncoded?: number }[] };
     const sessions = Array.isArray(body.sessions) ? body.sessions : [];
-    if (sessions.length === 0) return null;
-    return sessions.some((session) => (session.framesEncoded ?? 0) > 0);
+    return {
+      encoding: sessions.length === 0 ? null : sessions.some((session) => (session.framesEncoded ?? 0) > 0),
+      rebooting: body.capture?.rebooting === true,
+    };
   } catch {
-    return null;
+    return unknown;
   }
 }
 
@@ -190,6 +192,7 @@ export function useWebRtcStream({
       judgeable: () => readable() && !failing && pc?.connectionState === "connected"
         && firstFrameDecodedRef.current && judgeStallsRef.current,
       publish: publishStats,
+      capturePaused: async () => (await senderProgress(statsUrl, sessionId)).rebooting,
       reconnectedAt: stallReconnectAtRef,
       failCodec: () => failCodec(),
       retryTransport: (message: string) => retryTransport(message),
@@ -325,11 +328,15 @@ export function useWebRtcStream({
                 const reports = firstFrameReport ? parseInboundVideo(firstFrameReport) : [];
                 if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
                 const mediaArriving = reports.some((report) => report.framesReceived > 0);
-                const senderEncoding = mediaArriving
-                  ? null
-                  : await senderIsEncoding(statsUrl, sessionId);
+                const sender = await senderProgress(statsUrl, sessionId);
+                const senderEncoding = mediaArriving ? null : sender.encoding;
                 if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration
                   || document.visibilityState !== "visible") return;
+                if (sender.rebooting) {
+                  graceUsed = false;
+                  armFirstFrameWatchdog?.();
+                  return;
+                }
                 const disposition = webRtcFailureDisposition("first-frame-timeout", pc?.connectionState ?? "closed", {
                   mediaArriving,
                   senderEncoding,

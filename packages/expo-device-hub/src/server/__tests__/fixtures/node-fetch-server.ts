@@ -4,11 +4,30 @@ import { Agent, createServer, request, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { after, test } from 'node:test';
 
-import { toFetchRequest, writeFetchResponse } from '../../cli/node-fetch-server';
+import { discardUnreadBody, toFetchRequest, writeFetchResponse } from '../../cli/node-fetch-server';
 
 let cancelledBody: Promise<void> | undefined;
 let abortedBody: Promise<unknown> | undefined;
 const server = createServer((req, res) => {
+  if (req.url === '/refuse') {
+    // The Hub's gate answers without reading the upload, and the CLI discards it afterwards.
+    const refused = toFetchRequest(req);
+    discardUnreadBody(refused);
+    writeFetchResponse(new Response('Unauthorized', { status: 401 }), res);
+    return;
+  }
+  if (req.url === '/fail') {
+    // A handler that fails before it reads the upload, which the CLI answers with a 500.
+    const failed = toFetchRequest(req);
+    try {
+      throw new Error('handler failed');
+    } catch {
+      writeFetchResponse(new Response('Internal Server Error', { status: 500 }), res);
+    } finally {
+      discardUnreadBody(failed);
+    }
+    return;
+  }
   // Backend routing forwards the Fetch request before middleware can reject it.
   const forwarded = new Request(toFetchRequest(req));
   if (req.url === '/reject') {
@@ -103,3 +122,25 @@ test('a disconnected uploader rejects the pending body read', { timeout: 2000 },
   upload.destroy();
   await abortedBody;
 });
+
+for (const [path, status, body] of [
+  ['/refuse', 401, 'Unauthorized'],
+  ['/fail', 500, 'Internal Server Error'],
+] as const) {
+  test(`a large upload answered with ${status} without being read keeps the connection usable`, { timeout: 5000 }, async () => {
+    const upload = request({ host: '127.0.0.1', port, path, method: 'POST', agent });
+    const responsePromise = once(upload, 'response');
+    upload.end(Buffer.alloc(1024 * 1024, 120));
+    const [response] = await responsePromise as [IncomingMessage];
+    const socket = response.socket;
+    assert.equal(response.statusCode, status);
+    assert.equal(await read(response), body);
+
+    const next = request({ host: '127.0.0.1', port, path: '/ready', agent });
+    const nextResponse = once(next, 'response');
+    next.end();
+    const [ready] = await nextResponse as [IncomingMessage];
+    assert.equal(ready.socket, socket);
+    assert.equal(await read(ready), 'ready');
+  });
+}

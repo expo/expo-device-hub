@@ -1,5 +1,39 @@
 # expo-device-hub
 
+## 0.17.0
+
+### Minor Changes
+
+- 9d50a4d: Ship the serve-sim pasteboard helper, so Hub simulator previews can use the token-protected pasteboard read and write APIs.
+- fc0a29e: Copy selected simulator app text to the browser clipboard from the Hub preview toolbar.
+- 69dac3b: Let embedded Hub previews ask the embedding page for clipboard-read permission when a browser clipboard read fails.
+- 63f3ac2: Paste browser clipboard text into simulator apps from the Hub preview keyboard or toolbar.
+- 89a2f39: Read simulator app clipboard text in Hub previews when simctl cannot access the pasteboard.
+- 27d5a91: Add `--cors-origin <origin>` to let a page on another origin use the Hub with `@expo/hub-client`, on iOS and Android. It takes the same values as serve-sim's `--cors-origin`: an origin, or a subdomain wildcard such as `https://*.expo.dev`.
+
+### Patch Changes
+
+- c65c8b8: Keep iOS session recording in the same MP4 across network-capture reboots, resuming with fresh frames and a keyframe after boot completes. Preserve elapsed timestamps and record reboot interruptions in the manifest.
+- b819c39: Preserve iOS recording finalization during shutdown and clean up capture when startup is interrupted.
+- 27df089: Keep iOS recordings through transient control stalls, and preserve partial recordings when encoder finalization fails.
+- c42a827: The Hub now discards an upload that it answers without reading, such as one the token gate refuses or one whose route fails. Before, a large refused POST stayed paused, and the next request on the same keep-alive connection waited forever.
+- c42a827: Under `--require-token`, the Hub's 401 for a missing token on a serve-sim or serve-emu route now carries that backend's CORS headers. A page that the backend allows, such as a `--cors-origin` page, can read the refusal instead of getting a network error.
+- 8ab2a61: serve-emu now answers every route with its CORS policy and answers every preflight, as serve-sim does. A page on a loopback origin can use the Android backend of a Hub on a loopback address, and an allowed cross-origin page can read the screenshot artifact headers. `allowedOrigins` also takes serve-sim's subdomain wildcard, such as `https://*.expo.dev`.
+
+## 0.16.0
+
+### Minor Changes
+
+- 5317c57: The CLI now records the metadata of each running Hub in `server-<port>.json` in `$TMPDIR/expo-device-hub` (or `EXPO_DEVICE_HUB_STATE_DIR`).
+
+### Patch Changes
+
+- 3e3c70a: Find the Android SDK in predefined search paths when `ANDROID_HOME` is not set.
+- cf4c0b2: Advance the iOS Rotate button through requested orientations while screen readback is delayed or an app declines a pose.
+- c49d95a: Add a `/healthz` endpoint that answers `200 {"status":"ok"}` without the session token.
+- cf4c0b2: Wait for helper admission before sending iOS input when the helper advertises `inputAdmission`. Legacy helpers continue accepting input when the socket opens.
+- 8450057: Keep regular iPhone preview rotation when returning to portrait-only apps such as Home.
+
 ## 0.15.3
 
 ### Patch Changes

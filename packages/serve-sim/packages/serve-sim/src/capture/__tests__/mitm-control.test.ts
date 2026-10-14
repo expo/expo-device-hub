@@ -109,6 +109,39 @@ describe("mitm control server", () => {
     }
   });
 
+  test("filters each record by the fields in force when it finishes, so they can change live", async () => {
+    const store = new CaptureStore(() => 10);
+    const control = await startMitmControl({ store, token: "secret", fields: [] });
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${control.port}${path}`, {
+        method: "POST",
+        headers: { [CONTROL_TOKEN_HEADER]: "secret" },
+        body: JSON.stringify(body),
+      });
+    const exchange = async (id: string) => {
+      await post("/request", { id, method: "POST", url: `https://example.com/${id}` });
+      await post("/response", {
+        id,
+        status: 200,
+        req: { size: 2, headers: { "x-test": "1" }, body: "hi" },
+        res: { size: 2, headers: { "x-test": "2" }, body: "ok" },
+      });
+      return store.body(store.list().at(-1)!.id);
+    };
+    try {
+      const before = await exchange("before");
+      expect(before?.requestHeaders ?? {}).toEqual({});
+      expect(before?.responseBody ?? null).toBeNull();
+      control.setFields(["header", "response-body"]);
+      const after = await exchange("after");
+      expect(after?.requestHeaders).toEqual({ "x-test": "1" });
+      expect(after?.responseBody).toBe("ok");
+      expect(after?.requestBody).toBeNull();
+    } finally {
+      await new Promise<void>((resolve) => control.server.close(() => resolve()));
+    }
+  });
+
   test("answers 413 for a post over the body cap and reports it", async () => {
     const previous = process.env[MAX_CONTROL_BODY_BYTES_ENV];
     process.env[MAX_CONTROL_BODY_BYTES_ENV] = "1024";

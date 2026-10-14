@@ -4,6 +4,8 @@ export type BrowserOriginPolicy = {
 
 export const WEBRTC_CORS_METHODS = "POST, OPTIONS";
 export const WEBRTC_CORS_HEADERS = "Authorization, Content-Type";
+/** Every method a router route takes, named in a preflight answer for any route. */
+export const ROUTER_CORS_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 
 function stripIpv6Brackets(hostname: string): string {
   return hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
@@ -31,6 +33,11 @@ function normalizedHttpOrigin(origin: string): string | null {
   }
 }
 
+/** A request's `Origin` header: a configured `*` means any origin, but no page can send one. */
+function normalizedRequestOrigin(origin: string): string | null {
+  return origin === "*" ? null : normalizedHttpOrigin(origin);
+}
+
 export function parseAllowedOrigins(value: string): string[] {
   const origins = value.split(",").map((origin) => origin.trim()).filter(Boolean);
   const normalized = origins.map(normalizedHttpOrigin);
@@ -40,17 +47,53 @@ export function parseAllowedOrigins(value: string): string[] {
   return normalized as string[];
 }
 
+// @ref LLP 0003#cors — the origin shapes serve-sim's `--cors-origin` takes, so one list fits both
+// A wildcard needs two labels after the star, which stops a bare TLD like `*.com`.
+const WILDCARD_HOST = /^\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i;
+
+/**
+ * Whether `configured` names `origin`, exactly or through a leading `*.` wildcard. A copy of
+ * serve-sim's `originMatches`: canonical origins compare, and a wildcard covers subdomains only,
+ * never the bare host, with the same scheme and port.
+ */
+function originMatches(configured: string, origin: URL): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(configured);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.origin === origin.origin) return true;
+  // A wildcard must be spelled `*.` in the value itself: URL turns `%2A` and full-width or small
+  // stars into `*`, which would otherwise grant a whole domain no one named.
+  if (!/^https?:\/\/\*\./i.test(configured.trim()) || !WILDCARD_HOST.test(parsed.hostname)) return false;
+  const suffix = parsed.hostname.slice(1).toLowerCase();
+  const host = origin.hostname.toLowerCase();
+  return (
+    parsed.protocol === origin.protocol &&
+    parsed.port === origin.port &&
+    host.length > suffix.length &&
+    host.endsWith(suffix)
+  );
+}
+
+function isConfiguredOrigin(normalizedOrigin: string, allowedOrigins: readonly string[]): boolean {
+  if (allowedOrigins.includes("*")) return true;
+  const origin = new URL(normalizedOrigin);
+  return allowedOrigins.some((allowed) => originMatches(allowed, origin));
+}
+
 export function isAllowedBrowserOrigin(
   req: Request,
   policy: BrowserOriginPolicy = {},
 ): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return false;
 
-  const allowedOrigins = policy.allowedOrigins ?? [];
-  if (allowedOrigins.includes("*") || allowedOrigins.includes(normalizedOrigin)) return true;
+  if (isConfiguredOrigin(normalizedOrigin, policy.allowedOrigins ?? [])) return true;
 
   const target = new URL(req.url);
   if (normalizedOrigin === target.origin) return true;
@@ -70,13 +113,11 @@ export function isAllowedMutationOrigin(
 ): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return false;
 
-  const allowedOrigins = policy.allowedOrigins ?? [];
   return (
-    allowedOrigins.includes("*") ||
-    allowedOrigins.includes(normalizedOrigin) ||
+    isConfiguredOrigin(normalizedOrigin, policy.allowedOrigins ?? []) ||
     normalizedOrigin === new URL(req.url).origin
   );
 }
@@ -95,11 +136,34 @@ export function corsHeadersForRequest(
   if (!origin) return headers;
   if (!isAllowedBrowserOrigin(req, policy)) return headers;
 
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return headers;
   headers["Access-Control-Allow-Origin"] = policy.allowedOrigins?.includes("*")
     ? "*"
     : normalizedOrigin;
   headers["Vary"] = "Origin";
   return headers;
+}
+
+/**
+ * `response` with the CORS policy for `req`, which the router puts on every route, as
+ * serve-sim's middleware does. `Vary: Origin` goes on every response, even one whose origin
+ * is refused, so a cache never replays a copy without the policy to an allowed origin.
+ */
+export function withCorsPolicy(
+  req: Request,
+  response: Response,
+  policy: BrowserOriginPolicy = {},
+): Response {
+  // A copy, because a response's headers may be immutable, as a redirect's are.
+  const headers = new Headers(response.headers);
+  const vary = headers.get("vary")?.split(",").map((name) => name.trim().toLowerCase()) ?? [];
+  if (!vary.includes("origin") && !vary.includes("*")) headers.append("Vary", "Origin");
+  const allowOrigin = corsHeadersForRequest(req, policy)["Access-Control-Allow-Origin"];
+  if (allowOrigin) headers.set("Access-Control-Allow-Origin", allowOrigin);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }

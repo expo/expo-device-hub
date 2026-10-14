@@ -8,6 +8,8 @@ declare global {
       streamUrl: string;
       wsUrl: string;
       inputAdmission?: true;
+      inputPaste?: true;
+      inputCopy?: true;
       pid: number;
       port: number;
       device: string;
@@ -45,6 +47,8 @@ declare global {
       requireToken?: boolean;
       /** Public page Share copies when `--share-url` is set. */
       shareUrl?: string;
+      /** Hide the Share button when `--disable-share` is set. */
+      disableShare?: boolean;
       streamSettings?: StreamSettings;
       /**
        * Set when the server routes helper stream/control + DevTools sockets

@@ -24,7 +24,7 @@ HubClient must handle input and control sockets the same way as the serve-sim br
 An open input socket is not yet admitted. A helper that advertises `inputAdmission: true` in `/api` sends the `0x83` frame after it admits the socket. The client sends input, and flushes queued input, only after that frame [observed: `createInputSocket` in `input-socket.ts`; `WS_MSG_INPUT_ADMITTED` in `input-protocol.ts`].
 
 - An older helper has no admission frame, so the client treats an open socket as admitted. It waits 1 s before it clears a refusal notice, so that an immediate `1013` refusal can arrive first.
-- Queued input has a size limit and drops expired messages [observed: `ws-send-queue.ts`].
+- Queued input has a size limit and drops expired messages [observed: `ws-send-queue.ts`]. Rotation intent resolves only when the admitted socket sends it; the cursor advances after successful delivery, so refused or expired rotations do not change the next requested pose [observed: `input-socket.ts`, `ws-send-queue.ts`, and `rotation-cursor.ts`].
 - A `1013` close with `WS_REASON_INPUT_UNAVAILABLE` means that all input slots are in use. The client reconnects, and reports the refusal only after 13 s. That is longer than the server's heartbeat timeout plus one reconnect, so a slot that a lost socket holds becomes free first.
 - A `1013` close with another reason means that input was lost (for example, a full input queue). The client reports it at once.
 

@@ -16,6 +16,13 @@ mock.module("sonner", () => ({
 import { ShareSessionButton } from "../client/components/share-session-button";
 
 describe("ShareSessionButton", () => {
+  test("hides the button when sharing is disabled, including token-gated previews", () => {
+    expect(renderToStaticMarkup(
+      <ShareSessionButton config={{ disableShare: true, requireToken: true, execToken: "tok" }} />,
+    )).toBe("");
+    expect(renderToStaticMarkup(<ShareSessionButton config={null} />)).toContain('aria-label="Share session"');
+  });
+
   test("says in the tooltip when the link includes the token", () => {
     const gated = renderToStaticMarkup(
       <ShareSessionButton config={{ requireToken: true, execToken: "tok" }} />,

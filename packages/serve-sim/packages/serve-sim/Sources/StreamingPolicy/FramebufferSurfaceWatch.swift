@@ -10,6 +10,7 @@ public struct FramebufferSurfaceWatch: Sendable {
     private var lastSurfaceNanoseconds: UInt64
     private var lastRewireNanoseconds: UInt64
     private var lossStartNanoseconds: UInt64?
+    private var rewiredCurrentLoss = false
     private var endedLossNanoseconds: UInt64 = 0
     public private(set) var losses: UInt64 = 0
     public private(set) var rewires: UInt64 = 0
@@ -24,21 +25,31 @@ public struct FramebufferSurfaceWatch: Sendable {
         lastSurfaceNanoseconds = now
         guard let start = lossStartNanoseconds else { return nil }
         lossStartNanoseconds = nil
+        rewiredCurrentLoss = false
         let lasted = Self.elapsed(from: start, to: now)
         endedLossNanoseconds &+= lasted
         return lasted
     }
 
-    public mutating func tick(atNanoseconds now: UInt64, capturedAnyFrame: Bool) -> Action {
+    /// `deviceBooted` is read only when a re-wire is due, so at most once per interval.
+    public mutating func tick(atNanoseconds now: UInt64, capturedAnyFrame: Bool,
+                              deviceBooted: @autoclosure () -> Bool = true) -> Action {
         let surfaceMissing = !capturedAnyFrame || Self.elapsed(from: lastSurfaceNanoseconds, to: now) >= intervalNanoseconds
         guard surfaceMissing, Self.elapsed(from: lastRewireNanoseconds, to: now) >= intervalNanoseconds else {
             return .none
         }
         lastRewireNanoseconds = now
+        if capturedAnyFrame, lossStartNanoseconds == nil {
+            lossStartNanoseconds = lastSurfaceNanoseconds
+            losses &+= 1
+        }
+        // A simulator that is not booted has no display pipeline to wire, and every
+        // attempt leaves ROCKit proxies behind that are never released. The loss
+        // still counts; only the re-wire waits for the boot.
+        guard deviceBooted() else { return .none }
         rewires &+= 1
-        guard capturedAnyFrame, lossStartNanoseconds == nil else { return .rewire(lossStarted: false) }
-        lossStartNanoseconds = lastSurfaceNanoseconds
-        losses &+= 1
+        guard capturedAnyFrame, !rewiredCurrentLoss else { return .rewire(lossStarted: false) }
+        rewiredCurrentLoss = true
         return .rewire(lossStarted: true)
     }
 

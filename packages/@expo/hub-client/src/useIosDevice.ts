@@ -64,13 +64,13 @@ import {
   type DeviceCapabilities,
   type DeviceConnectionOptions,
   type DeviceLog,
+  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
-  type DeviceOrientation,
   type ForegroundApp,
   type HardwareButton,
   type HidKeyEvent,
@@ -88,6 +88,7 @@ import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
+import { createRotationCursor } from './rotation-cursor';
 import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
@@ -107,7 +108,9 @@ import {
   createLadderBackoff,
 } from './webrtc-fallback';
 import { createInputSocket } from './input-socket';
-import { WS_MSG_CONFIG, WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
+import { type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
+import { WS_MSG_CONFIG } from './input-protocol';
+import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -172,15 +175,6 @@ export function iosStreamCapabilities(streamSettings: unknown): DeviceStreamCapa
       : undefined;
   return transport === 'webrtc' ? IOS_WEBRTC_STREAM_CAPABILITIES : IOS_HTTP_STREAM_CAPABILITIES;
 }
-
-// The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
-// press advances one step, so four presses come back around to portrait.
-const ORIENTATION_CYCLE: DeviceOrientation[] = [
-  'portrait',
-  'landscape_left',
-  'portrait_upside_down',
-  'landscape_right',
-];
 
 // iOS only has a Home button + app switcher; the rest are no-ops.
 const BUTTON_NAME: Record<HardwareButton, string | null> = {
@@ -405,6 +399,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const imgRef = useRef<HTMLImageElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
@@ -432,6 +427,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
+  const rotationCursorRef = useRef(createRotationCursor());
+  useEffect(() => {
+    rotationCursorRef.current.updateReadback(screen?.orientation);
+  }, [screen?.orientation]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -446,16 +445,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
       if (useWebRtc) {
         videoRef.current = (el as HTMLVideoElement) ?? null;
+        setWebRtcVideoElement(videoRef.current);
         canvasRef.current = null;
         imgRef.current = null;
       } else if (useAvcc) {
         canvasRef.current = (el as HTMLCanvasElement) ?? null;
         videoRef.current = null;
+        setWebRtcVideoElement(null);
         imgRef.current = null;
       } else {
         imgRef.current = (el as HTMLImageElement) ?? null;
         canvasRef.current = null;
         videoRef.current = null;
+        setWebRtcVideoElement(null);
         if (el) applyStreamSrc();
       }
     },
@@ -464,9 +466,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
-  const sendWs = useCallback((tag: number, payload: object) => {
+  const sendWs = useCallback((tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) => {
     if (!config || config !== deviceSettingConfigRef.current) return;
-    inputSocketRef.current?.send(tag, payload);
+    inputSocketRef.current?.send(tag, payload, onSent);
   }, [config]);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -592,14 +594,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key('up', HID_USAGE_R);
   }, [sendWs]);
 
-  // Rotate one step counterclockwise from the last known orientation, over the
-  // helper's orientation channel (tag 0x07 → HID orientation event). The helper
-  // confirms by pushing an updated screen config, which keeps the cycle in sync.
+  // Keep cycling from requested poses while the helper's readback is delayed
+  // or an app declines a pose. Screen state still comes only from readback.
   const rotate = useCallback(() => {
-    const current = screenRef.current?.orientation ?? 'portrait';
-    const next =
-      ORIENTATION_CYCLE[(ORIENTATION_CYCLE.indexOf(current) + 1) % ORIENTATION_CYCLE.length];
-    sendWs(WS_MSG_ORIENTATION, { orientation: next });
+    // Resolve each queued click in delivery order; refused, expired or evicted
+    // input must not advance the cursor.
+    sendWs(
+      WS_MSG_ORIENTATION,
+      () => ({ orientation: rotationCursorRef.current.peekNext() }),
+      (payload) =>
+        rotationCursorRef.current.recordSent((payload as { orientation: DeviceOrientation }).orientation),
+    );
   }, [sendWs]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -964,9 +969,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [useWebRtc, webRtcError, webRtcStream, webRtcCodecsExhausted]);
 
+  // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — surface remounts keep the peer
   useEffect(() => {
     if (!useWebRtc) return;
-    const video = videoRef.current;
+    const video = webRtcVideoElement;
     if (!video) return;
     let stopped = false;
     let firstFrame = true;
@@ -995,6 +1001,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
     };
     const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      if (stopped) return;
       const presentedFrameDelta = presentedVideoFrameDelta(
         previousPresentedFrames,
         metadata.presentedFrames,
@@ -1032,7 +1039,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       video.srcObject = null;
     };
-  }, [useWebRtc, webRtcStream, markWebRtcFrameDecoded, onAvccFrame]);
+  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded, onAvccFrame]);
 
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
@@ -1141,6 +1148,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsUrl = config?.wsUrl ?? null;
   const requireInputAdmission = config?.inputAdmission ?? false;
   const controlDevice = config?.device ?? null;
+  useEffect(() => {
+    rotationCursorRef.current = createRotationCursor(screenRef.current?.orientation ?? 'portrait');
+  }, [wsUrl, controlDevice, videoSessionKey]);
   // A replacement helper cannot restore lost input, so its notice outlives the socket.
   // A helper can report a null config while it restarts; that gap keeps the notice.
   const lostInputTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1178,6 +1188,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & { inputUnavailable?: boolean };
           if (typeof c.width !== 'number' || typeof c.height !== 'number' || !Number.isFinite(c.width) || !Number.isFinite(c.height) || c.width <= 0 || c.height <= 0 || (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== 'boolean')) return false;
+          rotationCursorRef.current.updateReadback(c.orientation);
           setInputUnavailable(c.inputUnavailable === true);
           hasWsConfigRef.current = true;
           setScreen(prev => prev?.width === c.width && prev.height === c.height && prev.orientation === c.orientation ? prev : c);

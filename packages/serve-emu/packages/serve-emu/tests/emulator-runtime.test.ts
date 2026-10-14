@@ -91,6 +91,8 @@ describe("emulator resolution and listing", () => {
       }),
     ).resolves.toBe("/sdk/tools/emulator");
     expect(checked).toEqual([
+      "/bin/adb",
+      "/bin/emulator",
       "/sdk/emulator/emulator",
       "/sdk/tools/emulator",
     ]);

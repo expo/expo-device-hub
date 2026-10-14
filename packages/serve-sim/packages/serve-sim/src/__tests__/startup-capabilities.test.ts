@@ -341,7 +341,7 @@ test("registry capture prepares, publishes, reuses, and removes the same runtime
     startProxy: async () => {
       starts++;
       return {
-        address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA",
+        address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA", setFields: () => {},
         close: async () => { closes++; },
       };
     },
@@ -371,7 +371,7 @@ function captureHarness(close: () => Promise<void> = async () => {}) {
   return createCaptureRuntime({
     dylib: () => dylib, trustCa: async () => {},
     startProxy: async () => ({
-      address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA", close,
+      address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA", setFields: () => {}, close,
     }),
   });
 }

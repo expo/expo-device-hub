@@ -16,8 +16,8 @@ final class RecordingAvailabilityTests: XCTestCase {
         try RecordingAvailability().checkStart() // A new serve-sim session starts fresh.
     }
 
-    func testNoFramesAndManifestWriteFailuresPermitAnotherStart() throws {
-        for code in [13, 17] {
+    func testFinishedFlushFailureNoFramesAndManifestWriteFailuresPermitAnotherStart() throws {
+        for code in [13, 16, 17] {
             var availability = RecordingAvailability()
             availability.finalizationFailed(NSError(domain: "serve-sim-recording", code: code))
             try availability.checkStart()

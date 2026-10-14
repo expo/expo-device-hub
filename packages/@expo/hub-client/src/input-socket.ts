@@ -1,4 +1,4 @@
-import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./ws-send-queue";
+import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from "./ws-send-queue";
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
@@ -113,9 +113,9 @@ export function createInputSocket(
   };
 
   return {
-    send(tag: number, payload: object) {
+    send(tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) {
       // New helpers require admission; legacy helpers keep their prior open behavior.
-      pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
+      pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload, Date.now(), onSent);
     },
     // @ref LLP 0013#input-ownership — complete gestures stay queued; a held touch is released
     discardUnfinishedGestures(tag: number) {

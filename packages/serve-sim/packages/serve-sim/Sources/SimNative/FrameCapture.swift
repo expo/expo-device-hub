@@ -97,6 +97,7 @@ actor FrameCapture {
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
+    private var device: NSObject?
 
     init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
         self.nowNanoseconds = nowNanoseconds
@@ -135,6 +136,7 @@ actor FrameCapture {
             throw makeError(3, "Failed to get device IO")
         }
         self.ioClient = io
+        self.device = device
 
         try wireUpFramebuffer()
         // Main capture follows authoritative display election. Independent
@@ -232,6 +234,13 @@ actor FrameCapture {
     private func surface(for descriptor: NSObject, live: Bool = false) -> IOSurface? {
         let key = ObjectIdentifier(descriptor)
         guard live else { return framebufferSurfaces[key] }
+        // @ref LLP 0001#capture-recovery — a simulator that is not booted is not read; its loss keeps counting.
+        // It has no surface, and every read of its descriptor leaves a ROCKit
+        // proxy behind that is never released.
+        guard isDeviceBooted() else {
+            updateCachedSurface(nil, for: key)
+            return nil
+        }
 
         let surfaceSelector = NSSelectorFromString("framebufferSurface")
         var reported: IOSurface?
@@ -457,8 +466,9 @@ actor FrameCapture {
         guard let lastLiveRevalidationNs else { return }
         // A cached miss cannot establish that the surface is still missing.
         let healthCheckNs = min(nowNs, lastLiveRevalidationNs)
-        guard case .rewire(let lossStarted) = surfaceWatch.tick(atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0)
-        else { return }
+        guard case .rewire(let lossStarted) = surfaceWatch.tick(
+            atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0, deviceBooted: isDeviceBooted()
+        ) else { return }
         if lossStarted {
             print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
         }
@@ -467,6 +477,12 @@ actor FrameCapture {
         } catch {
             // Retry on the next eligible tick.
         }
+    }
+
+    /// A capture installed without a device, as tests do, counts as booted.
+    private func isDeviceBooted() -> Bool {
+        guard let device else { return true }
+        return device.value(forKey: "stateString") as? String == "Booted"
     }
 
     // MARK: - Frame capture
@@ -579,9 +595,11 @@ actor FrameCapture {
     func installDescriptorsForTesting(
         _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
         io: NSObject? = nil,
+        device: NSObject? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
+        self.device = device
         self.onFrame = onFrame
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
@@ -679,14 +697,14 @@ actor FrameCapture {
         displayRefreshTask?.cancel()
     }
 
-    func stop() {
+    func stop(preservingObservers: Bool = false) {
         captureGeneration &+= 1
         displayInfoTask?.cancel()
         displayInfoTask = nil
         displayRefreshTask?.cancel()
         displayRefreshTask = nil
         displayRefreshRequested = false
-        screenObservers.removeAll()
+        if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
         authoritativeDisplay = nil
         displayConfigurationReady = false
@@ -706,6 +724,7 @@ actor FrameCapture {
         invalidatePick()
         photocopier.reset()
         ioClient = nil
+        device = nil
     }
 
     private func unregisterCallbacks() {

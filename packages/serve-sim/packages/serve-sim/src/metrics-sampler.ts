@@ -132,7 +132,7 @@ const runCommand = (file: string, args: string[], signal?: AbortSignal): Promise
   execFileAsync(file, args, { timeout: 3000, maxBuffer: 8 * 1024 * 1024, signal }).then((r) => r.stdout);
 
 /** The current foreground app: the tracker when it's warm, else the AX bridge; null when unknown. */
-function frontmostAppOf(udid: string): Promise<ForegroundApp | null> {
+function frontmostAppFast(udid: string): Promise<ForegroundApp | null> {
   const tracked = foregroundTracker.peek(udid);
   return tracked ? Promise.resolve(tracked) : frontmostAppViaAx(udid);
 }
@@ -290,7 +290,7 @@ export class NetworkThroughputMonitor {
 export async function sampleUserApp(udid: string, deps: SampleDeps = {}): Promise<AppUsage | null> {
   const resolved: Required<SampleDeps> = {
     exec: deps.exec ?? runCommand,
-    frontmostApp: deps.frontmostApp ?? frontmostAppOf,
+    frontmostApp: deps.frontmostApp ?? frontmostAppFast,
     networkRate: deps.networkRate ?? (() => ({ netInBytesPerSec: 0, netOutBytesPerSec: 0 })),
   };
   const foreground = await sampleForegroundApp(udid, resolved);

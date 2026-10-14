@@ -121,13 +121,15 @@ export type SessionGateOptions = {
   htmlHeaders?: Record<string, string>;
   /** False ignores `?token=`, as serve-sim does on its capture routes. */
   allowQueryToken?: boolean;
+  /** Added to a refusal, so a page that may read the route can read why it was refused. */
+  corsHeaders?: Record<string, string>;
 };
 
 /** Null lets the request through; otherwise the response that answers it. */
 export function authorizeRequest(
   request: Request,
   token: string,
-  { mountPath, htmlHeaders, allowQueryToken = true }: SessionGateOptions,
+  { mountPath, htmlHeaders, allowQueryToken = true, corsHeaders }: SessionGateOptions,
 ): Response | null {
   const url = new URL(request.url);
   const fromQuery = allowQueryToken ? url.searchParams.get('token') : null;
@@ -162,6 +164,7 @@ export function authorizeRequest(
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store, private',
         ...htmlHeaders,
+        ...corsHeaders,
       },
     });
   }
@@ -178,6 +181,7 @@ export function authorizeRequest(
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store, private',
         'WWW-Authenticate': 'Bearer',
+        ...corsHeaders,
       },
     },
   );
@@ -197,6 +201,24 @@ export function authorizeUpgrade(
     return true;
   }
   return hasCookieToken(request, token) && isSameOriginRequest(request);
+}
+
+/**
+ * Names the request's `Origin` when `allows` it. `Vary: Origin` goes on either way, as serve-sim
+ * does, so a cache never replays one origin's answer to another.
+ */
+export function corsHeadersFor(
+  request: Request,
+  allows: (origin: URL, request: Request) => boolean,
+): Record<string, string> {
+  let origin: URL | null = null;
+  try {
+    origin = new URL(request.headers.get('origin') ?? '');
+  } catch {}
+  const web = origin?.protocol === 'http:' || origin?.protocol === 'https:';
+  return origin && web && allows(origin, request)
+    ? { 'Access-Control-Allow-Origin': origin.origin, Vary: 'Origin' }
+    : { Vary: 'Origin' };
 }
 
 /** A copy of an authorized request that carries the token as a bearer, for the backends' gates. */

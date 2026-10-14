@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { lstatSync, readlinkSync, realpathSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { basename, isAbsolute, join, resolve, sep } from "path";
@@ -14,7 +15,14 @@ function realpathOrSelf(path: string): string {
 /** $TMPDIR sits behind a symlink (/var -> /private/var); a canonical path needs a root in that shape. */
 const TMP_ROOT = realpathOrSelf(tmpdir());
 
-export const UPLOAD_DIR = join(TMP_ROOT, "serve-sim-uploads");
+/** Shared parent of every server's staging folder. */
+export const UPLOAD_ROOT = join(TMP_ROOT, "serve-sim-uploads");
+/**
+ * This server's staging folder. Upload IDs come from clients, and the queue in upload-store only
+ * orders work inside one process, so a second server must never reset or remove these files.
+ */
+// @ref LLP 0003#uploading-an-app-fixture — each server stages uploads in its own folder
+export const UPLOAD_DIR = join(UPLOAD_ROOT, `${process.pid}-${randomUUID().slice(0, 8)}`);
 /** Staged here; only a child writes to the Desktop (see TCC_PROTECTED_DIRS). */
 export const SCREENSHOT_DIR = join(TMP_ROOT, "serve-sim-screenshots");
 /** Protected (see TCC_PROTECTED_DIRS), so only child processes ever name a path under it. */
@@ -48,9 +56,9 @@ const ALLOWED_ROOTS = [
       join(homedir(), "Library", "Developer", "CoreSimulator", "Devices"),
       // Apple's own apps live in the runtime root, not under a device's data container.
       "/Library/Developer/CoreSimulator",
-      join(tmpdir(), basename(UPLOAD_DIR)),
+      join(tmpdir(), basename(UPLOAD_ROOT)),
       join(tmpdir(), basename(SCREENSHOT_DIR)),
-      UPLOAD_DIR,
+      UPLOAD_ROOT,
       SCREENSHOT_DIR,
     ].flatMap((root) => [root, realpathOrSelf(root)]),
   ),

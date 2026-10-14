@@ -20,6 +20,7 @@ let clock = 0;
 /// What the signalling endpoint answers the offer with.
 let offerStatus = 200;
 let offersPosted = 0;
+let captureRebooting = false;
 let offerBody = "nope";
 
 class FakePeer {
@@ -93,7 +94,7 @@ Object.assign(globalThis, {
   MediaStream: class {},
   fetch: async (input: string) => {
     if (input.includes("/stats")) {
-      return new Response(JSON.stringify({ sessions: [{ framesEncoded: 0 }] }));
+      return new Response(JSON.stringify({ capture: { rebooting: captureRebooting }, sessions: [{ framesEncoded: 0 }] }));
     }
     if (input.includes("/offer")) offersPosted += 1;
     if (input.includes("/offer") && offerStatus !== 200) {
@@ -127,6 +128,7 @@ async function start(
   visibility = visible;
   offerStatus = offerAnswers;
   offersPosted = 0;
+  captureRebooting = false;
   offerBody = "nope";
   clock = 0;
   timers.clear();
@@ -638,4 +640,32 @@ test("a transport stall leaves the codec its reconnect", async () => {
   // Now a real decoder stall: it should still earn a reconnect, not lose the codec.
   await pollStall(frozenRun(200));
   expect(failures()).toEqual([]);
+});
+
+test("intentional capture reboot preserves an established peer through silence", async () => {
+  const hook = await start("visible", 200, false);
+  hook.markFrameDecoded();
+  captureRebooting = true;
+  await pollStall(deadRun(10));
+  expect(closed).toBe(0);
+  expect(failures()).toEqual([]);
+  captureRebooting = false;
+  await pollStall(deadRun(10));
+  expect(closed).toBe(1);
+});
+
+test("first-frame timeout defers through reboot without demoting the codec", async () => {
+  await start("visible", 200, false);
+  captureRebooting = true;
+  for (let i = 0; i < 3; i++) {
+    expect(fireTimer()).toBe(4_000);
+    await flush(); resolveStats(0); await flush();
+    expect(closed).toBe(0);
+    expect(failures()).toEqual([]);
+  }
+  captureRebooting = false;
+  expect(fireTimer()).toBe(4_000);
+  await flush(); resolveStats(0); await flush();
+  expect(closed).toBe(1);
+  expect(failures()).toMatchObject([{ kind: "codec" }]);
 });

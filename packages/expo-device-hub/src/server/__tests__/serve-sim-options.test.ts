@@ -104,6 +104,13 @@ describe('standaloneServeSimOptions', () => {
     });
   });
 
+  test('allows each --cors-origin page, as serve-sim --cors-origin does', () => {
+    expect(
+      standaloneServeSimOptions(parseCliOptions(['--cors-origin', 'https://example.com'])).corsOrigins,
+    ).toEqual(['https://example.com']);
+    expect(standaloneServeSimOptions(parseCliOptions([])).corsOrigins).toBeUndefined();
+  });
+
   test('round-trips through the server environment payload', () => {
     const options = parseCliOptions(['--transport', 'webrtc', '--webrtc-codec', 'vp8']);
     expect(readStandaloneServeSimOptions(encodeStandaloneServeSimOptions(options))).toEqual(

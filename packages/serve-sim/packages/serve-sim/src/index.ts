@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { RECORDING_FINALIZATION_WAIT_MS, RECORDING_RECONCILIATION_WAIT_MS } from "./recording-timeouts";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
@@ -8,6 +9,7 @@ import { createHash, randomBytes } from "crypto";
 import { networkInterfaces } from "os";
 import { extname, join, resolve } from "path";
 import WebSocket from "ws";
+import { onCliInputReady } from "./socket/cli-input";
 import {
   stateDir,
   stateFileForDevice,
@@ -27,13 +29,12 @@ import { logBufferCache } from "./log-buffer";
 import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
-import { runShutdownSteps } from "./shutdown-budget";
+import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   missingCapabilities,
-  hasDefaultCapabilities,
   registerCapability,
 } from "./capabilities";
 import {
@@ -54,6 +55,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
+import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -72,13 +74,14 @@ import {
 import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream-runtime-args";
 import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
-import { sendHingeAngleToWs } from "./hinge-command";
+import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
 import { finishDeviceRecordingsForShutdown } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
+const RECORDING_SHUTDOWN_TIMEOUT_MS = 65_000;
 const CAPTURE_SHUTDOWN_SHARE_MS = 12_000;
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
@@ -252,11 +255,6 @@ function openHelperSocket(state: ServerState): WebSocket {
   );
 }
 
-function reportInputSocketClose(ws: WebSocket, reject: (error: Error) => void): void {
-  ws.on("close", (code, reason) => {
-    if (code === 1013) reject(new Error(`Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`));
-  });
-}
 
 function clearState(udid?: string) {
   if (udid) {
@@ -412,6 +410,7 @@ function disarmDevicesArmedHere(): void {
 }
 
 let sessionStopping = false;
+let previewShutdownReady = false;
 let releasingDevices: Promise<void> | undefined;
 
 function disarmDevicesArmedHereAsync(): Promise<void> {
@@ -433,6 +432,7 @@ function disarmDevicesArmedHereAsync(): Promise<void> {
 
 // A stream helper outlives the session that spawned it, so it must not arm the
 // device: arming after its parent disarmed would leave the insert set for good.
+// Its preview middleware leaves the clipboard reader alone for the same reason.
 const STREAM_HELPER_ENV = "SERVE_SIM_STREAM_HELPER";
 
 // ─── Preview server lifecycle ───
@@ -856,17 +856,16 @@ async function gesture(jsonStr: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify(touch));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x03;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -891,7 +890,6 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     const send = (type: "begin" | "end") => {
       const json = new TextEncoder().encode(JSON.stringify({ type, x, y }));
@@ -900,13 +898,13 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
       msg.set(json, 1);
       ws.send(msg);
     };
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       send("begin");
       setTimeout(() => {
         send("end");
         setTimeout(() => { ws.close(); resolve(); }, 50);
       }, 40);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -968,11 +966,15 @@ async function typeText(
   await sendKeyEventsToWs(state.wsUrl, events, { token: state.token });
 }
 
-async function hinge(angle: number, deviceArg?: string) {
+async function hinge(angle: number | undefined, deviceArg?: string) {
   const state = readState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
+  }
+  if (angle === undefined) {
+    console.log(JSON.stringify({ device: state.device, ...await readHingeStateFromWs(state.wsUrl, { token: state.token }) }));
+    return;
   }
   await sendHingeAngleToWs(state.wsUrl, angle, { token: state.token });
   console.log(JSON.stringify({ device: state.device, hingeAngle: angle }));
@@ -1000,17 +1002,16 @@ async function rotate(orientation: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify({ orientation }));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x07;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -1044,17 +1045,16 @@ async function button(buttonName = "home", deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify(payload));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x04;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -1094,16 +1094,15 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
+    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify({ option: resolved, enabled }));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x08;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -1120,12 +1119,11 @@ async function memoryWarning(deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
+    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
       ws.send(new Uint8Array([0x09]));
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -1785,7 +1783,7 @@ function printStartupError(message: string, quiet: boolean): void {
 
 async function serve(
   servePort: number,
-  devices: string[],
+  targetDevices: string[],
   portExplicit: boolean,
   host: string,
   options: {
@@ -1794,12 +1792,14 @@ async function serve(
     corsOrigins?: string[];
     frameAncestors?: string[];
     shareUrl?: string;
+    disableShare?: boolean;
     allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
     quiet?: boolean;
     networkCapture?: boolean;
     networkCaptureProxy?: string;
+    clipboard?: boolean | "unmanaged";
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1807,20 +1807,6 @@ async function serve(
     printStartupError(message, quiet);
     process.exit(1);
   };
-  // Boot the target simulators; the preview server streams them in-process
-  // (no spawned helper). Sessions are created lazily on the first stream request.
-  let targetDevices: string[];
-  try {
-    targetDevices = resolveTargetDevices(devices);
-    if (!quiet && devices.length === 0 && readAllStates().length === 0) {
-      console.log("Starting simulator stream...");
-    }
-    for (const udid of targetDevices) {
-      await ensureBooted(udid);
-    }
-  } catch (err) {
-    return failStartup(err instanceof Error ? err.message : String(err));
-  }
   const targetDevice = targetDevices[0];
 
   const capture = await import("./capture");
@@ -1828,8 +1814,10 @@ async function serve(
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
   await startNetworkCapture(options.networkCapture ? targetDevices : [], options.networkCaptureFields, quiet);
+  if (sessionStopping) return;
 
   const { simMiddleware } = await import("./middleware");
+  if (sessionStopping) return;
   // Standalone serve-sim owns its HTTP server and wires WebSocket upgrades, so
   // it can route helper/DevTools sockets through the single preview port.
   // Minted here, not in the middleware, because the operator has to be told what it is.
@@ -1845,9 +1833,11 @@ async function serve(
       corsOrigins: options.corsOrigins ?? [],
       frameAncestors: options.frameAncestors ?? [],
       shareUrl: options.shareUrl,
+      disableShare: options.disableShare,
       allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
       networkCapture: !!options.networkCapture,
       networkCaptureProxy: options.networkCaptureProxy,
+      clipboard: options.clipboard,
       loopbackOnly: isLoopbackHost(host),
       execToken: previewToken,
       requirePreviewToken,
@@ -1865,6 +1855,7 @@ async function serve(
     const p = servePort + i;
     try {
       await bindPreviewServer(p, middleware, host);
+      if (sessionStopping) return;
       boundPort = p;
       bound = true;
       break;
@@ -1957,30 +1948,49 @@ async function serve(
     shuttingDown = true;
     sessionStopping = true;
     const recordingErrors: string[] = [];
-    const recordingsFinished = await finishDeviceRecordingsForShutdown(
-      error => recordingErrors.push(String(error))
-    );
-    if (!recordingsFinished) {
-      try {
-        writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
-          pid: process.pid, errors: recordingErrors,
-        }), { mode: 0o600 });
-      } catch (error) {
-        console.error(`Could not report recording shutdown failure: ${String(error)}`);
-      }
-    }
-    await runShutdownSteps({
-      stopCapture: () => capture.captureRuntime.disableAll(),
-      disarm: () => disarmDevicesArmedHereAsync(),
-      totalMs: SHUTDOWN_TIMEOUT_MS,
-      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+    await runRecordingShutdown({
+      finishRecordings: () => finishDeviceRecordingsForShutdown(
+        error => recordingErrors.push(String(error))
+      ),
+      timeoutMs: RECORDING_SHUTDOWN_TIMEOUT_MS,
+      onTimeout: () => {
+        const error = `Recording shutdown exceeded ${RECORDING_SHUTDOWN_TIMEOUT_MS / 1000} seconds. ` +
+          `PID ${process.pid} and its state remain alive to preserve the output; ` +
+          "shutdown will finish when recording finalization completes.";
+        recordingErrors.push(error);
+        console.error(error);
+      },
+      completeShutdown: async recordingsFinished => {
+        if (!recordingsFinished) {
+          try {
+            writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
+              pid: process.pid, errors: recordingErrors,
+            }), { mode: 0o600 });
+          } catch (error) {
+            console.error(`Could not report recording shutdown failure: ${String(error)}`);
+          }
+        }
+        await runShutdownSteps({
+          stopCapture: () => capture.captureRuntime.disableAll(),
+          disarm: async () => {
+            try {
+              await middleware.dispose();
+            } finally {
+              await disarmDevicesArmedHereAsync();
+            }
+          },
+          totalMs: SHUTDOWN_TIMEOUT_MS,
+          captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+        });
+        clearAll();
+        process.exit(recordingsFinished ? 0 : 1);
+      },
     });
-    clearAll();
-    process.exit(recordingsFinished ? 0 : 1);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGHUP", shutdown);
+  previewShutdownReady = true;
   await new Promise(() => {});
 }
 
@@ -2182,6 +2192,7 @@ program
     "URL the Share button copies, instead of this preview's address.",
     parseShareUrl,
   )
+  .option("--disable-share", "Hide the Share button in the preview UI.")
   .option(
     "--cors-origin <origin>",
     "Allow this origin to read the preview cross-origin and open its control socket " +
@@ -2351,15 +2362,7 @@ Examples:
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);
     }
-    // Only take over device selection when something has to happen before the
-    // run mode starts. Otherwise follow and detach pick their own target, as
-    // they did before this flag existed.
-    const launchesBeforeStreaming =
-      Boolean(installAppPath) ||
-      Boolean(bundleId) ||
-      capabilities.enable.length > 0 ||
-      capabilities.disable.length > 0 ||
-      hasDefaultCapabilities();
+    const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
 
     const startPort: number | undefined = opts.port;
     const streamOptionsProvided = wasProvided("transport")
@@ -2452,6 +2455,8 @@ Examples:
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
             process.on(signal, async () => {
               sessionStopping = true;
+              // The in-process server must finish recordings before capture/capability teardown.
+              if (opts.preview !== false && previewShutdownReady) return;
               // A failed capture teardown must not keep the devices armed.
               try {
                 await stopNetworkCapture();
@@ -2461,7 +2466,7 @@ Examples:
                 );
               }
               await disarmDevicesArmedHereAsync();
-              if (process.listenerCount(signal) > 1) return;
+              if (opts.preview === false && process.listenerCount(signal) > 1) return;
               process.exit(0);
             });
           }
@@ -2470,7 +2475,6 @@ Examples:
           await ensureBooted(udid);
           if (sessionStopping) return;
         }
-        const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
         if (!isStreamHelper) {
           for (const udid of targets) {
             await armCapabilityLoader(udid);
@@ -2482,7 +2486,7 @@ Examples:
         (await import("./capture")).captureRuntime.refuseCapture(publicCaptureRefusal(opts.host, !!opts.requireToken));
         await startNetworkCapture(opts.networkCapture ? targets : [], opts.networkCaptureField, !!opts.quiet);
         if (sessionStopping) return;
-        for (const udid of launchesBeforeStreaming && !isStreamHelper ? targets : []) {
+        for (const udid of isStreamHelper ? [] : targets) {
           if (sessionStopping) return;
           if (installAppPath) {
             const result = await runInvocation(installAppInvocation(udid, installAppPath));
@@ -2497,19 +2501,23 @@ Examples:
             const applied = await applyDefaultCapabilities(udid, null, capabilities);
             const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {
-              console.error(
+              // The catch below prints this, stops capture, and disarms what this session armed.
+              throw new Error(
                 `Requested ${missing.join(", ")} but ${missing.length === 1 ? "it" : "they"} ` +
                   `did not apply on ${udid}. See the message above for why.`,
               );
-              await stopNetworkCapture();
-              process.exit(1);
             }
           }
         }
       } catch (error) {
         if (sessionStopping) return;
         printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
-        await stopNetworkCapture();
+        sessionStopping = true;
+        try {
+          await stopNetworkCapture();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
         process.exit(1);
       }
     }
@@ -2525,12 +2533,14 @@ Examples:
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
+        disableShare: !!opts.disableShare,
         allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,
+        clipboard: isStreamHelper ? "unmanaged" : !capabilities.disable.includes("clipboard"),
         networkCaptureFields: opts.networkCaptureField,
       });
     }
@@ -2580,12 +2590,15 @@ async function recordVideo(udid: string, output: string): Promise<void> {
   };
   const keepAlive = setInterval(() => {}, 60_000);
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let heartbeatInFlight = false;
+  const heartbeatAbort = new AbortController();
   let recordingStopStarted = false;
   let rejectLease: (error: Error) => void = () => {};
   const lostLease = new Promise<never>((_, reject) => { rejectLease = reject; });
   void lostLease.catch(() => {});
   let finished = false;
   let startupCancellationDelivered = false;
+  let recordingFinalized = false;
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
   try {
@@ -2618,22 +2631,37 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     recordingStarted = true;
     console.error("serve-sim:recording-started");
     heartbeat = setInterval(() => {
-      if (recordingStopStarted) return;
-      void fetch(url, { method: "PUT", headers, signal: AbortSignal.timeout(10_000) })
+      if (recordingStopStarted || heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      // @ref LLP 0001#recording-stall-recovery — a transient control timeout does not prove ownership was lost.
+      void fetch(url, { method: "PUT", headers, signal: AbortSignal.any([AbortSignal.timeout(120_000), heartbeatAbort.signal]) })
         .then(async response => {
-          if (!response.ok && !recordingStopStarted) rejectLease(new Error(`Recording lease was lost (${response.status}): ${await response.text()}`));
+          if (!response.ok && response.status < 500 && response.status !== 408 && response.status !== 429 && !recordingStopStarted) {
+            // The status establishes loss of ownership even if its body stalls or fails.
+            rejectLease(new Error(`Recording lease was lost (${response.status})`));
+          }
+          await response.body?.cancel();
         })
-        .catch(error => {
-          if (!recordingStopStarted) rejectLease(error instanceof Error ? error : new Error(String(error)));
-        });
+        .catch(async error => {
+          if (!recordingStopStarted && await waitForServerExit(state.pid, 0)) {
+            rejectLease(error instanceof Error ? error : new Error(String(error)));
+          }
+        })
+        .finally(() => { heartbeatInFlight = false; });
     }, 5_000);
+    let leaseError: unknown;
+    try {
+      await Promise.race([stopping, lostLease]);
+    } catch (error) {
+      leaseError = error;
+    }
+    recordingStopStarted = true;
+    heartbeatAbort.abort();
+    clearInterval(heartbeat);
+    heartbeat = undefined;
     let stopError: unknown;
     let stopRequestAmbiguous = false;
     try {
-      await Promise.race([stopping, lostLease]);
-      recordingStopStarted = true;
-      clearInterval(heartbeat);
-      heartbeat = undefined;
       let stop: Response;
       try {
         stop = await fetch(url, {
@@ -2651,22 +2679,37 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       if (result.manifest !== manifestPath) {
         throw new Error("Recording stop returned an unexpected manifest path");
       }
+      recordingFinalized = true;
+      if (leaseError) {
+        stopError = leaseError;
+        stopRequestAmbiguous = true;
+      }
     } catch (error) {
       stopError = error;
     }
     if (stopError && !stopRequestAmbiguous) throw stopError;
-    if (!await waitForRecordingManifest(manifestPath, 120_000)) {
+    const manifestWaitMs = stopRequestAmbiguous
+      ? RECORDING_RECONCILIATION_WAIT_MS : RECORDING_FINALIZATION_WAIT_MS;
+    if (!await waitForRecordingManifest(manifestPath, manifestWaitMs)) {
       throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
     }
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { status?: string; error?: string };
+    if (manifest.status === "failed") {
+      recordingFinalized = true;
+      throw new Error(`Recording finalized a partial MP4: ${manifest.error ?? "native recording failed"}. Saved manifest: ${manifestPath}`);
+    }
     if (stopError && !stopRequested && !await waitForServerExit(state.pid, 5_000)) {
-      throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+      if (!stopRequested) {
+        throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+      }
     }
     finished = true;
     console.log(manifestPath);
   } finally {
     recordingStopStarted = true;
+    heartbeatAbort.abort();
     if (heartbeat) clearInterval(heartbeat);
-    if (!finished && !startupCancellationDelivered) {
+    if (!finished && !startupCancellationDelivered && !recordingFinalized) {
       try {
         await fetch(url, { method: "DELETE", headers, signal: AbortSignal.timeout(10_000) });
       } catch {}
@@ -2729,14 +2772,14 @@ program
 
 program
   .command("hinge")
-  .description("Set a foldable simulator's hinge angle (0° folded, 90° half folded, 180° unfolded)")
-  .argument("<position>", "fold|half|unfold or an angle from 0 to 180 degrees", (value: string) => {
+  .description("Set or read a foldable simulator's hinge angle (0° folded, 90° half folded, 180° unfolded)")
+  .argument("[position]", "fold|half|unfold or an angle from 0 to 180 degrees", (value: string) => {
     const angle = parseHingeAngle(value);
     if (angle === undefined) throw new InvalidArgumentError("Expected fold, half, unfold, or an angle from 0 to 180");
     return angle;
   })
   .option(...deviceOpt)
-  .action((angle: number, opts) => hinge(angle, opts.device));
+  .action((angle: number | undefined, opts) => hinge(angle, opts.device));
 
 program
   .command("ca-debug")
@@ -2791,6 +2834,7 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(clipboardCapability);
 registerCapability(captureRuntime.capability);
 
 {

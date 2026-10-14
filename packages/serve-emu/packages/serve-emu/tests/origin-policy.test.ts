@@ -4,6 +4,7 @@ import {
   isAllowedBrowserOrigin,
   isAllowedMutationOrigin,
   parseAllowedOrigins,
+  withCorsPolicy,
 } from "../src/origin-policy.ts";
 
 describe("browser origin policy", () => {
@@ -71,6 +72,72 @@ describe("browser origin policy", () => {
         "Access-Control-Allow-Origin"
       ],
     ).toBe("https://example.test");
+  });
+
+  // The same shapes serve-sim's --cors-origin takes, so the Hub can pass one list to both.
+  test("matches a subdomain wildcard as serve-sim does", () => {
+    const policy = { allowedOrigins: ["https://*.expo.dev"] };
+    const fromOrigin = (origin: string, method = "GET") =>
+      new Request("https://hub.example.test/api/devices", { method, headers: { Origin: origin } });
+
+    expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), policy)).toBe(true);
+    expect(isAllowedBrowserOrigin(fromOrigin("https://a.b.expo.dev"), policy)).toBe(true);
+    expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), policy)).toBe(true);
+    expect(
+      corsHeadersForRequest(fromOrigin("https://pr-12.expo.dev"), policy)["Access-Control-Allow-Origin"],
+    ).toBe("https://pr-12.expo.dev");
+    // Subdomains only, with the same scheme and port.
+    expect(isAllowedBrowserOrigin(fromOrigin("https://expo.dev"), policy)).toBe(false);
+    expect(isAllowedBrowserOrigin(fromOrigin("http://pr-12.expo.dev"), policy)).toBe(false);
+    expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev:8443"), policy)).toBe(false);
+    expect(isAllowedBrowserOrigin(fromOrigin("https://evilexpo.dev"), policy)).toBe(false);
+    // Only a star spelled `*.`: URL would turn these into `*.expo.dev` and grant the whole domain.
+    for (const configured of ["https://%2A.expo.dev", "https://\uFF0A.expo.dev", "https://\uFE61.expo.dev"]) {
+      expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), { allowedOrigins: [configured] })).toBe(false);
+      expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), { allowedOrigins: [configured] })).toBe(
+        false,
+      );
+    }
+    // Two labels after the star, as in serve-sim.
+    expect(isAllowedBrowserOrigin(fromOrigin("https://example.com"), { allowedOrigins: ["https://*.com"] })).toBe(
+      false,
+    );
+  });
+
+  test("refuses a request Origin of *, which no page sends", () => {
+    const policy = { allowedOrigins: ["https://*.expo.dev"] };
+    const fromStar = (method = "GET") =>
+      new Request("https://hub.example.test/api/devices", { method, headers: { Origin: "*" } });
+
+    expect(isAllowedBrowserOrigin(fromStar(), policy)).toBe(false);
+    expect(isAllowedMutationOrigin(fromStar("POST"), policy)).toBe(false);
+    expect(corsHeadersForRequest(fromStar(), policy)["Access-Control-Allow-Origin"]).toBeUndefined();
+  });
+
+  test("adds the policy to a response whose headers are immutable", () => {
+    const req = new Request("http://127.0.0.1:3300/api/devices", {
+      headers: { Origin: "https://example.test" },
+    });
+    const redirect = Response.redirect("http://127.0.0.1:3300/", 302);
+
+    const response = withCorsPolicy(req, redirect, { allowedOrigins: ["https://example.test"] });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("http://127.0.0.1:3300/");
+    expect(response.headers.get("access-control-allow-origin")).toBe("https://example.test");
+    expect(response.headers.get("vary")).toBe("Origin");
+  });
+
+  test("keeps a response's own Vary and names Origin in it once", () => {
+    const req = new Request("http://127.0.0.1:3300/api/metrics", {
+      headers: { Origin: "http://localhost:5173" },
+    });
+
+    const varied = withCorsPolicy(req, new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
+    const alreadyOrigin = withCorsPolicy(req, new Response("ok", { headers: { Vary: "Origin" } }));
+
+    expect(varied.headers.get("vary")).toBe("Accept-Encoding, Origin");
+    expect(alreadyOrigin.headers.get("vary")).toBe("Origin");
   });
 
   test("normalizes configured origin lists", () => {

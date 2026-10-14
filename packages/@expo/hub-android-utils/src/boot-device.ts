@@ -13,9 +13,9 @@ import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
  * the device is adb-online that means the boot failed; the emulator's output
  * is discarded (the detached child outlives us), so failure reports point the
  * user at re-running the returned `command` to see it. Resolves `emulator`
- * from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the default macOS
- * SDK location). The result's `value` is `null` if the process could not be
- * spawned, with the invocation-specific failure in `error`.
+ * from the Android SDK (see `resolveSdkRoot`). The result's `value` is `null`
+ * if the process could not be spawned, with the invocation-specific failure in
+ * `error`.
  */
 export async function bootDevice(
   options: BootDeviceOptions,

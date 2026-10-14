@@ -99,12 +99,19 @@ describe("copyTextToClipboard", () => {
 
   function fakeDocument(copy: () => boolean) {
     const appended: unknown[] = [];
+    const document = {
+      activeElement: {} as unknown,
+      createElement: () => area,
+      body: { appendChild: (el: unknown) => appended.push(el) },
+      execCommand: copy,
+    };
     const area = {
       value: "",
       style: {} as Record<string, string>,
       range: null as [number, number] | null,
       removed: false,
       setAttribute() {},
+      focus() { document.activeElement = this; },
       select() {},
       setSelectionRange(start: number, end: number) {
         this.range = [start, end];
@@ -116,11 +123,7 @@ describe("copyTextToClipboard", () => {
     return {
       area,
       appended,
-      document: {
-        createElement: () => area,
-        body: { appendChild: (el: unknown) => appended.push(el) },
-        execCommand: copy,
-      },
+      document,
     };
   }
 
@@ -164,6 +167,21 @@ describe("copyTextToClipboard", () => {
 
     expect(await copyTextToClipboard("link")).toBe(true);
     expect(appended).toHaveLength(1);
+  });
+
+  test("copies the selected text when a toolbar button initially owns focus", async () => {
+    let clipboard = "older browser text";
+    const { document, area } = fakeDocument(() => {
+      // Chromium can accept the command without copying an unfocused textarea.
+      if (document.activeElement === area) clipboard = area.value;
+      return true;
+    });
+    install({ clipboard: { writeText: async () => { throw new Error("denied"); } } }, document);
+
+    const text = "manual Copy Ω ✓ 日本語 👩‍💻";
+    expect(await copyTextToClipboard(text)).toBe(true);
+    expect(clipboard).toBe(text);
+    expect(area.removed).toBe(true);
   });
 
   test("reports failure when the selection copy is refused", async () => {

@@ -49,6 +49,11 @@ private final class FakeFramebufferIO: NSObject {
     @objc func updateIOPorts() { updates += 1 }
 }
 
+private final class FakeSimDevice: NSObject {
+    @objc dynamic var stateString: String
+    init(state: String) { stateString = state }
+}
+
 private final class FrameLog: @unchecked Sendable {
     private let lock = NSLock()
     private var frames: [(luma: UInt8, canvas: Dimensions?)] = []
@@ -81,7 +86,8 @@ final class FrameCaptureSurfaceTests: XCTestCase {
     }
 
     private func capture(with descriptor: FakeFramebufferDescriptor, io: NSObject? = nil,
-                         clock: FakeMonotonicClock? = nil) async -> (FrameCapture, FrameLog) {
+                         clock: FakeMonotonicClock? = nil,
+                         device: NSObject? = nil) async -> (FrameCapture, FrameLog) {
         let capture: FrameCapture
         if let clock {
             capture = FrameCapture(nowNanoseconds: { clock.now() })
@@ -89,7 +95,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
             capture = FrameCapture()
         }
         let log = FrameLog()
-        await capture.installDescriptorsForTesting([(descriptor, panel)], io: io) { pixelBuffer, _, canvas in
+        await capture.installDescriptorsForTesting([(descriptor, panel)], io: io, device: device) { pixelBuffer, _, canvas in
             log.append(pixelBuffer, canvas: canvas)
         }
         return (capture, log)
@@ -141,6 +147,44 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         XCTAssertGreaterThan(log.all.last!.luma, 220)
         let recovered = await capture.surfaceLossTimings()
         XCTAssertEqual(recovered.rewires, 2)
+        XCTAssertEqual(recovered.losses, 1)
+        await capture.stop()
+    }
+
+    func testShutDownDeviceIsNotReadOrRewiredUntilItBootsAgain() async throws {
+        let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
+        let io = FakeFramebufferIO()
+        let device = FakeSimDevice(state: "Booted")
+        let clock = FakeMonotonicClock()
+        let (capture, log) = await capture(with: descriptor, io: io, clock: clock, device: device)
+        await capture.captureFrameForTesting(force: true)
+        let readsWhileBooted = descriptor.surfaceReads + descriptor.maskedSurfaceReads
+
+        // The fake still answers, as a stale proxy to a shut-down simulator would not.
+        device.stateString = "Shutdown"
+        for _ in 0..<5 {
+            clock.advance(milliseconds: 1_100)
+            await capture.pollSurfaceForTesting()
+        }
+        XCTAssertEqual(descriptor.surfaceReads + descriptor.maskedSurfaceReads, readsWhileBooted)
+        XCTAssertEqual(io.updates, 0)
+        XCTAssertEqual(log.all.count, 1)
+        let shutDown = await capture.surfaceLossTimings()
+        XCTAssertEqual(shutDown.rewires, 0)
+        XCTAssertEqual(shutDown.losses, 1)
+
+        // The new boot publishes new descriptors; the old one has no surface.
+        descriptor.surface = nil
+        device.stateString = "Booted"
+        let replacement = FakeFramebufferDescriptor(surface(width: 80, height: 160, gray: 255))
+        io.deviceIOPorts = [FakeFramebufferPort(replacement)]
+        clock.advance(milliseconds: 1_100)
+        await capture.pollSurfaceForTesting()
+        XCTAssertEqual(io.updates, 1)
+        XCTAssertEqual(replacement.registrations, 1)
+        XCTAssertEqual(log.all.count, 2)
+        let recovered = await capture.surfaceLossTimings()
+        XCTAssertEqual(recovered.rewires, 1)
         XCTAssertEqual(recovered.losses, 1)
         await capture.stop()
     }

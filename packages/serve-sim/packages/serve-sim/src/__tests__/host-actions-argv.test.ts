@@ -124,6 +124,12 @@ describe("simctl-backed actions", () => {
     ]);
   });
 
+  it("selects the app data container explicitly", async () => {
+    expect(await argv("app.container", { udid: UDID, bundleId: BUNDLE, type: "data" })).toEqual([
+      "xcrun", "simctl", "get_app_container", UDID, BUNDLE, "data",
+    ]);
+  });
+
   it("builds app install and media add from a path", async () => {
     expect(await argv("app.install", { udid: UDID, path: CONFINED })).toEqual([
       "xcrun", "simctl", "install", UDID, CONFINED,
@@ -136,7 +142,7 @@ describe("simctl-backed actions", () => {
   it("resolves a staged upload into the install path", async () => {
     const out = await argv("app.install", { udid: UDID, uploadId: "staged.ipa" });
     expect(out.slice(0, 4)).toEqual(["xcrun", "simctl", "install", UDID]);
-    expect(out[4]).toMatch(/serve-sim-uploads\/staged\.ipa$/);
+    expect(out[4]).toMatch(/serve-sim-uploads\/\d+-[0-9a-f]{8}\/staged\.ipa$/);
   });
 });
 
@@ -282,7 +288,7 @@ describe("procedures that shell out", () => {
     const runs = loggedArgv();
     const sips = runs.filter((r) => r[0] === "sips").at(-1)!;
     expect(sips.slice(0, 5)).toEqual(["sips", "-Z", "320", STAGED, "--out"]);
-    expect(sips[5]).toMatch(/serve-sim-uploads\/thumb-[0-9a-f-]+\.png$/);
+    expect(sips[5]).toMatch(/serve-sim-uploads\/\d+-[0-9a-f]{8}\/thumb-[0-9a-f-]+\.png$/);
     expect(runs.at(-1)?.slice(0, 2)).toEqual(["base64", "-i"]);
     expect(existsSync(sips[5]!)).toBe(false);
   });

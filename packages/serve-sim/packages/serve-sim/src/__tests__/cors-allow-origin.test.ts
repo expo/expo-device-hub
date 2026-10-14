@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "../middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "../middleware-utils";
 
 describe("corsAllowOriginHeaders", () => {
   test("echoes an allowlisted origin", () => {
@@ -154,5 +154,14 @@ describe("frameAncestorsPolicy", () => {
     expect(frameAncestorsPolicy(["https://expo.dev:443/dashboard"])).toBe(
       "frame-ancestors 'self' https://expo.dev",
     );
+  });
+});
+
+describe("isAllowedOrigin", () => {
+  test("matches the page's own origin when a proxy keeps the default port in Host", () => {
+    expect(isAllowedOrigin("https://sim.example.com", "sim.example.com:443", [])).toBe(true);
+    expect(isAllowedOrigin("http://sim.example.com", "SIM.example.com:80", [])).toBe(true);
+    expect(isAllowedOrigin("https://sim.example.com", "sim.example.com:8443", [])).toBe(false);
+    expect(isAllowedOrigin("https://sim.example.com", "bad host", [])).toBe(false);
   });
 });

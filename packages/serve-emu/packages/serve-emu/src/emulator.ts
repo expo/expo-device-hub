@@ -3,6 +3,13 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { listAllDevices, readEmuConsoleValue, type Device } from "./adb.ts";
+import {
+  ANDROID_SDK_HINT,
+  androidExecutable,
+  androidSdkRoots,
+  describeAndroidSdkRoots,
+  type AndroidSdkRoot,
+} from "./android-sdk.ts";
 import { cameraLaunchArgs, seedCameraFeeds } from "./camera.ts";
 import {
   isEmulatorSerial,
@@ -80,15 +87,11 @@ let emulatorResolutionCache: {
   resolution: Promise<string>;
 } | null = null;
 
-function sdkEmulatorCandidates(env: NodeJS.ProcessEnv): string[] {
-  const roots = [
-    env.ANDROID_HOME,
-    env.ANDROID_SDK_ROOT,
-    env.HOME ? join(env.HOME, "Library", "Android", "sdk") : undefined,
-  ].filter((v): v is string => Boolean(v));
-  return [...new Set(roots)].flatMap((root) => [
-    join(root, "emulator", "emulator"),
-    join(root, "tools", "emulator"),
+function sdkEmulatorCandidates(roots: readonly AndroidSdkRoot[]): string[] {
+  const executable = androidExecutable("emulator");
+  return roots.flatMap((root) => [
+    join(root.path, "emulator", executable),
+    join(root.path, "tools", executable),
   ]);
 }
 
@@ -98,6 +101,7 @@ function emulatorEnvironmentKey(env: NodeJS.ProcessEnv): string {
     env.ANDROID_HOME ?? "",
     env.ANDROID_SDK_ROOT ?? "",
     env.HOME ?? "",
+    env.LOCALAPPDATA ?? "",
   ].join("\0");
 }
 
@@ -131,12 +135,14 @@ export async function resolveEmulator(
       return "emulator";
     }
 
-    for (const candidate of sdkEmulatorCandidates(env)) {
+    const roots = androidSdkRoots({ env, homeDir: env.HOME, existsSync: pathExists });
+    for (const candidate of sdkEmulatorCandidates(roots)) {
       if (pathExists(candidate)) return candidate;
     }
 
     throw new Error(
-      "Could not find Android Emulator. Put `emulator` on PATH or set ANDROID_HOME / ANDROID_SDK_ROOT.",
+      "Could not find Android Emulator on PATH or in " +
+        `${describeAndroidSdkRoots(roots)}. ${ANDROID_SDK_HINT}`,
       { cause: pathProbe.error ?? undefined },
     );
   })();

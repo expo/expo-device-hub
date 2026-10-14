@@ -126,6 +126,12 @@ foreground streaming [observed: `src/index.ts` CLI action]:
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
 
+The private preview `serve` function receives the resolved targets from this
+foreground caller, after its successful boot wait and stale-loader cleanup. It
+does not repeat those operations. Helper, no-preview, and detached processes
+still initialize through their own CLI invocation; readiness is never cached
+across processes or reboots [observed: `src/index.ts` CLI action and `serve`].
+
 The loader must be inserted before an app starts: dyld reads the insert at `exec`
 and cannot add it to an already-running process. See [LLP 0007, The
 problem](0007-serve-sim-capability-loader.explainer.md#the-problem). Capture is

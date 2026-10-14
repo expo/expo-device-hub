@@ -8,10 +8,10 @@ import type { RemoveDeviceOptions } from "./types";
  * Delete an AVD via `avdmanager delete avd`.
  *
  * Removes the emulator permanently (shut it down first with `shutdownDevice` if
- * it is running). Resolves `avdmanager` from `ANDROID_HOME` / `ANDROID_SDK_ROOT`
- * (falling back to the default macOS SDK location). Throws if `name` is empty;
- * otherwise the result's `value` is `true` on success and `false` on failure,
- * with the invocation-specific failure in `error`.
+ * it is running). Resolves `avdmanager` from the Android SDK (see
+ * `resolveSdkRoot`). Throws if `name` is empty; otherwise the result's `value`
+ * is `true` on success and `false` on failure, with the invocation-specific
+ * failure in `error`.
  */
 export async function removeDevice(
   options: RemoveDeviceOptions,

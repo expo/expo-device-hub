@@ -10,6 +10,7 @@ import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
+import { z } from "zod";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
@@ -23,7 +24,7 @@ import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type C
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { handleAppIconRequest } from "./app-icon";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -35,6 +36,7 @@ import {
   assertPreviewAccess,
   assertUpgradeAccess,
   isUsableSessionToken,
+  matchesBearerToken,
   upgradeAuthHeaders,
 } from "./session-auth";
 import {
@@ -67,10 +69,14 @@ import { writeWebSocketAccept } from "./socket/server-upgrade";
 import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
 import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
-import { type WebMiddleware } from "./runtime-utils";
+import { readRequestBodyAsync, RequestBodyTooLargeError, type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
+import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
+import { createClipboardSession } from "./clipboard-session";
+import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
-/** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
+/** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
 
 type SimReq = IncomingMessage;
@@ -78,6 +84,7 @@ type SimRes = ServerResponse;
 type SimNext = (err?: unknown) => Promise<void>;
 export type SimMiddleware = WebMiddleware & {
   handleUpgrade(req: SimReq, socket: Socket, head: Buffer): void;
+  dispose(): Promise<void>;
 };
 
 // Injected at build time as a base64-encoded string via `define`
@@ -215,6 +222,8 @@ const RN_MARKERS = [
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
+
+const PasteboardWriteBody = z.object({ text: z.string() });
 
 /** What to do with a persisted device state when reaping during a grid poll. */
 type StaleStateAction = "keep" | "recycle-self" | "recycle-helper";
@@ -933,6 +942,7 @@ export function previewConfigForState(
   proxyHelpers = false,
   requirePreviewToken = false,
   shareUrl?: string,
+  disableShare = false,
 ): ServeSimState & {
   basePath: string;
   logsEndpoint: string;
@@ -964,6 +974,7 @@ export function previewConfigForState(
   proxyHelpers?: boolean;
   requireToken?: boolean;
   shareUrl?: string;
+  disableShare?: boolean;
 } {
   const gridApiBase = (base === "" ? "" : base) + "/grid/api";
   const legacyCodec = typeof streamSettingsOrCodec === "string" ? streamSettingsOrCodec : undefined;
@@ -1003,6 +1014,7 @@ export function previewConfigForState(
     ...(proxyHelpers ? { proxyHelpers: true } : {}),
     ...(requirePreviewToken ? { requireToken: true } : {}),
     ...(shareUrl ? { shareUrl } : {}),
+    ...(disableShare ? { disableShare: true } : {}),
   };
 }
 
@@ -1470,6 +1482,8 @@ export interface SimMiddlewareOptions {
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
+  /** Hide the Share button without hiding the other preview controls. */
+  disableShare?: boolean;
   /**
    * Without the token gate, the preview answers only for `localhost` and IP addresses; other `Host`
    * headers get 403, which stops DNS rebinding from reading the session token. Set this to answer
@@ -1481,6 +1495,13 @@ export interface SimMiddlewareOptions {
   networkCapture?: boolean;
   /** Process-wide HTTP upstream proxy URL, optionally with Basic credentials. Unset resets new captures to direct. */
   networkCaptureProxy?: string;
+  /**
+   * The clipboard reader on devices this middleware opens or starts. `true` (default) sets it up.
+   * `false` removes a reader that is already there and republishes the capability loader config.
+   * Await `dispose()` to release what either one set up. `"unmanaged"` changes nothing: serve-sim's
+   * stream helpers pass it, because they can outlive the session that owns the capability loader.
+   */
+  clipboard?: boolean | "unmanaged";
   /**
    * The server listens on loopback only. Without the token gate, network capture is refused unless
    * this is set: anyone who can load the preview could otherwise read captured traffic. An embedder
@@ -1886,6 +1907,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;
+  const disableShare = !!options?.disableShare;
   const allowAnyHostWhenInsecure = options?.allowAnyHostWhenInsecure ?? false;
   // Under the token gate a rebinding page has no cookie and cannot read the token, so only an
   // ungated preview needs its Host checked.
@@ -1900,6 +1922,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     : {};
   const networkCapture = options?.networkCapture ?? false;
   captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
+  const clipboardOption = options?.clipboard ?? true;
+  const clipboard = clipboardOption === "unmanaged" ? null : createClipboardSession(clipboardOption);
+  const initializeClipboard = async (udid: string, rebooted = false): Promise<void> => {
+    try {
+      await clipboard?.initialize(udid, rebooted);
+    } catch (error) {
+      console.error(`[serve-sim] Could not initialize the simulator clipboard on ${udid}:`, error);
+    }
+  };
   // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
   // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
   captureRuntime.refuseCapture(
@@ -2075,6 +2106,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base || url === base + "/") {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);
+      if (state) void initializeClipboard(state.device);
       let html = loadHtml();
 
       if (!state) {
@@ -2085,6 +2117,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           basePath: base,
           execToken,
           ...(shareUrl ? { shareUrl } : {}),
+          ...(disableShare ? { disableShare: true } : {}),
         });
         html = html.replace(
           "<!--__SIM_PREVIEW_CONFIG__-->",
@@ -2095,7 +2128,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       if (state) {
         const remoteState = rewriteStateForRequestHost(state, hostForRequest(req), base, httpProtocolForRequest(req), proxyHelpers);
         const config = JSON.stringify(
-          previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl),
+          previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare),
         );
         const configScript = `<script>window.__SIM_PREVIEW__=${config}</script>`;
         html = html.replace("<!--__SIM_PREVIEW_CONFIG__-->", configScript);
@@ -2359,7 +2392,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           base,
           streamSettings,
           gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
-          () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
+          async () => {
+            await initializeClipboard(udid, true);
+            await enableNetworkCaptureForStartedDevice(udid, networkCapture);
+          },
         ).then((error) => {
           if (res.writableEnded || res.destroyed) return;
           if (error) {
@@ -2523,6 +2559,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api") {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);
+      if (state) void initializeClipboard(state.device);
       // The web UI polls /api every ~2s, so logging every hit floods the
       // debug stream with identical lines. Only log when the selection
       // result changes.
@@ -2546,7 +2583,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       res.end(
         JSON.stringify(
           remoteState
-            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl)
+            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare)
             : null,
         ),
       );
@@ -2641,6 +2678,111 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
+    if (url === base + "/api/pasteboard") {
+      const respond = (status: number, body: object) => {
+        res.writeHead(status, { ...NO_STORE, "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.method !== "POST" && req.method !== "PUT") {
+        res.writeHead(405, { ...NO_STORE, "Content-Type": "text/plain; charset=utf-8" });
+        res.end("method not allowed");
+        return;
+      }
+      // Clipboard access requires both the preview token and a trusted browser origin.
+      // @ref LLP 0010#who-may-use-the-pasteboard-api — why the preview's own Host counts as trusted
+      if (!isAllowedOrigin(req.headers.origin, hostForRequest(req), corsOrigins)) {
+        respond(403, { ok: false, error: "This origin cannot use the simulator clipboard" });
+        return;
+      }
+      if (!matchesBearerToken(req.headers.authorization, execToken)) {
+        respond(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      // connectToFetch replays the body once the handler yields, so read it before any await. JSON
+      // escaping can double the text (a newline becomes `\n`), so the body may be twice the text limit.
+      const bodyRead =
+        req.method === "PUT" ? readRequestBodyAsync(req, 2 * MAX_PASTEBOARD_TEXT_BYTES) : null;
+      bodyRead?.catch(() => {}); // the awaited copy below reports the failure
+      let udid = selectedDevice;
+      if (udid && !isSimulatorUdid(udid)) {
+        respond(400, { ok: false, error: "Invalid simulator device ID" });
+        return;
+      }
+      if (!udid) {
+        const booted = await getBootedUdids();
+        udid = (booted && [...booted][0]) ?? null;
+      }
+      if (!udid) {
+        respond(400, { ok: false, error: "No booted simulator available" });
+        return;
+      }
+      try {
+        if (bodyRead) {
+          let body: Buffer | undefined;
+          try {
+            body = await bodyRead;
+          } catch (error) {
+            if (!(error instanceof RequestBodyTooLargeError)) throw error;
+            respond(413, { ok: false, error: "Clipboard text is too large" });
+            return;
+          }
+          let json: unknown;
+          try {
+            json = JSON.parse(body!.toString("utf-8"));
+          } catch {
+            respond(400, { ok: false, error: "Invalid JSON" });
+            return;
+          }
+          const parsed = PasteboardWriteBody.safeParse(json);
+          if (!parsed.success) {
+            respond(400, { ok: false, error: "Clipboard text must be a string" });
+            return;
+          }
+          if (Buffer.byteLength(parsed.data.text) > MAX_PASTEBOARD_TEXT_BYTES) {
+            respond(413, { ok: false, error: "Clipboard text is too large" });
+            return;
+          }
+          await writeSimPasteboard(udid, parsed.data.text);
+          respond(200, { ok: true });
+          return;
+        }
+
+        // Copy needs the input session to hold its turn through the clipboard read.
+        const copy = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1)).get("copy") === "1";
+        const session = copy ? peekDeviceSession(udid) : undefined;
+        if (copy && !session) {
+          respond(409, { ok: false, error: "No simulator input session for this device" });
+          return;
+        }
+        const result = session
+          ? await session.copyPasteboard()
+          : await readSimPasteboardResult(udid);
+        respond(200, { ok: true, ...result });
+      } catch (error) {
+        // A failed Copy can still leave Command held; the viewer shows this beside the error.
+        const cleanup = cleanupWarningOf(error);
+        if (error instanceof PasteboardBusyError) {
+          respond(409, { ok: false, error: error.message, ...cleanup });
+          return;
+        }
+        if (error instanceof PasteboardTooLargeError) {
+          respond(413, { ok: false, error: "Simulator clipboard text is too large", ...cleanup });
+          return;
+        }
+        if (error instanceof PasteboardUnavailableError) {
+          respond(503, { ok: false, error: error.message, ...cleanup });
+          return;
+        }
+        if (error instanceof PasteboardCopyTimeoutError) {
+          respond(504, { ok: false, error: error.message, ...cleanup });
+          return;
+        }
+        console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
+        respond(500, { ok: false, error: "Could not access the simulator pasteboard", ...cleanup });
+      }
+      return;
+    }
+
     // JSON API: recent simulator action log. This is intentionally in-memory and
     // bounded; it is for live debugging/agent observability, not archival audit.
     if (url === base + "/api/event-log") {
@@ -2699,10 +2841,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const computeConfig = async (): Promise<string> => {
         const states = await readServeSimStates();
         const state = selectServeSimState(states, selectedDevice);
+        if (state) void initializeClipboard(state.device);
         const remoteState = state ? rewriteStateForRequestHost(state, hostForRequest(req), base, httpProtocolForRequest(req), proxyHelpers) : null;
         return JSON.stringify(
           remoteState
-            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl)
+            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare)
             : null,
         );
       };
@@ -3062,6 +3205,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // channel plus same-origin helper/devtools proxy sockets.
   fetchMiddleware.handleUpgrade = (req: SimReq, socket: Socket, head: Buffer) => {
     connectMiddleware.handleUpgrade?.(req, socket, head);
+  };
+  fetchMiddleware.dispose = async () => {
+    await clipboard?.dispose();
   };
   return fetchMiddleware;
 }

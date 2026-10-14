@@ -131,6 +131,13 @@ Two things mitigate this, and neither is perfect:
 An app that asks once at launch and never listens again can only be reached by
 restarting it. That is a property of the app, not something serve-sim can fix.
 
+The clipboard reader is armed the same way, but a clipboard read never restarts
+an app. An app that already has the capability loader picks up the reader when
+its config changes. An app that started before the session armed the loader has
+no loader, so it has no reader until the user restarts it.
+[LLP 0010](0010-serve-sim-clipboard.explainer.md#reads-never-restart-apps)
+explains why.
+
 ## Lifecycle
 
 The insert is machine-wide state on the simulator, so it must be owned by
@@ -143,6 +150,11 @@ something that reliably removes it:
 - The process that arms it registers the teardown first, on `exit` and on
   `SIGINT`/`SIGTERM`/`SIGHUP`. The signal handlers disarm directly, because
   spawning `simctl` from an exit handler does not always finish.
+- An embedded `simMiddleware` does not own the host's signals, so its clipboard
+  setup registers only the `exit` teardown. That teardown is synchronous, like
+  the serve-sim CLI's own `exit` fallback. It runs when the host ends with
+  `process.exit` or returns normally
+  ([LLP 0010](0010-serve-sim-clipboard.explainer.md)).
 - `--detach` never arms. The command exits once the helper is streaming, so no process
   is left to disarm it. `--install-app-path`, `--launch-app-identifier`, `--launch-arg`,
   `--open-url`, `--enable` and `--disable` are rejected with `--detach`.

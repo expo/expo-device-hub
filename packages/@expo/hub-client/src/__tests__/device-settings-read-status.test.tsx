@@ -82,10 +82,27 @@ function settingsServer() {
   const activeSocketReads = new Map<object, ServerWebSocket<SocketData>>();
   let activeHttpReads = 0;
   const socketStarts: string[] = [];
+  const controlClients = new Set<WebSocket>();
+  const receivedEnds = new Set<number>();
   stubGlobal("WebSocket", class extends WebSocket {
     constructor(...args: ConstructorParameters<typeof WebSocket>) {
       super(...args);
       socketStarts.push(new URL(this.url).pathname);
+      this.addEventListener("message", (event) => {
+        try {
+          const message = JSON.parse(String(event.data));
+          if (message.end && typeof message.sub === "number") receivedEnds.add(message.sub);
+        } catch {}
+      });
+      this.addEventListener("close", () => controlClients.delete(this));
+    }
+
+    override send(data: Parameters<WebSocket["send"]>[0]) {
+      try {
+        const message = JSON.parse(String(data));
+        if (typeof message.sub === "number") controlClients.add(this);
+      } catch {}
+      return super.send(data);
     }
   });
   const realFetch = globalThis.fetch;
@@ -298,6 +315,8 @@ function settingsServer() {
     writes,
     subscriptions,
     controls,
+    controlClients,
+    receivedEnds,
     execConnections: () => socketStarts.filter((path) => path === "/ios/exec-ws").length,
     async settleReads() {
       await waitFor(() => activeHttpReads === 0 && activeSocketReads.size === 0);
@@ -353,6 +372,7 @@ for (const sub of [1, 2, 3, 4]) {
     const cached = mounted.client().deviceSettings;
     const authRequests = server.state.authRequests;
     const subscriptions = server.subscriptions.length;
+    const endedStreamIds = [...server.controls].map(socket => socket.data.streams.get(sub));
     server.state.endedSubscriptions.add(sub);
     await act(async () => {
       for (const socket of server.controls) {
@@ -360,7 +380,8 @@ for (const sub of [1, 2, 3, 4]) {
       }
       await yieldIO();
     });
-    if (sub === 3) await waitFor(() => mounted.client().activityStatus === "error");
+    // Real message delivery installs the retry timer before fake time advances.
+    await waitFor(() => endedStreamIds.every(id => id !== undefined && server.receivedEnds.has(id)));
     expect(mounted.client().deviceSettingsStatus).toBe("ready");
     expect(mounted.client().deviceSettings).toBe(cached);
     expect(mounted.client().activityStatus).toBe(sub === 3 ? "error" : "ready");
@@ -796,7 +817,8 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
     }
     if (replyTiming === "after repeated reconnects") {
       await act(async () => { for (const socket of server.controls) socket.close(); });
-      await waitFor(() => server.controls.size === 0);
+      // The server can close before the client handles close and schedules its retry.
+      await waitFor(() => server.controls.size === 0 && server.controlClients.size === 0);
       await advanceUntil(() => server.controls.size > 0, 1500);
     }
 

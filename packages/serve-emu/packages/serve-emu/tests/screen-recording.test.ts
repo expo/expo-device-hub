@@ -37,7 +37,6 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
   roots.push(root);
   let nowUs = 10_000_000n;
   const samples: Parameters<RecordingWriter["add"]>[0][] = [];
-  let cancelled = false;
   const recording = await ScreenRecording.create({
     directory: join(root, "session"),
     udid: "emulator-5554",
@@ -51,9 +50,7 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
           samples.push(sample);
         },
         finish: async () => {},
-        cancel: async () => {
-          cancelled = true;
-        },
+        cancel: async () => {},
       };
     },
     ...extra,
@@ -65,7 +62,6 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
     setTime: (value: bigint) => {
       nowUs = value;
     },
-    cancelled: () => cancelled,
   };
 }
 
@@ -330,14 +326,26 @@ test("finish rejects within the bound after a failure while a write is still sta
 });
 
 test("rejects an oversized first frame and persists a failed manifest", async () => {
-  const { recording, root, cancelled } = await setup({ maxQueuedBytes: 16 });
+  const startWriter = Promise.withResolvers<RecordingWriter>();
+  const cancelled = Promise.withResolvers<void>();
+  const { recording, root } = await setup({
+    maxQueuedBytes: 16,
+    createWriter: () => startWriter.promise,
+  });
   recording.accept(frame(0n), size, "scrcpy");
   await expect(recording.ready).rejects.toThrow("byte limit");
   await expect(recording.finish()).rejects.toThrow("byte limit");
-  expect(cancelled()).toBe(true);
   expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
     status: "failed",
   });
+
+  // Failure reporting must not wait for the writer; cleanup follows once it starts.
+  startWriter.resolve({
+    add: async () => {},
+    finish: async () => {},
+    cancel: async () => cancelled.resolve(),
+  });
+  await cancelled.promise;
 });
 
 test.each(["start", "write", "finish"])(

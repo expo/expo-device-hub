@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
+import {
+  ANDROID_SDK_HINT,
+  androidExecutable,
+  androidSdkRoots,
+  describeAndroidSdkRoots,
+  type AndroidSdkLookup,
+} from "./android-sdk.ts";
 import { execBuffer, execText } from "./exec.ts";
 import type { AppIcon, AppIconMimeType } from "./shared/api-contracts.ts";
 
@@ -141,24 +148,43 @@ function compareVersions(a: string, b: string): number {
 
 let aapt2Path: Promise<string> | null = null;
 
-async function findAapt2(): Promise<string> {
-  const roots = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT].filter(
-    (root): root is string => !!root,
-  );
+export interface Aapt2LookupDependencies {
+  sdk?: AndroidSdkLookup;
+  readdir?: (path: string) => Promise<string[]>;
+  access?: (path: string) => Promise<void>;
+  execText?: typeof execText;
+}
+
+/**
+ * Find `aapt2` in the newest build-tools of each candidate SDK root, then on
+ * PATH. build-tools is rarely on PATH, so the SDK roots carry most setups.
+ */
+export async function findAapt2({
+  sdk,
+  readdir: list = readdir,
+  access: check = access,
+  execText: runExec = execText,
+}: Aapt2LookupDependencies = {}): Promise<string> {
+  const executable = androidExecutable("aapt2", sdk?.platform);
+
+  const roots = androidSdkRoots(sdk);
   for (const root of roots) {
-    const buildTools = join(root, "build-tools");
-    const versions = (await readdir(buildTools).catch(() => [])).sort(compareVersions);
+    const buildTools = join(root.path, "build-tools");
+    const versions = (await list(buildTools).catch(() => [])).sort(compareVersions);
     for (const version of versions.reverse()) {
-      const candidate = join(buildTools, version, "aapt2");
-      if (await access(candidate).then(() => true, () => false)) return candidate;
+      const candidate = join(buildTools, version, executable);
+      if (await check(candidate).then(() => true, () => false)) return candidate;
     }
   }
-  const probe = await execText("aapt2", ["version"], {
+  const probe = await runExec(executable, ["version"], {
     timeout: AAPT2_TIMEOUT_MS,
     lane: "background",
   });
-  if (probe.status === 0) return "aapt2";
-  throw new Error("aapt2 not found; install Android SDK build-tools");
+  if (probe.status === 0) return executable;
+  throw new Error(
+    `aapt2 not found on PATH or in the build-tools of ${describeAndroidSdkRoots(roots)}. ` +
+      `Install Android SDK Build-Tools. ${ANDROID_SDK_HINT}`,
+  );
 }
 
 function resolveAapt2(): Promise<string> {

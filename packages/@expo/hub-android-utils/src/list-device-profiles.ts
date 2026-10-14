@@ -10,9 +10,8 @@ import type { AndroidDeviceProfile } from "./types";
  *
  * Wraps `avdmanager list device`, returning one entry per profile. Each `id` is
  * the stable identifier to pass to `avdmanager create avd -d <id>`. Resolves
- * `avdmanager` from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the
- * default macOS SDK location). The result's `value` is empty on failure, with
- * the invocation-specific failure in `error`.
+ * `avdmanager` from the Android SDK (see `resolveSdkRoot`). The result's
+ * `value` is empty on failure, with the invocation-specific failure in `error`.
  */
 export async function listDeviceProfiles(): Promise<AndroidUtilsResult<AndroidDeviceProfile[]>> {
   try {

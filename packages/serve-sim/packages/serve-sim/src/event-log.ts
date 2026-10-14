@@ -373,6 +373,18 @@ export function eventLogEventForAction(
   if (device === undefined) return null;
 
   switch (action) {
+    case "app.launch":
+    case "app.stop":
+    case "app.openUrl":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "app",
+        action: action.slice("app.".length),
+        status,
+        summary: action === "app.launch" ? "Launch app" : action === "app.stop" ? "Stop app" : "Open app URL",
+        details,
+      };
     case "app.install":
       return {
         device,

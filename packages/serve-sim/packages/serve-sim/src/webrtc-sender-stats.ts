@@ -33,6 +33,7 @@ export interface SenderStreamStats {
 }
 
 export interface CaptureCounts {
+  rebooting?: boolean;
   pickCount: number | null;
   pickSumMs: number | null;
   pickMaxMs: number | null;
@@ -232,6 +233,7 @@ function readCaptureCounts(raw: unknown): CaptureCounts | null {
   return {
     pickCount: maybeNumber(raw.pickCount),
     pickSumMs: maybeNumber(raw.pickSumMs),
+    ...(typeof raw.rebooting === "boolean" ? { rebooting: raw.rebooting } : {}),
     pickMaxMs: maybeNumber(raw.pickMaxMs),
     screenFrames,
     idleFrames,

@@ -8,10 +8,10 @@ import type { CreateDeviceOptions } from "./types";
  * Create a new AVD via `avdmanager create avd`.
  *
  * Pass a system image `package` (see `listSystemImages`) and a device profile
- * `id` (see `listDeviceProfiles`). Resolves `avdmanager` from `ANDROID_HOME` /
- * `ANDROID_SDK_ROOT` (falling back to the default macOS SDK location). Throws if
- * `device` is empty; otherwise the result's `value` is `true` on success and
- * `false` on failure, with the invocation-specific failure in `error`.
+ * `id` (see `listDeviceProfiles`). Resolves `avdmanager` from the Android SDK
+ * (see `resolveSdkRoot`). Throws if `device` is empty; otherwise the result's
+ * `value` is `true` on success and `false` on failure, with the
+ * invocation-specific failure in `error`.
  */
 export async function createDevice(
   options: CreateDeviceOptions,

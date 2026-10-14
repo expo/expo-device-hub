@@ -314,3 +314,26 @@ test("legacy config confirms recovery without waiting for an unsupported acknowl
     expect(state.recoveries).toBe(1);
   } finally { state.input.dispose(); }
 });
+
+
+test("queued rotations resolve at admission and record each delivered pose", () => {
+  const state = setup();
+  let pose = 0;
+  const delivered: number[] = [];
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    for (let index = 0; index < 3; index++) {
+      state.input.send(0x07, () => ({ pose: pose + 1 }), payload => {
+        pose = (payload as { pose: number }).pose;
+        delivered.push(pose);
+      });
+    }
+    expect(delivered).toEqual([]);
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
+    expect(delivered).toEqual([1, 2, 3]);
+    expect(state.sockets[0]!.sent.map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))))).toEqual([{ pose: 1 }, { pose: 2 }, { pose: 3 }]);
+  } finally {
+    state.input.dispose();
+  }
+});

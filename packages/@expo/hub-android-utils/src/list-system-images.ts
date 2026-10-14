@@ -10,9 +10,9 @@ import type { AndroidSystemImage } from "./types";
  *
  * Wraps `sdkmanager --list_installed`, keeping only `system-images;…` packages.
  * Each `package` is the value to pass to `avdmanager create avd -k <package>`.
- * Resolves `sdkmanager` from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back
- * to the default macOS SDK location). The result's `value` is empty on failure,
- * with the invocation-specific failure in `error`.
+ * Resolves `sdkmanager` from the Android SDK (see `resolveSdkRoot`). The
+ * result's `value` is empty on failure, with the invocation-specific failure in
+ * `error`.
  */
 export async function listSystemImages(): Promise<AndroidUtilsResult<AndroidSystemImage[]>> {
   try {

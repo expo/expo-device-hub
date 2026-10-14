@@ -1,6 +1,9 @@
 import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
+import { AppRelativePath, runAppFileAction } from "./app-files";
+
+import { CAPTURE_FIELDS } from "./capture/fields";
 
 import {
   type HostActionResult,
@@ -8,9 +11,11 @@ import {
   installAppInvocation,
   ok,
   runInvocation,
+  redactHostPaths,
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync } from "./screenshot-store";
+import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import {
   UploadChunk,
   UploadId,
@@ -61,6 +66,12 @@ const FileSource = z.union([
   z.object({ uploadId: UploadId }),
   z.object({ path: ConfinedPath }),
 ]);
+
+/** Each capture field once; the four the capture proxy knows. */
+const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.length).refine(
+  (fields) => new Set(fields).size === fields.length,
+  "list each capture field once",
+);
 
 const ACTION_SCHEMAS = {
   "appearance.get": z.object({ udid: Device }),
@@ -113,9 +124,43 @@ const ACTION_SCHEMAS = {
     service: Token,
   }),
   "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
-  "app.container": z.object({ udid: Device, bundleId: BundleId }),
+  "app.container": z.object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") }),
+  "app.file.upload": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) }),
+  "app.file.read": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
+  "app.file.list": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() }),
+  "app.file.remove": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
+  "app.stop": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId }),
+  "app.openUrl": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
+  }),
   "app.infoPlist": z.object({ path: ConfinedPath }),
   "app.install": z.object({ udid: Device }).and(FileSource),
+  "app.launch": z.object({
+    // Launch state and locks use simctl's canonical uppercase UDID.
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    launchArgs: z
+      .array(
+        z
+          .string()
+          .max(8192)
+          .refine((value) => !value.includes("\0"), "must not contain NUL"),
+      )
+      .max(256)
+      .refine(
+        (args) => args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
+        "must total at most 128 KiB",
+      )
+      .default([]),
+    openUrl: z
+      .string()
+      .max(8192)
+      .url()
+      .refine((value) => !value.includes("\0"), "must not contain NUL")
+      .optional(),
+  }),
   "app.iconPath": z.object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) }),
   "media.add": z.object({ udid: Device }).and(FileSource),
   reveal: z.union([z.object({ path: ConfinedPath }), z.object({ screenshot: ScreenshotName })]),
@@ -129,8 +174,9 @@ const ACTION_SCHEMAS = {
     first: z.boolean().optional(),
   }),
   "upload.remove": z.object({ uploadId: UploadId }),
-  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean() }),
-  "capture.enable": z.object({ udid: DeviceUdid }),
+  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean(), fields: CaptureFieldList.optional() }),
+  "capture.enable": z.object({ udid: DeviceUdid, fields: CaptureFieldList.optional() }),
+  "capture.fields": z.object({ udid: DeviceUdid, fields: CaptureFieldList }),
   "capture.clear": z.object({ udid: DeviceUdid }),
   "capture.body": z.object({ udid: DeviceUdid, id: CaptureRequestId }),
 } as const;
@@ -143,6 +189,13 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * which would blow past ARG_MAX as arguments, so they are decoded and appended here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "app.file.upload",
+  "app.file.read",
+  "app.file.list",
+  "app.file.remove",
+  "app.stop",
+  "app.openUrl",
+  "app.launch",
   "upload.append",
   "upload.remove",
   "app.iconPath",
@@ -150,6 +203,7 @@ const PROCEDURE_ACTIONS = [
   "screenshot.thumbnail",
   "capture.reboot",
   "capture.enable",
+  "capture.fields",
   "capture.clear",
   "capture.body",
 ] as const satisfies readonly HostActionName[];
@@ -284,7 +338,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "app.container": {
       const p = parseParams(action, raw);
-      return simctl(["get_app_container", p.udid, p.bundleId, "app"]);
+      return simctl(["get_app_container", p.udid, p.bundleId, p.type]);
     }
     case "app.infoPlist": {
       const p = parseParams(action, raw);
@@ -320,6 +374,34 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
   switch (action) {
+    case "app.file.upload": return runAppFileAction("upload", parseParams(action, raw));
+    case "app.file.read": return runAppFileAction("read", parseParams(action, raw));
+    case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
+    case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));
+    case "app.stop":
+    case "app.openUrl": {
+      const p = parseParams(action, raw);
+      try {
+        if ("url" in p) await openUrlInApp(p.udid, p.bundleId, p.url);
+        else await stopApp(p.udid, p.bundleId);
+        return ok();
+      } catch (error) {
+        return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
+      }
+    }
+    case "app.launch": {
+      const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
+      try {
+        await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
+        return ok();
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
+      }
+    }
     case "upload.append": {
       const p = parseParams(action, raw);
       return await appendUploadChunkAsync(p);
@@ -331,10 +413,8 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
     case "capture.reboot": {
       const p = parseParams(action, raw);
       const { rebootWithCapture } = await import("./capture");
-      const { closeDeviceSession } = await import("./device-session");
-      closeDeviceSession(p.udid);
       try {
-        const meta = await rebootWithCapture(p.udid, p.enabled);
+        const meta = p.fields ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields) : await rebootWithCapture(p.udid, p.enabled);
         // The device rebooted, but capture did not start: report a failed action, not a toggle.
         if (p.enabled && meta.attachment === "failed") {
           return {
@@ -358,7 +438,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
       const p = parseParams(action, raw);
       const { captureRuntime } = await import("./capture");
       try {
-        const meta = await captureRuntime.enableForDevice(p.udid);
+        const meta = await captureRuntime.enableForDevice(p.udid, p.fields);
         captureRuntime.setDeviceCaptureEnabled(p.udid, true);
         return ok(JSON.stringify(meta));
       } catch (error) {
@@ -368,6 +448,20 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
           exitCode: 1,
         };
       }
+    }
+    case "capture.fields": {
+      const p = parseParams(action, raw);
+      const { captureRuntime } = await import("./capture");
+      const meta = captureRuntime.setFieldsForDevice(p.udid, p.fields);
+      if (!meta) {
+        // The device's meta tells a caller that capture is off, not that the change failed.
+        return {
+          stdout: JSON.stringify(captureRuntime.metaFor(p.udid)),
+          stderr: "Network capture is not on for this device. Enable it first.",
+          exitCode: 1,
+        };
+      }
+      return ok(JSON.stringify(meta));
     }
     case "capture.clear": {
       const p = parseParams(action, raw);

@@ -3,12 +3,27 @@ import { EventEmitter } from 'node:events';
 
 import { accessCookieName } from '../session-auth';
 
+// The real device servers answer each preflight. Loaded through a variable, so the Hub's type check
+// does not compile their sources, which use another `tsconfig`.
+const EMU_SOURCE = '../../../../serve-emu/packages/serve-emu/src/middleware.ts';
+const SIM_SOURCE = '../../../../serve-sim/packages/serve-sim/src/middleware.ts';
+const { createRouter: realEmuRouter } = (await import(EMU_SOURCE)) as {
+  createRouter: (options: { allowedOrigins?: string[] }) => { handleRequest(request: Request): Promise<Response> };
+};
+const { simMiddleware: realSimMiddleware } = (await import(SIM_SOURCE)) as {
+  simMiddleware: (options: { basePath: string; corsOrigins?: string[] }) => (
+    request: Request,
+  ) => Promise<Response | undefined>;
+};
+
 const TOKEN = 'hub-gate-token';
 const ORIGIN = 'http://192.168.1.20:3400';
 const cookie = `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`;
 const SAME_ORIGIN = { cookie, 'sec-fetch-site': 'same-origin' };
 // The policy for the `--frame-ancestor` origin the CLI hands over below.
 const FRAME_POLICY = "frame-ancestors 'self' https://*.expo.dev";
+// The `--cors-origin` page the CLI hands over below.
+const PAGE = 'https://page.example';
 
 // What reached each vendored backend, and with which credential.
 const simRequests: Request[] = [];
@@ -23,9 +38,16 @@ let deviceListings = 0;
 mock.module('../../../vendor/serve-sim/dist/middleware.js', () => ({
   simMiddleware: (options: Record<string, unknown>) => {
     simOptions = options;
+    // The real middleware answers each preflight, so a test sees what a browser gets before it sends
+    // the request itself.
+    const preflight = realSimMiddleware({
+      basePath: options.basePath as string,
+      corsOrigins: options.corsOrigins as string[],
+    });
     return Object.assign(
       async (request: Request) => {
         simRequests.push(request);
+        if (request.method === 'OPTIONS') return preflight(request);
         // serve-sim names its own frame policy on its pages.
         if (new URL(request.url).pathname.endsWith('/framed')) {
           return new Response('sim', { headers: { 'Content-Security-Policy': "frame-ancestors 'self' https://a.dev" } });
@@ -49,9 +71,12 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
   SESSION_TOKEN_SUBPROTOCOL_PREFIX: 'serve-emu.token.',
   createRouter: (options: Record<string, unknown>) => {
     emuOptions = options;
+    // The real router answers each preflight, before its token gate and without a device.
+    const preflight = realEmuRouter({ allowedOrigins: options.allowedOrigins as string[] });
     return {
       handleRequest: async (request: Request) => {
         emuRequests.push(request);
+        if (request.method === 'OPTIONS') return preflight.handleRequest(request);
         // A redirect's headers are immutable.
         if (new URL(request.url).pathname === '/moved') return Response.redirect('http://emu.test/', 302);
         return new Response('emu');
@@ -85,6 +110,8 @@ process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
 process.env.EXPO_DEVICE_HUB_SESSION_TOKEN = TOKEN;
 process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(['https://*.expo.dev']);
 process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN = 'recording-token';
+process.env.EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS = JSON.stringify({ corsOrigins: [PAGE] });
+process.env.EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS = JSON.stringify({ allowedOrigins: [PAGE] });
 const server = await import('../index');
 
 afterAll(() => {
@@ -153,12 +180,97 @@ describe('the Hub under a session token', () => {
     expect(emuRequests).toEqual([]);
   });
 
+  // Otherwise the page sees only a network error, as if the Hub were down.
+  test('lets a --cors-origin page read why either backend refused it', async () => {
+    for (const path of ['/vendor/serve-sim/api', '/vendor/serve-emu/api/devices']) {
+      const response = await request(path, { headers: { Origin: PAGE } });
+      expect([path, response?.status]).toEqual([path, 401]);
+      expect(response?.headers.get('access-control-allow-origin')).toBe(PAGE);
+      expect(response?.headers.get('vary')).toBe('Origin');
+    }
+  });
+
+  // A browser sends the preflight first, then the request with the token it has.
+  test('lets a --cors-origin page read every kind of token refusal after its preflight', async () => {
+    // Each backend's real preflight lets the page send the token header at all.
+    for (const path of ['/vendor/serve-emu/api/devices', '/vendor/serve-sim/api']) {
+      const preflight = await request(path, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: PAGE,
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'authorization',
+        },
+      });
+      expect([path, preflight?.status]).toEqual([path, 204]);
+      expect([path, preflight?.headers.get('access-control-allow-origin')]).toEqual([path, PAGE]);
+      expect(preflight?.headers.get('access-control-allow-headers')).toContain('Authorization');
+    }
+    simRequests.length = 0;
+    emuRequests.length = 0;
+
+    const wrong = { Origin: PAGE, Authorization: 'Bearer wrong-token' };
+    const refusals: Array<[string, RequestInit]> = [
+      ['/vendor/serve-emu/api/devices', { headers: wrong }],
+      ['/vendor/serve-sim/api', { headers: wrong }],
+      ['/vendor/serve-emu/api/devices?token=wrong-token', { headers: { Origin: PAGE } }],
+      ['/vendor/serve-sim/stream.mjpeg?token=wrong-token', { headers: { Origin: PAGE } }],
+      ['/vendor/serve-emu/api/screenshot', { method: 'POST', headers: wrong }],
+      ['/vendor/serve-emu/api/devices', { headers: { ...wrong, 'sec-fetch-dest': 'document' } }],
+    ];
+    for (const [path, init] of refusals) {
+      const response = await request(path, init);
+      const body = (await response?.text()) ?? '';
+      expect([path, response?.status]).toEqual([path, 401]);
+      expect([path, response?.headers.get('access-control-allow-origin')]).toEqual([path, PAGE]);
+      expect([path, body.includes('wrong-token') || body.includes(TOKEN)]).toEqual([path, false]);
+    }
+    expect(simRequests).toEqual([]);
+    expect(emuRequests).toEqual([]);
+  });
+
+  test('names no other origin on a refusal, and none on its own routes', async () => {
+    const other = await request('/vendor/serve-emu/api/devices', { headers: { Origin: 'https://elsewhere.example' } });
+    const own = await request('/api/devices', { headers: { Origin: PAGE } });
+
+    expect(other?.status).toBe(401);
+    expect(other?.headers.get('access-control-allow-origin')).toBeNull();
+    expect(other?.headers.get('vary')).toBe('Origin');
+    expect(own?.status).toBe(401);
+    expect(own?.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  // serve-sim allows any loopback page; serve-emu only one that calls a Hub on a loopback host.
+  test("follows each backend's loopback rule on a refusal", async () => {
+    const headers = { Origin: 'http://localhost:5173' };
+    const allowOrigin = async (url: string) =>
+      (await server.default(new Request(url, { headers })))?.headers.get('access-control-allow-origin');
+
+    expect(await allowOrigin(`${ORIGIN}/vendor/serve-sim/api`)).toBe('http://localhost:5173');
+    expect(await allowOrigin(`${ORIGIN}/vendor/serve-emu/api/devices`)).toBeNull();
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-emu/api/devices')).toBe('http://localhost:5173');
+  });
+
+  // serve-emu counts `*.localhost` as loopback; serve-sim does not.
+  test('names a *.localhost page on a serve-emu refusal only', async () => {
+    const allowOrigin = async (url: string) =>
+      (await server.default(new Request(url, { headers: { Origin: 'http://preview.localhost:5173' } })))
+        ?.headers.get('access-control-allow-origin');
+
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-emu/api/devices')).toBe(
+      'http://preview.localhost:5173',
+    );
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-sim/api')).toBeNull();
+  });
+
   // A route the Hub does not know still falls through to static files, so it is gated too.
   test('refuses a path it does not route, which the CLI would serve as a static file', async () => {
     expect((await request('/_expo/static/js/web/index.js'))?.status).toBe(401);
   });
 
-  test('keeps the liveness probe open', async () => {
+  // The expo.dev preview page probes `/healthz` without a token, as it does serve-sim's.
+  test('keeps the health and readiness probes open', async () => {
+    expect((await request('/healthz'))?.status).toBe(200);
     expect((await request('/readyz'))?.status).toBe(200);
   });
 
@@ -204,8 +316,8 @@ describe('the Hub under a session token', () => {
 
   // A preflight cannot carry the token. Each backend answers or refuses one before its own gate.
   test('passes a backend preflight through without a credential, and refuses one for the Hub', async () => {
-    expect((await request('/vendor/serve-sim/api', { method: 'OPTIONS' }))?.status).toBe(200);
-    expect((await request('/vendor/serve-emu/webrtc/stats', { method: 'OPTIONS' }))?.status).toBe(200);
+    expect((await request('/vendor/serve-sim/api', { method: 'OPTIONS' }))?.status).toBe(204);
+    expect((await request('/vendor/serve-emu/webrtc/stats', { method: 'OPTIONS' }))?.status).toBe(204);
 
     expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);
     expect(emuRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);

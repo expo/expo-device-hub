@@ -36,13 +36,20 @@ async function acquireLaunchStateLock<T>(udid: string, fn: () => Promise<T>): Pr
   );
 }
 
-export function withLaunchStateLockSync<T>(udid: string, fn: () => T): T {
+/** A synchronous update could not take the lock: another process held it, or an update in this process does. */
+export class LaunchStateLockedError extends Error {
+  constructor(message: string, public readonly heldByThisProcess: boolean) {
+    super(message);
+  }
+}
+
+export function withLaunchStateLockSync<T>(udid: string, fn: () => T, timeoutMs = LOCK_TIMEOUT_MS): T {
   const path = lockFile(udid);
   return withStateLockSync(
     path,
-    LOCK_TIMEOUT_MS,
-    () => new Error(`Could not release launch state for ${udid}: ${path} is still locked. Retry cleanup after the active command finishes.`),
-    () => new Error(`Cannot release launch state for ${udid} while this process is updating it. Run cleanup again after the command finishes.`),
+    timeoutMs,
+    () => new LaunchStateLockedError(`Could not release launch state for ${udid}: ${path} is still locked. Retry cleanup after the active command finishes.`, false),
+    () => new LaunchStateLockedError(`Cannot release launch state for ${udid} while this process is updating it. Run cleanup again after the command finishes.`, true),
     fn,
   );
 }

@@ -1,5 +1,17 @@
 # @expo/hub-client
 
+## 1.6.0
+
+### Minor Changes
+
+- 190a904: Expose activity readiness independently of video.
+
+### Patch Changes
+
+- cf4c0b2: Advance the iOS Rotate button through requested orientations while screen readback is delayed or an app declines a pose.
+- cf4c0b2: Wait for helper admission before sending iOS input when the helper advertises `inputAdmission`. Legacy helpers continue accepting input when the socket opens.
+- 66ca088: Keep settings available when other streams restart and prevent duplicate writes.
+
 ## 1.5.0
 
 ### Minor Changes

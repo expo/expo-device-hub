@@ -5,7 +5,13 @@ import { networkInterfaces } from 'node:os';
 import { WebSocketServer } from 'ws';
 import { URL } from 'node:url';
 
-import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
+import {
+  discardUnreadBody,
+  requestOrigin,
+  toFetchRequest,
+  toUpgradeRequest,
+  writeFetchResponse,
+} from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { startupMessage } from './cli/startup';
 import { localHubUrl, publishHubState } from './cli/state-file';
@@ -114,8 +120,9 @@ async function main(): Promise<void> {
   const serveStaticFile = staticFileHandler(new URL('../client/', import.meta.url));
 
   const server = createServer(async (req, res) => {
+    let request: Request | undefined;
     try {
-      const request = toFetchRequest(req);
+      request = toFetchRequest(req);
       const response = await handler(request);
       if (response) {
         writeFetchResponse(response, res);
@@ -133,6 +140,9 @@ async function main(): Promise<void> {
       } else {
         writeFetchResponse(new Response('Internal Server Error', { status: 500 }), res);
       }
+    } finally {
+      // An answer or a failure that left the upload unread would pause the connection.
+      if (request) discardUnreadBody(request);
     }
   });
 

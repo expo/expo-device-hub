@@ -66,6 +66,37 @@ export function corsAllowOriginHeaders(
   return {};
 }
 
+/**
+ * True when a browser may use a route that reads user data: the page's own origin, or an origin
+ * CORS already allows (loopback or `--cors-origin`). Browsers send Origin on every POST and PUT,
+ * so a request without one is refused.
+ */
+export function isAllowedOrigin(
+  origin: string | null | undefined,
+  host: string | undefined,
+  allowedOrigins: readonly string[],
+): boolean {
+  if (!origin) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (!isWebOrigin(parsed)) return false;
+  if (host && parsed.host === normalizeHost(parsed.protocol, host)) return true;
+  return "Access-Control-Allow-Origin" in corsAllowOriginHeaders(origin, allowedOrigins);
+}
+
+// URL drops a default port that a proxy may keep in Host, such as "sim.example.com:443".
+function normalizeHost(protocol: string, host: string): string | null {
+  try {
+    return new URL(`${protocol}//${host}`).host;
+  } catch {
+    return null;
+  }
+}
+
 // Same wildcard rule as WILDCARD_HOST, plus the bare host and IPv6 shapes a frame source may use.
 const FRAMEABLE_ORIGIN = /^https?:\/\/(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+|\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?$/i;
 

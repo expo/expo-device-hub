@@ -68,10 +68,6 @@ export function assertKnownCapabilities(names: string[]): void {
   }
 }
 
-export function hasDefaultCapabilities(): boolean {
-  return registeredCapabilities().some((definition) => definition.defaultEnabled);
-}
-
 export function registeredCapabilities(): CapabilityDefinition[] {
   return [...registry.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

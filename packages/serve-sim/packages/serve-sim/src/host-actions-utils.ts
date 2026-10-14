@@ -45,7 +45,11 @@ export async function ensurePrivateDirAsync(dir: string): Promise<void> {
 }
 
 /** Drops entries older than maxAgeMs, then reports the bytes the rest still hold. */
-export async function pruneStaleEntriesAsync(dir: string, maxAgeMs: number): Promise<number> {
+export async function pruneStaleEntriesAsync(
+  dir: string,
+  maxAgeMs: number,
+  include: (entry: string) => boolean = () => true,
+): Promise<number> {
   let total = 0;
   let entries: string[];
   try {
@@ -55,6 +59,7 @@ export async function pruneStaleEntriesAsync(dir: string, maxAgeMs: number): Pro
   }
   const cutoff = Date.now() - maxAgeMs;
   for (const entry of entries) {
+    if (!include(entry)) continue;
     const full = join(dir, entry);
     try {
       const info = await lstat(full);
@@ -66,7 +71,7 @@ export async function pruneStaleEntriesAsync(dir: string, maxAgeMs: number): Pro
 }
 
 /** Child output is useful, but a stack trace prints the operator's checkout. Keep the message. */
-function redactHostPaths(text: string): string {
+export function redactHostPaths(text: string): string {
   if (!text) return text;
   return text.split(homedir()).join("~").replace(/\/(?:private\/)?var\/folders\/\S+/g, "<tmp>");
 }

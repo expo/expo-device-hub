@@ -81,6 +81,7 @@ controls and the simulator APIs behind them.
 ```
 serve-sim [device...]                 Start preview server (default: localhost:3200)
 serve-sim --no-preview [device...]    Stream in foreground without a preview server
+serve-sim --disable-share [device...] Hide only the preview's Share button
 serve-sim gesture '<json>' [-d udid]  Send a touch gesture
 serve-sim button [name] [-d udid]     Send a button press (default: home)
 serve-sim type <text> [-d udid]       Type text via the simulator keyboard
@@ -155,6 +156,11 @@ Options:
                       Argument passed to the app when it launches (repeatable)
       --open-url <url>
                       URL to open in the app after it launches
+      --enable <capability>
+                      Turn on a capability that is off by default (repeatable)
+      --disable <capability>
+                      Turn off a capability that is on by default (repeatable).
+                      Capabilities: clipboard (on), networkCapture (off)
       --list [device] List running streams
       --kill [device] Kill running stream(s)
 
@@ -424,6 +430,12 @@ server.onUpgrade((request, socket) => {
 ```
 
 The middleware reads the helper's state from `$TMPDIR/serve-sim/` and points the browser at the helper's stream, interaction WebSocket, and WebKit DevTools endpoints. By default those URLs target the helper's own port directly (the helper answers loopback origins), so a plain `app.use(...)` mount works without touching your server's WebSocket handling.
+
+Opening a device sets up its clipboard reader through the capability loader, in the process that mounts the middleware. Set `clipboard: false` to remove that reader instead, or `clipboard: "unmanaged"` to leave it to the serve-sim session that owns the device. Await `middleware.dispose()` when the host server closes, to release the clipboard setup it owns. Clipboard reads never restart an app; an app already running before setup may need an explicit restart.
+
+In the CLI and in the middleware, when `simctl pbpaste` fails, a clipboard read can ask the clipboard reader in the app. Before it asks, it grants that app pasteboard access with `simctl privacy`. A read that fails after the grant also leaves it. The grant stays in the simulator's privacy (TCC) database, also after a reboot. It replaces a Deny that `simctl privacy revoke` stored. While it stays, the app gets no "Allow Paste" prompt. iOS can still show a banner on a read, such as "Safari pasted from serve-sim-pasteboard". To return the app to the prompt, run `xcrun simctl privacy <udid> reset pasteboard <bundle-id>`. A later read through the clipboard reader grants access again. Do not use `revoke`. It stores a Deny, and pasteboard reads in the app then get empty text with no prompt. `clipboard: false` (`--disable clipboard` for the CLI) prevents the grant. The grant, prompt, banner, and revoke results above come from an iOS 26.4 simulator with Xcode 26.4. [Clipboard](https://github.com/expo/expo-device-hub/blob/main/llp/0010-serve-sim-clipboard.explainer.md#the-pasteboard-grant-stays) gives the details.
+
+Copy in the preview toolbar (`POST /api/pasteboard?copy=1`) installs `ServeSimPasteboard.app` on the simulator and grants it pasteboard access. The app and the grant stay, and the app shows on the Home screen. `clipboard: false` (`--disable clipboard` for the CLI) does not prevent this. To remove the app, run `xcrun simctl uninstall <udid> com.expo.serve-sim-pasteboard`. The next Copy installs and grants it again.
 
 ### Single-port / remote proxying
 

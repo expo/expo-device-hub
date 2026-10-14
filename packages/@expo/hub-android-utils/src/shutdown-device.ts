@@ -7,9 +7,9 @@ import type { ShutdownDeviceOptions } from "./types";
 /**
  * Shut down a running emulator via `adb -s <serial> emu kill`.
  *
- * Resolves `adb` from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the
- * default macOS SDK location). The result's `value` is `true` on success and
- * `false` on failure, with the invocation-specific failure in `error`.
+ * Resolves `adb` from the Android SDK (see `resolveSdkRoot`). The result's
+ * `value` is `true` on success and `false` on failure, with the
+ * invocation-specific failure in `error`.
  */
 export async function shutdownDevice(
   options: ShutdownDeviceOptions,

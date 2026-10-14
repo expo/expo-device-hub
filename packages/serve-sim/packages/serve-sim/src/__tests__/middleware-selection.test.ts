@@ -50,6 +50,16 @@ describe("previewConfigForState", () => {
     const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
     expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputAdmission).toBe(true);
   });
+  test("advertises input paste only for helpers that support it", () => {
+    expect(previewConfigForState(states[0]!, "/preview", "token-xyz").inputPaste).toBeUndefined();
+    const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
+    expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputPaste).toBe(true);
+  });
+  test("advertises input copy only for helpers that support it", () => {
+    expect(previewConfigForState(states[0]!, "/preview", "token-xyz").inputCopy).toBeUndefined();
+    const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
+    expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputCopy).toBe(true);
+  });
   test("returns the full client config shape with device-scoped endpoints", () => {
     const state = states[1]!;
     expect(previewConfigForState(state, "/preview", "token-xyz")).toEqual({
@@ -100,6 +110,14 @@ describe("previewConfigForState", () => {
       ).shareUrl,
     ).toBe("https://expo.dev/simulator-preview/abc");
     expect("shareUrl" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
+  });
+
+  test("keeps sharing disabled in device configs, including a supplied public share URL", () => {
+    expect(previewConfigForState(
+      states[0]!, "/preview", "token-xyz", undefined, false, true,
+      "https://expo.dev/simulator-preview/abc", true,
+    ).disableShare).toBe(true);
+    expect("disableShare" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
   });
 
   test("omits stream settings when none are pinned", () => {
