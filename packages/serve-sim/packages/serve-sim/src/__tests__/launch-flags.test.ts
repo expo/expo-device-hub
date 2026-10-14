@@ -94,17 +94,33 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     }
   });
 
-  test.each(["--detach", "--no-preview"])("rejects --disable-share with %s before device selection", async (mode) => {
+  test.each([
+    ["--detach", false],
+    ["--no-preview", false],
+    ["--detach", true],
+    ["--no-preview", true],
+  ] as const)("rejects --disable-share with %s before device selection (quiet=%s)", async (mode, quiet) => {
     const shims = installShims({
       xcrun: '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$SERVE_SIM_LAUNCH_FLAGS_TRACE"\nexit 1\n',
     });
     const trace = join(shims.dir, "xcrun.trace");
+    const diagnostic = "--disable-share needs the foreground preview, so drop --detach/--no-preview.";
     try {
-      const { code, stderr } = await runCli(["--disable-share", mode], {
+      const { code, stdout, stderr } = await runCli([
+        ...(quiet ? ["--quiet"] : []), "--disable-share", mode,
+      ], {
         SERVE_SIM_LAUNCH_FLAGS_TRACE: trace,
       });
       expect(code).toBe(1);
-      expect(stderr).toContain("--disable-share needs the foreground preview, so drop --detach/--no-preview.");
+      if (quiet) {
+        expect(stdout.trim()).not.toBe("");
+        expect(stdout.trim().split("\n")).toHaveLength(1);
+        expect(JSON.parse(stdout)).toEqual({ error: diagnostic });
+        expect(stderr).toBe("");
+      } else {
+        expect(stderr).toContain(diagnostic);
+        expect(stdout).toBe("");
+      }
       expect(existsSync(trace)).toBe(false);
     } finally {
       shims.restore();
