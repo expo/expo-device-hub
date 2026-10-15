@@ -104,7 +104,9 @@ jobs:
           export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
           bun test --max-concurrency=1 --retry=1 .e2e.
 
+      # Runs after a failed simulator step too, so both failures show.
       - name: Report the unit shard result
+        if: ${{ always() }}
         run: |
           if [ -f /tmp/serve-sim-unit-failed ]; then
             echo "::error::The serve-sim unit shards failed; see \"Run two isolated unit shards\"."
