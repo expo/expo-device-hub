@@ -14,7 +14,7 @@ import {
   redactHostPaths,
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
-import { ScreenshotName, captureScreenshotAsync } from "./screenshot-store";
+import { ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
 import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
@@ -84,28 +84,40 @@ const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.leng
 );
 
 const ACTION_SCHEMAS = {
-  "appearance.get": z.object({ udid: Device }),
-  "appearance.set": z.object({ udid: Device, value: z.enum(APPEARANCES) }),
-  "hardwareKeyboard.get": z.object({ udid: Device }),
-  "hardwareKeyboard.set": UiSetting("hardware-keyboard"),
-  "reduceMotion.get": z.object({ udid: Device }),
-  "reduceMotion.set": UiSetting("reduce-motion"),
-  "increaseContrast.get": z.object({ udid: Device }),
-  "increaseContrast.set": UiSetting("increase-contrast"),
-  "reduceTransparency.get": z.object({ udid: Device }),
-  "reduceTransparency.set": UiSetting("reduce-transparency"),
-  "voiceover.get": z.object({ udid: Device }),
-  "voiceover.set": UiSetting("voiceover"),
-  "liquidGlass.get": z.object({ udid: Device }),
-  "liquidGlass.set": UiSetting("liquid-glass"),
-  "colorFilter.get": z.object({ udid: Device }),
-  "colorFilter.set": UiSetting("color-filter"),
-  "textSize.get": z.object({ udid: Device }),
-  "textSize.set": UiSetting("text-size"),
-  "showBorders.get": z.object({ udid: Device }),
-  "showBorders.set": UiSetting("show-borders"),
-  "settings.status": z.object({ udid: Device }),
-  "softwareKeyboard.toggle": z.object({ udid: Device }),
+  "appearance.get": z.object({ udid: Device }).meta({ description: "Read light or dark mode." }),
+  "appearance.set": z
+    .object({ udid: Device, value: z.enum(APPEARANCES) })
+    .meta({ description: "Set light or dark mode." }),
+  "hardwareKeyboard.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read whether the hardware keyboard is connected." }),
+  "hardwareKeyboard.set": UiSetting("hardware-keyboard").meta({
+    description: "Connect or disconnect the hardware keyboard.",
+  }),
+  "reduceMotion.get": z.object({ udid: Device }).meta({ description: "Read Reduce Motion." }),
+  "reduceMotion.set": UiSetting("reduce-motion").meta({ description: "Turn Reduce Motion on or off." }),
+  "increaseContrast.get": z.object({ udid: Device }).meta({ description: "Read Increase Contrast." }),
+  "increaseContrast.set": UiSetting("increase-contrast").meta({
+    description: "Turn Increase Contrast on or off.",
+  }),
+  "reduceTransparency.get": z.object({ udid: Device }).meta({ description: "Read Reduce Transparency." }),
+  "reduceTransparency.set": UiSetting("reduce-transparency").meta({
+    description: "Turn Reduce Transparency on or off.",
+  }),
+  "voiceover.get": z.object({ udid: Device }).meta({ description: "Read whether VoiceOver is on." }),
+  "voiceover.set": UiSetting("voiceover").meta({ description: "Turn VoiceOver on or off." }),
+  "liquidGlass.get": z.object({ udid: Device }).meta({ description: "Read the Liquid Glass style." }),
+  "liquidGlass.set": UiSetting("liquid-glass").meta({ description: "Set the Liquid Glass style." }),
+  "colorFilter.get": z.object({ udid: Device }).meta({ description: "Read the color filter." }),
+  "colorFilter.set": UiSetting("color-filter").meta({ description: "Set the color filter." }),
+  "textSize.get": z.object({ udid: Device }).meta({ description: "Read the text size." }),
+  "textSize.set": UiSetting("text-size").meta({ description: "Set the text size." }),
+  "showBorders.get": z.object({ udid: Device }).meta({ description: "Read whether button borders show." }),
+  "showBorders.set": UiSetting("show-borders").meta({ description: "Show or hide button borders." }),
+  "settings.status": z.object({ udid: Device }).meta({ description: "Read every simulator setting." }),
+  "softwareKeyboard.toggle": z
+    .object({ udid: Device })
+    .meta({ description: "Show or hide the on-screen keyboard." }),
   tap: z.object({ udid: Device, x: TouchCoordinate, y: TouchCoordinate })
     .meta({ description: "Tap at normalized screen coordinates." }),
   gesture: z.object({ udid: Device, events: TouchGesture })
@@ -114,134 +126,215 @@ const ACTION_SCHEMAS = {
     udid: Device,
     text: z.string().max(4096).regex(/^[\t\n\r\x20-\x7e]*$/, "must use US-keyboard ASCII characters, newline or tab"),
   }).meta({ description: "Type US-keyboard ASCII text into the focused field." }),
-  memoryWarning: z.object({ udid: Device }),
-  "caDebug.set": z.object({
-    udid: Device,
-    option: z.enum(Object.keys(CA_DEBUG_FLAGS)),
-    value: z.enum(TOGGLE_VALUES),
-  }),
+  memoryWarning: z.object({ udid: Device }).meta({ description: "Send a memory warning to the device." }),
+  "caDebug.set": z
+    .object({
+      udid: Device,
+      option: z.enum(Object.keys(CA_DEBUG_FLAGS)),
+      value: z.enum(TOGGLE_VALUES),
+    })
+    .meta({ description: "Turn a Core Animation debug option on or off." }),
   "hinge.get": z.object({ udid: Device }).meta({ description: "Read the hinge state." }),
-  "hinge.set": z.object({
-    udid: Device,
-    value: z.union([
-      z.enum(HINGE_POSITIONS.map((position) => position.name)),
-      z.number().refine(isHingeAngle, "must be from 0 to 180"),
-    ]),
-  }),
-  "permissions.list": z.object({ udid: Device, bundleId: BundleId.optional() }),
-  "location.set": z.object({ udid: Device, lat: Coordinate, lng: Coordinate }),
-  "location.clear": z.object({ udid: Device }),
-  "home.springboard": z.object({ udid: Device }),
-  "home.watch": z.object({ udid: Device.optional() }),
-  rotate: z.object({ udid: Device, value: Token }),
-  button: z.object({ value: Token, udid: Device.optional() }),
-  "server.detach": z.object({
-    udid: Device.optional(),
-    port: z.string().regex(/^[0-9]{1,5}$/).optional(),
-  }),
-  "server.kill": z.object({}),
-  "camera.listWebcams": z.object({}),
-  "camera.switch": z.discriminatedUnion("source", [
-    z.object({ udid: Device, source: z.literal("file"), target: ConfinedPath }),
-    z.object({ udid: Device, source: z.literal("webcam"), target: Argument.optional() }),
-    z.object({ udid: Device, source: z.literal("placeholder") }),
-  ]),
-  "camera.inject": z.discriminatedUnion("source", [
-    z.object({
+  "hinge.set": z
+    .object({
       udid: Device,
-      bundleId: BundleId,
-      mirror: z.enum(TOGGLE_VALUES),
-      source: z.literal("file"),
-      target: ConfinedPath,
+      value: z.union([
+        z.enum(HINGE_POSITIONS.map((position) => position.name)),
+        z.number().refine(isHingeAngle, "must be from 0 to 180"),
+      ]),
+    })
+    .meta({ description: "Fold or unfold a foldable simulator." }),
+  "permissions.list": z
+    .object({ udid: Device, bundleId: BundleId.optional() })
+    .meta({ description: "List permissions for one app or for every app." }),
+  "location.set": z
+    .object({ udid: Device, lat: Coordinate, lng: Coordinate })
+    .meta({ description: "Set the simulated location." }),
+  "location.clear": z.object({ udid: Device }).meta({ description: "Stop simulating a location." }),
+  "home.springboard": z.object({ udid: Device }).meta({ description: "Go to the Home screen." }),
+  "home.watch": z.object({ udid: Device.optional() }).meta({ hidden: true }),
+  rotate: z.object({ udid: Device, value: Token }).meta({ description: "Rotate the device." }),
+  button: z
+    .object({ value: Token, udid: Device.optional() })
+    .meta({ description: "Press a hardware button." }),
+  "server.detach": z
+    .object({
+      udid: Device.optional(),
+      port: z.string().regex(/^[0-9]{1,5}$/).optional(),
+    })
+    .meta({ hidden: true }),
+  "server.kill": z.object({}).meta({ hidden: true }),
+  "camera.listWebcams": z.object({}).meta({ hidden: true }),
+  "camera.switch": z
+    .discriminatedUnion("source", [
+      z.object({ udid: Device, source: z.literal("file"), target: ConfinedPath }),
+      z.object({ udid: Device, source: z.literal("webcam"), target: Argument.optional() }),
+      z.object({ udid: Device, source: z.literal("placeholder") }),
+    ])
+    .meta({
+      description: "Change the camera feed of an app with a simulated camera.",
+      args: ["source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
     }),
-    z.object({
+  "camera.inject": z
+    .discriminatedUnion("source", [
+      z.object({
+        udid: Device,
+        bundleId: BundleId,
+        mirror: z.enum(TOGGLE_VALUES),
+        source: z.literal("file"),
+        target: ConfinedPath,
+      }),
+      z.object({
+        udid: Device,
+        bundleId: BundleId,
+        mirror: z.enum(TOGGLE_VALUES),
+        source: z.literal("webcam"),
+        target: Argument.optional(),
+      }),
+      z.object({
+        udid: Device,
+        bundleId: BundleId,
+        mirror: z.enum(TOGGLE_VALUES),
+        source: z.literal("placeholder"),
+      }),
+    ])
+    .meta({
+      description: "Relaunch an app with a simulated camera feed.",
+      args: ["bundleId", "mirror", "source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
+    }),
+  "camera.mirror": z
+    .object({ udid: Device, value: z.enum(TOGGLE_VALUES) })
+    .meta({ description: "Mirror the simulated camera feed." }),
+  "camera.stopWebcam": z.object({ udid: Device }).meta({ hidden: true }),
+  "permissions.set": z
+    .object({
       udid: Device,
+      action: z.enum(PERMISSION_ACTIONS),
+      service: Token,
       bundleId: BundleId,
-      mirror: z.enum(TOGGLE_VALUES),
-      source: z.literal("webcam"),
-      target: Argument.optional(),
-    }),
-    z.object({
-      udid: Device,
+    })
+    .meta({ description: "Grant, revoke or reset one permission for an app." }),
+  "permissions.resetAll": z
+    .object({ udid: Device, bundleId: BundleId })
+    .meta({ description: "Reset every permission for an app." }),
+  "app.container": z
+    .object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") })
+    .meta({ description: "Print the path of an app's bundle or data container." }),
+  "app.file.upload": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) })
+    .meta({ description: "Copy a file into an app's data container.", upload: "uploadId", uploadAs: "id" }),
+  "app.file.read": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath })
+    .meta({ description: "Download a file from an app's data container.", output: "base64" }),
+  "app.file.list": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() })
+    .meta({ description: "List the files in a folder of an app's data container." }),
+  "app.file.remove": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath })
+    .meta({ description: "Delete a file from an app's data container." }),
+  "app.stop": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId })
+    .meta({ description: "Stop an app." }),
+  "app.openUrl": z
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
       bundleId: BundleId,
-      mirror: z.enum(TOGGLE_VALUES),
-      source: z.literal("placeholder"),
-    }),
-  ]),
-  "camera.mirror": z.object({ udid: Device, value: z.enum(TOGGLE_VALUES) }),
-  "camera.stopWebcam": z.object({ udid: Device }),
-  "permissions.set": z.object({
-    udid: Device,
-    bundleId: BundleId,
-    action: z.enum(PERMISSION_ACTIONS),
-    service: Token,
-  }),
-  "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
-  "app.container": z.object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") }),
-  "app.file.upload": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) }),
-  "app.file.read": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
-  "app.file.list": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() }),
-  "app.file.remove": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
-  "app.stop": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId }),
-  "app.openUrl": z.object({
-    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
-    bundleId: BundleId,
-    url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
-  }),
-  "app.infoPlist": z.object({ path: ConfinedPath }),
-  "app.install": z.object({ udid: Device }).and(FileSource),
-  "app.launch": z.object({
-    // Launch state and locks use simctl's canonical uppercase UDID.
-    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
-    bundleId: BundleId,
-    launchArgs: z
-      .array(
-        z
-          .string()
-          .max(8192)
-          .refine((value) => !value.includes("\0"), "must not contain NUL"),
-      )
-      .max(256)
-      .refine(
-        (args) => args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
-        "must total at most 128 KiB",
-      )
-      .default([]),
-    openUrl: z
-      .string()
-      .max(8192)
-      .url()
-      .refine((value) => !value.includes("\0"), "must not contain NUL")
-      .optional(),
-  }),
-  "app.iconPath": z.object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) }),
-  "media.add": z.object({ udid: Device }).and(FileSource),
-  reveal: z.union([z.object({ path: ConfinedPath }), z.object({ screenshot: ScreenshotName })]),
-  "file.readBase64": z.object({ path: ConfinedPath }),
-  "screenshot.capture": z.object({ udid: Device, fileName: ScreenshotName }),
-  "screenshot.thumbnail": z.object({ fileName: ScreenshotName }),
-  "upload.append": z.object({
-    uploadId: UploadId,
-    // Bounded here rather than trusting the socket's cap: a host may supply its own transport.
-    data: UploadChunk,
-    first: z.boolean().optional(),
-  }),
-  "upload.remove": z.object({ uploadId: UploadId }),
-  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean(), fields: CaptureFieldList.optional() }),
-  "capture.enable": z.object({ udid: DeviceUdid, fields: CaptureFieldList.optional() }),
-  "capture.fields": z.object({ udid: DeviceUdid, fields: CaptureFieldList }),
-  "capture.clear": z.object({ udid: DeviceUdid }),
-  "capture.body": z.object({ udid: DeviceUdid, id: CaptureRequestId }),
+      url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
+    })
+    .meta({ description: "Open a URL in an app." }),
+  "app.infoPlist": z
+    .object({ path: ConfinedPath })
+    .meta({ description: "Read an Info.plist as JSON." }),
+  "app.install": z
+    .object({ udid: Device })
+    .and(FileSource)
+    .meta({ description: "Install an app from an .ipa file.", args: ["path"], upload: "path" }),
+  "app.launch": z
+    .object({
+      // Launch state and locks use simctl's canonical uppercase UDID.
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      launchArgs: z
+        .array(
+          z
+            .string()
+            .max(8192)
+            .refine((value) => !value.includes("\0"), "must not contain NUL"),
+        )
+        .max(256)
+        .refine(
+          (args) => args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
+          "must total at most 128 KiB",
+        )
+        .default([]),
+      openUrl: z
+        .string()
+        .max(8192)
+        .url()
+        .refine((value) => !value.includes("\0"), "must not contain NUL")
+        .optional(),
+    })
+    .meta({ description: "Restart an app with launch arguments and an optional URL to open." }),
+  "app.iconPath": z
+    .object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) })
+    .meta({ hidden: true }),
+  "media.add": z
+    .object({ udid: Device })
+    .and(FileSource)
+    .meta({ description: "Add a photo or video to the Photos library.", args: ["path"], upload: "path" }),
+  reveal: z
+    .union([z.object({ path: ConfinedPath }), z.object({ screenshot: ScreenshotName })])
+    .meta({ hidden: true }),
+  "file.readBase64": z
+    .object({ path: ConfinedPath })
+    .meta({ description: "Download a file from the simulator host.", output: "base64" }),
+  "screenshot.capture": z
+    .object({ udid: Device, fileName: ScreenshotName.optional() })
+    .meta({ description: "Take a screenshot.", output: "path" }),
+  "screenshot.thumbnail": z.object({ fileName: ScreenshotName }).meta({ hidden: true }),
+  "upload.append": z
+    .object({
+      uploadId: UploadId,
+      // Bounded here rather than trusting the socket's cap: a host may supply its own transport.
+      data: UploadChunk,
+      first: z.boolean().optional(),
+    })
+    .meta({ hidden: true }),
+  "upload.remove": z.object({ uploadId: UploadId }).meta({ hidden: true }),
+  "capture.reboot": z
+    .object({ udid: DeviceUdid, enabled: z.boolean(), fields: CaptureFieldList.optional() })
+    .meta({ description: "Reboot the simulator with network capture on or off." }),
+  "capture.enable": z
+    .object({ udid: DeviceUdid, fields: CaptureFieldList.optional() })
+    .meta({ description: "Start network capture." }),
+  "capture.fields": z
+    .object({ udid: DeviceUdid, fields: CaptureFieldList })
+    .meta({ description: "Choose the fields that network capture records." }),
+  "capture.clear": z
+    .object({ udid: DeviceUdid })
+    .meta({ description: "Clear the captured network requests." }),
+  "capture.body": z
+    .object({ udid: DeviceUdid, id: CaptureRequestId })
+    .meta({ description: "Read the body of a captured network request." }),
+  "actions.describe": z.object({}).meta({ hidden: true }),
 } as const;
 
 type HostActionName = keyof typeof ACTION_SCHEMAS;
 
 /**
  * Everything else is one child process, built by buildInvocation. These are file work done in this
- * process, or a sequence of children with cleanup between them. Uploads arrive as base64 chunks,
- * which would blow past ARG_MAX as arguments, so they are decoded and appended here instead.
+ * process, a sequence of children with cleanup between them, or the action catalog. Uploads arrive
+ * as base64 chunks, which would blow past ARG_MAX as arguments, so they are decoded and appended
+ * here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "actions.describe",
   "app.file.upload",
   "app.file.read",
   "app.file.list",
@@ -266,6 +359,15 @@ type InvocationAction = Exclude<HostActionName, ProcedureAction>;
 
 function isProcedureAction(action: HostActionName): action is ProcedureAction {
   return PROCEDURE_ACTIONS.some((procedure) => procedure === action);
+}
+
+export function describeHostActions(): Record<string, z.core.JSONSchema.BaseSchema> {
+  const catalog: Record<string, z.core.JSONSchema.BaseSchema> = {};
+  for (const [name, schema] of Object.entries(ACTION_SCHEMAS)) {
+    const { $schema: _$schema, ...jsonSchema } = z.toJSONSchema(schema, { io: "input" });
+    if (jsonSchema.hidden !== true) catalog[name] = jsonSchema;
+  }
+  return catalog;
 }
 
 function isHostActionName(action: string): action is HostActionName {
@@ -625,8 +727,11 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
-      return await captureScreenshotAsync(p);
+      return await captureScreenshotAsync({ udid: p.udid, fileName: p.fileName ?? newScreenshotName() });
     }
+    case "actions.describe":
+      parseParams(action, raw);
+      return ok(JSON.stringify(describeHostActions()));
     case "screenshot.thumbnail": {
       const p = parseParams(action, raw);
       const thumb = await reserveThumbnailPathAsync();

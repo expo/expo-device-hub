@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 
-import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { InvalidHostActionError, describeHostActions, runHostActionAsync } from "../host-actions";
 import { UDID } from "./helpers";
 import { SCREENSHOT_DIR, UPLOAD_DIR } from "../host-paths";
 
@@ -411,5 +411,64 @@ describe("capture actions", () => {
         runHostActionAsync({ action: "capture.reboot", params: { udid, enabled: true } }, BIN),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
     }
+  });
+});
+
+describe("action catalog", () => {
+  const catalog = describeHostActions();
+
+  it("describes each action with its parameters", () => {
+    expect(catalog["hardwareKeyboard.set"]).toMatchObject({
+      description: "Connect or disconnect the hardware keyboard.",
+      type: "object",
+      properties: { value: { enum: ["on", "off"] } },
+      required: ["udid", "value"],
+    });
+    expect(Object.keys(catalog["permissions.set"]?.properties ?? {})).toEqual([
+      "udid", "action", "service", "bundleId",
+    ]);
+  });
+
+  it("gives every listed action a description", () => {
+    const missing = Object.entries(catalog).filter(([, entry]) => typeof entry.description !== "string");
+    expect(missing.map(([name]) => name)).toEqual([]);
+  });
+
+  it("leaves out actions a remote caller has no use for", () => {
+    for (const name of [
+      "server.detach", "server.kill", "reveal", "home.watch", "app.iconPath",
+      "camera.listWebcams", "camera.stopWebcam", "screenshot.thumbnail",
+      "upload.append", "upload.remove", "actions.describe",
+    ]) {
+      expect(catalog).not.toHaveProperty([name]);
+    }
+  });
+
+  it("labels the actions that take or return a file", () => {
+    expect(catalog["app.install"]).toMatchObject({ args: ["path"], upload: "path" });
+    expect(catalog["media.add"]).toMatchObject({ args: ["path"], upload: "path" });
+    expect(catalog["camera.inject"]).toMatchObject({
+      args: ["bundleId", "mirror", "source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
+    });
+    expect(catalog["camera.switch"]).toMatchObject({
+      args: ["source", "target"],
+      upload: "target",
+      uploadWhen: { source: "file" },
+      keepUpload: true,
+    });
+    expect(catalog["app.file.upload"]).toMatchObject({ upload: "uploadId", uploadAs: "id" });
+    expect(catalog["app.file.read"]).toMatchObject({ output: "base64" });
+    expect(catalog["screenshot.capture"]).toMatchObject({ output: "path" });
+    expect(catalog["file.readBase64"]).toMatchObject({ output: "base64" });
+  });
+
+  it("serves the catalog as an action", async () => {
+    const result = await runHostActionAsync({ action: "actions.describe" }, BIN);
+
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(catalog);
   });
 });

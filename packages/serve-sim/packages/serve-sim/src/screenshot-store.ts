@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { readdir, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
@@ -35,6 +36,11 @@ export const ScreenshotName = z
     new RegExp(`^${SCREENSHOT_PREFIX}[A-Za-z0-9._-]{1,100}\\.png$`),
     "must be a serve-sim screenshot name",
   );
+
+export function newScreenshotName(): string {
+  const time = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 23);
+  return `${SCREENSHOT_PREFIX}${time}-${randomUUID().slice(0, 8)}.png`;
+}
 
 async function stagedScreenshotBudgetExceededAsync(): Promise<boolean> {
   try {

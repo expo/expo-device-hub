@@ -187,6 +187,23 @@ describe("procedures that shell out", () => {
     ]);
   });
 
+  it("names a capture when the caller does not", async () => {
+    const result = await runHostActionAsync(
+      { action: "screenshot.capture", params: { udid: UDID } },
+      serveSimBin,
+    );
+    const staged = result.stdout.trim();
+    rmSync(staged, { force: true });
+
+    expect(result.exitCode).toBe(0);
+    expect(staged).toMatch(
+      /\/serve-sim-screenshot-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}-[0-9a-f]{8}\.png$/,
+    );
+    expect(loggedArgv().filter((r) => r[0] === "xcrun").at(-1)).toEqual([
+      "xcrun", "simctl", "io", UDID, "screenshot", staged,
+    ]);
+  });
+
   // A copy that never returns is what a consent prompt looks like from the child's side. The client
   // gives an action ten seconds, so the copy has to be reaped well inside that, and the capture is
   // still a success: the file simctl wrote is staged, and stderr says where.

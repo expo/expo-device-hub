@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-15 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions)
+**Revised:** 2026-10-15 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -499,3 +499,32 @@ admission flag stay unchanged, including for legacy helpers [observed:
 The CLI tap, gesture, button, rotate, CA debug and memory-warning senders reuse
 this live-name selection and input admission path [observed: `sendHelperMessage`
 and its callers in `src/index.ts`].
+### Action catalog
+
+`actions.describe` with `{}` returns a JSON object that maps each action name to
+the JSON Schema of its parameters (`z.toJSONSchema` with `io: "input"`). A client
+reads it, so a new action needs no client change.
+Each schema also carries these keys from `.meta()` in `src/host-actions.ts`:
+
+- `description`: one sentence for a user.
+- `args`: the order in which a client fills parameters from values given in
+  order, for actions whose schema has several shapes. Other actions use the
+  order of `properties`. The client fills `udid` itself, so `args` leaves it
+  out and the client skips it in `properties`.
+- `upload`: the parameter that takes a file. A client uploads a local file with
+  `upload.append` and sends the staged path, or the upload ID when `uploadAs`
+  is `"id"`. `uploadWhen` lists parameter values that must match first, for
+  example `{source: "file"}`. `keepUpload: true` means the action keeps reading
+  the file, so the client does not send `upload.remove` after a success.
+- `output`: `"path"` when stdout is a file path on the host to read with
+  `file.readBase64`, or `"base64"` when stdout is the file.
+
+Patterns come from JavaScript regular expressions; some, such as the one in
+`Argument`, need the `u` flag.
+
+The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
+`home.watch`, `app.iconPath`, `camera.listWebcams`, `camera.stopWebcam`,
+`screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
+called.
+
+`screenshot.capture` makes a file name when `fileName` is missing.
