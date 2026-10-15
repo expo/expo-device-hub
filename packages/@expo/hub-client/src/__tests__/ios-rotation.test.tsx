@@ -314,10 +314,11 @@ test("a failed iOS rotation send leaves the cursor unchanged", async () => {
   helper().send = () => {
     throw new Error("send failed");
   };
-  expect(() => client().rotate()).toThrow("send failed");
+  expect(() => client().rotate()).not.toThrow();
+  expect(helper().rotations()).toEqual([]);
   helper().send = send;
   client().rotate();
-  expect(helper().rotations()).toEqual(["landscape_left"]);
+  expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
 
 test("a partial queued flush does not apply a successfully sent rotation twice", async () => {
@@ -328,11 +329,11 @@ test("a partial queued flush does not apply a successfully sent rotation twice",
   const send = helper().send.bind(helper());
   let attempts = 0;
   helper().send = (data) => {
-    if (++attempts === 2) throw new Error("send failed");
+    if (++attempts >= 2) throw new Error("send failed");
     send(data);
   };
   helper().readyState = 1;
-  expect(() => helper().onopen?.()).toThrow("send failed");
+  expect(() => helper().onopen?.()).not.toThrow();
   expect(helper().rotations()).toEqual(["landscape_left"]);
   helper().send = send;
   client().rotate();

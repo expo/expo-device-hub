@@ -111,7 +111,17 @@ describe('ws send queue', () => {
   test('does not report a send that throws', () => {
     let reported = false;
     const ws = { readyState: 1, send() { throw new Error('closed'); } };
-    expect(() => sendOrQueueWsMessage(ws, [], 7, {}, 1000, () => { reported = true; })).toThrow('closed');
+    const pending = sendOrQueueWsMessage(ws, [], 7, {}, 1000, () => { reported = true; });
+    expect(pending).toHaveLength(1);
     expect(reported).toBe(false);
   });
+});
+
+test('a failed send retains only unsent queue entries in order', () => {
+  const queue = [{tag:3,payload:{n:1},createdAt:0},{tag:3,payload:{n:2},createdAt:0}];
+  let sends = 0;
+  const ws = {readyState:1,send() {if (++sends === 2) throw new Error('closed');}};
+  expect(flushWsMessageQueue(ws,queue,1)).toEqual([queue[1]!]);
+  const broken = {readyState:1,send() {throw new Error('closed');}};
+  expect(sendOrQueueWsMessage(broken,queue,4,{n:3},1)).toEqual([queue[1]!,{tag:4,payload:{n:3},createdAt:1}]);
 });

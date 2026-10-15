@@ -63,6 +63,14 @@ Settings, host actions, logs, events, activity metrics and config updates share 
 
 When the shift key makes a printable character, the client sends the character with `shifted: true`, in addition to the HID usage. serve-sim types it through the software keyboard when the Simulator's hardware keyboard is off and the device has no hinge-angle support. Otherwise, or when software typing fails, it sends the HID usage [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; serve-sim `client/client.tsx`, tag `0x06` in `device-session.ts`].
 
+## Input ownership
+
+When a browser interaction loses focus, or the client changes device, queued input that it owns is cancelled [observed: `cancelInput` in `types.ts`, `useIosDevice.ts`, `useAndroidDevice.ts`]:
+
+- A gesture that has both `begin` and `end` stays in the queue, in its order and with its expiry. A gesture without its `end` is removed, so that the device does not keep a held touch.
+- Paced key input stops [observed: `paced-key-sender.ts`].
+- If a send fails, the commands that were not sent stay in the queue for the next admission [observed: `ws-send-queue.ts`].
+
 ## Open questions
 
 None at this time.

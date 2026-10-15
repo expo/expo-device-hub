@@ -82,8 +82,10 @@ export function flushWsMessageQueue(
 ): QueuedWsMessage[] {
   const fresh = queue.filter((message) => !message.sent && now - message.createdAt <= maxQueueAgeMs);
   if (!ws || ws.readyState !== WS_OPEN_READY_STATE) return fresh;
-  for (const message of fresh) {
-    sendMessage(ws, message);
+  for (let index = 0; index < fresh.length; index++) {
+    const message = fresh[index]!;
+    try { sendMessage(ws, message); }
+    catch { return fresh.slice(index); }
   }
   return [];
 }
@@ -98,9 +100,9 @@ export function sendOrQueueWsMessage(
   onSent?: WsMessageSent,
 ): QueuedWsMessage[] {
   const fresh = flushWsMessageQueue(ws, queue, now);
-  if (ws?.readyState === WS_OPEN_READY_STATE) {
-    sendMessage(ws, { tag, payload, onSent });
-    return fresh;
+  if (ws?.readyState === WS_OPEN_READY_STATE && fresh.length === 0) {
+    try { sendMessage(ws, { tag, payload, onSent }); return fresh; }
+    catch { /* Preserve the unsent command for a later admission. */ }
   }
   return enqueueWsMessage(fresh, { tag, payload, createdAt: now, ...(onSent ? { onSent } : {}) });
 }

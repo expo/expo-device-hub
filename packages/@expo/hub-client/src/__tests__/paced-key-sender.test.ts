@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
 import { keyEventsForInputType } from '../mobile-keyboard';
 import { createPacedKeySender } from '../paced-key-sender';
@@ -16,13 +16,13 @@ function fakeScheduler() {
   return { schedule, cancel: () => {}, drain };
 }
 
-describe('createPacedKeySender', () => {
-  test('sends a multi-character paste one event at a time, in order', () => {
+describe("createPacedKeySender", () => {
+  test("sends a multi-character paste one event at a time, in order", () => {
     const clock = fakeScheduler();
     const sent: HidKeyEvent[] = [];
     const sender = createPacedKeySender((e) => sent.push(e), 4, clock.schedule, clock.cancel);
 
-    const events = keyEventsForInputType('insertFromPaste', 'Hi!');
+    const events = keyEventsForInputType("insertFromPaste", "Hi!");
     expect(events.length).toBeGreaterThan(2);
 
     sender.enqueue(events);
@@ -33,13 +33,13 @@ describe('createPacedKeySender', () => {
     expect(sent).toEqual(events);
   });
 
-  test('keeps events queued when more arrive mid-drain', () => {
+  test("keeps events queued when more arrive mid-drain", () => {
     const clock = fakeScheduler();
     const sent: HidKeyEvent[] = [];
     const sender = createPacedKeySender((e) => sent.push(e), 4, clock.schedule, clock.cancel);
 
-    const first = keyEventsForInputType('insertText', 'a');
-    const second = keyEventsForInputType('insertText', 'b');
+    const first = keyEventsForInputType("insertText", "a");
+    const second = keyEventsForInputType("insertText", "b");
     sender.enqueue(first);
     sender.enqueue(second);
 
@@ -47,15 +47,40 @@ describe('createPacedKeySender', () => {
     expect(sent).toEqual([...first, ...second]);
   });
 
-  test('dispose drops queued events and stops the pump', () => {
+  test("dispose drops queued events and stops the pump", () => {
     const clock = fakeScheduler();
     const sent: HidKeyEvent[] = [];
     const sender = createPacedKeySender((e) => sent.push(e), 4, clock.schedule, clock.cancel);
 
-    sender.enqueue(keyEventsForInputType('insertFromPaste', 'abc'));
+    sender.enqueue(keyEventsForInputType("insertFromPaste", "abc"));
     sender.dispose();
     clock.drain();
 
-    expect(sent).toEqual([{ type: 'down', usage: 0x04 }]);
+    expect(sent).toEqual([{ type: "down", usage: 0x04 }]);
   });
+});
+
+test("cancel releases a partially sent modifier batch and allows a new batch", () => {
+  const clock = fakeScheduler();
+  const sent: HidKeyEvent[] = [];
+  const sender = createPacedKeySender((event) => sent.push(event), 4, clock.schedule, clock.cancel);
+  sender.enqueue([
+    { type: "down", usage: 225 },
+    { type: "down", usage: 4 },
+    { type: "up", usage: 4 },
+    { type: "up", usage: 225 },
+  ]);
+  expect(sender.cancel()).toEqual([{ type: "up", usage: 225 }]);
+  clock.drain();
+  expect(sent).toEqual([{ type: "down", usage: 225 }]);
+  sender.enqueue([
+    { type: "down", usage: 5 },
+    { type: "up", usage: 5 },
+  ]);
+  clock.drain();
+  expect(sent.slice(1)).toEqual([
+    { type: "down", usage: 5 },
+    { type: "up", usage: 5 },
+  ]);
+  expect(sender.cancel()).toEqual([]);
 });
