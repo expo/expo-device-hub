@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from 'bun:test';
+import { afterEach, expect, jest, spyOn, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error';
@@ -14,6 +14,7 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
   restoreGlobals();
+  jest.useRealTimers();
 });
 
 const CLIENT_LIMIT_REASON = 'Simulator input unavailable; retry after other clients disconnect';
@@ -27,7 +28,7 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false, helper = { pid: 1 } as { pid: number; absent?: boolean } } = {}) {
+async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false, coarsePointer = true, helper = { pid: 1 } as { pid: number; absent?: boolean } } = {}) {
   const sockets: FakeSocket[] = [];
   const listeners = new Map<string, Set<() => void>>();
   const addListener = (name: string, callback: () => void) => {
@@ -49,6 +50,11 @@ async function renderIosClient(inputAdmission: unknown = true, { renderScreen = 
     removeEventListener: removeListener,
     setTimeout,
     clearTimeout,
+    matchMedia: (query: string) => ({
+      matches: coarsePointer && query === '(pointer: coarse)',
+      addEventListener() {},
+      removeEventListener() {},
+    }),
   });
   stubGlobal('document', { hidden: false, addEventListener: addListener, removeEventListener: removeListener });
   stubGlobal('WebSocket', class {
@@ -163,6 +169,37 @@ test('malformed config frames cannot admit modern input or set keyboard state', 
   expect(client().hardwareKeyboardConnected).toBe(false);
 });
 
+for (const coarsePointer of [false, true]) {
+  for (const inputAdmission of [true, false]) {
+    test(`${coarsePointer ? 'touch admission disconnects' : 'desktop admission preserves'} the hardware keyboard on ${inputAdmission ? 'modern' : 'legacy'} helpers and reconnect`, async () => {
+      const { client, helperSockets } = await renderIosClient(inputAdmission, { coarsePointer });
+      const admit = async (socket: FakeSocket) => {
+        socket.readyState = 1;
+        await act(async () => socket.onopen?.());
+        if (inputAdmission) {
+          expect(socket.sent).toHaveLength(0);
+          await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+        }
+        if (coarsePointer) {
+          const frame = new Uint8Array(socket.sent[0]!);
+          expect(frame[0]).toBe(0x0e);
+          expect(JSON.parse(new TextDecoder().decode(frame.subarray(1)))).toEqual({ enabled: false });
+          expect(client().hardwareKeyboardConnected).toBe(false);
+        } else {
+          expect(socket.sent).toHaveLength(0);
+          expect(client().hardwareKeyboardConnected).toBeNull();
+        }
+      };
+      const socket = helperSockets()[0]!;
+      await admit(socket);
+      await act(async () => socket.onclose?.({ code: 1006, reason: '' }));
+      await act(async () => new Promise(resolve => setTimeout(resolve, 25)));
+      expect(helperSockets()).toHaveLength(2);
+      await admit(helperSockets()[1]!);
+    });
+  }
+}
+
 test('legacy OPEN sends input while recovery waits out the refusal grace', async () => {
   const {client, helperSockets} = await renderIosClient(false); const socket = helperSockets()[0]!;
   socket.readyState = 1; await act(async () => socket.onopen?.());
@@ -187,6 +224,7 @@ test('screen config cannot clear a refusal before modern admission', async () =>
 
 
 test('an overload warning survives admission but expires without changing owners', async () => {
+  jest.useFakeTimers();
   const { client, helperSockets } = await renderIosClient();
   const socket = helperSockets()[0]!;
   socket.readyState = 1;
@@ -194,16 +232,17 @@ test('an overload warning survives admission but expires without changing owners
   const reason = 'Simulator input queue full; send smaller batches or slow down';
   await act(async () => socket.onclose?.({ code: 1013, reason }));
   expect(client().inputError).toBe(reason);
-  await act(async () => new Promise(resolve => setTimeout(resolve, 12)));
+  await act(async () => { jest.advanceTimersByTime(12); });
   const retry = helperSockets()[1]!;
   retry.readyState = 1;
   await act(async () => retry.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
   expect(client().inputError).toBe(reason);
-  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  await act(async () => { jest.advanceTimersByTime(30); });
   expect(client().inputError).toBeNull();
 });
 
 test('an overload warning outlives a helper restart at the same URL', async () => {
+  jest.useFakeTimers();
   const helper = { pid: 1 };
   const { client, helperSockets } = await renderIosClient(true, { helper });
   const socket = helperSockets()[0]!;
@@ -212,14 +251,15 @@ test('an overload warning outlives a helper restart at the same URL', async () =
   const reason = 'Simulator input queue full; send smaller batches or slow down';
   helper.pid = 2;
   await act(async () => socket.onclose?.({ code: 1013, reason }));
-  await act(async () => new Promise(resolve => setTimeout(resolve, 12)));
+  await act(async () => { jest.advanceTimersByTime(12); });
   expect(helperSockets().length).toBeGreaterThan(2);
   expect(client().inputError).toBe(reason);
-  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  await act(async () => { jest.advanceTimersByTime(30); });
   expect(client().inputError).toBeNull();
 });
 
 test('an overload warning outlives a helper that is briefly absent', async () => {
+  jest.useFakeTimers();
   const helper = { pid: 1, absent: false };
   const { client, helperSockets } = await renderIosClient(true, { helper });
   const socket = helperSockets()[0]!;
@@ -228,10 +268,10 @@ test('an overload warning outlives a helper that is briefly absent', async () =>
   const reason = 'Simulator input queue full; send smaller batches or slow down';
   helper.absent = true;
   await act(async () => socket.onclose?.({ code: 1013, reason }));
-  await act(async () => new Promise(resolve => setTimeout(resolve, 12)));
+  await act(async () => { jest.advanceTimersByTime(12); });
   expect(client().status).toBe('connecting');
   expect(client().inputError).toBe(reason);
-  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  await act(async () => { jest.advanceTimersByTime(30); });
   expect(client().inputError).toBeNull();
 });
 

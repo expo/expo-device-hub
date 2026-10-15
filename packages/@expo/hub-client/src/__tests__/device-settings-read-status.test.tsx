@@ -68,13 +68,17 @@ function settingsServer() {
     aborted: 0,
     fontScale: 1,
     night: "yes",
-    iosSettings: {} as DeviceSettings,
+    iosSettings: {} as DeviceSettings & { 'hardware-keyboard'?: string },
+    inputAdmission: false,
+    holdWrites: false,
     authReady: true,
     authRequests: 0,
     streams: false,
     endedSubscriptions: new Set<number>(),
   };
   const writes: Array<{ device: string; option: string; value?: string }> = [];
+  const pendingWrites: Array<(error?: string) => void> = [];
+  const inputSockets = new Set<ServerWebSocket<SocketData>>();
   const subscriptions: number[] = [];
   const controls = new Set<ServerWebSocket<SocketData>>();
   const pendingAuth = new Set<ServerWebSocket<SocketData>>();
@@ -84,6 +88,7 @@ function settingsServer() {
   const socketStarts: string[] = [];
   const controlClients = new Set<WebSocket>();
   const receivedEnds = new Set<number>();
+  const receivedErrors = new Set<string>();
   stubGlobal("WebSocket", class extends WebSocket {
     constructor(...args: ConstructorParameters<typeof WebSocket>) {
       super(...args);
@@ -92,6 +97,7 @@ function settingsServer() {
         try {
           const message = JSON.parse(String(event.data));
           if (message.end && typeof message.sub === "number") receivedEnds.add(message.sub);
+          if (typeof message.error === "string") receivedErrors.add(message.error);
         } catch {}
       });
       this.addEventListener("close", () => controlClients.delete(this));
@@ -160,6 +166,7 @@ function settingsServer() {
           basePath: "/ios",
           proxyHelpers: true,
           execToken: "exec-token",
+          inputAdmission: state.inputAdmission,
           ...(state.streams ? {
             metricsEndpoint: "/ios/metrics",
             logsEndpoint: "/ios/logs",
@@ -218,6 +225,7 @@ function settingsServer() {
     websocket: {
       open(socket) {
         if (!socket.data.path.includes("/helper/")) return;
+        inputSockets.add(socket);
         const config = new TextEncoder().encode(JSON.stringify({ width: 390, height: 844 }));
         socket.send(new Uint8Array([0x82, ...config]));
       },
@@ -251,10 +259,14 @@ function settingsServer() {
         } else if (message.ui && message.id != null) {
           if (message.ui.option) {
             writes.push({ ...message.ui, option: message.ui.option });
-            if (message.ui.value) {
-              state.iosSettings[message.ui.option as keyof DeviceSettings] = message.ui.value;
-            }
-            socket.send(JSON.stringify({ id: message.id, ok: true }));
+            const ui = message.ui;
+            const finish = (error?: string) => {
+              if (error) { socket.send(JSON.stringify({ id: message.id, error })); return; }
+              if (ui.value) state.iosSettings[ui.option as keyof DeviceSettings] = ui.value;
+              socket.send(JSON.stringify({ id: message.id, ok: true }));
+            };
+            if (state.holdWrites) pendingWrites.push(finish);
+            else finish();
             return;
           }
           const read = {};
@@ -285,6 +297,7 @@ function settingsServer() {
         }
       },
       close(socket) {
+        inputSockets.delete(socket);
         for (const [read, owner] of activeSocketReads) {
           if (owner === socket) activeSocketReads.delete(read);
         }
@@ -317,6 +330,9 @@ function settingsServer() {
     controls,
     controlClients,
     receivedEnds,
+    receivedErrors,
+    inputSockets,
+    finishWrites: (error?: string) => { for (const finish of pendingWrites.splice(0)) finish(error); },
     execConnections: () => socketStarts.filter((path) => path === "/ios/exec-ws").length,
     async settleReads() {
       await waitFor(() => activeHttpReads === 0 && activeSocketReads.size === 0);
@@ -1094,6 +1110,125 @@ test("iOS: subscription changes do not interrupt an active settings read", async
   expect(server.state.authRequests).toBe(auth);
   expect(server.reads).toHaveLength(1);
 });
+
+test("iOS: hardware keyboard polls reconcile changes made by another viewer", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+  await server.settleReads();
+  server.state.iosSettings['hardware-keyboard'] = 'on';
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === true);
+  await server.settleReads();
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+});
+
+test("iOS: desktop admission preserves the keyboard mode from a settings read", async () => {
+  const server = settingsServer();
+  server.state.inputAdmission = true;
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => server.reads.length === 1 && server.inputSockets.size === 1);
+  await act(async () => { for (const socket of server.inputSockets) socket.send(Uint8Array.of(0x83)); });
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().hardwareKeyboardConnected).toBe(false);
+});
+
+test("iOS: desktop readback recovers on input admission without waiting for the settings poll", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.inputAdmission = true;
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false && server.inputSockets.size === 1);
+  await act(async () => { for (const socket of server.inputSockets) socket.send(Uint8Array.of(0x83)); });
+  await server.settleReads();
+  await act(async () => { for (const socket of server.inputSockets) socket.close(); });
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === null);
+  await advanceTime(1500);
+  await waitFor(() => server.inputSockets.size === 1);
+  server.state.iosSettings['hardware-keyboard'] = 'on';
+  await act(async () => { for (const socket of server.inputSockets) socket.send(Uint8Array.of(0x83)); });
+  // No five-second poll tick: admission must request authoritative readback.
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === true);
+  expect(server.writes).toHaveLength(0);
+});
+
+test("iOS: a settings read cannot undo a completed keyboard toggle", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+  await server.settleReads();
+  const reads = server.reads.length;
+  server.state.mode = "hold";
+  await advanceTime(5000);
+  await waitFor(() => server.reads.length === reads + 1);
+  await act(async () => mounted.client().setHardwareKeyboardConnected(true));
+  await waitFor(() => server.writes.length === 1);
+  await waitFor(() => server.state.iosSettings['hardware-keyboard'] === 'on');
+  await act(async () => { await yieldIO(); });
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await server.settleReads();
+  expect(mounted.client().hardwareKeyboardConnected).toBe(true);
+});
+
+test("iOS: a settings read that completes during a keyboard toggle cannot undo its pending value", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+  await server.settleReads();
+  const reads = server.reads.length;
+  server.state.holdWrites = true;
+  await act(async () => mounted.client().setHardwareKeyboardConnected(true));
+  await waitFor(() => server.writes.length === 1);
+  await act(async () => server.setHidden(false));
+  await waitFor(() => server.reads.length === reads + 1);
+  await server.settleReads();
+  expect(mounted.client().hardwareKeyboardConnected).toBe(true);
+  await act(async () => server.finishWrites());
+});
+
+test.each([false, true])("iOS: a failed keyboard toggle rolls back only without a newer connection (reconnect: %s)", async (reconnect) => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.iosSettings['hardware-keyboard'] = 'off';
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  await advanceTime(5000);
+  await waitFor(() => mounted.client().hardwareKeyboardConnected === false);
+  await server.settleReads();
+  server.state.holdWrites = true;
+  await act(async () => mounted.client().setHardwareKeyboardConnected(true));
+  await waitFor(() => server.writes.length === 1);
+  if (reconnect) {
+    // Keep the new connection's authoritative read pending while the old write fails.
+    server.state.mode = "hold";
+    await act(async () => { for (const socket of server.inputSockets) socket.close(); });
+    await waitFor(() => mounted.client().hardwareKeyboardConnected === null);
+    await advanceTime(1500);
+    await waitFor(() => server.inputSockets.size === 1);
+  }
+  await act(async () => server.finishWrites("Keyboard change rejected"));
+  await waitFor(() => server.receivedErrors.has("Keyboard change rejected"));
+  expect(mounted.client().hardwareKeyboardConnected).toBe(reconnect ? null : false);
+});
+
 
 test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {
   const server = settingsServer();
