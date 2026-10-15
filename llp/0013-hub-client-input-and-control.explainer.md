@@ -71,6 +71,10 @@ When a browser interaction loses focus, or the client changes device, queued inp
 - Paced key input stops [observed: `paced-key-sender.ts`].
 - If a send fails, the commands that were not sent stay in the queue for the next admission [observed: `ws-send-queue.ts`].
 
+## Input feedback
+
+`DeviceScreen` shows `inputError` as a status line over the video. The video stays visible, because video and input use different connections [observed: `DeviceScreen.tsx`].
+
 ## Open questions
 
-None at this time.
+- `DeviceScreen` shows the input notice with fixed colors (`rgba(0, 0, 0, 0.75)`, `#fca5a5`). LLP 0000 [constraint 3](0000-expo-device-hub.explainer.md#constraints-you-must-not-simplify-away) forbids fixed colors in the Hub UI. Does that rule apply to `DeviceScreen`, which the Hub and the Expo website both render?

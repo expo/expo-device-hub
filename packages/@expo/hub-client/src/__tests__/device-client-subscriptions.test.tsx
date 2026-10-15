@@ -373,3 +373,27 @@ test("server rendering starts idle without opening a connection", () => {
   expect(html).toBe("<span>idle</span>");
   expect(requests).toHaveLength(0);
 });
+
+test('screen subscribers receive input failures and cancellation ownership updates', async () => {
+  const store = createDeviceClientStore();
+  let screen!: ReturnType<typeof useDeviceScreenClient>;
+  let cancelled = '';
+  let renders = 0;
+  function Screen() {
+    screen = useDeviceScreenClient();
+    renders++;
+    return null;
+  }
+  await mount(<DeviceClientStoreContext.Provider value={store}><Screen /></DeviceClientStoreContext.Provider>);
+  await act(async () => store.publish({ ...NOOP_DEVICE_CLIENT,
+    inputError: 'Input unavailable', cancelInput: () => { cancelled = 'first'; } }));
+  expect(screen.inputError).toBe('Input unavailable');
+  screen.cancelInput?.();
+  expect(cancelled).toBe('first');
+  await act(async () => store.publish({ ...NOOP_DEVICE_CLIENT,
+    inputError: null, cancelInput: () => { cancelled = 'replacement'; } }));
+  expect(screen.inputError).toBeNull();
+  screen.cancelInput?.();
+  expect(cancelled).toBe('replacement');
+  expect(renders).toBe(3);
+});
