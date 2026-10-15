@@ -972,11 +972,16 @@ async function hinge(angle: number | undefined, deviceArg?: string) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
-  if (angle === undefined) {
-    console.log(JSON.stringify({ device: state.device, ...await readHingeStateFromWs(state.wsUrl, { token: state.token }) }));
-    return;
+  try {
+    if (angle === undefined) {
+      console.log(JSON.stringify({ device: state.device, ...await readHingeStateFromWs(state.wsUrl, { token: state.token }) }));
+      return;
+    }
+    await sendHingeAngleToWs(state.wsUrl, angle, { token: state.token });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
   }
-  await sendHingeAngleToWs(state.wsUrl, angle, { token: state.token });
   console.log(JSON.stringify({ device: state.device, hingeAngle: angle }));
 }
 
