@@ -51,6 +51,9 @@ export function connectToFetch(
       closeRequest();
     },
   }) as IncomingMessage;
+  // Like Node's request: a route that awaited before listening for "close" can still see
+  // that the client left.
+  Object.defineProperty(fakeReq, "destroyed", { get: () => requestClosed });
 
   let status = 200;
   let responseHeaders = new Headers();

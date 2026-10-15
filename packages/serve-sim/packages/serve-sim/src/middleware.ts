@@ -2858,14 +2858,29 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       });
       res.write(":\n\n");
 
+      // Listen for the client leaving before the first await: a close during that
+      // computation must still stop the watcher and heartbeat set up below.
+      let closed = false;
+      let debounce: ReturnType<typeof setTimeout> | null = null;
+      let watcher: FSWatcher | null = null;
+      let watcherRetry: ReturnType<typeof setTimeout> | null = null;
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      req.on("close", () => {
+        closed = true;
+        if (debounce) clearTimeout(debounce);
+        if (watcherRetry) clearTimeout(watcherRetry);
+        if (heartbeat) clearInterval(heartbeat);
+        watcher?.close();
+      });
+
       let lastSent = await computeConfig();
+      if (closed || res.writableEnded) return;
       res.write("data: " + lastSent + "\n\n");
 
-      let closed = false;
       const sendIfChanged = async () => {
         if (closed || res.writableEnded) return;
         const next = await computeConfig();
-        if (next === lastSent) return;
+        if (next === lastSent || closed || res.writableEnded) return;
         lastSent = next;
         res.write("data: " + next + "\n\n");
       };
@@ -2873,7 +2888,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       // Debounce filesystem events: a helper boot rewrites the state file a few
       // times in quick succession, and selectServeSimState also shells out to
       // refresh booted devices, so coalesce bursts into one recompute.
-      let debounce: ReturnType<typeof setTimeout> | null = null;
       const onFsEvent = () => {
         if (debounce) return;
         debounce = setTimeout(() => {
@@ -2882,8 +2896,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         }, 150);
       };
 
-      let watcher: FSWatcher | null = null;
-      let watcherRetry: ReturnType<typeof setTimeout> | null = null;
       const ensureWatcher = () => {
         if (closed || res.writableEnded || watcher || watcherRetry) return;
         watcherRetry = setTimeout(() => {
@@ -2906,19 +2918,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
       // Keep the connection alive through buffering proxies + catch any change
       // an fs event missed (e.g. dir created after we failed to watch it).
-      const heartbeat = setInterval(() => {
+      heartbeat = setInterval(() => {
         if (closed || res.writableEnded) return;
         res.write(":\n\n");
         ensureWatcher();
       }, 15000);
-
-      req.on("close", () => {
-        closed = true;
-        if (debounce) clearTimeout(debounce);
-        if (watcherRetry) clearTimeout(watcherRetry);
-        clearInterval(heartbeat);
-        watcher?.close();
-      });
       return;
     }
 
@@ -2973,6 +2977,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // SSE: normalized accessibility snapshot stream
     if (url === base + "/ax") {
       const states = await readServeSimStates();
+      // The client may have left during that await; its close event has already fired.
+      if (req.destroyed) return;
       const state = selectServeSimState(states, selectedDevice);
       if (!state) {
         res.writeHead(404);
@@ -2997,6 +3003,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // udid, hostCores, cadence), then one `data:` line per sample.
     if (url === base + "/metrics") {
       const states = await readServeSimStates();
+      // The client may have left during that await; its close event has already fired.
+      if (req.destroyed) return;
       const state = selectServeSimState(states, selectedDevice);
       handleMetricsRequest(req, res, state, metricsSamplerCache);
       return;
@@ -3004,6 +3012,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
     if (url === base + "/network-capture") {
       const states = await readServeSimStates();
+      // The client may have left during that await; its close event has already fired.
+      if (req.destroyed) return;
       const state = selectServeSimState(states, selectedDevice);
       handleNetworkCaptureRequest(req, res, state, captureRuntime);
       return;
@@ -3052,6 +3062,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // stays narrow and the client can listen without rate-limit concerns.
     if (url === base + "/appstate") {
       const states = await readServeSimStates();
+      // The client may have left during that await; its close event has already fired.
+      if (req.destroyed) return;
       const state = selectServeSimState(states, selectedDevice);
       if (!state) {
         res.writeHead(404);
