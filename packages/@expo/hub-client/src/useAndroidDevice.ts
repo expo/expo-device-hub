@@ -270,6 +270,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
+  const webRtcVideoOwnerRef = useRef<{
+    video: HTMLVideoElement;
+    stream: MediaStream;
+    scope: string;
+  } | null>(null);
   const [webRtcVideoReady, setWebRtcVideoReady] = useState(false);
   const [webRtcInputError, setWebRtcInputError] = useState<string | null>(null);
   // Whether this device's WebRTC stream has been live, so a later gap counts as
@@ -369,6 +375,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
       canvasRef.current = el?.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : null;
       const video = el?.tagName === 'VIDEO' ? (el as HTMLVideoElement) : null;
+      attachedVideoRef.current = video;
       setWebRtcVideoElement((current) => (current === video ? current : video));
     },
     [],
@@ -933,6 +940,39 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
+  const preserveWebRtcFrame = useCallback(() => {
+    const video = webRtcVideoElement;
+    const owner = webRtcVideoOwnerRef.current;
+    // A device handoff must not copy the previous device's frame into its new
+    // surface. Only detach the stream this hook attached to this video node.
+    if (
+      !video || !video.srcObject || owner?.video !== video ||
+      owner.stream !== video.srcObject || owner.scope !== deviceScope
+    ) return;
+    // Keep an existing poster until fresh video paints, but still detach a
+    // replacement stream that failed before its first paint.
+    if (
+      !video.poster && video.readyState >= 2 &&
+      video.videoWidth > 0 && video.videoHeight > 0
+    ) {
+      try {
+        const snapshot = document.createElement('canvas');
+        snapshot.width = video.videoWidth;
+        snapshot.height = video.videoHeight;
+        const context = snapshot.getContext('2d');
+        if (context) {
+          context.drawImage(video, 0, 0);
+          const poster = snapshot.toDataURL('image/png');
+          // Empty canvas serialization returns data:, rather than an image.
+          if (poster && poster !== 'data:,') video.poster = poster;
+        }
+      } catch {
+        // Canvas capture is best effort; peer teardown still proceeds.
+      }
+    }
+    // Without a poster, keep the browser's existing frame attachment as a fallback.
+    if (video.poster) video.srcObject = null;
+  }, [deviceScope, webRtcVideoElement]);
   const {
     stream: webRtcStream,
     error: webRtcError,
@@ -959,27 +999,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         : 'all',
     sendIceServersInOffer: false,
     allowCodecFallback: false,
+    expectContinuousFrames: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    onBeforeDisconnect: preserveWebRtcFrame,
     fetchImpl: sessionFetch,
   });
 
   const restartWebRtc = useCallback(() => {
-    const video = webRtcVideoElement;
-    // Closing the peer or replacing srcObject can clear the decoded frame.
-    // Capture it before either happens and show it until fresh video arrives.
-    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-      const snapshot = document.createElement('canvas');
-      snapshot.width = video.videoWidth;
-      snapshot.height = video.videoHeight;
-      const context = snapshot.getContext('2d');
-      if (context) {
-        context.drawImage(video, 0, 0);
-        video.poster = snapshot.toDataURL('image/png');
-      }
-      video.srcObject = null;
-    }
+    preserveWebRtcFrame();
     restartWebRtcStream();
-  }, [restartWebRtcStream, webRtcVideoElement]);
+  }, [preserveWebRtcFrame, restartWebRtcStream]);
 
   // Media remounts update the restart target without replacing the input socket.
   const restartWebRtcRef = useRef(restartWebRtc);
@@ -1063,6 +1092,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSwitch.phase,
   ]);
 
+  // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — resume only the owned surface
   // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
   // The node is stateful (rather than only a ref) so a remount reattaches the
   // stream and frame observer even when the MediaStream itself is unchanged.
@@ -1104,6 +1134,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
     const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      if (stopped) return;
       const presentedFrameDelta = presentedVideoFrameDelta(
         previousPresentedFrames,
         metadata.presentedFrames,
@@ -1119,8 +1150,18 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
+    const onVisibilityChange = () => {
+      const owner = webRtcVideoOwnerRef.current;
+      if (
+        stopped || document.hidden || attachedVideoRef.current !== video ||
+        owner?.video !== video || owner.stream !== webRtcStream ||
+        owner.scope !== deviceScopeRef.current || !video.paused
+      ) return;
+      void video.play().catch(() => {});
+    };
 
     video.srcObject = webRtcStream;
+    webRtcVideoOwnerRef.current = { video, stream: webRtcStream, scope: deviceScopeRef.current };
     setWebRtcVideoReady(false);
     if (typeof video.requestVideoFrameCallback === 'function') {
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
@@ -1128,10 +1169,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       video.addEventListener('timeupdate', onTimeUpdate);
     }
     video.addEventListener('loadeddata', onLoadedData, { once: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     void video.play().catch(() => {});
 
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {

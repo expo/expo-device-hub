@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, spyOn, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { iosStreamCapabilities, useIosDeviceClient } from '../useIosDevice';
@@ -146,7 +146,8 @@ async function controlledClient(
   const discoveries: Array<(response: Response) => void> = [];
   const requests: string[] = [];
   const offeredCodecs: string[] = [];
-  stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+  stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
     requests.push(url);
     if (/\/api$/.test(new URL(url).pathname) && !url.includes('/grid/')) {
       return new Promise<Response>((resolve) => discoveries.push(resolve));
@@ -294,6 +295,50 @@ test('exhausted WebRTC codecs report an error without attempting locked HTTP str
   expect(hub.client.status).toBe('error');
   expect(hub.client.error).toContain('No supported WebRTC codec');
   expect(hub.requests.some((url) => /stream\.(mjpeg|avcc)/.test(url))).toBe(false);
+});
+
+test('a locked session restarts its exhausted ladder with a growing delay', async () => {
+  const hub = await exhaustedWebRtcClient();
+  const offers = () => hub.requests.filter((url) => url.endsWith('/webrtc/offer'));
+  expect(hub.client.status).toBe('error');
+  await hub.fireTimer(2000);
+  expect(offers()).toHaveLength(4);
+  expect(hub.offeredCodecs.at(-1)).toBe('h264');
+  expect(hub.client.status).not.toBe('error');
+  for (let attempt = 0; attempt < 3; attempt++) await hub.fireTimer(4000);
+  expect(offers()).toHaveLength(6);
+  expect(hub.client.error).toContain('No supported WebRTC codec');
+  // The second restart waits 4 s, not 2 s.
+  await hub.fireTimer(4000);
+  expect(offers()).toHaveLength(7);
+  expect(hub.offeredCodecs.at(-1)).toBe('h264');
+});
+
+test('a slow locked walk keeps its restart backoff', async () => {
+  let clock = performance.now();
+  const now = spyOn(performance, 'now').mockImplementation(() => clock);
+  try {
+    const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+    stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+    stubGlobal('RTCPeerConnection', Peer);
+    await hub.resolve(0, 'webrtc');
+    const offers = () => hub.requests.filter((url) => url.endsWith('/webrtc/offer')).length;
+    const walk = async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        clock += 35_000;
+        await hub.fireTimer(4000);
+      }
+    };
+    await walk();
+    await hub.fireTimer(2000);
+    // Codec failures are 35 s apart, so exhaustions are 105 s apart.
+    await walk();
+    const before = offers();
+    await hub.fireTimer(4000);
+    expect(offers()).toBe(before + 1);
+  } finally {
+    now.mockRestore();
+  }
 });
 
 test('an unchanged background discovery preserves the selected WebRTC codec and peer', async () => {

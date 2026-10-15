@@ -4,12 +4,33 @@ import {
   buildWebRtcOfferPayload,
   isRetryableWebRtcOfferStatus,
   preferredVideoCodecs,
+  videoRtpArriving,
   shouldFallbackCodecAfterFirstFrameTimeout,
   type WebRtcIceServer,
   type WebRtcVideoCodecCapability,
 } from '../useWebRtcStream';
 
 describe('WebRTC stream options', () => {
+  test('recognizes legacy mediaType-only video before first paint', async () => {
+    const report = new Map([['video', {
+      type: 'inbound-rtp', mediaType: 'video', framesReceived: 10,
+    }]]) as unknown as RTCStatsReport;
+    const peer = { getStats: async () => report } as RTCPeerConnection;
+    expect(await videoRtpArriving(peer)).toBe(true);
+  });
+
+  test('first-frame diagnosis finishes even when the browser stats read hangs', async () => {
+    const peer = { getStats: () => new Promise<RTCStatsReport>(() => {}) } as RTCPeerConnection;
+    let timer: ReturnType<typeof setTimeout>;
+    const result = await Promise.race([videoRtpArriving(peer), new Promise(resolve => { timer = setTimeout(() => resolve('hung'), 2_100); })]);
+    clearTimeout(timer!);
+    expect(result).toBe(false);
+  });
+  test('a locked helper can retry a transient missing offer route', () => {
+    expect(isRetryableWebRtcOfferStatus(404, true)).toBe(true);
+    expect(isRetryableWebRtcOfferStatus(404, false)).toBe(false);
+    expect(isRetryableWebRtcOfferStatus(401, true)).toBe(false);
+  });
   test('prefers H.264 packetization-mode=1 before other H.264 formats', () => {
     const vp8 = { mimeType: 'video/VP8' };
     const h264Mode0 = {
@@ -84,3 +105,11 @@ describe('WebRTC stream options', () => {
     expect(shouldFallbackCodecAfterFirstFrameTimeout(true, 'failed')).toBe(false);
   });
 });
+
+ test('raises iOS asymmetric H.264 offers while preserving Android and other codecs', () => {
+  const sdp = 'a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=42e01f';
+  const options = { description: {type: 'offer' as const, sdp}, sessionId: 'A', codec: 'h264' as const, iceServers: [] };
+  expect(buildWebRtcOfferPayload(options).sdp).toBe(sdp);
+  expect(buildWebRtcOfferPayload({...options, raiseH264Level: true}).sdp).toContain('42e034');
+  expect(buildWebRtcOfferPayload({...options, codec: 'vp8', raiseH264Level: true}).sdp).toBe(sdp);
+ });
