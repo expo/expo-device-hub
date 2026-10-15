@@ -35,11 +35,12 @@ const PREVIEW_SIZE_OPTIONS: ReadonlyArray<SelectOption<'physical' | 'fill'>> = [
 const SLIDER_WIDTH = 112;
 
 /**
- * The iPhone Duo's fold controls, placed at the top of Device options like
+ * A foldable device's controls, placed at the top of Device options like
  * serve-sim's Simulator settings: the five named poses, a live 0–180° hinge
  * slider with a decimal degree input, Table Mode, and the viewer's 2D/3D
- * preview choices. Every change waits for the helper's acknowledgement while
- * the controls stay enabled, so a slider drag feels live.
+ * preview choices. A device whose hinge offers less, such as an Android
+ * emulator, shows only what it offers. Every change waits for the backend's
+ * acknowledgement while the controls stay enabled, so a slider drag feels live.
  */
 export function FoldSettings({
   hinge,
@@ -53,7 +54,7 @@ export function FoldSettings({
   const [angleDraft, setAngleDraft] = useState<number | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const previewDescriptionId = useId();
-  const { angle, pose, pending, error, tableMode, tableModeAvailable } = hinge;
+  const { angle, pose, pending, error, tableMode, tableModeAvailable, controls } = hinge;
 
   useEffect(() => {
     if (error || (!pending && !adjusting)) setAngleDraft(null);
@@ -70,17 +71,20 @@ export function FoldSettings({
   const displayedAngle = angleDraft ?? angle;
   const selectedPose = angleDraft !== null ? null : selectedFoldPose(angle, pose);
   const poseValue = selectedPose ?? (displayedAngle === undefined ? 'unknown' : 'custom');
+  const offeredPoses = controls
+    ? FOLD_POSE_OPTIONS.filter((option) => controls.poses.includes(option.value))
+    : FOLD_POSE_OPTIONS;
   const poseOptions: ReadonlyArray<SelectOption> =
     selectedPose === null
       ? [
-          ...FOLD_POSE_OPTIONS,
+          ...offeredPoses,
           {
             value: poseValue,
             label: poseValue === 'unknown' ? 'Unknown' : 'Custom',
             disabled: true,
           },
         ]
-      : FOLD_POSE_OPTIONS;
+      : offeredPoses;
   const canChangeTableMode = (tableModeAvailable ?? false) || tableMode === true;
   const viewMode: DuoPreviewMode = hinge.modelActive ? '3d' : '2d';
   const changeAngle = (value: number) => {
@@ -88,7 +92,7 @@ export function FoldSettings({
     hinge.setControl({ control: 'angle', value });
   };
   const selectPose = (value: string) => {
-    const position = FOLD_POSE_OPTIONS.find((option) => option.value === value);
+    const position = offeredPoses.find((option) => option.value === value);
     if (!position) return;
     setAngleDraft(null);
     setAdjusting(false);
@@ -157,21 +161,23 @@ export function FoldSettings({
           />
         </span>
       </SidebarRow>
-      <SidebarRow label="Table Mode">
-        <DisabledControlHint
-          reason={
-            !canChangeTableMode ? 'Table Mode is not available in the current pose.' : undefined
-          }
-          label="Table Mode">
-          <SidebarSwitch
-            label="Table Mode"
-            checked={tableMode ?? false}
-            disabled={!canChangeTableMode}
-            onChange={(value) => hinge.setControl({ control: 'table', value })}
-          />
-        </DisabledControlHint>
-      </SidebarRow>
-      {preview && (
+      {controls?.tableMode !== false && (
+        <SidebarRow label="Table Mode">
+          <DisabledControlHint
+            reason={
+              !canChangeTableMode ? 'Table Mode is not available in the current pose.' : undefined
+            }
+            label="Table Mode">
+            <SidebarSwitch
+              label="Table Mode"
+              checked={tableMode ?? false}
+              disabled={!canChangeTableMode}
+              onChange={(value) => hinge.setControl({ control: 'table', value })}
+            />
+          </DisabledControlHint>
+        </SidebarRow>
+      )}
+      {preview && controls?.model !== false && (
         <>
           <SidebarRow
             label="Preview mode"

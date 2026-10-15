@@ -239,8 +239,35 @@ export type FoldStatus = {
   supported: boolean;
   posture: FoldPosture | null;
   hingeAngle: number | null;
+  /**
+   * The angles the hinge moves through, from the emulator's hardware config;
+   * null without a hinge, or when serve-emu cannot read that config.
+   */
+  hingeRange: { min: number; max: number } | null;
 };
 export type FoldResponse = ApiSuccess<{ fold: FoldStatus }>;
+/** Fold or unfold fully, or move the hinge to an angle in degrees. */
+export type FoldRequest = { posture: "closed" | "opened" } | { hingeAngle: number };
+
+export function parseFoldRequest(body: Record<string, unknown>): FoldRequest {
+  if (body.hingeAngle === undefined) {
+    if (body.posture !== "closed" && body.posture !== "opened") {
+      throw new Error("posture must be closed or opened");
+    }
+    return { posture: body.posture };
+  }
+  if (body.posture !== undefined) throw new Error("set either posture or hingeAngle, not both");
+  // @ref LLP 0004#android-emulators — the 0–180° range serve-sim accepts for the iPhone Duo hinge
+  if (
+    typeof body.hingeAngle !== "number" ||
+    !Number.isFinite(body.hingeAngle) ||
+    body.hingeAngle < 0 ||
+    body.hingeAngle > 180
+  ) {
+    throw new Error("hingeAngle must be a number between 0 and 180");
+  }
+  return { hingeAngle: body.hingeAngle };
+}
 
 export type NightMode = "auto" | "dark" | "light";
 export type NightModeStatus = { mode: NightMode | "unknown"; raw: string };
@@ -651,7 +678,7 @@ export type ApiContractMap = {
   };
   "/api/fold": {
     GET: EndpointContract<undefined, FoldResponse>;
-    POST: EndpointContract<{ posture: "closed" | "opened" }, FoldResponse>;
+    POST: EndpointContract<FoldRequest, FoldResponse>;
   };
   "/api/night-mode": {
     GET: EndpointContract<undefined, NightModeResponse>;
@@ -1324,8 +1351,13 @@ export function parseFoldResponse(value: unknown): FoldResponse {
     ? null
     : oneOf(fold.posture, ["closed", "half_opened", "opened", "flipped", "tent"] as const, "fold.posture");
   const hingeAngle = fold.hingeAngle === null ? null : number(fold.hingeAngle, "fold.hingeAngle");
+  const range = fold.hingeRange === null ? null : record(fold.hingeRange, "fold.hingeRange");
+  const hingeRange = range && {
+    min: number(range.min, "fold.hingeRange.min"),
+    max: number(range.max, "fold.hingeRange.max"),
+  };
   if (typeof fold.supported !== "boolean") fail("fold.supported must be a boolean");
-  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle } };
+  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle, hingeRange } };
 }
 
 export function parseNightModeResponse(value: unknown): NightModeResponse {

@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** ServeSim, Hub
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Jiun Shin (with Claude Code)
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated); 2026-10-15 (Android emulators)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -131,6 +131,67 @@ The existing CLI uses degrees and keeps its three angle aliases:
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
+
+## Android emulators
+
+serve-emu moves a foldable emulator's hinge with `POST /api/fold` and
+`{ "hingeAngle": number }`. It accepts angles from 0 to 180, the range
+serve-sim accepts for the iPhone Duo, and sets the emulator's `hinge-angle0`
+sensor. Android derives the posture from the angle, using the AVD's
+`hw.sensor.hinge_angles_posture_definitions`. On `pixel_fold`, 0–30° is closed,
+30–150° half-opened, and 150–180° opened [observed: `pixel_fold` `config.ini`,
+Android Emulator 37.2.12, API 37].
+
+Not every hinge moves from 0° to 180°: the SDK's 8" Fold-out moves from 180°
+to 360° [observed: `8in Foldable` in `devices.xml` from the SDK's `sdklib`].
+Every fold status therefore reports `hingeRange`, read from
+`hw.sensor.hinge.ranges` in the `hardware-qemu.ini` that the emulator writes at
+launch, and serve-emu refuses an angle outside it. `hingeRange` is null when
+serve-emu cannot read that file, for example when adb reaches an emulator on
+another host [observed: `readHingeRange` in
+`packages/serve-emu/packages/serve-emu/src/fold.ts`].
+
+The emulator console stores a new angle at once, but the guest receives it
+about 100–200 ms later. Until then `device_state` still reports the previous
+posture: 5 of 24 reads taken right after a change did so [observed: `pixel_fold`,
+Android Emulator 37.2.12, API 37]. serve-emu therefore waits until
+`dumpsys device_state` reports the new angle before it answers. Android
+receives the angle in eighths of a degree, and can keep the previous eighth
+after a change of a few hundredths: 90.123° arrives as 90.125°, and 33.33° set
+after 33.3° stays at 33.25° [observed: `pixel_fold`, Android Emulator 37.2.12,
+API 37, 2026-10-15]. The wait therefore accepts an angle within an eighth of a
+degree, and serve-emu then confirms the exact angle with the console.
+
+The Hub's `DeviceHinge` contract in `packages/@expo/hub-client/src/types.ts`
+also describes a foldable Android emulator, so one set of Fold settings drives
+both platforms, as [LLP 0000](0000-expo-device-hub.explainer.md#direction-one-device-protocol)
+asks. The Android client sends Fold settings' changes to `POST /api/fold` and
+polls `GET /api/fold` every five seconds for changes made in the emulator's own
+controls or by another viewer. It keeps polling when serve-emu reports no hinge,
+because a URL without a device follows serve-emu's default device, which can
+change, and it keeps its state when a poll reads the same hinge
+[observed: `packages/@expo/hub-client/src/useAndroidHinge.ts`].
+
+Fold settings assume a hinge from 0° (closed) to 180° (flat), like the iPhone
+Duo's, so the client offers no fold controls for another `hingeRange`, and
+takes an unknown range to be 0–180°. Fully folded, Partially open, and Fully
+open map to 0°, 90°, and 180°. Laptop and Tent also set a physical orientation,
+and Tent sets Table Mode; serve-emu controls neither, because its
+`/api/orientation` changes only Android's user rotation setting
+[observed: `getUserRotation` in serve-emu's `/api/orientation` handler]. The
+client therefore offers only the three angle presets through
+`DeviceHinge.controls`, with no Table Mode, and Fold settings hides the rest.
+Without a physical orientation, a pose follows from the angle alone, so a hinge
+at 90° reads as Partially open however it got there.
+
+The 3D preview is hidden as well (`controls.model` is false). The Android SDK
+has only 2D skin frames for `pixel_fold`, and the emulator shows one display at
+a time, so there are no simultaneous cover and inner feeds for a model's two
+panels [observed: `skins/pixel_fold` in the Android SDK]. The flat preview
+keeps the iPhone Duo's sizing, serve-sim's 320 px portrait and 620 px landscape
+screen widths, because `PhoneFrame` sizes every device with a hinge that way, so
+the cover and inner displays keep their relative size
+[observed: `packages/@expo/hub-components/src/dashboard/PhoneFrame.tsx`].
 
 ## APIs inside an iOS app
 

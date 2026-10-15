@@ -41,6 +41,23 @@ function rowLabels(markup: string) {
 }
 
 describe('FoldSettings', () => {
+  test('shows only the poses and rows an Android emulator hinge offers', () => {
+    const markup = renderToStaticMarkup(
+      <FoldSettings
+        hinge={hinge({
+          controls: { poses: ['closed', 'book', 'open'], tableMode: false, model: false },
+          angle: 90,
+          pose: 'book',
+          modelActive: false,
+          modelUrl: null,
+        })}
+        preview={preview()}
+      />,
+    );
+    expect(rowLabels(markup)).toEqual(['Fold pose', 'Hinge angle']);
+    expect(markup).toContain('data-test-options="Fully folded\nPartially open\nFully open"');
+  });
+
   test('renders nothing until the simulator reports a hinge or an angle, like serve-sim', () => {
     expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: undefined })} />)).toBe('');
     expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: false, angle: 90 })} />)).toBe('');

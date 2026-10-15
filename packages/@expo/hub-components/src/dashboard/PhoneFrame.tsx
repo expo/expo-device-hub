@@ -110,7 +110,9 @@ export function PhoneFrame({
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({
-      // Match serve-sim's 320px portrait / 620px landscape screen widths.
+      // Foldables, the iPhone Duo and Android emulators alike, match serve-sim's
+      // 320px portrait / 620px landscape screen widths, so the cover and inner
+      // displays keep their relative size as the device folds.
       maxShortSide: client?.hinge ? (ratio > 1 ? 620 / ratio : 320) : MAX_SHORT_SIDE,
       ratio,
     }),

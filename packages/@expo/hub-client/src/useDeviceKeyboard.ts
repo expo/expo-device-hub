@@ -65,7 +65,10 @@ export function useDeviceKeyboard(client: Pick<DeviceClient, 'sendKey' | 'hinge'
         event.preventDefault();
         swallowedKeysRef.current.add(event.code);
         const pose = HINGE_POSES[Number(digit[1]) - 1];
-        if (pose && !event.repeat) hinge.setControl({ control: 'pose', value: pose.id });
+        // A hinge without the pose, such as an Android emulator's without Laptop, ignores it.
+        if (pose && !event.repeat && (hinge.controls?.poses.includes(pose.id) ?? true)) {
+          hinge.setControl({ control: 'pose', value: pose.id });
+        }
         return;
       }
     }
