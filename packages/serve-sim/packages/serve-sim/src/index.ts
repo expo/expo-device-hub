@@ -271,6 +271,15 @@ function openHelperSocket(state: ServerState): WebSocket {
   );
 }
 
+function helperMessage(opcode: number, payload?: unknown): Uint8Array {
+  if (payload === undefined) return Uint8Array.of(opcode);
+  const json = new TextEncoder().encode(JSON.stringify(payload));
+  const message = new Uint8Array(1 + json.length);
+  message[0] = opcode;
+  message.set(json, 1);
+  return message;
+}
+
 function sendHelperMessage(state: ServerState, message: Uint8Array): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
@@ -871,7 +880,7 @@ function deviceLabelsForEvents(events: EventLogEntry[]): Map<string, string> {
 }
 
 async function gesture(jsonStr: string, deviceArg?: string) {
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -894,24 +903,7 @@ async function gesture(jsonStr: string, deviceArg?: string) {
     return sendTouchGestureToWs(state, result.data);
   }
 
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(state);
-    ws.binaryType = "arraybuffer";
-
-    onCliInputReady(ws, state.inputAdmission === true, () => {
-      const json = new TextEncoder().encode(JSON.stringify(touch));
-      const msg = new Uint8Array(1 + json.length);
-      msg[0] = 0x03;
-      msg.set(json, 1);
-      ws.send(msg);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
-
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", state.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendHelperMessage(state, helperMessage(0x03, touch));
 }
 
 async function tap(xArg: string, yArg: string, deviceArg?: string) {
@@ -923,7 +915,7 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
     console.error("  Example: serve-sim tap 0.5 0.9   # near bottom-center");
     process.exit(1);
   }
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -979,7 +971,7 @@ async function typeText(
     throw err;
   }
 
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -989,7 +981,7 @@ async function typeText(
 }
 
 async function hinge(angle: number | undefined, deviceArg?: string) {
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -1008,7 +1000,7 @@ async function hinge(angle: number | undefined, deviceArg?: string) {
 }
 
 async function rotate(orientation: string, deviceArg?: string) {
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -1027,24 +1019,7 @@ async function rotate(orientation: string, deviceArg?: string) {
     process.exit(1);
   }
 
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(state);
-    ws.binaryType = "arraybuffer";
-
-    onCliInputReady(ws, state.inputAdmission === true, () => {
-      const json = new TextEncoder().encode(JSON.stringify({ orientation }));
-      const msg = new Uint8Array(1 + json.length);
-      msg[0] = 0x07;
-      msg.set(json, 1);
-      ws.send(msg);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
-
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", state.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendHelperMessage(state, helperMessage(0x07, { orientation }));
 }
 
 // HID (page, usage) codes for hardware buttons not backed by a named idb event
@@ -1061,7 +1036,7 @@ const HID_BUTTON_CODES: Record<string, { page: number; usage: number }> = {
 };
 
 async function button(buttonName = "home", deviceArg?: string) {
-  const state = readState(deviceArg);
+  const state = readDeviceState(deviceArg);
   if (!state) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
@@ -1070,24 +1045,7 @@ async function button(buttonName = "home", deviceArg?: string) {
   const hid = HID_BUTTON_CODES[buttonName];
   const payload = hid ? { button: buttonName, ...hid } : { button: buttonName };
 
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(state);
-    ws.binaryType = "arraybuffer";
-
-    onCliInputReady(ws, state.inputAdmission === true, () => {
-      const json = new TextEncoder().encode(JSON.stringify(payload));
-      const msg = new Uint8Array(1 + json.length);
-      msg[0] = 0x04;
-      msg.set(json, 1);
-      ws.send(msg);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
-
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", state.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendHelperMessage(state, helperMessage(0x04, payload));
 }
 
 // Send a CoreAnimation debug option toggle to the helper, which invokes
@@ -1104,49 +1062,23 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
     process.exit(1);
   }
 
-  const stateFile = readState(deviceArg);
+  const stateFile = readDeviceState(deviceArg);
   if (!stateFile) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
 
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(stateFile);
-    ws.binaryType = "arraybuffer";
-    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
-      const json = new TextEncoder().encode(JSON.stringify({ option: resolved, enabled }));
-      const msg = new Uint8Array(1 + json.length);
-      msg[0] = 0x08;
-      msg.set(json, 1);
-      ws.send(msg);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendHelperMessage(stateFile, helperMessage(0x08, { option: resolved, enabled }));
 }
 
 // Ask the helper to invoke -[SimDevice simulateMemoryWarning].
 async function memoryWarning(deviceArg?: string) {
-  const stateFile = readState(deviceArg);
+  const stateFile = readDeviceState(deviceArg);
   if (!stateFile) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(stateFile);
-    ws.binaryType = "arraybuffer";
-    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
-      ws.send(new Uint8Array([0x09]));
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendHelperMessage(stateFile, helperMessage(0x09));
 }
 
 async function softwareKeyboard(deviceArg?: string) {
@@ -1155,7 +1087,7 @@ async function softwareKeyboard(deviceArg?: string) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
-  return sendHelperMessage(stateFile, new Uint8Array([0x0c]));
+  return sendHelperMessage(stateFile, helperMessage(0x0c));
 }
 
 // ─── Camera injection ───
