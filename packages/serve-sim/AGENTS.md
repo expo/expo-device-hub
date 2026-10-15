@@ -18,13 +18,13 @@
 
 ## Commands
 
-Run these from the repo root. CI runs the same commands: `bun run lint` and
-`bun run typecheck` in `.eas/workflows/checks.yml`, and in
-`.eas/workflows/sim-test.yml`, through `scripts/ci/serve-sim-tests.ts`,
-`bun run test` in two parallel shards before the simulator boots, then
-`bun run test:e2e` with every simulator file on the worker's simulator. Both
-pass `--retry=1`, so a failed test runs once more; a failed `beforeAll` and a
-file that fails to load stay red. A green local run predicts a green PR.
+Run these from the repo root. CI runs the same underlying steps: `bun run
+lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and in
+`.eas/workflows/sim-test.yml` `bun run test` in two parallel shards that
+ignore `*.e2e.test.*` files, before the simulator boots, then the `*.e2e.test.*`
+files with `SERVE_SIM_E2E_REQUIRED=1`. Both pass `--retry=1`, so a failed test
+runs once more; a failed `beforeAll` and a file that fails to load stay red.
+A green local run predicts a green PR.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
@@ -45,7 +45,10 @@ file that fails to load stay red. A green local run predicts a green PR.
   state directory, so it never kills another session's server. It builds the
   test fixtures, then sets `SERVE_SIM_E2E_REQUIRED=1` so every precondition
   fails instead of skipping. Every suite that picks a device with
-  `e2eDevice()` also calls `requireE2E()`; a test enforces the pairing. One
+  `e2eDevice()` also calls `requireE2E()`, and every suite that calls
+  `requireE2E()` (for a simulator or a built artifact) is named `*.e2e.test.*`,
+  so CI runs it after the simulator boots, where a missing precondition fails;
+  a test enforces both. One
   suite, `ui-settings.e2e`, skips on CI by design because `simctl ui` hangs
   on shared runners; `SERVE_SIM_UI_E2E=1` forces it on. On exit the run
   kills any server it started and removes its state directory. Export

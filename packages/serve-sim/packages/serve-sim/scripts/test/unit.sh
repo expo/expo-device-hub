@@ -14,8 +14,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../.." && pwd)"
 
-# A short path leaves room for Unix socket names.
-STATE_DIR="$(mktemp -d /tmp/ss-test.XXXXXX)"
+STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/serve-sim-test.XXXXXX")"
 trap 'rm -rf "$STATE_DIR"' EXIT
 export SERVE_SIM_STATE_DIR="$STATE_DIR"
 mkdir "$STATE_DIR/tmp"

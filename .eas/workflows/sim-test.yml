@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - packages/serve-sim/**
-      - scripts/ci/serve-sim-tests.ts
       - .eas/workflows/sim-test.yml
   pull_request_labeled:
     labels: [eas-approved]
@@ -79,9 +78,15 @@ jobs:
       # A unit failure must not hide the simulator results, so the last step reports it.
       - name: Run two isolated unit shards
         working_directory: packages/serve-sim
+        # Simulator suites are named *.e2e.test.*; they run after the simulator boots.
         run: |
           rm -f /tmp/serve-sim-unit-failed
-          bun ../../scripts/ci/serve-sim-tests.ts unit || touch /tmp/serve-sim-unit-failed
+          pids=()
+          for shard in 1 2; do
+            bun run test -- --path-ignore-patterns='**/*.e2e.test.*' --shard=$shard/2 --retry=1 &
+            pids+=($!)
+          done
+          for pid in "${pids[@]}"; do wait "$pid" || touch /tmp/serve-sim-unit-failed; done
 
       - name: Install Chrome for Testing
         run: bunx @puppeteer/browsers@3.2.3 install chrome@154.0.8037.57 --path "$HOME/.cache/chrome-for-testing" --format '{{path}}' > /tmp/chrome-path
@@ -92,13 +97,12 @@ jobs:
       - name: Run sequential simulator tests
         # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
         # Runs from the serve-sim tree root so the attribution test finds its NOTICE.
-        # The worker boots one simulator; SERVE_SIM_CI_SIMULATOR lets the tests use it.
         env:
-          SERVE_SIM_CI_SIMULATOR: "1"
+          SERVE_SIM_E2E_REQUIRED: "1"
         working_directory: packages/serve-sim
         run: |
           export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
-          exec bun ../../scripts/ci/serve-sim-tests.ts simulator
+          bun test --max-concurrency=1 --retry=1 .e2e.
 
       - name: Report the unit shard result
         run: |
