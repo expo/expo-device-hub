@@ -327,6 +327,61 @@ describe("serve-sim-backed actions", () => {
     expect(await argv("button", { value: "home" })).toEqual(["serve-sim", "button", "home"]);
   });
 
+  it("builds a get and a set for each simulator setting", async () => {
+    const settings = [
+      ["hardwareKeyboard", "hardware-keyboard", "off"],
+      ["reduceMotion", "reduce-motion", "on"],
+      ["increaseContrast", "increase-contrast", "on"],
+      ["reduceTransparency", "reduce-transparency", "on"],
+      ["voiceover", "voiceover", "off"],
+      ["liquidGlass", "liquid-glass", "tinted"],
+      ["colorFilter", "color-filter", "grayscale"],
+      ["textSize", "text-size", "extra-large"],
+      ["showBorders", "show-borders", "on"],
+    ] as const;
+    for (const [name, option, value] of settings) {
+      expect(await argv(`${name}.get`, { udid: UDID })).toEqual([
+        "serve-sim", "ui", option, "-d", UDID,
+      ]);
+      expect(await argv(`${name}.set`, { udid: UDID, value })).toEqual([
+        "serve-sim", "ui", option, value, "-d", UDID,
+      ]);
+    }
+    expect(await argv("textSize.set", { udid: UDID, value: "increment" })).toEqual([
+      "serve-sim", "ui", "text-size", "increment", "-d", UDID,
+    ]);
+    expect(await argv("settings.status", { udid: UDID })).toEqual([
+      "serve-sim", "ui", "status", "--json", "-d", UDID,
+    ]);
+  });
+
+  it("builds the device and debug actions", async () => {
+    expect(await argv("softwareKeyboard.toggle", { udid: UDID })).toEqual([
+      "serve-sim", "software-keyboard", "-d", UDID,
+    ]);
+    expect(await argv("memoryWarning", { udid: UDID })).toEqual([
+      "serve-sim", "memory-warning", "-d", UDID,
+    ]);
+    expect(await argv("caDebug.set", { udid: UDID, option: "slow-animations", value: "on" })).toEqual([
+      "serve-sim", "ca-debug", "slow-animations", "on", "-d", UDID,
+    ]);
+    expect(await argv("hinge.set", { udid: UDID, value: "half" })).toEqual([
+      "serve-sim", "hinge", "half", "-d", UDID,
+    ]);
+    expect(await argv("hinge.set", { udid: UDID, value: 135 })).toEqual([
+      "serve-sim", "hinge", "135", "-d", UDID,
+    ]);
+  });
+
+  it("builds the permission listing", async () => {
+    expect(await argv("permissions.list", { udid: UDID })).toEqual([
+      "serve-sim", "permissions", "list", "-d", UDID,
+    ]);
+    expect(await argv("permissions.list", { udid: UDID, bundleId: BUNDLE })).toEqual([
+      "serve-sim", "permissions", "list", BUNDLE, "-d", UDID,
+    ]);
+  });
+
   it("builds server detach and kill", async () => {
     expect(await argv("server.detach", { udid: UDID, port: "3100" })).toEqual([
       "serve-sim", "--detach", UDID, "--port", "3100",

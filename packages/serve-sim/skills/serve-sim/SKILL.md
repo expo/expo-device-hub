@@ -75,6 +75,7 @@ Key invariants the agent must respect:
 | Hardware button | `npx @expo/serve-sim button <name>` | Names: `home`, `swipe_home`, `app_switcher`, `lock`, `siri`, `side_button`. See [references/buttons-rotation.md](references/buttons-rotation.md). |
 | Rotate device | `npx @expo/serve-sim rotate <orientation>` | `portrait`, `portrait_upside_down`, `landscape_left`, `landscape_right`. |
 | Simulate memory warning | `npx @expo/serve-sim memory-warning` | Equivalent to Debug → Simulate Memory Warning. |
+| Toggle on-screen keyboard | `npx @expo/serve-sim software-keyboard` | Equivalent to I/O → Keyboard → Toggle Software Keyboard (⌘K). |
 | CoreAnimation debug | `npx @expo/serve-sim ca-debug <option> <on\|off>` | Options: `blended`, `copies`, `misaligned`, `offscreen`, `slow-animations`. See [references/ca-debug.md](references/ca-debug.md). |
 | Inject camera feed | `npx @expo/serve-sim camera <bundle-id> [--file <path>\|--webcam [name]]` | (Re)launches the app with the camera dylib attached. macOS 14+ only. See [references/camera.md](references/camera.md). |
 | Hot-swap camera source | `npx @expo/serve-sim camera switch <placeholder\|webcam\|file> [arg]` | No app relaunch. |

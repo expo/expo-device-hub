@@ -16,6 +16,9 @@ import {
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync } from "./screenshot-store";
 import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
+import { CA_DEBUG_FLAGS } from "./ca-debug";
+import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
+import { UI_OPTIONS } from "./ui-settings";
 import {
   UploadChunk,
   UploadId,
@@ -40,7 +43,7 @@ export class InvalidHostActionError extends Error {}
 
 const APPEARANCES = ["light", "dark"] as const;
 const PERMISSION_ACTIONS = ["grant", "revoke", "reset"] as const;
-const MIRROR_VALUES = ["on", "off"] as const;
+const TOGGLE_VALUES = ["on", "off"] as const;
 
 const Device = z
   .string()
@@ -62,6 +65,12 @@ const FileName = z.string().regex(/^(?!\.)[^/\\\n]{1,255}$/, "must be a plain fi
 
 const Coordinate = z.number().finite();
 
+function UiSetting(option: string) {
+  const spec = UI_OPTIONS[option];
+  if (!spec) throw new Error(`Unknown simulator setting ${option}.`);
+  return z.object({ udid: Device, value: z.enum([...spec.values, ...(spec.extraValues ?? [])]) });
+}
+
 const FileSource = z.union([
   z.object({ uploadId: UploadId }),
   z.object({ path: ConfinedPath }),
@@ -76,6 +85,40 @@ const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.leng
 const ACTION_SCHEMAS = {
   "appearance.get": z.object({ udid: Device }),
   "appearance.set": z.object({ udid: Device, value: z.enum(APPEARANCES) }),
+  "hardwareKeyboard.get": z.object({ udid: Device }),
+  "hardwareKeyboard.set": UiSetting("hardware-keyboard"),
+  "reduceMotion.get": z.object({ udid: Device }),
+  "reduceMotion.set": UiSetting("reduce-motion"),
+  "increaseContrast.get": z.object({ udid: Device }),
+  "increaseContrast.set": UiSetting("increase-contrast"),
+  "reduceTransparency.get": z.object({ udid: Device }),
+  "reduceTransparency.set": UiSetting("reduce-transparency"),
+  "voiceover.get": z.object({ udid: Device }),
+  "voiceover.set": UiSetting("voiceover"),
+  "liquidGlass.get": z.object({ udid: Device }),
+  "liquidGlass.set": UiSetting("liquid-glass"),
+  "colorFilter.get": z.object({ udid: Device }),
+  "colorFilter.set": UiSetting("color-filter"),
+  "textSize.get": z.object({ udid: Device }),
+  "textSize.set": UiSetting("text-size"),
+  "showBorders.get": z.object({ udid: Device }),
+  "showBorders.set": UiSetting("show-borders"),
+  "settings.status": z.object({ udid: Device }),
+  "softwareKeyboard.toggle": z.object({ udid: Device }),
+  memoryWarning: z.object({ udid: Device }),
+  "caDebug.set": z.object({
+    udid: Device,
+    option: z.enum(Object.keys(CA_DEBUG_FLAGS)),
+    value: z.enum(TOGGLE_VALUES),
+  }),
+  "hinge.set": z.object({
+    udid: Device,
+    value: z.union([
+      z.enum(HINGE_POSITIONS.map((position) => position.name)),
+      z.number().refine(isHingeAngle, "must be from 0 to 180"),
+    ]),
+  }),
+  "permissions.list": z.object({ udid: Device, bundleId: BundleId.optional() }),
   "location.set": z.object({ udid: Device, lat: Coordinate, lng: Coordinate }),
   "location.clear": z.object({ udid: Device }),
   "home.springboard": z.object({ udid: Device }),
@@ -97,25 +140,25 @@ const ACTION_SCHEMAS = {
     z.object({
       udid: Device,
       bundleId: BundleId,
-      mirror: z.enum(MIRROR_VALUES),
+      mirror: z.enum(TOGGLE_VALUES),
       source: z.literal("file"),
       target: ConfinedPath,
     }),
     z.object({
       udid: Device,
       bundleId: BundleId,
-      mirror: z.enum(MIRROR_VALUES),
+      mirror: z.enum(TOGGLE_VALUES),
       source: z.literal("webcam"),
       target: Argument.optional(),
     }),
     z.object({
       udid: Device,
       bundleId: BundleId,
-      mirror: z.enum(MIRROR_VALUES),
+      mirror: z.enum(TOGGLE_VALUES),
       source: z.literal("placeholder"),
     }),
   ]),
-  "camera.mirror": z.object({ udid: Device, value: z.enum(MIRROR_VALUES) }),
+  "camera.mirror": z.object({ udid: Device, value: z.enum(TOGGLE_VALUES) }),
   "camera.stopWebcam": z.object({ udid: Device }),
   "permissions.set": z.object({
     udid: Device,
@@ -242,6 +285,10 @@ function serveSimInvocation(binPath: string, args: string[]): Invocation {
 function buildInvocation(action: InvocationAction, raw: unknown, binPath: string): Invocation {
   const serveSim = (args: string[]): Invocation => serveSimInvocation(binPath, args);
   const simctl = (args: string[]): Invocation => ({ file: "xcrun", args: ["simctl", ...args] });
+  const uiGet = (option: string, p: { udid: string }): Invocation =>
+    serveSim(["ui", option, "-d", p.udid]);
+  const uiSet = (option: string, p: { udid: string; value: string }): Invocation =>
+    serveSim(["ui", option, p.value, "-d", p.udid]);
 
   switch (action) {
     case "appearance.get": {
@@ -251,6 +298,66 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     case "appearance.set": {
       const p = parseParams(action, raw);
       return simctl(["ui", p.udid, "appearance", p.value]);
+    }
+    case "hardwareKeyboard.get":
+      return uiGet("hardware-keyboard", parseParams(action, raw));
+    case "hardwareKeyboard.set":
+      return uiSet("hardware-keyboard", parseParams(action, raw));
+    case "reduceMotion.get":
+      return uiGet("reduce-motion", parseParams(action, raw));
+    case "reduceMotion.set":
+      return uiSet("reduce-motion", parseParams(action, raw));
+    case "increaseContrast.get":
+      return uiGet("increase-contrast", parseParams(action, raw));
+    case "increaseContrast.set":
+      return uiSet("increase-contrast", parseParams(action, raw));
+    case "reduceTransparency.get":
+      return uiGet("reduce-transparency", parseParams(action, raw));
+    case "reduceTransparency.set":
+      return uiSet("reduce-transparency", parseParams(action, raw));
+    case "voiceover.get":
+      return uiGet("voiceover", parseParams(action, raw));
+    case "voiceover.set":
+      return uiSet("voiceover", parseParams(action, raw));
+    case "liquidGlass.get":
+      return uiGet("liquid-glass", parseParams(action, raw));
+    case "liquidGlass.set":
+      return uiSet("liquid-glass", parseParams(action, raw));
+    case "colorFilter.get":
+      return uiGet("color-filter", parseParams(action, raw));
+    case "colorFilter.set":
+      return uiSet("color-filter", parseParams(action, raw));
+    case "textSize.get":
+      return uiGet("text-size", parseParams(action, raw));
+    case "textSize.set":
+      return uiSet("text-size", parseParams(action, raw));
+    case "showBorders.get":
+      return uiGet("show-borders", parseParams(action, raw));
+    case "showBorders.set":
+      return uiSet("show-borders", parseParams(action, raw));
+    case "settings.status": {
+      const p = parseParams(action, raw);
+      return serveSim(["ui", "status", "--json", "-d", p.udid]);
+    }
+    case "softwareKeyboard.toggle": {
+      const p = parseParams(action, raw);
+      return serveSim(["software-keyboard", "-d", p.udid]);
+    }
+    case "memoryWarning": {
+      const p = parseParams(action, raw);
+      return serveSim(["memory-warning", "-d", p.udid]);
+    }
+    case "caDebug.set": {
+      const p = parseParams(action, raw);
+      return serveSim(["ca-debug", p.option, p.value, "-d", p.udid]);
+    }
+    case "hinge.set": {
+      const p = parseParams(action, raw);
+      return serveSim(["hinge", String(p.value), "-d", p.udid]);
+    }
+    case "permissions.list": {
+      const p = parseParams(action, raw);
+      return serveSim(["permissions", "list", ...(p.bundleId ? [p.bundleId] : []), "-d", p.udid]);
     }
     case "location.set": {
       const p = parseParams(action, raw);

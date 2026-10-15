@@ -95,6 +95,7 @@ serve-sim ca-debug <option> <on|off> [-d udid]
                                       Toggle a CoreAnimation debug flag
                                       (blended|copies|misaligned|offscreen|slow-animations)
 serve-sim memory-warning [-d udid]    Simulate a memory warning
+serve-sim software-keyboard [-d udid] Show or hide the on-screen keyboard
 serve-sim event-log [-d udid]         Show recent simulator events
 serve-sim capture har -o <path> [-d udid]
                                       Follow a live capture into HAR + JSON files

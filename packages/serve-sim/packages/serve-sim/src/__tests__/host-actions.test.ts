@@ -39,6 +39,29 @@ describe("runHostActionAsync validation", () => {
         BIN,
       ),
     ).rejects.toBeInstanceOf(InvalidHostActionError);
+    await expect(
+      runHostActionAsync(
+        { action: "hardwareKeyboard.set", params: { udid: "U", value: "true" } },
+        BIN,
+      ),
+    ).rejects.toThrow(/^hardwareKeyboard\.set: value /);
+    for (const params of [
+      { udid: "U", value: "huge" },
+      { udid: "U", value: "--help" },
+    ]) {
+      await expect(runHostActionAsync({ action: "textSize.set", params }, BIN)).rejects.toThrow(
+        /^textSize\.set: value /,
+      );
+    }
+    await expect(
+      runHostActionAsync({ action: "hinge.set", params: { udid: "U", value: 181 } }, BIN),
+    ).rejects.toThrow(/^hinge\.set: value /);
+    await expect(
+      runHostActionAsync(
+        { action: "caDebug.set", params: { udid: "U", option: "debug_everything", value: "on" } },
+        BIN,
+      ),
+    ).rejects.toThrow(/^caDebug\.set: option /);
   });
 
   it("rejects a bundle id carrying shell metacharacters", async () => {

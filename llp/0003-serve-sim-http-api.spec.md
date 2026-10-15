@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest)
+**Revised:** 2026-10-15 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -436,3 +436,24 @@ The app must understand the format. For SQLite, stop the app and use a consisten
 checkpointed snapshot, or restore the matching database and WAL files together.
 These actions copy bytes; they do not translate JSON into AsyncStorage, import
 Keychain entries, create backend sessions, or execute uploaded JavaScript.
+
+### Simulator settings and device actions
+
+Each simulator setting in the sidebar has a read action and a write action on
+`/exec-ws`: `<setting>.get` with `{udid}` and `<setting>.set` with `{udid, value}`,
+for `hardwareKeyboard`, `reduceMotion`, `increaseContrast`, `reduceTransparency`,
+`voiceover`, `liquidGlass`, `colorFilter`, `textSize` and `showBorders`. Values are
+the canonical values of `serve-sim ui` (`UI_OPTIONS` in `src/ui-settings.ts`),
+plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.status` returns every setting as JSON.
+
+- `softwareKeyboard.toggle`: `{udid}`. Shows or hides the on-screen keyboard, like ⌘K.
+- `memoryWarning`: `{udid}`. Sends a memory warning to the device.
+- `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
+  `value` is `on` or `off`.
+- `hinge.set`: `{udid, value}`. `value` is `fold`, `half`, `unfold` or an angle from
+  0 to 180.
+- `permissions.list`: `{udid, bundleId?}`. Returns the app permissions as JSON.
+
+Each action runs the matching `serve-sim` CLI command as a child process and replies
+with `{id, stdout, stderr, exitCode}`. `softwareKeyboard.toggle`, `memoryWarning`
+and `caDebug.set` send an input message and do not wait for the device to confirm it.

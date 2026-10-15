@@ -74,6 +74,7 @@ import {
 import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream-runtime-args";
 import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
+import { CA_DEBUG_ALIASES, CA_DEBUG_FLAGS } from "./ca-debug";
 import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
 import { finishDeviceRecordingsForShutdown } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
@@ -253,6 +254,21 @@ function openHelperSocket(state: ServerState): WebSocket {
     state.wsUrl,
     state.token ? { headers: { Authorization: `Bearer ${state.token}` } } : undefined,
   );
+}
+
+function sendHelperMessage(state: ServerState, message: Uint8Array): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const ws = openHelperSocket(state);
+    ws.binaryType = "arraybuffer";
+    onCliInputReady(ws, state.inputAdmission === true, () => {
+      ws.send(message);
+      setTimeout(() => { ws.close(); resolve(); }, 50);
+    }, reject);
+    ws.onerror = () => {
+      console.error("Failed to connect to serve-sim server at", state.wsUrl);
+      reject(new Error("WebSocket connection failed"));
+    };
+  });
 }
 
 
@@ -1074,19 +1090,10 @@ async function button(buttonName = "home", deviceArg?: string) {
 async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
   const stateArg = (stateRaw ?? "").toLowerCase();
   const enabled = stateArg === "on" || stateArg === "1" || stateArg === "true";
-  const aliases: Record<string, string> = {
-    blended: "debug_color_blended",
-    copies: "debug_color_copies",
-    copied: "debug_color_copies",
-    misaligned: "debug_color_misaligned",
-    offscreen: "debug_color_offscreen",
-    "slow-animations": "debug_slow_animations",
-    slow: "debug_slow_animations",
-  };
-  const resolved = option ? (aliases[option] ?? option) : undefined;
+  const resolved = option ? (CA_DEBUG_ALIASES[option] ?? option) : undefined;
   if (!resolved || !["on", "off", "1", "0", "true", "false"].includes(stateArg)) {
     console.error(
-      `Usage: serve-sim ca-debug <option> <on|off> [-d udid]\n  option shortcuts: ${Object.keys(aliases).join(", ")}`,
+      `Usage: serve-sim ca-debug <option> <on|off> [-d udid]\n  option shortcuts: ${Object.keys(CA_DEBUG_ALIASES).join(", ")}`,
     );
     process.exit(1);
   }
@@ -1134,6 +1141,15 @@ async function memoryWarning(deviceArg?: string) {
       reject(new Error("WebSocket connection failed"));
     };
   });
+}
+
+async function softwareKeyboard(deviceArg?: string) {
+  const stateFile = readState(deviceArg);
+  if (!stateFile) {
+    console.error("No serve-sim server running. Run `serve-sim` first.");
+    process.exit(1);
+  }
+  return sendHelperMessage(stateFile, new Uint8Array([0x0c]));
 }
 
 // ─── Camera injection ───
@@ -2789,8 +2805,7 @@ program
 program
   .command("ca-debug")
   .description(
-    "Toggle a CoreAnimation debug render flag " +
-      "(blended|copies|misaligned|offscreen|slow-animations)",
+    `Toggle a CoreAnimation debug render flag (${Object.keys(CA_DEBUG_FLAGS).join("|")})`,
   )
   .argument("<option>")
   .argument("<state>", "on|off")
@@ -2802,6 +2817,12 @@ program
   .description("Simulate a memory warning on the device")
   .option(...deviceOpt)
   .action((opts) => memoryWarning(opts.device));
+
+program
+  .command("software-keyboard")
+  .description("Show or hide the on-screen keyboard")
+  .option(...deviceOpt)
+  .action((opts) => softwareKeyboard(opts.device));
 
 program
   .command("event-log")
