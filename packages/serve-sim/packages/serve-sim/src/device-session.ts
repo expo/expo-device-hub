@@ -297,7 +297,7 @@ export class DeviceSession {
   private softwareKeyboardHidden = false;
   private softwareKeyboardSync: Promise<void> = Promise.resolve();
   private softwareKeyboardSyncPending = false;
-  private softwareKeyboardPendingVisible: boolean | undefined;
+  private readonly softwareKeyboardRequests: Array<boolean | "toggle"> = [];
   private readonly inputOperationQueues = new Map<HidSocket, InputOperation[]>();
   private inputOperationSequence = 0;
   private readonly clipboardInputBarriers = new Set<number>();
@@ -374,7 +374,7 @@ export class DeviceSession {
   async suspendForReboot(): Promise<void> {
     this.rebootSuspended = true;
     this.inputGeneration++;
-    this.softwareKeyboardPendingVisible = undefined;
+    this.softwareKeyboardRequests.length = 0;
     await this.captureStart;
     // A failed recording POST reports its own error and owns no lease to preserve.
     // It must settle before suspend, but its failure must not strand reboot input.
@@ -1415,7 +1415,7 @@ export class DeviceSession {
       }
       case 0x0c:
         this.recordHidEvent(tag, {});
-        await this.hid.softwareKeyboard();
+        this.queueSoftwareKeyboardSync("toggle");
         break;
       case 0x0d: {
         const m = json<{ visible: boolean }>();
@@ -1697,8 +1697,10 @@ export class DeviceSession {
     });
   }
 
-  private queueSoftwareKeyboardSync(visible: boolean): void {
-    this.softwareKeyboardPendingVisible = visible;
+  private queueSoftwareKeyboardSync(request: boolean | "toggle"): void {
+    const requests = this.softwareKeyboardRequests;
+    if (typeof request === "boolean" && typeof requests.at(-1) === "boolean") requests[requests.length - 1] = request;
+    else requests.push(request);
     if (this.softwareKeyboardSyncPending) return;
     this.softwareKeyboardSyncPending = true;
     const generation = this.inputGeneration;
@@ -2019,10 +2021,15 @@ export class DeviceSession {
   }
 
   private async drainSoftwareKeyboardSync(generation: number): Promise<void> {
-    while (this.canRunInputControl(generation) && this.softwareKeyboardPendingVisible !== undefined) {
-      const visible = this.softwareKeyboardPendingVisible;
-      this.softwareKeyboardPendingVisible = undefined;
-      await this.setSoftwareKeyboardVisible(visible, generation);
+    while (this.canRunInputControl(generation)) {
+      const request = this.softwareKeyboardRequests.shift();
+      if (request === undefined) return;
+      if (request === "toggle") {
+        this.softwareKeyboardHidden = false;
+        await this.hid.softwareKeyboard();
+      } else {
+        await this.setSoftwareKeyboardVisible(request, generation);
+      }
     }
   }
 

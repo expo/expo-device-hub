@@ -66,6 +66,27 @@ const hardwareKeyboardUpdatesStarted: string[] = [];
 let hardwareKeyboardRevision = 0;
 let keyboardRestoreFailures = 0;
 let keyboardRestoreAttempts = 0;
+let axTree = "{}";
+
+const VISIBLE_KEYBOARD_TREE = JSON.stringify([{
+  AXUniqueId: null,
+  AXLabel: null,
+  AXValue: null,
+  enabled: true,
+  frame: { x: 0, y: 0, width: 390, height: 844 },
+  role_description: "application",
+  type: "Application",
+  children: ["delete", "shift", "space"].map((id) => ({
+    AXUniqueId: id,
+    AXLabel: id,
+    AXValue: null,
+    enabled: true,
+    frame: { x: 10, y: 700, width: 40, height: 40 },
+    role_description: "button",
+    type: "Button",
+    children: [],
+  })),
+}]);
 
 // Keep NativeHid's real error handling in the loop; only replace the addon.
 const addon = {
@@ -208,7 +229,7 @@ mock.module("../../native", () => ({
   },
   NativeHid,
   Orientation: { portrait: 1, portraitUpsideDown: 2, landscapeRight: 3, landscapeLeft: 4 },
-  axDescribeAsync: async () => "{}",
+  axDescribeAsync: async () => axTree,
   axFrontmostAsync: async () => "{}",
   axTypeKeyboardCharacterAsync: async (_udid: string, character: string) => {
     axCharacters.push(character);
@@ -306,6 +327,7 @@ beforeEach(() => {
   hardwareKeyboardRevision = 0;
   keyboardRestoreFailures = 0;
   keyboardRestoreAttempts = 0;
+  axTree = "{}";
   routedScreens.length = 0;
   hingeAngles.length = 0;
   hingePoses.length = 0;
@@ -1859,6 +1881,58 @@ describe("wheel ownership", () => {
     } finally {
       second.terminate();
     }
+  });
+});
+
+describe("software keyboard visibility", () => {
+  const send = (tag: number, payload: object) => ws!.send(Buffer.concat([
+    Buffer.from([tag]), Buffer.from(JSON.stringify(payload)),
+  ]));
+  const toggles = () => inputCalls.filter((call) => call === "softwareKeyboard").length;
+
+  async function disconnect(): Promise<void> {
+    ws!.terminate();
+    await waitUntil(() => (session as unknown as { admittedHidSockets: Set<unknown> }).admittedHidSockets.size === 0);
+    await Bun.sleep(30);
+  }
+
+  test("does not hide the keyboard again after a client shows it", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x0d, { visible: false });
+    await waitUntil(() => toggles() === 1);
+    send(0x0c, {});
+    await waitUntil(() => toggles() === 2);
+
+    await disconnect();
+
+    expect(toggles()).toBe(2);
+  });
+
+  test("keeps a toggle when its client disconnects", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x0c, {});
+    await waitUntil(() => toggles() === 1);
+
+    await disconnect();
+
+    expect(toggles()).toBe(1);
+  });
+
+  test("applies a toggle after an earlier hide from the same client", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x0d, { visible: false });
+    send(0x0c, {});
+    await waitUntil(() => toggles() === 2);
+
+    await disconnect();
+
+    expect(toggles()).toBe(2);
   });
 });
 

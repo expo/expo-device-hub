@@ -55,6 +55,7 @@ function session(failOn?: (call: KeyCall) => boolean, udid = "SESSION-TEST", onK
     axHandledKeyUsages: new WeakMap(),
     inputQueueDraining: false,
     softwareKeyboardSync: Promise.resolve(),
+    softwareKeyboardRequests: [],
     restoreHardwareKeyboardWhenIdle: false,
     serverInput: { send() {}, on() {}, close() {} },
     activeHidKeyUsages: new WeakMap<object, Set<number>>(),
