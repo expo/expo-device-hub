@@ -24,6 +24,7 @@ let offerStatus = 200;
 let offersPosted = 0;
 let offerBody = "nope";
 let senderFrames = 0;
+let captureRebooting: unknown = undefined;
 let statsAuthorization: string | null = null;
 let statsSignal: AbortSignal | null = null;
 
@@ -105,7 +106,7 @@ Object.assign(globalThis, {
     if (input.includes("/stats")) {
       statsAuthorization = new Headers(init?.headers).get("authorization");
       statsSignal = init?.signal ?? null;
-      return new Response(JSON.stringify({ sessions: [{ sessionId: new URL(input).searchParams.get("sessionId"), framesEncoded: senderFrames }] }));
+      return new Response(JSON.stringify({ capture: { rebooting: captureRebooting }, sessions: [{ sessionId: new URL(input).searchParams.get("sessionId"), framesEncoded: senderFrames }] }));
     }
     if (input.includes("/offer")) offersPosted += 1;
     if (input.includes("/offer") && offerStatus !== 200) {
@@ -143,6 +144,7 @@ async function start(
   offersPosted = 0;
   offerBody = "nope";
   senderFrames = 0;
+  captureRebooting = undefined;
   statsAuthorization = null;
   statsSignal = null;
   clock = 0;
@@ -470,4 +472,41 @@ test("first-frame sender diagnosis retains the session bearer", async () => {
   await flush();
   expect(statsAuthorization).toBe("Bearer token-A");
   expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
+});
+
+for (const received of [0, 10]) {
+  test(`capture reboot rearms first-frame diagnosis with ${received} received frames`, async () => {
+    await start();
+    captureRebooting = true;
+    for (let window = 0; window < 3; window++) {
+      fireTimer(4_000); await flush(); resolveStats(received); await flush();
+      expect(closed).toBe(0);
+      expect(failures()).toEqual([]);
+    }
+    captureRebooting = false;
+    fireTimer(4_000); await flush(); resolveStats(received); await flush();
+    if (received > 0) {
+      // Reboot does not consume the ordinary first-paint grace.
+      expect(closed).toBe(0);
+      fireTimer(4_000); await flush(); resolveStats(received); await flush();
+    }
+    expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
+  });
+}
+
+test("capture reboot pauses established recovery without spending the codec retry", async () => {
+  const hook = await start(); hook.markFrameDecoded();
+  captureRebooting = true;
+  await pollStall(frozenRun(100));
+  await pollStall(frozenRun(100, 1000));
+  expect(closed).toBe(0);
+  expect(updates).not.toContain(STALLED);
+  captureRebooting = false;
+  await pollStall(frozenRun(100, 2000));
+  expect(closed).toBe(1);
+  expect(failures()).toEqual([]);
+  expect(updates).toContain(STALLED);
+  await reconnect(); hook.markFrameDecoded();
+  await pollStall(frozenRun(100));
+  expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
 });
