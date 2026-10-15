@@ -70,6 +70,7 @@
     "Sources/SimAXSettings/build.sh",
     "Sources/SimPasteboard/sim-pasteboard.m",
     "Sources/SimPasteboard/Info.plist",
+    "Sources/SimPasteboard/Icons/*.png",
     "Sources/SimPasteboard/build.sh",
     "Sources/SimPasteboardReader/sim-pasteboard-reader.m",
     "Sources/SimPasteboardReader/build.sh",
