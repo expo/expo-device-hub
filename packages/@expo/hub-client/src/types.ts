@@ -150,18 +150,33 @@ export interface DuoModelScroll {
 }
 
 /**
- * iPhone Duo hinge state and controls, mirroring serve-sim's web client. Angles
- * and poses show the pending request while a command awaits acknowledgement,
- * then the helper's confirmed values.
+ * The hinge controls a device offers. An Android emulator only moves its hinge
+ * sensor, so it has no Laptop or Tent pose, no Table Mode, and no 3D model.
+ */
+export interface DeviceHingeControls {
+  /** Presets it can apply; the order carries no meaning. */
+  poses: readonly HingePose[];
+  tableMode: boolean;
+  /** Whether Xcode's 3D model can present the device. */
+  model: boolean;
+}
+
+/**
+ * Hinge state and controls for a foldable device, mirroring serve-sim's web
+ * client for the iPhone Duo and serve-emu's `/api/fold` for an Android
+ * emulator. Angles and poses show the pending request while a command awaits
+ * acknowledgement, then the backend's confirmed values.
  */
 export interface DeviceHinge {
+  /** What this device offers; undefined offers every control the iPhone Duo has. */
+  controls?: DeviceHingeControls;
   /**
-   * Whether the simulator can move its hinge; undefined until the helper
+   * Whether the device can move its hinge; undefined until the backend
    * reports it. Like serve-sim, fold controls show once this or `angle` is
    * known, and the pose shortcuts need it to be true.
    */
   supported?: boolean;
-  /** Hinge angle in degrees; undefined until the helper reports it. */
+  /** Hinge angle in degrees; undefined until the backend reports it. */
   angle?: number;
   /** Named preset in effect, null for a custom angle, undefined until reported. */
   pose?: HingePose | null;
@@ -174,7 +189,7 @@ export interface DeviceHinge {
   faceDown: boolean;
   /** The panel the viewer should present: 1 is the cover, 3 the inner display. */
   activeScreenId: 1 | 3;
-  /** A hinge command awaits the helper's acknowledgement. */
+  /** A hinge command awaits the backend's acknowledgement. */
   pending: boolean;
   /** The last failed hinge command, cleared when the next one starts. */
   error: string | null;
@@ -734,7 +749,7 @@ export interface DeviceClient {
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
-  /** iPhone Duo hinge state and controls; null for devices without a hinge. */
+  /** Hinge state and controls of a foldable device; null for devices without a hinge. */
   hinge: DeviceHinge | null;
   /**
    * The active display's own glass corners for the flat view, oriented with

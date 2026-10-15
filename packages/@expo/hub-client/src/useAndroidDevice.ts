@@ -26,6 +26,7 @@ import {
   parseAndroidActivityFrame,
 } from './android-activity';
 import { apiUrl, deviceApiUrl } from './android-api-url';
+import { androidHingeBackend } from './android-hinge';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import { androidPermissionsBackend } from './android-permissions';
 import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon';
@@ -78,6 +79,7 @@ import { useAccessibility } from './useAccessibility';
 import { useAndroidCamera } from './useAndroidCamera';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useAppPermissions } from './useAppPermissions';
+import { useAndroidHinge } from './useAndroidHinge';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
@@ -574,6 +576,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       active && baseUrl ? androidPermissionsBackend(baseUrl, targetDevice, sessionFetch) : null,
     [active, baseUrl, targetDevice, sessionFetch],
   );
+  const hingeBackend = useMemo(
+    () =>
+      active && baseUrl
+        ? androidHingeBackend(sessionFetch, deviceApiUrl(baseUrl, '/api/fold', targetDevice))
+        : null,
+    [active, baseUrl, targetDevice, sessionFetch],
+  );
+  const hinge = useAndroidHinge(hingeBackend);
   const appPermissions = useAppPermissions({
     active,
     appId: foregroundApp?.id ?? null,
@@ -1964,7 +1974,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   return {
     platform: 'android',
-    hinge: null,
+    hinge,
     displayCorners: null,
     // The transport can stay live while the server stages new stream settings.
     // Show the pending change immediately without feeding it back into the

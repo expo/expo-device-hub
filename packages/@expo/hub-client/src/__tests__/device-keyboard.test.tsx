@@ -96,6 +96,22 @@ test('Option+Shift+1–5 select the Duo poses in Xcode order and never reach the
   ]);
 });
 
+test('a hinge ignores the shortcut of a pose it does not offer, as an Android emulator does Laptop', async () => {
+  const commands: HingeControlCommand[] = [];
+  const setControl = (command: HingeControlCommand) => {
+    commands.push(command);
+  };
+  const controls = { poses: ['closed', 'book', 'open'], tableMode: false, model: false };
+  const { keys, surface } = await mount({ supported: true, controls, setControl } as unknown as DeviceHinge);
+  for (const digit of ['Digit3', 'Digit4', 'Digit5']) {
+    const event = keyEvent({ key: '!', code: digit, altKey: true, shiftKey: true });
+    await act(async () => surface.props.onKeyDown(event));
+    expect(event.prevented).toBe(true);
+  }
+  expect(commands).toEqual([{ control: 'pose', value: 'book' }]);
+  expect(keys).toHaveLength(0);
+});
+
 for (const [name, hinge] of [
   ['without a hinge', null],
   // Like serve-sim, the shortcut waits for the simulator to report its hinge.
