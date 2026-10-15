@@ -314,6 +314,8 @@ export interface DeviceGrpcCaptureStats {
 
 /** Latest cumulative server-side capture and pacing counters. */
 export interface DeviceStreamCaptureStats {
+  /** Capture is intentionally suspended for a device reboot; older servers omit this. */
+  rebooting?: boolean;
   screenFrames: number | null;
   idleFrames: number | null;
   offeredFrames: number | null;

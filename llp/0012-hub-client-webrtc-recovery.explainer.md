@@ -5,7 +5,7 @@
 **Systems:** HubClient
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-13 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-14 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -85,6 +85,16 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 - Replacing an iOS or Android video element reattaches the existing stream without renegotiating its peer or reconnecting input [observed: stateful `webRtcVideoElement` in both adapters].
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].
+
+## Capture reboot
+
+The sender's optional `capture.rebooting` boolean identifies an intentional capture suspension. The shared stats parser preserves explicit `true` and `false`; missing or malformed values remain unknown [observed: `DeviceStreamCaptureStats` in `types.ts`, `readWebRtcCaptureStats` in `stream-stats.ts`].
+
+Before acting on an established playback stall, the watchdog checks the sender. A reboot resets the stall samples without spending the same-codec reconnect or demoting the codec. A first-frame timeout checks the same flag even when RTP has arrived; during reboot it rearms the timeout and restores the ordinary first-paint grace [observed: `startPlaybackStallWatchdog` in `playback-stall-watchdog.ts`, `armFirstFrameTimeout` in `useWebRtcStream.ts`].
+
+Each sender check has a 2 s limit, is cancelled on hook teardown, and retains the session token. Late results cannot judge a replaced peer or a new visibility generation. When reboot ends, or the flag is unavailable, ordinary stall and first-frame recovery applies again. Older servers and Android sources that omit the flag keep their normal recovery policy [observed: `readSenderStats` in `useWebRtcStream.ts`, the generation guards in both watchdog paths].
+
+This ports the browser recovery behavior added to serve-sim in #333; it needs a backend that advertises the reboot flag to distinguish an intentional pause [observed: upstream commit `c65c8b8e5a2508c60a7714d6803d6d235500fd30`, `src/client/hooks/use-webrtc-stream.ts` and `src/client/hooks/playback-stall-watchdog.ts`].
 
 ## H.264 offer level
 
