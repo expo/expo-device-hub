@@ -278,12 +278,25 @@ function fakeDependencies(
       raw: "0 0",
     }),
     setOrientation: async (orientation) => ({ orientation }),
-    getFold: async () => ({ supported: true, posture: "closed", hingeAngle: 0 }),
-    setFold: async (posture) => ({
+    getFold: async () => ({
       supported: true,
-      posture,
-      hingeAngle: posture === "closed" ? 0 : 180,
+      posture: "closed",
+      hingeAngle: 0,
+      hingeRange: { min: 0, max: 180 },
     }),
+    setFold: async (request) => "posture" in request
+      ? {
+        supported: true,
+        posture: request.posture,
+        hingeAngle: request.posture === "closed" ? 0 : 180,
+        hingeRange: { min: 0, max: 180 },
+      }
+      : {
+        supported: true,
+        posture: "half_opened",
+        hingeAngle: request.hingeAngle,
+        hingeRange: { min: 0, max: 180 },
+      },
     getNightMode: async () => ({ mode: "light", raw: "no" }),
     setNightMode: async (mode) => ({ mode, raw: mode }),
     getFontScale: async () => ({ scale: 1, raw: "1.0" }),
@@ -639,6 +652,52 @@ describe("domain API failures", () => {
       "invalid_request",
       "h264Fps must be an integer between 1 and 120",
     );
+  });
+
+  test("moves the hinge to an angle and rejects fold requests it cannot apply", async () => {
+    const router = createApiRouter(createApiRoutes());
+    const requests: unknown[] = [];
+    const deps = fakeDependencies({
+      setFold: async (request) => {
+        requests.push(request);
+        return {
+          supported: true,
+          posture: "half_opened",
+          hingeAngle: 90,
+          hingeRange: { min: 0, max: 180 },
+        };
+      },
+    });
+    const post = (body: unknown) =>
+      router.handle(
+        new Request(`${BASE_URL}/api/fold`, { method: "POST", body: JSON.stringify(body) }),
+        deps,
+      );
+
+    const moved = await post({ hingeAngle: 90 });
+    expect(moved.status).toBe(200);
+    expect(await moved.json()).toEqual({
+      ok: true,
+      fold: { supported: true, posture: "half_opened", hingeAngle: 90, hingeRange: { min: 0, max: 180 } },
+    });
+    expect(requests).toEqual([{ hingeAngle: 90 }]);
+
+    for (const hingeAngle of [-1, 180.5, "90", null, true]) {
+      await expectFailure(
+        await post({ hingeAngle }),
+        400,
+        "invalid_request",
+        "hingeAngle must be a number between 0 and 180",
+      );
+    }
+    await expectFailure(
+      await post({ posture: "closed", hingeAngle: 0 }),
+      400,
+      "invalid_request",
+      "set either posture or hingeAngle, not both",
+    );
+    await expectFailure(await post({}), 400, "invalid_request", "posture must be closed or opened");
+    expect(requests).toEqual([{ hingeAngle: 90 }]);
   });
 
   test("rejects non-numeric font scales before dependency work", async () => {

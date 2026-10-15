@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** ServeSim, Hub
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Systems:** ServeSim, ServeEmu, Hub
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Jiun Shin (with Claude Code)
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated); 2026-10-15 (Android emulators)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -131,6 +131,36 @@ The existing CLI uses degrees and keeps its three angle aliases:
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
+
+## Android emulators
+
+serve-emu moves a foldable emulator's hinge with `POST /api/fold` and
+`{ "hingeAngle": number }`. It accepts angles from 0 to 180, the range
+serve-sim accepts for the iPhone Duo, and sets the emulator's `hinge-angle0`
+sensor. Android derives the posture from the angle, using the AVD's
+`hw.sensor.hinge_angles_posture_definitions`. On `pixel_fold`, 0–30° is closed,
+30–150° half-opened, and 150–180° opened [observed: `pixel_fold` `config.ini`,
+Android Emulator 37.2.12, API 37].
+
+Not every hinge moves from 0° to 180°: the SDK's 8" Fold-out moves from 180°
+to 360° [observed: `8in Foldable` in `devices.xml` from the SDK's `sdklib`].
+Every fold status therefore reports `hingeRange`, read from
+`hw.sensor.hinge.ranges` in the `hardware-qemu.ini` that the emulator writes at
+launch, and serve-emu refuses an angle outside it. `hingeRange` is null when
+serve-emu cannot read that file, for example when adb reaches an emulator on
+another host [observed: `readHingeRange` in
+`packages/serve-emu/packages/serve-emu/src/fold.ts`].
+
+The emulator console stores a new angle at once, but the guest receives it
+about 100–200 ms later. Until then `device_state` still reports the previous
+posture: 5 of 24 reads taken right after a change did so [observed: `pixel_fold`,
+Android Emulator 37.2.12, API 37]. serve-emu therefore waits until
+`dumpsys device_state` reports the new angle before it answers. Android
+receives the angle in eighths of a degree, and can keep the previous eighth
+after a change of a few hundredths: 90.123° arrives as 90.125°, and 33.33° set
+after 33.3° stays at 33.25° [observed: `pixel_fold`, Android Emulator 37.2.12,
+API 37, 2026-10-15]. The wait therefore accepts an angle within an eighth of a
+degree, and serve-emu then confirms the exact angle with the console.
 
 ## APIs inside an iOS app
 

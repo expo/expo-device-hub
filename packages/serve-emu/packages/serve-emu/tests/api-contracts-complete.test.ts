@@ -262,12 +262,22 @@ describe("complete API success contracts", () => {
   test("parses orientation, appearance, and network status payloads", () => {
     expect(parseFoldResponse({
       ok: true,
-      fold: { supported: true, posture: "half_opened", hingeAngle: 90 },
-    }).fold).toEqual({ supported: true, posture: "half_opened", hingeAngle: 90 });
+      fold: { supported: true, posture: "half_opened", hingeAngle: 90, hingeRange: { min: 0, max: 180 } },
+    }).fold).toEqual({
+      supported: true, posture: "half_opened", hingeAngle: 90, hingeRange: { min: 0, max: 180 },
+    });
+    expect(parseFoldResponse({
+      ok: true,
+      fold: { supported: false, posture: null, hingeAngle: null, hingeRange: null },
+    }).fold.hingeRange).toBeNull();
     expect(() => parseFoldResponse({
       ok: true,
-      fold: { supported: true, posture: "sideways", hingeAngle: 90 },
+      fold: { supported: true, posture: "sideways", hingeAngle: 90, hingeRange: null },
     })).toThrow();
+    expect(() => parseFoldResponse({
+      ok: true,
+      fold: { supported: true, posture: "opened", hingeAngle: 180, hingeRange: { min: "0", max: 180 } },
+    })).toThrow("fold.hingeRange.min");
     expect(
       parseOrientationResponse({
         ok: true,
