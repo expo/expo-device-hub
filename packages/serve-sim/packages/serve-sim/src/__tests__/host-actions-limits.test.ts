@@ -198,6 +198,23 @@ describe("what a preview link may spend on the host", () => {
       for (const file of [...stale, fresh, captured]) rmSync(file, { force: true });
     }
   });
+
+  it("explains a child that prints more than an action can return", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexec head -c 17000000 /dev/zero\n" }, async () => {
+      const result = await runHostActionAsync(
+        { action: "appearance.get", params: { udid: UDID } },
+        BIN,
+      );
+      expect(result).toEqual({
+        stdout: "",
+        stderr:
+          "The xcrun command printed more than 16 MiB, which is the most an action can return. " +
+          "Ask for less output, or use a smaller file, and try again.",
+        exitCode: 1,
+      });
+    });
+  });
+
   // exec, so the deadline's SIGKILL reaps the sleep itself; a plain `sleep` would leave it running
   // under init after its shell died.
   it("gives up on a child that never exits", async () => {
