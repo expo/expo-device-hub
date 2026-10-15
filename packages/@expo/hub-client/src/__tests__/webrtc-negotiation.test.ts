@@ -30,6 +30,31 @@ describe("WebRTC offer negotiation", () => {
     expect(requests).toBe(2);
   });
 
+  for (const conflict of [
+    { error: 'webrtc_stream_changed', message: 'The stream changed while WebRTC was starting.' },
+    { ok: false, code: 'session_changed', error: 'device session changed from generation 1 to 2' },
+  ]) {
+    test(`retries a temporary Android offer conflict: ${JSON.stringify(conflict)}`, async () => {
+      let requests = 0;
+      const response = await postWebRtcOffer({
+        url: 'https://example.test/webrtc/offer',
+        body: '{"sessionId":"viewer-A"}',
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async (_url, init) => {
+          expect(init?.body).toBe('{"sessionId":"viewer-A"}');
+          requests++;
+          return requests === 1
+            ? Response.json(conflict, { status: 409 })
+            : Response.json({ type: 'answer', sdp: 'answer' });
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(requests).toBe(2);
+    });
+  }
+
   test("returns a lasting named 409 without retrying it", async () => {
     let requests = 0;
     const response = await postWebRtcOffer({
