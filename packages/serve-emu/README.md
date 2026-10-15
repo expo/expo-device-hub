@@ -433,11 +433,18 @@ curl -X POST "$BASE/api/orientation" \
 # when a request finds a read older than a second. After a lock, the locked pose is the
 # reading for one second, and a read that started before the lock is discarded.
 
-# Emulator foldables report their current posture and hinge angle.
+# Emulator foldables report their current posture and hinge angle, and the
+# hingeRange of angles the AVD's hinge moves through (null when unknown).
 curl "$BASE/api/fold"
 curl -X POST "$BASE/api/fold" \
   -H 'Content-Type: application/json' \
   -d '{"posture":"opened"}' # or "closed"
+# Or move the hinge to an angle from 0 (closed) to 180 (flat), as serve-sim's
+# iPhone Duo hinge does, within the AVD's hingeRange. Android derives the
+# posture from the angle.
+curl -X POST "$BASE/api/fold" \
+  -H 'Content-Type: application/json' \
+  -d '{"hingeAngle":90}'
 
 curl "$BASE/api/night-mode"
 curl -X POST "$BASE/api/night-mode" \

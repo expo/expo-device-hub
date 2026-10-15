@@ -11,7 +11,7 @@ import {
 } from "./camera.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
 import { getExecSnapshot } from "./exec.ts";
-import { getFoldStatus, setFoldPosture } from "./fold.ts";
+import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
   getFontWeight,
@@ -156,6 +156,7 @@ import {
   isOrientationMode,
   ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
   STREAM_MODES,
@@ -2200,14 +2201,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("fold payload must be an object");
             }
-            const posture = (payload as Record<string, unknown>).posture;
-            if (posture !== "closed" && posture !== "opened") {
-              throw new Error("posture must be closed or opened");
-            }
+            const fold = parseFoldRequest(payload as Record<string, unknown>);
             return Response.json({
               ok: true,
               fold: await runForContext(requestContext, (context) =>
-                setFoldPosture(context.serial, posture),
+                applyFoldRequest(context.serial, fold),
               ),
             });
           } catch (err) {

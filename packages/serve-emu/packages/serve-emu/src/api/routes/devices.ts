@@ -6,6 +6,7 @@ import {
   isOrientationMode,
   ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
 } from "../../shared/api-contracts.ts";
@@ -136,13 +137,10 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
       path: "/api/fold",
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "fold payload");
-        const posture = body.posture;
-        if (posture !== "closed" && posture !== "opened") {
-          invalid("posture must be closed or opened");
-        }
+        const fold = parseInput(() => parseFoldRequest(body));
         return Response.json({
           ok: true,
-          fold: await downstream("set fold posture", () => deps.setFold(posture)),
+          fold: await downstream("set fold state", () => deps.setFold(fold)),
         });
       },
     },
