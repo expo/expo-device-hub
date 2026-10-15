@@ -59,6 +59,10 @@ Settings, host actions, logs, events, activity metrics and config updates share 
 - Settings polls pause while the channel is down and read again once it authenticates [observed: `onConnectionChange` in `control-socket.ts`]. A read in flight when the channel drops is rejected, never replayed. An ended stream or a subscription change does not interrupt settings.
 - The metrics subscription drives `activityStatus`: `loading` on subscribe, `ready` on stream metadata or a sample, and `error` when the stream ends or the channel drops.
 
+## Keyboard input
+
+When the shift key makes a printable character, the client sends the character with `shifted: true`, in addition to the HID usage. serve-sim types it through the software keyboard when the Simulator's hardware keyboard is off and the device has no hinge-angle support. Otherwise, or when software typing fails, it sends the HID usage [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; serve-sim `client/client.tsx`, tag `0x06` in `device-session.ts`].
+
 ## Open questions
 
 None at this time.

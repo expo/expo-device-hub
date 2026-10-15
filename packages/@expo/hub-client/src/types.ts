@@ -463,6 +463,10 @@ export interface KeyboardInput {
   key: string;
   /** Whether this is an auto-repeated keydown. */
   repeat: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  altKey?: boolean;
 }
 
 /**
