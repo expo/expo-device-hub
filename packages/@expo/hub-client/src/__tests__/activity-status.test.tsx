@@ -11,6 +11,8 @@ class Socket {
   static fail = false;
   closed = false;
   metrics = false;
+  // Clients choose subscription ids; tests address streams by path.
+  streams = new Map<string, number>();
   readyState = 1;
   onopen?: () => void;
   onmessage?: (event: { data: string }) => void;
@@ -24,7 +26,15 @@ class Socket {
     if (typeof data !== "string") return;
     const message = JSON.parse(data);
     if (message.token) queueMicrotask(() => this.onmessage?.({ data: '{"ready":true}' }));
-    if (message.sub === 3) this.metrics = true;
+    if (typeof message.sub === "number" && typeof message.path === "string") {
+      this.streams.set(message.path.split("?")[0]!, message.sub);
+      if (message.path === "/ios/metrics") this.metrics = true;
+    }
+    // serve-sim answers id-only health probes before host action dispatch.
+    if (typeof message.id === "number" && !message.ui && !message.action)
+      queueMicrotask(() =>
+        this.onmessage?.({ data: JSON.stringify({ id: message.id, error: "unsupported request" }) }),
+      );
     if (message.ui)
       queueMicrotask(() =>
         this.onmessage?.({
@@ -159,7 +169,7 @@ function channel(platform: DevicePlatform) {
       frame: (event: string, value: unknown): void => {
         socket.onmessage?.({
           data: JSON.stringify({
-            sub: 3,
+            sub: socket.streams.get("/ios/metrics"),
             data: `event: ${event}\ndata: ${JSON.stringify(value)}\n\n`,
           }),
         });
@@ -298,7 +308,7 @@ test("iOS resets readiness when a helper is replaced at the same metrics path", 
   await act(async () =>
     socket.onmessage?.({
       data: JSON.stringify({
-        sub: 4,
+        sub: socket.streams.get("/ios/api/events"),
         data: `data: ${JSON.stringify({ ...iosConfig(), pid: 2, execToken: "replacement" })}\n\n`,
       }),
     }),

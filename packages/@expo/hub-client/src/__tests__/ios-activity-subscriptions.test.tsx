@@ -36,16 +36,17 @@ test("stale iOS activity stops rendering until a new metrics sample arrives", as
   let now = 1000;
   const clock = spyOn(Date, "now").mockImplementation(() => now);
   restoreClock = () => clock.mockRestore();
-  const sockets: Array<{ url: string; onmessage?: (event: { data: string }) => void }> = [];
+  const sockets: Array<{ url: string; sent: string[]; onmessage?: (event: { data: string }) => void }> = [];
   stubGlobal(
     "WebSocket",
     class {
       readonly readyState = 1;
+      sent: string[] = [];
       onmessage?: (event: { data: string }) => void;
       constructor(readonly url: string) {
         sockets.push(this);
       }
-      send() {}
+      send(message: string) { this.sent.push(message); }
       close() {}
     },
   );
@@ -84,10 +85,13 @@ test("stale iOS activity stops rendering until a new metrics sample arrives", as
   });
   expect(unrelatedRenders).toBe(1);
   const metrics = sockets.find((socket) => socket.url.endsWith("/exec-ws"))!;
+  await act(async () => metrics.onmessage?.({ data: JSON.stringify({ ready: true }) }));
+  const subscription = metrics.sent.map(message => JSON.parse(message)).find(message => message.path === "/metrics");
+  expect(subscription).toBeDefined();
   const sample = (t: number) =>
     metrics.onmessage?.({
       data: JSON.stringify({
-        sub: 3,
+        sub: subscription.sub,
         data: `data: ${JSON.stringify({ t, bundleId: "test.app", cpuPct: 10, memBytes: 0, netInBytesPerSec: 0, netOutBytesPerSec: 0 })}\n\n`,
       }),
     });

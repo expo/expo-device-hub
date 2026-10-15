@@ -71,6 +71,17 @@ test('failed auth has a deadline and disposal cancels reconnects', async () => {
   await Bun.sleep(40); expect(sockets).toHaveLength(2);
 });
 
+test('connection observers see authentication and loss, and keep the channel reconnecting', async () => {
+  const {channel, sockets, ready} = setup(); const states: boolean[] = [];
+  const stop = channel.onConnectionChange(value => states.push(value));
+  expect(sockets).toHaveLength(1); const ws = ready();
+  ws.reply({ready: true}); expect(states).toEqual([true]);
+  ws.close(); expect(states).toEqual([true, false]);
+  await Bun.sleep(15); expect(sockets).toHaveLength(2); ready(); expect(states).toEqual([true, false, true]);
+  stop(); sockets[1]!.close(); await Bun.sleep(15);
+  expect(sockets).toHaveLength(2); expect(states).toEqual([true, false, true]);
+});
+
 test('shared actions and UI requests wait for a server slot', async () => {
   const {channel, ready} = setup();
   const requests = Array.from({length: 10}, (_, n) => channel.request(
