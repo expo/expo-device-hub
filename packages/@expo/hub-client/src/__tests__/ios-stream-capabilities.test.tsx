@@ -4,6 +4,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { iosStreamCapabilities, useIosDeviceClient } from '../useIosDevice';
 import { type DeviceClient, type DeviceConnectionOptions } from '../types';
 import { createGlobalStubs } from './test-globals';
+import { WS_REASON_INPUT_UNAVAILABLE } from '../input-protocol';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
@@ -414,8 +415,10 @@ test('config updates retain an input rejection until the reconnected helper admi
   await hub.resolveResponse(0, Response.json(config));
   const channel = await configChannel();
   const helper = Socket.instances.find((socket) => socket.url.includes('/helper/ws'))!;
-  const rejection = 'Input client limit reached';
+  // serve-sim refuses a full client list with this reason; the notice waits out its grace.
+  const rejection = WS_REASON_INPUT_UNAVAILABLE;
   await act(async () => helper.close(1013, rejection));
+  await hub.fireTimer(13_000);
   expect(hub.client.inputError).toBe(rejection);
   await channel.push(config);
   expect(hub.client.inputError).toBe(rejection);
@@ -614,6 +617,22 @@ test('fresh input queued during rediscovery is delivered to the same device', as
   await act(async () => replacement.open());
   expect(replacement.sent).toContainEqual({ button: 'home' });
 });
+
+for (const replacement of [{ pid: 2 }, { execToken: 'exec-2' }]) {
+  test(`queued input is discarded when the helper is replaced (${JSON.stringify(replacement)})`, async () => {
+    const hub = await controlledClient({}, true);
+    await hub.resolveResponse(0, Response.json(preview('http', { pid: 1 })));
+    await act(async () => Socket.instances.filter((socket) => socket.url.includes('/helper/ws')).at(-1)!.close());
+    hub.client.pressButton('home');
+    await hub.fireTimer(1500);
+    // Input belongs to the helper that was running when the user acted.
+    await hub.resolveResponse(1, Response.json(preview('http', { pid: 1, ...replacement })));
+    const helper = Socket.instances.filter((socket) => socket.url.includes('/helper/ws')).at(-1)!;
+    await act(async () => helper.open());
+    await act(async () => helper.onmessage?.({ data: new Uint8Array([0x83]).buffer }));
+    expect(helper.sent).not.toContainEqual({ button: 'home' });
+  });
+}
 
 test('queued input is discarded when rediscovery resolves to a different device', async () => {
   const hub = await controlledClient({ device: undefined }, true);
