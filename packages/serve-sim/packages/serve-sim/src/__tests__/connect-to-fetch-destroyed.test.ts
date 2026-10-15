@@ -28,3 +28,14 @@ test("req.destroyed turns true when the client aborts", async () => {
 test("req.destroyed turns true when the response body is cancelled", async () => {
   expect(await destroyedAfterLeaving(async (_, response) => response.body!.cancel())).toBe(true);
 });
+
+test("a route that returns without answering after the client left does not leave the response pending", async () => {
+  const controller = new AbortController();
+  const response = connectToFetch(async (request: IncomingMessage) => {
+    await Bun.sleep(50);
+    if (request.destroyed) return;
+  }, new Request("http://127.0.0.1/stream", { signal: controller.signal }));
+  controller.abort();
+  const settled = await Promise.race([response.then(() => "settled"), Bun.sleep(1_000).then(() => "pending")]);
+  expect(settled).toBe("settled");
+});
