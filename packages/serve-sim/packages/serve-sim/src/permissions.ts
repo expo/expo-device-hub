@@ -560,7 +560,7 @@ export async function permissions(args: string[]): Promise<void> {
       notifications: readNotifications(udid, parsed.bundleId),
     };
     console.log(JSON.stringify(result, null, quiet ? 0 : 2));
-    process.exit(0);
+    return;
   }
 
   const bundleId = parsed.bundleId!;
@@ -593,5 +593,4 @@ export async function permissions(args: string[]): Promise<void> {
       `🔐 ${parsed.verb} ${parsed.permission}${valueStr} for ${bundleId} on ${udid}`,
     );
   }
-  process.exit(0);
 }
