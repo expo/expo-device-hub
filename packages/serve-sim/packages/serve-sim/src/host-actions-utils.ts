@@ -95,8 +95,8 @@ export function runInvocation({ file, args, timeoutMs }: Invocation): Promise<Ho
           resolve({
             stdout: "",
             stderr:
-              `The ${basename(file)} command printed more than ${MAX_OUTPUT_BYTES / 1024 ** 2} MiB, ` +
-              "which is the most an action can return. Ask for less output, or use a smaller file, and try again.",
+              `The ${basename(file)} command printed more than ${MAX_OUTPUT_BYTES / 1024 ** 2} MiB to stdout or stderr. ` +
+              "Ask for less output, or use a smaller file, and try again.",
             exitCode: 1,
           });
           return;

@@ -199,8 +199,9 @@ describe("what a preview link may spend on the host", () => {
     }
   });
 
-  it("explains a child that prints more than an action can return", async () => {
-    await withShimsAsync({ xcrun: "#!/bin/sh\nexec head -c 17000000 /dev/zero\n" }, async () => {
+  it.each(["stdout", "stderr"])("explains a child that exceeds the %s limit", async (stream) => {
+    const redirect = stream === "stderr" ? " >&2" : "";
+    await withShimsAsync({ xcrun: `#!/bin/sh\nexec head -c 17000000 /dev/zero${redirect}\n` }, async () => {
       const result = await runHostActionAsync(
         { action: "appearance.get", params: { udid: UDID } },
         BIN,
@@ -208,7 +209,7 @@ describe("what a preview link may spend on the host", () => {
       expect(result).toEqual({
         stdout: "",
         stderr:
-          "The xcrun command printed more than 16 MiB, which is the most an action can return. " +
+          "The xcrun command printed more than 16 MiB to stdout or stderr. " +
           "Ask for less output, or use a smaller file, and try again.",
         exitCode: 1,
       });
