@@ -495,3 +495,7 @@ selection with `--device`. The selected record's WebSocket URL, token and
 admission flag stay unchanged, including for legacy helpers [observed:
 `resolveDeviceMatches` in `src/device.ts`, `readDeviceState` and
 `softwareKeyboard` in `src/index.ts`].
+
+The CLI tap, gesture, button, rotate, CA debug and memory-warning senders reuse
+this live-name selection and input admission path [observed: `sendInputMessage`
+and its callers in `src/index.ts`].

@@ -147,6 +147,18 @@ test("CLI name lookup still selects a unique name case-insensitively", async () 
 });
 
 for (const { args, messages } of commands) {
+  if (args[0] !== "software-keyboard") {
+    test(`CLI ${args[0]} routes a simulator name to the only live stream across runtimes`, async () => {
+      const result = await runInput(args, /* admit */ true, /* legacy */ false, {
+        argument: "iPhOnE 17", devices: sameNameDevices, liveDevices: [secondDevice],
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.connections).toEqual([`/legacy/${secondDevice}/ws`]);
+      expect(result.sentBeforeAdmission).toBe(false);
+      expect(result.messages).toEqual(messages);
+    });
+  }
+
   test(`CLI ${args[0]} rejects a full input pool even when refusal arrives after its old success timer`, async () => {
     const result = await runInput(args, /* admit */ false);
     expect(result.exitCode).not.toBe(0);
