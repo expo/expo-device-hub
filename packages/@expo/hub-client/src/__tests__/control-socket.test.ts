@@ -115,3 +115,25 @@ test('queued request deadlines reject without sending an expired write', async (
   await Promise.all(active);
   expect(ws.sent.some(msg => msg.action === 'expired')).toBe(false);
 });
+
+
+test('eight abandoned requests fail queued and new work loudly until a server slot returns', async () => {
+  const {channel, ready} = setup();
+  const abandoned = Array.from({length: 8}, (_, n) =>
+    channel.request({action: `hung-${n}`}, 10).catch(error => error));
+  const ws = ready();
+  const queued = channel.request({ui: {device: 'queued'}}, 200).catch(error => error);
+  expect((await Promise.all(abandoned)).every(error => error.message === 'exec-ws timeout')).toBe(true);
+  expect((await queued).message).toBe('too many actions in flight on this connection');
+  const fresh = await channel.request({action: 'new'}, 200).catch(error => error);
+  expect(fresh.message).toBe('too many actions in flight on this connection');
+  expect(ws.sent.filter(msg => typeof msg.id === 'number')).toHaveLength(8);
+  expect(ws.closed).toBe(false);
+  ws.reply({id: ws.sent.find(msg => msg.action === 'hung-0')!.id, ok: true});
+  const recovered = channel.request({action: 'after-reply'}, 200);
+  const sent = ws.sent.find(msg => msg.action === 'after-reply')!;
+  expect(sent).toBeDefined();
+  ws.reply({id: sent.id, ok: true});
+  expect((await recovered).ok).toBe(true);
+  expect(ws.sent.some(msg => msg.action === 'new' || 'ui' in msg)).toBe(false);
+});

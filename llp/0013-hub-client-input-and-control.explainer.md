@@ -45,8 +45,9 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 
 `createControlSocket` owns one exec-ws connection for one client identity (URL and token), never for the whole module [observed: `control-socket.ts`].
 
-- At most 8 requests are in flight. serve-sim serves 8 action requests per control connection [observed: `MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`].
-- A health probe runs every 5 s, and a probe without a reply in 5 s closes the connection. A connection attempt also stops after 5 s.
+- HubClient queues requests at a client-side limit of 8 in flight, matching serve-sim's server limit (`MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`). The serve-sim browser client does not impose this queue [observed: `control-socket.ts`; `socket/client-control.ts`].
+- A sent request keeps its server slot after caller timeout or abort, until the server replies or the connection fails. If all 8 slots belong to abandoned requests, queued and new requests fail immediately with "too many actions in flight on this connection". Health probes still run, subscriptions stay connected, and a late server reply makes its slot usable again. Writes are never replayed [observed: `sendRequests` and `inFlight` in `control-socket.ts`].
+- HubClient adds a health probe every 5 s; a probe without a reply in 5 s closes the connection. serve-sim's browser client has no health probe. Both clients stop a connection attempt after 5 s [observed: `control-socket.ts`; `socket/client-control.ts`].
 - Each subscription retries by itself after the server ends it. One ended subscription does not close the others.
 
 serve-sim's client uses the same 5 s connect timeout and 2 s stream retry [observed: `socket/client-control.ts`].
