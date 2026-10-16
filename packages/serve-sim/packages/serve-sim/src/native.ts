@@ -283,15 +283,21 @@ export class NativeHid {
   }
 
   key(type: KeyType, usage: number): Promise<void> {
-    if (this.keyboardUnavailable) return Promise.reject(new Error("Simulator keyboard input is unavailable"));
+    if (this.keyboardUnavailable) return this.rejectUnavailableKeyboard("key");
     return this.guard("key", () => this.handle.key(type, usage), undefined);
   }
 
   /** Clipboard shortcuts need a failed keypress to reach their acknowledgement path. */
   keyChecked(type: KeyType, usage: number): Promise<void> {
-    if (this.keyboardUnavailable) return Promise.reject(new Error("Simulator keyboard input is unavailable"));
+    if (this.keyboardUnavailable) return this.rejectUnavailableKeyboard("keyChecked");
     if (this.inputUnavailable) return Promise.reject(new Error("Simulator input is unavailable"));
     return Promise.resolve().then(() => this.handle.key(type, usage));
+  }
+
+  private rejectUnavailableKeyboard(operation: string): Promise<never> {
+    const error = new Error("Simulator keyboard input is unavailable");
+    console.error(`[hid] ${operation} rejected:`, error.message);
+    return Promise.reject(error);
   }
 
   /** anchorX/anchorY default to screen center when omitted. */
