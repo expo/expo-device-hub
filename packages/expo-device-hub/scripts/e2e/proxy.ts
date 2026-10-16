@@ -39,6 +39,7 @@ export function startProxy(options: {
   start: () => void;
 }) {
   let mode: InputMode = "normal";
+  let runId: string | null = null;
   let connections = 0;
   let controlConnections = 0;
   let eventSequence = 0;
@@ -68,8 +69,19 @@ export function startProxy(options: {
         return new Response(null, { status: 403 });
       }
       if (url.pathname === "/_e2e/start" && request.method === "POST") {
+        if (runId !== null)
+          return new Response("A scenario runner already owns this proxy", { status: 409 });
+        runId = crypto.randomUUID();
         options.start();
-        return Response.json({ ok: true });
+        return Response.json({ runId });
+      }
+      if (
+        runId !== null &&
+        url.pathname.startsWith("/_e2e/") &&
+        request.method === "POST" &&
+        request.headers.get("x-hub-e2e-run") !== runId
+      ) {
+        return new Response("This action belongs to another scenario runner", { status: 403 });
       }
       if (url.pathname === "/_e2e/state")
         return Response.json({ mode, controlConnections, inputAttempts, events });

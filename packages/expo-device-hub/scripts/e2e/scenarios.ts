@@ -28,13 +28,15 @@ async function until<T>(
   }
   throw new Error(`Timed out: ${description}`);
 }
+let runId: string | undefined;
 async function post(path: string, body: object = {}) {
   const response = await fetch("/_e2e/" + path, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(runId ? { "x-hub-e2e-run": runId } : {}) },
     body: JSON.stringify(body),
   });
-  assert(response.ok, `${path}: ${response.status} ${await response.text()}`);
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
+  return response.json() as Promise<{ runId?: string }>;
 }
 const state = async () =>
   (await (await fetch("/_e2e/state")).json()) as {
@@ -223,8 +225,15 @@ export async function runScenarios() {
     await run();
     cases.push({ name, durationMs: Math.round(performance.now() - started) });
   }
+  // A mirrored/reopened page may observe the dashboard, but must not run faults or submit results.
   try {
-    await post("start");
+    runId = (await post("start")).runId;
+    assert(runId, "Proxy granted this runner ownership");
+  } catch (error) {
+    window.__hubE2EResult = { ok: false, cases, error: String(error) };
+    return;
+  }
+  try {
     await check("Dashboard decodes advancing H264 frames", async () => {
       await advancingVideo();
       assert(

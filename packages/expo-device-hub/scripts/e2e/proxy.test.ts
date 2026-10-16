@@ -6,12 +6,14 @@ let proxy: ReturnType<typeof startProxy>;
 let launches: boolean[];
 let restarts: number;
 let starts: number;
+let results: unknown[];
 const sockets = new Set<WebSocket>();
 
 beforeEach(() => {
   launches = [];
   restarts = 0;
   starts = 0;
+  results = [];
   proxy = startProxy({
     backend: "http://127.0.0.1:1",
     device: "mock-owned-device",
@@ -23,7 +25,9 @@ beforeEach(() => {
     restart: async () => {
       restarts++;
     },
-    result() {},
+    result(value) {
+      results.push(value);
+    },
     start() {
       starts++;
     },
@@ -148,4 +152,22 @@ test("trusted local drivers without Origin retain actions, fixture reads and dis
   expect(restarts).toBe(1);
   expect(await (await fetch(proxy.url + "/_e2e/fixture")).text()).toBe("test-input-only\n");
   expect(await discovery()).toContain("mock-owned-device");
+});
+
+test("only one scenario runner can claim controls and submit the run result", async () => {
+  const first = await post("start");
+  expect(first.status).toBe(200);
+  const { runId } = (await first.json()) as { runId: string };
+  expect(runId).toBeString();
+  expect((await post("start")).status).toBe(409);
+  expect(starts).toBe(1);
+  expect((await post("restart")).status).toBe(403);
+  expect((await post("result")).status).toBe(403);
+  expect((await post("result", { "x-hub-e2e-run": "another-run" })).status).toBe(403);
+  expect(restarts).toBe(0);
+  expect(results).toEqual([]);
+  expect((await post("restart", { "x-hub-e2e-run": runId })).status).toBe(200);
+  expect((await post("result", { "x-hub-e2e-run": runId })).status).toBe(200);
+  expect(restarts).toBe(1);
+  expect(results).toEqual([{ keyboard: true }]);
 });
