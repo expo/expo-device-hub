@@ -29,7 +29,7 @@ async function waitFor(check: () => boolean, message: string, timeoutMs = 15_000
   throw new Error(message);
 }
 
-test.skipIf(!enabled).each(["native", "native-no-keyboard", "preview"] as const)("ordinary iPhone %s input reaches UIKit with CoreDevice HID ownership", async (transport) => {
+test.skipIf(!enabled).each(["native", "native-no-keyboard", "native-no-screen", "preview"] as const)("ordinary iPhone %s input reaches UIKit with CoreDevice HID ownership", async (transport) => {
   const udid = process.env.SERVE_SIM_TEST_UDID?.trim();
   if (!udid) throw new Error("set SERVE_SIM_TEST_UDID to a dedicated iOS 27 iPhone");
   const listing = JSON.parse(simctl("list", "devices", "booted", "-j")) as {
@@ -61,6 +61,23 @@ test.skipIf(!enabled).each(["native", "native-no-keyboard", "preview"] as const)
     simctl("launch", udid, APP, "--input-test");
     await waitFor(() => lines().slice(start).some((line) => line.startsWith("input-ready\t")), "fixture never became ready");
   };
+  const nativeInput = (input: string) => {
+    const output = execFileSync("node", ["--input-type=module", "-e", `
+      import { createRequire } from 'node:module';
+      import assert from 'node:assert/strict';
+      const { SimHID } = createRequire(import.meta.url)(process.argv[1]);
+      const hid = new SimHID(process.argv[2]);
+      const keyboardAvailable = await hid.setScreen(${transport === "native-no-screen" ? 0 : 1});
+      ${transport === "native-no-keyboard" ? "assert.equal(keyboardAvailable, false);" : ""}
+      ${input}
+      await new Promise(resolve => setTimeout(resolve, 150));
+      process.exit(0);
+    `, join(import.meta.dir, "../../dist/native/serve-sim-native.node"), udid], {
+      env: nativeEnv, encoding: "utf8", stdio: "pipe", timeout: 30_000,
+    });
+    appendFileSync(serverLog, output);
+    if (transport === "native-no-keyboard") expect(output).toContain("[test] CoreDevice keyboard symbol hidden");
+  };
   const startServer = async () => {
     // Same foreground startup and input path as build-tools createServeSimArgs;
     // tunnel, reporting, and hosted-worker execution are intentionally absent.
@@ -68,7 +85,7 @@ test.skipIf(!enabled).each(["native", "native-no-keyboard", "preview"] as const)
     try {
       server = spawn("node", [CLI, udid, "--port", String(await freePortAsync()), "--host", "127.0.0.1",
         "--require-token", "--transport", "webrtc", "--webrtc-codec", "h264", "--disable-share"], {
-        env: { ...process.env, SERVE_SIM_STATE_DIR: stateDir, SERVE_SIM_DEBUG_HID: "1" },
+        env: { ...nativeEnv, SERVE_SIM_STATE_DIR: stateDir, SERVE_SIM_DEBUG_HID: "1" },
         stdio: ["ignore", fd, fd],
       });
     } finally { closeSync(fd); }
@@ -87,26 +104,17 @@ test.skipIf(!enabled).each(["native", "native-no-keyboard", "preview"] as const)
     if (transport !== "preview") {
       // Exercise HID setup independently of capture's CoreDevice observers.
       // A successful native completion alone is not proof of guest delivery.
-      const output = execFileSync("node", ["--input-type=module", "-e", `
-        import { createRequire } from 'node:module';
-        const { SimHID } = createRequire(import.meta.url)(process.argv[1]);
-        const hid = new SimHID(process.argv[2]);
-        await hid.setScreen(1);
+      nativeInput(`
         await hid.touch('begin', .5, .5, 1170, 2532, 0);
         await new Promise(resolve => setTimeout(resolve, 150));
         await hid.touch('end', .5, .5, 1170, 2532, 0);
-        await new Promise(resolve => setTimeout(resolve, 150));
-        process.exit(0);
-      `, join(import.meta.dir, "../../dist/native/serve-sim-native.node"), udid], {
-        env: nativeEnv, encoding: "utf8", stdio: "pipe", timeout: 30_000,
-      });
-      appendFileSync(serverLog, output);
-      if (transport === "native-no-keyboard") expect(output).toContain("[test] CoreDevice keyboard symbol hidden");
+      `);
       await received();
     } else {
       const state = JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as { wsUrl: string; token: string };
       const ws = new WebSocket(state.wsUrl, { headers: { Authorization: `Bearer ${state.token}` } });
       ws.binaryType = "arraybuffer";
+      let inputConfig: { keyboardUnavailable?: boolean; inputUnavailable?: boolean } | undefined;
       try {
         await new Promise<void>((resolve, reject) => {
           let configured = false;
@@ -115,21 +123,35 @@ test.skipIf(!enabled).each(["native", "native-no-keyboard", "preview"] as const)
           ws.on("error", (error) => { clearTimeout(timer); reject(error); });
           ws.on("message", (raw: ArrayBuffer) => {
             const data = new Uint8Array(raw);
-            if (data[0] === 0x82) configured = true;
+            if (data[0] === 0x82) {
+              inputConfig = JSON.parse(Buffer.from(data.subarray(1)).toString());
+              configured = true;
+            }
             if (data[0] === 0x83) admitted = true;
             if (configured && admitted) { clearTimeout(timer); resolve(); }
           });
         });
+        expect(inputConfig).toMatchObject({ keyboardUnavailable: true, inputUnavailable: false });
         for (const type of ["begin", "end"]) {
           ws.send(Buffer.concat([Buffer.from([3]), Buffer.from(JSON.stringify({ type, x: 0.5, y: 0.5 }))]));
           await Bun.sleep(150);
         }
         await received();
+        const acknowledgement = new Promise<Uint8Array>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("key failure acknowledgement timed out")), 15_000);
+          ws.on("message", (raw: ArrayBuffer) => {
+            const data = new Uint8Array(raw);
+            if (data[0] === 0x91) { clearTimeout(timer); resolve(data); }
+          });
+        });
+        ws.send(Buffer.concat([Buffer.from([6]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
+        ws.send(Buffer.from([0x11]));
+        expect([...await acknowledgement]).toEqual([0x91, 0]);
       } finally { ws.close(); }
     }
   };
   try {
-    if (transport === "native-no-keyboard") {
+    if (transport === "native-no-keyboard" || transport === "preview") {
       const library = join(stateDir, "no-keyboard.dylib");
       execFileSync("xcrun", ["clang", "-dynamiclib", "-arch", "arm64", "-o", library,
         join(import.meta.dir, "fixtures/hid-no-keyboard.c")], { stdio: "pipe", timeout: 30_000 });

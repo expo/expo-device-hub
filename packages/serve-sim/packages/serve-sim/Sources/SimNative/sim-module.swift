@@ -34,10 +34,14 @@ private func u32(_ v: Int) -> UInt32 {
         setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
     }
 
-    /// Zero means capture has no screen metadata; Universal HID waits for a panel.
-    @NodeMethod func setScreen(_ screenID: Int) async throws {
+    /// Zero omits capture metadata; ordinary iOS uses its sole profile panel.
+    /// Returns keyboard availability after setup; touch remains independent.
+    @NodeMethod func setScreen(_ screenID: Int) async throws -> Bool {
         let id = UInt32(exactly: screenID).flatMap { $0 > 0 ? $0 : nil }
-        try await setup.run { await injector.setScreen(screenID: id) }
+        return try await setup.run {
+            await injector.setScreen(screenID: id)
+            return await injector.supportsKeyboard()
+        }
     }
 
     @NodeMethod func touch(_ type: String, _ x: Double, _ y: Double,

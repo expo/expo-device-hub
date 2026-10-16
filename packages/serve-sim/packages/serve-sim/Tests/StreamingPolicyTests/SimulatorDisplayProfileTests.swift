@@ -14,6 +14,7 @@ struct SimulatorDisplayProfileTests {
             ["displayType": "scene", "screenID": 5],
         ])
         #expect(profile.isFoldable)
+        #expect(profile.singleIntegratedScreenID == nil)
         #expect(profile.nativeRotations == [1: 0, 3: 270])
     }
 
@@ -27,6 +28,7 @@ struct SimulatorDisplayProfileTests {
         ])
         #expect(!profile.isFoldable)
         #expect(profile.integratedDisplayCount == 1)
+        #expect(profile.singleIntegratedScreenID == 1)
     }
 
     @Test("missing optional rotation does not disable the foldable guard")
@@ -52,6 +54,16 @@ struct SimulatorDisplayProfileTests {
             ["displayType": "integrated", "screenID": $0]
         })
         #expect(!profile.isFoldable)
+        #expect(profile.singleIntegratedScreenID == nil)
+    }
+    @Test("a sole integrated panel uses its actual ID without requiring rotation metadata")
+    func singlePanelIdentity() {
+        let profile = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 19],
+            ["displayType": "tvOut", "screenID": 1],
+        ])
+        #expect(profile.singleIntegratedScreenID == 19)
+        #expect(SimulatorDisplayProfile().singleIntegratedScreenID == nil)
     }
     @Test("recording panels follow unique DeviceKit identities rather than numeric ID conventions")
     func recordingPanelIdentity() {
