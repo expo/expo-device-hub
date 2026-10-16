@@ -3,6 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { StreamStatusPill } from "../client/components/stream-status-pill";
 
 describe("StreamStatusPill", () => {
+  test("reports a keyboard-only failure without claiming touch is unavailable", () => {
+    const html = renderToStaticMarkup(<StreamStatusPill streaming keyboardUnavailable />);
+    expect(html).toContain(">keyboard unavailable</span>");
+    expect(html).toContain("Touch input remains available.");
+  });
   test.each([true, false])("shows input failure when streaming is %s", (streaming) => {
     const html = renderToStaticMarkup(<StreamStatusPill streaming={streaming} inputUnavailable />);
 

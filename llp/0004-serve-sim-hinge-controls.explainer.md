@@ -391,11 +391,24 @@ Unsupported digitizers retain Indigo. CoreDevice key encoding is optional for
 ordinary iOS: its absence is logged without disabling touch or falling touch
 back to legacy input. Setup still opens the keyboard service, which also starts
 guest HID delivery; the missing-key-encoder regression verifies actual UIKit
-touch receipts. Duo keeps its existing requirement for both transports
+touch receipts. If keys cannot be encoded, native setup reports that capability
+separately: `NativeHid` rejects keyboard requests, config publishes
+`keyboardUnavailable`, and the preview shows a keyboard-only warning while
+touch remains usable. Legacy keyboard sends also failed delivery under the
+reproduced ownership state, so they are not a fallback for missing CoreDevice
+encoding [observed: `SimHID.setScreen`, `NativeHid`, `DeviceSession.screenConfig`,
+`StreamStatusPill`; local UIKit typing probe, 2026-10-16].
+Duo keeps its existing requirement for both transports
 instead of falling back to its disconnected inner service.
 Nonfoldable orientation stays on the legacy rotation path, and buttons continue
 to use Indigo [observed: `HIDInjector.setup`, `setupCoreDeviceHID`, `sendKey`, and
 `sendOrientation`].
+
+When capture omits its optional screen ID, ordinary iOS uses the sole integrated
+panel ID from the static device profile; it does not guess ID 1 or select a
+virtual output. Foldables still wait for capture to identify their active panel
+[observed: `SimulatorDisplayProfile.singleIntegratedScreenID`,
+`HIDInjector.setScreen`; `native-no-screen` case in `hid-ownership.e2e.test.ts`].
 
 This also avoids an ordinary iPhone's silent legacy input drop when CoreDevice
 HID owns guest input. On iOS 27.0, setting/posting

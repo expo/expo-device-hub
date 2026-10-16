@@ -25,7 +25,7 @@ const require = createRequire(import.meta.url);
 // handle is garbage-collected (Swift `deinit`), so there are no explicit
 // destroy/free calls here.
 interface SimHIDHandle {
-  setScreen(screenId: number): Promise<void>;
+  setScreen(screenId: number): Promise<boolean | void>;
   supportsHingeAngle(): Promise<boolean>;
   hingeState(): Promise<NativeHingeState>;
   hingeControlEligibility(): Promise<NativeHingeState>;
@@ -193,6 +193,7 @@ function load(): NativeAddon {
 export class NativeHid {
   private readonly handle: SimHIDHandle;
   private setupFailed = false;
+  keyboardUnavailable = false;
 
   constructor(udid: string) {
     this.handle = new (load().SimHID)(udid);
@@ -227,7 +228,8 @@ export class NativeHid {
   async setScreen(screenId: number): Promise<void> {
     if (this.inputUnavailable) return;
     try {
-      await this.handle.setScreen(screenId);
+      // Older addons return void; a false result explicitly disables only keys.
+      this.keyboardUnavailable = await this.handle.setScreen(screenId) === false;
     } catch (err) {
       // Native setup is cached for this handle; a failed setup cannot recover
       // until a new session. Keep capture running without calling partial HID state.
@@ -281,11 +283,13 @@ export class NativeHid {
   }
 
   key(type: KeyType, usage: number): Promise<void> {
+    if (this.keyboardUnavailable) return Promise.reject(new Error("Simulator keyboard input is unavailable"));
     return this.guard("key", () => this.handle.key(type, usage), undefined);
   }
 
   /** Clipboard shortcuts need a failed keypress to reach their acknowledgement path. */
   keyChecked(type: KeyType, usage: number): Promise<void> {
+    if (this.keyboardUnavailable) return Promise.reject(new Error("Simulator keyboard input is unavailable"));
     if (this.inputUnavailable) return Promise.reject(new Error("Simulator input is unavailable"));
     return Promise.resolve().then(() => this.handle.key(type, usage));
   }
