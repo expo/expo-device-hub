@@ -437,6 +437,13 @@ checkpointed snapshot, or restore the matching database and WAL files together.
 These actions copy bytes; they do not translate JSON into AsyncStorage, import
 Keychain entries, create backend sessions, or execute uploaded JavaScript.
 
+### Action coverage
+
+Every serve-sim command or capability that makes sense for users to interact with
+must also be available as a host action on `/exec-ws`. Add or update the action
+alongside the command or capability so action clients can use the same controls
+[confirmed: Gabe Debes, 2026-10-15].
+
 ### Simulator settings and device actions
 
 Each simulator setting in the sidebar has a read action and a write action on
