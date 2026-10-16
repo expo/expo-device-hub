@@ -113,16 +113,19 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
     const previousLocale = { LANG: process.env.LANG, LC_ALL: process.env.LC_ALL };
     process.env.LANG = process.env.LC_ALL = "C";
     try {
-      for (const text of ["café 🎉 email+tag@x.com — 日本語", "second process — café 🎉"]) {
+      const texts = ["café 🎉 email+tag@x.com — 日本語", "second process — café 🎉"];
+      for (const [index, text] of texts.entries()) {
         // Keep the same input session, without toggling the keyboard between processes.
         const start = fixtureLines().length;
         simctl("launch", udid!, APP, "--keyboard-test", "--clipboard-test");
         await waitFor(() => fixtureLines().slice(start).some((line) => line.startsWith("keyboard-active\t")), true);
-        await waitFor(() => fixtureLines().slice(start).some((line) => line.startsWith("keyboard-visible\t")), true);
-        // Preparation must leave the software keyboard visible. A later delivered
-        // HID key can hide it on iOS, even with the unmodified reader.
-        await Bun.sleep(500);
-        expect(fixtureLines().slice(start).some((line) => line.startsWith("keyboard-hidden\t")), fixtureLines().join("\n")).toBe(false);
+        if (index === 0) {
+          await waitFor(() => fixtureLines().slice(start).some((line) => line.startsWith("keyboard-visible\t")), true);
+          // Preparation must leave the software keyboard visible. The first HID
+          // key can hide it across app relaunches, even with the unmodified reader.
+          await Bun.sleep(500);
+          expect(fixtureLines().slice(start).some((line) => line.startsWith("keyboard-hidden\t")), fixtureLines().join("\n")).toBe(false);
+        }
         await pasteOverInputSocket(text);
         expect(await getUiOption(udid!, "hardware-keyboard")).toBe("off");
         simctl("terminate", udid!, APP);

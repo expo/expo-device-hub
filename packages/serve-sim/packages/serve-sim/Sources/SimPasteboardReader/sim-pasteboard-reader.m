@@ -30,7 +30,14 @@ static void refresh_key_commands(void) {
       || strcmp(method_getTypeEncoding(gate), "B24@0:8@16") != 0
       || strcmp(method_getTypeEncoding(update), "v16@0:8") != 0
       || class_getMethodImplementation(object_getClass(app), predicate) != method_getImplementation(gate)
-      || class_getMethodImplementation(object_getClass(app), refresh) != method_getImplementation(update)) return;
+      || class_getMethodImplementation(object_getClass(app), refresh) != method_getImplementation(update)) {
+    static BOOL reported = NO;
+    if (!reported) {
+      reported = YES;
+      fprintf(stderr, "[serve-sim] key-command refresh unavailable: unsupported UIKit methods or app overrides\n");
+    }
+    return;
+  }
 
   refreshing = YES;
   IMP original = method_setImplementation(gate, (IMP)allow_key_command_update);
