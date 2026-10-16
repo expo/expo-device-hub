@@ -53,6 +53,7 @@ final class AccessibilityBridge: NSObject {
     private let queue = DispatchQueue(label: "serve-sim.ax.bridge", qos: .userInitiated)
     private let lock = NSLock()
     private var tokenToDevice: [String: NSObject] = [:]
+    private var tokenToDeadline: [String: DispatchTime] = [:]
     private var translator: NSObject?
     private var loaded = false
 
@@ -255,16 +256,33 @@ final class AccessibilityBridge: NSObject {
         return result
     }
 
+    // @ref LLP 0003#printable-key-characters — readiness probes must not crawl the full UI or press keys
+    func isSoftwareKeyboardVisible(udid: String) throws -> Bool {
+        try keyboardAction(udid: udid, character: nil)
+    }
+
     func typeKeyboardCharacter(udid: String, character: String) throws -> Bool {
+        guard character.count == 1 else { return false }
+        return try keyboardAction(udid: udid, character: character)
+    }
+
+    // A nil character is a bounded read-only readiness probe, never a key press.
+    private func keyboardAction(udid: String, character requestedCharacter: String?) throws -> Bool {
         try ensureLoaded()
         guard let device = FrameCapture.findSimDevice(udid: udid),
               let translator = translator else {
             throw AccessibilityError.translatorUnavailable
         }
-        guard character.count == 1 else { return false }
+        let probeOnly = requestedCharacter == nil
+        let character = requestedCharacter ?? ""
+        let deadline: DispatchTime? = probeOnly ? .now() + .milliseconds(250) : nil
+        func probeExpired() -> Bool {
+            guard let deadline else { return false }
+            return DispatchTime.now().uptimeNanoseconds >= deadline.uptimeNanoseconds
+        }
 
         let token = UUID().uuidString
-        registerToken(token, device: device)
+        registerToken(token, device: device, deadline: deadline)
         defer { unregisterToken(token) }
 
         let frontmostSel = NSSelectorFromString("frontmostApplicationWithDisplayId:bridgeDelegateToken:")
@@ -320,6 +338,7 @@ final class AccessibilityBridge: NSObject {
                 var x = bounds.minX + step / 2
                 while x < bounds.maxX, pointBudget > 0 {
                     defer { x += step }
+                    if probeExpired() { return found }
                     let point = CGPoint(x: x, y: y)
                     if coverage.contains(point) { continue }
                     pointBudget -= 1
@@ -332,6 +351,13 @@ final class AccessibilityBridge: NSObject {
                         t.setValue(token, forKey: "bridgeDelegateToken")
                     }
                     guard stringValue(element, key: "accessibilityRole") == "AXButton" else { continue }
+                    if probeOnly {
+                        if let id = stringValue(element, key: "accessibilityIdentifier"), keyboardIds.contains(id) {
+                            found["id:\(id)"] = element
+                            if isKeyboard(found) { return found }
+                        }
+                        continue
+                    }
                     let frame = (element as? NSAccessibilityElement)?.accessibilityFrame() ?? .zero
                     guard !coverage.contains(frame) else { continue }
                     coverage.insertLeaf(frame)
@@ -401,6 +427,7 @@ final class AccessibilityBridge: NSObject {
 
         var elements = scan()
         guard isKeyboard(elements) else { return false }
+        if probeOnly { return true }
         let initialPlane = plane(elements)
 
         func switchPlane(to target: KeyboardPlane) -> Bool {
@@ -586,14 +613,21 @@ final class AccessibilityBridge: NSObject {
 
     // MARK: - Token registry
 
-    private func registerToken(_ token: String, device: NSObject) {
+    private func registerToken(_ token: String, device: NSObject, deadline: DispatchTime? = nil) {
         lock.lock(); defer { lock.unlock() }
         tokenToDevice[token] = device
+        tokenToDeadline[token] = deadline
     }
 
     private func unregisterToken(_ token: String) {
         lock.lock(); defer { lock.unlock() }
         tokenToDevice.removeValue(forKey: token)
+        tokenToDeadline.removeValue(forKey: token)
+    }
+
+    private func deadline(for token: String) -> DispatchTime? {
+        lock.lock(); defer { lock.unlock() }
+        return tokenToDeadline[token]
     }
 
     private func device(for token: String) -> NSObject? {
@@ -747,7 +781,7 @@ final class AccessibilityBridge: NSObject {
                   let device = self.device(for: capturedToken) else {
                 return Self.emptyTranslatorResponse()
             }
-            return self.runRequest(request, on: device)
+            return self.runRequest(request, on: device, deadline: self.deadline(for: capturedToken))
         }
         return block as AnyObject
     }
@@ -755,7 +789,11 @@ final class AccessibilityBridge: NSObject {
     /// Hop one accessibility XPC request → response. Synchronous: AXPTranslator
     /// drives this from inside its lazy property accessors, so we must block
     /// until CoreSimulator's async callback fires (or the timeout trips).
-    private func runRequest(_ request: AnyObject, on device: NSObject) -> AnyObject? {
+    private func runRequest(_ request: AnyObject, on device: NSObject, deadline: DispatchTime?) -> AnyObject? {
+        let timeout = deadline ?? .now() + .seconds(5)
+        guard DispatchTime.now().uptimeNanoseconds < timeout.uptimeNanoseconds else {
+            return Self.emptyTranslatorResponse()
+        }
         let sel = NSSelectorFromString("sendAccessibilityRequestAsync:completionQueue:completionHandler:")
         guard let imp = device.method(for: sel) else {
             return Self.emptyTranslatorResponse()
@@ -783,7 +821,7 @@ final class AccessibilityBridge: NSObject {
         let send = unsafeBitCast(imp, to: SendFunc.self)
         send(device, sel, request, queue, completion as AnyObject)
 
-        if semaphore.wait(timeout: .now() + 5.0) == .timedOut {
+        if semaphore.wait(timeout: timeout) == .timedOut {
             return Self.emptyTranslatorResponse()
         }
         return box.value ?? Self.emptyTranslatorResponse()

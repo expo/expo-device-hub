@@ -24,6 +24,7 @@ import {
   Orientation,
   axDescribeAsync,
   axFrontmostAsync,
+  axKeyboardVisibleAsync,
   axTypeKeyboardCharacterAsync,
   type MjpegFrame,
   type NativeHingeState,
@@ -332,7 +333,8 @@ export class DeviceSession {
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
   private softwareKeyboardReadyUntil = 0;
-  private softwareKeyboardVisibilityProbe: Promise<boolean> | null = null;
+  private softwareKeyboardSetupRevision = 0;
+  private softwareKeyboardVisibilityProbe: { revision: number; result: Promise<boolean> } | null = null;
 
   constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
@@ -1445,7 +1447,8 @@ export class DeviceSession {
               : null;
             if (!this.hidSockets.has(ws)) return;
             if (currentSetting === "off") {
-              this.softwareKeyboardReadyUntil = Date.now() + 1_000;
+              this.softwareKeyboardSetupRevision++;
+              this.softwareKeyboardReadyUntil = Date.now() + 3_000;
               this.restoreHardwareKeyboardWhenIdle = false;
               return;
             }
@@ -1455,7 +1458,8 @@ export class DeviceSession {
               m.enabled ? "on" : "off",
             ).catch(() => undefined);
             if (!revision) return;
-            this.softwareKeyboardReadyUntil = m.enabled ? 0 : Date.now() + 1_000;
+            this.softwareKeyboardSetupRevision++;
+            this.softwareKeyboardReadyUntil = m.enabled ? 0 : Date.now() + 3_000;
             this.hardwareKeyboardRevision = m.enabled ? undefined : revision;
             this.restoreHardwareKeyboardWhenIdle = !m.enabled && this.hidSockets.size === 0;
           });
@@ -1722,23 +1726,26 @@ export class DeviceSession {
   private async typeSoftwareKeyboardCharacter(character: string, ws: HidSocket, generation: number): Promise<boolean> {
     const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
     const deadline = this.softwareKeyboardReadyUntil;
+    debugKeyboard("character readiness remaining=%d", Math.max(0, deadline - Date.now()));
     while (canType() && Date.now() < deadline) {
       // AX tree reads have no native cancellation. Keep at most one read in
       // flight and release the input turn at the deadline or on disconnect.
       let probe = this.softwareKeyboardVisibilityProbe;
       if (!probe) {
-        probe = isSoftwareKeyboardVisible(this.udid).catch(() => false);
+        const started = Date.now();
+        probe = { revision: this.softwareKeyboardSetupRevision, result: axKeyboardVisibleAsync(this.udid).catch(() => false) };
+        void probe.result.then(visible => debugKeyboard("readiness probe visible=%s elapsed=%d", visible, Date.now() - started));
         this.softwareKeyboardVisibilityProbe = probe;
-        void probe.then(() => {
+        void probe.result.then(() => {
           if (this.softwareKeyboardVisibilityProbe === probe) this.softwareKeyboardVisibilityProbe = null;
         });
       }
       const visible = await Promise.race([
-        probe,
+        probe.result,
         new Promise<undefined>(resolve => setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now())))),
       ]);
       if (!canType()) return false;
-      if (visible === true) {
+      if (visible === true && probe.revision === this.softwareKeyboardSetupRevision) {
         this.softwareKeyboardReadyUntil = 0;
         break;
       }
@@ -1747,7 +1754,10 @@ export class DeviceSession {
     // A timed-out native read may still finish; it must never trigger typing
     // later or overlap another character attempt. Retain the HID fallback.
     if (!canType() || this.softwareKeyboardVisibilityProbe) return false;
-    return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+    const started = Date.now();
+    const handled = await axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+    debugKeyboard("software character handled=%s elapsed=%d", handled, Date.now() - started);
+    return handled;
   }
 
   /** Press Command+V for one viewer's paste; see `sendCommandShortcut`. */

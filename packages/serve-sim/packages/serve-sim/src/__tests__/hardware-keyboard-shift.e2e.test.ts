@@ -200,6 +200,9 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
   });
 
   afterAll(() => {
+    if (process.env.DEBUG?.includes("keyboard")) {
+      try { console.error(readFileSync(join(tempState.dir, `server-${udid}.log`), "utf8")); } catch {}
+    }
     try { cli("--kill", udid!); } catch {}
     try { simctl("terminate", udid!, APP); } catch {}
     try { simctl("uninstall", udid!, APP); } catch {}

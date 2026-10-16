@@ -391,6 +391,12 @@ private func axQuery<T: Sendable>(
             return String(decoding: data, as: UTF8.self)
         }
     },
+    "axKeyboardVisible": try NodeFunction { (udid: String) async throws -> Bool in
+        try await axQuery(udid) { udid in
+            SimFrameworks.load()
+            return try AccessibilityBridge.shared.isSoftwareKeyboardVisible(udid: udid)
+        }
+    },
     "axTypeKeyboardCharacter": try NodeFunction { (udid: String, character: String) async throws -> Bool in
         try await axQuery(udid) { udid in
             SimFrameworks.load()
