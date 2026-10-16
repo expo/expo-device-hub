@@ -191,6 +191,7 @@ export function DeviceScreen({
 
   // ── pointer state ──
   const pointersRef = useRef(new Map<number, Point>());
+  const capturedPointersRef = useRef(new Set<number>());
   const modeRef = useRef<'none' | 'single' | 'alt' | 'two'>('none');
   const singleIdRef = useRef<number | null>(null);
   const altShiftRef = useRef(false);
@@ -242,20 +243,24 @@ export function DeviceScreen({
     rafRef.current = 0;
     const pending = pendingRef.current;
     pendingRef.current = {};
+    const mode = modeRef.current;
     const points = [...pointersRef.current.values()];
+    const pointerIds = [...pointersRef.current.keys()];
+    pointersRef.current.clear();
+    capturedPointersRef.current.clear();
+    modeRef.current = 'none';
+    singleIdRef.current = null;
     const a = pending.multi?.a ?? points[0];
     let b = pending.multi?.b ?? points[1];
-    if (modeRef.current === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
-    else if (a && (modeRef.current === 'two' || modeRef.current === 'alt')) {
+    if (mode === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
+    else if (a && (mode === 'two' || mode === 'alt')) {
       b ??= altSecondFinger(a);
       sendMultiTouch?.({ phase: 'end', a, b });
     }
-    for (const id of pointersRef.current.keys()) {
+    // Releasing capture may synchronously dispatch lostpointercapture.
+    for (const id of pointerIds) {
       try { surfaceRef.current?.releasePointerCapture(id); } catch {}
     }
-    pointersRef.current.clear();
-    modeRef.current = 'none';
-    singleIdRef.current = null;
     setFingers(null);
   }, [sendTouch, sendMultiTouch, altSecondFinger]);
   const cancelBrowserInput = useCallback(() => {
@@ -279,7 +284,9 @@ export function DeviceScreen({
     event.preventDefault();
     surfaceRef.current?.focus({ preventScroll: true });
     try {
-      surfaceRef.current?.setPointerCapture(event.pointerId);
+      const surface = surfaceRef.current;
+      surface?.setPointerCapture(event.pointerId);
+      if (surface) capturedPointersRef.current.add(event.pointerId);
     } catch {}
     pointersRef.current.set(event.pointerId, p);
 
@@ -297,7 +304,11 @@ export function DeviceScreen({
     // Second finger down → real two-finger gesture.
     if (canMulti && pointersRef.current.size >= 2 && modeRef.current !== 'alt') {
       if (modeRef.current === 'single') {
-        sendTouch({ phase: 'end', ...p });
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+        pendingRef.current = {};
+        const previousPoint = pointersRef.current.get(singleIdRef.current!) ?? p;
+        sendTouch({ phase: 'end', ...previousPoint, cancelled: true });
         singleIdRef.current = null;
       }
       const [a, b] = [...pointersRef.current.values()];
@@ -344,6 +355,8 @@ export function DeviceScreen({
     if (!stored) return;
     event.preventDefault();
     const p = pointFrom(event.clientX, event.clientY) ?? stored;
+    // A normal release owns its end; ignore its resulting lost-capture event.
+    capturedPointersRef.current.delete(event.pointerId);
     try {
       surfaceRef.current?.releasePointerCapture(event.pointerId);
     } catch {}
@@ -352,6 +365,7 @@ export function DeviceScreen({
       endMulti(p, altSecondFinger(p));
       modeRef.current = 'none';
       pointersRef.current.clear();
+      capturedPointersRef.current.clear();
       return;
     }
     if (modeRef.current === 'two') {
@@ -359,6 +373,7 @@ export function DeviceScreen({
       endMulti(a ?? p, b ?? p);
       modeRef.current = 'none';
       pointersRef.current.clear();
+      capturedPointersRef.current.clear();
       return;
     }
     if (modeRef.current === 'single' && event.pointerId === singleIdRef.current) {
@@ -453,13 +468,31 @@ export function DeviceScreen({
           borderRadius,
           outline: 'none',
         }}
-        onBlur={releasePressedKeys}
+        onBlur={() => {
+          releasePressedKeys();
+          // Captured gestures survive focus restoration; uncaptured ones cannot receive outside releases.
+          if ([...pointersRef.current.keys()].some(id => !capturedPointersRef.current.has(id))) {
+            cancelBrowserInput();
+          }
+        }}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
+        onPointerLeave={(event) => {
+          if (pointersRef.current.has(event.pointerId) && !capturedPointersRef.current.has(event.pointerId)) {
+            cancelBrowserInput();
+          }
+        }}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={(event) => {
+          if (pointersRef.current.has(event.pointerId)) cancelBrowserInput();
+        }}
+        onLostPointerCapture={(event) => {
+          if (capturedPointersRef.current.delete(event.pointerId) && pointersRef.current.has(event.pointerId)) {
+            cancelBrowserInput();
+          }
+        }}
         onContextMenu={(event) => event.preventDefault()}
       />
 

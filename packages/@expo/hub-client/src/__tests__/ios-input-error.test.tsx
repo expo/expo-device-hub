@@ -91,7 +91,7 @@ async function renderIosClient(inputAdmission: unknown = true, helper: { pid: nu
     renderer = create(<Harness />, { createNodeMock: node => node.type === 'div' ? surface : null });
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
-  return { client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />), changeOptions: (options: {device?: string; token?: string | null; enabled?: boolean}) => renderer!.update(<Harness {...options} />) };
+  return { surface, client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />), changeOptions: (options: {device?: string; token?: string | null; enabled?: boolean}) => renderer!.update(<Harness {...options} />) };
 }
 
 function configFrame(config: object): ArrayBuffer {
@@ -602,4 +602,76 @@ test('a real helper replacement at the same URL retires the previous callbacks',
   expect(replacement.sent.filter(message => new Uint8Array(message)[0] === 6)).toEqual([]);
   await act(async () => client().sendTouch({ phase: 'begin', x: 0.4, y: 0.5 }));
   expect(gestureMessages(replacement)).toHaveLength(1);
+});
+
+
+for (const gesture of ['single', 'multi'] as const) {
+  for (const cancellation of ['onLostPointerCapture', 'onPointerCancel', 'failed capture blur', 'failed capture leave'] as const) {
+    test(`${cancellation} discards an unfinished unadmitted ${gesture} gesture`, async () => {
+      const harness = await renderIosClient(true, { pid: 1 }, true);
+      const socket = harness.helperSockets()[0]!;
+      socket.readyState = 1;
+      const surface = renderer!.root.findByProps({ role: 'application' });
+      if (cancellation.startsWith('failed capture')) {
+        harness.surface.setPointerCapture = () => { throw new Error('capture unavailable'); };
+      }
+      const pointer = { pointerId: 1, pointerType: 'mouse', button: 0, clientX: 20, clientY: 60,
+        altKey: gesture === 'multi', shiftKey: false, preventDefault() {} };
+      await act(async () => surface.props.onPointerDown(pointer));
+      await act(async () => {
+        if (cancellation === 'failed capture blur') surface.props.onBlur();
+        else if (cancellation === 'failed capture leave') surface.props.onPointerLeave(pointer);
+        else surface.props[cancellation](pointer);
+      });
+      await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+      expect(gestureMessages(socket)).toEqual([]);
+      await act(async () => surface.props.onPointerUp(pointer));
+      expect(gestureMessages(socket)).toEqual([]);
+    });
+  }
+}
+
+for (const cancellation of ['blur', 'onLostPointerCapture', 'onPointerCancel'] as const) {
+  test(`a real two-finger gesture abandoned by ${cancellation} does not replay its single-touch prefix`, async () => {
+    const { helperSockets, dispatch } = await renderIosClient(true, { pid: 1 }, true);
+    const socket = helperSockets()[0]!;
+    socket.readyState = 1;
+    const surface = renderer!.root.findByProps({ role: 'application' });
+    const pointer = { pointerId: 1, pointerType: 'touch', button: 0, clientX: 20, clientY: 60,
+      altKey: false, shiftKey: false, preventDefault() {} };
+    await act(async () => {
+      surface.props.onPointerDown(pointer);
+      surface.props.onPointerDown({ ...pointer, pointerId: 2, clientX: 70 });
+    });
+    await act(async () => {
+      if (cancellation === 'blur') dispatch('blur');
+      else surface.props[cancellation](pointer);
+      socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+    });
+    expect(gestureMessages(socket)).toEqual([]);
+    await act(async () => surface.props.onPointerUp({ ...pointer, pointerId: 2, clientX: 70 }));
+    expect(gestureMessages(socket)).toEqual([]);
+  });
+}
+
+test('a completed real pinch keeps its multi-touch pair and an earlier tap without a synthetic tap', async () => {
+  const { helperSockets, client } = await renderIosClient(true, { pid: 1 }, true);
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  const surface = renderer!.root.findByProps({ role: 'application' });
+  const pointer = { pointerId: 1, pointerType: 'touch', button: 0, clientX: 20, clientY: 60,
+    altKey: false, shiftKey: false, preventDefault() {} };
+  await act(async () => {
+    surface.props.onPointerDown(pointer);
+    surface.props.onPointerUp(pointer);
+    client().sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
+    surface.props.onPointerDown(pointer);
+    surface.props.onPointerDown({ ...pointer, pointerId: 2, clientX: 70 });
+    surface.props.onPointerUp(pointer);
+    socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+  });
+  const gestures = gestureMessages(socket);
+  expect(gestures.map(message => message.type)).toEqual(['begin', 'end', 'begin', 'end']);
+  expect(gestures[2]).toHaveProperty('x1');
+  expect(socket.sent.filter(message => new Uint8Array(message)[0] === 6)).toHaveLength(1);
 });

@@ -524,7 +524,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const edge = displayEdge === undefined ? undefined : rawEdgeForDisplayEdge(orientation, displayEdge);
     const payload =
       edge === undefined ? { type: sample.phase, ...p } : { type: sample.phase, ...p, edge };
-    sendWs(WS_MSG_TOUCH, payload);
+    if (sample.phase === 'end' && sample.cancelled) {
+      // A single→multi transition releases an admitted finger but is not a completed tap.
+      const pending = pendingInputRef.current;
+      pending.messages = discardUnfinishedQueuedGestures(pending.messages, WS_MSG_TOUCH);
+      const socket = inputSocketRef.current;
+      socket?.discardUnfinishedGestures(WS_MSG_TOUCH);
+      socket?.trySend(WS_MSG_TOUCH, payload);
+    } else {
+      sendWs(WS_MSG_TOUCH, payload);
+    }
   }, [sendWs, ownsInput]);
 
   const sendMultiTouch = useCallback(

@@ -441,6 +441,8 @@ export type DeviceAppearance = 'light' | 'dark';
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
   phase: 'begin' | 'move' | 'end';
+  /** An end that abandons unsent touch intent, e.g. conversion to a two-finger gesture. */
+  cancelled?: boolean;
   /** 0..1 across the screen width. */
   x: number;
   /** 0..1 down the screen height. */

@@ -133,3 +133,101 @@ test("KeyboardCapture restores focus without ending the captured phone gesture",
   await act(async () => surface.dispatchEvent(pointer("pointerup", 50) as unknown as PointerEvent));
   expect(touches.map((sample) => sample.phase)).toEqual(["begin", "move", "end"]);
 });
+
+async function gestureHarness(captureFails = false) {
+  const touches: { phase: string; x: number; y: number }[] = [];
+  let cancellations = 0;
+  await act(async () =>
+    root.render(
+      <DeviceScreen
+        client={{
+          ...NOOP_DEVICE_CLIENT,
+          sendTouch: (sample) => touches.push(sample),
+          cancelInput: () => {
+            cancellations++;
+          },
+        }}
+      />,
+    ),
+  );
+  surface = container.querySelector('[role="application"]')!;
+  surface.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 200 }) as DOMRect;
+  const pointer = (type: string, x = 20) =>
+    new dom.PointerEvent(type, {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: "touch",
+      button: 0,
+      clientX: x,
+      clientY: 60,
+    });
+  Object.assign(surface, {
+    setPointerCapture() {
+      if (captureFails) throw new Error("capture unavailable");
+    },
+    releasePointerCapture() {
+      surface.dispatchEvent(pointer("lostpointercapture") as unknown as PointerEvent);
+    },
+  });
+  const dispatch = async (type: string, x = 20) =>
+    act(async () => {
+      surface.dispatchEvent(pointer(type, x) as unknown as PointerEvent);
+    });
+  return { touches, dispatch, cancellations: () => cancellations };
+}
+
+test("failed capture ends an uncaptured drag on local blur", async () => {
+  const s = await gestureHarness(true);
+  await s.dispatch("pointerdown");
+  await s.dispatch("pointermove", 40);
+  const button = dom.document.createElement("button");
+  dom.document.body.append(button);
+  await act(async () => button.focus());
+  frame();
+  expect(s.touches).toEqual([
+    { phase: "begin", x: 0.2, y: 0.3 },
+    { phase: "end", x: 0.4, y: 0.3 },
+  ]);
+  expect(frames.size).toBe(0);
+  await s.dispatch("pointerup", 50);
+  expect(s.touches).toHaveLength(2);
+});
+
+for (const event of ["lostpointercapture", "pointercancel"]) {
+  test(`${event} ends the gesture once and cancels its pending movement`, async () => {
+    const s = await gestureHarness();
+    await s.dispatch("pointerdown");
+    await s.dispatch("pointermove", 40);
+    await s.dispatch(event);
+    frame();
+    expect(s.touches.map((sample) => sample.phase)).toEqual(["begin", "end"]);
+    expect(frames.size).toBe(0);
+    await s.dispatch("pointerup", 50);
+    expect(s.touches).toHaveLength(2);
+  });
+}
+
+test("normal pointerup ignores synchronous capture loss and uses the real release position", async () => {
+  const s = await gestureHarness();
+  await s.dispatch("pointerdown");
+  await s.dispatch("pointermove", 40);
+  await s.dispatch("pointerup", 50);
+  expect(s.cancellations()).toBe(0);
+  expect(s.touches).toEqual([
+    { phase: "begin", x: 0.2, y: 0.3 },
+    { phase: "end", x: 0.5, y: 0.3 },
+  ]);
+  expect(frames.size).toBe(0);
+});
+
+test("an uncaptured pointer leaving the surface ends the drag without needing a focus change", async () => {
+  const s = await gestureHarness(true);
+  await s.dispatch("pointerdown");
+  await s.dispatch("pointermove", 40);
+  // React derives pointerleave from the bubbling native pointerout event.
+  await s.dispatch("pointerout", 120);
+  frame();
+  expect(s.touches.map((sample) => sample.phase)).toEqual(["begin", "end"]);
+  expect(document.activeElement).toBe(surface);
+  expect(frames.size).toBe(0);
+});
