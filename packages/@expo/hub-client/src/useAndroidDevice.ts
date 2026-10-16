@@ -1002,9 +1002,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     // @ref LLP 0012#playback-watchdog — gRPC repeats idle frames; scrcpy may stay silent
+    // Reserve half the stall window for repeat-timer quantization and encode/delivery latency.
     expectContinuousFrames: webRtcCaptureSource?.mode === 'grpc-screenshot' &&
       webRtcCaptureSource.repeatFrameMs !== undefined && webRtcCaptureSource.repeatFrameMs > 0 &&
-      webRtcCaptureSource.repeatFrameMs < PLAYBACK_STALL_POLL_MS * PLAYBACK_STALL_POLLS,
+      webRtcCaptureSource.repeatFrameMs <= (PLAYBACK_STALL_POLL_MS * PLAYBACK_STALL_POLLS) / 2,
     onKeyframeNeeded: requestWebRtcKeyframe,
     onBeforeDisconnect: preserveWebRtcFrame,
     fetchImpl: sessionFetch,

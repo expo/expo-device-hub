@@ -384,8 +384,8 @@ async function androidHarness({
     changeDevice: async () => {
       await act(async () => renderer!.update(<Harness device="another-emulator" />));
     },
-    stallPlayback: async () => {
-      for (let sample = 0; sample <= PLAYBACK_STALL_POLLS; sample++) {
+    stallPlayback: async (samples = PLAYBACK_STALL_POLLS + 1) => {
+      for (let sample = 0; sample < samples; sample++) {
         await act(async () => {
           for (const interval of intervals.values()) {
             if (interval.delay === PLAYBACK_STALL_POLL_MS) interval.callback();
@@ -669,7 +669,7 @@ for (const mode of ['scrcpy', 'grpc-screenshot']) {
 }
 
 
-for (const repeatFrameMs of [0, 8_000, 30_000]) {
+for (const repeatFrameMs of [0, 4_001, 7_999, 8_000, 30_000]) {
   test(`slow or disabled gRPC repeats (${repeatFrameMs}ms) do not trigger false recovery`, async () => {
     const hub = await androidHarness({ sourceMode: 'grpc-screenshot', repeatFrameMs });
     const peer = Peer.instances.at(-1)!;
@@ -681,6 +681,27 @@ for (const repeatFrameMs of [0, 8_000, 30_000]) {
     expect(hub.client.status).toBe('streaming');
   });
 }
+
+test('gRPC repeats at the eligibility boundary tolerate timer and delivery latency but recover when dead', async () => {
+  const hub = await androidHarness({ sourceMode: 'grpc-screenshot', repeatFrameMs: 4_000 });
+  const peer = Peer.instances.at(-1)!;
+  let polls = 0;
+  let frozen = false;
+  let frames = 100;
+  peer.getStats = async () => {
+    // A 4 s repeat plus up to 250 ms timer quantization and 750 ms delivery.
+    if (!frozen && ++polls % 5 === 0) frames++;
+    return new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: frames, framesDecoded: frames,
+    }]]);
+  };
+  await hub.stallPlayback(25);
+  expect(peer.closeCount).toBe(0);
+  expect(hub.client.status).toBe('streaming');
+  frozen = true;
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(1);
+});
 
 test('missing cadence metadata stays conservative and late discovery adopts the gRPC policy once', async () => {
   const hub = await androidHarness({ delaySource: true, sourceMode: 'grpc-screenshot' });
