@@ -17,6 +17,7 @@ export function createInputSocket(
   url: string,
   handlers: InputSocketHandlers,
   {
+    initialMessages = [] as QueuedWsMessage[],
     requireAdmission = true,
     legacyOpenGraceMs = 1000,
     reconnectDelayMs = 1000,
@@ -33,7 +34,7 @@ export function createInputSocket(
   let admitted = false;
   let reported = false;
   let stopped = false;
-  let pendingMessages: QueuedWsMessage[] = [];
+  let pendingMessages = initialMessages;
 
   const connect = () => {
     if (stopped || socket) return;
@@ -114,11 +115,18 @@ export function createInputSocket(
 
   return {
     send(tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) {
+      if (stopped) return;
       // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload, Date.now(), onSent);
     },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
+    },
+    /** Transfer unsent intent across rediscovery without resetting its original age. */
+    takePending() {
+      const messages = pendingMessages;
+      pendingMessages = [];
+      return messages;
     },
     start: connect,
     dispose() {

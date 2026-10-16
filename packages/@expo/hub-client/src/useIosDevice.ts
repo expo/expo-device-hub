@@ -106,7 +106,7 @@ import {
   createLadderBackoff,
 } from './webrtc-fallback';
 import { createInputSocket } from './input-socket';
-import { type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
+import { enqueueWsMessage, sendOrQueueWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
 import { WS_MSG_CONFIG } from './input-protocol';
 import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
 
@@ -383,6 +383,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
+  const pendingInputRef = useRef<{ scope: string | null; helper: string | null; messages: QueuedWsMessage[] }>({ scope: null, helper: null, messages: [] });
+  const inputHelperKey = config ? JSON.stringify([config.device, config.wsUrl, config.pid, config.execToken]) : null;
+  // @ref LLP 0013#ios-input-adapter — discovery gaps retain intent, known owner changes discard it
+  useLayoutEffect(() => {
+    const previous = pendingInputRef.current;
+    const sameScope = previous.scope === connectionScope;
+    const helper = inputHelperKey ?? (sameScope ? previous.helper : null);
+    if (!sameScope || (previous.helper !== null && previous.helper !== helper)) {
+      // Retire the old transport before callbacks can send into the new scope.
+      inputSocketRef.current?.dispose();
+      inputSocketRef.current = null;
+      pendingInputRef.current = { scope: connectionScope, helper, messages: [] };
+    } else {
+      // Initial discovery binds early intent; a temporary null config keeps its owner.
+      previous.helper = helper;
+    }
+  }, [connectionScope, inputHelperKey]);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -457,8 +474,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) => {
-    if (!deviceSettingConfigRef.current) return;
-    inputSocketRef.current?.send(tag, payload, onSent);
+    const pending = pendingInputRef.current;
+    if (pending.scope === null) return;
+    if (inputSocketRef.current && deviceSettingConfigRef.current) {
+      inputSocketRef.current.send(tag, payload, onSent);
+    } else {
+      pending.messages = sendOrQueueWsMessage(null, pending.messages, tag, payload, Date.now(), onSent);
+    }
   }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -1152,6 +1174,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const pendingOwner = pendingInputRef.current;
+    const initialMessages = pendingOwner.messages;
+    pendingOwner.messages = [];
     // @ref LLP 0013#ios-input-adapter — refusals clear only on admission; rediscovery waits for the reconnect
     const input = createInputSocket(wsUrl, {
       onAdmitted() {
@@ -1195,12 +1220,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       },
       onRecovered() { setInputSocketError(null); },
-    }, { requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
+    }, { initialMessages, requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
     inputSocketRef.current = input;
     input.start();
     return () => {
       clearTimeout(refreshTimer);
+      let messages = input.takePending();
       input.dispose();
+      if (pendingInputRef.current === pendingOwner) {
+        for (const message of pendingOwner.messages) messages = enqueueWsMessage(messages, message);
+        pendingOwner.messages = messages;
+      }
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
     };

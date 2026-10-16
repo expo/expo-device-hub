@@ -20,12 +20,13 @@ const CLIENT_LIMIT_REASON = 'Simulator input unavailable; retry after other clie
 type FakeSocket = {
   url: string;
   readyState: number;
+  sent: ArrayBuffer[];
   onopen?: () => void;
   onmessage?: (event: { data: unknown }) => void;
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient(inputAdmission: unknown = true, helper: { pid: number; absent?: boolean } = { pid: 1 }) {
+async function renderIosClient(inputAdmission: unknown = true, helper: { pid: number; absent?: boolean; discovery?: Promise<void> } = { pid: 1 }) {
   const sockets: FakeSocket[] = [];
   const realTimeout = globalThis.setTimeout;
   stubGlobal('setTimeout', (callback: () => void, delay: number) => realTimeout(callback, delay === 13_000 ? 20 : delay === 1500 ? 10 : delay === 1000 || delay === 5000 ? 20 : delay));
@@ -48,7 +49,8 @@ async function renderIosClient(inputAdmission: unknown = true, helper: { pid: nu
     constructor(readonly url: string) {
       sockets.push(this);
     }
-    send() {}
+    sent: ArrayBuffer[] = [];
+    send(data: ArrayBuffer) { this.sent.push(data); }
     close() {}
   });
   stubGlobal('EventSource', class {
@@ -57,6 +59,7 @@ async function renderIosClient(inputAdmission: unknown = true, helper: { pid: nu
   stubGlobal('fetch', async (url: string) => {
     const endpoint = new URL(String(url), 'http://localhost:3200');
     if (endpoint.pathname === '/sim/api') {
+      await helper.discovery;
       if (helper.absent) return Response.json(null);
       const device = endpoint.searchParams.get('device');
       return Response.json({inputAdmission: inputAdmission === false ? undefined : inputAdmission, device, pid: helper.pid,
@@ -68,15 +71,15 @@ async function renderIosClient(inputAdmission: unknown = true, helper: { pid: nu
   });
 
   let client!: DeviceClient;
-  function Harness({device = 'DEVICE-A'}: {device?: string}) {
-    client = useIosDeviceClient({ baseUrl: '/sim', device, streamMode: 'mjpeg' });
+  function Harness({device = 'DEVICE-A', token = null, enabled = true}: {device?: string; token?: string | null; enabled?: boolean}) {
+    client = useIosDeviceClient({ baseUrl: '/sim', device, token, enabled, streamMode: 'mjpeg' });
     return null;
   }
   await act(async () => {
     renderer = create(<Harness />);
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
-  return { client: () => client, helperSockets, changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
+  return { client: () => client, helperSockets, changeDevice: (device: string) => renderer!.update(<Harness device={device} />), changeOptions: (options: {device?: string; token?: string | null; enabled?: boolean}) => renderer!.update(<Harness {...options} />) };
 }
 
 function configFrame(config: object): ArrayBuffer {
@@ -228,3 +231,80 @@ test('an overload warning stays with its device', async () => {
   await act(async () => changeDevice('DEVICE-B'));
   expect(client().inputError).toBeNull();
 });
+
+function buttons(socket: FakeSocket) {
+  return socket.sent.filter(data => new Uint8Array(data)[0] === 0x04)
+    .map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))).button);
+}
+
+async function admit(socket: FakeSocket) {
+  socket.readyState = 1;
+  await act(async () => socket.onopen?.());
+  expect(buttons(socket)).toEqual([]);
+  await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+}
+
+test('fresh controls entered before discovery wait for input admission', async () => {
+  let release!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+  const { client, helperSockets } = await renderIosClient(true, helper);
+  expect(helperSockets()).toHaveLength(0);
+  await act(async () => client().pressButton('home'));
+  await act(async () => release());
+  const socket = helperSockets()[0]!;
+  await admit(socket);
+  expect(buttons(socket)).toEqual(['home']);
+});
+
+for (const replaced of [false, true]) {
+  test(`a discovery gap ${replaced ? 'drops commands for a replaced helper' : 'retains fresh commands for the same helper'}`, async () => {
+    const helper = { pid: 1, absent: false };
+    const { client, helperSockets } = await renderIosClient(true, helper);
+    // Queue one command before admission, then remove the helper from discovery.
+    await act(async () => client().pressButton('home'));
+    helper.absent = true;
+    await act(async () => helperSockets()[0]!.onclose?.({ code: 1006, reason: '' }));
+    await act(async () => new Promise(resolve => setTimeout(resolve, 15)));
+    expect(client().status).toBe('connecting');
+    await act(async () => client().pressButton('power'));
+    helper.absent = false;
+    if (replaced) helper.pid++;
+    await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+    const socket = helperSockets().at(-1)!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(replaced ? [] : ['home', 'lock']);
+  });
+}
+
+for (const changed of ['device', 'token', 'disabled'] as const) {
+  test(`early input is discarded when ${changed} changes`, async () => {
+    let release!: () => void;
+    const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+    const { client, helperSockets, changeOptions } = await renderIosClient(true, helper);
+    await act(async () => client().pressButton('home'));
+    await act(async () => changeOptions(changed === 'device' ? { device: 'DEVICE-B' } : changed === 'token' ? { token: 'new-token' } : { enabled: false }));
+    if (changed === 'disabled') await act(async () => changeOptions({ enabled: true }));
+    await act(async () => client().pressButton('power'));
+    await act(async () => release());
+    const socket = helperSockets().at(-1)!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(['lock']);
+  });
+}
+
+for (const expired of [false, true]) {
+  test(`early controls ${expired ? 'expire at their original deadline' : 'retain the 32-message capacity limit'}`, async () => {
+    let release!: () => void;
+    let now = 0;
+    const NativeDate = Date;
+    stubGlobal('Date', class extends NativeDate { static now() { return now; } });
+    const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+    const { client, helperSockets } = await renderIosClient(true, helper);
+    await act(async () => { for (let index = 0; index < 40; index++) client().pressButton('home'); });
+    if (expired) now = 1501;
+    await act(async () => release());
+    const socket = helperSockets()[0]!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(expired ? [] : Array(32).fill('home'));
+  });
+}
