@@ -1,4 +1,5 @@
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
+import { US_KEYBOARD_MAP } from "./text-to-keys";
 /**
  * In-process device session — the replacement for the spawned serve-sim-bin
  * helper. One session per booted simulator owns a NativeCapture + NativeHid and
@@ -23,6 +24,7 @@ import {
   Orientation,
   axDescribeAsync,
   axFrontmostAsync,
+  axKeyboardVisibleAsync,
   axTypeKeyboardCharacterAsync,
   type MjpegFrame,
   type NativeHingeState,
@@ -330,6 +332,9 @@ export class DeviceSession {
   private readonly serverInput: HidSocket = { send() {}, on() {}, close() {} };
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
+  private softwareKeyboardReadyUntil = 0;
+  private softwareKeyboardSetupRevision = 0;
+  private softwareKeyboardVisibilityProbe: { revision: number; result: Promise<boolean> } | null = null;
 
   constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
@@ -1311,13 +1316,17 @@ export class DeviceSession {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             const axHandledKeyUsages = this.axHandledKeyUsages.get(ws)!;
+            const generation = this.inputGeneration;
             const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
             this.supportsHingeAngle ??= supportsHingeAngle;
-            if (m.type === "down" && !supportsHingeAngle && m.shifted === true &&
-              typeof m.key === "string" && m.key.length === 1) {
+            const character = typeof m.key === "string" && m.key.length === 1 ? m.key : undefined;
+            const physical = character === undefined ? undefined : US_KEYBOARD_MAP[character];
+            // Matching US keys retain the fast HID path; layout differences need the character.
+            const needsCharacter = m.shifted === true || !physical || physical.shift || physical.usage !== m.usage;
+            if (m.type === "down" && !supportsHingeAngle && character !== undefined && needsCharacter) {
               const hardwareKeyboard = await getUiOption(this.udid, "hardware-keyboard");
               if (hardwareKeyboard === "off" &&
-                await this.typeSoftwareKeyboardCharacter(m.key)) {
+                await this.typeSoftwareKeyboardCharacter(character, ws, generation)) {
                 if (this.activeHidKeyUsages.get(ws)?.has(m.usage)) {
                   await this.updateHidKey(ws, "up", m.usage);
                 }
@@ -1325,7 +1334,7 @@ export class DeviceSession {
                 return;
               }
             }
-            if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
+            if (!this.canRunInputControl(generation) || this.detachedHidSockets.has(ws)) return;
             if (m.type === "up" && axHandledKeyUsages.delete(m.usage)) return;
             if (m.type === "down") axHandledKeyUsages.delete(m.usage);
             if (m.type === "down" || m.type === "up") await this.updateHidKey(ws, m.type, m.usage);
@@ -1438,6 +1447,8 @@ export class DeviceSession {
               : null;
             if (!this.hidSockets.has(ws)) return;
             if (currentSetting === "off") {
+              this.softwareKeyboardSetupRevision++;
+              this.softwareKeyboardReadyUntil = Date.now() + 3_000;
               this.restoreHardwareKeyboardWhenIdle = false;
               return;
             }
@@ -1447,6 +1458,8 @@ export class DeviceSession {
               m.enabled ? "on" : "off",
             ).catch(() => undefined);
             if (!revision) return;
+            this.softwareKeyboardSetupRevision++;
+            this.softwareKeyboardReadyUntil = m.enabled ? 0 : Date.now() + 3_000;
             this.hardwareKeyboardRevision = m.enabled ? undefined : revision;
             this.restoreHardwareKeyboardWhenIdle = !m.enabled && this.hidSockets.size === 0;
           });
@@ -1709,9 +1722,42 @@ export class DeviceSession {
       });
   }
 
-  private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
-    if (this.phase !== "running") return false;
-    return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+  // @ref LLP 0003#printable-key-characters — accepted keyboard setup can precede guest visibility
+  private async typeSoftwareKeyboardCharacter(character: string, ws: HidSocket, generation: number): Promise<boolean> {
+    const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
+    const deadline = this.softwareKeyboardReadyUntil;
+    debugKeyboard("character readiness remaining=%d", Math.max(0, deadline - Date.now()));
+    while (canType() && Date.now() < deadline) {
+      // AX tree reads have no native cancellation. Keep at most one read in
+      // flight and release the input turn at the deadline or on disconnect.
+      let probe = this.softwareKeyboardVisibilityProbe;
+      if (!probe) {
+        const started = Date.now();
+        probe = { revision: this.softwareKeyboardSetupRevision, result: axKeyboardVisibleAsync(this.udid).catch(() => false) };
+        void probe.result.then(visible => debugKeyboard("readiness probe visible=%s elapsed=%d", visible, Date.now() - started));
+        this.softwareKeyboardVisibilityProbe = probe;
+        void probe.result.then(() => {
+          if (this.softwareKeyboardVisibilityProbe === probe) this.softwareKeyboardVisibilityProbe = null;
+        });
+      }
+      const visible = await Promise.race([
+        probe.result,
+        new Promise<undefined>(resolve => setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now())))),
+      ]);
+      if (!canType()) return false;
+      if (visible === true && probe.revision === this.softwareKeyboardSetupRevision) {
+        this.softwareKeyboardReadyUntil = 0;
+        break;
+      }
+      if (visible === false) await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    // A timed-out native read may still finish; it must never trigger typing
+    // later or overlap another character attempt. Retain the HID fallback.
+    if (!canType() || this.softwareKeyboardVisibilityProbe) return false;
+    const started = Date.now();
+    const handled = await axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+    debugKeyboard("software character handled=%s elapsed=%d", handled, Date.now() - started);
+    return handled;
   }
 
   /** Press Command+V for one viewer's paste; see `sendCommandShortcut`. */

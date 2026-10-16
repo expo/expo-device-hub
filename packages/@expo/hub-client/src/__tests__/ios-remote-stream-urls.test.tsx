@@ -166,7 +166,19 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     `${publicBase.replace(/^http/, 'ws')}/exec-ws`,
   );
   const subscriptions = sockets.flatMap((socket) => socket.sent).filter((message) => 'sub' in message);
-  expect(subscriptions).toContainEqual({ sub: 1, path: `${advertisedBasePath}/logs?device=DEVICE-A` });
-  expect(subscriptions).toContainEqual({ sub: 2, path: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A` });
-  expect(subscriptions).toContainEqual({ sub: 3, path: `${advertisedBasePath}/metrics?device=DEVICE-A` });
+  expect(subscriptions).toContainEqual(expect.objectContaining({ path: `${advertisedBasePath}/logs?device=DEVICE-A` }));
+  expect(subscriptions).toContainEqual(expect.objectContaining({ path: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A` }));
+  expect(subscriptions).toContainEqual(expect.objectContaining({ path: `${advertisedBasePath}/metrics?device=DEVICE-A` }));
+  const controlSockets = sockets.filter(socket => socket.url.endsWith('/exec-ws'));
+  expect(controlSockets).toHaveLength(1);
+  const metricsSubs = subscriptions.filter(message => String(message.path).includes('/metrics?'));
+  expect(metricsSubs).toHaveLength(1);
+  const control = controlSockets[0]!;
+  const before = control.sent.length;
+  await act(async () => client.detachLogs());
+  const changes = control.sent.slice(before);
+  expect(changes).toHaveLength(1);
+  expect(changes[0]).toHaveProperty('unsub');
+  expect(changes[0]!.unsub).not.toBe(metricsSubs[0]!.sub);
+
 });

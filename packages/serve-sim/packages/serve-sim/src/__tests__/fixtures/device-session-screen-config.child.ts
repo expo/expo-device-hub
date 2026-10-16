@@ -60,6 +60,9 @@ let axDelay = 0;
 let axGate: Promise<void> | undefined;
 let hardwareKeyboard = "on";
 let hardwareKeyboardDelay = 0;
+let softwareKeyboardVisible = true;
+let softwareKeyboardVisibilityGate: Promise<void> | undefined;
+let softwareKeyboardVisibilityReads = 0;
 let hardwareKeyboardReadGate: Promise<void> | undefined;
 let hardwareKeyboardReads = 0;
 const hardwareKeyboardUpdatesStarted: string[] = [];
@@ -185,7 +188,20 @@ const inputCommands: Array<{
   { name: "caDebug", call: (hid) => hid.caDebug("color-blended-layers", true), result: true },
 ];
 
+mock.module("../../ax", () => ({
+  isSoftwareKeyboardVisible: async () => {
+    softwareKeyboardVisibilityReads++;
+    await softwareKeyboardVisibilityGate;
+    return softwareKeyboardVisible;
+  },
+}));
+
 mock.module("../../native", () => ({
+  axKeyboardVisibleAsync: async () => {
+    softwareKeyboardVisibilityReads++;
+    await softwareKeyboardVisibilityGate;
+    return softwareKeyboardVisible;
+  },
   NativeCapture: class {
     async start() { if (captureStartError) throw captureStartError; }
     async stop() { captureStops++; }
@@ -300,6 +316,9 @@ beforeEach(() => {
   axGate = undefined;
   hardwareKeyboard = "on";
   hardwareKeyboardDelay = 0;
+  softwareKeyboardVisible = true;
+  softwareKeyboardVisibilityGate = undefined;
+  softwareKeyboardVisibilityReads = 0;
   hardwareKeyboardReadGate = undefined;
   hardwareKeyboardReads = 0;
   hardwareKeyboardUpdatesStarted.length = 0;
@@ -830,8 +849,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-async function waitUntil(predicate: () => boolean): Promise<void> {
-  const deadline = Date.now() + 1500;
+async function waitUntil(predicate: () => boolean, timeoutMs = 1500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error("Timed out waiting for screen config");
     await Bun.sleep(10);
@@ -1106,6 +1125,175 @@ describe("shifted keyboard routing", () => {
     send(0x06, { type: "up", usage: 4 });
     await waitUntil(() => inputCalls.filter((call) => call === "key").length === 2);
     expect(axCharacters).toEqual([]);
+  });
+
+  test("types an unshifted browser-layout character instead of its physical US key", async () => {
+    hardwareKeyboard = "off";
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => axCharacters.length === 1);
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("an early layout key waits for a pending hardware keyboard change", async () => {
+    await start({ width: 1170, height: 2532 });
+    hardwareKeyboardDelay = 30;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => axCharacters.length === 1);
+    expect(hardwareKeyboard).toBe("off");
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("an early layout key waits for the guest keyboard to appear", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => softwareKeyboardVisibilityReads > 0 || axCharacters.length > 0);
+    expect(axCharacters).toEqual([]);
+    softwareKeyboardVisible = true;
+    await waitUntil(() => axCharacters.length === 1);
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("disconnecting during keyboard readiness never types the pending character", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    await waitUntil(() => softwareKeyboardVisibilityReads > 0 || axCharacters.length > 0);
+    ws!.terminate();
+    await Bun.sleep(50);
+    softwareKeyboardVisible = true;
+    await Bun.sleep(50);
+    expect(axCharacters).toEqual([]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("keeps matching unshifted printable keys on the fast HID path", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    inputCalls.length = 0;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 4, key: "a" });
+    send(0x06, { type: "up", usage: 4 });
+    await waitUntil(() => keyEvents.length === 2);
+    expect(axCharacters).toEqual([]);
+    expect(keyEvents).toEqual([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+    expect(softwareKeyboardVisibilityReads).toBe(0);
+  });
+
+  test("keyboard visibility waiting expires and retains the HID fallback", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    axFailures = 1;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => keyEvents.length === 2, 4_000);
+    expect(axCharacters).toEqual(["z"]);
+    expect(softwareKeyboardVisibilityReads).toBeGreaterThan(0);
+    expect(keyEvents).toEqual([{ type: "down", usage: 0x1c }, { type: "up", usage: 0x1c }]);
+  });
+
+  test("a stalled visibility read expires without piling up native queries or typing later", async () => {
+    await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    softwareKeyboardVisibilityGate = new Promise<void>(resolve => { release = resolve; });
+    try {
+      send(0x0e, { enabled: false });
+      send(0x06, { type: "down", usage: 0x1c, key: "z" });
+      send(0x06, { type: "up", usage: 0x1c });
+      await waitUntil(() => softwareKeyboardVisibilityReads === 1);
+      await Bun.sleep(3_100);
+      expect(keyEvents).toEqual([{ type: "down", usage: 0x1c }, { type: "up", usage: 0x1c }]);
+      send(0x06, { type: "down", usage: 0x1d, key: "y" });
+      send(0x06, { type: "up", usage: 0x1d });
+      await waitUntil(() => keyEvents.length === 4);
+      expect(softwareKeyboardVisibilityReads).toBe(1);
+      expect(axCharacters).toEqual([]);
+      release();
+      await Bun.sleep(50);
+      expect(axCharacters).toEqual([]);
+      expect(keyEvents).toHaveLength(4);
+    } finally { release(); }
+  });
+
+  test("disconnecting during a stalled visibility read releases another viewer's input", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    softwareKeyboardVisibilityGate = new Promise<void>(resolve => { release = resolve; });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    try {
+      send(0x0e, { enabled: false });
+      send(0x06, { type: "down", usage: 0x1c, key: "z" });
+      await waitUntil(() => softwareKeyboardVisibilityReads === 1);
+      ws!.terminate();
+      sendTo(second, 0x06, { type: "down", usage: 4 });
+      sendTo(second, 0x06, { type: "up", usage: 4 });
+      await Bun.sleep(150);
+      expect(keyEvents).toEqual([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+      expect(axCharacters).toEqual([]);
+      release();
+      await Bun.sleep(50);
+      expect(axCharacters).toEqual([]);
+    } finally { release(); second.terminate(); }
+  });
+
+  test("a guest keyboard appearing after one second still preserves the early layout key", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => softwareKeyboardVisibilityReads > 0);
+    await Bun.sleep(1_100);
+    expect(axCharacters).toEqual([]);
+    expect(keyEvents).toEqual([]);
+    softwareKeyboardVisible = true;
+    await waitUntil(() => axCharacters.length === 1);
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("a new keyboard setup cannot reuse a disconnected viewer's visibility result", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    softwareKeyboardVisibilityGate = new Promise<void>(resolve => { release = resolve; });
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    await waitUntil(() => softwareKeyboardVisibilityReads === 1);
+    ws!.terminate();
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    try {
+      const readsBeforeSetup = hardwareKeyboardReads;
+      sendTo(second, 0x0e, { enabled: true });
+      sendTo(second, 0x0e, { enabled: false });
+      sendTo(second, 0x06, { type: "down", usage: 0x1d, key: "y" });
+      sendTo(second, 0x06, { type: "up", usage: 0x1d });
+      await waitUntil(() => hardwareKeyboardReads >= readsBeforeSetup + 2);
+      release();
+      await waitUntil(() => axCharacters.length === 1);
+      expect(softwareKeyboardVisibilityReads).toBe(2);
+      expect(axCharacters).toEqual(["y"]);
+      expect(keyEvents).toEqual([]);
+    } finally { release(); second.terminate(); }
   });
 
   test("preserves hardware keyboard state set before the session starts", async () => {

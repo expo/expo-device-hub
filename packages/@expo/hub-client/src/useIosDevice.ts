@@ -1,3 +1,4 @@
+import { createControlSocket } from './control-socket';
 /**
  * serve-sim (iOS) implementation of the {@link DeviceClient} interface.
  *
@@ -54,7 +55,7 @@ import { hostUiRequest, runHostAction } from './exec-ws';
 import { fetchIosAppIcon, getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchScreenshot } from './screenshot';
-import { hidUsageForCode } from './keyboard';
+import { iosMessageForKeyboardInput } from './keyboard';
 import {
   type ConnectionStatus,
   type DeviceActivity,
@@ -83,7 +84,7 @@ import {
 } from './types';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
-import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
 import { createRotationCursor } from './rotation-cursor';
@@ -105,23 +106,15 @@ import {
   webRtcFallbackDecision,
   createLadderBackoff,
 } from './webrtc-fallback';
-import {
-  flushWsMessageQueue,
-  type QueuedWsMessage,
-  type WsMessagePayload,
-  type WsMessageSent,
-  sendOrQueueWsMessage,
-  WS_OPEN_READY_STATE,
-} from './ws-send-queue';
+import { createInputSocket } from './input-socket';
+import { enqueueWsMessage, sendOrQueueWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
+import { WS_MSG_CONFIG } from './input-protocol';
+import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
 const DEVICE_SETTINGS_POLL_MS = 5000;
 const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
-// serve-sim accepts the upgrade before it admits an input socket, then closes
-// a refused socket at once. On a server without an admission frame, an open
-// socket that outlives this was admitted.
-const INPUT_ADMISSION_MS = 1000;
 const ACTIVITY_STALE_MS = 8000;
 const noop = () => {};
 
@@ -137,9 +130,7 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // Connect/disconnect the guest's hardware keyboard; serve-sim's own touch
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
-export const WS_TAG_SCREEN_CONFIG = 0x82;
-// Sent once to an admitted input socket by servers that advertise `inputAdmission`.
-const WS_MSG_INPUT_ADMITTED = 0x83;
+export { WS_MSG_CONFIG as WS_TAG_SCREEN_CONFIG } from './input-protocol';
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -321,15 +312,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const connectionScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
   const { deviceSettingsStatus, resetRead, settleRead } =
     useDeviceSettingsReadStatus(connectionScope);
-  const deviceSettingsReadRef = useRef<{
-    invalidate: () => void;
-    resume: () => void;
-  } | null>(null);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  // serve-sim's rejection of the input socket (close 1013), kept until a socket is admitted.
+  // A refusal stays visible until server admission confirms recovery.
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
@@ -377,6 +364,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const streamMode = streamCapabilities
     ? resolveDeviceStreamMode(requestedStreamMode, streamCapabilities.modeAvailability)
     : requestedStreamMode;
+  // @ref LLP 0013#shared-ios-control-channel — one channel per exec-ws identity, so a null config keeps it open
+  // Exec-ws details outlive a null config, so its subscriptions can await a replacement helper.
+  const controlWsUrl = connection?.middleware.execWsUrl ?? null;
+  const controlToken = connection?.middleware.execToken ?? null;
+  const controlSocket = useMemo(() => controlWsUrl && controlToken
+    ? createControlSocket(controlWsUrl, controlToken, {
+        retryMs: RECONNECT_MS,
+        openSocket: address => new WebSocket(address, socketProtocols),
+      }) : null, [controlWsUrl, controlToken, socketProtocols]);
+  useEffect(() => { controlSocket?.activate(); return () => controlSocket?.dispose(); }, [controlSocket]);
+  const requestHostUi = useCallback((url: string, execToken: string, payload: Parameters<typeof hostUiRequest>[2]) =>
+    hostUiRequest(url, execToken, payload, socketProtocols, controlSocket ?? undefined), [controlSocket, socketProtocols]);
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -392,12 +391,24 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // first event.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const admittedWsRef = useRef<WebSocket | null>(null);
-  // Input that arrived while the helper socket was down; flushed on reconnect
-  // (bounded, and stale entries are dropped — see `./ws-send-queue`).
-  const pendingWsRef = useRef<QueuedWsMessage[]>([]);
-  const pendingWsDestinationRef = useRef<{ wsUrl: string; device: string | null } | null>(null);
+  const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
+  const pendingInputRef = useRef<{ scope: string | null; helper: string | null; messages: QueuedWsMessage[] }>({ scope: null, helper: null, messages: [] });
+  const inputHelperKey = config ? JSON.stringify([config.device, config.wsUrl, config.pid, config.execToken]) : null;
+  // @ref LLP 0013#ios-input-adapter — discovery gaps retain intent, known owner changes discard it
+  useLayoutEffect(() => {
+    const previous = pendingInputRef.current;
+    const sameScope = previous.scope === connectionScope;
+    const helper = inputHelperKey ?? (sameScope ? previous.helper : null);
+    if (!sameScope || (previous.helper !== null && previous.helper !== helper)) {
+      // Retire the old transport before callbacks can send into the new scope.
+      inputSocketRef.current?.dispose();
+      inputSocketRef.current = null;
+      pendingInputRef.current = { scope: connectionScope, helper, messages: [] };
+    } else {
+      // Initial discovery binds early intent; a temporary null config keeps its owner.
+      previous.helper = helper;
+    }
+  }, [connectionScope, inputHelperKey]);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -472,14 +483,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) => {
-    pendingWsRef.current = sendOrQueueWsMessage(
-      admittedWsRef.current,
-      pendingWsRef.current,
-      tag,
-      payload,
-      Date.now(),
-      onSent,
-    );
+    const pending = pendingInputRef.current;
+    if (pending.scope === null) return;
+    if (inputSocketRef.current && deviceSettingConfigRef.current) {
+      inputSocketRef.current.send(tag, payload, onSent);
+    } else {
+      pending.messages = sendOrQueueWsMessage(null, pending.messages, tag, payload, Date.now(), onSent);
+    }
   }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -529,9 +539,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const sendKey = useCallback(
     (input: KeyboardInput): boolean => {
-      const usage = hidUsageForCode(input.code);
-      if (usage === null) return false;
-      sendWs(WS_MSG_KEY, { type: input.phase, usage });
+      const message = iosMessageForKeyboardInput(input);
+      if (!message) return false;
+      sendWs(WS_MSG_KEY, message);
       return true;
     },
     [sendWs],
@@ -559,18 +569,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
       const previous = hardwareKeyboardConnected;
       setHardwareKeyboardConnectedState(connected);
-      void hostUiRequest(
-        c.execWsUrl,
-        c.execToken,
-        {
-          device: c.device,
-          option: UI_OPTION_HARDWARE_KEYBOARD,
-          value: connected ? 'on' : 'off',
-        },
-        socketProtocols,
-      ).catch(() => setHardwareKeyboardConnectedState(previous));
+      void requestHostUi(c.execWsUrl, c.execToken, {
+        device: c.device,
+        option: UI_OPTION_HARDWARE_KEYBOARD,
+        value: connected ? 'on' : 'off',
+      }).catch(() => setHardwareKeyboardConnectedState(previous));
     },
-    [config, hardwareKeyboardConnected, socketProtocols],
+    [config, hardwareKeyboardConnected, requestHostUi],
   );
 
   const toggleSoftwareKeyboard = useCallback(() => {
@@ -638,11 +643,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
+      void requestHostUi(execWsUrl, execToken, {
+        device,
+        option: key,
+        value,
+      })
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await hostUiRequest(execWsUrl, execToken, { device }, socketProtocols);
+            const result = await requestHostUi(execWsUrl, execToken, { device });
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -668,7 +677,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config, socketProtocols],
+    [config, requestHostUi],
   );
 
   const setAppearance = useCallback(
@@ -1145,142 +1154,96 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
-  const inputAdmission = config?.inputAdmission === true;
+  const requireInputAdmission = config?.inputAdmission ?? false;
   const controlDevice = config?.device ?? null;
   useEffect(() => {
     rotationCursorRef.current = createRotationCursor(screenRef.current?.orientation ?? 'portrait');
   }, [wsUrl, controlDevice, videoSessionKey]);
+  // A replacement helper cannot restore lost input, so its notice outlives the socket.
+  // A helper can report a null config while it restarts; that gap keeps the notice.
+  const lostInputTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const inputOwnerRef = useRef<{ scope: string | null; helper: string | null } | null>(null);
   useEffect(() => {
-    pendingWsDestinationRef.current = null;
-    pendingWsRef.current = [];
-    return () => {
-      pendingWsRef.current = [];
-    };
-  }, [active, baseUrl, targetDevice, token]);
-
+    const previous = inputOwnerRef.current;
+    const sameScope = previous !== null && previous.scope === connectionScope;
+    const helper = wsUrl ? JSON.stringify([controlDevice, wsUrl]) : sameScope ? previous.helper : null;
+    if (previous !== null && (!sameScope || previous.helper !== helper)) {
+      clearTimeout(lostInputTimerRef.current);
+      lostInputTimerRef.current = undefined;
+      setInputSocketError(null);
+    }
+    inputOwnerRef.current = { scope: connectionScope, helper };
+  }, [connectionScope, wsUrl, controlDevice]);
+  useEffect(() => () => clearTimeout(lostInputTimerRef.current), []);
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
-    setInputSocketError(null);
+    setInputSocketError(current => lostInputTimerRef.current === undefined ? null : current);
     setInputUnavailable(false);
     if (!wsUrl) return;
-    const previousDestination = pendingWsDestinationRef.current;
-    if (
-      previousDestination &&
-      (previousDestination.wsUrl !== wsUrl || previousDestination.device !== controlDevice)
-    ) {
-      pendingWsRef.current = [];
-    }
-    pendingWsDestinationRef.current = { wsUrl, device: controlDevice };
-    let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let admissionTimer: ReturnType<typeof setTimeout> | null = null;
     hasWsConfigRef.current = false;
-    // Opening is not admission: a refused socket opens, then closes with 1013.
-    // A refused socket gets no messages, so the admission frame or a screen
-    // config confirms admission.
-    const admitInput = (ws: WebSocket) => {
-      if (cancelled || wsRef.current !== ws || ws.readyState !== WS_OPEN_READY_STATE) return;
-      if (admissionTimer) clearTimeout(admissionTimer);
-      admissionTimer = null;
-      admittedWsRef.current = ws;
-      pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
-      setInputSocketError(null);
-    };
-
-    const connect = () => {
-      if (cancelled) return;
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(wsUrl, socketProtocols);
-      } catch {
-        return;
-      }
-      ws.binaryType = 'arraybuffer';
-      wsRef.current = ws;
-      admittedWsRef.current = null;
-      ws.onopen = () => {
-        if (cancelled || wsRef.current !== ws) return;
-        // Older servers have no admission frame and may have no screen config yet.
-        if (!inputAdmission) {
-          admittedWsRef.current = ws;
-          pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
-          admissionTimer = setTimeout(() => admitInput(ws), INPUT_ADMISSION_MS);
-        }
-        // The Hub owns keyboard forwarding while this socket is active. Keep the
-        // Simulator's separate host-keyboard connection off so iOS shows its
-        // software keyboard while browser HID keys continue to type. serve-sim
-        // reconnects it once the last input socket detaches.
-        sendWs(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
-        if (!cancelled) setHardwareKeyboardConnectedState(false);
-      };
-      ws.onmessage = (event) => {
-        if (cancelled || wsRef.current !== ws) return;
-        if (!(event.data instanceof ArrayBuffer)) return;
-        const bytes = new Uint8Array(event.data);
-        if (bytes.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) {
-          admitInput(ws);
-          return;
-        }
-        if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const pendingOwner = pendingInputRef.current;
+    const initialMessages = pendingOwner.messages;
+    pendingOwner.messages = [];
+    // @ref LLP 0013#ios-input-adapter — refusals clear only on admission; rediscovery waits for the reconnect
+    const input = createInputSocket(wsUrl, {
+      onAdmitted() {
+        // Send setup directly, before queued keys. The helper serializes this
+        // setting change with subsequent input, so layout keys observe it off.
+        if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
+        setHardwareKeyboardConnectedState(false);
+      },
+      onMessage(data) {
+        if (!(data instanceof ArrayBuffer)) return false;
+        const bytes = new Uint8Array(data);
+        if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
-          const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
-            inputUnavailable?: boolean;
-          };
-          if (!cancelled) setInputUnavailable(c.inputUnavailable === true);
-          if (c.width > 0 && c.height > 0) {
-            // Seed from this socket's readback before replaying queued clicks.
-            rotationCursorRef.current.updateReadback(c.orientation);
-            admitInput(ws);
-            hasWsConfigRef.current = true;
-            setScreen((prev) =>
-              prev &&
-              prev.width === c.width &&
-              prev.height === c.height &&
-              prev.orientation === c.orientation
-                ? prev
-                : c,
-            );
-          }
-        } catch {}
-      };
-      ws.onclose = (event) => {
-        if (cancelled || wsRef.current !== ws) return;
-        wsRef.current = null;
-        admittedWsRef.current = null;
-        if (admissionTimer) clearTimeout(admissionTimer);
-        admissionTimer = null;
-        const rejection = iosInputCloseError(event.code, event.reason);
-        if (rejection) setInputSocketError(rejection);
-        retryTimer = setTimeout(() => {
-          if (cancelled) return;
-          connect();
-          // Normally exec-ws pushes replacement config. HTTP discovery recovers
-          // rotated credentials or a proxy that cannot upgrade WebSockets.
+          const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & { inputUnavailable?: boolean };
+          if (typeof c.width !== 'number' || typeof c.height !== 'number' || !Number.isFinite(c.width) || !Number.isFinite(c.height) || c.width <= 0 || c.height <= 0 || (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== 'boolean')) return false;
+          rotationCursorRef.current.updateReadback(c.orientation);
+          setInputUnavailable(c.inputUnavailable === true);
+          hasWsConfigRef.current = true;
+          setScreen(prev => prev?.width === c.width && prev.height === c.height && prev.orientation === c.orientation ? prev : c);
+          return true;
+        } catch { return false; }
+      },
+      onDisconnect() {
+        setHardwareKeyboardConnectedState(null);
+        // Normally exec-ws pushes replacement config by the reconnect. HTTP discovery
+        // recovers rotated credentials or a proxy that cannot upgrade WebSockets.
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
           if (!configUpdatesReadyRef.current) refreshConfigRef.current?.();
         }, RECONNECT_MS);
-      };
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch {}
-      };
-    };
-    connect();
-
+      },
+      onRefused(reason) {
+        clearTimeout(lostInputTimerRef.current);
+        lostInputTimerRef.current = undefined;
+        setInputSocketError(reason);
+        // Admission cannot undo commands already lost to a queue overflow.
+        if (reason !== WS_REASON_INPUT_UNAVAILABLE) {
+          lostInputTimerRef.current = setTimeout(() => {
+            lostInputTimerRef.current = undefined;
+            setInputSocketError(current => current === reason ? null : current);
+          }, 5_000);
+        }
+      },
+      onRecovered() { setInputSocketError(null); },
+    }, { initialMessages, requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
+    inputSocketRef.current = input;
+    input.start();
     return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      if (admissionTimer) clearTimeout(admissionTimer);
-      try {
-        wsRef.current?.close();
-      } catch {}
-      wsRef.current = null;
-      admittedWsRef.current = null;
-      // Keep fresh input across rediscovery; connection/device changes clear
-      // it above, and the queue drops expired messages before delivery.
+      clearTimeout(refreshTimer);
+      let messages = input.takePending();
+      input.dispose();
+      if (pendingInputRef.current === pendingOwner) {
+        for (const message of pendingOwner.messages) messages = enqueueWsMessage(messages, message);
+        pendingOwner.messages = messages;
+      }
+      if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, inputAdmission, controlDevice, sendWs, socketProtocols, videoSessionKey]);
+  }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1305,9 +1268,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       execWsUrl && execToken
         ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
-            runHostAction(execWsUrl, execToken, action, params, socketProtocols)
+            runHostAction(execWsUrl, execToken, action, params, socketProtocols, controlSocket ?? undefined)
         : null,
-    [execWsUrl, execToken, socketProtocols],
+    [execWsUrl, execToken, socketProtocols, controlSocket],
   );
 
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
@@ -1350,59 +1313,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => clearInterval(watchdog);
   }, [metricsPath, activityScope]);
 
-  useEffect(() => {
-    if (!execWsUrl || !execToken) return;
-    const subscriptions = new Map<number, 'logs' | 'events' | 'metrics' | 'config'>();
-    const paths = new Map<number, string>();
-    if (configEventsPath) {
-      subscriptions.set(4, 'config');
-      paths.set(4, configEventsPath);
-    }
-    if (logsEnabled && logsPath) {
-      subscriptions.set(1, 'logs');
-      paths.set(1, logsPath);
-    }
-    if (eventsEnabled && eventsPath && deviceUdid) {
-      subscriptions.set(2, 'events');
-      paths.set(2, eventsPath);
-    }
-    if (metricsPath) {
-      subscriptions.set(3, 'metrics');
-      paths.set(3, metricsPath);
-    }
-    if (subscriptions.size === 0) return;
-    if (metricsPath) setActivityStatus('loading');
-
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const buffers = new Map<number, string>();
-    const subscriptionRetries = new Map<number, ReturnType<typeof setTimeout>>();
-    const clearSubscriptionRetries = () => {
-      for (const timer of subscriptionRetries.values()) clearTimeout(timer);
-      subscriptionRetries.clear();
-    };
-    const markMetricsInterrupted = () => {
-      setActivityStatus('error');
-      setActivity((current) =>
-        current && !current.errored ? { ...current, errored: true } : current,
-      );
-    };
-    const markInterrupted = () => {
-      deviceSettingsReadRef.current?.invalidate();
-      settleRead('error');
-      if (metricsPath) markMetricsInterrupted();
-    };
-
-    const emit = (kind: 'logs' | 'events' | 'metrics' | 'config', block: ParsedSseBlock) => {
-      if (kind === 'config') {
-        try {
-          const value = JSON.parse(block.data) as PreviewApi | null;
-          applyPreviewConfigRef.current?.(value);
-          configUpdatesReadyRef.current = true;
-        } catch {}
-        return;
-      }
+  const emitControlEvent = useCallback((kind: 'logs' | 'events' | 'metrics', block: ParsedSseBlock) => {
       if (kind === 'logs') {
         let message = block.data;
         try {
@@ -1450,125 +1361,54 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           ),
         );
       } catch {}
-    };
+  }, [deviceUdid, setActivityStatus]);
 
-    const connect = () => {
-      if (cancelled) return;
-      clearSubscriptionRetries();
-      buffers.clear();
-      try {
-        ws = new WebSocket(execWsUrl, socketProtocols);
-      } catch {
-        configUpdatesReadyRef.current = false;
-        markInterrupted();
-        retryTimer = setTimeout(() => {
-          if (cancelled) return;
-          connect();
-          refreshConfigRef.current?.();
-        }, RECONNECT_MS);
-        return;
-      }
-      const socket = ws;
-      let authenticated = false;
-      ws.onopen = () => {
-        if (!cancelled && ws === socket) socket.send(JSON.stringify({ token: execToken }));
-      };
-      ws.onmessage = (event) => {
-        if (cancelled || ws !== socket) return;
-        let msg: { ready?: boolean; sub?: number; data?: string; end?: boolean };
+  const subscribeControl = useCallback((kind: 'logs' | 'events' | 'metrics', path: string) => {
+    if (!controlSocket) return;
+    let buffer = '';
+    if (kind === 'metrics') setActivityStatus('loading');
+    return controlSocket.subscribe(path, chunk => {
+      buffer = drainSseChunk(buffer, chunk, block => emitControlEvent(kind, block));
+    }, () => {
+      buffer = '';
+      if (kind !== 'metrics') return;
+      setActivityStatus('error');
+      setActivity(current => current && !current.errored ? {...current, errored: true} : current);
+    });
+  }, [controlSocket, emitControlEvent, setActivityStatus]);
+  useEffect(() => {
+    if (logsEnabled && logsPath) return subscribeControl('logs', logsPath);
+  }, [logsEnabled, logsPath, subscribeControl]);
+  useEffect(() => {
+    if (eventsEnabled && eventsPath && deviceUdid) return subscribeControl('events', eventsPath);
+  }, [eventsEnabled, eventsPath, deviceUdid, subscribeControl]);
+  useEffect(() => {
+    if (metricsPath) return subscribeControl('metrics', metricsPath);
+  }, [metricsPath, subscribeControl]);
+  useEffect(() => {
+    if (!controlSocket || !configEventsPath) return;
+    let buffer = '';
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = controlSocket.subscribe(configEventsPath, chunk => {
+      buffer = drainSseChunk(buffer, chunk, block => {
         try {
-          msg = JSON.parse(String(event.data));
-        } catch {
-          return;
-        }
-        if (msg.ready) {
-          if (authenticated) return;
-          authenticated = true;
-          deviceSettingsReadRef.current?.resume();
-          for (const [sub, path] of paths) {
-            ws?.send(JSON.stringify({ sub, path }));
-          }
-          return;
-        }
-        if (typeof msg.sub !== 'number' || !subscriptions.has(msg.sub)) return;
-        if (msg.end) {
-          const sub = msg.sub;
-          if (subscriptionRetries.has(sub)) return;
-          buffers.delete(sub);
-          if (subscriptions.get(sub) === 'metrics') markMetricsInterrupted();
-          if (subscriptions.get(sub) === 'config') {
-            configUpdatesReadyRef.current = false;
-            refreshConfigRef.current?.();
-          }
-          // An upstream stream ending does not invalidate this authenticated
-          // socket or unrelated settings reads. Retry only that subscription.
-          subscriptionRetries.set(
-            sub,
-            setTimeout(() => {
-              subscriptionRetries.delete(sub);
-              if (!cancelled && ws === socket) {
-                socket.send(JSON.stringify({ sub, path: paths.get(sub) }));
-              }
-            }, RECONNECT_MS),
-          );
-          return;
-        }
-        if (typeof msg.data === 'string') {
-          const sub = msg.sub;
-          const kind = subscriptions.get(sub)!;
-          buffers.set(
-            sub,
-            drainSseChunk(buffers.get(sub) ?? '', msg.data, (block) => emit(kind, block)),
-          );
-        }
-      };
-      ws.onclose = () => {
-        if (!cancelled && ws === socket) {
-          ws = null;
-          clearSubscriptionRetries();
-          configUpdatesReadyRef.current = false;
-          markInterrupted();
-          retryTimer = setTimeout(() => {
-            if (cancelled) return;
-            connect();
-            refreshConfigRef.current?.();
-          }, RECONNECT_MS);
-        }
-      };
-      ws.onerror = () => {
-        if (cancelled || ws !== socket) return;
-        try {
-          ws?.close();
+          applyPreviewConfigRef.current?.(JSON.parse(block.data) as PreviewApi | null);
+          configUpdatesReadyRef.current = true;
         } catch {}
-      };
-    };
-    connect();
-
-    return () => {
-      cancelled = true;
+      });
+    }, () => {
+      buffer = '';
       configUpdatesReadyRef.current = false;
-      // Pause reads until the replacement control socket authenticates.
-      deviceSettingsReadRef.current?.invalidate();
-      if (retryTimer) clearTimeout(retryTimer);
-      clearSubscriptionRetries();
-      try {
-        ws?.close();
-      } catch {}
+      // HTTP discovery covers rotated credentials until the subscription recovers.
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => refreshConfigRef.current?.(), RECONNECT_MS);
+    });
+    return () => {
+      clearTimeout(refreshTimer);
+      configUpdatesReadyRef.current = false;
+      unsubscribe();
     };
-  }, [
-    logsEnabled,
-    eventsEnabled,
-    execWsUrl,
-    execToken,
-    configEventsPath,
-    logsPath,
-    eventsPath,
-    metricsPath,
-    deviceUdid,
-    socketProtocols,
-    settleRead,
-    setActivityStatus,
-  ]);
+  }, [controlSocket, configEventsPath]);
 
   // Bulk reads hydrate the controls and track changes made inside the simulator.
   // Wait between completed reads; hidden tabs and interrupted control sockets pause polling.
@@ -1622,7 +1462,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const versions = new Map(deviceSettingVersionsRef.current);
       const pendingAtStart = tracker.pending;
       try {
-        const res = await hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols);
+        const res = await requestHostUi(execWsUrl, execToken, { device: deviceUdid });
         // A response from before an interruption cannot restore availability.
         if (cancelled || readRevision !== revision) return;
         if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
@@ -1681,24 +1521,32 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         void refresh();
       }
     };
-    deviceSettingsReadRef.current = {
-      invalidate,
-      resume: () => {
-        if (!interrupted) return;
-        interrupted = false;
-        retryDelay = RECONNECT_MS;
-        void refresh();
-      },
+    const resume = () => {
+      if (!interrupted) return;
+      interrupted = false;
+      retryDelay = RECONNECT_MS;
+      void refresh();
     };
     pageDocument?.addEventListener('visibilitychange', onVisibilityChange);
+    // Pause reads while the shared control channel is down and read again once
+    // it authenticates. Stream ends do not interrupt the channel.
+    const stopWatchingControl = controlSocket?.onConnectionChange((ready) => {
+      if (cancelled) return;
+      if (ready) {
+        resume();
+        return;
+      }
+      invalidate();
+      settleRead('error');
+    });
     void refresh();
     return () => {
       cancelled = true;
       clearTimer();
+      stopWatchingControl?.();
       pageDocument?.removeEventListener('visibilitychange', onVisibilityChange);
-      deviceSettingsReadRef.current = null;
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
+  }, [execWsUrl, execToken, deviceUdid, controlSocket, requestHostUi, resetRead, settleRead]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
