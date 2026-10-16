@@ -3,6 +3,10 @@ import { z } from "zod";
 import { onCliInputReady } from "./socket/cli-input";
 
 export const TouchCoordinate = z.number().finite().min(0).max(1);
+const DEFAULT_STEP_DELAY_MS = 40;
+function delayBeforeEvent(event: { delayMs?: number }, index: number): number {
+  return event.delayMs ?? (index === 0 ? 0 : DEFAULT_STEP_DELAY_MS);
+}
 const TouchEvent = z.object({
   type: z.enum(["begin", "move", "end"]),
   x: TouchCoordinate,
@@ -16,7 +20,7 @@ export const TouchGesture = z.array(TouchEvent).min(2).max(256).refine(
     events.slice(1, -1).every((event) => event.type === "move"),
   "must start with begin, contain only moves, and finish with end",
 ).refine(
-  (events) => events.reduce((total, event) => total + (event.delayMs ?? 0), 0) <= 30_000,
+  (events) => events.reduce((total, event, index) => total + delayBeforeEvent(event, index), 0) <= 30_000,
   "total delay must be at most 30000 ms",
 );
 
@@ -34,7 +38,7 @@ export function sendTouchGestureToWs(
     let delayTimer: ReturnType<typeof setTimeout> | undefined;
     let finishDelay: (() => void) | undefined;
     const timeout = setTimeout(() => finish(new Error("Simulator gesture did not finish. Try again.")),
-      10_000 + events.reduce((total, event) => total + (event.delayMs ?? 0), 0));
+      10_000 + events.reduce((total, event, index) => total + delayBeforeEvent(event, index), 0));
 
     function finish(error?: Error) {
       if (settled) return;
@@ -53,10 +57,11 @@ export function sendTouchGestureToWs(
 
     async function send() {
       try {
-        for (const { delayMs, ...event } of events) {
-          if (delayMs) await new Promise<void>((done) => {
+        for (const [index, { delayMs, ...event }] of events.entries()) {
+          const waitMs = delayBeforeEvent({ delayMs }, index);
+          if (waitMs) await new Promise<void>((done) => {
             finishDelay = done;
-            delayTimer = setTimeout(done, delayMs);
+            delayTimer = setTimeout(done, waitMs);
           });
           if (settled || ws.readyState !== WebSocket.OPEN) return;
           ws.send(Buffer.concat([Buffer.from([0x03]), Buffer.from(JSON.stringify(event))]));

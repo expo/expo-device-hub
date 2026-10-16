@@ -9,7 +9,7 @@ import { onCliInputReady } from "../socket/cli-input";
 const CLI = join(import.meta.dir, "../index.ts");
 
 const commands = [
-  { args: ["tap", "0.5", "0.5"], messages: [0x03, 0x03] },
+  { args: ["tap", "0.5", "0.5"], messages: [0x03, 0x03, 0x11] },
   { args: ["gesture", '{"type":"begin","x":0.5,"y":0.5}'], messages: [0x03] },
   { args: ["button", "home"], messages: [0x04] },
   { args: ["rotate", "portrait"], messages: [0x07] },
@@ -62,9 +62,10 @@ esac
           } else socket.close(1013, "Simulator input unavailable; retry after other clients disconnect");
         }, 200));
       },
-      message(_socket, data) {
+      message(socket, data) {
         if (!admitted) sentBeforeAdmission = true;
         messages.push(Buffer.from(data)[0]!);
+        if (Buffer.from(data)[0] === 0x11) socket.send(Buffer.from([0x91, 1]));
       },
     },
   });

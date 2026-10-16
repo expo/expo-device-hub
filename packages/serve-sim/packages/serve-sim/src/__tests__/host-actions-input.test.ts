@@ -31,9 +31,11 @@ afterEach(() => {
   state.restore();
 });
 
-function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAck" = "success") {
+function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAck" | "slowAck" | "paced" = "success") {
   const frames: Frame[] = [];
   const authorization: Array<string | null> = [];
+  const touchTimes: number[] = [], nativePhases: string[] = [];
+  let pendingPhase = "", nativeTimer: ReturnType<typeof setTimeout> | undefined;
   let admitted = false, sentBeforeAdmission = false, acknowledged = false;
   server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
@@ -62,7 +64,19 @@ function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAc
         if (!admitted) sentBeforeAdmission = true;
         const bytes = Buffer.from(data);
         const tag = bytes[0]!;
-        frames.push({ tag, ...(bytes.length > 1 ? { payload: JSON.parse(bytes.subarray(1).toString()) } : {}) });
+        const payload = bytes.length > 1 ? JSON.parse(bytes.subarray(1).toString()) : undefined;
+        frames.push({ tag, ...(payload === undefined ? {} : { payload }) });
+        if (tag === 0x03) {
+          touchTimes.push(performance.now());
+          // Model a native event dispatch that retains only the last phase within one frame.
+          if (mode === "paced") {
+            pendingPhase = payload.type;
+            if (!nativeTimer) {
+              nativeTimer = setTimeout(() => { nativePhases.push(pendingPhase); nativeTimer = undefined; }, 16);
+              timers.push(nativeTimer);
+            }
+          }
+        }
         if (mode === "interrupt" && tag === 0x03) socket.close(1000, "Gesture interrupted");
         if (tag === 0x11) timers.push(setTimeout(() => {
           if (mode === "earlyAck") {
@@ -71,12 +85,12 @@ function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAc
           }
           acknowledged = true;
           socket.send(Buffer.from([0x91, mode === "errorAck" ? 0 : 1]));
-        }, 40));
+        }, mode === "slowAck" ? 250 : 40));
       },
     },
   });
   writeServeSimState({ ...inProcessServeSimState(UDID, server.port!), token: TOKEN });
-  return { frames, authorization, beforeAdmission: () => sentBeforeAdmission, acknowledged: () => acknowledged };
+  return { frames, authorization, touchTimes, nativePhases, beforeAdmission: () => sentBeforeAdmission, acknowledged: () => acknowledged };
 }
 
 function run(action: string, params: Record<string, unknown> = {}) {
@@ -89,9 +103,16 @@ test("tap uses the authenticated, admitted input channel for begin and end", asy
   expect(result.exitCode).toBe(0);
   expect(observed.authorization).toEqual([`Bearer ${TOKEN}`]);
   expect(observed.beforeAdmission()).toBe(false);
-  expect(observed.frames).toEqual(["begin", "end"].map(type => ({
-    tag: 0x03, payload: { type, x: 0.25, y: 0.75 },
-  })));
+  expect(observed.frames).toEqual([
+    ...["begin", "end"].map(type => ({ tag: 0x03, payload: { type, x: 0.25, y: 0.75 } })),
+    { tag: 0x11 },
+  ]);
+});
+
+test("tap waits for native completion beyond its old fixed timers", async () => {
+  const observed = helper("slowAck");
+  expect((await run("tap", { x: 0.25, y: 0.75 })).exitCode).toBe(0);
+  expect(observed.acknowledged()).toBe(true);
 });
 
 test("gesture keeps ordered events on one admitted connection until the final acknowledgement", async () => {
@@ -109,19 +130,41 @@ test("gesture keeps ordered events on one admitted connection until the final ac
   expect(observed.acknowledged()).toBe(true);
 });
 
+test("gesture paces omitted delays so native dispatch observes every phase", async () => {
+  const observed = helper("paced");
+  const immediate = events.map(({ delayMs: _delayMs, ...event }) => event);
+  expect((await run("gesture", { events: immediate })).exitCode).toBe(0);
+  expect(observed.touchTimes).toHaveLength(3);
+  expect(observed.touchTimes[1]! - observed.touchTimes[0]!).toBeGreaterThanOrEqual(25);
+  expect(observed.touchTimes[2]! - observed.touchTimes[1]!).toBeGreaterThanOrEqual(25);
+  expect(observed.nativePhases).toEqual(["begin", "move", "end"]);
+});
+
 test("type preserves leading dashes and whitespace and waits for keyboard completion", async () => {
   const observed = helper();
   const result = await run("type", { text: "--help\t\n\r" });
   expect(result.exitCode).toBe(0);
   expect(observed.authorization).toEqual([`Bearer ${TOKEN}`]);
   expect(observed.frames).toEqual([
-    ...[0x2d, 0x2d, 0x0b, 0x08, 0x0f, 0x13, 0x2b, 0x28].flatMap(usage => [
+    ...[0x2d, 0x2d, 0x0b, 0x08, 0x0f, 0x13, 0x2b, 0x28, 0x28].flatMap(usage => [
       { tag: 0x06, payload: { type: "down", usage } },
       { tag: 0x06, payload: { type: "up", usage } },
     ]),
     { tag: 0x11 },
   ]);
   expect(observed.acknowledged()).toBe(true);
+});
+
+test("type converts CRLF and lone CR to exactly one Enter each", async () => {
+  const observed = helper();
+  expect((await run("type", { text: "a\r\nb\rc" })).exitCode).toBe(0);
+  expect(observed.frames).toEqual([
+    ...[0x04, 0x28, 0x05, 0x28, 0x06].flatMap(usage => [
+      { tag: 0x06, payload: { type: "down", usage } },
+      { tag: 0x06, payload: { type: "up", usage } },
+    ]),
+    { tag: 0x11 },
+  ]);
 });
 
 test("type accepts empty text without injecting a key", async () => {
@@ -174,6 +217,11 @@ for (const [action, params] of [["tap", { x: 0.5, y: 0.5 }], ["gesture", { event
 }
 
 for (const mode of ["interrupt", "errorAck"] as const) {
+  test(`tap reports ${mode} instead of success`, async () => {
+    helper(mode);
+    expect((await run("tap", { x: 0.25, y: 0.75 })).exitCode).not.toBe(0);
+  });
+
   test(`gesture reports ${mode} instead of success`, async () => {
     const observed = helper(mode);
     expect((await run("gesture", { events })).exitCode).not.toBe(0);

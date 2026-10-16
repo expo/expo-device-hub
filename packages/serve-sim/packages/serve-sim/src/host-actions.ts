@@ -363,7 +363,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "type": {
       const p = parseParams(action, raw);
-      return serveSim(["type", "-d", p.udid, "--", p.text]);
+      return serveSim(["type", "-d", p.udid, "--", p.text.replace(/\r\n?/g, "\n")]);
     }
     case "memoryWarning": {
       const p = parseParams(action, raw);

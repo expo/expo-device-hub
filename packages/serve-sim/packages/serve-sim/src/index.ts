@@ -928,28 +928,10 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
-  return new Promise<void>((resolve, reject) => {
-    const ws = openHelperSocket(state);
-    ws.binaryType = "arraybuffer";
-    const send = (type: "begin" | "end") => {
-      const json = new TextEncoder().encode(JSON.stringify({ type, x, y }));
-      const msg = new Uint8Array(1 + json.length);
-      msg[0] = 0x03;
-      msg.set(json, 1);
-      ws.send(msg);
-    };
-    onCliInputReady(ws, state.inputAdmission === true, () => {
-      send("begin");
-      setTimeout(() => {
-        send("end");
-        setTimeout(() => { ws.close(); resolve(); }, 50);
-      }, 40);
-    }, reject);
-    ws.onerror = () => {
-      console.error("Failed to connect to serve-sim server at", state.wsUrl);
-      reject(new Error("WebSocket connection failed"));
-    };
-  });
+  return sendTouchGestureToWs(state, [
+    { type: "begin", x, y },
+    { type: "end", x, y, delayMs: 40 },
+  ]);
 }
 
 async function typeText(

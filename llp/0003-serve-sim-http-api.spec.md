@@ -450,16 +450,20 @@ alongside the command or capability so action clients can use the same controls
 - `gesture`: `{udid, events}`, a complete sequence of 2–256 touch events. Each
   event has `type`, normalized `x` and `y`, optional `edge` (0–4), and optional
   `delayMs` (0–1000) before that event. Start with `begin`, finish with `end`, and
-  use only `move` between them. Total delay is limited to 30 seconds.
+  use only `move` between them. Omitted delays default to 40 ms before every event
+  after the first; explicit zero is allowed. Total delay, including defaults, is
+  limited to 30 seconds.
 - `type`: `{udid, text}`, up to 4096 US-keyboard ASCII characters, including
-  newline and tab. Text is passed literally, including leading dashes.
+  newline and tab. Leading dashes are passed literally; CRLF and lone carriage
+  returns are normalized to a single newline before typing.
 
 These actions use the existing CLI input paths. `serve-sim gesture` accepts the
 event array as its JSON argument and keeps one admitted connection for the whole
 sequence, then waits for the input-completion barrier before reporting success.
 The legacy single-event JSON argument remains supported; separate single-event
 calls cannot form a drag because disconnect releases that connection's touch.
-Typing also waits for an input-completion barrier. Tap success confirms delivery.
+Tap and typing also wait for an input-completion barrier; a disconnect or failed
+barrier reports failure instead of success for input still waiting in the queue.
 
 ### Simulator settings and device actions
 
