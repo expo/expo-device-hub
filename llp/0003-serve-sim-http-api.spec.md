@@ -326,6 +326,10 @@ Legacy helpers retain send-on-open compatibility. Browser submission does not
 prove native delivery or app acceptance
 [observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
 
+### Printable key characters
+
+The HID key frame (`0x06`) accepts a physical `usage` with `type: "down" | "up"`, plus optional `key` and legacy `shifted` metadata. A single-character keydown can name the browser-layout character. For a non-hinge Simulator with the hardware keyboard off, the helper uses software-keyboard typing when the character is shifted or differs from that physical US key. Matching unshifted US keys, shortcuts without character metadata, and key releases retain HID handling. A software-typed key suppresses its matching physical release; unavailable software characters and other device modes keep the existing HID fallback [observed: `src/device-session.ts`, key frame routing; `src/text-to-keys.ts`, `US_KEYBOARD_MAP`].
+
 ### Raw HID close contract
 
 The raw HID adapter releases session capacity exactly once, stops its heartbeat,

@@ -1,5 +1,6 @@
 ---
 "@expo/hub-client": patch
+"@expo/serve-sim": patch
 ---
 
-Preserve browser keyboard modifiers and forward shifted printable iOS input through serve-sim's software-keyboard fallback.
+Preserve browser-layout printable characters in iOS key messages and consume layout differences through the helper's software keyboard, while preserving shortcuts and HID fallback.

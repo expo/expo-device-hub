@@ -1108,6 +1108,28 @@ describe("shifted keyboard routing", () => {
     expect(axCharacters).toEqual([]);
   });
 
+  test("types an unshifted browser-layout character instead of its physical US key", async () => {
+    hardwareKeyboard = "off";
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => axCharacters.length === 1);
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("keeps matching unshifted printable keys on the fast HID path", async () => {
+    hardwareKeyboard = "off";
+    await start({ width: 1170, height: 2532 });
+    inputCalls.length = 0;
+    send(0x06, { type: "down", usage: 4, key: "a" });
+    send(0x06, { type: "up", usage: 4 });
+    await waitUntil(() => keyEvents.length === 2);
+    expect(axCharacters).toEqual([]);
+    expect(keyEvents).toEqual([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+  });
+
   test("preserves hardware keyboard state set before the session starts", async () => {
     hardwareKeyboard = "off";
     await start({ width: 1170, height: 2532 });

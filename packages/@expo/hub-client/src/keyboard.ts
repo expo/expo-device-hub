@@ -153,11 +153,12 @@ export function androidMessageForKeyboardInput(
   return null;
 }
 
-// @ref LLP 0013#keyboard-input — serve-sim types shifted characters through the software keyboard
-/** Match serve-sim's shifted-character fallback when the software keyboard owns input. */
+// @ref LLP 0013#keyboard-input — character metadata preserves the browser layout when HID positions differ
+/** Keep printable browser characters while preserving physical key releases and shortcuts. */
 export function iosMessageForKeyboardInput(input: KeyboardInput) {
   const usage = hidUsageForCode(input.code);
   if (usage === null) return null;
-  const shifted = input.phase === 'down' && input.shiftKey && !input.metaKey && !input.ctrlKey && !input.altKey && input.key.length === 1 && input.key !== ' ';
-  return {type: input.phase, usage, ...(shifted ? {key: input.key, shifted: true} : {})};
+  const printable = input.phase === 'down' && !input.metaKey && !input.ctrlKey && !input.altKey && input.key.length === 1;
+  const shifted = printable && input.shiftKey && input.key !== ' ';
+  return {type: input.phase, usage, ...(printable ? {key: input.key} : {}), ...(shifted ? {shifted: true} : {})};
 }

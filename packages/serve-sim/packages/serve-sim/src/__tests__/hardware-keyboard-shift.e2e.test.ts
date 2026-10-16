@@ -225,6 +225,20 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     expectEveryCharacterChange(start, "Hi! _ 123");
   }, 60_000);
 
+  test("browser-layout unshifted keys type their characters instead of physical US positions", async () => {
+    const desktop = await openSocket();
+    send(desktop, 0x0e, { enabled: false });
+    const start = await launchTextField();
+    await waitForSoftwareKeyboard();
+    for (const [usage, key] of [[0x1c, "z"], [0x1d, "y"]] as const) {
+      send(desktop, 0x06, { type: "down", usage, key });
+      send(desktop, 0x06, { type: "up", usage });
+      await Bun.sleep(30);
+    }
+    await waitFor(() => lastText(start), "zy");
+    expectEveryCharacterChange(start, "zy");
+  }, 60_000);
+
   test("presses shifted top-row letters and punctuation", async () => {
     const desktop = await openSocket();
     send(desktop, 0x0e, { enabled: false });

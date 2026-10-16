@@ -1,4 +1,5 @@
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
+import { US_KEYBOARD_MAP } from "./text-to-keys";
 /**
  * In-process device session — the replacement for the spawned serve-sim-bin
  * helper. One session per booted simulator owns a NativeCapture + NativeHid and
@@ -1313,11 +1314,14 @@ export class DeviceSession {
             const axHandledKeyUsages = this.axHandledKeyUsages.get(ws)!;
             const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
             this.supportsHingeAngle ??= supportsHingeAngle;
-            if (m.type === "down" && !supportsHingeAngle && m.shifted === true &&
-              typeof m.key === "string" && m.key.length === 1) {
+            const character = typeof m.key === "string" && m.key.length === 1 ? m.key : undefined;
+            const physical = character === undefined ? undefined : US_KEYBOARD_MAP[character];
+            // Matching US keys retain the fast HID path; layout differences need the character.
+            const needsCharacter = m.shifted === true || !physical || physical.shift || physical.usage !== m.usage;
+            if (m.type === "down" && !supportsHingeAngle && character !== undefined && needsCharacter) {
               const hardwareKeyboard = await getUiOption(this.udid, "hardware-keyboard");
               if (hardwareKeyboard === "off" &&
-                await this.typeSoftwareKeyboardCharacter(m.key)) {
+                await this.typeSoftwareKeyboardCharacter(character)) {
                 if (this.activeHidKeyUsages.get(ws)?.has(m.usage)) {
                   await this.updateHidKey(ws, "up", m.usage);
                 }
