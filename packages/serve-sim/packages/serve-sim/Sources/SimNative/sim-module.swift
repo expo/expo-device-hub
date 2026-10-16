@@ -34,7 +34,7 @@ private func u32(_ v: Int) -> UInt32 {
         setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
     }
 
-    /// Zero means capture has no modern screen metadata; retain legacy routing.
+    /// Zero means capture has no screen metadata; Universal HID waits for a panel.
     @NodeMethod func setScreen(_ screenID: Int) async throws {
         let id = UInt32(exactly: screenID).flatMap { $0 > 0 ? $0 : nil }
         try await setup.run { await injector.setScreen(screenID: id) }

@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -385,13 +385,33 @@ selected service stays pinned through each gesture's final report. Input waits
 for capture to identify a panel. Capability lookup retries transient startup
 failures and never falls back to the disconnected legacy inner service.
 
-The new path is restricted to profiles with exactly two integrated displays;
-virtual outputs (such as CarPlay) do not count. Nonfoldable devices keep their
-original Indigo target (`0x32`), Down events for both begin and move, and legacy
-rotation, without CoreDevice capability queries. Duo keyboard input uses
-CoreDevice's `KeyboardHIDCapability` (`HIDKeyboard.send(key:state:)`) on both
-displays: legacy keyboard messages are accepted but never reach focused text
-fields. Button input continues to use Indigo.
+Ordinary iOS devices with one integrated display also prefer CoreDevice touch
+when its symbols, value layouts, and per-device capability are available.
+Unsupported digitizers retain Indigo. CoreDevice key encoding is optional for
+ordinary iOS: its absence is logged without disabling touch or falling touch
+back to legacy input. Setup still opens the keyboard service, which also starts
+guest HID delivery; the missing-key-encoder regression verifies actual UIKit
+touch receipts. Duo keeps its existing requirement for both transports
+instead of falling back to its disconnected inner service.
+Nonfoldable orientation stays on the legacy rotation path, and buttons continue
+to use Indigo [observed: `HIDInjector.setup`, `setupCoreDeviceHID`, `sendKey`, and
+`sendOrientation`].
+
+This also avoids an ordinary iPhone's silent legacy input drop when CoreDevice
+HID owns guest input. On iOS 27.0, setting/posting
+`com.apple.coredevice.dtuhidd.active=1`, restarting BackBoard, and reasserting the
+active owner reproduces missing UIKit touches despite a successful legacy send
+and WebSocket acknowledgement. Clearing the live flag alone is not a reliable
+repair. Transport selection therefore uses capabilities rather than this
+notification. Serve-sim never restarts BackBoard to repair input; only the
+explicitly opted-in, dedicated-device regression does so [observed:
+`src/__tests__/hid-ownership.e2e.test.ts`; local published 0.9.0 middleware
+reproduction, 2026-10-16].
+
+CoreDevice capabilities belong to a boot. Every new main capture resets its
+device's boot-bound cache, including ordinary devices; fixed-panel feeds share
+the main session and do not reset it [observed:
+`FrameCapture.start`; preview reboot case in `hid-ownership.e2e.test.ts`].
 
 For independent checks on Xcode 27.1 beta:
 
