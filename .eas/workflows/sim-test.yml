@@ -36,7 +36,7 @@ jobs:
       - name: Install mitmproxy
         run: |
           brew install --cask mitmproxy
-          xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
+          sudo xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
           # Fail here, not in the capture tests, when mitmdump cannot start.
           mitmdump=$(realpath "$(command -v mitmdump)")
           if xattr -p com.apple.quarantine "$mitmdump" >/dev/null 2>&1; then
