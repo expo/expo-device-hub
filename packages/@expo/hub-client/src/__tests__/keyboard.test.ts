@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { androidMessageForKeyboardInput, hidUsageForCode } from '../keyboard';
+import { androidMessageForKeyboardInput, hidUsageForCode, iosMessageForKeyboardInput } from '../keyboard';
 import { type KeyboardInput } from '../types';
 
 const input = (key: string, code = key, phase: KeyboardInput['phase'] = 'down'): KeyboardInput => ({
@@ -55,4 +55,24 @@ describe('serve-emu physical keyboard mapping', () => {
     expect(androidMessageForKeyboardInput(input('a', 'KeyA', 'up'))).toBeNull();
     expect(androidMessageForKeyboardInput(input('Shift', 'ShiftLeft'))).toBeNull();
   });
+});
+
+test('iOS forwards shifted printable text while preserving shortcuts and keyup', () => {
+  const shifted = {...input('A', 'KeyA'), shiftKey: true};
+  expect(iosMessageForKeyboardInput(shifted)).toEqual({type: 'down', usage: 4, key: 'A', shifted: true});
+  expect(iosMessageForKeyboardInput({...shifted, phase: 'up'})).toEqual({type: 'up', usage: 4});
+  for (const modifier of ['ctrlKey', 'metaKey', 'altKey']) expect(iosMessageForKeyboardInput({...shifted, [modifier]: true})).toEqual({type: 'down', usage: 4});
+  expect(iosMessageForKeyboardInput({...input(' ', 'Space'), shiftKey: true})).toEqual({type: 'down', usage: 0x2c, key: ' '});
+  expect(iosMessageForKeyboardInput({...input('!', 'Digit1'), shiftKey: true})).toEqual({type: 'down', usage: 0x1e, key: '!', shifted: true});
+  expect(iosMessageForKeyboardInput(input('AudioVolumeUp'))).toBeNull();
+});
+
+
+test('iOS forwards unshifted browser-layout characters without changing physical releases', () => {
+  for (const [key, code, usage] of [['z', 'KeyY', 0x1c], ['y', 'KeyZ', 0x1d], ['ö', 'Semicolon', 0x33]] as const) {
+    expect(iosMessageForKeyboardInput(input(key, code))).toEqual({type: 'down', usage, key});
+    expect(iosMessageForKeyboardInput(input(key, code, 'up'))).toEqual({type: 'up', usage});
+  }
+  expect(iosMessageForKeyboardInput(input('Dead', 'Quote'))).toEqual({type: 'down', usage: 0x34});
+  expect(iosMessageForKeyboardInput({...input('z', 'KeyY'), ctrlKey: true})).toEqual({type: 'down', usage: 0x1c});
 });

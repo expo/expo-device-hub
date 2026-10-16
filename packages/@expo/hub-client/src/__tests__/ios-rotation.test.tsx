@@ -282,12 +282,14 @@ test("refused input does not skip the first iOS pose on retry", async () => {
   expect(retry.rotations()).toEqual(["landscape_left"]);
 });
 
-test("queued clicks advance in delivery order from the admitting screen config", async () => {
+test("queued clicks use screen readback but wait for the explicit admission frame", async () => {
   const { client, helper } = await mount({ inputAdmission: true, initialScreen: false });
   client().rotate();
   client().rotate();
   client().rotate();
   await act(async () => helper().screen("landscape_right"));
+  expect(helper().rotations()).toEqual([]);
+  await act(async () => helper().admit());
   expect(helper().rotations()).toEqual(["portrait", "landscape_left", "portrait_upside_down"]);
   client().rotate();
   expect(helper().rotations().at(-1)).toBe("landscape_right");
@@ -351,6 +353,7 @@ test("changing devices discards queued rotations instead of advancing the new cu
   await switchDevice("DEVICE-B");
   await act(async () => helper().screen("landscape_right"));
   expect(helper().rotations()).toEqual([]);
+  await act(async () => helper().admit());
   client().rotate();
   expect(helper().rotations()).toEqual(["portrait"]);
 });

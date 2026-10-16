@@ -326,6 +326,10 @@ Legacy helpers retain send-on-open compatibility. Browser submission does not
 prove native delivery or app acceptance
 [observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
 
+### Printable key characters
+
+The HID key frame (`0x06`) accepts a physical `usage` with `type: "down" | "up"`, plus optional `key` and legacy `shifted` metadata. A single-character keydown can name the browser-layout character. For a non-hinge Simulator with the hardware keyboard off, the helper uses software-keyboard typing when the character is shifted or differs from that physical US key. Matching unshifted US keys, shortcuts without character metadata, and key releases retain HID handling. After hardware-keyboard-off setup, software-character input waits for the guest keyboard to become visible within a three-second window. That check does not press a key; the character attempt runs once, and disconnect or generation change cancels it. A slow native visibility read releases the input turn by the deadline (or within a 25 ms ownership check after disconnect). Readiness uses a read-only native keyboard scan, stopping after two known keyboard identifiers with a 250 ms total traversal/XPC budget; it does not serialize the full UI tree. Only one readiness read can remain in flight, and a new hardware-keyboard setup cannot reuse an earlier setup's result. Characters use HID fallback if the window expires while a read remains pending; its late result cannot type a character. Matching US HID keys skip this wait. A software-typed key suppresses its matching physical release; unavailable software characters and other device modes keep the existing HID fallback [observed: `src/device-session.ts`, key frame routing; `src/text-to-keys.ts`, `US_KEYBOARD_MAP`].
+
 ### Raw HID close contract
 
 The raw HID adapter releases session capacity exactly once, stops its heartbeat,

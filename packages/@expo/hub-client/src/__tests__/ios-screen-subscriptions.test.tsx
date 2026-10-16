@@ -21,6 +21,7 @@ class ControlSocket {
 
   constructor() {
     ControlSocket.instances.push(this);
+    queueMicrotask(() => this.onopen?.());
   }
   send(data: ArrayBuffer) {
     this.sent.push(data);

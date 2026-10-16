@@ -152,3 +152,13 @@ export function androidMessageForKeyboardInput(
   if (input.key.length === 1) return { type: 'text', text: input.key };
   return null;
 }
+
+// @ref LLP 0013#keyboard-input — character metadata preserves the browser layout when HID positions differ
+/** Keep printable browser characters while preserving physical key releases and shortcuts. */
+export function iosMessageForKeyboardInput(input: KeyboardInput) {
+  const usage = hidUsageForCode(input.code);
+  if (usage === null) return null;
+  const printable = input.phase === 'down' && !input.metaKey && !input.ctrlKey && !input.altKey && input.key.length === 1;
+  const shifted = printable && input.shiftKey && input.key !== ' ';
+  return {type: input.phase, usage, ...(printable ? {key: input.key} : {}), ...(shifted ? {shifted: true} : {})};
+}
