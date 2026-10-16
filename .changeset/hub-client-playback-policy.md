@@ -2,4 +2,4 @@
 "@expo/hub-client": patch
 ---
 
-Classify playback stalls using frame progress and reconnect once before demoting a codec.
+Add the playback stall classification and recovery policy.
