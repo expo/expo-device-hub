@@ -79,7 +79,7 @@ Window blur, a hidden tab, page hide, unmount, or a real input-owner change canc
 
 - Buffered wheel frames and paced key batches stop before adapter queues are cleared. Held keys/touches are released only through their original owner.
 - Unsent keys and scrolls are discarded from both the socket queue and any pre-discovery queue; they must not type or scroll later after the browser has left the interaction.
-- Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement before starting the pinch.
+- Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement and releases at the last forwarded single-touch point, while starting the pinch at the current two-finger positions.
 - Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
 
 This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].

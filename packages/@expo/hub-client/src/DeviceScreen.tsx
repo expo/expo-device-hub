@@ -194,6 +194,7 @@ export function DeviceScreen({
   const capturedPointersRef = useRef(new Set<number>());
   const modeRef = useRef<'none' | 'single' | 'alt' | 'two'>('none');
   const singleIdRef = useRef<number | null>(null);
+  const lastSinglePointRef = useRef<Point | null>(null);
   const altShiftRef = useRef(false);
   const panOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const [fingers, setFingers] = useState<{ a: Point; b: Point } | null>(null);
@@ -205,7 +206,10 @@ export function DeviceScreen({
     rafRef.current = 0;
     const pend = pendingRef.current;
     pendingRef.current = {};
-    if (pend.single) sendTouch({ phase: 'move', ...pend.single });
+    if (pend.single) {
+      sendTouch({ phase: 'move', ...pend.single });
+      lastSinglePointRef.current = pend.single;
+    }
     if (pend.multi) {
       sendMultiTouch?.(pend.multi);
       setFingers({ a: pend.multi.a, b: pend.multi.b });
@@ -250,6 +254,7 @@ export function DeviceScreen({
     capturedPointersRef.current.clear();
     modeRef.current = 'none';
     singleIdRef.current = null;
+    lastSinglePointRef.current = null;
     const a = pending.multi?.a ?? points[0];
     let b = pending.multi?.b ?? points[1];
     if (mode === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
@@ -307,9 +312,10 @@ export function DeviceScreen({
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
         rafRef.current = 0;
         pendingRef.current = {};
-        const previousPoint = pointersRef.current.get(singleIdRef.current!) ?? p;
+        const previousPoint = lastSinglePointRef.current ?? pointersRef.current.get(singleIdRef.current!) ?? p;
         sendTouch({ phase: 'end', ...previousPoint, cancelled: true });
         singleIdRef.current = null;
+        lastSinglePointRef.current = null;
       }
       const [a, b] = [...pointersRef.current.values()];
       modeRef.current = 'two';
@@ -321,6 +327,7 @@ export function DeviceScreen({
     if (modeRef.current === 'none') {
       modeRef.current = 'single';
       singleIdRef.current = event.pointerId;
+      lastSinglePointRef.current = p;
       sendTouch({ phase: 'begin', ...p });
     }
   };
@@ -385,6 +392,7 @@ export function DeviceScreen({
       sendTouch({ phase: 'end', ...p });
       modeRef.current = 'none';
       singleIdRef.current = null;
+      lastSinglePointRef.current = null;
     }
     pointersRef.current.delete(event.pointerId);
   };
