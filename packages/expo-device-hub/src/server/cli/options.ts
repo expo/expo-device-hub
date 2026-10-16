@@ -60,8 +60,6 @@ Options:
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
       --hide-sidebar         Hide the device list sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
-      --share-url <url>      Accepted for parity with serve-sim; the Hub has no Share button
-      --disable-share        Accepted for parity with serve-sim; the Hub has no Share button
       --android-recording-directory <path> Record the only booted emulator until shutdown
   -h, --help                 Show this help
 `;
@@ -228,7 +226,8 @@ export function parseCliOptions(args: string[]): CliOptions {
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
         'hide-sidebar': { type: 'boolean', default: false },
         'hide-boot-device': { type: 'boolean', default: false },
-        // No-ops, so the EAS worker can pass serve-sim's share flags to either CLI.
+        // Undocumented no-ops: the Hub has no Share button, but the EAS worker may pass
+        // serve-sim's share flags to either CLI.
         'share-url': { type: 'string' },
         'disable-share': { type: 'boolean', default: false },
         'require-token': { type: 'boolean', default: false },
@@ -354,16 +353,6 @@ export function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`--webrtc-ice-policy relay requires --turn-url.\n\n${HELP}`);
   }
   const corsOrigins = values['cors-origin'].map(parseCorsOrigin);
-  // Refuse what serve-sim refuses, so a bad value fails the same way with either CLI.
-  if (values['share-url'] !== undefined) {
-    let protocol: string | undefined;
-    try {
-      protocol = new URL(values['share-url']).protocol;
-    } catch {}
-    if (protocol !== 'http:' && protocol !== 'https:') {
-      throw new Error(`--share-url must be an http(s) URL.\n\n${HELP}`);
-    }
-  }
 
   return {
     port,

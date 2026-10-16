@@ -258,14 +258,6 @@ describe('parseCliOptions', () => {
   test('accepts --share-url and --disable-share, as serve-sim does', () => {
     expect(parseCliOptions(['--disable-share'])).toEqual(parseCliOptions([]));
     expect(parseCliOptions(['--share-url', 'https://expo.dev/preview/abc'])).toEqual(parseCliOptions([]));
-    expect(HELP).toContain('--share-url');
-    expect(HELP).toContain('--disable-share');
-  });
-
-  test('rejects a --share-url that serve-sim rejects', () => {
-    for (const value of ['', 'expo.dev', 'file:///tmp/page.html', 'javascript:alert(1)']) {
-      expect(() => parseCliOptions(['--share-url', value])).toThrow('--share-url must be an http(s) URL.');
-    }
   });
 
   test('collects every --frame-ancestor, as serve-sim does', () => {
