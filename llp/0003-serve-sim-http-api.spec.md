@@ -499,6 +499,24 @@ admission flag stay unchanged, including for legacy helpers [observed:
 The CLI tap, gesture, button, rotate, CA debug and memory-warning senders reuse
 this live-name selection and input admission path [observed: `sendHelperMessage`
 and its callers in `src/index.ts`].
+
+### Clipboard actions
+
+`clipboard.read` and `clipboard.copy` take `{udid}` and return JSON in `stdout`
+as `{text, cleanupWarning?}`. Read returns the existing pasteboard; Copy sends
+Command+C to the current selection and waits for new text. `clipboard.write`
+takes `{udid, text}` without pasting. `clipboard.paste` takes `{udid, text?}`:
+omitting text pastes the existing simulator clipboard, while `""` writes and
+pastes an empty string. Write and Paste return `{ok: true, cleanupWarning?}`.
+These are in-process actions under the usual `/exec-ws` token and Origin policy.
+
+The UDID must identify one simulator and is normalized to uppercase. Text is
+limited to 4 MiB of UTF-8; the 4 MiB `/exec-ws` message limit also includes the
+JSON envelope and escaping. Copy and Paste start the device input session if
+needed, wait for capture readiness, and share the viewer input queue and
+pasteboard lock. Errors return a nonzero `exitCode` and explanatory `stderr`,
+including any key cleanup warning. See [LLP 0010](0010-serve-sim-clipboard.explainer.md).
+
 ### Action catalog
 
 `actions.describe` with `{}` returns a JSON object that maps each action name to

@@ -1749,6 +1749,33 @@ export class DeviceSession {
     return this.sendCommandShortcut(KEY_V, ws);
   }
 
+  // @ref LLP 0010#paste — Host actions share the viewer input barrier and take the lock after their turn.
+  async pastePasteboard(text?: string): Promise<string | null> {
+    await this.waitForCapture();
+    const assertInput = () => {
+      if (this.phase !== "running" || this.rebootSuspended || this.hid.inputUnavailable) {
+        throw new Error("Simulator input is unavailable");
+      }
+    };
+    assertInput();
+    let cleanupWarning: string | null = null;
+    let completed = false;
+    const turn = this.queueInputOperation(this.serverInput, async () => {
+      assertInput();
+      const sendShortcut = async () => {
+        assertInput();
+        cleanupWarning = await this.sendCommandShortcut(KEY_V, null);
+      };
+      if (text !== undefined) await pasteTextIntoSim(this.udid, text, sendShortcut, assertInput);
+      else await withSimPasteboardLock(this.udid, sendShortcut, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS);
+      completed = true;
+    }, { clipboard: true });
+    if (!turn) throw new Error("Simulator input is unavailable");
+    await turn;
+    if (!completed) throw new Error("Simulator input is unavailable");
+    return cleanupWarning;
+  }
+
   // Like Paste, take the input turn before the pasteboard lock, and hold both through the read.
   async copyPasteboard(): Promise<PasteboardReadResult> {
     // Capture startup configures HID's target, as for viewer input.

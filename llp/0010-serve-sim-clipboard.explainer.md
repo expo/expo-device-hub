@@ -36,6 +36,28 @@ Responses carry `Cache-Control: no-store`, so a proxy does not keep clipboard te
 
 [Copy](#copy) uses this route, with `?copy=1`. So the rules at the start of this section apply to Copy too. On the input socket, Copy sends only an input barrier. The reply holds a request ID and a result, and no text [observed: `copySimClipboardAfterInput` in `src/client/utils/sim-clipboard.ts` and its caller in `src/client/client.tsx`, the `0x11` case in `src/device-session.ts`].
 
+## Clipboard host actions
+
+The action catalog also exposes `clipboard.read`, `clipboard.write`,
+`clipboard.copy`, and `clipboard.paste` through `/exec-ws`, using that socket's
+token and Origin policy. Read and Copy return JSON `{text, cleanupWarning?}` in
+`stdout`, preserving whitespace and JSON-looking text. Write and Paste return
+`{ok: true, cleanupWarning?}`; failures put the reason and any cleanup warning
+in `stderr` with a nonzero exit code [observed: `src/host-actions.ts`].
+
+Read and Write reuse the pasteboard helpers above. Copy and Paste start an input
+session when needed, so a browser viewer is not required. Both wait for capture
+readiness and acquire their shared input turn before the pasteboard lock. Paste
+with no text uses the existing simulator clipboard; empty text writes an empty
+string before the chord. A stopped session or discarded queued Paste fails
+without claiming success [observed: `getDeviceSession`, `copyPasteboard`, and
+`pastePasteboard` in `src/device-session.ts`].
+
+The host actions accept one simulator UUID, normalized to uppercase so sessions
+and locks share the same key. The text limit remains 4 MiB of UTF-8; the exec
+socket's separate 4 MiB message limit includes the JSON envelope and escaping
+[observed: `src/host-actions.ts`, `src/socket/server-control.ts`].
+
 ## Reading when `simctl pbpaste` fails
 
 When `simctl pbpaste` fails, the read asks the foreground app instead [observed: `readPasteboardOnce` in `src/sim-pasteboard-reader.ts`]. This path is meant for headless workers, which have no GUI login session:

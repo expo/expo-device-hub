@@ -72,7 +72,9 @@ function session(failOn?: (call: KeyCall) => boolean, udid = "SESSION-TEST", onK
     sendCommandShortcut(key: number, ws: object | null): Promise<string | null>;
     queueInputOperation(ws: object, run: () => Promise<void>): Promise<void> | null;
     detachHidSocket(ws: object): void;
+    discardQueuedInput(ws: object): void;
     copyPasteboard(): Promise<{ text: string }>;
+    pastePasteboard(text?: string): Promise<string | null>;
   };
   internals.activeHidKeyUsages.set(internals.serverInput, new Set());
   const viewer = () => {
@@ -388,6 +390,68 @@ describe("copy shortcut", () => {
     expect(internals.activeHidKeyUsageCounts.has(MetaLeft)).toBe(false);
   });
 
+});
+
+describe("pastePasteboard", () => {
+  test("does not report success when reboot discards a queued paste", async () => {
+    const { calls, internals, viewer } = session();
+    let release!: () => void;
+    const earlier = internals.queueInputOperation(viewer(), () => new Promise<void>((resolve) => { release = resolve; }));
+    const paste = internals.pastePasteboard();
+    await Bun.sleep(20);
+    internals.discardQueuedInput(internals.serverInput);
+    release();
+    await earlier;
+    await expect(paste).rejects.toThrow("Simulator input is unavailable");
+    expect(calls).toEqual([]);
+  });
+
+  test("waits behind prior input and holds later input through its chord", async () => {
+    const { calls, internals, viewer } = session(undefined, `PASTE-HOST-${process.pid}-${Math.random()}`);
+    let release!: () => void;
+    const earlier = internals.queueInputOperation(viewer(), () => new Promise<void>((resolve) => { release = resolve; }));
+    const paste = internals.pastePasteboard();
+    await Bun.sleep(20);
+    let laterRan = false;
+    const later = internals.queueInputOperation(viewer(), async () => {
+      expect(calls).toContainEqual(["up", KeyV]);
+      laterRan = true;
+    });
+    expect(calls).toEqual([]);
+    expect(laterRan).toBe(false);
+    release();
+    await earlier;
+    expect(await paste).toBeNull();
+    await later;
+    expect(laterRan).toBe(true);
+  });
+
+  test("does not write or send a chord if the session stops while waiting for its lock", async () => {
+    const udid = `PASTE-STOP-${process.pid}-${Math.random()}`;
+    const { calls, internals } = session(undefined, udid);
+    let release!: () => void;
+    let acquired!: () => void;
+    const locked = new Promise<void>((resolve) => { acquired = resolve; });
+    const holder = withSimPasteboardLock(udid, async () => {
+      acquired();
+      await new Promise<void>((resolve) => { release = resolve; });
+    });
+    await locked;
+    const paste = internals.pastePasteboard("");
+    await Bun.sleep(50);
+    Object.assign(internals, { phase: "stopped" });
+    release();
+    await holder;
+    await expect(paste).rejects.toThrow("Simulator input is unavailable");
+    expect(calls).toEqual([]);
+  });
+
+  test("reports key cleanup warnings and refuses unavailable input", async () => {
+    const { hid, internals } = session(([type, usage]) => type === "up" && usage === MetaLeft);
+    expect(await internals.pastePasteboard()).toContain("key may still be held");
+    hid.inputUnavailable = true;
+    await expect(internals.pastePasteboard()).rejects.toThrow("Simulator input is unavailable");
+  });
 });
 
 describe("copyPasteboard", () => {
