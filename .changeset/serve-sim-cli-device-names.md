@@ -2,4 +2,4 @@
 "@expo/serve-sim": patch
 ---
 
-Accept a simulator name with `-d` in the input commands.
+Accept simulator names with `-d` in input commands.
