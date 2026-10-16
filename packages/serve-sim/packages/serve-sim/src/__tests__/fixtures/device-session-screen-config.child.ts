@@ -69,6 +69,7 @@ let keyboardRestoreAttempts = 0;
 let axTree = "{}";
 let trackSoftwareKeyboardVisibility = false;
 let softwareKeyboardGate: Promise<void> | undefined;
+let softwareKeyboardGateAtCall: number | undefined;
 
 const VISIBLE_KEYBOARD_TREE = JSON.stringify([{
   AXUniqueId: null,
@@ -148,7 +149,9 @@ const addon = {
     async memoryWarning() { inputCalls.push("memoryWarning"); }
     async softwareKeyboard() {
       inputCalls.push("softwareKeyboard");
-      await softwareKeyboardGate;
+      if (softwareKeyboardGateAtCall === undefined || inputCalls.filter((call) => call === "softwareKeyboard").length >= softwareKeyboardGateAtCall) {
+        await softwareKeyboardGate;
+      }
       if (trackSoftwareKeyboardVisibility) axTree = axTree === VISIBLE_KEYBOARD_TREE ? "{}" : VISIBLE_KEYBOARD_TREE;
     }
     async caDebug() { inputCalls.push("caDebug"); return true; }
@@ -216,6 +219,7 @@ mock.module("../../native", () => ({
   NativeCapture: class {
     async start() { if (captureStartError) throw captureStartError; }
     async stop() { captureStops++; }
+    async suspendForReboot() {}
     async screenSize() { screenReads++; const value = { ...screen }; await screenReadGate; return value; }
     async subscribeScreenChanges(callback: typeof screenChanged) {
       screenChanged = callback;
@@ -336,6 +340,7 @@ beforeEach(() => {
   axTree = "{}";
   trackSoftwareKeyboardVisibility = false;
   softwareKeyboardGate = undefined;
+  softwareKeyboardGateAtCall = undefined;
   routedScreens.length = 0;
   hingeAngles.length = 0;
   hingePoses.length = 0;
@@ -2034,6 +2039,75 @@ describe("software keyboard visibility", () => {
     }
     await (session as unknown as { softwareKeyboardSync: Promise<void> }).softwareKeyboardSync;
     await waitUntil(() => pending() === 0);
+  });
+
+  test.each(["toggles", "coalesced visibility"])("releases completed %s while later native input remains blocked", async (backlog) => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    const { url } = await start({ width: 1170, height: 2532 });
+    const first = deferred(), last = deferred();
+    softwareKeyboardGate = first.promise;
+    const pending = () => (session as unknown as { inFlightHidMessageCount: number }).inFlightHidMessageCount;
+    let second: WebSocket | undefined;
+    try {
+      send(0x0c, {});
+      await waitUntil(() => toggles() === 1);
+      for (let index = 0; index < 1022; index++) {
+        if (backlog === "toggles") send(0x0c, {});
+        else send(0x0d, { visible: false });
+        if (index % 16 === 15) await Bun.sleep(1);
+      }
+      send(0x0c, {});
+      await waitUntil(() => pending() === 1024);
+      softwareKeyboardGateAtCall = backlog === "toggles" ? 1024 : 2;
+      softwareKeyboardGate = last.promise;
+      first.resolve();
+      await waitUntil(() => toggles() === softwareKeyboardGateAtCall);
+      second = new WebSocket(url.replace("http:", "ws:"));
+      await new Promise<void>((resolve, reject) => {
+        second!.once("open", resolve);
+        second!.once("error", reject);
+      });
+      second.send(Buffer.concat([Buffer.from([0x0c]), Buffer.from("{}") ]));
+      await Bun.sleep(30);
+      expect(second.readyState).toBe(WebSocket.OPEN);
+      expect(pending()).toBe(2);
+    } finally {
+      first.resolve();
+      last.resolve();
+      second?.terminate();
+    }
+    await (session as unknown as { softwareKeyboardSync: Promise<void> }).softwareKeyboardSync;
+    await waitUntil(() => pending() === 0);
+  });
+
+  test.each(["close", "reboot"])("releases queued keyboard messages on %s while active native input remains blocked", async (cause) => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    const gate = deferred();
+    softwareKeyboardGate = gate.promise;
+    const pending = () => (session as unknown as { inFlightHidMessageCount: number }).inFlightHidMessageCount;
+    let suspending: Promise<void> | undefined;
+    try {
+      send(0x0c, {});
+      await waitUntil(() => toggles() === 1);
+      send(0x0d, { visible: false });
+      send(0x0d, { visible: true });
+      send(0x0c, {});
+      await waitUntil(() => pending() === 4);
+      if (cause === "reboot") suspending = session!.suspendForReboot();
+      else session!.close();
+      await waitUntil(() => pending() === 1);
+      expect(toggles()).toBe(1);
+    } finally {
+      gate.resolve();
+      if (suspending) await Promise.race([
+        suspending,
+        Bun.sleep(1500).then(() => { throw new Error("Timed out releasing keyboard messages for reboot"); }),
+      ]);
+    }
+    await (session as unknown as { softwareKeyboardSync: Promise<void> }).softwareKeyboardSync;
+    await waitUntil(() => pending() === 0);
+    expect(toggles()).toBe(1);
   });
 });
 

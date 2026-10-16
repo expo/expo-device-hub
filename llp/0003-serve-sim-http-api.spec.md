@@ -295,7 +295,9 @@ queued native work, so the existing 1,024-message per-socket admission limit
 also counts pending keyboard requests. A device-wide limit of 1,024 pending
 viewer keyboard messages includes disconnected viewers and coalesced visibility
 requests; overflow closes the requesting socket with `1013` without queueing
-another request [observed: `attachHidSocket`,
+another request. Each message releases its slot when its associated queue entry
+completes or is discarded, so a later slow operation does not retain completed
+messages' admission slots [observed: `attachHidSocket`,
 `handleHidMessage`, and `queueSoftwareKeyboardSync` in `src/device-session.ts`].
 
 Accepted manual toggles survive viewer disconnect. Disconnect restores a

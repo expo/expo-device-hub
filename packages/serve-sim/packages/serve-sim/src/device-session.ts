@@ -83,6 +83,12 @@ type InputOperation = {
   reject: (error: unknown) => void;
 };
 
+type SoftwareKeyboardRequest = {
+  request: boolean | "toggle";
+  completion: Promise<void>;
+  complete: () => void;
+};
+
 // AVCC seed tag (StreamFormat.AVCCEnvelope.seedTag). description/keyframe/delta
 // envelopes are framed natively; only the on-connect JPEG seed is built here.
 const AVCC_SEED_TAG = 0x04;
@@ -298,7 +304,7 @@ export class DeviceSession {
   private softwareKeyboardSync: Promise<void> = Promise.resolve();
   private softwareKeyboardSyncPending = false;
   private pendingSoftwareKeyboardMessages = 0;
-  private readonly softwareKeyboardRequests: Array<boolean | "toggle"> = [];
+  private readonly softwareKeyboardRequests: SoftwareKeyboardRequest[] = [];
   private readonly inputOperationQueues = new Map<HidSocket, InputOperation[]>();
   private inputOperationSequence = 0;
   private readonly clipboardInputBarriers = new Set<number>();
@@ -375,7 +381,7 @@ export class DeviceSession {
   async suspendForReboot(): Promise<void> {
     this.rebootSuspended = true;
     this.inputGeneration++;
-    this.softwareKeyboardRequests.length = 0;
+    this.clearSoftwareKeyboardRequests();
     await this.captureStart;
     // A failed recording POST reports its own error and owns no lease to preserve.
     // It must settle before suspend, but its failure must not strand reboot input.
@@ -420,6 +426,7 @@ export class DeviceSession {
   close(): void {
     if (this.phase !== "running") return;
     this.phase = "stopped";
+    this.clearSoftwareKeyboardRequests();
     if (this.recordingLease) clearTimeout(this.recordingLease.timer);
     this.recordingLease = undefined;
     clearTimeout(this.screenRefreshTimer);
@@ -1708,20 +1715,28 @@ export class DeviceSession {
       this.pendingSoftwareKeyboardMessages++;
     }
     const requests = this.softwareKeyboardRequests;
-    if (typeof request === "boolean" && typeof requests.at(-1) === "boolean") requests[requests.length - 1] = request;
-    else requests.push(request);
+    let queued = requests.at(-1);
+    if (typeof request === "boolean" && queued && typeof queued.request === "boolean") {
+      queued.request = request;
+    } else {
+      let complete!: () => void;
+      const completion = new Promise<void>((resolve) => { complete = resolve; });
+      queued = { request, completion, complete };
+      requests.push(queued);
+    }
     if (!this.softwareKeyboardSyncPending) {
       this.softwareKeyboardSyncPending = true;
       const generation = this.inputGeneration;
-      this.softwareKeyboardSync = this.softwareKeyboardSync
-        .then(() => this.drainSoftwareKeyboardSync(generation))
-        .finally(() => {
-          this.softwareKeyboardSyncPending = false;
-        });
+      const drain = () => this.drainSoftwareKeyboardSync(generation);
+      this.softwareKeyboardSync = this.softwareKeyboardSync.then(drain, drain);
     }
     return ws
-      ? this.softwareKeyboardSync.finally(() => { this.pendingSoftwareKeyboardMessages--; })
-      : this.softwareKeyboardSync;
+      ? queued.completion.finally(() => { this.pendingSoftwareKeyboardMessages--; })
+      : queued.completion;
+  }
+
+  private clearSoftwareKeyboardRequests(): void {
+    for (const request of this.softwareKeyboardRequests.splice(0)) request.complete();
   }
 
   private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
@@ -2034,15 +2049,24 @@ export class DeviceSession {
   }
 
   private async drainSoftwareKeyboardSync(generation: number): Promise<void> {
-    while (this.canRunInputControl(generation)) {
-      const request = this.softwareKeyboardRequests.shift();
-      if (request === undefined) return;
-      if (request === "toggle") {
-        this.softwareKeyboardHidden = false;
-        await this.hid.softwareKeyboard();
-      } else {
-        await this.setSoftwareKeyboardVisible(request, generation);
+    try {
+      while (this.canRunInputControl(generation)) {
+        const request = this.softwareKeyboardRequests.shift();
+        if (request === undefined) return;
+        try {
+          if (request.request === "toggle") {
+            this.softwareKeyboardHidden = false;
+            await this.hid.softwareKeyboard();
+          } else {
+            await this.setSoftwareKeyboardVisible(request.request, generation);
+          }
+        } finally {
+          request.complete();
+        }
       }
+    } finally {
+      this.clearSoftwareKeyboardRequests();
+      this.softwareKeyboardSyncPending = false;
     }
   }
 
