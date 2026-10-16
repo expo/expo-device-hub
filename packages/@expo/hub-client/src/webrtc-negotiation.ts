@@ -2,27 +2,27 @@ type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<
 type SendBeaconLike = (url: string | URL, data?: BodyInit | null) => boolean;
 const CLOSE_TIMEOUT_MS = 2_000;
 const RETRYABLE_OFFER_CONFLICTS = new Set([
-  'webrtc_session_busy',
-  'webrtc_stream_changed',
-  'session_changed',
+  "webrtc_session_busy",
+  "webrtc_stream_changed",
+  "session_changed",
 ]);
 
 export class WebRtcSignalingBusyError extends Error {
   constructor() {
-    super('WebRTC signaling stayed busy for too long. Reload to try again.');
-    this.name = 'WebRtcSignalingBusyError';
+    super("WebRTC signaling stayed busy for too long. Reload to try again.");
+    this.name = "WebRtcSignalingBusyError";
   }
 }
 
 export class WebRtcSignalingTimeoutError extends Error {
   constructor() {
-    super('WebRTC signaling timed out.');
-    this.name = 'WebRtcSignalingTimeoutError';
+    super("WebRTC signaling timed out.");
+    this.name = "WebRtcSignalingTimeoutError";
   }
 }
 
 function abortError(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('The operation was aborted', 'AbortError');
+  return signal.reason ?? new DOMException("The operation was aborted", "AbortError");
 }
 
 function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
@@ -30,16 +30,16 @@ function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(finish, delayMs);
     function finish() {
-      signal?.removeEventListener('abort', abort);
+      signal?.removeEventListener("abort", abort);
       resolve();
     }
     function abort() {
       clearTimeout(timer);
       reject(
-        signal ? abortError(signal) : new DOMException('The operation was aborted', 'AbortError'),
+        signal ? abortError(signal) : new DOMException("The operation was aborted", "AbortError"),
       );
     }
-    signal?.addEventListener('abort', abort, { once: true });
+    signal?.addEventListener("abort", abort, { once: true });
   });
 }
 
@@ -62,18 +62,18 @@ export async function closeWebRtcSession({
   const body = JSON.stringify({ sessionId });
   const beacon =
     sendBeacon ??
-    (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function'
+    (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function"
       ? navigator.sendBeacon.bind(navigator)
       : undefined);
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so unload does not rely on a preflight.
-      if (beacon(beaconUrl, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
+      if (beacon(beaconUrl, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
     } catch {}
   }
   await fetchImpl(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body,
     keepalive,
     signal: keepalive ? undefined : AbortSignal.timeout(CLOSE_TIMEOUT_MS),
@@ -93,9 +93,11 @@ async function isRetryableOfferConflict(response: Response): Promise<boolean> {
     error = body?.error;
     code = body?.code;
   } catch {}
-  return (typeof code === 'string' && RETRYABLE_OFFER_CONFLICTS.has(code)) ||
-    (typeof error === 'string' && RETRYABLE_OFFER_CONFLICTS.has(error)) ||
-    (code === undefined && error === undefined);
+  return (
+    (typeof code === "string" && RETRYABLE_OFFER_CONFLICTS.has(code)) ||
+    (typeof error === "string" && RETRYABLE_OFFER_CONFLICTS.has(error)) ||
+    (code === undefined && error === undefined)
+  );
 }
 
 /** Post an SDP offer, retrying temporary contention or a capture restart during setup. */
@@ -122,7 +124,7 @@ export async function postWebRtcOffer({
     const requestController = new AbortController();
     let timedOut = false;
     const abortRequest = () => requestController.abort(signal ? abortError(signal) : undefined);
-    signal?.addEventListener('abort', abortRequest, { once: true });
+    signal?.addEventListener("abort", abortRequest, { once: true });
     const timeout = setTimeout(() => {
       timedOut = true;
       requestController.abort();
@@ -132,8 +134,8 @@ export async function postWebRtcOffer({
     let retryable: boolean;
     try {
       response = await fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         signal: requestController.signal,
         body,
       });
@@ -144,7 +146,7 @@ export async function postWebRtcOffer({
       throw error;
     } finally {
       clearTimeout(timeout);
-      signal?.removeEventListener('abort', abortRequest);
+      signal?.removeEventListener("abort", abortRequest);
     }
 
     if (!retryable) return response;
