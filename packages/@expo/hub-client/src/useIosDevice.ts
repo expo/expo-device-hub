@@ -1188,8 +1188,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // @ref LLP 0013#ios-input-adapter — refusals clear only on admission; rediscovery waits for the reconnect
     const input = createInputSocket(wsUrl, {
       onAdmitted() {
-        // The helper restores its host keyboard connection after the last owner leaves.
-        input.send(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
+        // Send setup directly, before queued keys. The helper serializes this
+        // setting change with subsequent input, so layout keys observe it off.
+        if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
         setHardwareKeyboardConnectedState(false);
       },
       onMessage(data) {

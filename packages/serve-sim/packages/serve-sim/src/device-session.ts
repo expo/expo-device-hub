@@ -331,6 +331,7 @@ export class DeviceSession {
   private readonly serverInput: HidSocket = { send() {}, on() {}, close() {} };
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
+  private softwareKeyboardReadyUntil = 0;
 
   constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
@@ -1312,6 +1313,7 @@ export class DeviceSession {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             const axHandledKeyUsages = this.axHandledKeyUsages.get(ws)!;
+            const generation = this.inputGeneration;
             const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
             this.supportsHingeAngle ??= supportsHingeAngle;
             const character = typeof m.key === "string" && m.key.length === 1 ? m.key : undefined;
@@ -1321,7 +1323,7 @@ export class DeviceSession {
             if (m.type === "down" && !supportsHingeAngle && character !== undefined && needsCharacter) {
               const hardwareKeyboard = await getUiOption(this.udid, "hardware-keyboard");
               if (hardwareKeyboard === "off" &&
-                await this.typeSoftwareKeyboardCharacter(character)) {
+                await this.typeSoftwareKeyboardCharacter(character, ws, generation)) {
                 if (this.activeHidKeyUsages.get(ws)?.has(m.usage)) {
                   await this.updateHidKey(ws, "up", m.usage);
                 }
@@ -1329,7 +1331,7 @@ export class DeviceSession {
                 return;
               }
             }
-            if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
+            if (!this.canRunInputControl(generation) || this.detachedHidSockets.has(ws)) return;
             if (m.type === "up" && axHandledKeyUsages.delete(m.usage)) return;
             if (m.type === "down") axHandledKeyUsages.delete(m.usage);
             if (m.type === "down" || m.type === "up") await this.updateHidKey(ws, m.type, m.usage);
@@ -1442,6 +1444,7 @@ export class DeviceSession {
               : null;
             if (!this.hidSockets.has(ws)) return;
             if (currentSetting === "off") {
+              this.softwareKeyboardReadyUntil = Date.now() + 1_000;
               this.restoreHardwareKeyboardWhenIdle = false;
               return;
             }
@@ -1451,6 +1454,7 @@ export class DeviceSession {
               m.enabled ? "on" : "off",
             ).catch(() => undefined);
             if (!revision) return;
+            this.softwareKeyboardReadyUntil = m.enabled ? 0 : Date.now() + 1_000;
             this.hardwareKeyboardRevision = m.enabled ? undefined : revision;
             this.restoreHardwareKeyboardWhenIdle = !m.enabled && this.hidSockets.size === 0;
           });
@@ -1713,8 +1717,20 @@ export class DeviceSession {
       });
   }
 
-  private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
-    if (this.phase !== "running") return false;
+  // @ref LLP 0003#printable-key-characters — accepted keyboard setup can precede guest visibility
+  private async typeSoftwareKeyboardCharacter(character: string, ws: HidSocket, generation: number): Promise<boolean> {
+    const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
+    const deadline = this.softwareKeyboardReadyUntil;
+    while (canType() && Date.now() < deadline) {
+      const visible = await isSoftwareKeyboardVisible(this.udid).catch(() => false);
+      if (!canType()) return false;
+      if (visible) {
+        this.softwareKeyboardReadyUntil = 0;
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    if (!canType()) return false;
     return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
   }
 

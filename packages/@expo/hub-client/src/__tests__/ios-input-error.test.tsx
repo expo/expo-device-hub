@@ -308,3 +308,26 @@ for (const expired of [false, true]) {
     expect(buttons(socket)).toEqual(expired ? [] : Array(32).fill('home'));
   });
 }
+
+test('admission prepares the keyboard before early layout keys and preserves control order', async () => {
+  let release!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+  const { client, helperSockets } = await renderIosClient(true, helper);
+  await act(async () => {
+    client().pressButton('home');
+    client().sendKey({ phase: 'down', code: 'KeyY', key: 'z', repeat: false });
+    client().sendKey({ phase: 'up', code: 'KeyY', key: 'z', repeat: false });
+    client().pressButton('power');
+  });
+  await act(async () => release());
+  const socket = helperSockets()[0]!;
+  await admit(socket);
+  const messages = socket.sent.map(data => ({ tag: new Uint8Array(data)[0], payload: JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))) }));
+  expect(messages).toEqual([
+    { tag: 0x0e, payload: { enabled: false } },
+    { tag: 0x04, payload: { button: 'home' } },
+    { tag: 0x06, payload: { type: 'down', usage: 0x1c, key: 'z' } },
+    { tag: 0x06, payload: { type: 'up', usage: 0x1c } },
+    { tag: 0x04, payload: { button: 'lock' } },
+  ]);
+});

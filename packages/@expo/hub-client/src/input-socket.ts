@@ -2,7 +2,8 @@ import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type Queue
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
-  onAdmitted(): void;
+  /** Prepare this admitted session before queued input; false means setup could not be sent. */
+  onAdmitted(): void | boolean;
   /** Return true for a config frame from an older server that lacks an admission frame. */
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
@@ -56,8 +57,12 @@ export function createInputSocket(
     const admit = (confirmed: boolean) => {
       const firstAdmission = !admitted;
       admitted = true;
+      if (firstAdmission && handlers.onAdmitted() === false) {
+        admitted = false;
+        ws.close();
+        return;
+      }
       pendingMessages = flushWsMessageQueue(ws, pendingMessages);
-      if (firstAdmission) handlers.onAdmitted();
       if (confirmed) confirmAdmission();
     };
     ws.onopen = () => {

@@ -60,6 +60,8 @@ let axDelay = 0;
 let axGate: Promise<void> | undefined;
 let hardwareKeyboard = "on";
 let hardwareKeyboardDelay = 0;
+let softwareKeyboardVisible = true;
+let softwareKeyboardVisibilityReads = 0;
 let hardwareKeyboardReadGate: Promise<void> | undefined;
 let hardwareKeyboardReads = 0;
 const hardwareKeyboardUpdatesStarted: string[] = [];
@@ -185,6 +187,13 @@ const inputCommands: Array<{
   { name: "caDebug", call: (hid) => hid.caDebug("color-blended-layers", true), result: true },
 ];
 
+mock.module("../../ax", () => ({
+  isSoftwareKeyboardVisible: async () => {
+    softwareKeyboardVisibilityReads++;
+    return softwareKeyboardVisible;
+  },
+}));
+
 mock.module("../../native", () => ({
   NativeCapture: class {
     async start() { if (captureStartError) throw captureStartError; }
@@ -300,6 +309,8 @@ beforeEach(() => {
   axGate = undefined;
   hardwareKeyboard = "on";
   hardwareKeyboardDelay = 0;
+  softwareKeyboardVisible = true;
+  softwareKeyboardVisibilityReads = 0;
   hardwareKeyboardReadGate = undefined;
   hardwareKeyboardReads = 0;
   hardwareKeyboardUpdatesStarted.length = 0;
@@ -1119,15 +1130,70 @@ describe("shifted keyboard routing", () => {
     expect(keyEvents).toEqual([]);
   });
 
-  test("keeps matching unshifted printable keys on the fast HID path", async () => {
-    hardwareKeyboard = "off";
+  test("an early layout key waits for a pending hardware keyboard change", async () => {
     await start({ width: 1170, height: 2532 });
+    hardwareKeyboardDelay = 30;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => axCharacters.length === 1);
+    expect(hardwareKeyboard).toBe("off");
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("an early layout key waits for the guest keyboard to appear", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => softwareKeyboardVisibilityReads > 0 || axCharacters.length > 0);
+    expect(axCharacters).toEqual([]);
+    softwareKeyboardVisible = true;
+    await waitUntil(() => axCharacters.length === 1);
+    expect(axCharacters).toEqual(["z"]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("disconnecting during keyboard readiness never types the pending character", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    await waitUntil(() => softwareKeyboardVisibilityReads > 0 || axCharacters.length > 0);
+    ws!.terminate();
+    await Bun.sleep(50);
+    softwareKeyboardVisible = true;
+    await Bun.sleep(50);
+    expect(axCharacters).toEqual([]);
+    expect(keyEvents).toEqual([]);
+  });
+
+  test("keeps matching unshifted printable keys on the fast HID path", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
     inputCalls.length = 0;
+    send(0x0e, { enabled: false });
     send(0x06, { type: "down", usage: 4, key: "a" });
     send(0x06, { type: "up", usage: 4 });
     await waitUntil(() => keyEvents.length === 2);
     expect(axCharacters).toEqual([]);
     expect(keyEvents).toEqual([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+    expect(softwareKeyboardVisibilityReads).toBe(0);
+  });
+
+  test("keyboard visibility waiting expires and retains the HID fallback", async () => {
+    await start({ width: 1170, height: 2532 });
+    softwareKeyboardVisible = false;
+    axFailures = 1;
+    send(0x0e, { enabled: false });
+    send(0x06, { type: "down", usage: 0x1c, key: "z" });
+    send(0x06, { type: "up", usage: 0x1c });
+    await waitUntil(() => keyEvents.length === 2);
+    expect(axCharacters).toEqual(["z"]);
+    expect(softwareKeyboardVisibilityReads).toBeGreaterThan(0);
+    expect(keyEvents).toEqual([{ type: "down", usage: 0x1c }, { type: "up", usage: 0x1c }]);
   });
 
   test("preserves hardware keyboard state set before the session starts", async () => {

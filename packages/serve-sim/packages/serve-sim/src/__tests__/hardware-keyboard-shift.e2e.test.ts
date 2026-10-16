@@ -239,6 +239,20 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     expectEveryCharacterChange(start, "zy");
   }, 60_000);
 
+  test("early layout keys wait for keyboard setup without a client-side delay", async () => {
+    const desktop = await openSocket();
+    const start = await launchTextField();
+    // beforeEach left hardware input on. Match the client's admission burst:
+    // setup and queued keys arrive together, without waiting for setting readback.
+    send(desktop, 0x0e, { enabled: false });
+    for (const [usage, key] of [[0x1c, "z"], [0x1d, "y"]] as const) {
+      send(desktop, 0x06, { type: "down", usage, key });
+      send(desktop, 0x06, { type: "up", usage });
+    }
+    await waitFor(() => lastText(start), "zy");
+    expectEveryCharacterChange(start, "zy");
+  }, 60_000);
+
   test("presses shifted top-row letters and punctuation", async () => {
     const desktop = await openSocket();
     send(desktop, 0x0e, { enabled: false });
