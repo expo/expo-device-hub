@@ -19,6 +19,7 @@ import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
+import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import {
   UploadChunk,
   UploadId,
@@ -105,12 +106,21 @@ const ACTION_SCHEMAS = {
   "showBorders.set": UiSetting("show-borders"),
   "settings.status": z.object({ udid: Device }),
   "softwareKeyboard.toggle": z.object({ udid: Device }),
+  tap: z.object({ udid: Device, x: TouchCoordinate, y: TouchCoordinate })
+    .meta({ description: "Tap at normalized screen coordinates." }),
+  gesture: z.object({ udid: Device, events: TouchGesture })
+    .meta({ description: "Send a complete touch gesture and wait for input completion." }),
+  type: z.object({
+    udid: Device,
+    text: z.string().max(4096).regex(/^[\t\n\r\x20-\x7e]*$/, "must use US-keyboard ASCII characters, newline or tab"),
+  }).meta({ description: "Type US-keyboard ASCII text into the focused field." }),
   memoryWarning: z.object({ udid: Device }),
   "caDebug.set": z.object({
     udid: Device,
     option: z.enum(Object.keys(CA_DEBUG_FLAGS)),
     value: z.enum(TOGGLE_VALUES),
   }),
+  "hinge.get": z.object({ udid: Device }).meta({ description: "Read the hinge state." }),
   "hinge.set": z.object({
     udid: Device,
     value: z.union([
@@ -343,6 +353,18 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const p = parseParams(action, raw);
       return serveSim(["software-keyboard", "-d", p.udid]);
     }
+    case "tap": {
+      const p = parseParams(action, raw);
+      return serveSim(["tap", String(p.x), String(p.y), "-d", p.udid]);
+    }
+    case "gesture": {
+      const p = parseParams(action, raw);
+      return serveSim(["gesture", JSON.stringify(p.events), "-d", p.udid]);
+    }
+    case "type": {
+      const p = parseParams(action, raw);
+      return serveSim(["type", "-d", p.udid, "--", p.text]);
+    }
     case "memoryWarning": {
       const p = parseParams(action, raw);
       return serveSim(["memory-warning", "-d", p.udid]);
@@ -350,6 +372,10 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     case "caDebug.set": {
       const p = parseParams(action, raw);
       return serveSim(["ca-debug", p.option, p.value, "-d", p.udid]);
+    }
+    case "hinge.get": {
+      const p = parseParams(action, raw);
+      return serveSim(["hinge", "-d", p.udid]);
     }
     case "hinge.set": {
       const p = parseParams(action, raw);

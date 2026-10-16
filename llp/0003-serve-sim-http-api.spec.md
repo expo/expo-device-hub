@@ -444,6 +444,23 @@ must also be available as a host action on `/exec-ws`. Add or update the action
 alongside the command or capability so action clients can use the same controls
 [confirmed: Gabe Debes, 2026-10-15].
 
+### Input actions
+
+- `tap`: `{udid, x, y}`, with normalized coordinates from 0 to 1.
+- `gesture`: `{udid, events}`, a complete sequence of 2–256 touch events. Each
+  event has `type`, normalized `x` and `y`, optional `edge` (0–4), and optional
+  `delayMs` (0–1000) before that event. Start with `begin`, finish with `end`, and
+  use only `move` between them. Total delay is limited to 30 seconds.
+- `type`: `{udid, text}`, up to 4096 US-keyboard ASCII characters, including
+  newline and tab. Text is passed literally, including leading dashes.
+
+These actions use the existing CLI input paths. `serve-sim gesture` accepts the
+event array as its JSON argument and keeps one admitted connection for the whole
+sequence, then waits for the input-completion barrier before reporting success.
+The legacy single-event JSON argument remains supported; separate single-event
+calls cannot form a drag because disconnect releases that connection's touch.
+Typing also waits for an input-completion barrier. Tap success confirms delivery.
+
 ### Simulator settings and device actions
 
 Each simulator setting in the sidebar has a read action and a write action on
@@ -457,6 +474,7 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.
 - `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
   `value` is `on` or `off`.
+- `hinge.get`: `{udid}`. Reads the hinge state as JSON.
 - `hinge.set`: `{udid, value}`. `value` is `fold`, `half`, `unfold` or an angle from
   0 to 180.
 - `permissions.list`: `{udid, bundleId?}`. Returns the app permissions as JSON.

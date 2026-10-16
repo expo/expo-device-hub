@@ -10,6 +10,7 @@ import { networkInterfaces } from "os";
 import { extname, join, resolve } from "path";
 import WebSocket from "ws";
 import { onCliInputReady } from "./socket/cli-input";
+import { TouchGesture, sendTouchGestureToWs } from "./touch-gesture";
 import {
   stateDir,
   stateFileForDevice,
@@ -882,6 +883,15 @@ async function gesture(jsonStr: string, deviceArg?: string) {
   } catch {
     console.error("Invalid JSON:", jsonStr);
     process.exit(1);
+  }
+
+  if (Array.isArray(touch)) {
+    const result = TouchGesture.safeParse(touch);
+    if (!result.success) {
+      console.error(`Invalid gesture: ${result.error.issues[0]?.message}`);
+      process.exit(1);
+    }
+    return sendTouchGestureToWs(state, result.data);
   }
 
   return new Promise<void>((resolve, reject) => {
@@ -2764,7 +2774,7 @@ program
 
 program
   .command("gesture")
-  .description("Send a touch gesture")
+  .description("Send a touch event or a complete begin/move/end event array")
   .argument("<json>", 'Gesture JSON, e.g. \'{"type":"begin","x":0.5,"y":0.5}\'')
   .option(...deviceOpt)
   .action((json: string, opts) => gesture(json, opts.device));
