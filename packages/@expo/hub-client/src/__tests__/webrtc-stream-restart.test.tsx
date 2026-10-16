@@ -264,6 +264,8 @@ async function androidHarness({
   canvasContextUnavailable = false,
   canvasImage = 'data:image/png;base64,last-frame',
   sourceMode = 'scrcpy',
+  omitCadence = false,
+  repeatFrameMs = undefined as number | undefined,
 } = {}) {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -310,12 +312,14 @@ async function androidHarness({
   const source = {
     ok: true,
     mode: sourceMode,
+    repeatFrameMs: repeatFrameMs ?? (sourceMode === 'grpc-screenshot' ? 500 : 0),
     grpcImageMode: 'mmap',
     inputSource: 'scrcpy',
     availableModes: ['scrcpy', 'grpc-screenshot'],
     availableInputSources: ['scrcpy', 'grpc'],
     sessionGeneration: 1,
   };
+  if (omitCadence) delete (source as { repeatFrameMs?: number }).repeatFrameMs;
   const writes: { path: string; body: unknown; finish: (response: Response) => void }[] = [];
   const closedSessions: string[] = [];
   let finishSource!: (response: Response) => void;
@@ -612,7 +616,7 @@ test('Android source changes reject overlapping settings writes and wait for rep
   await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
   expect(hub.writes.map((write) => write.path)).toEqual(['/api/stream-mode']);
   await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
-  await hub.finishWrite({ ...hub.source, mode: 'grpc-screenshot', sessionGeneration: 2 });
+  await hub.finishWrite({ ...hub.source, mode: 'grpc-screenshot', repeatFrameMs: 500, sessionGeneration: 2 });
   await hub.fireTimer(100);
   await act(async () => ControlSocket.instances.at(-1)!.open());
   expect(hub.client.status).toBe('reconnecting');
@@ -663,3 +667,85 @@ for (const mode of ['scrcpy', 'grpc-screenshot']) {
     expect(hub.client.status).toBe('streaming');
   });
 }
+
+
+for (const repeatFrameMs of [0, 8_000, 30_000]) {
+  test(`slow or disabled gRPC repeats (${repeatFrameMs}ms) do not trigger false recovery`, async () => {
+    const hub = await androidHarness({ sourceMode: 'grpc-screenshot', repeatFrameMs });
+    const peer = Peer.instances.at(-1)!;
+    peer.getStats = async () => new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: 100, framesDecoded: 100,
+    }]]);
+    await hub.stallPlayback(); await hub.stallPlayback();
+    expect(peer.closeCount).toBe(0);
+    expect(hub.client.status).toBe('streaming');
+  });
+}
+
+test('missing cadence metadata stays conservative and late discovery adopts the gRPC policy once', async () => {
+  const hub = await androidHarness({ delaySource: true, sourceMode: 'grpc-screenshot' });
+  const initial = Peer.instances.at(-1)!;
+  initial.getStats = async () => new Map([['video', {
+    id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: 100, framesDecoded: 100,
+  }]]);
+  await hub.stallPlayback();
+  expect(initial.closeCount).toBe(0);
+  await hub.finishSource();
+  const peer = Peer.instances.at(-1)!;
+  expect(peer).not.toBe(initial);
+  await hub.paintReplacement();
+  expect(hub.client.status).toBe('streaming');
+  const count = Peer.instances.length;
+  peer.getStats = initial.getStats;
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(1);
+  expect(Peer.instances).toHaveLength(count);
+});
+
+for (const from of ['scrcpy', 'grpc-screenshot']) {
+  test(`switching from ${from} adopts the new policy before first paint without another peer replacement`, async () => {
+    const hub = await androidHarness({ sourceMode: from });
+    const to = from === 'scrcpy' ? 'grpc-screenshot' : 'scrcpy';
+    await act(async () => hub.client.setStreamSource(to));
+    await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
+    await hub.finishWrite({ ...hub.source, mode: to, repeatFrameMs: to === 'grpc-screenshot' ? 500 : 0, sessionGeneration: 2 });
+    await hub.fireTimer(100);
+    await act(async () => ControlSocket.instances.at(-1)!.open());
+    const peer = Peer.instances.at(-1)!;
+    const count = Peer.instances.length;
+    await hub.paintReplacement();
+    expect(hub.client.status).toBe('streaming');
+    expect(Peer.instances).toHaveLength(count);
+    peer.getStats = async () => new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: 100, framesDecoded: 100,
+    }]]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(to === 'grpc-screenshot' ? 1 : 0);
+  });
+}
+
+test('a healthy repeating gRPC stream stays connected', async () => {
+  const hub = await androidHarness({ sourceMode: 'grpc-screenshot' });
+  const peer = Peer.instances.at(-1)!;
+  let frames = 100;
+  peer.getStats = async () => {
+    frames++;
+    return new Map([['video', { id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: frames, framesDecoded: frames }]]);
+  };
+  await hub.stallPlayback(); await hub.stallPlayback();
+  expect(peer.closeCount).toBe(0);
+  expect(hub.client.status).toBe('streaming');
+});
+
+
+test('a legacy gRPC host with no cadence metadata remains usable without false stalls', async () => {
+  const hub = await androidHarness({ sourceMode: 'grpc-screenshot', omitCadence: true });
+  const peer = Peer.instances.at(-1)!;
+  expect(hub.client.streamSource?.mode).toBe('grpc-screenshot');
+  expect(hub.client.streamSource?.repeatFrameMs).toBeUndefined();
+  peer.getStats = async () => new Map([['video', {
+    id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: 100, framesDecoded: 100,
+  }]]);
+  await hub.stallPlayback(); await hub.stallPlayback();
+  expect(peer.closeCount).toBe(0);
+});

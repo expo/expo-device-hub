@@ -480,7 +480,7 @@ describe("server stream source switching", () => {
     }
   });
 
-  test("stages, publishes, rolls back, and idempotently reports a source", async () => {
+  test.each([undefined, 0, 30_000])("reports source repeat cadence %s across switches", async (repeatFrameMs) => {
     const initial = fakeSession("emulator-5554", "scrcpy");
     const grpc = fakeSession("emulator-5554", "grpc-screenshot");
     const grpcGate = deferred<EmuSession>();
@@ -489,7 +489,7 @@ describe("server stream source switching", () => {
     let failScrcpy = false;
     const captured: CapturedServer = { options: null };
     const started = await startServer(
-      { serial: "emulator-5554", port: 3300 },
+      { serial: "emulator-5554", port: 3300, repeatFrameMs },
       {
         openSession: async ({ mode }) => {
           modes.push(mode);
@@ -509,6 +509,7 @@ describe("server stream source switching", () => {
       ok: true,
       serial: "emulator-5554",
       mode: "scrcpy",
+      repeatFrameMs: repeatFrameMs ?? SCRCPY_DEFAULTS.repeatFrameMs,
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy"],
@@ -541,6 +542,7 @@ describe("server stream source switching", () => {
     grpcGate.resolve(grpc.session);
     expect(await (await switching).json()).toMatchObject({
       mode: "grpc-screenshot",
+      repeatFrameMs: repeatFrameMs || 500,
       sessionGeneration: 1,
     });
     expect(initial.closeCalls()).toBe(1);
@@ -548,6 +550,7 @@ describe("server stream source switching", () => {
     const idempotent = await putMode(captured, "grpc-screenshot");
     expect(await idempotent.json()).toMatchObject({
       mode: "grpc-screenshot",
+      repeatFrameMs: repeatFrameMs || 500,
       sessionGeneration: 1,
     });
     expect(modes).toEqual(["scrcpy", "grpc-screenshot"]);

@@ -85,6 +85,7 @@ import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
+import { PLAYBACK_STALL_POLL_MS, PLAYBACK_STALL_POLLS } from './webrtc-playback-stall';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type ConnectionStatus,
@@ -636,6 +637,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           streamSourceRef.current = next;
           setStreamSourceState((current) =>
             current?.mode === next.mode &&
+            current.repeatFrameMs === next.repeatFrameMs &&
             current.grpcImageMode === next.grpcImageMode &&
             current.encoder === next.encoder &&
             current.encoderName === next.encoderName &&
@@ -971,6 +973,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Without a poster, keep the browser's existing frame attachment as a fallback.
     if (video.poster) video.srcObject = null;
   }, [deviceScope, webRtcVideoElement]);
+  // Source switches are committed on the server before the first replacement paint.
+  const webRtcCaptureSource = pendingStreamSourceRef.current ?? streamSource;
   const {
     stream: webRtcStream,
     error: webRtcError,
@@ -997,7 +1001,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         : 'all',
     sendIceServersInOffer: false,
     allowCodecFallback: false,
-    expectContinuousFrames: false,
+    // @ref LLP 0012#playback-watchdog — gRPC repeats idle frames; scrcpy may stay silent
+    expectContinuousFrames: webRtcCaptureSource?.mode === 'grpc-screenshot' &&
+      webRtcCaptureSource.repeatFrameMs !== undefined && webRtcCaptureSource.repeatFrameMs > 0 &&
+      webRtcCaptureSource.repeatFrameMs < PLAYBACK_STALL_POLL_MS * PLAYBACK_STALL_POLLS,
     onKeyframeNeeded: requestWebRtcKeyframe,
     onBeforeDisconnect: preserveWebRtcFrame,
     fetchImpl: sessionFetch,

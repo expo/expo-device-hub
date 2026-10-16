@@ -957,7 +957,7 @@ describe("createRouter stream mode", () => {
     await router.stopAll();
   });
 
-  test("reports the source and replaces it through the GET/PUT contract", async () => {
+  test("reports the source and its repeat cadence through GET/PUT", async () => {
     const state = {
       devices: [{ serial: "emulator-5554", state: "device" }],
       avds: [] as string[],
@@ -980,6 +980,7 @@ describe("createRouter stream mode", () => {
       ok: true,
       serial: "emulator-5554",
       mode: "scrcpy",
+      repeatFrameMs: 0,
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy"],
@@ -1010,6 +1011,7 @@ describe("createRouter stream mode", () => {
       ok: true,
       serial: "emulator-5554",
       mode: "grpc-screenshot",
+      repeatFrameMs: 500,
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy", "grpc"],
