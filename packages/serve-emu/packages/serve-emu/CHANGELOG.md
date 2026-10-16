@@ -19,6 +19,11 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - Remove `GET /api/screenshot`. It now returns 405, and clients must use
   `POST /api/screenshot`.
 
+### Fixed
+
+- Synchronize emulator rotation controls with the simulated orientation used by
+  gRPC PNG and MMAP screenshots, and align gRPC touch input with rotated frames.
+
 ### Added
 
 - Save screenshot captures to `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` when it is set, and report the outcome in the `X-Expo-Screenshot-Artifact` header.
