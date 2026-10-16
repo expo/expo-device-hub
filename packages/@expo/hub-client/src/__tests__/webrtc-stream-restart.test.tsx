@@ -263,6 +263,7 @@ async function androidHarness({
   captureThrows = false,
   canvasContextUnavailable = false,
   canvasImage = 'data:image/png;base64,last-frame',
+  sourceMode = 'scrcpy',
 } = {}) {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -308,7 +309,7 @@ async function androidHarness({
   stubGlobal('WebSocket', ControlSocket);
   const source = {
     ok: true,
-    mode: 'scrcpy',
+    mode: sourceMode,
     grpcImageMode: 'mmap',
     inputSource: 'scrcpy',
     availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -641,5 +642,24 @@ for (const outcome of ['failure', 'superseded'] as const) {
     expect(hub.client.streamSourcePending).toBe(false);
     expect(hub.client.streamSettings?.maxDimension).toBe(1280);
     if (outcome === 'failure') expect(hub.client.status).toBe('streaming');
+  });
+}
+
+for (const mode of ['scrcpy', 'grpc-screenshot']) {
+  test(`Android ${mode} applies its source-specific no-frame recovery policy`, async () => {
+    const hub = await androidHarness({ sourceMode: mode });
+    const peer = Peer.instances.at(-1)!;
+    peer.getStats = async () => new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video', framesReceived: 100, framesDecoded: 100,
+    }]]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(mode === 'grpc-screenshot' ? 1 : 0);
+    if (mode === 'grpc-screenshot') {
+      expect(hub.closedSessions).toHaveLength(1);
+      await hub.fireTimer(500);
+      expect(Peer.instances.at(-1)).not.toBe(peer);
+      await hub.paintReplacement();
+    }
+    expect(hub.client.status).toBe('streaming');
   });
 }
