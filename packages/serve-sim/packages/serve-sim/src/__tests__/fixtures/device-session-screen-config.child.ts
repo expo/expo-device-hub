@@ -67,6 +67,8 @@ let hardwareKeyboardRevision = 0;
 let keyboardRestoreFailures = 0;
 let keyboardRestoreAttempts = 0;
 let axTree = "{}";
+let trackSoftwareKeyboardVisibility = false;
+let softwareKeyboardGate: Promise<void> | undefined;
 
 const VISIBLE_KEYBOARD_TREE = JSON.stringify([{
   AXUniqueId: null,
@@ -144,7 +146,11 @@ const addon = {
       return hingeResult;
     }
     async memoryWarning() { inputCalls.push("memoryWarning"); }
-    async softwareKeyboard() { inputCalls.push("softwareKeyboard"); }
+    async softwareKeyboard() {
+      inputCalls.push("softwareKeyboard");
+      await softwareKeyboardGate;
+      if (trackSoftwareKeyboardVisibility) axTree = axTree === VISIBLE_KEYBOARD_TREE ? "{}" : VISIBLE_KEYBOARD_TREE;
+    }
     async caDebug() { inputCalls.push("caDebug"); return true; }
     async hingeState() { return { ...nativeHingeState }; }
     async hingeControlEligibility() {
@@ -328,6 +334,8 @@ beforeEach(() => {
   keyboardRestoreFailures = 0;
   keyboardRestoreAttempts = 0;
   axTree = "{}";
+  trackSoftwareKeyboardVisibility = false;
+  softwareKeyboardGate = undefined;
   routedScreens.length = 0;
   hingeAngles.length = 0;
   hingePoses.length = 0;
@@ -1885,6 +1893,8 @@ describe("wheel ownership", () => {
 });
 
 describe("software keyboard visibility", () => {
+  beforeEach(() => { trackSoftwareKeyboardVisibility = true; });
+
   const send = (tag: number, payload: object) => ws!.send(Buffer.concat([
     Buffer.from([tag]), Buffer.from(JSON.stringify(payload)),
   ]));
@@ -1908,18 +1918,27 @@ describe("software keyboard visibility", () => {
     await disconnect();
 
     expect(toggles()).toBe(2);
+    expect(axTree).toBe(VISIBLE_KEYBOARD_TREE);
   });
 
   test("keeps a toggle when its client disconnects", async () => {
     axTree = VISIBLE_KEYBOARD_TREE;
     await start({ width: 1170, height: 2532 });
     inputCalls.length = 0;
-    send(0x0c, {});
-    await waitUntil(() => toggles() === 1);
+    const gate = deferred();
+    softwareKeyboardGate = gate.promise;
+    try {
+      send(0x0c, {});
+      await waitUntil(() => toggles() === 1);
 
-    await disconnect();
+      await disconnect();
+    } finally {
+      gate.resolve();
+    }
+    await waitUntil(() => axTree !== VISIBLE_KEYBOARD_TREE);
 
     expect(toggles()).toBe(1);
+    expect(axTree).toBe("{}");
   });
 
   test("applies a toggle after an earlier hide from the same client", async () => {
@@ -1933,6 +1952,88 @@ describe("software keyboard visibility", () => {
     await disconnect();
 
     expect(toggles()).toBe(2);
+    expect(axTree).toBe(VISIBLE_KEYBOARD_TREE);
+  });
+
+  test("ignores malformed visibility requests without stranding a later toggle", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    const gate = deferred();
+    softwareKeyboardGate = gate.promise;
+    try {
+      send(0x0d, { visible: false });
+      await waitUntil(() => toggles() === 1);
+      for (const payload of [{}, { visible: null }, { visible: "false" }, { visible: 0 }]) send(0x0d, payload);
+      send(0x0c, {});
+      await Bun.sleep(30);
+    } finally {
+      gate.resolve();
+    }
+    await waitUntil(() => toggles() === 2);
+    await disconnect();
+    expect(toggles()).toBe(2);
+    expect(axTree).toBe(VISIBLE_KEYBOARD_TREE);
+  });
+
+  test("closes a client that accumulates too many pending software keyboard toggles", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    await start({ width: 1170, height: 2532 });
+    const gate = deferred();
+    softwareKeyboardGate = gate.promise;
+    const closed = new Promise<number>((resolve) => ws!.once("close", resolve));
+    try {
+      send(0x0c, {});
+      await waitUntil(() => toggles() === 1);
+      // Yield between batches so transport bursts alone cannot trigger the existing in-flight cap.
+      for (let index = 0; index < 1030; index++) {
+        send(0x0c, {});
+        if (index % 16 === 15) await Bun.sleep(1);
+      }
+      expect(await Promise.race([
+        closed,
+        Bun.sleep(1500).then(() => { throw new Error("Timed out waiting for pending software keyboard input to close"); }),
+      ])).toBe(1013);
+    } finally {
+      gate.resolve();
+    }
+    await (session as unknown as { softwareKeyboardSync: Promise<void> }).softwareKeyboardSync;
+  });
+
+  test("bounds pending keyboard messages across reconnects even when visibility requests coalesce", async () => {
+    axTree = VISIBLE_KEYBOARD_TREE;
+    const { url } = await start({ width: 1170, height: 2532 });
+    const gate = deferred();
+    softwareKeyboardGate = gate.promise;
+    const pending = () => (session as unknown as { inFlightHidMessageCount: number }).inFlightHidMessageCount;
+    let replacement: WebSocket | undefined;
+    try {
+      send(0x0c, {});
+      await waitUntil(() => toggles() === 1);
+      for (let index = 0; index < 1023; index++) {
+        send(0x0d, { visible: false });
+        if (index % 16 === 15) await Bun.sleep(1);
+      }
+      await waitUntil(() => pending() === 1024);
+      expect((session as unknown as { softwareKeyboardRequests: unknown[] }).softwareKeyboardRequests).toHaveLength(1);
+      await disconnect();
+      replacement = new WebSocket(url.replace("http:", "ws:"));
+      await new Promise<void>((resolve, reject) => {
+        replacement!.once("open", resolve);
+        replacement!.once("error", reject);
+      });
+      const closed = new Promise<number>((resolve) => replacement!.once("close", resolve));
+      replacement.send(Buffer.concat([Buffer.from([0x0d]), Buffer.from(JSON.stringify({ visible: false }))]));
+      expect(await Promise.race([
+        closed,
+        Bun.sleep(1500).then(() => { throw new Error("Timed out waiting for reconnected keyboard input to close"); }),
+      ])).toBe(1013);
+      expect(pending()).toBe(1024);
+    } finally {
+      gate.resolve();
+      replacement?.terminate();
+    }
+    await (session as unknown as { softwareKeyboardSync: Promise<void> }).softwareKeyboardSync;
+    await waitUntil(() => pending() === 0);
   });
 });
 

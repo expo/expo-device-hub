@@ -285,6 +285,24 @@ without the state flag retain their open-based behavior [observed:
 The CDP bridge forwards frames verbatim in both directions. The token
 subprotocol is not forwarded upstream, so the credential stops at serve-sim.
 
+### Software keyboard requests
+
+HID tag `0x0c` toggles the software keyboard; tag `0x0d` requests a boolean
+`visible` state. Missing or non-boolean visibility values are ignored. Manual
+toggles and visibility requests share one queue in arrival order; adjacent
+visibility requests may coalesce. Their handlers stay in flight through the
+queued native work, so the existing 1,024-message per-socket admission limit
+also counts pending keyboard requests. A device-wide limit of 1,024 pending
+viewer keyboard messages includes disconnected viewers and coalesced visibility
+requests; overflow closes the requesting socket with `1013` without queueing
+another request [observed: `attachHidSocket`,
+`handleHidMessage`, and `queueSoftwareKeyboardSync` in `src/device-session.ts`].
+
+Accepted manual toggles survive viewer disconnect. Disconnect restores a
+keyboard that serve-sim automatically hid; it does not undo a manual toggle
+[observed: `detachHidSocket` and `drainSoftwareKeyboardSync` in
+`src/device-session.ts`].
+
 ### Rotation readback
 
 The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.

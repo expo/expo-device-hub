@@ -297,6 +297,7 @@ export class DeviceSession {
   private softwareKeyboardHidden = false;
   private softwareKeyboardSync: Promise<void> = Promise.resolve();
   private softwareKeyboardSyncPending = false;
+  private pendingSoftwareKeyboardMessages = 0;
   private readonly softwareKeyboardRequests: Array<boolean | "toggle"> = [];
   private readonly inputOperationQueues = new Map<HidSocket, InputOperation[]>();
   private inputOperationSequence = 0;
@@ -1415,13 +1416,13 @@ export class DeviceSession {
       }
       case 0x0c:
         this.recordHidEvent(tag, {});
-        this.queueSoftwareKeyboardSync("toggle");
+        await this.queueSoftwareKeyboardSync("toggle", ws);
         break;
       case 0x0d: {
-        const m = json<{ visible: boolean }>();
-        if (m) {
+        const m = json<{ visible?: unknown }>();
+        if (typeof m?.visible === "boolean") {
           this.recordHidEvent(tag, m);
-          this.queueSoftwareKeyboardSync(m.visible);
+          await this.queueSoftwareKeyboardSync(m.visible, ws);
         }
         break;
       }
@@ -1697,18 +1698,30 @@ export class DeviceSession {
     });
   }
 
-  private queueSoftwareKeyboardSync(request: boolean | "toggle"): void {
+  // @ref LLP 0003#software-keyboard-requests — Count pending messages across reconnects, even when visibility requests coalesce.
+  private queueSoftwareKeyboardSync(request: boolean | "toggle", ws?: HidSocket): Promise<void> {
+    if (ws) {
+      if (this.pendingSoftwareKeyboardMessages >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
+        this.overloadHidSocket(ws);
+        return Promise.resolve();
+      }
+      this.pendingSoftwareKeyboardMessages++;
+    }
     const requests = this.softwareKeyboardRequests;
     if (typeof request === "boolean" && typeof requests.at(-1) === "boolean") requests[requests.length - 1] = request;
     else requests.push(request);
-    if (this.softwareKeyboardSyncPending) return;
-    this.softwareKeyboardSyncPending = true;
-    const generation = this.inputGeneration;
-    this.softwareKeyboardSync = this.softwareKeyboardSync
-      .then(() => this.drainSoftwareKeyboardSync(generation))
-      .finally(() => {
-        this.softwareKeyboardSyncPending = false;
-      });
+    if (!this.softwareKeyboardSyncPending) {
+      this.softwareKeyboardSyncPending = true;
+      const generation = this.inputGeneration;
+      this.softwareKeyboardSync = this.softwareKeyboardSync
+        .then(() => this.drainSoftwareKeyboardSync(generation))
+        .finally(() => {
+          this.softwareKeyboardSyncPending = false;
+        });
+    }
+    return ws
+      ? this.softwareKeyboardSync.finally(() => { this.pendingSoftwareKeyboardMessages--; })
+      : this.softwareKeyboardSync;
   }
 
   private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
