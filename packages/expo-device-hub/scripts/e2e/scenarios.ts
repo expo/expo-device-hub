@@ -218,22 +218,24 @@ export async function runBlurScenario() {
  * Synthetic DOM events make the same cases runnable in the collaborative browser
  * and headless runner. OS focus/trusted-event delivery is a separate acceptance check.
  */
-export async function runScenarios() {
+export async function runScenarios(mountDashboard: () => void) {
   const cases: Array<{ name: string; durationMs: number }> = [];
   async function check(name: string, run: () => Promise<void>) {
     const started = performance.now();
     await run();
     cases.push({ name, durationMs: Math.round(performance.now() - started) });
   }
-  // A mirrored/reopened page may observe the dashboard, but must not run faults or submit results.
+  // Claim before mounting: rejected mirrored pages must not create extra device/control sockets.
   try {
     runId = (await post("start")).runId;
     assert(runId, "Proxy granted this runner ownership");
   } catch (error) {
     window.__hubE2EResult = { ok: false, cases, error: String(error) };
+    document.getElementById("root")!.textContent = String(error);
     return;
   }
   try {
+    mountDashboard();
     await check("Dashboard decodes advancing H264 frames", async () => {
       await advancingVideo();
       assert(

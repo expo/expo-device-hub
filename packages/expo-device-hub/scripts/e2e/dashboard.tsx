@@ -20,8 +20,10 @@ window.RTCPeerConnection = class extends Peer {
     };
   }
 };
-createRoot(document.getElementById("root")!).render(<Dashboard />);
+const mountDashboard = () => createRoot(document.getElementById("root")!).render(<Dashboard />);
 
 if (new URL(location.href).searchParams.has("run")) {
-  void import("./scenarios").then(({ runScenarios }) => runScenarios());
+  void import("./scenarios").then(({ runScenarios }) => runScenarios(mountDashboard));
+} else {
+  mountDashboard();
 }

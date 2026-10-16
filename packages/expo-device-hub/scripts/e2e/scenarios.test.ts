@@ -3,6 +3,7 @@ import {
   nativeFixtureEvent,
   nativeTextEdits,
   runBlurScenario,
+  runScenarios,
   waitForActivityRecovery,
 } from "./scenarios";
 
@@ -137,4 +138,24 @@ test("subscription recovery rejects paused charts and data from the retired conn
 test("subscription recovery accepts a fresh replacement sample rendered by Activity", async () => {
   setupActivity(200);
   await expect(waitForActivityRecovery(1, 100, 150)).resolves.toBeUndefined();
+});
+
+test("a rejected runner does not mount a second device client or submit a result", async () => {
+  const requests: string[] = [];
+  const root = { textContent: "" };
+  const browser: { __hubE2EResult?: { ok: boolean } } = {};
+  stub("window", browser);
+  stub("document", { getElementById: () => root });
+  stub("fetch", async (url: string) => {
+    requests.push(url);
+    return new Response("A scenario runner already owns this proxy", { status: 409 });
+  });
+  let mounts = 0;
+  await runScenarios(() => {
+    mounts++;
+  });
+  expect(mounts).toBe(0);
+  expect(requests).toEqual(["/_e2e/start"]);
+  expect(browser.__hubE2EResult?.ok).toBe(false);
+  expect(root.textContent).toContain("already owns this proxy");
 });
