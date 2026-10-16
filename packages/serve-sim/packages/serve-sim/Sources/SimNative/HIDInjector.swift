@@ -20,9 +20,9 @@ private func hidLog(_ message: @autoclosure () -> String) {
 ///
 /// Uses IndigoHIDMessageForMouseNSEvent to create touch messages and
 /// IndigoHIDMessageForButton for hardware button presses, sent via
-/// SimDeviceLegacyHIDClient. Foldables use per-display Universal HID touch
-/// reports, CoreDevice's HIDKeyboard, and Device Hub's CoreDevice vendor control
-/// for orientation; other devices use PurpleWorkspacePort / GSEvent.
+/// SimDeviceLegacyHIDClient. Supported iOS devices use per-display Universal HID
+/// touch reports and CoreDevice's HIDKeyboard. Foldables also use CoreDevice
+/// vendor control for orientation; other devices use PurpleWorkspacePort / GSEvent.
 ///
 /// The real C signature for touch is:
 ///   IndigoHIDMessageForMouseNSEvent(CGPoint*, CGPoint*, IndigoHIDTarget, NSEventType, NSSize, IndigoHIDEdge)
@@ -43,6 +43,7 @@ actor HIDInjector {
     private var isFoldable = false
     private var digitizerCapability: CoreDeviceCapabilityObject?
     private var keyboardCapability: CoreDeviceCapabilityObject?
+    private var usesUniversalHID: Bool { digitizerCapability != nil }
     private var touchTarget = HIDTargetPolicy()
     private var multiTouchTarget = HIDTargetPolicy()
 
@@ -93,43 +94,24 @@ actor HIDInjector {
         let displayProfile = SimulatorDisplayProfile.read(from: device)
         self.nativeScreenRotations = displayProfile.nativeRotations
         self.isFoldable = displayProfile.isFoldable
-        if isFoldable {
-            // Touch and keyboard are both required for a usable Duo session.
-            // Fail input setup if either transport is unavailable.
-            guard SSCoreDeviceDigitizerAvailable() else {
-                throw NSError(domain: "HIDInjector", code: 6,
-                              userInfo: [NSLocalizedDescriptionKey: "CoreDevice touch transport is unavailable (missing symbols or unsupported value layout)"])
-            }
-            guard SSCoreDeviceKeyboardAvailable() else {
-                throw NSError(domain: "HIDInjector", code: 7,
-                              userInfo: [NSLocalizedDescriptionKey: "CoreDevice keyboard transport is unavailable (missing symbols or unsupported value layout)"])
-            }
-            // Capabilities can become available after the simulator is listed.
-            // Do not cache a transient lookup failure or fall back to Indigo on
-            // the inner panel: its legacy service is disconnected.
-            for attempt in 0..<10 {
-                var transport = "touch"
-                do {
-                    digitizerCapability = try await CoreDeviceBridge.shared.capability(
-                        udid: deviceUDID,
-                        metadataSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVN",
-                        witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
-                    )
-                    transport = "keyboard"
-                    keyboardCapability = try await CoreDeviceBridge.shared.capability(
-                        udid: deviceUDID,
-                        metadataSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVN",
-                        witnessSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVAA0B10CapabilityAAWP"
-                    )
-                    break
-                } catch {
-                    if attempt == 9 {
-                        throw NSError(domain: "HIDInjector", code: 8,
-                                      userInfo: [NSLocalizedDescriptionKey: "CoreDevice \(transport) capability lookup failed: \(error)",
-                                                 NSUnderlyingErrorKey: error])
-                    }
-                    try await Task.sleep(nanoseconds: 250_000_000)
-                }
+        // @ref LLP 0004#touch-transport — ordinary iOS can also have a disconnected legacy digitizer.
+        let runtimeSelector = NSSelectorFromString("runtime")
+        let runtime = device.responds(to: runtimeSelector)
+            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
+        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
+        let ordinaryIOS = displayProfile.integratedDisplayCount == 1 &&
+            runtimeIdentifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS-")
+        if isFoldable || ordinaryIOS {
+            do {
+                try await setupCoreDeviceHID(deviceUDID: deviceUDID)
+                hidLog("[hid] Using CoreDevice touch transport")
+            } catch {
+                // Older host frameworks/runtimes may not expose these capabilities.
+                // Duo cannot fall back: its inner legacy service is disconnected.
+                if isFoldable { throw error }
+                digitizerCapability = nil
+                keyboardCapability = nil
+                hidLog("[hid] CoreDevice HID unavailable; using legacy input: \(error)")
             }
         }
         setScreen(screenID: nil)
@@ -196,13 +178,60 @@ actor HIDInjector {
         hidLog("[hid] IndigoHIDMessageForMouseNSEvent loaded (with edge gesture support)")
     }
 
+    private func setupCoreDeviceHID(deviceUDID: String) async throws {
+        // Duo keeps its existing requirement for both transports. Ordinary iOS
+        // touch must remain usable when only the optional keyboard is missing.
+        guard SSCoreDeviceDigitizerAvailable() else {
+            throw NSError(domain: "HIDInjector", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: "CoreDevice touch transport is unavailable (missing symbols or unsupported value layout)"])
+        }
+        let keyboardAvailable = SSCoreDeviceKeyboardAvailable()
+        if isFoldable && !keyboardAvailable {
+            throw NSError(domain: "HIDInjector", code: 7,
+                          userInfo: [NSLocalizedDescriptionKey: "CoreDevice keyboard transport is unavailable (missing symbols or unsupported value layout)"])
+        }
+        // Capabilities can become available after the simulator is listed.
+        // Do not cache a transient lookup failure or fall back to Indigo on
+        // the inner panel: its legacy service is disconnected.
+        for attempt in 0..<10 {
+            var transport = "touch"
+            do {
+                digitizerCapability = try await CoreDeviceBridge.shared.capability(
+                    udid: deviceUDID,
+                    metadataSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVN",
+                    witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
+                )
+                transport = "keyboard"
+                // Opening this service also starts guest HID delivery. Request
+                // it even when the optional key encoder is unavailable.
+                keyboardCapability = try await CoreDeviceBridge.shared.capability(
+                    udid: deviceUDID,
+                    metadataSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVN",
+                    witnessSymbol: "$s10CoreDevice21KeyboardHIDCapabilityVAA0B10CapabilityAAWP"
+                )
+                break
+            } catch {
+                if attempt == 9 {
+                    if !isFoldable && transport == "keyboard" { break }
+                    throw NSError(domain: "HIDInjector", code: 8,
+                                  userInfo: [NSLocalizedDescriptionKey: "CoreDevice \(transport) capability lookup failed: \(error)",
+                                             NSUnderlyingErrorKey: error])
+                }
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+        if !keyboardAvailable || keyboardCapability == nil {
+            print("[hid] CoreDevice keyboard unavailable; touch input remains available")
+        }
+    }
+
     /// Keep panel metadata aligned with capture and select the transport’s service.
     /// Existing gestures retain their target until their corresponding touch-up.
     func setScreen(screenID: UInt32?) {
         if scrollIdle.selectScreen(screenID) { finishInterruptedScroll(wasActive: true) }
         selectedScreenID = screenID
-        touchTarget.setScreen(screenID, universalHID: isFoldable)
-        multiTouchTarget.setScreen(screenID, universalHID: isFoldable)
+        touchTarget.setScreen(screenID, universalHID: usesUniversalHID)
+        multiTouchTarget.setScreen(screenID, universalHID: usesUniversalHID)
     }
 
     // IndigoHIDEdge values (x4 param to IndigoHIDMessageForMouseNSEvent).
@@ -216,7 +245,7 @@ actor HIDInjector {
     static let edgeRight: UInt32  = 4  // Right edge
 
     // Preserve the original Down encoding for begin and move for compatibility
-    // with older runtimes. Foldables send Universal HID reports instead.
+    // with older runtimes. CoreDevice-capable iOS devices use Universal HID instead.
     private static let touchDownEvent: Int32 = 1
     private static let touchUpEvent: Int32 = 2
 
@@ -245,7 +274,7 @@ actor HIDInjector {
     /// idle touch-up, and swipe-home. Routing is pinned until touch-up.
     private func rawSendTouch(type: String, x: Double, y: Double, edge: UInt32 = 0) {
         guard let target = touchTarget.target(for: type) else { return }
-        if isFoldable {
+        if usesUniversalHID {
             sendUniversalTouches(target: target, type: type, contacts: [.init(x: x, y: y)], edge: edge)
             return
         }
@@ -271,7 +300,7 @@ actor HIDInjector {
     func sendMultiTouch(type: String, x1: Double, y1: Double, x2: Double, y2: Double, screenWidth: Int, screenHeight: Int) {
         if type == "begin" { interruptScroll() }
         guard let target = multiTouchTarget.target(for: type) else { return }
-        if isFoldable {
+        if usesUniversalHID {
             sendUniversalTouches(target: target, type: type,
                                  contacts: [.init(x: x1, y: y1), .init(x: x2, y: y2)])
             return
@@ -343,9 +372,9 @@ actor HIDInjector {
         default: return
         }
 
-        // Duo accepts keyboard input through CoreDevice on both displays.
-        // Indigo logs successful dispatch but never delivers it to the guest.
-        if isFoldable {
+        // Keep the keyboard on the same transport as touch. Legacy sends can
+        // report success without delivery while CoreDevice owns guest input.
+        if usesUniversalHID {
             guard let keyboardCapability,
                   SSCoreDeviceSendKey(keyboardCapability.storage, usage, direction == 1) else {
                 print("[hid] CoreDevice keyboard injection failed (usage=0x\(String(usage, radix: 16)))")
