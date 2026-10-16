@@ -95,7 +95,6 @@ test("KeyboardCapture restores focus without ending the captured phone gesture",
               cancellations++;
             },
             sendTouch: (sample) => touches.push(sample),
-            sendMultiTouch: (sample) => multi.push(sample),
           }}
         />
         <KeyboardCapture open onKeys={() => {}} />
