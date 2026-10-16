@@ -22,6 +22,7 @@ import { UI_OPTIONS } from "./ui-settings";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
 import { cleanupWarningOf } from "./sim-pasteboard-copy";
+import type { StreamSettings } from "./stream-settings";
 import {
   UploadChunk,
   UploadId,
@@ -622,7 +623,7 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
   return "uploadId" in p ? stagedUploadPath(p.uploadId) : p.path;
 }
 
-async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
+async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSettings?: StreamSettings): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
     case "clipboard.write":
@@ -639,7 +640,8 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
           return ok(JSON.stringify({ ok: true }));
         }
         const { getDeviceSession } = await import("./device-session");
-        const session = getDeviceSession(p.udid);
+        // @ref LLP 0010#clipboard-host-actions — Copy/Paste may create the viewer's capture session first.
+        const session = getDeviceSession(p.udid, streamSettings);
         if (action === "clipboard.copy") return ok(JSON.stringify(await session.copyPasteboard()));
         const cleanupWarning = await session.pastePasteboard("text" in p ? p.text : undefined);
         return ok(JSON.stringify({ ok: true, ...(cleanupWarning ? { cleanupWarning } : {}) }));
@@ -796,13 +798,14 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
 export async function runHostActionAsync(
   msg: HostActionRequest,
   binPath: string,
+  streamSettings?: StreamSettings,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
   const result = isProcedureAction(action)
-    ? await runProcedureAsync(action, params)
+    ? await runProcedureAsync(action, params, streamSettings)
     : await runInvocation(buildInvocation(action, params, binPath));
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.

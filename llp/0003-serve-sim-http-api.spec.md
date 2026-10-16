@@ -514,7 +514,10 @@ The UDID must identify one simulator and is normalized to uppercase. Text is
 limited to 4 MiB of UTF-8; the 4 MiB `/exec-ws` message limit also includes the
 JSON envelope and escaping. Copy and Paste start the device input session if
 needed, wait for capture readiness, and share the viewer input queue and
-pasteboard lock. Errors return a nonzero `exitCode` and explanatory `stderr`,
+pasteboard lock. A session created before its viewer uses the owning middleware's
+configured transport and encoder settings; action parameters cannot supply those
+settings [observed: `src/middleware.ts`, `src/socket/server-control.ts`,
+`src/host-actions.ts`]. Errors return a nonzero `exitCode` and explanatory `stderr`,
 including any key cleanup warning. See [LLP 0010](0010-serve-sim-clipboard.explainer.md).
 
 ### Action catalog

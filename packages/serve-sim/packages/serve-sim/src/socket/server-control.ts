@@ -5,6 +5,7 @@ import {
 } from "./control-utils";
 import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
+import type { StreamSettings } from "../stream-settings";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
@@ -77,6 +78,8 @@ interface ExecChannelOptions {
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
+  /** Trusted initial settings from the owning middleware, never from action parameters. */
+  streamSettings?: StreamSettings;
 }
 
 function wireExecSocket(
@@ -253,7 +256,7 @@ function wireExecSocket(
     }
     if (!reserveAction(id)) return;
     const params = msg.params as Record<string, unknown> | undefined;
-    runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim")
+    runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim", opts.streamSettings)
       .then((result) => {
         try {
           opts.onActionResult?.(action, params, result);

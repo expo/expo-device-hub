@@ -64,7 +64,7 @@ describe("clipboard host actions", () => {
     for (const text of [undefined, ""]) {
       expect(JSON.parse((await run("clipboard.paste", text === undefined ? {} : { text })).stdout)).toEqual({ ok: true, cleanupWarning: "held key" });
       expect(paste).toHaveBeenLastCalledWith(text);
-      expect(get).toHaveBeenLastCalledWith(UDID);
+      expect(get).toHaveBeenLastCalledWith(UDID, undefined);
     }
     copy.mockRejectedValue(Object.assign(new Error("Copy timed out"), { cleanupWarning: "held key" }));
     const failure = await run("clipboard.copy");

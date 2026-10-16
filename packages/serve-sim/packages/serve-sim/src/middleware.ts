@@ -3165,6 +3165,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const execWebSocketHandler = createExecWebSocketHandler({
     path: `${base}/exec-ws`,
     execToken,
+    streamSettings,
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,

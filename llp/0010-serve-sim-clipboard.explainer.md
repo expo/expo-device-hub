@@ -53,6 +53,13 @@ string before the chord. A stopped session or discarded queued Paste fails
 without claiming success [observed: `getDeviceSession`, `copyPasteboard`, and
 `pastePasteboard` in `src/device-session.ts`].
 
+When Copy or Paste creates the session before a viewer, it uses the owning
+middleware's configured stream settings, passed through the exec handler to the
+host action. A later viewer reuses that session with the configured transport
+and encoder settings. These settings come from the middleware, not action
+parameters [observed: `src/middleware.ts`, `src/socket/server-control.ts`,
+`src/host-actions.ts`, `getDeviceSession` in `src/device-session.ts`].
+
 The host actions accept one simulator UUID, normalized to uppercase so sessions
 and locks share the same key. The text limit remains 4 MiB of UTF-8; the exec
 socket's separate 4 MiB message limit includes the JSON envelope and escaping
