@@ -47,3 +47,11 @@ _SSCDMotionManagerDescriptor:
 _SSCDHingeReadbackDescriptor:
 .long _SSCDHingeReadback - _SSCDHingeReadbackDescriptor
 .long 0
+.globl _SSCDDeviceStateReadbackDescriptor
+_SSCDDeviceStateReadbackDescriptor:
+.long _SSCDDeviceStateReadback - _SSCDDeviceStateReadbackDescriptor
+.long 0
+.globl _SSCDOrientationReadbackDescriptor
+_SSCDOrientationReadbackDescriptor:
+.long _SSCDOrientationReadback - _SSCDOrientationReadbackDescriptor
+.long 0

@@ -69,4 +69,34 @@ struct SimulatorDisplayProfileTests {
         })
         #expect(!profile.isFoldable)
     }
+    @Test("recording panels follow unique DeviceKit identities rather than numeric ID conventions")
+    func recordingPanelIdentity() {
+        let profile = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 19, "chromeIdentifier": "com.apple.dt.devicekit.chrome.phone15"],
+            ["displayType": "integrated", "screenID": 7, "chromeIdentifier": "phone14"],
+            ["displayType": "tvOut", "screenID": 2, "chromeIdentifier": "phone15"],
+        ])
+        #expect(profile.recordingScreen(screenID: 19, chromeIdentifier: "phone15") == .outer)
+        #expect(profile.recordingScreen(screenID: 7, chromeIdentifier: "com.apple.dt.devicekit.chrome.phone14") == .inner)
+        #expect(profile.recordingScreen(screenID: 19, chromeIdentifier: nil) == .outer)
+        #expect(profile.recordingScreen(screenID: 7, chromeIdentifier: "phone15") == nil)
+        #expect(profile.recordingScreen(screenID: 7, chromeIdentifier: "unknown") == nil)
+        #expect(profile.recordingScreen(screenID: 2, chromeIdentifier: "phone15") == nil)
+    }
+
+    @Test("ordinary, unknown and ambiguous profiles omit semantic recording panels")
+    func ambiguousRecordingPanels() {
+        let inner: [String: Any] = ["displayType": "integrated", "screenID": 7, "chromeIdentifier": "phone14"]
+        let outer: [String: Any] = ["displayType": "integrated", "screenID": 19, "chromeIdentifier": "phone15"]
+        let unknown: [String: Any] = ["displayType": "integrated", "screenID": 19, "chromeIdentifier": "phone16"]
+        let sameRole: [String: Any] = ["displayType": "integrated", "screenID": 19, "chromeIdentifier": "phone14"]
+        let sharedID: [String: Any] = ["displayType": "integrated", "screenID": 7, "chromeIdentifier": "phone15"]
+        for displays in [[], [inner], [inner, unknown], [inner, sameRole], [inner, sharedID],
+                         [inner, outer, inner]] {
+            let profile = SimulatorDisplayProfile(displays: displays)
+            #expect(profile.recordingScreen(screenID: 7, chromeIdentifier: "phone14") == nil)
+            #expect(profile.recordingScreen(screenID: 19, chromeIdentifier: "phone15") == nil)
+        }
+    }
+
 }

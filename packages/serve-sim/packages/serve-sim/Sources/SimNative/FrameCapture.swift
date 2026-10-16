@@ -20,6 +20,14 @@ struct CapturedScreenInfo {
     let width: Int
     let height: Int
     var display: SimDisplayMetadata?
+    var displayProfile = SimulatorDisplayProfile()
+
+    var recordingDeviceState: RecordingDeviceState {
+        RecordingDeviceState(
+            width: width, height: height,
+            orientation: display?.orientation, screen: display?.recordingScreen(in: displayProfile)
+        )
+    }
 }
 
 /// Headless simulator frame capture via direct IOSurface access.
@@ -42,7 +50,7 @@ actor FrameCapture {
     private var pollGrid: PollDeadlineGrid?
     /// Each frame carries the viewer canvas computed on this actor, so the engine
     /// never has to hop back here on the frame path.
-    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
+    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void)?
     private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
@@ -87,6 +95,8 @@ actor FrameCapture {
     private var screenMetadata: [ObjectIdentifier: SimDisplayMetadata] = [:]
     private var fixedScreenID: UInt32?
     private var deviceUDID: String?
+    private var displayProfile = SimulatorDisplayProfile()
+    private(set) var isFoldable = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var displayInfoTask: Task<Void, Never>?
     private var displayRefreshTask: Task<Void, Never>?
@@ -105,7 +115,7 @@ actor FrameCapture {
     }
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
-               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
+               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -127,7 +137,9 @@ actor FrameCapture {
 
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
-        if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        displayProfile = SimulatorDisplayProfile.read(from: device)
+        isFoldable = displayProfile.isFoldable
+        if displayProfile.resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }
@@ -569,7 +581,8 @@ actor FrameCapture {
         }
         frameCount += 1
         if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
-        onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
+        onFrame?(copy, timestamp, webRTCEncodeCanvasSize(),
+                 CapturedScreenInfo(width: w, height: h, display: display, displayProfile: displayProfile))
     }
 
     /// Snapshotting straight to the delivery size avoids moving the whole framebuffer through
@@ -600,7 +613,7 @@ actor FrameCapture {
     ) {
         ioClient = io
         self.device = device
-        self.onFrame = onFrame
+        self.onFrame = { buffer, timestamp, canvas, _ in onFrame(buffer, timestamp, canvas) }
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
             entry.metadata.map { (ObjectIdentifier(entry.descriptor), $0) }
@@ -641,7 +654,8 @@ actor FrameCapture {
 
     func getScreenSize() -> CapturedScreenInfo? {
         guard capturedWidth > 0, capturedHeight > 0 else { return nil }
-        return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay)
+        return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay,
+                                  displayProfile: displayProfile)
     }
 
     /// Surfaces that this capture can publish. A fixed-panel session must not
@@ -706,6 +720,8 @@ actor FrameCapture {
         displayRefreshRequested = false
         if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
+        isFoldable = false
+        displayProfile = SimulatorDisplayProfile()
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()

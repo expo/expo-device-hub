@@ -61,35 +61,37 @@ export function createLadderBackoff() {
 }
 
 export type WebRtcFailureEvent =
-  | "first-frame-timeout"
-  | "playback-stall"
-  | "connection-failed"
-  | "signaling-failed";
+  | 'first-frame-timeout'
+  | 'playback-stall'
+  | 'connection-failed'
+  | 'signaling-failed';
 
-/// "wait" means the deadline passed but media is arriving, so the caller should re-arm.
-export type WebRtcFailureDisposition = "codec" | "transport" | "wait";
+/** 'wait' means the deadline passed but media is arriving, so the caller should re-arm. */
+export type WebRtcFailureDisposition = 'codec' | 'transport' | 'wait';
 
 export interface WebRtcMediaProgress {
   mediaArriving: boolean;
-  /// Null when the sender could not be asked; only it can tell a dead path from a dead encoder.
+  /** Null when the sender could not be asked; only it can tell a dead path from a dead encoder. */
   senderEncoding?: boolean | null;
 }
 
-/// Before the first frame, arriving media means be patient. After it, frames that arrive and
-/// stop being decoded mean the decoder gave up, and waiting cannot fix that.
+/**
+ * Before the first frame, arriving media gets another paint window (serve-sim #161).
+ * After first paint, arriving frames that stop decoding indicate a decoder stall.
+ */
 export function webRtcFailureDisposition(
   event: WebRtcFailureEvent,
   connectionState: RTCPeerConnectionState,
   progress: WebRtcMediaProgress = { mediaArriving: false },
 ): WebRtcFailureDisposition {
-  if (connectionState !== "connected") return "transport";
-  if (event === "first-frame-timeout") {
-    if (progress.mediaArriving) return "wait";
-    // Unknown stays "codec": only a sender known to be encoding redirects the blame.
-    return progress.senderEncoding === true ? "transport" : "codec";
+  if (connectionState !== 'connected') return 'transport';
+  if (event === 'first-frame-timeout') {
+    if (progress.mediaArriving) return 'wait';
+    // Unknown stays 'codec': only a sender known to be encoding redirects the blame.
+    return progress.senderEncoding === true ? 'transport' : 'codec';
   }
-  if (event === "playback-stall") return progress.mediaArriving ? "codec" : "transport";
-  return "transport";
+  if (event === 'playback-stall') return progress.mediaArriving ? 'codec' : 'transport';
+  return 'transport';
 }
 
 /** Repeated stalls within this window can demote the codec. */
@@ -100,9 +102,9 @@ export const STALL_RECONNECT_TTL_MS = 30_000;
 export function playbackStallAction(
   disposition: WebRtcFailureDisposition,
   msSinceCodecReconnect: number | null,
-): "retry-transport" | "fail-codec" | "none" {
-  if (disposition === "transport") return "retry-transport";
-  if (disposition !== "codec") return "none";
-  if (msSinceCodecReconnect === null) return "retry-transport";
-  return msSinceCodecReconnect < STALL_RECONNECT_TTL_MS ? "fail-codec" : "retry-transport";
+): 'retry-transport' | 'fail-codec' | 'none' {
+  if (disposition === 'transport') return 'retry-transport';
+  if (disposition !== 'codec') return 'none';
+  if (msSinceCodecReconnect === null) return 'retry-transport';
+  return msSinceCodecReconnect < STALL_RECONNECT_TTL_MS ? 'fail-codec' : 'retry-transport';
 }

@@ -55,6 +55,7 @@ export function startPlaybackStallWatchdog({
   failCodec,
   retryTransport,
   expectContinuousFrames = true,
+  capturePaused,
 }: {
   peer: () => RTCPeerConnection | null;
   /** Hidden tabs do not read or judge decoder progress. */
@@ -68,6 +69,8 @@ export function startPlaybackStallWatchdog({
   retryTransport: (message: string) => void;
   /** Change-driven sources may stay connected without producing any new frames. */
   expectContinuousFrames?: boolean;
+  /** Bounded, best-effort sender check before acting on a receiver stall. */
+  capturePaused?: () => Promise<boolean>;
 }): PlaybackStallWatchdog {
   let state = initialPlaybackStallState;
   let pinned: { id: string; framesReceived: number } | null = null;
@@ -126,6 +129,15 @@ export function startPlaybackStallWatchdog({
     });
     state = next.stalled ? initialPlaybackStallState : next.state;
     if (!next.stalled) return;
+    // @ref LLP 0012#capture-reboot — an intentional capture pause does not spend recovery
+    if (capturePaused) {
+      const paused = await capturePaused();
+      if (reading !== generation || peer() !== pc || !judgeable()) return;
+      if (paused) {
+        invalidate();
+        return;
+      }
+    }
     const disposition = webRtcFailureDisposition("playback-stall", pc.connectionState, {
       mediaArriving: next.mediaArriving,
     });

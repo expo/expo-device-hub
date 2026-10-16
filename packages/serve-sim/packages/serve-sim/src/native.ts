@@ -28,6 +28,7 @@ interface SimHIDHandle {
   setScreen(screenId: number): Promise<void>;
   supportsHingeAngle(): Promise<boolean>;
   hingeState(): Promise<NativeHingeState>;
+  hingeControlEligibility(): Promise<NativeHingeState>;
   setHingeAngle(angle: number): Promise<boolean>;
   setHingePose(pose: string): Promise<boolean>;
   supportsPhysicalOrientation(): Promise<boolean>;
@@ -65,6 +66,7 @@ interface SimCaptureHandle {
   webRTCSenderStats(sessionId: string): Promise<string>;
   screenSize(): Promise<NativeScreenInfo>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
+  subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
   subscribe(codec: number, onFrame: RawFrameCallback): Promise<NativeUnsubscribe>;
 }
@@ -82,6 +84,7 @@ interface NativeAddon {
   ) => SimCaptureHandle;
   axDescribe(udid: string): Promise<string>;
   axFrontmost(udid: string): Promise<string>;
+  axKeyboardVisible(udid: string): Promise<boolean>;
   axTypeKeyboardCharacter(udid: string, character: string): Promise<boolean>;
   setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean>;
 }
@@ -119,6 +122,12 @@ export type NativeHingeState = {
   hingeAngle?: number;
   tableMode?: boolean;
   physicalOrientation?: HingePhysicalOrientation;
+};
+
+export type NativeDeviceStateSnapshot = {
+  generation: number;
+  revision: number;
+  state: NativeHingeState;
 };
 
 export type NativeScreenInfo = {
@@ -253,6 +262,10 @@ export class NativeHid {
 
   hingeState(): Promise<NativeHingeState> {
     return this.guard("hingeState", () => this.handle.hingeState(), {});
+  }
+
+  async hingeControlEligibility(): Promise<NativeHingeState> {
+    return (await this.guard("hingeControlEligibility", () => this.handle.hingeControlEligibility(), {})) ?? {};
   }
 
   multiTouch(type: TouchType, x1: number, y1: number, x2: number, y2: number, w: number, h: number): Promise<void> {
@@ -402,6 +415,18 @@ export class NativeCapture {
     return this.handle.screenSize();
   }
 
+  async subscribeDeviceState(onSnapshot: (snapshot: NativeDeviceStateSnapshot) => Promise<void>): Promise<NativeUnsubscribe> {
+    let active = true;
+    const unsubscribe = await this.handle.subscribeDeviceState(async (json) => {
+      if (active) await onSnapshot(JSON.parse(json) as NativeDeviceStateSnapshot);
+    });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
+  }
+
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe> {
     return this.handle.subscribeScreenChanges(onChange);
   }
@@ -424,6 +449,11 @@ export function axDescribeAsync(udid: string): Promise<string> {
 /** Async frontmost-app probe — JSON string `{ bundleId, pid }` for the visible app. */
 export function axFrontmostAsync(udid: string): Promise<string> {
   return load().axFrontmost(udid);
+}
+
+/** Read-only keyboard probe with a 250 ms native traversal/XPC budget. */
+export function axKeyboardVisibleAsync(udid: string): Promise<boolean> {
+  return load().axKeyboardVisible(udid);
 }
 
 export function axTypeKeyboardCharacterAsync(udid: string, character: string): Promise<boolean> {

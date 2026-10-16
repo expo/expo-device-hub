@@ -6,7 +6,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
-import { bg } from '../primitives';
+import { bg, text, textSize } from '../primitives';
 import { AgentDeviceOverlay } from './AgentDeviceOverlay';
 import { type Device } from './data';
 import {
@@ -51,6 +51,7 @@ const CONFIG: Record<
  * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
  * clips a centered, undistorted stream and may crop its edges to prevent leaks.
  */
+// @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({
   device,
   client,
@@ -160,6 +161,25 @@ export function PhoneFrame({
           style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}>
           {deviceSurface}
         </div>
+        {live && client.inputError && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              ...textSize.xs,
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 1,
+              padding: 12,
+              backgroundColor: bg.danger,
+              color: text.danger,
+              pointerEvents: 'none',
+            }}>
+            {client.inputError}
+          </div>
+        )}
         {takeoverOverlay}
       </div>
       {deviceFrameAssets

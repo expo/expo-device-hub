@@ -1,8 +1,9 @@
-import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from "./ws-send-queue";
+import { discardUnfinishedQueuedGestures, flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from "./ws-send-queue";
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
-  onAdmitted(): void;
+  /** Prepare this admitted session before queued input; false means setup could not be sent. */
+  onAdmitted(): void | boolean;
   /** Return true for a config frame from an older server that lacks an admission frame. */
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
@@ -17,6 +18,7 @@ export function createInputSocket(
   url: string,
   handlers: InputSocketHandlers,
   {
+    initialMessages = [] as QueuedWsMessage[],
     requireAdmission = true,
     legacyOpenGraceMs = 1000,
     reconnectDelayMs = 1000,
@@ -33,7 +35,7 @@ export function createInputSocket(
   let admitted = false;
   let reported = false;
   let stopped = false;
-  let pendingMessages: QueuedWsMessage[] = [];
+  let pendingMessages = initialMessages;
 
   const connect = () => {
     if (stopped || socket) return;
@@ -55,8 +57,12 @@ export function createInputSocket(
     const admit = (confirmed: boolean) => {
       const firstAdmission = !admitted;
       admitted = true;
+      if (firstAdmission && handlers.onAdmitted() === false) {
+        admitted = false;
+        ws.close();
+        return;
+      }
       pendingMessages = flushWsMessageQueue(ws, pendingMessages);
-      if (firstAdmission) handlers.onAdmitted();
       if (confirmed) confirmAdmission();
     };
     ws.onopen = () => {
@@ -114,33 +120,25 @@ export function createInputSocket(
 
   return {
     send(tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) {
+      if (stopped) return;
       // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload, Date.now(), onSent);
     },
     // @ref LLP 0013#input-ownership — complete gestures stay queued; a held touch is released
     discardUnfinishedGestures(tag: number) {
-      // Keep complete begin/end pairs in their original order and with their original TTL.
-      const completed = new Set<QueuedWsMessage>();
-      let gesture: QueuedWsMessage[] = [];
-      for (const message of pendingMessages) {
-        if (message.tag !== tag) continue;
-        const phase = (message.payload as { type?: string }).type;
-        if (phase === "begin") gesture = [message];
-        else if (gesture.length) {
-          gesture.push(message);
-          if (phase === "end") {
-            for (const entry of gesture) completed.add(entry);
-            gesture = [];
-          }
-        }
-      }
-      pendingMessages = pendingMessages.filter(message => message.tag !== tag || completed.has(message));
+      pendingMessages = discardUnfinishedQueuedGestures(pendingMessages, tag);
     },
     discardQueued(tag: number) {
       pendingMessages = pendingMessages.filter(message => message.tag !== tag);
     },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
+    },
+    /** Transfer unsent intent across rediscovery without resetting its original age. */
+    takePending() {
+      const messages = pendingMessages;
+      pendingMessages = [];
+      return messages;
     },
     start: connect,
     dispose() {

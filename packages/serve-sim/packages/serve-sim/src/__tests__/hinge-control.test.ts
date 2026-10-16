@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HINGE_POSES, isHingeControlCommand, hingeControlState, hingePoseForState, hingePoseOrientation, isTableModeAvailable } from "../hinge-control";
+import { HINGE_POSES, isHingeControlCommand, isHingePreviewObserved, hingeControlState, isTableModeAvailable, observedHingePose } from "../hinge-control";
 
 describe("Device Hub hinge controls", () => {
   test("keeps the five physical poses distinct, including the two 90 degree poses", () => {
@@ -54,17 +54,46 @@ test("physical display handoff preserves the hinge angle and elects the requeste
   }
 });
 
-test("names the preset that native hinge state matches", () => {
-  for (const pose of HINGE_POSES) {
-    const { hingeAngle, tableMode } = hingeControlState({ control: "pose", value: pose.id });
-    expect(hingePoseForState({ hingeAngle, tableMode, physicalOrientation: hingePoseOrientation(pose.id) })).toBe(pose.id);
-  }
-  expect(hingePoseForState({ hingeAngle: 0 })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 180 })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "portrait" })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "landscape-left", tableMode: false })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "portrait", tableMode: true })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "facedown", tableMode: true })).toBeNull();
-  expect(hingePoseForState({ hingeAngle: 120, physicalOrientation: "portrait", tableMode: false })).toBeNull();
-  expect(hingePoseForState({})).toBeNull();
+test("observed native state names a preset only when all its fields are known and match", () => {
+  expect(observedHingePose(0, "portrait", false)).toBe("closed");
+  expect(observedHingePose(180, "portrait", false)).toBe("open");
+  expect(observedHingePose(90, "landscape-left", false)).toBe("laptop");
+  expect(observedHingePose(90, "portrait", false)).toBe("book");
+  expect(observedHingePose(80, "facedown", true)).toBe("tent");
+  expect(observedHingePose(89.5, "portrait", false)).toBe("book");
+  expect(observedHingePose(80, "facedown", false)).toBeNull();
+  expect(observedHingePose(90, "portrait", true)).toBeNull();
+  expect(observedHingePose(80.6, "facedown", true)).toBeNull();
+  expect(observedHingePose(45, "portrait", false)).toBeNull();
+  expect(observedHingePose(90, "facedown", false)).toBeNull();
+  expect(observedHingePose(0, "landscape-left", false)).toBeNull();
+  expect(observedHingePose(undefined, "portrait", false)).toBeUndefined();
+  expect(observedHingePose(90, undefined, false)).toBeUndefined();
+  expect(observedHingePose(90, "portrait", undefined)).toBeUndefined();
+});
+
+test("a local preview is observed only when native state reaches each field it sets", () => {
+  const tent = hingeControlState({ control: "pose", value: "tent" });
+  const book = { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false } as const;
+  // The acknowledgement can arrive while native state still reports the previous pose.
+  expect(isHingePreviewObserved(tent, book)).toBe(false);
+  expect(isHingePreviewObserved(tent, { hingeAngle: 80.4, hingePose: null, tableMode: true })).toBe(false);
+  expect(isHingePreviewObserved(tent, { hingeAngle: 80.4, hingePose: "tent", tableMode: false })).toBe(false);
+  expect(isHingePreviewObserved(tent, { hingeAngle: 80.4, hingePose: "tent", physicalOrientation: "facedown", tableMode: true })).toBe(true);
+  const angle = { tableMode: false, ...hingeControlState({ control: "angle", value: 120 }) };
+  expect(isHingePreviewObserved(angle, { hingeAngle: 118.9, tableMode: false })).toBe(false);
+  expect(isHingePreviewObserved(angle, { hingeAngle: 119.2, tableMode: false })).toBe(true);
+  expect(isHingePreviewObserved(angle, { tableMode: false })).toBe(false);
+  expect(isHingePreviewObserved({ hingeAngle: 90, ...hingeControlState({ control: "table", value: true }) }, { ...book, tableMode: true })).toBe(true);
+  expect(isHingePreviewObserved({}, {})).toBe(true);
+});
+
+test("fractional native observations release a preset preview without a named-pose equality trap", () => {
+  const closed = hingeControlState({ control: "pose", value: "closed" });
+  expect(isHingePreviewObserved(closed, { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false })).toBe(false);
+  expect(isHingePreviewObserved(closed, { hingeAngle: 0.6, hingePose: null, physicalOrientation: "portrait", tableMode: false })).toBe(true);
+  const laptop = hingeControlState({ control: "pose", value: "laptop" });
+  expect(isHingePreviewObserved(laptop, { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false })).toBe(false);
+  expect(isHingePreviewObserved(laptop, { hingeAngle: 90.8, physicalOrientation: "landscape-left", tableMode: false })).toBe(true);
+  expect(isHingePreviewObserved(laptop, { hingeAngle: 90.8, physicalOrientation: "landscape-left" })).toBe(false);
 });

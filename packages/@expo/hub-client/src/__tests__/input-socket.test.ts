@@ -337,3 +337,39 @@ test("queued rotations resolve at admission and record each delivered pose", () 
     state.input.dispose();
   }
 });
+
+test("a failed admission setup preserves queued input for the next connection", async () => {
+  const sockets: FakeSocket[] = [];
+  let failSetup = true;
+  const input = createInputSocket("ws://localhost/ws", {
+    onAdmitted: () => input.trySend(0x0e, { enabled: false }),
+    onMessage: () => false,
+    onDisconnect() {},
+    onRefused() {},
+    onRecovered() {},
+  }, {
+    reconnectDelayMs: 5,
+    openSocket: () => {
+      const socket = new FakeSocket();
+      const send = socket.send.bind(socket);
+      socket.send = data => { if (failSetup) throw new Error("setup send failed"); send(data); };
+      sockets.push(socket);
+      return socket as unknown as WebSocket;
+    },
+  });
+  try {
+    input.send(0x04, { button: "home" });
+    input.start();
+    sockets[0]!.open();
+    sockets[0]!.message(Uint8Array.of(0x83).buffer);
+    expect(sockets[0]!.closed).toBe(true);
+    expect(sockets[0]!.sent).toEqual([]);
+    failSetup = false;
+    await Bun.sleep(15);
+    sockets[1]!.open();
+    sockets[1]!.message(Uint8Array.of(0x83).buffer);
+    expect(sockets[1]!.sent.map(data => new Uint8Array(data)[0])).toEqual([0x0e, 0x04]);
+  } finally {
+    input.dispose();
+  }
+});

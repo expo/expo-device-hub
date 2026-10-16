@@ -1,4 +1,5 @@
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
+import { US_KEYBOARD_MAP } from "./text-to-keys";
 /**
  * In-process device session — the replacement for the spawned serve-sim-bin
  * helper. One session per booted simulator owns a NativeCapture + NativeHid and
@@ -23,9 +24,11 @@ import {
   Orientation,
   axDescribeAsync,
   axFrontmostAsync,
+  axKeyboardVisibleAsync,
   axTypeKeyboardCharacterAsync,
   type MjpegFrame,
   type NativeHingeState,
+  type NativeDeviceStateSnapshot,
   type NativeScreenInfo,
   type NativeUnsubscribe,
 } from "./native";
@@ -274,6 +277,9 @@ export class DeviceSession {
   private screenRefresh?: Promise<boolean>;
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
+  private unsubscribeDeviceState?: NativeUnsubscribe;
+  private deviceStateVersion?: { generation: number; revision: number };
+  private observedDeviceState?: NativeHingeState;
   private screenRefreshTimer?: ReturnType<typeof setTimeout>;
 
   private latestJpegBuffer: Buffer | null = null;
@@ -326,6 +332,9 @@ export class DeviceSession {
   private readonly serverInput: HidSocket = { send() {}, on() {}, close() {} };
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
+  private softwareKeyboardReadyUntil = 0;
+  private softwareKeyboardSetupRevision = 0;
+  private softwareKeyboardVisibilityProbe: { revision: number; result: Promise<boolean> } | null = null;
 
   constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
@@ -350,6 +359,14 @@ export class DeviceSession {
       });
       if (this.phase !== "running") { await unsubscribe(); return; }
       this.unsubscribeScreenChanges = unsubscribe;
+      void this.capture.subscribeDeviceState(async (snapshot) => {
+        this.applyDeviceState(snapshot);
+      }).then(async (unsubscribeDeviceState) => {
+        if (this.phase !== "running") { await unsubscribeDeviceState(); return; }
+        this.unsubscribeDeviceState = unsubscribeDeviceState;
+      }).catch((error) => {
+        console.error(`[capture] Device state observation unavailable: ${error}`);
+      });
       if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
       this.scheduleScreenRefresh();
       // Discover fold controls without delaying the first frame or inventing
@@ -411,8 +428,10 @@ export class DeviceSession {
     this.recordingLease = undefined;
     clearTimeout(this.screenRefreshTimer);
     this.screenRefreshTimer = undefined;
-    void this.unsubscribeScreenChanges?.().catch(() => {});
+    const screenChangesDetached = this.unsubscribeScreenChanges?.().catch(() => {});
     this.unsubscribeScreenChanges = undefined;
+    const deviceStateDetached = this.unsubscribeDeviceState?.().catch(() => {});
+    this.unsubscribeDeviceState = undefined;
     this.queueInputCleanup(this.serverInput, true);
     for (const ws of this.admittedHidSockets) {
       this.discardQueuedInput(ws);
@@ -423,6 +442,8 @@ export class DeviceSession {
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
     trackClosedSessionStop((async () => {
+      await this.captureStart?.catch(() => {});
+      await Promise.all([screenChangesDetached, deviceStateDetached]);
       let recordingError: unknown = this.recordingFailure;
       try {
         await this.recordingStart;
@@ -1295,13 +1316,17 @@ export class DeviceSession {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             const axHandledKeyUsages = this.axHandledKeyUsages.get(ws)!;
+            const generation = this.inputGeneration;
             const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
             this.supportsHingeAngle ??= supportsHingeAngle;
-            if (m.type === "down" && !supportsHingeAngle && m.shifted === true &&
-              typeof m.key === "string" && m.key.length === 1) {
+            const character = typeof m.key === "string" && m.key.length === 1 ? m.key : undefined;
+            const physical = character === undefined ? undefined : US_KEYBOARD_MAP[character];
+            // Matching US keys retain the fast HID path; layout differences need the character.
+            const needsCharacter = m.shifted === true || !physical || physical.shift || physical.usage !== m.usage;
+            if (m.type === "down" && !supportsHingeAngle && character !== undefined && needsCharacter) {
               const hardwareKeyboard = await getUiOption(this.udid, "hardware-keyboard");
               if (hardwareKeyboard === "off" &&
-                await this.typeSoftwareKeyboardCharacter(m.key)) {
+                await this.typeSoftwareKeyboardCharacter(character, ws, generation)) {
                 if (this.activeHidKeyUsages.get(ws)?.has(m.usage)) {
                   await this.updateHidKey(ws, "up", m.usage);
                 }
@@ -1309,7 +1334,7 @@ export class DeviceSession {
                 return;
               }
             }
-            if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
+            if (!this.canRunInputControl(generation) || this.detachedHidSockets.has(ws)) return;
             if (m.type === "up" && axHandledKeyUsages.delete(m.usage)) return;
             if (m.type === "down") axHandledKeyUsages.delete(m.usage);
             if (m.type === "down" || m.type === "up") await this.updateHidKey(ws, m.type, m.usage);
@@ -1422,6 +1447,8 @@ export class DeviceSession {
               : null;
             if (!this.hidSockets.has(ws)) return;
             if (currentSetting === "off") {
+              this.softwareKeyboardSetupRevision++;
+              this.softwareKeyboardReadyUntil = Date.now() + 3_000;
               this.restoreHardwareKeyboardWhenIdle = false;
               return;
             }
@@ -1431,6 +1458,8 @@ export class DeviceSession {
               m.enabled ? "on" : "off",
             ).catch(() => undefined);
             if (!revision) return;
+            this.softwareKeyboardSetupRevision++;
+            this.softwareKeyboardReadyUntil = m.enabled ? 0 : Date.now() + 3_000;
             this.hardwareKeyboardRevision = m.enabled ? undefined : revision;
             this.restoreHardwareKeyboardWhenIdle = !m.enabled && this.hidSockets.size === 0;
           });
@@ -1612,18 +1641,24 @@ export class DeviceSession {
         if (!this.canRunInputControl(generation)) return false;
         this.applyNativeHingeState(state);
       }
-      if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
       if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
-      if (command.control === "physical" && command.value === "facedown") {
-        if (this.hingeAngle === undefined) {
-          // Confirmed angles come from this session's commands. Read the live
-          // hinge once so a device that was already half open can turn over.
-          const { hingeAngle } = await this.hid.hingeState();
-          if (!this.canRunInputControl(generation)) return false;
-          this.hingeAngle = hingeAngle;
-        }
-        if (!(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
+      if (command.control === "physical" && command.value === "facedown" &&
+          this.observedDeviceState === undefined && this.hingeAngle === undefined) {
+        const state = await this.hid.hingeState();
+        if (!this.canRunInputControl(generation)) return false;
+        if (this.observedDeviceState === undefined) this.hingeAngle = state.hingeAngle;
       }
+      const needsPose = (command.control === "table" && command.value) ||
+        (command.control === "physical" && command.value === "facedown");
+      // @ref LLP 0004#live-pose-observation — eligibility orders native samples against successful sends
+      const eligibility = needsPose && this.observedDeviceState !== undefined
+        ? await this.hid.hingeControlEligibility()
+        : { hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation };
+      if (!this.canRunInputControl(generation)) return false;
+      if (command.control === "table" && command.value &&
+          !isTableModeAvailable(eligibility.hingeAngle, eligibility.physicalOrientation)) return false;
+      if (command.control === "physical" && command.value === "facedown" &&
+          !(eligibility.hingeAngle !== undefined && eligibility.hingeAngle > 0 && eligibility.hingeAngle < 180)) return false;
       this.hingeControlled = true;
       const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
         : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
@@ -1687,9 +1722,42 @@ export class DeviceSession {
       });
   }
 
-  private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
-    if (this.phase !== "running") return false;
-    return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+  // @ref LLP 0003#printable-key-characters — accepted keyboard setup can precede guest visibility
+  private async typeSoftwareKeyboardCharacter(character: string, ws: HidSocket, generation: number): Promise<boolean> {
+    const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
+    const deadline = this.softwareKeyboardReadyUntil;
+    debugKeyboard("character readiness remaining=%d", Math.max(0, deadline - Date.now()));
+    while (canType() && Date.now() < deadline) {
+      // AX tree reads have no native cancellation. Keep at most one read in
+      // flight and release the input turn at the deadline or on disconnect.
+      let probe = this.softwareKeyboardVisibilityProbe;
+      if (!probe) {
+        const started = Date.now();
+        probe = { revision: this.softwareKeyboardSetupRevision, result: axKeyboardVisibleAsync(this.udid).catch(() => false) };
+        void probe.result.then(visible => debugKeyboard("readiness probe visible=%s elapsed=%d", visible, Date.now() - started));
+        this.softwareKeyboardVisibilityProbe = probe;
+        void probe.result.then(() => {
+          if (this.softwareKeyboardVisibilityProbe === probe) this.softwareKeyboardVisibilityProbe = null;
+        });
+      }
+      const visible = await Promise.race([
+        probe.result,
+        new Promise<undefined>(resolve => setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now())))),
+      ]);
+      if (!canType()) return false;
+      if (visible === true && probe.revision === this.softwareKeyboardSetupRevision) {
+        this.softwareKeyboardReadyUntil = 0;
+        break;
+      }
+      if (visible === false) await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    // A timed-out native read may still finish; it must never trigger typing
+    // later or overlap another character attempt. Retain the HID fallback.
+    if (!canType() || this.softwareKeyboardVisibilityProbe) return false;
+    const started = Date.now();
+    const handled = await axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+    debugKeyboard("software character handled=%s elapsed=%d", handled, Date.now() - started);
+    return handled;
   }
 
   /** Press Command+V for one viewer's paste; see `sendCommandShortcut`. */
@@ -2147,6 +2215,22 @@ export class DeviceSession {
 
   // ── Config ───────────────────────────────────────────────────────────────
 
+  private applyDeviceState(snapshot: NativeDeviceStateSnapshot): void {
+    if (this.phase !== "running" || !Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 ||
+        !Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0 || !snapshot.state) return;
+    const previous = this.deviceStateVersion;
+    if (previous && (snapshot.generation < previous.generation ||
+        (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))) return;
+    this.deviceStateVersion = { generation: snapshot.generation, revision: snapshot.revision };
+    const previousState = this.observedDeviceState;
+    const { hingeAngle, physicalOrientation, tableMode } = snapshot.state;
+    this.observedDeviceState = { hingeAngle, physicalOrientation, tableMode };
+    if (!previousState || previousState.hingeAngle !== hingeAngle ||
+        previousState.physicalOrientation !== physicalOrientation || previousState.tableMode !== tableMode) {
+      this.broadcastConfig();
+    }
+  }
+
   screenConfig(): {
     width: number;
     height: number;
@@ -2160,6 +2244,7 @@ export class DeviceSession {
     physicalOrientation?: HingePhysicalOrientation;
     tableMode?: boolean;
     tableModeAvailable?: boolean;
+    observedDeviceState?: NativeHingeState;
   } {
     return {
       width: this.width,
@@ -2173,6 +2258,7 @@ export class DeviceSession {
       ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
       ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined ? { physicalOrientation: this.hingePhysicalOrientation } : {}),
       ...(this.tableMode !== undefined ? { tableMode: this.tableMode } : {}),
+      ...(this.observedDeviceState !== undefined ? { observedDeviceState: this.observedDeviceState } : {}),
     };
   }
 

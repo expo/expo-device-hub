@@ -366,6 +366,20 @@ export function useWebRtcStream({
       }, delay);
     };
 
+    const readSenderStats = async () => {
+      if (!statsUrl) return null;
+      try {
+        return await requestWebRtcServerStats(
+          statsUrl,
+          sessionId,
+          AbortSignal.any([lifecycleController.signal, AbortSignal.timeout(2_000)]),
+          fetchImpl,
+        );
+      } catch {
+        return null;
+      }
+    };
+
     const armFirstFrameTimeout = () => {
       if (
         stopped || failing || document.hidden ||
@@ -384,15 +398,16 @@ export function useWebRtcStream({
           const mediaArriving = await videoRtpArriving(peer);
           if (stopped || failing || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
           // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — an encoding sender blames the transport, not the codec
-          let senderEncoding: boolean | null = null;
-          if (!mediaArriving && statsUrl) {
-            try {
-              const sender = await requestWebRtcServerStats(statsUrl, sessionId, AbortSignal.any([lifecycleController.signal, AbortSignal.timeout(2_000)]), fetchImpl);
-              const encoded = sender.encoder?.framesEncoded;
-              senderEncoding = typeof encoded === 'number' ? encoded > 0 : null;
-            } catch {}
-          }
+          const sender = await readSenderStats();
           if (stopped || failing || document.hidden || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+          // @ref LLP 0012#capture-reboot — rearm without consuming the normal first-paint grace
+          if (sender?.capture?.rebooting === true) {
+            firstFrameGraceUsed = false;
+            armFirstFrameTimeout();
+            return;
+          }
+          const encoded = sender?.encoder?.framesEncoded;
+          const senderEncoding = !mediaArriving && typeof encoded === 'number' ? encoded > 0 : null;
           const state = peer?.connectionState ?? 'closed';
           const disposition = webRtcFailureDisposition('first-frame-timeout', state, {
             mediaArriving, senderEncoding,
@@ -420,6 +435,7 @@ export function useWebRtcStream({
       failCodec: () => allowCodecFallback ? failCodec() : retryTransport('WebRTC playback stalled.'),
       retryTransport,
       expectContinuousFrames,
+      capturePaused: async () => (await readSenderStats())?.capture?.rebooting === true,
     });
 
     // Like serve-sim, a used grace stays used across tab switches.

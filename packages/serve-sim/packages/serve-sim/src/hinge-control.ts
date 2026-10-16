@@ -25,7 +25,7 @@ export function isHingeControlCommand(value: unknown): value is HingeControlComm
     : command.control === "pose" && HINGE_POSES.some((pose) => pose.id === command.value);
 }
 
-/** Confirmed command state, separate from the app's reported screen orientation. */
+/** Requested control preview, separate from observed native state. */
 export function hingeControlState(command: HingeControlCommand): HingeControlState {
   if (command.control === "physical") return { hingePose: null, tableMode: command.value === "facedown" };
   if (command.control === "table") return { tableMode: command.value, hingePose: null };
@@ -48,12 +48,21 @@ export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation 
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
 }
 
-/** Name the preset that matches native state, so a new session shows the same pose. */
-export function hingePoseForState(state: { hingeAngle?: number; physicalOrientation?: HingePhysicalOrientation; tableMode?: boolean }): HingePose | null {
-  if (state.physicalOrientation === undefined || state.tableMode === undefined) return null;
-  return HINGE_POSES.find((pose) => pose.angle === state.hingeAngle &&
-    hingePoseOrientation(pose.id) === state.physicalOrientation &&
-    (pose.id === "tent") === state.tableMode)?.id ?? null;
+/** The preset that observed native state describes, whichever client produced it. */
+export function observedHingePose(angle: number | undefined, orientation: HingePhysicalOrientation | undefined,
+  tableMode: boolean | undefined): HingePose | null | undefined {
+  if (angle === undefined || orientation === undefined || tableMode === undefined) return undefined;
+  return HINGE_POSES.find((pose) => Math.abs(pose.angle - angle) <= 0.5 &&
+    hingePoseOrientation(pose.id) === orientation && (pose.id === "tent") === tableMode)?.id ?? null;
+}
+
+/** Native observation has reached every field that a local preview sets. */
+export function isHingePreviewObserved(preview: HingeControlState,
+  observed: HingeControlState & { physicalOrientation?: HingePhysicalOrientation }): boolean {
+  return (preview.hingeAngle === undefined ||
+      (observed.hingeAngle !== undefined && Math.abs(observed.hingeAngle - preview.hingeAngle) <= 1)) &&
+    (!preview.hingePose || observed.physicalOrientation === hingePoseOrientation(preview.hingePose)) &&
+    (preview.tableMode === undefined || observed.tableMode === preview.tableMode);
 }
 
 /** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */

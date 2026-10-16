@@ -1,5 +1,5 @@
 ---
-"@expo/hub-client": patch
+"@expo/hub-client": minor
 ---
 
-Announce input refusal without hiding live video, and keep dropped-input warnings visible briefly after recovery.
+Expose `inputError` on `DeviceScreenClient`, and keep Android video live when only the input socket fails. Consumers own the input-error notice UI.

@@ -59,8 +59,8 @@ export function nativeTextEdits(log: string): string {
     .join("\n");
 }
 const refusal = () =>
-  [...document.querySelectorAll('[role="status"]')].some((element) =>
-    element.textContent?.includes("Simulator input unavailable"),
+  [...document.querySelectorAll('[data-testid="device-screen-frame"] [role="status"]')].some(
+    (element) => element.textContent?.includes("Simulator input unavailable"),
   );
 const video = () => document.querySelector("video");
 const frames = () => video()?.getVideoPlaybackQuality().totalVideoFrames ?? 0;
@@ -289,6 +289,7 @@ export async function runScenarios() {
     await check(
       "Refusal stays visible through unadmitted OPEN; admission recovers input",
       async () => {
+        const healthyPeer = window.__hubE2E.peers.at(-1);
         await post("input", { mode: "refuse" });
         await until(refusal, Boolean, "persistent input refusal is announced", 25_000);
         const before = nativeTextEdits(await fixture());
@@ -312,6 +313,10 @@ export async function runScenarios() {
           "No input flushed before server admission",
         );
         await advancingVideo();
+        assert(
+          window.__hubE2E.peers.at(-1) === healthyPeer,
+          "Input refusal preserves the healthy peer",
+        );
         await pause(1_600); // The queued x expires before later recovery.
         await post("input", { mode: "normal" });
         await until(refusal, (value) => !value, "native admission clears refusal");

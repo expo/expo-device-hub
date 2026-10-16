@@ -34,9 +34,10 @@ serve-sim's client uses the same rules and numbers, with one difference [observe
 
 The iOS adapter uses the admission socket [observed: `createInputSocket` call in `useIosDevice.ts`]:
 
-- After admission, it turns off the Simulator's hardware keyboard, so that iOS shows its software keyboard.
+- After admission, it sends the hardware-keyboard-off setup frame directly before flushing queued controls. The helper serializes the setting change with subsequent input and gives the guest keyboard a three-second visibility window before a software-character attempt. The helper uses a bounded read-only keyboard probe rather than a full UI snapshot, and a setup revision prevents a new transition from accepting an older probe result. A stalled visibility read cannot hold the shared input queue past that window or schedule late typing; while its single read remains pending, input retains HID fallback. Failed setup sends close the connection and retain fresh pending input for retry [observed: `admit` in `input-socket.ts`; `onAdmitted` in `useIosDevice.ts`; tag `0x0e` in serve-sim `device-session.ts`].
 - A refusal notice clears when a socket is admitted. A config update for the same helper does not clear it. A replaced helper (new `pid` or exec token) gets a new input socket, which clears a client-limit notice and starts a new refusal grace.
 - A lost-input notice expires 5 s after the refusal, also when a socket is admitted sooner or the helper is replaced, because neither brings back lost commands. Selecting another device clears it at once, before that device's config arrives, and so does a new input URL. A restarting helper that briefly reports no config does not [observed: `lostInputTimerRef` in `useIosDevice.ts`]. serve-sim shows it as a toast with the default duration, and dismisses it early only when its input URL changes [observed: `client/client.tsx`, `client/components/app-toasts.tsx`].
+- Fresh input waits through initial discovery and temporary null configs for the same helper. The hook transfers unsent messages without resetting their 1.5 s age or 32-message bound; a requested device, server, token, or known helper identity change discards them [observed: `pendingInputRef` in `useIosDevice.ts`; `takePending` in `input-socket.ts`].
 - When the helper is replaced at the same URL (new `pid` or exec token), queued input is dropped. Input belongs to the helper that was running when the user acted [confirmed] (Gabe Debes, 2026-10-07).
 - After a disconnect, the adapter waits for the reconnect (1.5 s). If exec-ws has not delivered a config by then, it runs HTTP discovery to recover rotated credentials.
 
@@ -44,8 +45,9 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 
 `createControlSocket` owns one exec-ws connection for one client identity (URL and token), never for the whole module [observed: `control-socket.ts`].
 
-- At most 8 requests are in flight. serve-sim serves 8 action requests per control connection [observed: `MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`].
-- A health probe runs every 5 s, and a probe without a reply in 5 s closes the connection. A connection attempt also stops after 5 s.
+- HubClient queues requests at a client-side limit of 8 in flight, matching serve-sim's server limit (`MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`). The serve-sim browser client does not impose this queue [observed: `control-socket.ts`; `socket/client-control.ts`].
+- A sent request keeps its server slot after caller timeout or abort, until the server replies or the connection fails. If all 8 slots belong to abandoned requests, queued and new requests fail immediately with "too many actions in flight on this connection". Health probes still run, subscriptions stay connected, and a late server reply makes its slot usable again. Writes are never replayed [observed: `sendRequests` and `inFlight` in `control-socket.ts`].
+- HubClient adds a health probe every 5 s; a probe without a reply in 5 s closes the connection. serve-sim's browser client has no health probe. Both clients stop a connection attempt after 5 s [observed: `control-socket.ts`; `socket/client-control.ts`].
 - Each subscription retries by itself after the server ends it. One ended subscription does not close the others.
 
 serve-sim's client uses the same 5 s connect timeout and 2 s stream retry [observed: `socket/client-control.ts`].
@@ -61,20 +63,32 @@ Settings, host actions, logs, events, activity metrics and config updates share 
 
 ## Keyboard input
 
-When the shift key makes a printable character, the client sends the character with `shifted: true`, in addition to the HID usage. serve-sim types it through the software keyboard when the Simulator's hardware keyboard is off and the device has no hinge-angle support. Otherwise, or when software typing fails, it sends the HID usage [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; serve-sim `client/client.tsx`, tag `0x06` in `device-session.ts`].
+HubClient sends `key` for every single-character printable keydown without Control, Meta, or Alt, in addition to its physical HID usage. Shifted non-space characters retain `shifted: true`; releases, shortcuts, navigation keys, and dead keys keep physical HID semantics [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; `DeviceScreen.tsx`].
+
+The updated serve-sim helper uses the software-keyboard character path for shifted characters or when the character does not match that physical US key, while matching unshifted US characters stay on the fast HID path. This requires the Simulator hardware keyboard to be off and the device to have no hinge-angle support. Hardware-keyboard-on, hinge-capable devices, older helpers, and rejected software-keyboard characters retain HID fallback; characters absent from the Simulator keyboard remain a limitation [observed: tag `0x06` in `device-session.ts`; `US_KEYBOARD_MAP` in `text-to-keys.ts`].
+
+This extends serve-sim's browser client, which supplies character metadata only for shifted characters. HubClient also supplies unshifted metadata so a German-layout `KeyY` can type `z` instead of the physical US `y` [observed: `keyboard.ts`; serve-sim `client/client.tsx`].
 
 ## Input ownership
 
-When a browser interaction loses focus, or the client changes device, queued input that it owns is cancelled [observed: `cancelInput` in `types.ts`, `useIosDevice.ts`, `useAndroidDevice.ts`]:
+Input callbacks belong to a committed connection scope and its known helper, rather than the complete config object. Stream settings and ICE metadata do not retire them. Initial discovery binds the early queue without replacing that owner; temporary null discovery retains the known helper and original queue age. A requested device, server, enabled state, token, or known helper identity change retires the callbacks, even when the same values later return [observed: `inputOwner` and `ownsInput` in `useIosDevice.ts`; `inputIdentity` in `useAndroidDevice.ts`].
 
-- A gesture that has both `begin` and `end` stays in the queue, in its order and with its expiry. A gesture without its `end` is removed, so that the device does not keep a held touch.
-- Paced key input stops [observed: `paced-key-sender.ts`].
-- If a send fails, the commands that were not sent stay in the queue for the next admission [observed: `ws-send-queue.ts`].
+Local surface blur releases physical keys only. It keeps active gestures and paced phone-keyboard input, so `KeyboardCapture` can restore focus to its hidden input without ending a swipe [observed: `onBlur` in `DeviceScreen.tsx`; `onFocusOut` in `KeyboardCapture.tsx`].
+
+Window blur, a hidden tab, page hide, unmount, or a real input-owner change cancels abandoned input [observed: `listenForInputCancellation`, `cancelBrowserInput`, and the adapters' `cancelInput`]:
+
+- Buffered wheel frames and paced key batches stop before adapter queues are cleared. Held keys/touches are released only through their original owner.
+- Unsent keys and scrolls are discarded from both the socket queue and any pre-discovery queue; they must not type or scroll later after the browser has left the interaction.
+- Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
+
+This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
 
 ## Input feedback
 
-`DeviceScreen` shows `inputError` as a status line over the video. The video stays visible, because video and input use different connections [observed: `DeviceScreen.tsx`].
+HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
+
+An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
 
 ## Open questions
 
-- `DeviceScreen` shows the input notice with fixed colors (`rgba(0, 0, 0, 0.75)`, `#fca5a5`). LLP 0000 [constraint 3](0000-expo-device-hub.explainer.md#constraints-you-must-not-simplify-away) forbids fixed colors in the Hub UI. Does that rule apply to `DeviceScreen`, which the Hub and the Expo website both render?
+None at this time.

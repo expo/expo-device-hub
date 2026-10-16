@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission)
+**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -45,8 +45,13 @@ Use `serve-sim record-video --udid <udid> --output <empty-dir>` against a
 running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
 also attempts to finalize active recordings during shutdown. One recording may
-run per device. The manifest retains the record-sim upload schema. See
-[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for frame handling and limits.
+run per device. The manifest retains the required record-sim upload fields and
+may include a `deviceStates` timeline. Older manifests without that field remain
+valid [observed: `Sources/StreamingPolicy/RecordingManifest.swift`]. See
+[device-state metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)
+for the timeline contract, and
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md)
+for frame handling and limits.
 
 To control recording directly, `POST` a JSON body such as
 `{"start":true,"output":"/path/to/empty-dir","recordingId":"client-id"}`.
@@ -320,6 +325,10 @@ during the grace period.
 Legacy helpers retain send-on-open compatibility. Browser submission does not
 prove native delivery or app acceptance
 [observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
+
+### Printable key characters
+
+The HID key frame (`0x06`) accepts a physical `usage` with `type: "down" | "up"`, plus optional `key` and legacy `shifted` metadata. A single-character keydown can name the browser-layout character. For a non-hinge Simulator with the hardware keyboard off, the helper uses software-keyboard typing when the character is shifted or differs from that physical US key. Matching unshifted US keys, shortcuts without character metadata, and key releases retain HID handling. After hardware-keyboard-off setup, software-character input waits for the guest keyboard to become visible within a three-second window. That check does not press a key; the character attempt runs once, and disconnect or generation change cancels it. A slow native visibility read releases the input turn by the deadline (or within a 25 ms ownership check after disconnect). Readiness uses a read-only native keyboard scan, stopping after two known keyboard identifiers with a 250 ms total traversal/XPC budget; it does not serialize the full UI tree. Only one readiness read can remain in flight, and a new hardware-keyboard setup cannot reuse an earlier setup's result. Characters use HID fallback if the window expires while a read remains pending; its late result cannot type a character. Matching US HID keys skip this wait. A software-typed key suppresses its matching physical release; unavailable software characters and other device modes keep the existing HID fallback [observed: `src/device-session.ts`, key frame routing; `src/text-to-keys.ts`, `US_KEYBOARD_MAP`].
 
 ### Raw HID close contract
 

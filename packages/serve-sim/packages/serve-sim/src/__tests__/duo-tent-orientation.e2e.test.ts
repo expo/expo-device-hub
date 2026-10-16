@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { stateFileForDevice, type ServeSimDeviceState } from "../state";
-import { selectPose } from "./duo-hinge-helpers";
+import { selectPose, waitForHingeConfig } from "./duo-hinge-helpers";
+import { previewScreenConfig } from "../client/simulator/screen-config-state";
 
 // Opt in against a rebuilt running server and a booted Duo with a landscape-
 // capable app (Safari or fixtures/duo). This changes the device's physical pose.
@@ -16,6 +17,7 @@ test.skipIf(!device)("native hinge recovery reads angles changed by another proc
       // Commands run in the server, so this process cannot use its last sent
       // angle to pass. It must receive a fresh native motion sample.
       await selectPose(state, pose);
+      await waitForHingeConfig(state, { hingeAngle: angle });
       expect((await observer.hingeState()).hingeAngle).toBe(angle);
     }
   } finally { await selectPose(state, "tent"); }
@@ -62,7 +64,7 @@ test.skipIf(!device)("Tent makes the cover landscape regardless of the previous 
         signal: AbortSignal.timeout(5000),
       });
       expect(response.ok).toBe(true);
-      config = await response.json();
+      config = previewScreenConfig(await response.json());
       // The active panel can initially report the previous orientation while
       // iOS finishes rotating. Require a stable readback, not its first match.
       if (config.screenId === 1 && config.orientation === "landscape_left") {
@@ -72,7 +74,7 @@ test.skipIf(!device)("Tent makes the cover landscape regardless of the previous 
       await Bun.sleep(100);
     } while (Date.now() < deadline);
     expect({ previous, ...config }).toMatchObject({
-      previous, screenId: 1, orientation: "landscape_left", hingeAngle: 80, hingePose: "tent", tableMode: true,
+      previous, screenId: 1, orientation: "landscape_left", hingeAngle: 80, physicalOrientation: "facedown", tableMode: true,
     });
     expect(landscapeSince !== undefined && Date.now() - landscapeSince >= 2000).toBe(true);
   }

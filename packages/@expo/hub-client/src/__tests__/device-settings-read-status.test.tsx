@@ -816,6 +816,9 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
       await advanceUntil(() => server.controls.size > 0, 1500);
     }
     if (replyTiming === "after repeated reconnects") {
+      // A subscription can arrive before the replacement settings read does.
+      // Interrupt that read only after it reaches the real loopback server.
+      await waitFor(() => server.reads.length === 2);
       await act(async () => { for (const socket of server.controls) socket.close(); });
       // The server can close before the client handles close and schedules its retry.
       await waitFor(() => server.controls.size === 0 && server.controlClients.size === 0);

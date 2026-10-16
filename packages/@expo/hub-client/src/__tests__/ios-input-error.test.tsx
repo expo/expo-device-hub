@@ -1,8 +1,8 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error';
 import { DeviceScreen } from '../DeviceScreen';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error';
 import { type DeviceClient } from '../types';
 import { useIosDeviceClient } from '../useIosDevice';
 import { createGlobalStubs } from './test-globals';
@@ -27,7 +27,7 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false, helper = { pid: 1 } as { pid: number; absent?: boolean } } = {}) {
+async function renderIosClient(inputAdmission: unknown = true, helper: { pid: number; absent?: boolean; discovery?: Promise<void> } = { pid: 1 }, renderScreen = false) {
   const sockets: FakeSocket[] = [];
   const listeners = new Map<string, Set<() => void>>();
   const addListener = (name: string, callback: () => void) => {
@@ -53,10 +53,10 @@ async function renderIosClient(inputAdmission: unknown = true, { renderScreen = 
   stubGlobal('document', { hidden: false, addEventListener: addListener, removeEventListener: removeListener });
   stubGlobal('WebSocket', class {
     readyState = 0;
-    sent: ArrayBuffer[] = [];
     constructor(readonly url: string) {
       sockets.push(this);
     }
+    sent: ArrayBuffer[] = [];
     send(data: ArrayBuffer) { this.sent.push(data); }
     close() {}
   });
@@ -66,6 +66,7 @@ async function renderIosClient(inputAdmission: unknown = true, { renderScreen = 
   stubGlobal('fetch', async (url: string) => {
     const endpoint = new URL(String(url), 'http://localhost:3200');
     if (endpoint.pathname === '/sim/api') {
+      await helper.discovery;
       if (helper.absent) return Response.json(null);
       const device = endpoint.searchParams.get('device');
       return Response.json({inputAdmission: inputAdmission === false ? undefined : inputAdmission, device, pid: helper.pid,
@@ -77,25 +78,20 @@ async function renderIosClient(inputAdmission: unknown = true, { renderScreen = 
   });
 
   let client!: DeviceClient;
-  function Harness({device = 'DEVICE-A'}: {device?: string}) {
-    client = useIosDeviceClient({ baseUrl: '/sim', device, streamMode: 'mjpeg' });
+  function Harness({device = 'DEVICE-A', token = null, enabled = true}: {device?: string; token?: string | null; enabled?: boolean}) {
+    client = useIosDeviceClient({ baseUrl: '/sim', device, token, enabled, streamMode: 'mjpeg' });
     return renderScreen ? <DeviceScreen client={client} /> : null;
   }
   const surface = {
-    focus() {},
-    setPointerCapture() {},
-    releasePointerCapture() {},
-    addEventListener() {},
-    removeEventListener() {},
+    focus() {}, setPointerCapture() {}, releasePointerCapture() {},
+    addEventListener() {}, removeEventListener() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 200 }),
   };
   await act(async () => {
-    renderer = create(<Harness />, {
-      createNodeMock: node => node.type === 'div' ? surface : null,
-    });
+    renderer = create(<Harness />, { createNodeMock: node => node.type === 'div' ? surface : null });
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
-  return { client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
+  return { client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />), changeOptions: (options: {device?: string; token?: string | null; enabled?: boolean}) => renderer!.update(<Harness {...options} />) };
 }
 
 function configFrame(config: object): ArrayBuffer {
@@ -185,7 +181,6 @@ test('screen config cannot clear a refusal before modern admission', async () =>
     expect(client().hardwareKeyboardConnected).toBe(false);
 });
 
-
 test('an overload warning survives admission but expires without changing owners', async () => {
   const { client, helperSockets } = await renderIosClient();
   const socket = helperSockets()[0]!;
@@ -205,7 +200,7 @@ test('an overload warning survives admission but expires without changing owners
 
 test('an overload warning outlives a helper restart at the same URL', async () => {
   const helper = { pid: 1 };
-  const { client, helperSockets } = await renderIosClient(true, { helper });
+  const { client, helperSockets } = await renderIosClient(true, helper);
   const socket = helperSockets()[0]!;
   socket.readyState = 1;
   await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
@@ -221,7 +216,7 @@ test('an overload warning outlives a helper restart at the same URL', async () =
 
 test('an overload warning outlives a helper that is briefly absent', async () => {
   const helper = { pid: 1, absent: false };
-  const { client, helperSockets } = await renderIosClient(true, { helper });
+  const { client, helperSockets } = await renderIosClient(true, helper);
   const socket = helperSockets()[0]!;
   socket.readyState = 1;
   await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
@@ -237,7 +232,7 @@ test('an overload warning outlives a helper that is briefly absent', async () =>
 
 test('an overload warning stays with its device', async () => {
   const helper = { pid: 1, absent: false };
-  const { client, helperSockets, changeDevice } = await renderIosClient(true, { helper });
+  const { client, helperSockets, changeDevice } = await renderIosClient(true, helper);
   const socket = helperSockets()[0]!;
   socket.readyState = 1;
   await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
@@ -247,6 +242,106 @@ test('an overload warning stays with its device', async () => {
   helper.absent = true;
   await act(async () => changeDevice('DEVICE-B'));
   expect(client().inputError).toBeNull();
+});
+
+function buttons(socket: FakeSocket) {
+  return socket.sent.filter(data => new Uint8Array(data)[0] === 0x04)
+    .map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))).button);
+}
+
+async function admit(socket: FakeSocket) {
+  socket.readyState = 1;
+  await act(async () => socket.onopen?.());
+  expect(buttons(socket)).toEqual([]);
+  await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+}
+
+test('fresh controls entered before discovery wait for input admission', async () => {
+  let release!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+  const { client, helperSockets } = await renderIosClient(true, helper);
+  expect(helperSockets()).toHaveLength(0);
+  await act(async () => client().pressButton('home'));
+  await act(async () => release());
+  const socket = helperSockets()[0]!;
+  await admit(socket);
+  expect(buttons(socket)).toEqual(['home']);
+});
+
+for (const replaced of [false, true]) {
+  test(`a discovery gap ${replaced ? 'drops commands for a replaced helper' : 'retains fresh commands for the same helper'}`, async () => {
+    const helper = { pid: 1, absent: false };
+    const { client, helperSockets } = await renderIosClient(true, helper);
+    // Queue one command before admission, then remove the helper from discovery.
+    await act(async () => client().pressButton('home'));
+    helper.absent = true;
+    await act(async () => helperSockets()[0]!.onclose?.({ code: 1006, reason: '' }));
+    await act(async () => new Promise(resolve => setTimeout(resolve, 15)));
+    expect(client().status).toBe('connecting');
+    await act(async () => client().pressButton('power'));
+    helper.absent = false;
+    if (replaced) helper.pid++;
+    await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+    const socket = helperSockets().at(-1)!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(replaced ? [] : ['home', 'lock']);
+  });
+}
+
+for (const changed of ['device', 'token', 'disabled'] as const) {
+  test(`early input is discarded when ${changed} changes`, async () => {
+    let release!: () => void;
+    const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+    const { client, helperSockets, changeOptions } = await renderIosClient(true, helper);
+    await act(async () => client().pressButton('home'));
+    await act(async () => changeOptions(changed === 'device' ? { device: 'DEVICE-B' } : changed === 'token' ? { token: 'new-token' } : { enabled: false }));
+    if (changed === 'disabled') await act(async () => changeOptions({ enabled: true }));
+    await act(async () => client().pressButton('power'));
+    await act(async () => release());
+    const socket = helperSockets().at(-1)!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(['lock']);
+  });
+}
+
+for (const expired of [false, true]) {
+  test(`early controls ${expired ? 'expire at their original deadline' : 'retain the 32-message capacity limit'}`, async () => {
+    let release!: () => void;
+    let now = 0;
+    const NativeDate = Date;
+    stubGlobal('Date', class extends NativeDate { static now() { return now; } });
+    const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+    const { client, helperSockets } = await renderIosClient(true, helper);
+    await act(async () => { for (let index = 0; index < 40; index++) client().pressButton('home'); });
+    if (expired) now = 1501;
+    await act(async () => release());
+    const socket = helperSockets()[0]!;
+    await admit(socket);
+    expect(buttons(socket)).toEqual(expired ? [] : Array(32).fill('home'));
+  });
+}
+
+test('admission prepares the keyboard before early layout keys and preserves control order', async () => {
+  let release!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(resolve => { release = resolve; }) };
+  const { client, helperSockets } = await renderIosClient(true, helper);
+  await act(async () => {
+    client().pressButton('home');
+    client().sendKey({ phase: 'down', code: 'KeyY', key: 'z', repeat: false });
+    client().sendKey({ phase: 'up', code: 'KeyY', key: 'z', repeat: false });
+    client().pressButton('power');
+  });
+  await act(async () => release());
+  const socket = helperSockets()[0]!;
+  await admit(socket);
+  const messages = socket.sent.map(data => ({ tag: new Uint8Array(data)[0], payload: JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))) }));
+  expect(messages).toEqual([
+    { tag: 0x0e, payload: { enabled: false } },
+    { tag: 0x04, payload: { button: 'home' } },
+    { tag: 0x06, payload: { type: 'down', usage: 0x1c, key: 'z' } },
+    { tag: 0x06, payload: { type: 'up', usage: 0x1c } },
+    { tag: 0x04, payload: { button: 'lock' } },
+  ]);
 });
 
 test('retired callbacks and paced keys never cross device identity', async () => {
@@ -305,9 +400,9 @@ function gestureMessages(socket: FakeSocket) {
 }
 
 for (const gesture of ['single', 'multi'] as const) {
-  for (const cancellation of ['surface blur', 'blur', 'visibilitychange', 'pagehide']) {
+  for (const cancellation of ['blur', 'visibilitychange', 'pagehide']) {
     test(`${cancellation} abandons an unadmitted ${gesture} gesture`, async () => {
-      const { helperSockets, dispatch } = await renderIosClient(true, { renderScreen: true });
+      const { helperSockets, dispatch } = await renderIosClient(true, { pid: 1 }, true);
       const socket = helperSockets()[0]!;
       socket.readyState = 1;
       const surface = renderer!.root.findByProps({ role: 'application' });
@@ -328,8 +423,8 @@ for (const gesture of ['single', 'multi'] as const) {
     });
   }
 
-  test(`surface blur still releases an admitted ${gesture} gesture`, async () => {
-    const { helperSockets } = await renderIosClient(true, { renderScreen: true });
+  test(`surface blur preserves an admitted ${gesture} gesture until pointerup`, async () => {
+    const { helperSockets } = await renderIosClient(true, { pid: 1 }, true);
     const socket = helperSockets()[0]!;
     socket.readyState = 1;
     await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
@@ -340,6 +435,8 @@ for (const gesture of ['single', 'multi'] as const) {
       preventDefault() {},
     }));
     await act(async () => surface.props.onBlur());
+    expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin']);
+    await act(async () => surface.props.onPointerUp({ pointerId: 1, clientX: 20, clientY: 60, preventDefault() {} }));
     expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin', 'end']);
   });
 }
@@ -359,7 +456,7 @@ test('a completed tap before admission still reaches the device', async () => {
 for (const gesture of ['single', 'multi'] as const) {
   for (const cancellation of ['surface blur', 'blur'] as const) {
     test(`${cancellation} preserves a completed unadmitted ${gesture} gesture`, async () => {
-      const { helperSockets, dispatch } = await renderIosClient(true, { renderScreen: true });
+      const { helperSockets, dispatch } = await renderIosClient(true, { pid: 1 }, true);
       const socket = helperSockets()[0]!;
       socket.readyState = 1;
       const surface = renderer!.root.findByProps({ role: 'application' });
@@ -395,8 +492,8 @@ test('blur preserves completed input only for its original queue lifetime', asyn
   }
 });
 
-test('surface blur keeps a completed tap while abandoning the following drag', async () => {
-  const { helperSockets } = await renderIosClient(true, { renderScreen: true });
+test('window blur keeps a completed tap while abandoning the following drag', async () => {
+  const { helperSockets, dispatch } = await renderIosClient(true, { pid: 1 }, true);
   const socket = helperSockets()[0]!;
   socket.readyState = 1;
   const surface = renderer!.root.findByProps({ role: 'application' });
@@ -406,11 +503,103 @@ test('surface blur keeps a completed tap while abandoning the following drag', a
     surface.props.onPointerDown(pointer);
     surface.props.onPointerUp(pointer);
     surface.props.onPointerDown({ ...pointer, pointerId: 2, clientX: 40 });
-    surface.props.onBlur();
+    dispatch('blur');
     socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
   });
   expect(gestureMessages(socket)).toEqual([
     { type: 'begin', x: 0.2, y: 0.3 },
     { type: 'end', x: 0.2, y: 0.3 },
   ]);
+});
+
+test('initial discovery keeps the surface gesture and input callbacks owned by its early queue', async () => {
+  let resolve!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(done => { resolve = done; }) };
+  const { client, helperSockets } = await renderIosClient(true, helper, true);
+  const original = client();
+  const surface = renderer!.root.findByProps({ role: 'application' });
+  const pointer = { pointerId: 1, pointerType: 'touch', button: 0, clientX: 20, clientY: 60, preventDefault() {} };
+  await act(async () => surface.props.onPointerDown(pointer));
+  await act(async () => resolve());
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  expect(client().sendTouch).toBe(original.sendTouch);
+  expect(client().cancelInput).toBe(original.cancelInput);
+  expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin']);
+  await act(async () => surface.props.onPointerUp(pointer));
+  expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin', 'end']);
+});
+
+for (const returnToOriginal of [false, true]) {
+  test(`iOS callbacks retire across token ${returnToOriginal ? 'A to B to A' : 'A to B'} handoff`, async () => {
+    const { client, helperSockets, changeOptions } = await renderIosClient();
+    await act(async () => changeOptions({ token: 'token-A' }));
+    const original = client();
+    await act(async () => changeOptions({ token: 'token-B' }));
+    if (returnToOriginal) await act(async () => changeOptions({ token: 'token-A' }));
+    const socket = helperSockets().at(-1)!;
+    socket.readyState = 1;
+    await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+    await act(async () => {
+      original.sendTouch({ phase: 'begin', x: 0.2, y: 0.3 });
+      expect(original.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false })).toBe(false);
+      original.sendKeyEvents!([{ type: 'down', usage: 4 }, { type: 'up', usage: 4 }]);
+      await new Promise(done => setTimeout(done, 20));
+    });
+    expect(gestureMessages(socket)).toEqual([]);
+    expect(socket.sent.filter(message => new Uint8Array(message)[0] === 6)).toEqual([]);
+    await act(async () => client().sendTouch({ phase: 'begin', x: 0.4, y: 0.5 }));
+    expect(gestureMessages(socket)).toHaveLength(1);
+  });
+}
+
+test('window blur cancels abandoned pre-discovery input while keeping the completed tap', async () => {
+  let resolve!: () => void;
+  const helper = { pid: 1, discovery: new Promise<void>(done => { resolve = done; }) };
+  const { client, helperSockets, dispatch } = await renderIosClient(true, helper);
+  await act(async () => {
+    client().sendKeyEvents!([{ type: 'down', usage: 4 }, { type: 'up', usage: 4 }]);
+    client().sendScroll!({ dx: 0, dy: 0.1, x: 0.5, y: 0.5 });
+    client().sendTouch({ phase: 'begin', x: 0.2, y: 0.3 });
+    client().sendTouch({ phase: 'end', x: 0.2, y: 0.3 });
+    client().sendTouch({ phase: 'begin', x: 0.4, y: 0.5 });
+    dispatch('blur');
+    resolve();
+  });
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => {
+    socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+    await new Promise(done => setTimeout(done, 20));
+  });
+  expect(socket.sent.filter(message => [6, 11].includes(new Uint8Array(message)[0]!))).toEqual([]);
+  expect(gestureMessages(socket)).toEqual([{ type: 'begin', x: 0.2, y: 0.3 }, { type: 'end', x: 0.2, y: 0.3 }]);
+});
+
+test('a real helper replacement at the same URL retires the previous callbacks', async () => {
+  const helper = { pid: 1 };
+  const { client, helperSockets } = await renderIosClient(true, helper);
+  const first = helperSockets()[0]!;
+  first.readyState = 1;
+  await act(async () => first.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  const previous = client();
+  helper.pid = 2;
+  await act(async () => {
+    first.onclose?.({ code: 1006, reason: '' });
+    await new Promise(done => setTimeout(done, 30));
+  });
+  const replacement = helperSockets().at(-1)!;
+  expect(replacement).not.toBe(first);
+  replacement.readyState = 1;
+  await act(async () => replacement.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  await act(async () => {
+    previous.sendTouch({ phase: 'begin', x: 0.2, y: 0.3 });
+    previous.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
+    previous.cancelInput?.();
+  });
+  expect(gestureMessages(replacement)).toEqual([]);
+  expect(replacement.sent.filter(message => new Uint8Array(message)[0] === 6)).toEqual([]);
+  await act(async () => client().sendTouch({ phase: 'begin', x: 0.4, y: 0.5 }));
+  expect(gestureMessages(replacement)).toHaveLength(1);
 });

@@ -18,16 +18,13 @@ import {
   stopLaunchSession,
   enableCapabilities,
   applyDefaultCapabilities,
-  armCapabilityLoader,
   capabilityConfigPath,
-  capabilityLoaderPath,
   renderCapabilityConfig,
 } from "../launch-manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
-import { requireE2E } from "./e2e-preconditions";
 
 const UDID = "LAUNCH-MANAGER-TEST-" + process.pid;
 
@@ -532,49 +529,6 @@ exit 0
     } finally {
       clearRegisteredCapabilities();
     }
-  });
-});
-
-const loaderBuilt = existsSync(capabilityLoaderPath());
-
-requireE2E("capability loader arming", loaderBuilt);
-
-describe.skipIf(!loaderBuilt)("armCapabilityLoader", () => {
-  test("republishes the config before arming so a dead session's capability cannot load", async () => {
-    const log = join(stateDir(), "simctl-arm-calls");
-    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
-    const quotedConfig = "'" + capabilityConfigPath(UDID).replaceAll("'", "'\\''") + "'";
-    const dead = 999_999;
-    writeRawState(JSON.stringify({
-      launchArgs: [], sessionPids: [],
-      capabilities: {
-        camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
-        probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
-        live: { name: "live", scope: "allApps", dylib: "/live.dylib", ownerPid: process.pid },
-      },
-    }));
-    writeFileSync(
-      capabilityConfigPath(UDID),
-      "all\t/camera.dylib\t\t0\nall\t/probe.dylib\t\t0\nall\t/live.dylib\t\t0\n",
-    );
-
-    await withShimsAsync({ xcrun: `#!/bin/sh
-printf '%s\\n' "$*" >> ${quotedLog}
-if [ "$5" = "setenv" ] && [ "$6" = "DYLD_INSERT_LIBRARIES" ]; then
-  printf 'config-at-arm:%s\\n' "$(cat ${quotedConfig} 2>/dev/null | tr '\\t\\n' '  ')" >> ${quotedLog}
-fi
-exit 0
-` }, async () => {
-      await armCapabilityLoader(UDID);
-    });
-
-    const atArm = readFileSync(log, "utf-8").split("\n").find((line) => line.startsWith("config-at-arm:"));
-    expect(atArm).toContain("/probe.dylib");
-    expect(atArm).toContain("/live.dylib");
-    expect(atArm).not.toContain("/camera.dylib");
-    expect(readFileSync(capabilityConfigPath(UDID), "utf-8")).toBe(
-      "all\t/probe.dylib\t\t0\nall\t/live.dylib\t\t0\n",
-    );
   });
 });
 

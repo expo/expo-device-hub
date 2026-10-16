@@ -20,6 +20,8 @@ export interface StreamConfig extends HingeControlState {
   supportsHingeAngle?: boolean;
   /** Whether the active Duo surface can be selected without changing its hinge angle. */
   supportsPhysicalOrientation?: boolean;
+  /** Full native pose snapshot for preview; missing fields are unknown. */
+  observedDeviceState?: { hingeAngle?: number; physicalOrientation?: HingePhysicalOrientation; tableMode?: boolean };
   /** Last confirmed physical orientation, separate from the app's screen orientation. */
   physicalOrientation?: HingePhysicalOrientation;
 }

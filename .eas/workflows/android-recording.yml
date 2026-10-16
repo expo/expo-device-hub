@@ -3,7 +3,16 @@ name: Android recording
 on:
   push:
     branches: [main]
-  pull_request: {}
+  pull_request:
+    # iOS-only and docs-only changes do not affect Android recording.
+    paths:
+      - "**"
+      - "!packages/serve-sim/**"
+      - "!packages/@expo/hub-apple-utils/**"
+      - "!.changeset/**"
+      - "!llp/**"
+      - "!*.md"
+      - "!**/*.md"
   pull_request_labeled:
     labels: [eas-approved]
 

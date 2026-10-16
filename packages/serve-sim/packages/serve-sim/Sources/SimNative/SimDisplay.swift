@@ -10,6 +10,13 @@ struct SimDisplayMetadata: Equatable {
     let chromeIdentifier: String?
     let screenType: UInt64?
 
+    var integratedScreenID: UInt32? { screenType == 0 ? screenID : nil }
+
+    func recordingScreen(in profile: SimulatorDisplayProfile) -> RecordingScreen? {
+        guard let integratedScreenID else { return nil }
+        return profile.recordingScreen(screenID: integratedScreenID, chromeIdentifier: chromeIdentifier)
+    }
+
     func applying(_ current: CoreDeviceDisplayState?) -> Self {
         guard let current, current.screenID == screenID,
               let orientation = current.orientation else { return self }

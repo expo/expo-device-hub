@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveScreenConfigUpdate } from "../client/simulator/screen-config-state";
+import { previewScreenConfig, resolveScreenConfigUpdate } from "../client/simulator/screen-config-state";
 
 describe("screen config state", () => {
   test("reports input availability changes without a screen geometry change", () => {
@@ -122,13 +122,20 @@ describe("screen config state", () => {
       width: 2007, height: 2853, supportsHingeAngle: true, supportsPhysicalOrientation: true,
       hingeAngle: 90, hingePose: "book" as const, physicalOrientation: "portrait" as const,
       tableMode: true, tableModeAvailable: true,
+      observedDeviceState: { hingeAngle: 80, physicalOrientation: "facedown" as const, tableMode: true },
     };
     const config = { width: 2007, height: 2853 };
+    const legacy = { ...config, hingeAngle: 180, hingePose: "open" as const,
+      physicalOrientation: "portrait" as const, tableMode: false };
     for (const source of ["reported", "external"] as const) {
       expect(resolveScreenConfigUpdate(current, config, source)?.config).toEqual(config);
+      const updated = resolveScreenConfigUpdate(current, legacy, source)?.config;
+      expect(updated).toEqual(legacy);
+      expect(previewScreenConfig(updated!)).toEqual(legacy);
     }
     expect(resolveScreenConfigUpdate(current, { width: 900, height: 1280 }, "media")?.config)
-      .toMatchObject({ hingePose: "book", tableMode: true, physicalOrientation: "portrait" });
+      .toMatchObject({ hingePose: "book", tableMode: true, physicalOrientation: "portrait",
+        observedDeviceState: current.observedDeviceState });
   });
 
   test("reports a display switch even when both screens have the same dimensions", () => {
@@ -154,4 +161,32 @@ test("preserves physical pose and table state through media updates, but accepts
   expect(resolveScreenConfigUpdate(current, { ...current, hingePose: null }, "external")?.config.hingePose).toBeNull();
   expect(resolveScreenConfigUpdate(current, { ...current, tableMode: true }, "external")?.config.tableMode).toBe(true);
   expect(resolveScreenConfigUpdate(current, { ...current, tableModeAvailable: false }, "external")?.config.tableModeAvailable).toBe(false);
+});
+
+
+test("preview reads native pose independently of saved command state", () => {
+  const command = { width: 2007, height: 2853, hingeAngle: 90, hingePose: "book" as const,
+    physicalOrientation: "portrait" as const, tableMode: true, tableModeAvailable: true };
+  const native = { hingeAngle: 90, physicalOrientation: "landscape-left" as const, tableMode: false };
+  const raw = { ...command, observedDeviceState: native };
+  expect(previewScreenConfig(raw)).toMatchObject({
+    hingeAngle: 90, hingePose: "laptop", physicalOrientation: "landscape-left", tableMode: false,
+  });
+  expect(raw).toMatchObject(command);
+  const unknown = previewScreenConfig({ ...raw, observedDeviceState: {} });
+  expect(unknown.hingeAngle).toBeUndefined();
+  expect(unknown.hingePose).toBeUndefined();
+  expect(unknown.physicalOrientation).toBeUndefined();
+  expect(unknown.tableMode).toBeUndefined();
+  expect(unknown.tableModeAvailable).toBe(false);
+});
+
+test("native snapshot changes notify even when command state and geometry are unchanged", () => {
+  const current = { width: 2007, height: 2853, hingeAngle: 90,
+    observedDeviceState: { hingeAngle: 45, physicalOrientation: "portrait" as const, tableMode: false } };
+  const updated = { ...current, observedDeviceState: { ...current.observedDeviceState, hingeAngle: 60 } };
+  expect(resolveScreenConfigUpdate(current, updated, "reported")?.config).toEqual(updated);
+  expect(resolveScreenConfigUpdate(current, { ...current, observedDeviceState: {} }, "reported")?.config.observedDeviceState).toEqual({});
+  expect(resolveScreenConfigUpdate(current, { width: 900, height: 1280 }, "media")?.config.observedDeviceState)
+    .toEqual(current.observedDeviceState);
 });

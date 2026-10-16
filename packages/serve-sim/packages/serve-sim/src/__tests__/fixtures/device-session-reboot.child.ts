@@ -67,6 +67,7 @@ class Capture {
   async suspendForReboot() { suspended++; }
   async resumeAfterReboot() {}
   async subscribeScreenChanges() { return async () => {}; }
+  async subscribeDeviceState() { return async () => {}; }
   async screenSize() { return { width: 2006, height: 2852, screenId: 3, orientation: "portrait" }; }
 }
 mock.module("../../native", () => ({ ...native, NativeHid: Hid, NativeCapture: Capture }));

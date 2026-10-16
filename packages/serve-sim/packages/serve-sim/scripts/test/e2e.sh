@@ -11,6 +11,7 @@
 # SERVE_SIM_E2E_REQUIRED=1 so a missing precondition fails instead of skipping.
 #
 # Pass test paths to narrow the run; with none it runs the whole Bun suite.
+# Flags alone (as --flag=value) keep the whole suite.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../.." && pwd)"
@@ -21,8 +22,11 @@ if ! xcrun simctl list devices booted -j | grep -q "\"udid\" : \"$SERVE_SIM_TEST
   exit 1
 fi
 
+paths=false
+for arg in "$@"; do case "$arg" in -*) ;; *) paths=true ;; esac; done
+
 # The full suite includes capture tests. Focused non-capture runs keep their own prerequisites.
-if [ $# -eq 0 ]; then
+if [ "$paths" = false ]; then
   bun "$HERE/check-mitmproxy.ts"
 fi
 
@@ -49,7 +53,7 @@ trap cleanup EXIT
 export SERVE_SIM_E2E_REQUIRED=1
 
 cd "$ROOT"
-if [ $# -eq 0 ]; then
-  set -- packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
+if [ "$paths" = false ]; then
+  set -- "$@" packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
 fi
 bun test --max-concurrency=1 "$@"

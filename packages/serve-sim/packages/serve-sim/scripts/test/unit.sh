@@ -9,6 +9,7 @@
 # Simulator-backed suites therefore skip deterministically.
 #
 # Pass test paths to narrow the run; with none it runs the whole Bun suite.
+# Flags alone (as --flag=value, for example --shard=1/2) keep the whole suite.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../.." && pwd)"
@@ -22,10 +23,12 @@ export TMPDIR="$STATE_DIR/tmp"
 export SERVE_SIM_CAPTURE_CA_DIR="$STATE_DIR/capture-ca"
 export PATH="$HERE/shims:$PATH"
 # Values left exported from an e2e run must not turn skips into failures here.
-unset SERVE_SIM_E2E_REQUIRED SERVE_SIM_TEST_UDID
+unset SERVE_SIM_E2E_REQUIRED SERVE_SIM_TEST_UDID SERVE_SIM_DUO_E2E_DEVICE SERVE_SIM_DUO_REBOOT_E2E
 
 cd "$ROOT"
-if [ $# -eq 0 ]; then
-  set -- packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
+paths=false
+for arg in "$@"; do case "$arg" in -*) ;; *) paths=true ;; esac; done
+if [ "$paths" = false ]; then
+  set -- "$@" packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
 fi
 bun test --max-concurrency=1 "$@"

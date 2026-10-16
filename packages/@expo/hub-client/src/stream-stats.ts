@@ -280,6 +280,7 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
     };
   };
   return {
+    ...(typeof value.rebooting === 'boolean' ? { rebooting: value.rebooting } : {}),
     screenFrames: finiteNumber(value.screenFrames),
     idleFrames: finiteNumber(value.idleFrames),
     offeredFrames: finiteNumber(value.offeredFrames),

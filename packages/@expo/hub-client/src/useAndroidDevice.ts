@@ -312,7 +312,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setRecordingSnapshot({ scope: deviceScope, status: active ? 'unknown' : null });
   }
   const deviceScopeRef = useRef(deviceScope);
-  const inputIdentity = useMemo(() => Symbol(deviceScope), [deviceScope]);
+  const inputIdentity = useMemo(() => ({ deviceScope, token }), [deviceScope, token]);
   const committedInputIdentityRef = useRef(inputIdentity);
   useLayoutEffect(() => {
     deviceScopeRef.current = deviceScope;

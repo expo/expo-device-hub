@@ -18,13 +18,21 @@ static PoseSend sendReport;
 static PoseBarrier sendBarrier;
 static void *buttonMetadata, *serviceMetadata, *reportMetadata, *usageMetadata, *errorMetadata;
 
+static void *poseSymbol(void *utilities, const char *name) {
+    void *symbol = SSCoreDeviceSymbol(name);
+    return symbol ?: (utilities ? dlsym(utilities, name) : NULL);
+}
+
 bool SSCoreDeviceTableModeAvailable(void) {
     static dispatch_once_t once;
     static bool available;
     dispatch_once(&once, ^{
         if (!SSCoreDeviceInitialize()) return;
+        // SimulatorKit can load these dependencies locally, outside RTLD_DEFAULT.
+        // Retain the handle for the lifetime of the cached Swift function pointers.
+        void *utilities = dlopen("/Library/Developer/PrivateFrameworks/CoreDeviceUtilities.framework/CoreDeviceUtilities", RTLD_NOW | RTLD_LOCAL);
         bool found = true;
-#define RESOLVE(variable, symbol) do { variable = (typeof(variable))dlsym(RTLD_DEFAULT, symbol); found &= variable != NULL; } while (0)
+#define RESOLVE(variable, symbol) do { variable = (typeof(variable))poseSymbol(utilities, symbol); found &= variable != NULL; } while (0)
         RESOLVE(initButton, "$s19CoreDeviceUtilities18CustomButtonReportV5usage4downAC12UniversalHID8HIDUsageV_SbtcfC");
         RESOLVE(buttonReport, "$s19CoreDeviceUtilities18CustomButtonReportV6report12UniversalHID9HIDReportVvg");
         RESOLVE(customService, "$s10CoreDevice12HIDServiceIDV0aB9UtilitiesE9avpCustomACvgZ");

@@ -9,7 +9,7 @@ import type { DuoView } from "../simulator/duo-view";
 export interface DuoModelViewProps {
   angle?: number;
   pose?: HingePose | null;
-  /** Physical pose for display selection; undefined follows the confirmed pose, null is unknown. */
+  /** Preset framing intent; panel routing follows native display ownership after pending controls finish. */
   physicalPose?: HingePose | null;
   /** Face down with Table Mode, which elects the cover of a half-open device. */
   faceDown?: boolean;

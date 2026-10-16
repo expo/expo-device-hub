@@ -1,7 +1,7 @@
 // serve-sim shares eight action/UI slots per control connection.
 const MAX_IN_FLIGHT_REQUESTS = 8;
 
-// @ref LLP 0013#control-channel-pool — serve-sim's eight-request limit, health probe and per-subscription retry
+// @ref LLP 0013#control-channel-pool — client ownership, server-slot accounting, and independent health/subscription recovery
 /** A control channel belongs to one client identity, never to the module. */
 export function createControlSocket(
   url: string,
@@ -31,6 +31,7 @@ export function createControlSocket(
   let healthTimer: ReturnType<typeof setTimeout> | undefined;
   let healthProbeId: number | undefined;
   const pending = new Map<number, Pending>();
+  let sendingRequests = false;
   // Aborted or timed-out writes occupy a server slot until their reply.
   const inFlight = new Set<number>();
   const subscriptions = new Map<number, Subscription>();
@@ -88,13 +89,26 @@ export function createControlSocket(
   };
   const sendRequests = () => {
     const ws = socket;
-    if (!ws || !ready || disposed) return;
-    for (const [id, request] of pending) {
-      if (socket !== ws || inFlight.size >= MAX_IN_FLIGHT_REQUESTS) break;
-      if (request.sent) continue;
-      request.sent = true;
-      inFlight.add(id);
-      send(ws, { ...request.body, id });
+    if (!ws || !ready || disposed || sendingRequests) return;
+    sendingRequests = true;
+    try {
+      if (inFlight.size >= MAX_IN_FLIGHT_REQUESTS &&
+        ![...inFlight].some(id => pending.has(id))) {
+        // A health reply cannot free abandoned server work. Surface exhaustion
+        // without replaying writes or pretending their server slots are free.
+        for (const request of [...pending.values()])
+          request.finish(new Error("too many actions in flight on this connection"));
+        return;
+      }
+      for (const [id, request] of pending) {
+        if (socket !== ws || inFlight.size >= MAX_IN_FLIGHT_REQUESTS) break;
+        if (request.sent) continue;
+        request.sent = true;
+        inFlight.add(id);
+        send(ws, { ...request.body, id });
+      }
+    } finally {
+      sendingRequests = false;
     }
   };
   const scheduleHealthCheck = (ws: WebSocket) => {

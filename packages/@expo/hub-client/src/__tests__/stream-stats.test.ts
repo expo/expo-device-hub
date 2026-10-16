@@ -617,3 +617,13 @@ test('keeps a bounded chronological stream history', () => {
 
   expect(appendStreamStatsSample(samples, next)).toEqual([...samples.slice(1), next]);
 });
+
+
+test('capture reboot metadata preserves booleans without coercing older or malformed responses', () => {
+  for (const rebooting of [true, false]) {
+    expect(readWebRtcServerStats({ capture: { rebooting } }, 'viewer').capture).toHaveProperty('rebooting', rebooting);
+  }
+  for (const rebooting of [undefined, null, 0, 1, 'true', {}, []]) {
+    expect(readWebRtcServerStats({ capture: { rebooting } }, 'viewer').capture).not.toHaveProperty('rebooting');
+  }
+});

@@ -18,6 +18,8 @@ final class NativeVideoRecorderTests: XCTestCase {
         XCTAssertGreaterThan(result.writtenFrames, 0)
         let manifest = try JSONDecoder().decode(RecordingManifest.self,
             from: Data(contentsOf: URL(fileURLWithPath: result.manifestPath)))
+        XCTAssertEqual(manifest.deviceStates?.first?.timeMs, 0)
+        XCTAssertNotNil(manifest.deviceStates?.first?.state.contentRect)
         XCTAssertEqual(manifest.interruptions?.count, 1)
         XCTAssertNil(manifest.interruptions?.first?.resumedAtSeconds)
         let tracks = try await AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))
@@ -128,7 +130,8 @@ final class NativeVideoRecorderTests: XCTestCase {
         var frame: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240,
                                            kCVPixelFormatType_32BGRA, nil, &frame), kCVReturnSuccess)
-        mailbox.publish(try XCTUnwrap(frame), timestamp: .zero, wallClock: Date())
+        mailbox.publish(try XCTUnwrap(frame), timestamp: .zero, wallClock: Date(),
+            deviceState: .init(width: 120, height: 240, orientation: "portrait"))
         let recorder = try NativeVideoRecorder(
             mailbox: mailbox, canvas: Dimensions(width: 320, height: 240),
             outputDirectory: directory.path, bitrate: 2_000_000
@@ -255,6 +258,9 @@ final class NativeVideoRecorderTests: XCTestCase {
         XCTAssertEqual(manifest.width, 322)
         XCTAssertEqual(manifest.height, 242)
         XCTAssertEqual(manifest.recording, "recording.mp4")
+        XCTAssertEqual(withoutContentRects(manifest.deviceStates), [
+            .init(timeMs: 0, state: RecordingDeviceState(width: 120, height: 240))
+        ])
         let recordingURL = directory.appendingPathComponent("recording.mp4")
         let boxes = try topLevelMP4Boxes(at: recordingURL)
         XCTAssertLessThan(try XCTUnwrap(boxes["moov"]), try XCTUnwrap(boxes["mdat"]),
@@ -270,6 +276,328 @@ final class NativeVideoRecorderTests: XCTestCase {
         XCTAssertGreaterThan(frameRate, 45)
         XCTAssertLessThanOrEqual(frameRate, 60)
         XCTAssertGreaterThan(duration.seconds, 0.4)
+    }
+
+    func testDeviceStatesStartAtFirstWrittenFrameAndTrackStaticPoseAndRotation() async throws {
+        let (recorder, mailbox, directory) = try recordingFixture(canvas: .init(width: 240, height: 240))
+        defer { try? FileManager.default.removeItem(at: directory) }
+        recorder.start()
+        // The first written PTS must differ from the timer's zero so this test
+        // catches a timeline anchored to recording start instead of MP4 start.
+        try await Task.sleep(for: .milliseconds(250))
+        let portrait = try recordingFrame(width: 120, height: 240)
+        let initial = RecordingDeviceState(
+            width: 120, height: 240, orientation: "portrait", screen: .inner,
+            hingeAngle: 180, physicalOrientation: "portrait", tableMode: false
+        )
+        mailbox.publish(portrait, timestamp: .zero, wallClock: Date(), deviceState: initial)
+        try await Task.sleep(for: .milliseconds(350))
+
+        let book = RecordingDeviceState(
+            width: 120, height: 240, orientation: "portrait", screen: .inner,
+            hingeAngle: 90, physicalOrientation: "portrait", tableMode: false
+        )
+        // Pose changes still belong in the timeline when the source pixels and
+        // capture timestamp are unchanged and the recorder repeats its buffer.
+        mailbox.publish(portrait, timestamp: .zero, wallClock: Date(), deviceState: book)
+        try await Task.sleep(for: .milliseconds(350))
+
+        let landscape = try recordingFrame(width: 240, height: 120)
+        let tent = RecordingDeviceState(
+            width: 240, height: 120, orientation: "landscape_left", screen: .outer,
+            hingeAngle: 80, physicalOrientation: "facedown", tableMode: true
+        )
+        mailbox.publish(landscape, timestamp: CMTime(value: 1, timescale: 1),
+                        wallClock: Date(), deviceState: tent)
+        try await Task.sleep(for: .milliseconds(350))
+        let result = try await recorder.finish()
+        let manifest = try recordingManifest(result)
+        let states = try XCTUnwrap(manifest.deviceStates)
+        XCTAssertGreaterThan(result.sourceUnavailableTicks, 5)
+        XCTAssertEqual(states.count, 3)
+        XCTAssertEqual(states.map { sourceState($0.state) }, [initial, book, tent])
+        XCTAssertEqual(states.map(\.state.contentRect), [
+            .init(x: 60, y: 0, width: 120, height: 240),
+            .init(x: 60, y: 0, width: 120, height: 240),
+            .init(x: 0, y: 60, width: 240, height: 120),
+        ])
+        XCTAssertEqual(states.first?.timeMs, 0)
+        guard states.count == 3 else { return }
+        XCTAssertGreaterThan(states[1].timeMs, 200)
+        XCTAssertLessThan(states[1].timeMs, 550)
+        XCTAssertGreaterThan(states[2].timeMs, states[1].timeMs)
+        let duration = try await AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))
+            .load(.duration)
+        XCTAssertLessThan(states[2].timeMs, duration.seconds * 1_000)
+        let sampleTimes = try await recordedSampleTimes(at: directory.appendingPathComponent("recording.mp4"))
+        let firstSampleTime = try XCTUnwrap(sampleTimes.first)
+        for state in states {
+            XCTAssertTrue(sampleTimes.contains {
+                abs(($0 - firstSampleTime) - state.timeMs) < 0.01
+            }, "A state change must refer to an actual written video frame")
+        }
+
+        let second = try NativeVideoRecorder(
+            mailbox: mailbox, canvas: Dimensions(width: 240, height: 240),
+            outputDirectory: directory.appendingPathComponent("second").path, bitrate: 2_000_000
+        )
+        second.start()
+        try await Task.sleep(for: .milliseconds(250))
+        let secondResult = try await second.finish()
+        let secondManifest = try recordingManifest(secondResult)
+        XCTAssertEqual(withoutContentRects(secondManifest.deviceStates), [.init(timeMs: 0, state: tent)])
+    }
+
+    func testRecordingTracksIndependentStateChangesOnRepeatedPixels() async throws {
+        let (recorder, mailbox, directory) = try recordingFixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let frame = try recordingFrame(width: 120, height: 240)
+        mailbox.publish(frame, timestamp: .zero, wallClock: Date(), deviceState: RecordingDeviceState(
+            width: 120, height: 240, orientation: "portrait", screen: .inner
+        ))
+        let poses: [CoreDeviceBridge.HingeState] = [
+            .init(angle: 180, orientation: "portrait", tableMode: false),
+            .init(angle: 180, orientation: "landscape-right", tableMode: false),
+            .init(angle: 180, orientation: "landscape-right", tableMode: true),
+            .init(angle: 90),
+            .init(angle: 90, orientation: "portrait", tableMode: false),
+        ]
+        mailbox.updateHingeState(poses[0])
+        recorder.start()
+        for pose in poses {
+            mailbox.updateHingeState(pose)
+            try await Task.sleep(for: .milliseconds(250))
+            // Repeating an unchanged pose must not add another timeline entry.
+            mailbox.updateHingeState(pose)
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        var expected = poses.map { pose in
+            RecordingDeviceState(
+                width: 120, height: 240, orientation: "portrait", screen: .inner,
+                hingeAngle: pose.angle, physicalOrientation: pose.orientation, tableMode: pose.tableMode
+            )
+        }
+        let screens: [(String, RecordingScreen)] = [
+            ("landscape_left", .inner), ("landscape_right", .inner),
+            ("portrait_upside_down", .inner), ("portrait_upside_down", .outer),
+        ]
+        for (index, screen) in screens.enumerated() {
+            let state = RecordingDeviceState(
+                width: 120, height: 240, orientation: screen.0, screen: screen.1,
+                hingeAngle: 90, physicalOrientation: "portrait", tableMode: false
+            )
+            mailbox.publish(frame, timestamp: CMTime(value: Int64(index + 1), timescale: 60),
+                            wallClock: Date(), deviceState: state)
+            expected.append(state)
+            try await Task.sleep(for: .milliseconds(350))
+        }
+        let result = try await recorder.finish()
+        let data = try Data(contentsOf: URL(fileURLWithPath: result.manifestPath))
+        let manifest = try JSONDecoder().decode(RecordingManifest.self, from: data)
+        let states = try XCTUnwrap(manifest.deviceStates)
+        XCTAssertEqual(states.map { sourceState($0.state) }, expected)
+        XCTAssertEqual(states.first?.timeMs, 0)
+        XCTAssertGreaterThan(result.repeatedFrames, 20)
+        XCTAssertEqual(result.encodeFailures, 0)
+        XCTAssertEqual(result.writerDrops, 0)
+        for (prior, next) in zip(states, states.dropFirst()) {
+            XCTAssertGreaterThan(next.timeMs, prior.timeMs)
+        }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let entries = try XCTUnwrap(object["deviceStates"] as? [[String: Any]])
+        guard entries.count == expected.count else { return }
+        let unknown = try XCTUnwrap(entries[3]["state"] as? [String: Any])
+        XCTAssertNil(unknown["physicalOrientation"])
+        XCTAssertNil(unknown["tableMode"])
+        let restored = try XCTUnwrap(entries[4]["state"] as? [String: Any])
+        XCTAssertEqual(restored["physicalOrientation"] as? String, "portrait")
+        XCTAssertEqual(restored["tableMode"] as? Bool, false)
+    }
+
+    func testRapidHingeChangesAreCappedAndKeepFinalWrittenState() async throws {
+        let (recorder, mailbox, directory) = try recordingFixture()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let frame = try recordingFrame(width: 120, height: 240)
+        mailbox.publish(frame, timestamp: .zero, wallClock: Date(), deviceState: RecordingDeviceState(
+            width: 120, height: 240, orientation: "portrait", screen: .inner
+        ))
+        mailbox.updateHingeState(.init(angle: 0))
+        recorder.start()
+        try await Task.sleep(for: .milliseconds(300))
+        for angle in 1...60 {
+            mailbox.updateHingeState(.init(angle: Double(angle)))
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        mailbox.updateHingeState(.init(angle: 90))
+        try await Task.sleep(for: .milliseconds(80))
+        let result = try await recorder.finish()
+        let manifest = try recordingManifest(result)
+        let states = try XCTUnwrap(manifest.deviceStates)
+        XCTAssertEqual(states.first?.timeMs, 0)
+        XCTAssertEqual(states.first?.state.hingeAngle, 0)
+        XCTAssertEqual(states.last?.state.hingeAngle, 90)
+        XCTAssertTrue(states.contains { (1...60).contains($0.state.hingeAngle ?? -1) })
+        XCTAssertGreaterThan(result.repeatedFrames, 20)
+        let sampleTimes = try await recordedSampleTimes(at: directory.appendingPathComponent("recording.mp4"))
+        let firstSampleTime = try XCTUnwrap(sampleTimes.first)
+        for event in states {
+            XCTAssertLessThanOrEqual(states.filter {
+                $0.timeMs >= event.timeMs && $0.timeMs < event.timeMs + 1_000 - 0.01
+            }.count, 4)
+            XCTAssertTrue(sampleTimes.contains {
+                abs(($0 - firstSampleTime) - event.timeMs) < 0.01
+            })
+        }
+        for (prior, next) in zip(states, states.dropFirst()) {
+            XCTAssertNotEqual(next.state, prior.state)
+        }
+    }
+
+    func testMailboxUpdatesPoseOnUnchangedFrameAndClearsUnknownFields() throws {
+        let mailbox = NativeFrameMailbox()
+        mailbox.setActive(true)
+        let frame = try recordingFrame(width: 120, height: 240)
+        let timestamp = CMTime(value: 10, timescale: 60)
+        mailbox.publish(frame, timestamp: timestamp, wallClock: Date(), deviceState: RecordingDeviceState(
+            width: 120, height: 240, orientation: "landscape_left", screen: .outer,
+            hingeAngle: 180, physicalOrientation: "portrait", tableMode: false
+        ))
+        mailbox.updateHingeState(.init(angle: 80, orientation: "facedown", tableMode: true))
+        let tent = try XCTUnwrap(mailbox.latest())
+        XCTAssertEqual(tent.timestamp, timestamp)
+        XCTAssertTrue(tent.pixelBuffer === frame)
+        XCTAssertEqual(tent.deviceState, RecordingDeviceState(
+            width: 120, height: 240, orientation: "landscape_left", screen: .outer,
+            hingeAngle: 80, physicalOrientation: "facedown", tableMode: true
+        ))
+
+        mailbox.updateHingeState(.init(angle: 90))
+        let unknown = try XCTUnwrap(mailbox.latest())
+        XCTAssertEqual(unknown.timestamp, timestamp)
+        XCTAssertEqual(unknown.deviceState, RecordingDeviceState(
+            width: 120, height: 240, orientation: "landscape_left", screen: .outer, hingeAngle: 90
+        ))
+        mailbox.setActive(false)
+        mailbox.setActive(true)
+        mailbox.publish(frame, timestamp: timestamp, wallClock: Date())
+        XCTAssertEqual(mailbox.latest()?.deviceState, RecordingDeviceState(width: 120, height: 240))
+    }
+
+    func testEncodedOuterPixelsMatchExplicitContentRectAndFullCanvas() async throws {
+        let (recorder, mailbox, directory) = try recordingFixture(
+            canvas: .init(width: 2008, height: 2854), bitrate: 30_000_000)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = try recordingFrame(width: 1398, height: 2034)
+        mailbox.publish(source, timestamp: .zero, wallClock: Date(), deviceState: RecordingDeviceState(
+            width: 1398, height: 2034, orientation: "portrait", screen: .outer
+        ))
+        recorder.start()
+        try await Task.sleep(for: .milliseconds(350))
+        let result = try await recorder.finish()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: URL(fileURLWithPath: result.manifestPath))
+        ) as? [String: Any])
+        let states = try XCTUnwrap(object["deviceStates"] as? [[String: Any]])
+        let state = try XCTUnwrap(states.first?["state"] as? [String: Any])
+        XCTAssertEqual(state["contentRect"] as? [String: Int], ["x": 24, "y": 0, "width": 1960, "height": 2854])
+        let (size, bounds) = try await decodedBrightBounds(at: directory.appendingPathComponent("recording.mp4"))
+        XCTAssertEqual(size, Dimensions(width: 2008, height: 2854))
+        XCTAssertEqual(bounds, [24, 0, 1960, 2854])
+    }
+
+    private func recordingFixture(canvas: Dimensions = .init(width: 120, height: 240), bitrate: Int = 2_000_000) throws
+        -> (NativeVideoRecorder, NativeFrameMailbox, URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("serve-sim-recorder-state-\(UUID().uuidString)")
+        let mailbox = NativeFrameMailbox()
+        mailbox.setActive(true)
+        do {
+            return (try NativeVideoRecorder(mailbox: mailbox, canvas: canvas,
+                outputDirectory: directory.path, bitrate: bitrate), mailbox, directory)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    private func recordingManifest(_ result: NativeRecordingResult) throws -> RecordingManifest {
+        try JSONDecoder().decode(RecordingManifest.self,
+            from: Data(contentsOf: URL(fileURLWithPath: result.manifestPath)))
+    }
+
+    private func decodedBrightBounds(at url: URL) async throws -> (Dimensions, [Int]) {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        ])
+        reader.add(output)
+        XCTAssertTrue(reader.startReading())
+        let sample = try XCTUnwrap(output.copyNextSampleBuffer())
+        let buffer = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+        reader.cancelReading()
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        let size = buffer.dimensions
+        let bytes = try XCTUnwrap(CVPixelBufferGetBaseAddress(buffer)).assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(buffer)
+        var left = size.width, top = size.height, right = -1, bottom = -1
+        for y in 0..<size.height {
+            for x in 0..<size.width where bytes[y * stride + x * 4] > 128 {
+                left = min(left, x); top = min(top, y)
+                right = max(right, x); bottom = max(bottom, y)
+            }
+        }
+        return (size, [left, top, right - left + 1, bottom - top + 1])
+    }
+
+    private func sourceState(_ original: RecordingDeviceState) -> RecordingDeviceState {
+        XCTAssertNotNil(original.contentRect)
+        var state = original
+        state.contentRect = nil
+        return state
+    }
+
+    private func withoutContentRects(_ entries: [RecordingManifest.DeviceState]?) -> [RecordingManifest.DeviceState]? {
+        entries?.map { .init(timeMs: $0.timeMs, state: sourceState($0.state)) }
+    }
+
+    private func recordingFrame(width: Int, height: Int) throws -> CVPixelBuffer {
+        var frame: CVPixelBuffer?
+        let attributes: [String: Any] = [
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+        ]
+        XCTAssertEqual(CVPixelBufferCreate(
+            kCFAllocatorDefault, width, height,
+            kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            attributes as CFDictionary, &frame
+        ), kCVReturnSuccess)
+        let owned = try XCTUnwrap(frame)
+        CVPixelBufferLockBaseAddress(owned, [])
+        defer { CVPixelBufferUnlockBaseAddress(owned, []) }
+        memset(CVPixelBufferGetBaseAddressOfPlane(owned, 0), 235,
+               CVPixelBufferGetBytesPerRowOfPlane(owned, 0) * CVPixelBufferGetHeightOfPlane(owned, 0))
+        memset(CVPixelBufferGetBaseAddressOfPlane(owned, 1), 128,
+               CVPixelBufferGetBytesPerRowOfPlane(owned, 1) * CVPixelBufferGetHeightOfPlane(owned, 1))
+        return owned
+    }
+
+    private func recordedSampleTimes(at url: URL) async throws -> [Double] {
+        let asset = AVURLAsset(url: url)
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+        reader.add(output)
+        XCTAssertTrue(reader.startReading())
+        var times: [Double] = []
+        while let sample = output.copyNextSampleBuffer() {
+            times.append(CMSampleBufferGetPresentationTimeStamp(sample).seconds * 1_000)
+        }
+        XCTAssertEqual(reader.status, .completed)
+        return times
     }
 
     private func topLevelMP4Boxes(at url: URL) throws -> [String: Int] {
@@ -453,7 +781,8 @@ final class NativeVideoRecorderTests: XCTestCase {
         var frame: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240,
             kCVPixelFormatType_32BGRA, nil, &frame), kCVReturnSuccess)
-        mailbox.publish(try XCTUnwrap(frame), timestamp: .zero, wallClock: Date())
+        mailbox.publish(try XCTUnwrap(frame), timestamp: .zero, wallClock: Date(),
+            deviceState: .init(width: 120, height: 240, orientation: "portrait"))
         let recorder = try NativeVideoRecorder(mailbox: mailbox,
             canvas: Dimensions(width: 120, height: 240), outputDirectory: directory.path,
             bitrate: 2_000_000)
@@ -468,6 +797,8 @@ final class NativeVideoRecorderTests: XCTestCase {
         } catch { XCTAssertEqual((error as NSError).code, 16) }
         let partial = try JSONDecoder().decode(RecordingManifest.self,
             from: Data(contentsOf: directory.appendingPathComponent("session.json")))
+        XCTAssertEqual(partial.deviceStates?.first?.timeMs, 0)
+        XCTAssertNotNil(partial.deviceStates?.first?.state.contentRect)
         XCTAssertEqual(partial.status, "failed")
         XCTAssertTrue(partial.error?.contains("-19092") == true)
         let tracks = try await AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))

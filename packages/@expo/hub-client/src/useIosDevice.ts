@@ -1,3 +1,4 @@
+import { listenForInputCancellation } from './input-cancellation';
 import { createControlSocket } from './control-socket';
 /**
  * serve-sim (iOS) implementation of the {@link DeviceClient} interface.
@@ -82,7 +83,6 @@ import {
   type ScrollSample,
   type TouchSample,
 } from './types';
-import { listenForInputCancellation } from './input-cancellation';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error';
@@ -108,7 +108,7 @@ import {
   createLadderBackoff,
 } from './webrtc-fallback';
 import { createInputSocket } from './input-socket';
-import { type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
+import { discardUnfinishedQueuedGestures, enqueueWsMessage, sendOrQueueWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from './ws-send-queue';
 import { WS_MSG_CONFIG } from './input-protocol';
 import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
 
@@ -393,6 +393,36 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
+  const pendingInputRef = useRef<{ scope: string | null; helper: string | null; messages: QueuedWsMessage[] }>({ scope: null, helper: null, messages: [] });
+  const inputHelperKey = config ? JSON.stringify([config.device, config.wsUrl, config.pid, config.execToken]) : null;
+  // @ref LLP 0013#input-ownership — only a real scope/helper change retires input callbacks
+  const [inputOwner, setInputOwner] = useState(() => ({ scope: connectionScope, helper: inputHelperKey, identity: Symbol('ios-input') }));
+  if (inputOwner.scope !== connectionScope ||
+      (inputOwner.helper !== null && inputHelperKey !== null && inputOwner.helper !== inputHelperKey)) {
+    setInputOwner({ scope: connectionScope, helper: inputHelperKey, identity: Symbol('ios-input') });
+  } else if (inputOwner.helper === null && inputHelperKey !== null) {
+    // Initial discovery binds the early queue without retiring its callbacks.
+    setInputOwner({ ...inputOwner, helper: inputHelperKey });
+  }
+  const inputIdentity = inputOwner.identity;
+  const committedInputIdentityRef = useRef(inputIdentity);
+  useLayoutEffect(() => { committedInputIdentityRef.current = inputIdentity; }, [inputIdentity]);
+  const ownsInput = useCallback(() => committedInputIdentityRef.current === inputIdentity && pendingInputRef.current.scope !== null, [inputIdentity]);
+  // @ref LLP 0013#ios-input-adapter — discovery gaps retain intent, known owner changes discard it
+  useLayoutEffect(() => {
+    const previous = pendingInputRef.current;
+    const sameScope = previous.scope === connectionScope;
+    const helper = inputHelperKey ?? (sameScope ? previous.helper : null);
+    if (!sameScope || (previous.helper !== null && previous.helper !== helper)) {
+      // Retire the old transport before callbacks can send into the new scope.
+      inputSocketRef.current?.dispose();
+      inputSocketRef.current = null;
+      pendingInputRef.current = { scope: connectionScope, helper, messages: [] };
+    } else {
+      // Initial discovery binds early intent; a temporary null config keeps its owner.
+      previous.helper = helper;
+    }
+  }, [connectionScope, inputHelperKey]);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -467,11 +497,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) => {
-    if (!config || config !== deviceSettingConfigRef.current) return;
-    inputSocketRef.current?.send(tag, payload, onSent);
-  }, [config]);
+    if (!ownsInput()) return false;
+    const pending = pendingInputRef.current;
+    if (inputSocketRef.current && deviceSettingConfigRef.current) {
+      inputSocketRef.current.send(tag, payload, onSent);
+    } else {
+      pending.messages = sendOrQueueWsMessage(null, pending.messages, tag, payload, Date.now(), onSent);
+    }
+    return true;
+  }, [ownsInput]);
 
   const sendTouch = useCallback((sample: TouchSample) => {
+    if (!ownsInput()) return;
     const orientation = streamGeometry(screenRef.current).inputOrientation;
 
     let displayEdge: number | undefined;
@@ -488,7 +525,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const payload =
       edge === undefined ? { type: sample.phase, ...p } : { type: sample.phase, ...p, edge };
     sendWs(WS_MSG_TOUCH, payload);
-  }, [sendWs]);
+  }, [sendWs, ownsInput]);
 
   const sendMultiTouch = useCallback(
     (sample: MultiTouchSample) => {
@@ -520,8 +557,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (input: KeyboardInput): boolean => {
       const message = iosMessageForKeyboardInput(input);
       if (!message) return false;
-      sendWs(WS_MSG_KEY, message);
-      return true;
+      return sendWs(WS_MSG_KEY, message);
     },
     [sendWs],
   );
@@ -535,21 +571,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
   const cancelInput = useCallback(() => {
     const releases = keySender.cancel();
-    if (!config || config !== deviceSettingConfigRef.current) return;
+    if (!ownsInput()) return;
+    const pending = pendingInputRef.current;
+    pending.messages = pending.messages.filter(message => message.tag !== WS_MSG_KEY && message.tag !== WS_MSG_SCROLL);
+    pending.messages = discardUnfinishedQueuedGestures(pending.messages, WS_MSG_TOUCH);
+    pending.messages = discardUnfinishedQueuedGestures(pending.messages, WS_MSG_MULTI_TOUCH);
     const socket = inputSocketRef.current;
     socket?.discardQueued(WS_MSG_KEY);
     socket?.discardQueued(WS_MSG_SCROLL);
     socket?.discardUnfinishedGestures(WS_MSG_TOUCH);
     socket?.discardUnfinishedGestures(WS_MSG_MULTI_TOUCH);
     for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
-  }, [config, keySender]);
+  }, [keySender, ownsInput]);
   useEffect(() => {
     const stopListening = listenForInputCancellation(cancelInput);
     return () => { stopListening(); keySender.dispose(); };
   }, [cancelInput, keySender]);
   const sendKeyEvents = useCallback(
-    (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
-    [keySender],
+    (events: ReadonlyArray<HidKeyEvent>) => { if (ownsInput()) keySender.enqueue(events); },
+    [keySender, ownsInput],
   );
 
   // Connect/disconnect the Mac keyboard from the guest through serve-sim's
@@ -1174,11 +1214,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const pendingOwner = pendingInputRef.current;
+    const initialMessages = pendingOwner.messages;
+    pendingOwner.messages = [];
     // @ref LLP 0013#ios-input-adapter — refusals clear only on admission; rediscovery waits for the reconnect
     const input = createInputSocket(wsUrl, {
       onAdmitted() {
-        // The helper restores its host keyboard connection after the last owner leaves.
-        input.send(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
+        // Send setup directly, before queued keys. The helper serializes this
+        // setting change with subsequent input, so layout keys observe it off.
+        if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
         setHardwareKeyboardConnectedState(false);
       },
       onMessage(data) {
@@ -1217,12 +1261,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       },
       onRecovered() { setInputSocketError(null); },
-    }, { requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
+    }, { initialMessages, requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
     inputSocketRef.current = input;
     input.start();
     return () => {
       clearTimeout(refreshTimer);
+      let messages = input.takePending();
       input.dispose();
+      if (pendingInputRef.current === pendingOwner) {
+        for (const message of pendingOwner.messages) messages = enqueueWsMessage(messages, message);
+        pendingOwner.messages = messages;
+      }
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
     };

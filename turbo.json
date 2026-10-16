@@ -15,5 +15,11 @@
     "clean": {
       "cache": false
     }
+  },
+  "remoteCache": {
+    "preflight": true,
+    "apiUrl": "https://turbo.exp.host",
+    "teamId": "team_expo-device-hub",
+    "teamSlug": "expo-device-hub"
   }
 }

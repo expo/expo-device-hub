@@ -19,12 +19,12 @@
 ## Commands
 
 Run these from the repo root. CI runs the same underlying steps: `bun run
-lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and the same
-`bun test` command with `SERVE_SIM_E2E_REQUIRED=1` inside a timeout-and-retry
-wrapper in `.eas/workflows/sim-test.yml`. CI runs on a fresh worker with one
-simulator of its own, so it needs neither the device pin nor the private
-state directory that `test:e2e` adds for shared machines. A green local run
-predicts a green PR.
+lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and in
+`.eas/workflows/sim-test.yml` `bun run test` in two parallel shards that
+ignore `*.e2e.test.*` files, before the simulator boots, then the `*.e2e.test.*`
+files with `SERVE_SIM_E2E_REQUIRED=1`. Both pass `--retry=1`, so a failed test
+runs once more; a failed `beforeAll` and a file that fails to load stay red.
+A green local run predicts a green PR.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
@@ -34,15 +34,21 @@ predicts a green PR.
   puts an `xcrun` shim first on `PATH` that refuses `simctl`, so no test can
   find another session's server or touch a booted simulator, even on a
   machine where other agents keep simulators running. Simulator-backed
-  suites skip deterministically. Pass paths to narrow it:
-  `bun run test -- packages/serve-sim/src/__tests__/ports.test.ts`.
+  suites skip deterministically. `TMPDIR` is private to the run too. Pass
+  paths to narrow it:
+  `bun run test -- packages/serve-sim/src/__tests__/ports.test.ts`. Flags
+  alone, such as `bun run test -- --shard=1/2`, keep the whole suite.
+  `--shard` needs Bun 1.3.13 or later; older Bun ignores it and runs every file.
 - `bun run test:e2e` — the simulator-backed run. It requires
   `SERVE_SIM_TEST_UDID`, the UDID of a simulator you booted for this run, so
   it never drives a device that belongs to another session, and a private
   state directory, so it never kills another session's server. It builds the
   test fixtures, then sets `SERVE_SIM_E2E_REQUIRED=1` so every precondition
   fails instead of skipping. Every suite that picks a device with
-  `e2eDevice()` also calls `requireE2E()`; a test enforces the pairing. One
+  `e2eDevice()` also calls `requireE2E()`, and every suite that calls
+  `requireE2E()` (for a simulator or a built artifact) is named `*.e2e.test.*`,
+  so CI runs it after the simulator boots, where a missing precondition fails;
+  a test enforces both. One
   suite, `ui-settings.e2e`, skips on CI by design because `simctl ui` hangs
   on shared runners; `SERVE_SIM_UI_E2E=1` forces it on. On exit the run
   kills any server it started and removes its state directory. Export

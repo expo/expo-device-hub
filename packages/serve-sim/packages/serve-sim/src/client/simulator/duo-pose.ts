@@ -27,9 +27,10 @@ export function duoFacingYaw(fold: number): number {
 /** Another client turned the device over, so a remembered preset no longer describes it. */
 export function duoPhysicalPoseChanged(
   pose: HingePose | null | undefined,
+  previousOrientation: HingePhysicalOrientation | undefined,
   orientation: HingePhysicalOrientation | undefined,
 ): boolean {
-  return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
+  return !!pose && orientation !== undefined && orientation !== previousOrientation && hingePoseOrientation(pose) !== orientation;
 }
 
 /** Select the requested panel before native display metadata catches up. */
@@ -50,6 +51,18 @@ export function duoIntendedScreen(
   if (angle <= 54) return 1;
   if (angle >= 55) return 3;
   return nativeScreenId === 3 ? 3 : 1;
+}
+
+/** Native display ownership wins once optimistic control previews finish. */
+export function duoActiveScreen(
+  angle: number | undefined,
+  pose: HingePose | null | undefined,
+  nativeScreenId: number | undefined,
+  faceDown: boolean | undefined,
+  pending: boolean,
+): 1 | 3 {
+  if (!pending && (nativeScreenId === 1 || nativeScreenId === 3)) return nativeScreenId;
+  return duoIntendedScreen(angle, pending ? pose : null, nativeScreenId, faceDown);
 }
 
 /** Initial/preset framing. Live hinge edits articulate the saved view in duo-view.ts. */

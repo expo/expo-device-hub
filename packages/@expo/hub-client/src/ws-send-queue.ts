@@ -106,3 +106,22 @@ export function sendOrQueueWsMessage(
   }
   return enqueueWsMessage(fresh, { tag, payload, createdAt: now, ...(onSent ? { onSent } : {}) });
 }
+
+/** Remove only unfinished begin/end sequences for one gesture tag. */
+export function discardUnfinishedQueuedGestures(queue: QueuedWsMessage[], tag: number): QueuedWsMessage[] {
+  const completed = new Set<QueuedWsMessage>();
+  let gesture: QueuedWsMessage[] = [];
+  for (const message of queue) {
+    if (message.tag !== tag) continue;
+    const phase = (message.payload as { type?: string }).type;
+    if (phase === 'begin') gesture = [message];
+    else if (gesture.length) {
+      gesture.push(message);
+      if (phase === 'end') {
+        for (const entry of gesture) completed.add(entry);
+        gesture = [];
+      }
+    }
+  }
+  return queue.filter(message => message.tag !== tag || completed.has(message));
+}

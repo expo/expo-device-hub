@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { DuoModelViewProps } from "../components/duo-model-view";
 import type { StreamConfig } from "../types";
-import { duoIntendedScreen, duoFrameMatchesDisplay, duoScreenMapping, duoScreenPoint, stepDuoSpring, type DuoScreenMapping } from "./duo-pose";
+import { duoActiveScreen, duoFrameMatchesDisplay, duoScreenMapping, duoScreenPoint, stepDuoSpring, type DuoScreenMapping } from "./duo-pose";
 import { duoInitialView, duoViewFolds, duoViewRotation, type DuoView } from "./duo-view";
 import { duoFitScale, duoPanelEdgeAnchor, duoProjectAnchor, duoHingeDragAngle, type DuoScreenPoint as ProjectedPoint } from "./duo-layout";
 import { HID_EDGE_BOTTOM, HID_EDGE_LEFT, HID_EDGE_RIGHT, HID_EDGE_TOP, HOME_INDICATOR_BAND_NORM, rawEdgeForDisplayEdge, streamDisplayGeometry } from "./orientation";
@@ -314,8 +314,7 @@ export function createDuoScene(
       clearRetainedImage(inner);
     }
     previousCacheScreenOnFold = cacheScreenOnFold;
-    const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId, current.faceDown);
+    const intended = duoActiveScreen(current.angle, current.pose, config?.screenId, current.faceDown, current.hingeCommands?.pending === true);
     const coverHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="1"]');
     const innerHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="3"]');
     if (coverHost || innerHost) {
@@ -412,8 +411,7 @@ export function createDuoScene(
     const isInner = inner.meshes.includes(hit.object);
     const current = state();
     const config = current.streamConfig;
-    const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId, current.faceDown);
+    const intended = duoActiveScreen(current.angle, current.pose, config?.screenId, current.faceDown, current.hingeCommands?.pending === true);
     if ((!isCover && !isInner) || intended !== (isCover ? 1 : 3)) return null;
     const surface = isCover ? cover : inner;
     const mapping = surface.mapping;
