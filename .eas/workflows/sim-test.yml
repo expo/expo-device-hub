@@ -30,19 +30,9 @@ jobs:
       # Installs the monorepo root lockfile (bun.lock); serve-sim resolves through it.
       - uses: eas/install_node_modules
 
-      # Gatekeeper has rejected the mitmproxy 12.2.3 cask as unnotarized since
-      # 2026-10-06, and a quarantined first launch never returns
-      # (mitmproxy/mitmproxy#8474), so take the cask out of quarantine.
       - name: Install mitmproxy
         run: |
           brew install --cask mitmproxy
-          sudo xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
-          # Fail here, not in the capture tests, when mitmdump cannot start.
-          mitmdump=$(realpath "$(command -v mitmdump)")
-          if xattr -p com.apple.quarantine "$mitmdump" >/dev/null 2>&1; then
-            echo "::error::$mitmdump is still quarantined"
-            exit 1
-          fi
           # Check the exact binary capture will select, including SERVE_SIM_MITMDUMP.
           cd packages/serve-sim
           bun packages/serve-sim/scripts/test/check-mitmproxy.ts
