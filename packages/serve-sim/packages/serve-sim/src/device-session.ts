@@ -332,6 +332,7 @@ export class DeviceSession {
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
   private softwareKeyboardReadyUntil = 0;
+  private softwareKeyboardVisibilityProbe: Promise<boolean> | null = null;
 
   constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
@@ -1722,15 +1723,30 @@ export class DeviceSession {
     const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
     const deadline = this.softwareKeyboardReadyUntil;
     while (canType() && Date.now() < deadline) {
-      const visible = await isSoftwareKeyboardVisible(this.udid).catch(() => false);
+      // AX tree reads have no native cancellation. Keep at most one read in
+      // flight and release the input turn at the deadline or on disconnect.
+      let probe = this.softwareKeyboardVisibilityProbe;
+      if (!probe) {
+        probe = isSoftwareKeyboardVisible(this.udid).catch(() => false);
+        this.softwareKeyboardVisibilityProbe = probe;
+        void probe.then(() => {
+          if (this.softwareKeyboardVisibilityProbe === probe) this.softwareKeyboardVisibilityProbe = null;
+        });
+      }
+      const visible = await Promise.race([
+        probe,
+        new Promise<undefined>(resolve => setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now())))),
+      ]);
       if (!canType()) return false;
-      if (visible) {
+      if (visible === true) {
         this.softwareKeyboardReadyUntil = 0;
         break;
       }
-      await new Promise(resolve => setTimeout(resolve, 25));
+      if (visible === false) await new Promise(resolve => setTimeout(resolve, 25));
     }
-    if (!canType()) return false;
+    // A timed-out native read may still finish; it must never trigger typing
+    // later or overlap another character attempt. Retain the HID fallback.
+    if (!canType() || this.softwareKeyboardVisibilityProbe) return false;
     return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
   }
 

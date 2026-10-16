@@ -61,6 +61,7 @@ let axGate: Promise<void> | undefined;
 let hardwareKeyboard = "on";
 let hardwareKeyboardDelay = 0;
 let softwareKeyboardVisible = true;
+let softwareKeyboardVisibilityGate: Promise<void> | undefined;
 let softwareKeyboardVisibilityReads = 0;
 let hardwareKeyboardReadGate: Promise<void> | undefined;
 let hardwareKeyboardReads = 0;
@@ -190,6 +191,7 @@ const inputCommands: Array<{
 mock.module("../../ax", () => ({
   isSoftwareKeyboardVisible: async () => {
     softwareKeyboardVisibilityReads++;
+    await softwareKeyboardVisibilityGate;
     return softwareKeyboardVisible;
   },
 }));
@@ -310,6 +312,7 @@ beforeEach(() => {
   hardwareKeyboard = "on";
   hardwareKeyboardDelay = 0;
   softwareKeyboardVisible = true;
+  softwareKeyboardVisibilityGate = undefined;
   softwareKeyboardVisibilityReads = 0;
   hardwareKeyboardReadGate = undefined;
   hardwareKeyboardReads = 0;
@@ -1194,6 +1197,54 @@ describe("shifted keyboard routing", () => {
     expect(axCharacters).toEqual(["z"]);
     expect(softwareKeyboardVisibilityReads).toBeGreaterThan(0);
     expect(keyEvents).toEqual([{ type: "down", usage: 0x1c }, { type: "up", usage: 0x1c }]);
+  });
+
+  test("a stalled visibility read expires without piling up native queries or typing later", async () => {
+    await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    softwareKeyboardVisibilityGate = new Promise<void>(resolve => { release = resolve; });
+    try {
+      send(0x0e, { enabled: false });
+      send(0x06, { type: "down", usage: 0x1c, key: "z" });
+      send(0x06, { type: "up", usage: 0x1c });
+      await waitUntil(() => softwareKeyboardVisibilityReads === 1);
+      await Bun.sleep(1_100);
+      expect(keyEvents).toEqual([{ type: "down", usage: 0x1c }, { type: "up", usage: 0x1c }]);
+      send(0x06, { type: "down", usage: 0x1d, key: "y" });
+      send(0x06, { type: "up", usage: 0x1d });
+      await waitUntil(() => keyEvents.length === 4);
+      expect(softwareKeyboardVisibilityReads).toBe(1);
+      expect(axCharacters).toEqual([]);
+      release();
+      await Bun.sleep(50);
+      expect(axCharacters).toEqual([]);
+      expect(keyEvents).toHaveLength(4);
+    } finally { release(); }
+  });
+
+  test("disconnecting during a stalled visibility read releases another viewer's input", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    softwareKeyboardVisibilityGate = new Promise<void>(resolve => { release = resolve; });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    try {
+      send(0x0e, { enabled: false });
+      send(0x06, { type: "down", usage: 0x1c, key: "z" });
+      await waitUntil(() => softwareKeyboardVisibilityReads === 1);
+      ws!.terminate();
+      sendTo(second, 0x06, { type: "down", usage: 4 });
+      sendTo(second, 0x06, { type: "up", usage: 4 });
+      await Bun.sleep(150);
+      expect(keyEvents).toEqual([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+      expect(axCharacters).toEqual([]);
+      release();
+      await Bun.sleep(50);
+      expect(axCharacters).toEqual([]);
+    } finally { release(); second.terminate(); }
   });
 
   test("preserves hardware keyboard state set before the session starts", async () => {
