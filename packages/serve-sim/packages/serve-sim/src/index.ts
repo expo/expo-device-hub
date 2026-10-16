@@ -50,7 +50,7 @@ import {
 import { parseCaptureFields } from "./capture/fields";
 import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
-import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice } from "./device";
+import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice, resolveDeviceMatches } from "./device";
 import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
@@ -175,6 +175,20 @@ function getBootedUdids(): Set<string> | null {
     // booted check for this invocation.
     return null;
   }
+}
+
+function readDeviceState(deviceArg?: string): ServerState | null {
+  if (!deviceArg) return readState();
+  const direct = readState(deviceArg);
+  if (direct) return direct;
+  const states = resolveDeviceMatches(deviceArg)
+    .map(udid => readState(udid))
+    .filter(state => state !== null);
+  if (states.length > 1) {
+    console.error(`Ambiguous streaming device "${deviceArg}": ${states.map(state => state.device).join(", ")}. Use --device <UDID> to select one.`);
+    process.exit(1);
+  }
+  return states[0] ?? null;
 }
 
 function readStateFile(file: string): ServerState | null {
@@ -1144,7 +1158,7 @@ async function memoryWarning(deviceArg?: string) {
 }
 
 async function softwareKeyboard(deviceArg?: string) {
-  const stateFile = readState(deviceArg);
+  const stateFile = readDeviceState(deviceArg);
   if (!stateFile) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);

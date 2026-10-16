@@ -35,9 +35,15 @@ export function findBootedDevice(): string | null {
  * with a clear error when the name cannot be resolved.
  */
 export function resolveDevice(nameOrUDID: string): string {
+  return resolveDeviceMatches(nameOrUDID)[0]!;
+}
+
+/** All matching simulator UDIDs, so callers targeting existing streams can check live state. */
+export function resolveDeviceMatches(nameOrUDID: string): string[] {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) {
-    return nameOrUDID;
+    return [nameOrUDID];
   }
+  const matches: string[] = [];
   try {
     const output = execSync("xcrun simctl list devices -j", { encoding: "utf-8" });
     const data = JSON.parse(output) as {
@@ -45,10 +51,11 @@ export function resolveDevice(nameOrUDID: string): string {
     };
     for (const runtime of Object.values(data.devices)) {
       for (const device of runtime) {
-        if (device.name.toLowerCase() === nameOrUDID.toLowerCase()) return device.udid;
+        if (device.name.toLowerCase() === nameOrUDID.toLowerCase()) matches.push(device.udid);
       }
     }
   } catch {}
+  if (matches.length > 0) return matches;
   console.error(`Could not resolve device: ${nameOrUDID}`);
   process.exit(1);
 }

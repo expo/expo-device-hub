@@ -457,3 +457,12 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 Each action runs the matching `serve-sim` CLI command as a child process and replies
 with `{id, stdout, stderr, exitCode}`. `softwareKeyboard.toggle`, `memoryWarning`
 and `caDebug.set` send an input message and do not wait for the device to confirm it.
+
+`serve-sim software-keyboard -d <device>` accepts a UDID or simulator name and
+requires an existing serve-sim server. After a literal state lookup, it matches
+names case-insensitively across runtimes and selects the unique live stream.
+Multiple live matches fail before connecting and list their UDIDs for explicit
+selection with `--device`. The selected record's WebSocket URL, token and
+admission flag stay unchanged, including for legacy helpers [observed:
+`resolveDeviceMatches` in `src/device.ts`, `readDeviceState` and
+`softwareKeyboard` in `src/index.ts`].
