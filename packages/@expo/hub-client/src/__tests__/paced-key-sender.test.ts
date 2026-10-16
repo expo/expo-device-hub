@@ -84,3 +84,22 @@ test("cancel releases a partially sent modifier batch and allows a new batch", (
   ]);
   expect(sender.cancel()).toEqual([]);
 });
+
+test("idle settles after the last event is sent, and on cancel", async () => {
+  const clock = fakeScheduler();
+  const sender = createPacedKeySender(() => {}, 4, clock.schedule, clock.cancel);
+  await sender.idle();
+  sender.enqueue([{ type: "down", usage: 4 }, { type: "up", usage: 4 }]);
+  let idle = false;
+  void sender.idle().then(() => { idle = true; });
+  await Promise.resolve();
+  expect(idle).toBe(false);
+  clock.drain();
+  await Promise.resolve();
+  expect(idle).toBe(true);
+
+  sender.enqueue([{ type: "down", usage: 5 }, { type: "up", usage: 5 }]);
+  const cancelled = sender.idle();
+  sender.cancel();
+  await cancelled;
+});

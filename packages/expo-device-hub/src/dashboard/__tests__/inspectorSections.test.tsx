@@ -77,6 +77,12 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     setPermission: () => {},
     resetPermissions: () => {},
     refreshPermissions: () => {},
+    pasteText: async () => {},
+    copyText: async () => '',
+    clipboardActionId: 0,
+    clipboardPending: null,
+    clipboardError: null,
+    clipboardWarning: null,
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -127,6 +133,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       camera: false,
       accessibility: true,
       permissions: false,
+      clipboard: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -1514,6 +1521,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         camera: false,
         accessibility: false,
         permissions: false,
+        clipboard: false,
         streamSettings: false,
         location: false,
       },
@@ -1546,6 +1554,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       accessibility: false,
       location: false,
       permissions: false,
+      clipboard: false,
       streamSettings: false,
     },
     deviceSettings: null,
@@ -1606,6 +1615,7 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
       accessibility: false,
       location: false,
       permissions: false,
+      clipboard: false,
       streamSettings: false,
     },
     deviceSettings: null,
