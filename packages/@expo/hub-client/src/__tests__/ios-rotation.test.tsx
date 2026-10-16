@@ -201,7 +201,10 @@ test("repeated deferred readback cannot acknowledge a newer request for the same
   await act(async () => helper().screen("landscape_left"));
   client().rotate();
   expect(helper().rotations()).toEqual([
-    "landscape_left", "portrait_upside_down", "landscape_right", "portrait",
+    "landscape_left",
+    "portrait_upside_down",
+    "landscape_right",
+    "portrait",
   ]);
 });
 

@@ -1,28 +1,28 @@
-import { type ComponentType, type CSSProperties, useState } from 'react';
+import { type ComponentType, type CSSProperties, useState } from "react";
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
-} from '@expo/hub-client';
-import { bg, text, textSize } from '../primitives';
-import { AgentDeviceOverlay } from './AgentDeviceOverlay';
-import { type Device } from './data';
+} from "@expo/hub-client";
+import { bg, text, textSize } from "../primitives";
+import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
+import { type Device } from "./data";
 import {
   deviceFramePresentation,
   deviceViewportStyle,
   type DeviceFrameAssets,
-} from './deviceFrame';
-import { deviceScreenClipPath } from './deviceScreenClipPath';
+} from "./deviceFrame";
+import { deviceScreenClipPath } from "./deviceScreenClipPath";
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
   width: 1,
   height: 1,
   opacity: 0,
-  pointerEvents: 'none',
+  pointerEvents: "none",
 };
 
 // Cap on the device's *short* side (portrait width / landscape height). Sizing
@@ -32,7 +32,7 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 const MAX_SHORT_SIDE = 480;
 
 const CONFIG: Record<
-  Device['platform'],
+  Device["platform"],
   { ratio: number; radiusFraction: number; squircle: boolean }
 > = {
   ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
@@ -90,31 +90,32 @@ export function PhoneFrame({
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({ maxShortSide: MAX_SHORT_SIDE, ratio }),
-    containerType: 'inline-size',
+    containerType: "inline-size",
   };
 
   // `cqw` resolves against the width, but the radius should stay a fraction of
   // the *short* side so the corners look the same in portrait and landscape.
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
   const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
-  const live = client && client.status !== 'idle';
+  const live = client && client.status !== "idle";
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
   const deviceSurface = live ? (
     <DeviceScreen client={client} agentInteraction={agentInteraction} />
   ) : (
-    <div style={{ position: 'absolute', inset: 0, backgroundColor: bg.element }} />
+    <div style={{ position: "absolute", inset: 0, backgroundColor: bg.element }} />
   );
   const takeoverOverlay = (
     <div
       data-testid="agent-device-overlay-clip"
       style={{
-        position: 'absolute',
+        position: "absolute",
         inset: 0,
         zIndex: 2,
-        pointerEvents: overlayVisible ? 'auto' : 'none',
-      }}>
+        pointerEvents: overlayVisible ? "auto" : "none",
+      }}
+    >
       <AgentDeviceOverlay
         visible={overlayVisible}
         onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
@@ -135,7 +136,7 @@ export function PhoneFrame({
   const screenStyle: CSSProperties = framed
     ? { ...framed.screenStyle, backgroundColor: bg.element }
     : {
-        position: 'absolute',
+        position: "absolute",
         inset: 0,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
@@ -145,20 +146,23 @@ export function PhoneFrame({
   return (
     <div
       data-testid="device-screen-frame"
-      data-device-frame-kind={framed ? device.deviceFrame : 'none'}
-      data-agent-active={agentInteraction ? 'true' : 'false'}
+      data-device-frame-kind={framed ? device.deviceFrame : "none"}
+      data-agent-active={agentInteraction ? "true" : "false"}
       style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
       onPointerEnter={(event) => {
-        if (event.pointerType === 'mouse') setHovered(true);
+        if (event.pointerType === "mouse") setHovered(true);
       }}
-      onPointerLeave={() => setHovered(false)}>
+      onPointerLeave={() => setHovered(false)}
+    >
       <div
         data-testid="device-screen-clip"
-        data-device-frame-screen={framed ? 'true' : undefined}
-        style={screenStyle}>
+        data-device-frame-screen={framed ? "true" : undefined}
+        style={screenStyle}
+      >
         <div
           data-testid="device-frame-stream-cover"
-          style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}>
+          style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
+        >
           {deviceSurface}
         </div>
         {live && client.inputError && (
@@ -167,7 +171,7 @@ export function PhoneFrame({
             aria-live="polite"
             style={{
               ...textSize.xs,
-              position: 'absolute',
+              position: "absolute",
               bottom: 0,
               left: 0,
               right: 0,
@@ -175,8 +179,9 @@ export function PhoneFrame({
               padding: 12,
               backgroundColor: bg.danger,
               color: text.danger,
-              pointerEvents: 'none',
-            }}>
+              pointerEvents: "none",
+            }}
+          >
             {client.inputError}
           </div>
         )}
@@ -190,7 +195,7 @@ export function PhoneFrame({
             return (
               <img
                 key={kind}
-                data-testid={active ? 'device-frame-artwork' : undefined}
+                data-testid={active ? "device-frame-artwork" : undefined}
                 data-device-frame-artwork-kind={kind}
                 src={asset.src}
                 alt=""

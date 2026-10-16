@@ -1,18 +1,18 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { Window } from 'happy-dom';
-import { act } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { Window } from "happy-dom";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 
-import { useAndroidDeviceClient } from '../useAndroidDevice';
-import { DeviceScreen } from '../DeviceScreen';
-import { STREAM_RECONNECT_GRACE_MS } from '../stream-reconnect';
-import type { DeviceClient, DeviceStreamSourceStatus } from '../types';
+import { useAndroidDeviceClient } from "../useAndroidDevice";
+import { DeviceScreen } from "../DeviceScreen";
+import { STREAM_RECONNECT_GRACE_MS } from "../stream-reconnect";
+import type { DeviceClient, DeviceStreamSourceStatus } from "../types";
 
 class Peer extends EventTarget {
   static instances: Peer[] = [];
   closed = false;
-  iceGatheringState = 'complete';
-  connectionState = 'connected';
+  iceGatheringState = "complete";
+  connectionState = "connected";
   localDescription: RTCSessionDescriptionInit | null = null;
   ontrack: ((event: { streams: object[]; track: object }) => void) | null = null;
   onconnectionstatechange: (() => void) | null = null;
@@ -26,14 +26,14 @@ class Peer extends EventTarget {
     return {};
   }
   async createOffer() {
-    return { type: 'offer' as const, sdp: 'offer' };
+    return { type: "offer" as const, sdp: "offer" };
   }
   async setLocalDescription(description: RTCSessionDescriptionInit) {
     this.localDescription = description;
   }
   async setRemoteDescription() {}
   close() {
-    if (video?.srcObject) frameVisibleAtClose.push(retainedFrame()?.style.visibility === 'visible');
+    if (video?.srcObject) frameVisibleAtClose.push(retainedFrame()?.style.visibility === "visible");
     this.closed = true;
   }
   deliverTrack() {
@@ -48,24 +48,29 @@ class ControlSocket {
   onopen: (() => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
 
-  constructor(readonly url: string, readonly protocols?: string[]) {
+  constructor(
+    readonly url: string,
+    readonly protocols?: string[],
+  ) {
     ControlSocket.instances.push(this);
   }
   sent: string[] = [];
-  send(message: string) { this.sent.push(message); }
+  send(message: string) {
+    this.sent.push(message);
+  }
   close() {}
 }
 
 const source = (sessionGeneration: number): DeviceStreamSourceStatus & { ok: true } => ({
   ok: true,
-  mode: sessionGeneration === 1 ? 'scrcpy' : 'grpc-screenshot',
-  grpcImageMode: 'mmap',
-  encoder: 'software',
+  mode: sessionGeneration === 1 ? "scrcpy" : "grpc-screenshot",
+  grpcImageMode: "mmap",
+  encoder: "software",
   encoderName: null,
-  availableEncoders: ['software'],
-  inputSource: 'scrcpy',
-  availableInputSources: ['scrcpy', 'grpc'],
-  availableModes: ['scrcpy', 'grpc-screenshot'],
+  availableEncoders: ["software"],
+  inputSource: "scrcpy",
+  availableInputSources: ["scrcpy", "grpc"],
+  availableModes: ["scrcpy", "grpc-screenshot"],
   sessionGeneration,
 });
 
@@ -104,12 +109,12 @@ function installGlobal(name: string, value: unknown) {
 
 beforeEach(() => {
   browser = new Window();
-  installGlobal('window', browser);
-  installGlobal('document', browser.document);
-  installGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  installGlobal('RTCPeerConnection', Peer);
-  installGlobal('RTCRtpReceiver', { getCapabilities: () => null });
-  installGlobal('WebSocket', ControlSocket);
+  installGlobal("window", browser);
+  installGlobal("document", browser.document);
+  installGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  installGlobal("RTCPeerConnection", Peer);
+  installGlobal("RTCRtpReceiver", { getCapabilities: () => null });
+  installGlobal("WebSocket", ControlSocket);
   Peer.instances = [];
   ControlSocket.instances = [];
   metadata = deferred<Response>();
@@ -121,33 +126,33 @@ beforeEach(() => {
   intervals.clear();
   timeouts.clear();
   let timerId = 0;
-  installGlobal('setInterval', (callback: () => void, delay: number) => {
+  installGlobal("setInterval", (callback: () => void, delay: number) => {
     intervals.set(++timerId, { callback, delay });
     return timerId;
   });
-  installGlobal('clearInterval', (id: number) => intervals.delete(id));
-  installGlobal('setTimeout', (callback: () => void, delay: number) => {
+  installGlobal("clearInterval", (id: number) => intervals.delete(id));
+  installGlobal("setTimeout", (callback: () => void, delay: number) => {
     timeouts.set(++timerId, { callback, delay });
     return timerId;
   });
-  installGlobal('clearTimeout', (id: number) => timeouts.delete(id));
+  installGlobal("clearTimeout", (id: number) => timeouts.delete(id));
   browser.setTimeout = globalThis.setTimeout as unknown as typeof browser.setTimeout;
   browser.clearTimeout = globalThis.clearTimeout as unknown as typeof browser.clearTimeout;
   let initialSourceRead = true;
-  installGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+  installGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname;
-    if (path === '/api') {
+    if (path === "/api") {
       return Response.json({
         stream: {
-          transport: 'webrtc',
-          codec: 'h264',
+          transport: "webrtc",
+          codec: "h264",
           iceServers: [],
-          iceTransportPolicy: 'all',
+          iceTransportPolicy: "all",
         },
       });
     }
-    if (path === '/api/stream-mode') {
-      if (init?.method === 'PUT') {
+    if (path === "/api/stream-mode") {
+      if (init?.method === "PUT") {
         return replacement.promise;
       }
       if (initialSourceRead) {
@@ -156,15 +161,15 @@ beforeEach(() => {
       }
       return Response.json(authoritative);
     }
-    if (path === '/webrtc/offer') {
+    if (path === "/webrtc/offer") {
       offers++;
-      return Response.json({ type: 'answer', sdp: 'answer' });
+      return Response.json({ type: "answer", sdp: "answer" });
     }
     return Response.json({});
   });
-  container = document.createElement('div');
+  container = document.createElement("div");
   root = createRoot(container);
-  Object.defineProperty(browser.HTMLCanvasElement.prototype, 'getContext', {
+  Object.defineProperty(browser.HTMLCanvasElement.prototype, "getContext", {
     value: () => ({
       drawImage: () => {
         savedFrames++;
@@ -179,13 +184,17 @@ afterEach(async () => {
   for (const restore of restoreGlobals.splice(0).reverse()) restore();
 });
 
-function Harness({ device = 'emulator-5554', enabled = true, token = null }: { device?: string; enabled?: boolean; token?: string | null } = {}) {
+function Harness({
+  device = "emulator-5554",
+  enabled = true,
+  token = null,
+}: { device?: string; enabled?: boolean; token?: string | null } = {}) {
   client = useAndroidDeviceClient({
-    baseUrl: 'http://device.test',
+    baseUrl: "http://device.test",
     device,
     enabled,
     token,
-    streamMode: 'webrtc',
+    streamMode: "webrtc",
   });
   return <DeviceScreen client={client} />;
 }
@@ -193,7 +202,7 @@ function Harness({ device = 'emulator-5554', enabled = true, token = null }: { d
 async function mount(token: string | null = null) {
   await act(async () => root.render(<Harness token={token} />));
   expect(offers).toBe(1);
-  video = container.querySelector('video')!;
+  video = container.querySelector("video")!;
   Object.defineProperties(video, {
     videoWidth: { value: 1080 },
     videoHeight: { value: 1920 },
@@ -206,53 +215,78 @@ async function mount(token: string | null = null) {
     Peer.instances[0].deliverTrack();
   });
   await paintFrame();
-  expect(client.status).toBe('streaming');
+  expect(client.status).toBe("streaming");
   // Initial source metadata must not replace the already connecting peer.
   expect(offers).toBe(1);
   expect(Peer.instances).toHaveLength(1);
 }
 
 function retainedFrame() {
-  return container.querySelector('canvas');
+  return container.querySelector("canvas");
 }
 
 async function paintFrame() {
-  await act(async () => video.dispatchEvent(new window.Event('loadeddata')));
+  await act(async () => video.dispatchEvent(new window.Event("loadeddata")));
 }
 
-test('Android input callbacks and held gestures cannot cross a device handoff', async () => {
+test("Android input callbacks and held gestures cannot cross a device handoff", async () => {
   await mount();
   const oldClient = client;
   const oldSocket = ControlSocket.instances[0];
   const surface = container.querySelector('[role="application"]') as HTMLDivElement;
-  Object.defineProperty(surface, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 100, height: 200 }) });
+  Object.defineProperty(surface, "getBoundingClientRect", {
+    value: () => ({ left: 0, top: 0, width: 100, height: 200 }),
+  });
   Object.assign(surface, { setPointerCapture() {}, releasePointerCapture() {} });
   const frames = new Map<number, FrameRequestCallback>();
-  installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(1, callback); return 1; });
-  installGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
-  const pointer = (type: string, x: number) => new window.PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0, clientX: x, clientY: 20 });
-  await act(async () => surface.dispatchEvent(pointer('pointerdown', 10)));
-  await act(async () => surface.dispatchEvent(pointer('pointermove', 20)));
+  installGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.set(1, callback);
+    return 1;
+  });
+  installGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+  const pointer = (type: string, x: number) =>
+    new window.PointerEvent(type, {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      clientX: x,
+      clientY: 20,
+    });
+  await act(async () => surface.dispatchEvent(pointer("pointerdown", 10)));
+  await act(async () => surface.dispatchEvent(pointer("pointermove", 20)));
   expect(frames.size).toBe(1);
   await act(async () => root.render(<Harness device="emulator-5556" />));
   const replacementSocket = ControlSocket.instances.at(-1)!;
   expect(replacementSocket).not.toBe(oldSocket);
-  expect(oldSocket.sent.map(message => JSON.parse(message))
-    .filter(message => message.type === 'touch').map(message => message.action)).toEqual(['down', 'up']);
+  expect(
+    oldSocket.sent
+      .map((message) => JSON.parse(message))
+      .filter((message) => message.type === "touch")
+      .map((message) => message.action),
+  ).toEqual(["down", "up"]);
   await act(async () => replacementSocket.onopen?.());
   expect(frames.size).toBe(0);
   await act(async () => {
-    oldClient.sendTouch({ phase: 'move', x: .5, y: .5 });
-    oldClient.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
-    surface.dispatchEvent(pointer('pointermove', 30));
-    surface.dispatchEvent(pointer('pointerup', 30));
+    oldClient.sendTouch({ phase: "move", x: 0.5, y: 0.5 });
+    oldClient.sendKey({ phase: "down", code: "KeyA", key: "a", repeat: false });
+    surface.dispatchEvent(pointer("pointermove", 30));
+    surface.dispatchEvent(pointer("pointerup", 30));
   });
-  expect(replacementSocket.sent.map(message => JSON.parse(message)).filter(message => message.type !== 'reset-video')).toEqual([]);
-  await act(async () => surface.dispatchEvent(pointer('pointerdown', 40)));
-  expect(replacementSocket.sent.map(message => JSON.parse(message)).some(message => message.type === 'touch')).toBe(true);
+  expect(
+    replacementSocket.sent
+      .map((message) => JSON.parse(message))
+      .filter((message) => message.type !== "reset-video"),
+  ).toEqual([]);
+  await act(async () => surface.dispatchEvent(pointer("pointerdown", 40)));
+  expect(
+    replacementSocket.sent
+      .map((message) => JSON.parse(message))
+      .some((message) => message.type === "touch"),
+  ).toBe(true);
 });
 
-test('retired Android input callbacks stay retired when returning to the same device', async () => {
+test("retired Android input callbacks stay retired when returning to the same device", async () => {
   await mount();
   const firstClient = client;
   await act(async () => root.render(<Harness device="emulator-5556" />));
@@ -260,38 +294,42 @@ test('retired Android input callbacks stay retired when returning to the same de
   await act(async () => root.render(<Harness device="emulator-5554" />));
   const returnedSocket = ControlSocket.instances.at(-1)!;
   await act(async () => returnedSocket.onopen?.());
-  const inputMessages = () => returnedSocket.sent.map(message => JSON.parse(message))
-    .filter(message => message.type !== 'reset-video');
+  const inputMessages = () =>
+    returnedSocket.sent
+      .map((message) => JSON.parse(message))
+      .filter((message) => message.type !== "reset-video");
   await act(async () => {
-    firstClient.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });
-    expect(firstClient.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false })).toBe(false);
+    firstClient.sendTouch({ phase: "begin", x: 0.5, y: 0.5 });
+    expect(firstClient.sendKey({ phase: "down", code: "KeyA", key: "a", repeat: false })).toBe(
+      false,
+    );
   });
   expect(inputMessages()).toEqual([]);
-  await act(async () => client.sendTouch({ phase: 'begin', x: 0.2, y: 0.3 }));
+  await act(async () => client.sendTouch({ phase: "begin", x: 0.2, y: 0.3 }));
   expect(inputMessages()).toHaveLength(1);
 });
 
-test('an input-only outage keeps healthy Android WebRTC video visible beyond reconnect grace', async () => {
+test("an input-only outage keeps healthy Android WebRTC video visible beyond reconnect grace", async () => {
   await mount();
   const peer = Peer.instances[0];
   const stream = video.srcObject;
   await act(async () => ControlSocket.instances[0].onclose?.({ code: 1006 }));
   await act(async () => {
-    Object.defineProperty(video, 'paused', { value: false });
+    Object.defineProperty(video, "paused", { value: false });
     video.currentTime = 1;
-    video.dispatchEvent(new window.Event('timeupdate'));
+    video.dispatchEvent(new window.Event("timeupdate"));
   });
   const grace = [...timeouts].findLast(([, timer]) => timer.delay === STREAM_RECONNECT_GRACE_MS);
   if (grace) {
     timeouts.delete(grace[0]);
     await act(async () => grace[1].callback());
   }
-  expect(client.status).toBe('streaming');
+  expect(client.status).toBe("streaming");
   expect(client.error).toBeNull();
-  const inputError = 'WebRTC input disconnected. Retrying...';
+  const inputError = "WebRTC input disconnected. Retrying...";
   expect(client.inputError).toBe(inputError);
   expect(container.querySelector('[role="status"]')).toBeNull();
-  expect(container.textContent).toBe('');
+  expect(container.textContent).toBe("");
   expect(video.srcObject).toBe(stream);
   expect(peer.closed).toBe(false);
 
@@ -299,49 +337,51 @@ test('an input-only outage keeps healthy Android WebRTC video visible beyond rec
   timeouts.delete(retry[0]);
   await act(async () => retry[1].callback());
   await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
-  expect(client.status).toBe('streaming');
+  expect(client.status).toBe("streaming");
   expect(client.inputError).toBeNull();
   expect(container.querySelector('[role="status"]')).toBeNull();
   expect(Peer.instances).toHaveLength(1);
 });
 
-test('a peer failure still hides interrupted Android video after reconnect grace', async () => {
+test("a peer failure still hides interrupted Android video after reconnect grace", async () => {
   await mount();
   const peer = Peer.instances[0];
-  peer.connectionState = 'failed';
+  peer.connectionState = "failed";
   await act(async () => peer.onconnectionstatechange?.());
   expect(peer.closed).toBe(true);
-  expect(client.status).toBe('reconnecting');
+  expect(client.status).toBe("reconnecting");
   // Settings polls share this delay; the grace timer is the most recent one.
   const grace = [...timeouts].findLast(([, timer]) => timer.delay === STREAM_RECONNECT_GRACE_MS)!;
   expect(grace).toBeDefined();
   timeouts.delete(grace[0]);
   await act(async () => grace[1].callback());
-  expect(client.status).toBe('error');
+  expect(client.status).toBe("error");
   expect(client.error).not.toBeNull();
 });
 for (const returnToOriginalToken of [false, true]) {
- test(`retired token-A Android callbacks cannot reach ${returnToOriginalToken ? 'replacement A' : 'token B'} socket`, async () => {
-  await mount('token-A');
-  const oldClient = client;
-  const oldSocket = ControlSocket.instances.at(-1)!;
-  await act(async () => root.render(<Harness token="token-B" />));
-  await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
-  if (returnToOriginalToken) {
-   await act(async () => root.render(<Harness token="token-A" />));
-   await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
-  }
-  const replacementSocket = ControlSocket.instances.at(-1)!;
-  expect(replacementSocket).not.toBe(oldSocket);
-  expect(replacementSocket.protocols).toEqual([`serve-emu.token.${returnToOriginalToken ? 'token-A' : 'token-B'}`]);
-  const before = replacementSocket.sent.length;
-  await act(async () => {
-   oldClient.sendTouch({phase:'begin',x:.2,y:.3});
-   oldClient.sendKey({phase:'down',code:'KeyA',key:'a',repeat:false});
+  test(`retired token-A Android callbacks cannot reach ${returnToOriginalToken ? "replacement A" : "token B"} socket`, async () => {
+    await mount("token-A");
+    const oldClient = client;
+    const oldSocket = ControlSocket.instances.at(-1)!;
+    await act(async () => root.render(<Harness token="token-B" />));
+    await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
+    if (returnToOriginalToken) {
+      await act(async () => root.render(<Harness token="token-A" />));
+      await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
+    }
+    const replacementSocket = ControlSocket.instances.at(-1)!;
+    expect(replacementSocket).not.toBe(oldSocket);
+    expect(replacementSocket.protocols).toEqual([
+      `serve-emu.token.${returnToOriginalToken ? "token-A" : "token-B"}`,
+    ]);
+    const before = replacementSocket.sent.length;
+    await act(async () => {
+      oldClient.sendTouch({ phase: "begin", x: 0.2, y: 0.3 });
+      oldClient.sendKey({ phase: "down", code: "KeyA", key: "a", repeat: false });
+    });
+    const stale = replacementSocket.sent.slice(before).map((s) => JSON.parse(s));
+    expect(stale).toEqual([]);
+    await act(async () => client.sendTouch({ phase: "begin", x: 0.4, y: 0.5 }));
+    expect(replacementSocket.sent.length).toBe(before + 1);
   });
-  const stale = replacementSocket.sent.slice(before).map(s=>JSON.parse(s));
-  expect(stale).toEqual([]);
-  await act(async () => client.sendTouch({phase:'begin',x:.4,y:.5}));
-  expect(replacementSocket.sent.length).toBe(before+1);
- });
 }
