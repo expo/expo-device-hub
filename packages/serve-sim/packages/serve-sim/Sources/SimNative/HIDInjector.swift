@@ -39,6 +39,7 @@ actor HIDInjector {
     private var simDevice: NSObject?
     private var deviceUDID: String?
     private var selectedScreenID: UInt32?
+    private var singleIntegratedScreenID: UInt32?
     private var nativeScreenRotations: [UInt32: Int] = [:]
     private var isFoldable = false
     private var digitizerCapability: CoreDeviceCapabilityObject?
@@ -101,6 +102,7 @@ actor HIDInjector {
         let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
         let ordinaryIOS = displayProfile.integratedDisplayCount == 1 &&
             runtimeIdentifier.hasPrefix("com.apple.CoreSimulator.SimRuntime.iOS-")
+        singleIntegratedScreenID = ordinaryIOS ? displayProfile.singleIntegratedScreenID : nil
         if isFoldable || ordinaryIOS {
             do {
                 try await setupCoreDeviceHID(deviceUDID: deviceUDID)
@@ -228,6 +230,7 @@ actor HIDInjector {
     /// Keep panel metadata aligned with capture and select the transport’s service.
     /// Existing gestures retain their target until their corresponding touch-up.
     func setScreen(screenID: UInt32?) {
+        let screenID = screenID ?? singleIntegratedScreenID
         if scrollIdle.selectScreen(screenID) { finishInterruptedScroll(wasActive: true) }
         selectedScreenID = screenID
         touchTarget.setScreen(screenID, universalHID: usesUniversalHID)
@@ -372,8 +375,8 @@ actor HIDInjector {
         default: return
         }
 
-        // Keep the keyboard on the same transport as touch. Legacy sends can
-        // report success without delivery while CoreDevice owns guest input.
+        // Legacy keys also disappear while CoreDevice owns guest input.
+        // Report unavailable key encoding separately without disabling touch.
         if usesUniversalHID {
             guard let keyboardCapability,
                   SSCoreDeviceSendKey(keyboardCapability.storage, usage, direction == 1) else {
@@ -395,6 +398,12 @@ actor HIDInjector {
 
         hidLog("[hid] Key \(type) usage=0x\(String(usage, radix: 16))")
         rawSend(msg)
+    }
+
+    func supportsKeyboard() -> Bool {
+        usesUniversalHID
+            ? keyboardCapability != nil && SSCoreDeviceKeyboardAvailable()
+            : keyboardFunc != nil
     }
 
     // MARK: - Digital Crown events
