@@ -60,6 +60,7 @@ Options:
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
       --hide-sidebar         Hide the device list sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
+      --disable-share        Accepted for parity with serve-sim; the Hub has no Share button
       --android-recording-directory <path> Record the only booted emulator until shutdown
   -h, --help                 Show this help
 `;
@@ -191,6 +192,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'metrics-cors-origin': string[];
     'hide-sidebar': boolean;
     'hide-boot-device': boolean;
+    'disable-share': boolean;
     'require-token': boolean;
     'frame-ancestor': string[];
     'cors-origin': string[];
@@ -224,6 +226,8 @@ export function parseCliOptions(args: string[]): CliOptions {
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
         'hide-sidebar': { type: 'boolean', default: false },
         'hide-boot-device': { type: 'boolean', default: false },
+        // A no-op, so the EAS worker can pass serve-sim's flags to either CLI.
+        'disable-share': { type: 'boolean', default: false },
         'require-token': { type: 'boolean', default: false },
         'frame-ancestor': { type: 'string', multiple: true, default: [] },
         'cors-origin': { type: 'string', multiple: true, default: [] },
