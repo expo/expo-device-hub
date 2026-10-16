@@ -497,5 +497,5 @@ admission flag stay unchanged, including for legacy helpers [observed:
 `softwareKeyboard` in `src/index.ts`].
 
 The CLI tap, gesture, button, rotate, CA debug and memory-warning senders reuse
-this live-name selection and input admission path [observed: `sendInputMessage`
+this live-name selection and input admission path [observed: `sendHelperMessage`
 and its callers in `src/index.ts`].
