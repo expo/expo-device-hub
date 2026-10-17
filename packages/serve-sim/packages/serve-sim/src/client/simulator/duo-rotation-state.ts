@@ -6,11 +6,14 @@ const ORIENTATIONS: HingePhysicalOrientation[] = ["portrait", "landscape-left", 
 export function createDuoRotationState() {
   let displayed: number | undefined;
   let pendingUntil = 0;
+  let baseline: HingePhysicalOrientation | undefined;
   return {
+    takeBaseline() { const value = baseline; baseline = undefined; return value; },
     rebase(orientation: HingePhysicalOrientation | undefined) {
       const index = orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
       displayed = index < 0 ? undefined : index;
       pendingUntil = 0;
+      baseline = undefined;
     },
     request(turns: number, now = Date.now()) {
       pendingUntil = now + 1500;
@@ -20,11 +23,11 @@ export function createDuoRotationState() {
     observe(orientation: HingePhysicalOrientation | undefined, now = Date.now()) {
       const index = orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
       if (index < 0) return 0;
-      // With no pre-request physical baseline, a buffered first sample cannot
-      // tell us whether the optimistic turn has happened. Wait for the grace
-      // timer to seed a settled baseline without turning that camera again.
+      // No physical baseline means the optimistic camera was only a guess.
+      // Reframe from the first actual sample, then follow subsequent turns;
+      // discarding the whole grace interval would lose independent turns.
       if (displayed === undefined) {
-        if (now < pendingUntil) return 0;
+        if (pendingUntil > 0) baseline = orientation;
         displayed = index; pendingUntil = 0; return 0;
       }
       if (pendingUntil > now && index !== displayed) return 0;

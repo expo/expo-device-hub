@@ -1,5 +1,5 @@
 import { Euler, Quaternion, Vector3 } from "three";
-import { HINGE_POSES, type HingePose } from "../../hinge-control";
+import { HINGE_POSES, type HingePose, type HingePhysicalOrientation } from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { duoFacingYaw, duoPose } from "./duo-pose";
 
@@ -32,6 +32,12 @@ export function duoInitialView(
 export function duoPresetView(pose: HingePose): DuoView {
   const { angle } = HINGE_POSES.find(({ id }) => id === pose)!;
   return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
+}
+
+/** Seed a previously unknown physical baseline, independent of stale app geometry. */
+export function duoPhysicalView(angle: number | undefined, orientation: HingePhysicalOrientation): DuoView {
+  const turns = ["portrait", "landscape-left", "pud", "landscape-right"].indexOf(orientation);
+  return captureView(duoPose(angle, null, undefined, undefined, Math.max(0, turns) * Math.PI / 2));
 }
 
 /** Complete native pose discovery while preserving a locally chosen view. */

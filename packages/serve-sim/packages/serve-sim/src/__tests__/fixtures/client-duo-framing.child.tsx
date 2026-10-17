@@ -747,12 +747,24 @@ test("an early UI turn is not doubled by old then current native samples", async
   await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
   const rotated = structuredClone(model().view as DuoView);
   await observe(opened("portrait", "landscape_left"));
-  expect(model().view).toEqual(rotated);
+  expectView("open");
   await observe(opened("landscape-left", "portrait"));
   expect(model().view).toEqual(rotated);
   await act(async () => { await Bun.sleep(1600); });
   expect(model().view).toEqual(rotated);
   await observe(opened("pud", "landscape_right"));
+  const expected = duoRotateView(rotated, 1);
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+});
+
+test("an early confirmed UI turn followed by another native turn updates the camera before grace expires", async () => {
+  await mount();
+  await observe({width:2007,height:2853,screenId:3,orientation:"landscape_left",supportsHingeAngle:true,observedDeviceState:{}});
+  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  const rotated = structuredClone(model().view as DuoView);
+  await observe(opened("landscape-left", "portrait"));
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation))).toBeCloseTo(0, 6);
+  await observe(opened("pud", "portrait"));
   const expected = duoRotateView(rotated, 1);
   expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
 });

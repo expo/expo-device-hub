@@ -38,3 +38,11 @@ test("preset and out of plane changes establish a new baseline", () => {
   state.rebase("landscape-left");
   expect(state.observe("pud", 200)).toBe(1);
 });
+
+test("an early UI turn seeds from the first physical sample and follows a second turn immediately", () => {
+  const state = createDuoRotationState();
+  state.request(1, 0);
+  expect(state.observe("landscape-left", 100)).toBe(0);
+  expect(state.takeBaseline()).toBe("landscape-left");
+  expect(state.observe("pud", 200)).toBe(1);
+});
