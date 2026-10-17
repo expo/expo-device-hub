@@ -21,7 +21,8 @@ import {
 export const CLIPBOARD_CAPABILITY = "clipboard";
 
 const SPRINGBOARD_BUNDLE = "com.apple.springboard";
-const INJECTED_TIMEOUT_MS = 1200;
+// @ref LLP 0010#reading-when-simctl-pbpaste-fails — iOS 27 apps answer about 2 s after launch
+const INJECTED_TIMEOUT_MS = 3000;
 const INJECTED_POLL_MS = 25;
 
 export class PasteboardUnavailableError extends Error {}
