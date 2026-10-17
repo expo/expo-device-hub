@@ -17,12 +17,12 @@
  * screen and input changes without subscribing to metrics, FPS or logs.
  */
 
-import { type CSSProperties } from 'react';
+import { type CSSProperties } from "react";
 
-export type DevicePlatform = 'ios' | 'android';
+export type DevicePlatform = "ios" | "android";
 
 /** Viewer-selected transport for the active device stream. */
-export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
+export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
 
 /**
  * Lifecycle of a single connection:
@@ -36,14 +36,14 @@ export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
  *   streaming    — frames are flowing
  *   error        — connection failed or dropped
  */
-export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
+export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "streaming" | "error";
 
 /** Device orientation, as reported by serve-sim's stream config. */
 export type DeviceOrientation =
-  | 'portrait'
-  | 'portrait_upside_down'
-  | 'landscape_left'
-  | 'landscape_right';
+  | "portrait"
+  | "portrait_upside_down"
+  | "landscape_left"
+  | "landscape_right";
 
 /** Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio. */
 export interface ScreenSize {
@@ -86,7 +86,7 @@ export interface DeviceEvent {
   /** More specific operation within {@link kind}, when available. */
   action?: string;
   /** Whether the backend reported the operation as successful or failed. */
-  status?: 'ok' | 'error';
+  status?: "ok" | "error";
   /** Human-readable, privacy-safe event summary. */
   message: string;
   /** Structured event data retained for future richer presentation. */
@@ -95,28 +95,28 @@ export interface DeviceEvent {
 
 /** Simulator/device-wide settings exposed by serve-sim and serve-emu. */
 export type DeviceSettingKey =
-  | 'appearance'
-  | 'network'
-  | 'liquid-glass'
-  | 'color-filter'
-  | 'text-size'
-  | 'display-size'
-  | 'reduce-motion'
-  | 'bold-text'
-  | 'increase-contrast'
-  | 'onscreen-keyboard'
-  | 'show-borders'
-  | 'reduce-transparency'
-  | 'voiceover';
+  | "appearance"
+  | "network"
+  | "liquid-glass"
+  | "color-filter"
+  | "text-size"
+  | "display-size"
+  | "reduce-motion"
+  | "bold-text"
+  | "increase-contrast"
+  | "onscreen-keyboard"
+  | "show-borders"
+  | "reduce-transparency"
+  | "voiceover";
 
 /** Current backend-reported values. Missing keys are unavailable; `unsupported` keys are hidden. */
 export type DeviceSettings = Partial<Record<DeviceSettingKey, string>>;
 
 /** Settings availability for the selected device, independent of video and app activity. */
-export type DeviceSettingsStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type DeviceSettingsStatus = "idle" | "loading" | "ready" | "error";
 
 /** Which emulator camera a feed drives. */
-export type DeviceCameraFacing = 'back' | 'front';
+export type DeviceCameraFacing = "back" | "front";
 
 /** One emulator camera fed from a PNG on the host. */
 export interface DeviceCameraFeed {
@@ -150,7 +150,7 @@ export interface DeviceActivitySample {
 }
 
 /** Metrics discovery and stream readiness, independent of video and sample freshness. */
-export type DeviceActivityStatus = 'idle' | 'loading' | 'ready' | 'error';
+export type DeviceActivityStatus = "idle" | "loading" | "ready" | "error";
 
 /** Rolling activity history and health for the selected device. */
 export interface DeviceActivity {
@@ -161,10 +161,10 @@ export interface DeviceActivity {
 }
 
 /** Viewer-local HTTP stream codec selection. */
-export type DeviceHttpCodec = 'auto' | 'mjpeg' | 'h264';
+export type DeviceHttpCodec = "auto" | "mjpeg" | "h264";
 
 /** Viewer-local WebRTC codec selection. */
-export type DeviceWebRtcCodec = 'h264' | 'vp9' | 'vp8';
+export type DeviceWebRtcCodec = "h264" | "vp9" | "vp8";
 
 /** Stream transports and codecs supported by the active backend. */
 export interface DeviceStreamCapabilities {
@@ -183,16 +183,16 @@ export interface DeviceStreamEncoderSettings {
 }
 
 /** Android capture implementations exposed by serve-emu. */
-export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
+export type DeviceStreamSource = "scrcpy" | "grpc-screenshot";
 
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
-export type DeviceGrpcImageMode = 'png' | 'mmap' | 'rgb888';
+export type DeviceGrpcImageMode = "png" | "mmap" | "rgb888";
 
 /** Host H.264 encoder used for emulator gRPC screenshots. */
-export type DeviceGrpcEncoder = 'software' | 'hardware';
+export type DeviceGrpcEncoder = "software" | "hardware";
 
 /** Input transport used while gRPC provides emulator video. */
-export type DeviceInputSource = 'scrcpy' | 'grpc';
+export type DeviceInputSource = "scrcpy" | "grpc";
 
 /** Authoritative source state for the selected Android device session. */
 export interface DeviceStreamSourceStatus {
@@ -251,7 +251,7 @@ export interface DeviceStreamStatsSample {
   /** Current round-trip time for the browser's selected ICE candidate pair. */
   clientRoundTripMs: number | null;
   /** Whether the browser's selected ICE path is direct, relayed, or unknown. */
-  clientIcePath: 'direct' | 'relay' | 'unknown';
+  clientIcePath: "direct" | "relay" | "unknown";
 }
 
 /** Latest server-side WebRTC encoder statistics for this viewer. */
@@ -380,7 +380,7 @@ export interface DeviceCapabilities {
 }
 
 /** How the device answers one permission of the foreground app. */
-export type AppPermissionState = 'granted' | 'denied' | 'limited' | 'undetermined';
+export type AppPermissionState = "granted" | "denied" | "limited" | "undetermined";
 
 /** One permission row. `id` is the backend name (`android.permission.CAMERA`, `camera`). */
 export interface AppPermission {
@@ -389,7 +389,7 @@ export interface AppPermission {
   state: AppPermissionState;
 }
 
-export type AppPermissionAction = 'grant' | 'revoke';
+export type AppPermissionAction = "grant" | "revoke";
 
 /** The app currently in the foreground on the device. */
 export interface ForegroundApp {
@@ -423,24 +423,26 @@ export interface ForegroundApp {
 
 /** Hardware buttons. Implementations ignore the ones their platform lacks. */
 export type HardwareButton =
-  | 'home'
-  | 'back'
-  | 'recents'
-  | 'power'
-  | 'appSwitcher'
+  | "home"
+  | "back"
+  | "recents"
+  | "power"
+  | "appSwitcher"
   /** Dismisses the on-screen keyboard. Not a physical button; grouped here because it presses one key. */
-  | 'hideKeyboard';
+  | "hideKeyboard";
 
 /**
  * Device system appearance. Binary on purpose — the Hub exposes a plain
  * light/dark toggle with no "auto", even where the backend supports one
  * (serve-emu's `uimode night auto`).
  */
-export type DeviceAppearance = 'light' | 'dark';
+export type DeviceAppearance = "light" | "dark";
 
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
-  phase: 'begin' | 'move' | 'end';
+  phase: "begin" | "move" | "end";
+  /** An end that abandons unsent touch intent, e.g. conversion to a two-finger gesture. */
+  cancelled?: boolean;
   /** 0..1 across the screen width. */
   x: number;
   /** 0..1 down the screen height. */
@@ -451,14 +453,14 @@ export interface TouchSample {
 
 /** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
 export interface MultiTouchSample {
-  phase: 'begin' | 'move' | 'end';
+  phase: "begin" | "move" | "end";
   a: { x: number; y: number };
   b: { x: number; y: number };
 }
 
 /** A physical browser-keyboard event forwarded by {@link DeviceScreen}. */
 export interface KeyboardInput {
-  phase: 'down' | 'up';
+  phase: "down" | "up";
   /** Physical browser key, e.g. `KeyA`, `ShiftLeft`, or `Enter`. */
   code: string;
   /** Layout-resolved value, e.g. `a`, `A`, `é`, or `Enter`. */
@@ -476,7 +478,7 @@ export interface KeyboardInput {
  * {@link KeyboardCapture} from phone-keyboard text. Forwarded as-is over
  * serve-sim's `0x06` key channel.
  */
-export type HidKeyEvent = { type: 'down' | 'up'; usage: number };
+export type HidKeyEvent = { type: "down" | "up"; usage: number };
 
 /**
  * A scroll-wheel / trackpad pan over the screen, in *display* space. Deltas are
@@ -510,7 +512,7 @@ export interface AgentInteractionSegment {
   /** Milliseconds since the outer Argent tool call. */
   startMs: number;
   frames: AgentInteractionFrame[];
-  easing?: 'linear' | 'ease-out';
+  easing?: "linear" | "ease-out";
 }
 
 /** Parsed, visualization-safe geometry from an Argent MCP tool call. */
@@ -551,9 +553,15 @@ export interface DeviceConnectionOptions {
 }
 
 /** Which element the implementation paints into. */
-export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
+export type VideoSurfaceKind = "canvas" | "img" | "video";
 
-export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
+export type DeviceScreenRecordingStatus =
+  | "unknown"
+  | "waiting"
+  | "recording"
+  | "finalizing"
+  | "complete"
+  | "failed";
 
 /**
  * Whether a screenshot also reached the session artifacts, read from the
@@ -561,9 +569,9 @@ export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 
  * backend runs outside an EAS session.
  */
 export type ScreenshotArtifact =
-  | { status: 'saved' | 'disabled' }
+  | { status: "saved" | "disabled" }
   | {
-      status: 'failed';
+      status: "failed";
       /** Why the save failed, when the backend says. */
       error?: string;
     };
@@ -755,6 +763,8 @@ export interface DeviceClient {
   sendTouch: (sample: TouchSample) => void;
   /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
   sendMultiTouch?: (sample: MultiTouchSample) => void;
+  /** Discard queued input after its browser interaction loses ownership. */
+  cancelInput?: () => void;
   /**
    * Forward a physical browser-keyboard event to the device. Returns true when
    * the event was accepted, allowing {@link DeviceScreen} to suppress the
@@ -832,15 +842,16 @@ export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClien
 /** The client fields read by DeviceScreen. Full DeviceClient values remain valid inputs. */
 export type DeviceScreenClient = Pick<
   DeviceClient,
-  | 'videoKind'
-  | 'attachVideo'
-  | 'sendTouch'
-  | 'sendMultiTouch'
-  | 'sendScroll'
-  | 'sendKey'
-  | 'screen'
-  | 'status'
-  | 'error'
+  | "videoKind"
+  | "attachVideo"
+  | "sendTouch"
+  | "sendMultiTouch"
+  | "cancelInput"
+  | "sendScroll"
+  | "sendKey"
+  | "screen"
+  | "status"
+  | "error"
 >;
 
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
@@ -849,12 +860,12 @@ export interface DeviceScreenProps {
   /** Last active Argent gesture for the streamed device; removed after its idle timeout. */
   agentInteraction?: AgentInteraction | null;
   /** Corner radius for the video surface (matches the PhoneFrame placeholder). */
-  borderRadius?: CSSProperties['borderRadius'];
+  borderRadius?: CSSProperties["borderRadius"];
   /** Apply the iOS `corner-shape: squircle`. */
   squircle?: boolean;
 }
 
 /** The built-in screen also accepts the inputs returned by useDeviceScreenClient. */
-export interface DeviceScreenInputProps extends Omit<DeviceScreenProps, 'client'> {
+export interface DeviceScreenInputProps extends Omit<DeviceScreenProps, "client"> {
   client: DeviceScreenClient;
 }

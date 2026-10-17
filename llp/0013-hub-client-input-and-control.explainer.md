@@ -69,6 +69,21 @@ The updated serve-sim helper uses the software-keyboard character path for shift
 
 This extends serve-sim's browser client, which supplies character metadata only for shifted characters. HubClient also supplies unshifted metadata so a German-layout `KeyY` can type `z` instead of the physical US `y` [observed: `keyboard.ts`; serve-sim `client/client.tsx`].
 
+## Input ownership
+
+Input callbacks belong to a committed connection scope and its known helper, rather than the complete config object. Stream settings and ICE metadata do not retire them. Initial discovery binds the early queue without replacing that owner; temporary null discovery retains the known helper and original queue age. A requested device, server, enabled state, token, or known helper identity change retires the callbacks, even when the same values later return [observed: `inputOwner` and `ownsInput` in `useIosDevice.ts`; `inputIdentity` in `useAndroidDevice.ts`].
+
+Local surface blur releases physical keys only while all active pointers are captured. It keeps captured gestures and paced phone-keyboard input, so `KeyboardCapture` can restore focus to its hidden input without ending a swipe. If capture failed, local blur or leaving the surface cancels the unfinished gesture because outside releases cannot reach the surface. Unexpected capture loss and pointer cancellation also abandon unfinished input [observed: `onBlur` in `DeviceScreen.tsx`; `onFocusOut` in `KeyboardCapture.tsx`].
+
+Window blur, a hidden tab, page hide, unmount, or a real input-owner change cancels abandoned input [observed: `listenForInputCancellation`, `cancelBrowserInput`, and the adapters' `cancelInput`]:
+
+- Buffered wheel frames and paced key batches stop before adapter queues are cleared. Held keys/touches are released only through their original owner.
+- Unsent keys and scrolls are discarded from both the socket queue and any pre-discovery queue; they must not type or scroll later after the browser has left the interaction.
+- Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement and releases at the last forwarded single-touch point, while starting the pinch at the current two-finger positions.
+- Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
+
+This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
+
 ## Open questions
 
 None at this time.

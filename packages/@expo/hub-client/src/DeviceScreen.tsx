@@ -4,48 +4,45 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
-import { streamGeometry } from './orientation';
-import { createFrameScrollSender, wheelDeltaToPixels } from './scroll-wheel';
-import { AgentInteractionIndicator } from './AgentInteractionIndicator';
-import { TouchIndicator } from './TouchIndicator';
-import {
-  type DeviceScreenInputProps,
-  type KeyboardInput,
-  type MultiTouchSample,
-} from './types';
+import { listenForInputCancellation } from "./input-cancellation";
+import { streamGeometry } from "./orientation";
+import { createFrameScrollSender, wheelDeltaToPixels } from "./scroll-wheel";
+import { AgentInteractionIndicator } from "./AgentInteractionIndicator";
+import { TouchIndicator } from "./TouchIndicator";
+import { type DeviceScreenInputProps, type KeyboardInput, type MultiTouchSample } from "./types";
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
 type Point = { x: number; y: number };
 
 // Custom round cursor matching serve-sim's finger dot, so taps feel placed.
-const FINGER_CURSOR =
-  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='rgba(255,255,255,0.45)' stroke='rgba(0,0,0,0.55)' stroke-width='1.25'/%3E%3C/svg%3E") 12 12, pointer`;
+const FINGER_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='rgba(255,255,255,0.45)' stroke='rgba(0,0,0,0.55)' stroke-width='1.25'/%3E%3C/svg%3E") 12 12, pointer`;
 
 export const DEVICE_SCREEN_SURFACE_LAYOUT_STYLE: CSSProperties = {
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
-  containerType: 'size',
-  overflow: 'hidden',
+  containerType: "size",
+  overflow: "hidden",
 };
 
 export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
-  position: 'absolute',
+  position: "absolute",
   inset: 0,
-  boxSizing: 'border-box',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   padding: 24,
-  textAlign: 'center',
-  pointerEvents: 'none',
-  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  textAlign: "center",
+  pointerEvents: "none",
+  backgroundColor: "rgba(0, 0, 0, 0.55)",
   fontSize: 13,
-  fontFamily: 'var(--expo-font-mono)',
+  fontFamily: "var(--expo-font-mono)",
 };
 
 /**
@@ -55,16 +52,18 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
  * cover or blank it — that is what keeps an Android capture-source switch or
  * a brief socket drop from flashing black.
  */
-export function deviceScreenPresentsMedia(status: DeviceScreenInputProps['client']['status']): boolean {
-  return status === 'streaming' || status === 'reconnecting';
+export function deviceScreenPresentsMedia(
+  status: DeviceScreenInputProps["client"]["status"],
+): boolean {
+  return status === "streaming" || status === "reconnecting";
 }
 
 export function deviceScreenSurfaceStyle(
-  status: DeviceScreenInputProps['client']['status']
+  status: DeviceScreenInputProps["client"]["status"],
 ): CSSProperties {
   return {
     ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
-    ...(deviceScreenPresentsMedia(status) ? {} : { backgroundColor: '#000' }),
+    ...(deviceScreenPresentsMedia(status) ? {} : { backgroundColor: "#000" }),
   };
 }
 
@@ -74,30 +73,30 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
   const style: CSSProperties =
     rotation === 0
       ? {
-          display: 'block',
-          position: 'absolute',
+          display: "block",
+          position: "absolute",
           inset: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
         }
       : {
-          display: 'block',
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          width: rotatesSideways ? '100cqh' : '100%',
-          height: rotatesSideways ? '100cqw' : '100%',
+          display: "block",
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          width: rotatesSideways ? "100cqh" : "100%",
+          height: rotatesSideways ? "100cqw" : "100%",
           transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-          transformOrigin: 'center center',
-          objectFit: 'cover',
+          transformOrigin: "center center",
+          objectFit: "cover",
         };
 
   return {
     ...style,
-    userSelect: 'none',
-    WebkitUserSelect: 'none',
-    pointerEvents: 'none',
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    pointerEvents: "none",
   };
 }
 
@@ -129,6 +128,7 @@ export function DeviceScreen({
     sendMultiTouch,
     sendScroll,
     sendKey,
+    cancelInput,
     screen,
     status,
     error,
@@ -144,28 +144,14 @@ export function DeviceScreen({
   const pressedKeysRef = useRef(new Map<string, KeyboardInput>());
   const releasePressedKeys = useCallback(() => {
     for (const input of pressedKeysRef.current.values()) {
-      sendKey({ ...input, phase: 'up', repeat: false });
+      sendKey({ ...input, phase: "up", repeat: false });
     }
     pressedKeysRef.current.clear();
   }, [sendKey]);
 
-  useEffect(() => {
-    const onWindowBlur = () => releasePressedKeys();
-    const onVisibilityChange = () => {
-      if (document.hidden) releasePressedKeys();
-    };
-    window.addEventListener('blur', onWindowBlur);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.removeEventListener('blur', onWindowBlur);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      releasePressedKeys();
-    };
-  }, [releasePressedKeys]);
-
   const keyboardInputFrom = (
     event: ReactKeyboardEvent<HTMLDivElement>,
-    phase: KeyboardInput['phase'],
+    phase: KeyboardInput["phase"],
   ): KeyboardInput => ({
     phase,
     code: event.code,
@@ -180,14 +166,14 @@ export function DeviceScreen({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     // Keep the remote surface escapable for keyboard-only users while leaving a
     // plain Escape available to the simulator/emulator.
-    if (event.key === 'Escape' && event.shiftKey) {
+    if (event.key === "Escape" && event.shiftKey) {
       event.preventDefault();
       releasePressedKeys();
       event.currentTarget.blur();
       return;
     }
     if (event.nativeEvent.isComposing) return;
-    const input = keyboardInputFrom(event, 'down');
+    const input = keyboardInputFrom(event, "down");
     if (!sendKey(input)) return;
     event.preventDefault();
     pressedKeysRef.current.set(event.code || event.key, input);
@@ -196,14 +182,16 @@ export function DeviceScreen({
   const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const keyId = event.code || event.key;
     const wasPressed = pressedKeysRef.current.delete(keyId);
-    const handled = sendKey(keyboardInputFrom(event, 'up'));
+    const handled = sendKey(keyboardInputFrom(event, "up"));
     if (wasPressed || handled) event.preventDefault();
   };
 
   // ── pointer state ──
   const pointersRef = useRef(new Map<number, Point>());
-  const modeRef = useRef<'none' | 'single' | 'alt' | 'two'>('none');
+  const capturedPointersRef = useRef(new Set<number>());
+  const modeRef = useRef<"none" | "single" | "alt" | "two">("none");
   const singleIdRef = useRef<number | null>(null);
+  const lastSinglePointRef = useRef<Point | null>(null);
   const altShiftRef = useRef(false);
   const panOffsetRef = useRef<Point>({ x: 0, y: 0 });
   const [fingers, setFingers] = useState<{ a: Point; b: Point } | null>(null);
@@ -215,7 +203,10 @@ export function DeviceScreen({
     rafRef.current = 0;
     const pend = pendingRef.current;
     pendingRef.current = {};
-    if (pend.single) sendTouch({ phase: 'move', ...pend.single });
+    if (pend.single) {
+      sendTouch({ phase: "move", ...pend.single });
+      lastSinglePointRef.current = pend.single;
+    }
     if (pend.multi) {
       sendMultiTouch?.(pend.multi);
       setFingers({ a: pend.multi.a, b: pend.multi.b });
@@ -228,15 +219,21 @@ export function DeviceScreen({
   const pointFrom = (clientX: number, clientY: number): Point | null => {
     const rect = surfaceRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return null;
-    return { x: clamp01((clientX - rect.left) / rect.width), y: clamp01((clientY - rect.top) / rect.height) };
+    return {
+      x: clamp01((clientX - rect.left) / rect.width),
+      y: clamp01((clientY - rect.top) / rect.height),
+    };
   };
 
   // Second finger position for Alt-drag: mirror around center (pinch) or a
   // locked offset (pan, with Shift) — matches serve-sim.
-  const altSecondFinger = (p: Point): Point =>
-    altShiftRef.current
-      ? { x: clamp01(p.x + panOffsetRef.current.x), y: clamp01(p.y + panOffsetRef.current.y) }
-      : { x: 1 - p.x, y: 1 - p.y };
+  const altSecondFinger = useCallback(
+    (p: Point): Point =>
+      altShiftRef.current
+        ? { x: clamp01(p.x + panOffsetRef.current.x), y: clamp01(p.y + panOffsetRef.current.y) }
+        : { x: 1 - p.x, y: 1 - p.y },
+    [],
+  );
 
   const endMulti = (a: Point, b: Point) => {
     if (rafRef.current) {
@@ -244,50 +241,103 @@ export function DeviceScreen({
       rafRef.current = 0;
     }
     pendingRef.current = {};
-    sendMultiTouch?.({ phase: 'end', a, b });
+    sendMultiTouch?.({ phase: "end", a, b });
     setFingers(null);
   };
 
+  const cancelGestures = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    const pending = pendingRef.current;
+    pendingRef.current = {};
+    const mode = modeRef.current;
+    const points = [...pointersRef.current.values()];
+    const pointerIds = [...pointersRef.current.keys()];
+    pointersRef.current.clear();
+    capturedPointersRef.current.clear();
+    modeRef.current = "none";
+    singleIdRef.current = null;
+    lastSinglePointRef.current = null;
+    const a = pending.multi?.a ?? points[0];
+    let b = pending.multi?.b ?? points[1];
+    if (mode === "single" && a) sendTouch({ phase: "end", ...(pending.single ?? a) });
+    else if (a && (mode === "two" || mode === "alt")) {
+      b ??= altSecondFinger(a);
+      sendMultiTouch?.({ phase: "end", a, b });
+    }
+    // Releasing capture may synchronously dispatch lostpointercapture.
+    for (const id of pointerIds) {
+      try {
+        surfaceRef.current?.releasePointerCapture(id);
+      } catch {}
+    }
+    setFingers(null);
+  }, [sendTouch, sendMultiTouch, altSecondFinger]);
+  const cancelBrowserInput = useCallback(() => {
+    // Retire unfinished queued gestures before their synthetic end can complete them.
+    scrollSenderRef.current?.cancel();
+    cancelInput?.();
+    releasePressedKeys();
+    cancelGestures();
+    cancelInput?.();
+  }, [releasePressedKeys, cancelGestures, cancelInput]);
+  useLayoutEffect(() => {
+    const stopListening = listenForInputCancellation(cancelBrowserInput);
+    return () => {
+      stopListening();
+      cancelBrowserInput();
+    };
+  }, [cancelBrowserInput]);
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
     const p = pointFrom(event.clientX, event.clientY);
     if (!p) return;
     scrollSenderRef.current?.cancel();
     event.preventDefault();
     surfaceRef.current?.focus({ preventScroll: true });
     try {
-      surfaceRef.current?.setPointerCapture(event.pointerId);
+      const surface = surfaceRef.current;
+      surface?.setPointerCapture(event.pointerId);
+      if (surface) capturedPointersRef.current.add(event.pointerId);
     } catch {}
     pointersRef.current.set(event.pointerId, p);
 
     // Alt-drag with a mouse → synthetic pinch/pan.
-    if (canMulti && event.pointerType === 'mouse' && event.altKey && modeRef.current === 'none') {
-      modeRef.current = 'alt';
+    if (canMulti && event.pointerType === "mouse" && event.altKey && modeRef.current === "none") {
+      modeRef.current = "alt";
       altShiftRef.current = event.shiftKey;
       panOffsetRef.current = { x: 1 - 2 * p.x, y: 1 - 2 * p.y };
       const b = altSecondFinger(p);
       setFingers({ a: p, b });
-      sendMultiTouch?.({ phase: 'begin', a: p, b });
+      sendMultiTouch?.({ phase: "begin", a: p, b });
       return;
     }
 
     // Second finger down → real two-finger gesture.
-    if (canMulti && pointersRef.current.size >= 2 && modeRef.current !== 'alt') {
-      if (modeRef.current === 'single') {
-        sendTouch({ phase: 'end', ...p });
+    if (canMulti && pointersRef.current.size >= 2 && modeRef.current !== "alt") {
+      if (modeRef.current === "single") {
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+        pendingRef.current = {};
+        const previousPoint =
+          lastSinglePointRef.current ?? pointersRef.current.get(singleIdRef.current!) ?? p;
+        sendTouch({ phase: "end", ...previousPoint, cancelled: true });
         singleIdRef.current = null;
+        lastSinglePointRef.current = null;
       }
       const [a, b] = [...pointersRef.current.values()];
-      modeRef.current = 'two';
+      modeRef.current = "two";
       setFingers({ a, b });
-      sendMultiTouch?.({ phase: 'begin', a, b });
+      sendMultiTouch?.({ phase: "begin", a, b });
       return;
     }
 
-    if (modeRef.current === 'none') {
-      modeRef.current = 'single';
+    if (modeRef.current === "none") {
+      modeRef.current = "single";
       singleIdRef.current = event.pointerId;
-      sendTouch({ phase: 'begin', ...p });
+      lastSinglePointRef.current = p;
+      sendTouch({ phase: "begin", ...p });
     }
   };
 
@@ -296,21 +346,21 @@ export function DeviceScreen({
     if (!stored) return;
     const native = event.nativeEvent;
     const coalesced =
-      typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : null;
+      typeof native.getCoalescedEvents === "function" ? native.getCoalescedEvents() : null;
     const last = coalesced && coalesced.length > 0 ? coalesced[coalesced.length - 1] : event;
     const p = pointFrom(last.clientX, last.clientY);
     if (!p) return;
     event.preventDefault();
     pointersRef.current.set(event.pointerId, p);
 
-    if (modeRef.current === 'alt') {
-      pendingRef.current.multi = { phase: 'move', a: p, b: altSecondFinger(p) };
+    if (modeRef.current === "alt") {
+      pendingRef.current.multi = { phase: "move", a: p, b: altSecondFinger(p) };
       queueFrame();
-    } else if (modeRef.current === 'two') {
+    } else if (modeRef.current === "two") {
       const [a, b] = [...pointersRef.current.values()];
-      pendingRef.current.multi = { phase: 'move', a, b };
+      pendingRef.current.multi = { phase: "move", a, b };
       queueFrame();
-    } else if (modeRef.current === 'single' && event.pointerId === singleIdRef.current) {
+    } else if (modeRef.current === "single" && event.pointerId === singleIdRef.current) {
       pendingRef.current.single = p;
       queueFrame();
     }
@@ -321,32 +371,37 @@ export function DeviceScreen({
     if (!stored) return;
     event.preventDefault();
     const p = pointFrom(event.clientX, event.clientY) ?? stored;
+    // A normal release owns its end; ignore its resulting lost-capture event.
+    capturedPointersRef.current.delete(event.pointerId);
     try {
       surfaceRef.current?.releasePointerCapture(event.pointerId);
     } catch {}
 
-    if (modeRef.current === 'alt') {
+    if (modeRef.current === "alt") {
       endMulti(p, altSecondFinger(p));
-      modeRef.current = 'none';
+      modeRef.current = "none";
       pointersRef.current.clear();
+      capturedPointersRef.current.clear();
       return;
     }
-    if (modeRef.current === 'two') {
+    if (modeRef.current === "two") {
       const [a, b] = [...pointersRef.current.values()];
       endMulti(a ?? p, b ?? p);
-      modeRef.current = 'none';
+      modeRef.current = "none";
       pointersRef.current.clear();
+      capturedPointersRef.current.clear();
       return;
     }
-    if (modeRef.current === 'single' && event.pointerId === singleIdRef.current) {
+    if (modeRef.current === "single" && event.pointerId === singleIdRef.current) {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = 0;
       }
       pendingRef.current = {};
-      sendTouch({ phase: 'end', ...p });
-      modeRef.current = 'none';
+      sendTouch({ phase: "end", ...p });
+      modeRef.current = "none";
       singleIdRef.current = null;
+      lastSinglePointRef.current = null;
     }
     pointersRef.current.delete(event.pointerId);
   };
@@ -362,7 +417,7 @@ export function DeviceScreen({
     const sender = createFrameScrollSender(sendScroll);
     scrollSenderRef.current = sender;
     const onWheel = (event: WheelEvent) => {
-      if (modeRef.current !== 'none') return;
+      if (modeRef.current !== "none") return;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
       const dxPx = wheelDeltaToPixels(event.deltaX, event.deltaMode, rect.width);
@@ -384,11 +439,11 @@ export function DeviceScreen({
     const onVisibilityChange = () => {
       if (document.hidden) sender.cancel();
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    document.addEventListener('visibilitychange', onVisibilityChange);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
-      el.removeEventListener('wheel', onWheel);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
+      el.removeEventListener("wheel", onWheel);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       sender.cancel();
       scrollSenderRef.current = null;
     };
@@ -401,16 +456,16 @@ export function DeviceScreen({
   const surfaceStyle: CSSProperties = {
     ...deviceScreenSurfaceStyle(status),
     borderRadius,
-    ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
+    ...(squircle ? ({ cornerShape: "superellipse(1.3)" } as Record<string, unknown>) : {}),
   };
 
   const mediaStyle = deviceScreenMediaStyle(rotation);
 
   return (
     <div style={surfaceStyle}>
-      {videoKind === 'canvas' ? (
+      {videoKind === "canvas" ? (
         <canvas ref={attachVideo} style={mediaStyle} />
-      ) : videoKind === 'video' ? (
+      ) : videoKind === "video" ? (
         <video ref={attachVideo} autoPlay muted playsInline style={mediaStyle} />
       ) : (
         <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
@@ -423,22 +478,44 @@ export function DeviceScreen({
         aria-label="Interactive device screen. Focus to control it with your keyboard. Press Shift and Escape to stop keyboard control."
         tabIndex={0}
         style={{
-          position: 'absolute',
+          position: "absolute",
           inset: 0,
           cursor: FINGER_CURSOR,
-          touchAction: 'none',
+          touchAction: "none",
           borderRadius,
-          outline: 'none',
+          outline: "none",
         }}
         onBlur={() => {
           releasePressedKeys();
+          // Captured gestures survive focus restoration; uncaptured ones cannot receive outside releases.
+          if ([...pointersRef.current.keys()].some((id) => !capturedPointersRef.current.has(id))) {
+            cancelBrowserInput();
+          }
         }}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
+        onPointerLeave={(event) => {
+          if (
+            pointersRef.current.has(event.pointerId) &&
+            !capturedPointersRef.current.has(event.pointerId)
+          ) {
+            cancelBrowserInput();
+          }
+        }}
         onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        onPointerCancel={(event) => {
+          if (pointersRef.current.has(event.pointerId)) cancelBrowserInput();
+        }}
+        onLostPointerCapture={(event) => {
+          if (
+            capturedPointersRef.current.delete(event.pointerId) &&
+            pointersRef.current.has(event.pointerId)
+          ) {
+            cancelBrowserInput();
+          }
+        }}
         onContextMenu={(event) => event.preventDefault()}
       />
 
@@ -456,13 +533,14 @@ export function DeviceScreen({
         <div
           style={{
             ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
-            color: status === 'error' ? '#fca5a5' : 'rgba(255, 255, 255, 0.7)',
-          }}>
-          {status === 'error'
-            ? (error ?? 'Disconnected')
-            : status === 'connecting'
-              ? 'Connecting…'
-              : 'Not connected'}
+            color: status === "error" ? "#fca5a5" : "rgba(255, 255, 255, 0.7)",
+          }}
+        >
+          {status === "error"
+            ? (error ?? "Disconnected")
+            : status === "connecting"
+              ? "Connecting…"
+              : "Not connected"}
         </div>
       )}
     </div>
