@@ -208,6 +208,13 @@ That turns the check off, so a rebinding page could read the token again. Under
 `--require-token` the check is off anyway: a rebinding page has no cookie for
 the preview and cannot read the token.
 
+The Hub and serve-emu apply the same rule with the same flag, so all three
+answer the same hosts: the Hub's `hostAllowed` in `src/server/host-check.ts`,
+serve-emu's router and standalone server through `src/host-allowlist.ts`, and a
+test that compares the three lists [observed: those files,
+`src/server/__tests__/host-check.test.ts`]. Under Expo CLI the Hub takes no
+flags, so `EXPO_DEVICE_HUB_ALLOW_ANY_HOST=1` turns its check off there.
+
 ## CORS
 
 Every route answers with the configured policy. Pass an origin with

@@ -137,6 +137,7 @@ import {
   MultipartUploadError,
   stageMultipartUpload,
 } from "./multipart-upload.ts";
+import { isAllowedHost, refusedHostMessage } from "./host-allowlist.ts";
 import { HttpBodyError, readJsonLimited } from "./request-body.ts";
 import {
   MAX_UPLOAD_QUEUE_TIMEOUT_MS,
@@ -210,6 +211,11 @@ export type ServerOpts = {
    * the `semu_session` cookie, or a `token` query param.
    */
   token?: string;
+  /**
+   * Without `token`, the server answers only for `localhost`, `*.localhost`, and IP addresses, as
+   * serve-sim does, so a DNS-rebinding page cannot use it. Set this to answer for any host name.
+   */
+  allowAnyHostWhenInsecure?: boolean;
   maxFps?: number;
   bitRate?: number;
   maxSize?: number;
@@ -1971,6 +1977,14 @@ export async function startServer(
     async fetch(req, srv) {
       const requestContext = sessions.current;
       const url = new URL(req.url);
+      // Before routing and upgrades: without a token, a page on another name that resolves here
+      // (DNS rebinding) would pass the same-origin checks below.
+      if (!authToken && !opts.allowAnyHostWhenInsecure && !isAllowedHost(req.headers.get("host"))) {
+        return new Response(refusedHostMessage(req.headers.get("host") ?? ""), {
+          status: 403,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+        });
+      }
       const handleStatsRequest = () =>
         handleWebRtcStatsRequest(
           req,

@@ -13,6 +13,7 @@ import {
   writeFetchResponse,
 } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
+import { ALLOW_ANY_HOST_ENV } from './allow-any-host';
 import { startupMessage } from './cli/startup';
 import { localHubUrl, publishHubState } from './cli/state-file';
 import { staticFileHandler } from './cli/static-files';
@@ -111,6 +112,8 @@ async function main(): Promise<void> {
     delete process.env[SESSION_TOKEN_ENV];
     delete process.env[FRAME_ANCESTORS_ENV];
   }
+  if (options.allowAnyHostWhenInsecure) process.env[ALLOW_ANY_HOST_ENV] = '1';
+  else delete process.env[ALLOW_ANY_HOST_ENV];
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;

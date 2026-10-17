@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
 import {
-  createRouter,
+  createRouter as createRouterWithHostCheck,
   SESSION_TOKEN_SUBPROTOCOL_PREFIX,
   type EmuApp,
   type RouterDependencies,
   type StreamSocket,
 } from "../src/middleware.ts";
+
+// These tests use names such as `router.test` as hosts. Without a token the router answers only
+// for localhost and IP addresses, which `createRouter host check` below covers, so they turn it off.
+const createRouter: typeof createRouterWithHostCheck = (defaults = {}, dependencies) =>
+  createRouterWithHostCheck({ allowAnyHostWhenInsecure: true, ...defaults }, dependencies);
 
 const TOKEN = "router-session-token";
 const SERIAL = "emulator-5554";
@@ -17,6 +22,7 @@ function trackedRouter(
   allowedOrigins?: string[],
   appResponse: (request: Request) => Response = (request) =>
     Response.json({ ok: true, path: new URL(request.url).pathname }),
+  hostCheck = false,
 ) {
   const created: string[] = [];
   const launched: string[] = [];
@@ -48,7 +54,7 @@ function trackedRouter(
       return { serial: SERIAL, proc: null, ownsProcess: false, cameraFeed: false, stop: () => {} };
     },
   };
-  const router = createRouter(
+  const router = (hostCheck ? createRouterWithHostCheck : createRouter)(
     { ...(sessionToken === undefined ? {} : { sessionToken }), ...(allowedOrigins ? { allowedOrigins } : {}) },
     dependencies,
   );
@@ -411,6 +417,61 @@ describe("createRouter CORS policy", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     expect(created).toEqual([]);
+  });
+});
+
+// A page on another name that resolves to this machine (DNS rebinding) is same-origin in the browser
+// and carries that name in Host. Without a token, the router answers only localhost and IP
+// addresses, as serve-sim does.
+describe("createRouter host check", () => {
+  const fromHost = (host: string, init: RequestInit = {}) => new Request(`http://${host}/api/devices`, init);
+  const preflightFrom = (host: string) =>
+    fromHost(host, { method: "OPTIONS", headers: { Origin: "http://localhost:5173", "Access-Control-Request-Method": "GET" } });
+
+  test("refuses another host name before any preflight, route, or device", async () => {
+    const router = createRouterWithHostCheck({});
+    for (const request of [fromHost("rebound.example:3400"), preflightFrom("rebound.example:3400")]) {
+      const response = await router.handleRequest(request);
+      expect(response.status).toBe(403);
+      expect(await response.text()).toContain('does not answer for the host "rebound.example:3400"');
+    }
+    expect(router.authorizeUpgrade(new Request("http://rebound.example:3400/ws"))).toBe(false);
+  });
+
+  // A transport that skips `authorizeUpgrade` must not get an open socket from a rebinding page.
+  test("closes a socket whose upgrade request is missing or from another host name", async () => {
+    const { router, attached } = trackedRouter(undefined, undefined, undefined, /* hostCheck */ true);
+    await router.ensure(SERIAL);
+
+    for (const request of [undefined, new Request("http://rebound.example:3400/ws")]) {
+      const { socket, closes } = closableSocket();
+      router.attachWebSocket(socket, { serial: SERIAL, frameMeta: false, ...(request ? { request } : {}) });
+      expect(closes).toEqual([[1008, "Host not allowed"]]);
+    }
+    expect(attached).toEqual([]);
+
+    const { socket, closes } = closableSocket();
+    router.attachWebSocket(socket, { serial: SERIAL, frameMeta: false, request: new Request("http://127.0.0.1:3400/ws") });
+    expect(closes).toEqual([]);
+    expect(attached).toEqual([SERIAL]);
+  });
+
+  // The page is named, so the preflight answer depends only on the host.
+  const page = { allowedOrigins: ["http://localhost:5173"] };
+
+  test("answers localhost, *.localhost, and IP addresses", async () => {
+    const router = createRouterWithHostCheck(page);
+    for (const host of ["localhost:3400", "preview.localhost:3400", "127.0.0.1:3400", "[::1]:3400", "192.168.1.20:3400"]) {
+      expect([host, (await router.handleRequest(preflightFrom(host))).status]).toEqual([host, 204]);
+      expect([host, router.authorizeUpgrade(new Request(`http://${host}/ws`))]).toEqual([host, true]);
+    }
+  });
+
+  test("leaves the host to the token, or to allowAnyHostWhenInsecure", async () => {
+    const gated = createRouterWithHostCheck({ sessionToken: TOKEN });
+    expect((await gated.handleRequest(fromHost("rebound.example:3400"))).status).toBe(401);
+    const open = createRouterWithHostCheck({ ...page, allowAnyHostWhenInsecure: true });
+    expect((await open.handleRequest(preflightFrom("rebound.example:3400"))).status).toBe(204);
   });
 });
 

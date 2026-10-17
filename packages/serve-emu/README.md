@@ -118,6 +118,7 @@ serve-emu --running-avds
 | `--host` | `127.0.0.1` | Address to bind. Defaults to loopback so the device is not exposed. Set `0.0.0.0` to serve over the LAN — see [Access control](#access-control) |
 | `--token` | none | Shared secret required on every data-bearing request. Auto-generated for non-loopback binds if omitted. Must not be empty and can contain only letters, digits, and `-._~` |
 | `--unsafe-no-auth` | false | Allow a non-loopback bind with **no** authentication (dangerous) |
+| `--allow-any-host-when-insecure` | false | Without a token, answer for any host name, not only `localhost`, `*.localhost`, and IP addresses. A DNS-rebinding page can then control the device |
 | `-s, --serial` | auto | adb device serial; required when multiple devices are online |
 | `--stream-mode` | `scrcpy` | Screen capture source: `scrcpy`, or emulator-only host capture through `grpc-screenshot` |
 | `--encoder` | `software` | Host H.264 encoder for gRPC streaming: `software` uses libx264; `hardware` requires VideoToolbox, NVENC, or VAAPI. No software fallback |

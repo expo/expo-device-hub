@@ -559,6 +559,28 @@ describe('the Hub under a session token', () => {
     }
   });
 
+  // A page on another name that resolves here (DNS rebinding) carries that name in Host. Without a
+  // token, the Hub answers only localhost and IP addresses; with one, the token stops such a page.
+  test('closes a socket for another host name on a Hub without a token, and leaves it to the token', async () => {
+    const ungated = server.webSocketHandlersFor(undefined) as Record<
+      string,
+      (socket: unknown, request: Request) => void
+    >;
+    for (const route of Object.keys(ungated)) {
+      const socket = fakeSocket();
+      ungated[route]!(socket, new Request(`http://rebound.example:3400${route}`));
+      expect([route, socket.closed]).toEqual([route, { code: 1008, reason: 'Host not allowed' }]);
+    }
+    const local = fakeSocket();
+    ungated['/vendor/serve-emu/ws']!(local, new Request('http://localhost:3400/vendor/serve-emu/ws'));
+    expect(local.closed).toBeNull();
+
+    const gated = await server.default(
+      new Request('http://rebound.example:3400/api/devices', { headers: { Authorization: `Bearer ${TOKEN}` } }),
+    );
+    expect(gated?.status).toBe(200);
+  });
+
   test("opens a socket from the Hub's own page, a --cors-origin page, or a client without Origin", () => {
     const token = { 'sec-websocket-protocol': `serve-emu.token.${TOKEN}` };
     for (const origin of [ORIGIN, PAGE, undefined]) {

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
+import { ALLOW_ANY_HOST } from './allow-any-host';
 import { MOUNT_PATH } from './mount';
 import { originMatches } from './origin-match';
 import {
@@ -31,6 +32,8 @@ const middleware = simMiddleware({
   basePath: SIM_BASE_PATH,
   proxyHelpers: true,
   ...standaloneOptions,
+  // The Hub's host rule, so serve-sim answers the same hosts.
+  allowAnyHostWhenInsecure: ALLOW_ANY_HOST,
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN
     ? { execToken: SESSION_TOKEN, requirePreviewToken: true, frameAncestors: FRAME_ANCESTORS }

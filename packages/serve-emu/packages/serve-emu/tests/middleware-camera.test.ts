@@ -7,7 +7,7 @@ import type { Device } from "../src/adb.ts";
 import { cameraFeedPath, placeholderCameraImage } from "../src/camera.ts";
 import type { RunningAvd } from "../src/emulator.ts";
 import {
-  createRouter,
+  createRouter as createRouterWithHostCheck,
   type EmuApp,
   type RouterDependencies,
 } from "../src/middleware.ts";
@@ -18,6 +18,12 @@ import {
   type CameraStatus,
 } from "../src/shared/api-contracts.ts";
 import { solidPng } from "./fixtures/png.ts";
+
+// These tests use names such as `router.test` as hosts. Without a token the router answers only
+// for localhost and IP addresses, which `middleware-router-session-token.test.ts` covers, so they
+// turn it off.
+const createRouter: typeof createRouterWithHostCheck = (defaults = {}, dependencies) =>
+  createRouterWithHostCheck({ allowAnyHostWhenInsecure: true, ...defaults }, dependencies);
 
 type JsonObject = Record<string, unknown>;
 
