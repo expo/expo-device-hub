@@ -73,6 +73,41 @@ export function standaloneServeSimOptions(options: CliOptions): StandaloneServeS
   };
 }
 
+/**
+ * The serve-sim CLI flags for the Hub's stream settings, for the helper the Hub spawns with
+ * `--detach`. Without them the helper streams over HTTP even when the Hub runs with
+ * `--transport webrtc`, so its own port serves the MJPEG and H.264 streams the Hub refuses.
+ * `--require-token` cannot be passed: serve-sim refuses it with `--detach`.
+ */
+export function serveSimStreamArgs(streamSettings: StreamSettings | undefined): string[] {
+  if (!streamSettings) return [];
+  const args = ['--transport', streamSettings.transport];
+  if (streamSettings.transport === 'webrtc') {
+    args.push('--webrtc-codec', streamSettings.codec);
+    for (const server of streamSettings.iceServers ?? []) {
+      const isTurn = server.urls.some((url) => /^turns?:/i.test(url));
+      args.push(isTurn ? '--turn-url' : '--stun-url', server.urls.join(','));
+      if (server.username !== undefined) args.push('--turn-username', server.username);
+      if (server.credential !== undefined) args.push('--turn-credential', server.credential);
+    }
+  } else if (streamSettings.codec) {
+    args.push('--codec', streamSettings.codec);
+  }
+  if (streamSettings.maxDimension !== undefined) {
+    args.push('--max-dimension', String(streamSettings.maxDimension));
+  }
+  if (streamSettings.mjpegQuality !== undefined) {
+    args.push('--mjpeg-quality', String(streamSettings.mjpegQuality));
+  }
+  if (streamSettings.h264Bitrate !== undefined) {
+    args.push('--video-bitrate', String(streamSettings.h264Bitrate));
+  }
+  if (streamSettings.h264Fps !== undefined) {
+    args.push('--video-fps', String(streamSettings.h264Fps));
+  }
+  return args;
+}
+
 export function encodeStandaloneServeSimOptions(options: CliOptions): string {
   return JSON.stringify(standaloneServeSimOptions(options));
 }

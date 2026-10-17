@@ -4,6 +4,7 @@ import { parseCliOptions } from '../cli/options';
 import {
   encodeStandaloneServeSimOptions,
   readStandaloneServeSimOptions,
+  serveSimStreamArgs,
   standaloneServeSimOptions,
 } from '../serve-sim-options';
 
@@ -117,5 +118,50 @@ describe('standaloneServeSimOptions', () => {
       standaloneServeSimOptions(options),
     );
     expect(readStandaloneServeSimOptions('not json')).toEqual({});
+  });
+});
+
+// The helper the Hub spawns must stream the way the Hub does, or its own port serves what the Hub refuses.
+describe('serveSimStreamArgs', () => {
+  const argsFor = (args: string[]) =>
+    serveSimStreamArgs(standaloneServeSimOptions(parseCliOptions(args)).streamSettings);
+
+  test('passes WebRTC, its ICE servers, and the encoder settings on', () => {
+    expect(
+      argsFor([
+        '--transport', 'webrtc',
+        '--webrtc-codec', 'vp9',
+        '--stun-url', 'stun:stun.example.test:3478',
+        '--turn-url', 'turns:turn.example.test:443',
+        '--turn-username', 'user',
+        '--turn-credential', 'secret',
+        '--max-dimension', '960',
+        '--video-bitrate', '6000000',
+        '--video-fps', '30',
+      ]),
+    ).toEqual([
+      '--transport', 'webrtc',
+      '--webrtc-codec', 'vp9',
+      '--stun-url', 'stun:stun.example.test:3478',
+      '--turn-url', 'turns:turn.example.test:443',
+      '--turn-username', 'user',
+      '--turn-credential', 'secret',
+      '--max-dimension', '960',
+      '--video-bitrate', '6000000',
+      '--video-fps', '30',
+    ]);
+  });
+
+  test('passes an HTTP codec and quality on', () => {
+    expect(argsFor(['--transport', 'mjpeg', '--mjpeg-quality', '0.5'])).toEqual([
+      '--transport', 'http',
+      '--codec', 'mjpeg',
+      '--mjpeg-quality', '0.5',
+      '--video-fps', '60',
+    ]);
+  });
+
+  test('adds nothing without stream settings', () => {
+    expect(serveSimStreamArgs(undefined)).toEqual([]);
   });
 });
