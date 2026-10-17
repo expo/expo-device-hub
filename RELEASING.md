@@ -57,6 +57,14 @@ versions are Turborepo inputs. If the serve-sim build is not a cache hit, the re
 **Build packages**. The dispatch uses the `EXPO_CI_ROBOT_ACCESS_TOKEN` repository
 secret.
 
+The native release build is pinned to `macos-tahoe-26.5-xcode-26.6`. Both the EAS
+builder and Ubuntu cache reader set `EXPO_DEVICE_HUB_BUILD_IMAGE` to that image;
+Turborepo includes it in the cache key, so outputs from a different toolchain do
+not satisfy the release build. Update the image and both values together.
+The PR workflow tests one Xcode 26 build on Xcode 26 and 27 images, and separately
+checks that serve-sim builds from source with Xcode 27. It does not publish that
+Xcode 27 build.
+
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
 latest commit on `main`.
 

@@ -1,0 +1,19 @@
+name: Restore the prebuilt serve-sim package and fixtures
+inputs:
+  - name: artifact_id
+    required: true
+runs:
+  steps:
+    - uses: eas/checkout
+    - uses: eas/install_node_modules
+    - uses: eas/download_artifact
+      id: download_build
+      with:
+        artifact_id: ${{ inputs.artifact_id }}
+    - name: Restore built binaries and test fixtures
+      env:
+        BUILD_DIRECTORY: ${{ steps.download_build.outputs.artifact_path }}
+      run: |
+        # eas/download_artifact already extracts .tar.gz files.
+        test -f "$BUILD_DIRECTORY/dist/native/serve-sim-native.node"
+        cp -a "$BUILD_DIRECTORY/dist" packages/serve-sim/packages/serve-sim/

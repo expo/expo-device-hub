@@ -71,6 +71,7 @@ jobs:
       # Read-only access to the remote cache that build-cache wrote.
       TURBO_TOKEN: readonly
       TURBO_CACHE: local:rw,remote:r
+      EXPO_DEVICE_HUB_BUILD_IMAGE: macos-tahoe-26.5-xcode-26.6
     permissions:
       contents: write # push the release commit + tags
       id-token: write # npm OIDC Trusted Publishing

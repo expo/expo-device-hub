@@ -27,11 +27,13 @@ jobs:
   build:
     name: Build packages and write the remote cache
     runs_on: macos-medium
-    image: latest
+    image: macos-tahoe-26.5-xcode-26.6
     # TURBO_TOKEN (write access to turbo.exp.host) comes from this EAS environment.
     environment: production
     env:
       TURBO_CACHE: local:rw,remote:rw
+      # Must match the reader in release.yml; this is part of the cache key.
+      EXPO_DEVICE_HUB_BUILD_IMAGE: macos-tahoe-26.5-xcode-26.6
     steps:
       - uses: eas/checkout
 
