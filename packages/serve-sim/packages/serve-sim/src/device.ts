@@ -60,6 +60,18 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
   process.exit(1);
 }
 
+/** Canonical device identity for native capture, without exiting a middleware host. */
+export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
+  if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) return nameOrUDID.toUpperCase();
+  const { devices } = JSON.parse(await simctl(["list", "devices", "booted", "-j"])) as {
+    devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
+  };
+  const matches = Object.values(devices).flat().filter(device => device.state === "Booted" &&
+    (nameOrUDID.toLowerCase() === "booted" || device.name.toLowerCase() === nameOrUDID.toLowerCase()));
+  if (matches.length !== 1) throw new Error(matches.length ? "Several booted simulators match; specify a simulator UDID." : "No booted simulator matches that device name.");
+  return matches[0]!.udid.toUpperCase();
+}
+
 // Match simctl output, not the command echoed in every execution error.
 export function isAlreadyShutDown(error: unknown): boolean {
   const text = error instanceof Error ? error.message : String(error);

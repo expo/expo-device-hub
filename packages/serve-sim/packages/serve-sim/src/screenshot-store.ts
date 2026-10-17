@@ -94,16 +94,21 @@ export async function captureScreenshotAsync(p: {
   }
   let display = p.display;
   let shot: HostActionResult = { stdout: "", stderr: "", exitCode: 1 };
-  for (let attempt = 0; attempt < 3; attempt++) {
-    shot = await runInvocation({
-      file: "xcrun",
-      args: ["simctl", "io", p.udid, "screenshot", `--display=${display}`, staged],
-    });
-    if (!readActiveDisplay) break;
-    const current = await readActiveDisplay();
-    if (current === display) break;
-    display = current;
-    shot = { stdout: "", stderr: "The active display kept changing. Retry the screenshot once the fold has finished.", exitCode: 1 };
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      shot = await runInvocation({
+        file: "xcrun",
+        args: ["simctl", "io", p.udid, "screenshot", `--display=${display}`, staged],
+      });
+      if (shot.exitCode !== 0 || !readActiveDisplay) break;
+      const current = await readActiveDisplay();
+      if (current === display) break;
+      display = current;
+      shot = { stdout: "", stderr: "The active display kept changing. Retry the screenshot once the fold has finished.", exitCode: 1 };
+    }
+  } catch (error) {
+    if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
+    throw error;
   }
   // Or the reservation holds a ceiling slot until the prune. Only while still empty: a second capture
   // of the same name may have written a real screenshot there since.
