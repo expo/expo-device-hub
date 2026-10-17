@@ -692,3 +692,67 @@ test("unknown and late face-down readback preserve an explicit rotation", async 
   await observe(faceDown);
   expect(model().view).toEqual(rotated);
 });
+
+test("external rotation returning to Book restores the physical Book camera", async () => {
+  await mount(); await observe(native("book", "portrait"));
+  const before = structuredClone(model().view as DuoView);
+  await observe({ ...native("book", "portrait"), observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false } });
+  await observe(native("book", "portrait"));
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+});
+test("external Laptop after an external quarter turn restores the tabletop camera", async () => {
+  await mount(); await observe(native("laptop", "landscape_left"));
+  const before = structuredClone(model().view as DuoView);
+  await observe({ ...native("laptop", "landscape_left"), observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false } });
+  await observe(native("laptop", "landscape_left"));
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+});
+test("unconfirmed UI rotation yields to native after grace without another config", async () => {
+  await mount(); await observe(opened("portrait", "landscape_left"));
+  const before = structuredClone(model().view as DuoView);
+  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  await act(async () => { await Bun.sleep(1600); });
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+});
+
+test("external Laptop to Open uses the canonical front-on camera", async () => {
+  await mount(); await observe(native("laptop", "landscape_left"));
+  await observe({width:2007,height:2853,screenId:3,orientation:"portrait",supportsHingeAngle:true,
+    observedDeviceState:{hingeAngle:180,physicalOrientation:"portrait",tableMode:false}});
+  expectView("open");
+});
+
+const observedPresets = [
+  { pose: "closed", angle: 0, physical: "portrait", table: false },
+  { pose: "open", angle: 180, physical: "portrait", table: false },
+  { pose: "book", angle: 90, physical: "portrait", table: false },
+  { pose: "laptop", angle: 90, physical: "landscape-left", table: false },
+  { pose: "tent", angle: 80, physical: "facedown", table: true },
+] as const;
+function externalPreset(preset: typeof observedPresets[number]): StreamConfig {
+  return { width: 2007, height: 2853, screenId: preset.angle === 0 || preset.table ? 1 : 3,
+    orientation: "landscape_right", supportsHingeAngle: true,
+    observedDeviceState: { hingeAngle: preset.angle, physicalOrientation: preset.physical, tableMode: preset.table } };
+}
+for (const from of observedPresets) for (const to of observedPresets) {
+  if (from === to) continue;
+  test(`external ${from.pose} → ${to.pose} frames the physical preset with stale app geometry`, async () => {
+    await mount(); await observe(externalPreset(from)); await observe(externalPreset(to)); expectView(to.pose);
+  });
+}
+
+test("an early UI turn is not doubled by old then current native samples", async () => {
+  await mount();
+  await observe({width:2007,height:2853,screenId:3,orientation:"landscape_left",supportsHingeAngle:true,observedDeviceState:{}});
+  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  const rotated = structuredClone(model().view as DuoView);
+  await observe(opened("portrait", "landscape_left"));
+  expect(model().view).toEqual(rotated);
+  await observe(opened("landscape-left", "portrait"));
+  expect(model().view).toEqual(rotated);
+  await act(async () => { await Bun.sleep(1600); });
+  expect(model().view).toEqual(rotated);
+  await observe(opened("pud", "landscape_right"));
+  const expected = duoRotateView(rotated, 1);
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+});
