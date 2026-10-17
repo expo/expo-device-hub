@@ -17,6 +17,7 @@ runs:
       # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
       env:
         SERVE_SIM_E2E_REQUIRED: "1"
+        SERVE_SIM_E2E_DIAGNOSTICS_DIR: /tmp/serve-sim-e2e-diagnostics
       working_directory: packages/serve-sim
       run: |
         export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
@@ -30,3 +31,13 @@ runs:
           args+=(".e2e.")
         fi
         bun test --max-concurrency=1 --retry=1 "${args[@]}"
+
+    # The e2e helpers write a screenshot and logs here when an app launch is not seen.
+    - name: Upload e2e diagnostics
+      uses: eas/upload_artifact
+      if: ${{ always() }}
+      with:
+        type: other
+        name: serve-sim-e2e-diagnostics-${{ inputs.group }}
+        path: /tmp/serve-sim-e2e-diagnostics
+        ignore_error: true
