@@ -253,6 +253,38 @@ async function fail(message = "Native pose failed") {
   await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: false, error: message });
 }
 
+function opened(physicalOrientation: "portrait" | "pud" | "landscape-left" | "landscape-right", orientation: SimulatorOrientation): StreamConfig {
+  return { width: 2007, height: 2853, screenId: 3, orientation, supportsHingeAngle: true,
+    observedDeviceState: { hingeAngle: 180, physicalOrientation, tableMode: false } };
+}
+
+test("external rotation turns the opened Duo view before display geometry catches up", async () => {
+  await mount(); await observe(opened("portrait", "landscape_left"));
+  const before = structuredClone(model().view as DuoView);
+  await observe(opened("pud", "landscape_left"));
+  const expected = duoRotateView(before, 2);
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  await observe(opened("pud", "landscape_right"));
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  await observe(opened("portrait", "landscape_right"));
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+});
+
+test("UI rotation readback is not applied twice and later external rotation still turns the view", async () => {
+  await mount(); await observe(opened("portrait", "landscape_left"));
+  await act(async () => {
+    renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right");
+  });
+  const rotated = structuredClone(model().view as DuoView);
+  await observe(opened("portrait", "landscape_left"));
+  expect(model().view).toEqual(rotated);
+  await observe(opened("landscape-left", "portrait"));
+  expect(model().view).toEqual(rotated);
+  await observe(opened("pud", "landscape_right"));
+  const expected = duoRotateView(rotated, 1);
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+});
+
 for (const orientation of ["portrait", "landscape_right"] as const) {
   test(`external Laptop → Book uses physical framing with ${orientation} app geometry`, async () => {
     await mount();

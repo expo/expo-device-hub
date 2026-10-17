@@ -8,6 +8,7 @@ import {
   type HingePose,
 } from "../../hinge-control";
 import type { SimulatorOrientation, StreamConfig } from "../types";
+import { createDuoRotationState } from "../simulator/duo-rotation-state";
 import { duoPhysicalPoseChanged } from "../simulator/duo-pose";
 import {
   DUO_FACE_DOWN_HELD,
@@ -53,6 +54,9 @@ export function useDuoFraming(
     pose: HingePose | null | undefined;
     orientation: HingePhysicalOrientation | undefined;
   } | null>(null);
+  const [rotationRequest, setRotationRequest] = useState(0);
+  const [rotationReadback, setRotationReadback] = useState(0);
+  const nativeRotationRef = useRef(createDuoRotationState());
   const duoRotationRef = useRef({ turns: 0, revision: 0 });
   const hingePresetRotationsRef = useRef(
     new WeakMap<HingeControlCommand, { turns: number; revision: number }>(),
@@ -224,6 +228,8 @@ export function useDuoFraming(
         : (rotationDegreesForOrientation(current.orientation) -
             rotationDegreesForOrientation(orientation)) /
           90;
+      nativeRotationRef.current.request(turns);
+      setRotationRequest((revision) => revision + 1);
       duoRotationRef.current = {
         turns: duoRotationRef.current.turns + turns,
         revision: duoRotationRef.current.revision + 1,
@@ -255,11 +261,12 @@ export function useDuoFraming(
     hingePresetRotationsRef.current = new WeakMap();
     duoRotationRef.current = { turns: 0, revision: 0 };
     observedPoseRef.current = {};
+    nativeRotationRef.current = createDuoRotationState();
     sentHingePoseRef.current = undefined;
   }, [deviceKey, resetDuoView]);
 
   useEffect(() => {
-    // Use native orientation once when connecting, never as a live view control.
+    // Seed the view from display geometry; later turns follow native physical orientation.
     if (!duoView && activeStreamConfig.screenId !== undefined)
       setDuoView((previous) => previous ?? initialDuoView);
   }, [duoView, activeStreamConfig.screenId, initialDuoView]);
@@ -315,6 +322,37 @@ export function useDuoFraming(
     streamConfig?.physicalOrientation,
     physicalPose,
   ]);
+
+  useEffect(() => {
+    if (!rotationRequest) return;
+    const timer = setTimeout(() => setRotationReadback((revision) => revision + 1), 1500);
+    return () => clearTimeout(timer);
+  }, [deviceKey, rotationRequest]);
+
+  useEffect(() => {
+    const orientation = streamConfig?.physicalOrientation;
+    // Presets choose their own camera and may turn the device out of its plane.
+    // Keep their existing reconciliation instead of adding a second camera turn.
+    const pose = streamConfig?.hingePose;
+    if (
+      hingeOwned ||
+      pose === "book" ||
+      pose === "laptop" ||
+      pose === "tent" ||
+      orientation === "faceup" ||
+      orientation === "facedown"
+    ) {
+      nativeRotationRef.current.rebase(orientation);
+      return;
+    }
+    const turns = nativeRotationRef.current.observe(orientation);
+    if (!turns) return;
+    // The pose effect can clear a remembered preset in the same commit. Rotate
+    // the view that was visible before this observation, not stale app geometry.
+    const current = duoControlStateRef.current;
+    setDuoView(duoRotateView(current.duoView ?? current.initialDuoView, turns));
+    duoViewLocalIntentRef.current = true;
+  }, [hingeOwned, streamConfig?.hingePose, streamConfig?.physicalOrientation, rotationReadback]);
 
   useEffect(() => {
     // Another client can turn a half-open device face down without a preset.
