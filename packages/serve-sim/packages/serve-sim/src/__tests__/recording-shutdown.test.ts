@@ -42,7 +42,7 @@ test.each([false, true])("server shutdown preserves pending finalization and cle
     expect(JSON.parse(readFileSync(state, "utf8")).pid).toBe(child.pid);
     expect(readFileSync(output, "utf8")).toBe("unfinished");
     expect(existsSync(report)).toBe(false);
-    expect(events().map(event => event.name)).toEqual(["writer-start"]);
+    expect(events().map(event => event.name)).toEqual(["foreground-start", "foreground-stop", "writer-start"]);
     const exited = once(child, "exit");
     child.stdin!.write("finish");
     expect(await exited).toEqual([1, null]);
@@ -53,8 +53,8 @@ test.each([false, true])("server shutdown preserves pending finalization and cle
     expect(failure.pid).toBe(child.pid);
     expect(failure.errors.join("\n")).toContain("Recording shutdown exceeded 65 seconds");
     if (fails) expect(failure.errors.join("\n")).toContain("delayed native finish failed");
-    expect(events().map(event => event.name)).toEqual(["writer-start", "writer-finish", "capture-disable", "clipboard-dispose", "device-disarm"]);
-    for (const event of events().slice(2)) {
+    expect(events().map(event => event.name)).toEqual(["foreground-start", "foreground-stop", "writer-start", "writer-finish", "capture-disable", "clipboard-dispose", "device-disarm"]);
+    for (const event of events().slice(4)) {
       expect(event.statePresent).toBe(true);
       expect(event.reportPresent).toBe(true);
     }
