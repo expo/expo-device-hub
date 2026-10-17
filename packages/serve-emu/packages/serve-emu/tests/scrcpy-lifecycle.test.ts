@@ -471,6 +471,88 @@ describe("scrcpy async lifecycle", () => {
     await session.close();
   });
 
+  // Some Samsung devices abort app_process when /proc/<pid>/cmdline exceeds
+  // about 255 bytes: https://github.com/Genymobile/scrcpy/issues/6900
+  test("keeps the Hub's scrcpy server command line under 255 bytes", async () => {
+    const harness = createHarness();
+    const session = await startScrcpy(
+      { serial: SERIAL, maxFps: 60, bitRate: 8_000_000, maxSize: 1280 },
+      harness.deps,
+    );
+
+    const args = harness.state.spawnCalls[0].args;
+    const cmdline = args.slice(args.indexOf("app_process"));
+    expect(cmdline.slice(0, 5)).toEqual([
+      "app_process",
+      "/",
+      "com.genymobile.scrcpy.Server",
+      SCRCPY_VERSION,
+      "scid=01234560",
+    ]);
+    // The kernel ends every argument in /proc/<pid>/cmdline with a NUL byte.
+    const cmdlineBytes = cmdline.reduce(
+      (bytes, arg) => bytes + Buffer.byteLength(arg) + 1,
+      0,
+    );
+    expect(cmdlineBytes).toBeLessThan(255);
+
+    await session.close();
+  });
+
+  test("omits scrcpy server defaults and passes every other option", async () => {
+    const harness = createHarness();
+    const defaults = await startWith(harness);
+    const customBitRate = await startScrcpy(
+      { serial: SERIAL, bitRate: 4_000_000 },
+      harness.deps,
+    );
+    const control = await startScrcpyControl({ serial: SERIAL }, harness.deps);
+    const [defaultArgs, customBitRateArgs, controlArgs] =
+      harness.state.spawnCalls.map((call) => call.args);
+
+    for (const args of [defaultArgs, customBitRateArgs, controlArgs]) {
+      for (const serverDefault of [
+        "video=true",
+        "video_bit_rate=8000000",
+        "control=true",
+        "send_dummy_byte=true",
+        "send_stream_meta=true",
+        "send_frame_meta=true",
+        "send_device_meta=true",
+        "cleanup=true",
+      ]) {
+        expect(args).not.toContain(serverDefault);
+      }
+      expect(args).toEqual(
+        expect.arrayContaining([
+          "log_level=info",
+          "audio=false",
+          "tunnel_forward=true",
+          "clipboard_autosync=false",
+        ]),
+      );
+    }
+    expect(defaultArgs).toEqual(
+      expect.arrayContaining([
+        "max_size=1280",
+        "max_fps=60",
+        "video_codec_options=i-frame-interval=10",
+      ]),
+    );
+    expect(customBitRateArgs).toContain("video_bit_rate=4000000");
+    expect(controlArgs).toEqual(
+      expect.arrayContaining([
+        "video=false",
+        "send_dummy_byte=false",
+        "send_stream_meta=false",
+        "send_frame_meta=false",
+        "send_device_meta=false",
+      ]),
+    );
+
+    await Promise.all([defaults.close(), customBitRate.close(), control.close()]);
+  });
+
   test("a deferred adb command does not block unrelated timers", async () => {
     const harness = createHarness({ deferProbe: true });
     let startupSettled = false;
