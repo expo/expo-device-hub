@@ -1,0 +1,29 @@
+name: Prepare the prebuilt serve-sim tests
+inputs:
+  - name: artifact_id
+    required: true
+runs:
+  steps:
+    - uses: eas/checkout
+    - uses: eas/install_node_modules
+    - uses: eas/download_artifact
+      id: download_build
+      with:
+        artifact_id: ${{ inputs.artifact_id }}
+    - name: Restore built binaries and test fixtures
+      env:
+        BUILD_ARCHIVE: ${{ steps.download_build.outputs.artifact_path }}
+      run: |
+        shasum -a 256 "$BUILD_ARCHIVE"
+        tar -xzf "$BUILD_ARCHIVE" -C packages/serve-sim/packages/serve-sim
+
+    - name: Install mitmproxy
+      run: |
+        # Install the Python package without a quarantined macOS app bundle.
+        brew install python@3.14
+        "$(brew --prefix python@3.14)/bin/python3.14" -m venv /tmp/serve-sim-ci-mitmproxy
+        /tmp/serve-sim-ci-mitmproxy/bin/pip install mitmproxy==12.2.3
+        export SERVE_SIM_MITMDUMP=/tmp/serve-sim-ci-mitmproxy/bin/mitmdump
+        set-env SERVE_SIM_MITMDUMP "$SERVE_SIM_MITMDUMP"
+        cd packages/serve-sim
+        bun packages/serve-sim/scripts/test/check-mitmproxy.ts
