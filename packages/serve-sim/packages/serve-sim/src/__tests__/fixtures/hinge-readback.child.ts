@@ -3,9 +3,9 @@ import { EventEmitter } from "node:events";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
 import { UDID, useTempStateDir } from "../helpers";
-import type { NativeDeviceStateSnapshot } from "../../native";
+import type { NativeHingeState, NativeDeviceStateSnapshot } from "../../native";
 let observed: ((snapshot: NativeDeviceStateSnapshot) => void) | undefined;
-let eligibility = { hingeAngle: 0, physicalOrientation: "portrait" };
+let eligibility: NativeHingeState = { hingeAngle: 0, physicalOrientation: "portrait" };
 let eligibilityGate: Promise<void> | undefined;
 mock.module("../../native", () => ({ ...native, NativeCapture: class {
   async start() {} async stop() {}
@@ -46,7 +46,7 @@ test("readback orders acknowledgements and fresh external eligibility without tr
 });
 test("Table Mode setting stays distinct from observed tabletop activity",async()=>{
   send(0x10,{requestId:1,command:{control:"table",value:true}});expect(await socket.reply(0x90)).toMatchObject({ok:true});
-  sample(180,false);send(0x13);expect((await socket.reply(0x93)).state).toMatchObject({tableMode:true,tableModeActive:false});
+  eligibility={...eligibility,tableMode:false};sample(180,false);send(0x13);expect((await socket.reply(0x93)).state).toMatchObject({tableMode:true,tableModeActive:false});
 });
 test("a readback holds its place before a later hinge command",async()=>{
   let release!:()=>void;eligibilityGate=new Promise<void>(resolve=>{release=resolve;});
@@ -54,4 +54,13 @@ test("a readback holds its place before a later hinge command",async()=>{
   expect(eligibility.hingeAngle).toBe(180);release();eligibilityGate=undefined;
   expect((await socket.reply(0x93)).state).toMatchObject({hingeAngle:180});
   expect(await socket.reply(0x8f)).toMatchObject({ok:true,angle:30});
+});
+
+test("readback derives pose and activity from the same native eligibility snapshot",async()=>{
+  sample(80,false);
+  let release!:()=>void;eligibilityGate=new Promise<void>(resolve=>{release=resolve;});
+  send(0x13);await Bun.sleep(10);
+  eligibility={hingeAngle:80,physicalOrientation:"facedown",tableMode:true};sample(80,true);
+  release();eligibilityGate=undefined;
+  expect((await socket.reply(0x93)).state).toMatchObject({hingeAngle:80,physicalOrientation:"facedown",hingePose:"tent",tableModeActive:true,tableMode:false});
 });

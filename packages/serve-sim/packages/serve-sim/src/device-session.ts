@@ -1775,10 +1775,7 @@ export class DeviceSession {
                     this.hingePhysicalOrientation,
                   ),
                 }
-              : observedHingeState({
-                  ...(await this.hid.hingeControlEligibility()),
-                  tableMode: observed.tableMode,
-                });
+              : observedHingeState(await this.hid.hingeControlEligibility());
           if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
           ws.send(
             Buffer.concat([
@@ -1789,7 +1786,7 @@ export class DeviceSession {
                   state: {
                     ...state,
                     tableMode: this.tableMode,
-                    ...(observed ? { tableModeActive: observed.tableMode } : {}),
+                    ...(observed ? { tableModeActive: state.tableMode } : {}),
                   },
                 }),
               ),
