@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import { isWebOrigin, originMatches } from "./middleware-utils";
 import { unauthorizedPreviewPage } from "./unauthorized-page";
 
 export interface SessionAuthReq {
@@ -102,6 +103,28 @@ export function isSameOriginRequest(headers: SessionAuthReq["headers"]): boolean
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a request that can change state may run: one without `Origin` (a CLI), the preview's own
+ * page, or a page named by `--cors-origin`. A loopback page may read the preview but not act, as on
+ * the control socket and in serve-emu's router. A cross-site page can send a form-like POST that
+ * needs no preflight, so this holds with or without the token gate.
+ */
+export function stateChangeOriginAllowed(
+  headers: SessionAuthReq["headers"],
+  corsOrigins: readonly string[],
+): boolean {
+  const origin = headerValue(headers.origin);
+  if (!origin) return true;
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (!isWebOrigin(parsed)) return false;
+  return isSameOriginRequest(headers) || corsOrigins.some((allowed) => originMatches(allowed, parsed));
 }
 
 function isDocumentNavigation(headers: SessionAuthReq["headers"]): boolean {

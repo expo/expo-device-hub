@@ -38,6 +38,7 @@ import {
   isUsableSessionToken,
   matchesBearerToken,
   upgradeAuthHeaders,
+  stateChangeOriginAllowed,
 } from "./session-auth";
 import {
   eventLogEventForAction,
@@ -2017,6 +2018,21 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         "Access-Control-Max-Age": "600",
       });
       res.end();
+      return;
+    }
+    // Before the gate, so another site's page cannot change state whether or not there is a token.
+    const method = (req.method ?? "GET").toUpperCase();
+    if (
+      ownPath
+      && method !== "GET"
+      && method !== "HEAD"
+      && !stateChangeOriginAllowed(req.headers, corsOrigins)
+    ) {
+      res.writeHead(403, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({
+        ok: false,
+        error: "This page may not change the simulator. Start serve-sim with --cors-origin for its origin.",
+      }));
       return;
     }
     const requestedDevice = queryDevice(rawUrl);

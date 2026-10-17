@@ -292,6 +292,24 @@ describe("createRouter CORS policy", () => {
     expect(loopback.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
   });
 
+  // Another site's page can send a form-like POST without a preflight; it must not reach a device.
+  test("refuses a state change from another site before it starts a device", async () => {
+    const { router, created } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
+    const post = (headers: Record<string, string>) =>
+      router.handleRequest(
+        new Request(`http://127.0.0.1:3400/api/network?device=${SERIAL}`, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain", ...headers },
+          body: JSON.stringify({ enabled: false }),
+        }),
+      );
+
+    expect((await post({ Origin: "https://elsewhere.example" })).status).toBe(403);
+    expect(created).toEqual([]);
+    // The browser marks a same-origin page, even when a TLS proxy hides the client's scheme.
+    expect((await post({ Origin: "https://127.0.0.1:3400", "Sec-Fetch-Site": "same-origin" })).status).toBe(200);
+  });
+
   test("answers a preflight on any route before the token gate and without a device", async () => {
     const { request, created } = trackedRouter(TOKEN, [ALLOWED_ORIGIN]);
 

@@ -229,6 +229,17 @@ actions on the host, so it grants more than read access. Loopback is the
 exception: it may read the preview without a flag, but it may not open the
 control socket unless it is named.
 
+The same rule holds for every request that can change state (anything but
+`GET`, `HEAD`, and `OPTIONS`), with or without the token gate: it runs only for
+the preview's own page, a page named by `--cors-origin`, or a client that sends
+no `Origin`, such as the CLI. Anything else gets 403 before the route runs. CORS
+alone does not stop such a request: another site's page can send a form-like
+`POST` with no preflight, and only its answer is hidden [observed:
+`stateChangeOriginAllowed` in `src/session-auth.ts`]. serve-emu's router and the
+Hub apply the same rule. Each checks it in its own routes: the Hub in its device
+actions, and each backend in its router, so a path none of them routes goes to
+the host that embeds the Hub unchanged.
+
 A gated request still answers 401 with the CORS headers attached, so the browser
 can read the status rather than reporting an opaque network error. A route that
 throws before it sends its headers answers 500 with the same headers and a fixed

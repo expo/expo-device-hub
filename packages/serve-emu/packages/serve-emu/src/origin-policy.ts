@@ -113,6 +113,8 @@ export function isAllowedMutationOrigin(
 ): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
+  // The browser sets this, so it holds even when a TLS proxy hides the client's scheme.
+  if (req.headers.get("sec-fetch-site") === "same-origin") return true;
   const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return false;
 

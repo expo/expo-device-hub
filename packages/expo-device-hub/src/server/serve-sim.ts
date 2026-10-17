@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
 import { MOUNT_PATH } from './mount';
+import { originMatches } from './origin-match';
 import {
   readStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
@@ -39,6 +40,10 @@ const middleware = simMiddleware({
 /** Whether serve-sim lets a page on `origin` read its responses. */
 export const simAllowsOrigin = (origin: URL): boolean =>
   serveSimAllowsOrigin(standaloneOptions.corsOrigins ?? [], origin);
+
+/** Whether `--cors-origin` names `origin`, without serve-sim's implicit loopback reads. */
+export const corsOriginNamed = (origin: URL): boolean =>
+  (standaloneOptions.corsOrigins ?? []).some((allowed) => originMatches(allowed, origin));
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;
