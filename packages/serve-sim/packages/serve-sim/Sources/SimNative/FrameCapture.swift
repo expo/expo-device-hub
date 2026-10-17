@@ -669,6 +669,24 @@ actor FrameCapture {
                                   displayProfile: displayProfile)
     }
 
+    /// A screenshot must not use the panel cached before the most recent fold.
+    func activeScreenID() async throws -> UInt32 {
+        let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
+        if let fixedScreenID { return fixedScreenID }
+        if integratedIDs.count == 2, let deviceUDID {
+            guard let displays = try await CoreDeviceDisplayInfo.read(udid: deviceUDID),
+                  let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
+                throw makeError(5, "Simulator did not report its active display")
+            }
+            updateDisplayInfo(displays)
+            return active.screenID
+        }
+        guard let id = capturedDisplay?.integratedScreenID else {
+            throw makeError(5, "Simulator did not report its active display")
+        }
+        return id
+    }
+
     /// Surfaces that this capture can publish. A fixed-panel session must not
     /// size its canvas for the other panel of a foldable simulator.
     private func integratedCanvasSizes() -> [Dimensions]? {

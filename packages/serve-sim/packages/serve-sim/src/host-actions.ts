@@ -408,8 +408,15 @@ const ACTION_SCHEMAS = {
     .object({ path: ConfinedPath })
     .meta({ description: "Download a file from the simulator host.", output: "base64" }),
   "screenshot.capture": z
-    .object({ udid: Device, fileName: ScreenshotName.optional() })
-    .meta({ description: "Take a screenshot.", output: "path" }),
+    .object({
+      udid: Device,
+      fileName: ScreenshotName.optional(),
+      display: z.number().int().min(1).max(0xffff_ffff).optional(),
+    })
+    .meta({
+      description: "Take a screenshot of the active display, or the specified simctl display ID.",
+      output: "path",
+    }),
   "screenshot.thumbnail": z.object({ fileName: ScreenshotName }).meta({ hidden: true }),
   "upload.append": z
     .object({
@@ -902,10 +909,26 @@ async function runProcedureAsync(
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
-      return await captureScreenshotAsync({
-        udid: p.udid,
-        fileName: p.fileName ?? newScreenshotName(),
-      });
+      try {
+        let display = p.display;
+        let readActiveDisplay: (() => Promise<number>) | undefined;
+        if (display === undefined) {
+          const { getDeviceSession } = await import("./device-session");
+          const session = getDeviceSession(p.udid, streamSettings);
+          readActiveDisplay = () => session.activeScreenId();
+          display = await readActiveDisplay();
+        }
+        return await captureScreenshotAsync(
+          { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+          readActiveDisplay,
+        );
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
+      }
     }
     case "actions.describe":
       parseParams(action, raw);

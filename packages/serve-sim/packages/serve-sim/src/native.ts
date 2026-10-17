@@ -77,6 +77,7 @@ interface SimCaptureHandle {
   closeWebRTCSession(sessionId: string): Promise<void>;
   webRTCSenderStats(sessionId: string): Promise<string>;
   screenSize(): Promise<NativeScreenInfo>;
+  activeScreenId(): Promise<number>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
   subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
@@ -486,6 +487,10 @@ export class NativeCapture {
 
   screenSize(): Promise<NativeScreenInfo> {
     return this.handle.screenSize();
+  }
+
+  activeScreenId(): Promise<number> {
+    return this.handle.activeScreenId();
   }
 
   async subscribeDeviceState(

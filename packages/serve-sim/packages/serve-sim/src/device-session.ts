@@ -395,6 +395,12 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
+  /** Use the same native panel election as the live stream, including external folds. */
+  async activeScreenId(): Promise<number> {
+    await this.start();
+    return this.capture.activeScreenId();
+  }
+
   /** Begin capture. Throws if the device isn't booted. Idempotent. */
   start(): Promise<void> {
     if (this.phase === "running") return this.captureStart ?? Promise.resolve();

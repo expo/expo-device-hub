@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; observed hinge readback)
+**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -557,4 +557,10 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` makes a file name when `fileName` is missing.
+`screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
+when `fileName` is missing. `display` is a positive simctl screen ID, so a client
+can capture a particular panel even when it is inactive. Without it, the action
+starts or reuses the owning middleware's device session and selects the same
+native active display as the live stream. If that display cannot be determined,
+the action fails instead of silently capturing a different panel. An inactive
+panel's screenshot may be black.
