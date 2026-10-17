@@ -18,6 +18,7 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   'bold-text': 'off',
   'increase-contrast': 'off',
   'onscreen-keyboard': 'off',
+  fold: 'opened',
   'show-borders': 'off',
   'reduce-transparency': 'off',
   voiceover: 'off',
@@ -79,6 +80,14 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
   { key: 'voiceover', label: 'VoiceOver' },
 ];
 
+/** Postures the Folded switch cannot show on its own. */
+const FOLD_POSTURE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  'half-opened': 'Currently half open.',
+  flipped: 'Currently flipped.',
+  tent: 'Currently in tent posture.',
+  unknown: 'Currently partly open.',
+};
+
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
 export const NO_DEVICE_FRAME_DESCRIPTION = 'No device frame for selected device.';
@@ -126,6 +135,7 @@ export function DeviceOptionsSection({
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
+  const foldDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   const settingsAvailable = client?.deviceSettingsStatus === 'ready';
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
@@ -164,6 +174,9 @@ export function DeviceOptionsSection({
     );
   }
 
+  const foldDescription = Object.hasOwn(FOLD_POSTURE_DESCRIPTIONS, value('fold'))
+    ? FOLD_POSTURE_DESCRIPTIONS[value('fold')]
+    : undefined;
   const keyboardVisible = showDeviceSettings && client?.platform === 'ios';
 
   return (
@@ -208,6 +221,21 @@ export function DeviceOptionsSection({
             value={value('display-size')}
             disabled={disabled('display-size')}
             onChange={(nextValue) => setValue('display-size', nextValue)}
+          />
+        </SidebarRow>
+      )}
+
+      {showDeviceSettings && platform === 'android' && visible('fold') && (
+        <SidebarRow
+          label="Folded"
+          description={foldDescription}
+          descriptionId={foldDescription === undefined ? undefined : foldDescriptionId}>
+          <SidebarSwitch
+            checked={value('fold') === 'closed'}
+            disabled={disabled('fold')}
+            label="Folded"
+            descriptionId={foldDescription === undefined ? undefined : foldDescriptionId}
+            onChange={(checked) => setValue('fold', checked ? 'closed' : 'opened')}
           />
         </SidebarRow>
       )}

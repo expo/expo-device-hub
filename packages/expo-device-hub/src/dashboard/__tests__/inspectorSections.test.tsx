@@ -1666,6 +1666,42 @@ test('renders the Android on-screen keyboard switch the backend reports', () => 
   expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
+test('renders the Android fold switch the backend reports', () => {
+  const client = (fold: string) =>
+    ({
+      ...inspectorClient('android'),
+      deviceSettings: { appearance: 'light', network: 'on', 'text-size': 'medium', fold },
+    }) satisfies DeviceClient;
+
+  const closed = renderToStaticMarkup(<LogSidebar client={client('closed')} />);
+  expect(switchMarkup(closed, 'Folded')).toContain('aria-checked="true"');
+  expect(switchMarkup(closed, 'Folded')).not.toContain('aria-describedby');
+
+  const opened = renderToStaticMarkup(<LogSidebar client={client('opened')} />);
+  expect(switchMarkup(opened, 'Folded')).toContain('aria-checked="false"');
+
+  const halfOpen = renderToStaticMarkup(<LogSidebar client={client('half-opened')} />);
+  expect(switchMarkup(halfOpen, 'Folded')).toContain('aria-checked="false"');
+  expect(switchMarkup(halfOpen, 'Folded')).toContain('aria-describedby=');
+  expect(halfOpen).toContain('Currently half open.');
+});
+
+test('hides the fold switch on iOS and on Android devices without a hinge', () => {
+  const android = (deviceSettings: DeviceClient['deviceSettings']) =>
+    renderToStaticMarkup(
+      <LogSidebar client={{ ...inspectorClient('android'), deviceSettings } satisfies DeviceClient} />,
+    );
+  expect(android({ appearance: 'light', fold: 'unsupported' })).not.toContain('>Folded<');
+  expect(android({ appearance: 'light' })).not.toContain('>Folded<');
+  expect(android(null)).not.toContain('>Folded<');
+
+  const ios = {
+    ...inspectorClient('ios'),
+    deviceSettings: { ...inspectorClient('ios').deviceSettings, fold: 'closed' },
+  } satisfies DeviceClient;
+  expect(renderToStaticMarkup(<LogSidebar client={ios} />)).not.toContain('>Folded<');
+});
+
 
 test('shows hardware probe failures and the encoder still streaming with a single gRPC source', () => {
   const client = {

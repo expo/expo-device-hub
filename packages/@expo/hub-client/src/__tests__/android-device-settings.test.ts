@@ -251,6 +251,65 @@ describe('Android device setting contract', () => {
   });
 });
 
+describe('Android fold contract', () => {
+  test('folds and unfolds fully and refuses the postures serve-emu cannot set', () => {
+    expect(androidDeviceSettingRequest('fold', 'closed')).toEqual({
+      path: '/api/fold',
+      body: { posture: 'closed' },
+    });
+    expect(androidDeviceSettingRequest('fold', 'opened')).toEqual({
+      path: '/api/fold',
+      body: { posture: 'opened' },
+    });
+    expect(androidDeviceSettingRequest('fold', 'half-opened')).toBeNull();
+    expect(androidDeviceSettingRequest('fold', 'on')).toBeNull();
+  });
+
+  test('reads every reported posture', () => {
+    const fold = (posture: unknown) =>
+      parseAndroidDeviceSetting('fold', {
+        ok: true,
+        fold: { supported: true, posture, hingeAngle: 90 },
+      });
+    expect(fold('closed')).toBe('closed');
+    expect(fold('opened')).toBe('opened');
+    expect(fold('half_opened')).toBe('half-opened');
+    expect(fold('flipped')).toBe('flipped');
+    expect(fold('tent')).toBe('tent');
+    expect(fold(null)).toBe('unknown');
+  });
+
+  test('marks a device without a hinge unsupported', () => {
+    expect(
+      parseAndroidDeviceSetting('fold', {
+        ok: true,
+        fold: { supported: false, posture: null, hingeAngle: null },
+      }),
+    ).toBe('unsupported');
+  });
+
+  test('rejects fold responses it cannot read', () => {
+    expect(parseAndroidDeviceSetting('fold', { ok: false })).toBeNull();
+    expect(parseAndroidDeviceSetting('fold', { ok: true })).toBeNull();
+    expect(parseAndroidDeviceSetting('fold', { ok: true, fold: 'closed' })).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('fold', { ok: true, fold: { posture: 'closed' } }),
+    ).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('fold', {
+        ok: true,
+        fold: { supported: true, posture: 'sideways', hingeAngle: 90 },
+      }),
+    ).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('fold', {
+        ok: true,
+        fold: { supported: true, posture: 'constructor', hingeAngle: 90 },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe('Android device setting table', () => {
   test('derives the setting keys in table order', () => {
     expect(ANDROID_DEVICE_SETTING_KEYS).toEqual([
@@ -262,6 +321,7 @@ describe('Android device setting table', () => {
       'bold-text',
       'increase-contrast',
       'onscreen-keyboard',
+      'fold',
     ]);
   });
 
@@ -276,6 +336,7 @@ describe('Android device setting table', () => {
       'bold-text': 0,
       'increase-contrast': 0,
       'onscreen-keyboard': 0,
+      fold: 0,
     });
     expect(createAndroidDeviceSettingVersions()).not.toBe(versions);
   });

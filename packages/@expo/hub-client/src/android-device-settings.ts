@@ -10,6 +10,7 @@ export type AndroidDeviceSettingKey = Extract<
   | 'bold-text'
   | 'increase-contrast'
   | 'onscreen-keyboard'
+  | 'fold'
 >;
 
 export type AndroidSizeStep = 'small' | 'medium' | 'large' | 'extra-large';
@@ -50,7 +51,8 @@ export type AndroidDeviceSettingPath =
   | '/api/reduce-motion'
   | '/api/font-weight'
   | '/api/high-text-contrast'
-  | '/api/software-keyboard';
+  | '/api/software-keyboard'
+  | '/api/fold';
 
 export interface AndroidDeviceSettingRequest {
   path: AndroidDeviceSettingPath;
@@ -61,6 +63,15 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
+
+/** serve-emu's fold postures in Hub's kebab-case spelling. */
+const ANDROID_FOLD_POSTURES: ReadonlyMap<unknown, string> = new Map([
+  ['closed', 'closed'],
+  ['half_opened', 'half-opened'],
+  ['opened', 'opened'],
+  ['flipped', 'flipped'],
+  ['tent', 'tent'],
+]);
 
 function enabledBodyForOnOff(value: string): Record<string, unknown> | null {
   return value === 'on' || value === 'off' ? { enabled: value === 'on' } : null;
@@ -144,6 +155,19 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
     path: '/api/software-keyboard',
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.softwareKeyboard),
+  },
+  fold: {
+    path: '/api/fold',
+    // serve-emu can only fold or unfold fully; it reads the other postures.
+    encode: (value) => (value === 'closed' || value === 'opened' ? { posture: value } : null),
+    decode: (data) => {
+      const fold = asRecord(data.fold);
+      if (fold?.supported === false) return 'unsupported';
+      if (fold?.supported !== true) return null;
+      // A hinge angle between the device's postures has no posture name.
+      if (fold.posture === null) return 'unknown';
+      return ANDROID_FOLD_POSTURES.get(fold.posture) ?? null;
+    },
   },
 };
 
