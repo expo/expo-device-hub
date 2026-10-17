@@ -2307,6 +2307,7 @@ export class DeviceSession {
     height: number;
     orientation: string;
     inputUnavailable: boolean;
+    keyboardUnavailable: boolean;
     screenId?: number;
     supportsHingeAngle?: boolean;
     supportsPhysicalOrientation?: boolean;
@@ -2322,6 +2323,7 @@ export class DeviceSession {
       height: this.height,
       orientation: this.orientation,
       inputUnavailable: this.hid.inputUnavailable,
+      keyboardUnavailable: this.hid.keyboardUnavailable,
       ...(this.nativeScreen?.screenId !== undefined ? { screenId: this.nativeScreen.screenId } : {}),
       ...(this.supportsPhysicalOrientation !== undefined ? { supportsPhysicalOrientation: this.supportsPhysicalOrientation } : {}),
       ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle } : {}),

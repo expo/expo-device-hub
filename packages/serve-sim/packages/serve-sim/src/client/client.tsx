@@ -1615,7 +1615,7 @@ function AppWithConfig({
                 }}
               />
             </span>
-            <StreamStatusPill streaming={streaming} inputUnavailable={streamConfig?.inputUnavailable} />
+            <StreamStatusPill streaming={streaming} inputUnavailable={streamConfig?.inputUnavailable} keyboardUnavailable={streamConfig?.keyboardUnavailable} />
           </SimulatorToolbar>
         </div>
         )}

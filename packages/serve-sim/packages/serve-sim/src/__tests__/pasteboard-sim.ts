@@ -246,7 +246,9 @@ export async function sendSimTap(udid: string, x: number, y: number): Promise<vo
   await hid.touch("begin", x, y, 1, 1);
   await Bun.sleep(60);
   await hid.touch("end", x, y, 1, 1);
-  await Bun.sleep(300);
+  // WebKit commits a single tap after its double-tap delay, about 350 ms after touch-up on
+  // CoreDevice touch, and that commit clears a selection made by an earlier shortcut.
+  await Bun.sleep(750);
 }
 
 export async function sendSimSelectAllShortcut(udid: string): Promise<void> {

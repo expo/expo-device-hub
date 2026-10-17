@@ -2,6 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { previewScreenConfig, resolveScreenConfigUpdate } from "../client/simulator/screen-config-state";
 
 describe("screen config state", () => {
+  test("reports keyboard-only availability changes and retains them across media frames", () => {
+    const current = { width: 900, height: 1280, keyboardUnavailable: false };
+    const failed = { ...current, keyboardUnavailable: true };
+    expect(resolveScreenConfigUpdate(current, failed, "external")?.config.keyboardUnavailable).toBe(true);
+    expect(resolveScreenConfigUpdate(failed, current, "external")?.config.keyboardUnavailable).toBe(false);
+    expect(resolveScreenConfigUpdate(failed, { width: 450, height: 640 }, "media")?.config.keyboardUnavailable).toBe(true);
+  });
   test("reports input availability changes without a screen geometry change", () => {
     const current = { width: 900, height: 1280, inputUnavailable: false };
     const failed = { ...current, inputUnavailable: true };

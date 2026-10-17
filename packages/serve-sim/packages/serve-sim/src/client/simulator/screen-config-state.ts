@@ -16,6 +16,7 @@ export function screenConfigsEqual(a: StreamConfig | null, b: StreamConfig): boo
     a.physicalOrientation === b.physicalOrientation &&
     a.tableMode === b.tableMode && a.tableModeAvailable === b.tableModeAvailable &&
     a.inputUnavailable === b.inputUnavailable &&
+    a.keyboardUnavailable === b.keyboardUnavailable &&
     (a.observedDeviceState === undefined) === (b.observedDeviceState === undefined) &&
     a.observedDeviceState?.hingeAngle === b.observedDeviceState?.hingeAngle &&
     a.observedDeviceState?.physicalOrientation === b.observedDeviceState?.physicalOrientation &&

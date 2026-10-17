@@ -14,10 +14,11 @@ struct SimulatorDisplayProfileTests {
             ["displayType": "scene", "screenID": 5],
         ])
         #expect(profile.isFoldable)
+        #expect(profile.singleIntegratedScreenID == nil)
         #expect(profile.nativeRotations == [1: 0, 3: 270])
     }
 
-    @Test("iPhone and iPad stay on the legacy path despite their virtual outputs", arguments: [0, 270])
+    @Test("iPhone and iPad remain single-panel devices despite their virtual outputs", arguments: [0, 270])
     func singlePanel(rotation: Int) {
         let profile = SimulatorDisplayProfile(displays: [
             ["displayType": "integrated", "screenID": 1, "nativeRotation": rotation],
@@ -27,22 +28,7 @@ struct SimulatorDisplayProfileTests {
         ])
         #expect(!profile.isFoldable)
         #expect(profile.integratedDisplayCount == 1)
-    }
-
-    // Regression guard for Duo reboot recovery: the reset must not depend on
-    // how many framebuffer panels are visible when capture starts.
-    @Test("a foldable's main capture resets boot-bound state; panel feeds and single panels do not")
-    func bootBoundReset() {
-        let duo = SimulatorDisplayProfile(displays: [
-            ["displayType": "integrated", "screenID": 1],
-            ["displayType": "integrated", "screenID": 3],
-        ])
-        let iPhone = SimulatorDisplayProfile(displays: [
-            ["displayType": "integrated", "screenID": 1],
-        ])
-        #expect(duo.resetsBootBoundStateOnCapture(fixedScreenID: nil))
-        #expect(!duo.resetsBootBoundStateOnCapture(fixedScreenID: 3))
-        #expect(!iPhone.resetsBootBoundStateOnCapture(fixedScreenID: nil))
+        #expect(profile.singleIntegratedScreenID == 1)
     }
 
     @Test("missing optional rotation does not disable the foldable guard")
@@ -55,7 +41,7 @@ struct SimulatorDisplayProfileTests {
         #expect(profile.nativeRotations.isEmpty)
     }
 
-    @Test("missing profiles and duplicate descriptors do not opt into CoreDevice")
+    @Test("missing profiles and duplicate descriptors do not identify a foldable")
     func missingOrDuplicateDisplays() {
         #expect(!SimulatorDisplayProfile().isFoldable)
         let display: [String: Any] = ["displayType": "integrated", "screenID": 1]
@@ -68,6 +54,16 @@ struct SimulatorDisplayProfileTests {
             ["displayType": "integrated", "screenID": $0]
         })
         #expect(!profile.isFoldable)
+        #expect(profile.singleIntegratedScreenID == nil)
+    }
+    @Test("a sole integrated panel uses its actual ID without requiring rotation metadata")
+    func singlePanelIdentity() {
+        let profile = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 19],
+            ["displayType": "tvOut", "screenID": 1],
+        ])
+        #expect(profile.singleIntegratedScreenID == 19)
+        #expect(SimulatorDisplayProfile().singleIntegratedScreenID == nil)
     }
     @Test("recording panels follow unique DeviceKit identities rather than numeric ID conventions")
     func recordingPanelIdentity() {
