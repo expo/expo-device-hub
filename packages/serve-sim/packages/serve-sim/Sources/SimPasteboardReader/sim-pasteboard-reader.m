@@ -1,8 +1,55 @@
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+
+static BOOL allow_key_command_update(id app, SEL selector, id responder) {
+  (void)app;
+  (void)selector;
+  (void)responder;
+  return YES;
+}
+
+// @ref LLP 0010#cold-shortcut-registration — publish key commands without connecting the hardware keyboard
+static void refresh_key_commands(void) {
+  static BOOL refreshing = NO;
+  if (!NSThread.isMainThread || refreshing) return;
+  UIApplication *app = UIApplication.sharedApplication;
+  if (app == nil || app.applicationState != UIApplicationStateActive) return;
+
+  SEL predicate = NSSelectorFromString(@"_shouldUpdateSerializableKeyCommandsForResponder:");
+  SEL refresh = NSSelectorFromString(@"_immediatelyUpdateSerializableKeyCommands");
+  Method gate = class_getInstanceMethod(UIApplication.class, predicate);
+  Method update = class_getInstanceMethod(UIApplication.class, refresh);
+  // These are private APIs. Leave unknown signatures and app overrides alone.
+  if (gate == NULL || update == NULL
+      || strcmp(method_getTypeEncoding(gate), "B24@0:8@16") != 0
+      || strcmp(method_getTypeEncoding(update), "v16@0:8") != 0
+      || class_getMethodImplementation(object_getClass(app), predicate) != method_getImplementation(gate)
+      || class_getMethodImplementation(object_getClass(app), refresh) != method_getImplementation(update)) {
+    static BOOL reported = NO;
+    if (!reported) {
+      reported = YES;
+      fprintf(stderr, "[serve-sim] key-command refresh unavailable: unsupported UIKit methods or app overrides\n");
+    }
+    return;
+  }
+
+  refreshing = YES;
+  IMP original = method_setImplementation(gate, (IMP)allow_key_command_update);
+  @try {
+    ((void (*)(id, SEL))objc_msgSend)(app, refresh);
+  } @catch (NSException *exception) {
+    fprintf(stderr, "[serve-sim] could not refresh key commands (%s)\n", exception.name.UTF8String);
+  } @finally {
+    method_setImplementation(gate, original);
+    refreshing = NO;
+  }
+}
 
 static int write_whole_file(const char *path, const void *contents, size_t length) {
   FILE *file = fopen(path, "w");
@@ -63,6 +110,17 @@ static void *poll_requests(void *unused) {
 
 __attribute__((constructor))
 static void sim_pasteboard_reader_ui_init(void) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    for (NSString *name in @[UIKeyboardWillShowNotification, UIApplicationDidBecomeActiveNotification]) {
+      [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil
+          usingBlock:^(NSNotification *notification) {
+        NSNumber *local = notification.userInfo[UIKeyboardIsLocalUserInfoKey];
+        if (local == nil || local.boolValue) refresh_key_commands();
+      }];
+    }
+    // Config changes can load the reader after an app has already focused its field.
+    refresh_key_commands();
+  });
   pthread_t thread;
   if (pthread_create(&thread, NULL, poll_requests, NULL) == 0) pthread_detach(thread);
 }

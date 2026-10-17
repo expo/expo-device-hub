@@ -72,6 +72,9 @@ static void RequestIfAsked(void) {
 // editing changes proves delivery to UIKit, rather than just HID dispatch.
 @interface FixtureKeyboardController : UIViewController
 @property(nonatomic, strong) UITextField *field;
+@property(nonatomic, strong) UITextView *clipboardField;
+- (UIResponder *)textInput;
+- (void)recordActive;
 @end
 
 @implementation FixtureKeyboardController
@@ -79,6 +82,21 @@ static void RequestIfAsked(void) {
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.view.backgroundColor = UIColor.systemGreenColor;
+  [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardShown:)
+      name:UIKeyboardDidShowNotification object:nil];
+  [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(keyboardHidden:)
+      name:UIKeyboardWillHideNotification object:nil];
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--clipboard-test"]) {
+    self.clipboardField = [[UITextView alloc] initWithFrame:CGRectMake(24, 100, 300, 144)];
+    self.clipboardField.accessibilityIdentifier = @"typing-field";
+    self.clipboardField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    self.clipboardField.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.clipboardField.spellCheckingType = UITextSpellCheckingTypeNo;
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(clipboardChanged:)
+        name:UITextViewTextDidChangeNotification object:self.clipboardField];
+    [self.view addSubview:self.clipboardField];
+    return;
+  }
   self.field = [[UITextField alloc] initWithFrame:CGRectMake(24, 100, 300, 44)];
   self.field.borderStyle = UITextBorderStyleRoundedRect;
   self.field.accessibilityIdentifier = @"typing-field";
@@ -92,11 +110,33 @@ static void RequestIfAsked(void) {
 
 - (void)viewDidAppear:(BOOL)animated {
   [super viewDidAppear:animated];
-  if ([self.field becomeFirstResponder]) Record(@"keyboard-ready", @"");
+  if ([self.textInput becomeFirstResponder]) Record(@"keyboard-ready", @"");
+  [self recordActive];
+}
+
+- (UIResponder *)textInput {
+  return self.clipboardField ?: (UIResponder *)self.field;
+}
+
+- (void)recordActive {
+  if (self.view.window.windowScene.activationState == UISceneActivationStateForegroundActive
+      && self.view.window.isKeyWindow && self.textInput.isFirstResponder) Record(@"keyboard-active", @"");
+}
+
+- (void)keyboardShown:(NSNotification *)notification {
+  if (self.textInput.isFirstResponder) Record(@"keyboard-visible", @"");
+}
+
+- (void)keyboardHidden:(NSNotification *)notification {
+  Record(@"keyboard-hidden", [NSString stringWithFormat:@"local=%@ endFrame=%@", notification.userInfo[UIKeyboardIsLocalUserInfoKey], notification.userInfo[UIKeyboardFrameEndUserInfoKey]]);
 }
 
 - (void)textChanged:(UITextField *)field {
   Record(@"text", field.text ?: @"");
+}
+
+- (void)clipboardChanged:(NSNotification *)notification {
+  Record(@"text", self.clipboardField.text ?: @"");
 }
 
 @end
@@ -279,6 +319,13 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
   RecordURLContexts(URLContexts);
+}
+
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+  if ([self.window.rootViewController isKindOfClass:FixtureKeyboardController.class]) {
+    FixtureKeyboardController *controller = (FixtureKeyboardController *)self.window.rootViewController;
+    [controller recordActive];
+  }
 }
 
 @end
