@@ -76,6 +76,9 @@ describeWithSim(`wheel-to-touch handoff (sim ${udid ?? "<skipped>"})`, () => {
     if (!pid) throw new Error(`Could not identify the fixture process: ${launched}`);
     fixturePid = Number(pid[1]);
     await waitFor(() => events(start, "scroll-ready").length === 1 && states(start).length > 0, "table ready");
+    // CoreDevice touch drops a gesture that starts within about 250 ms of a relaunch, even
+    // after the scene is active. The legacy path delivered it.
+    await Bun.sleep(500);
     return start;
   }
 

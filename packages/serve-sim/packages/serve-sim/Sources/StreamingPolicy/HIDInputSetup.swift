@@ -1,6 +1,6 @@
 /// Runs input only after the shared native setup task has succeeded.
 ///
-/// Setup starts on the first input, not at construction. A Duo capture resets
+/// Setup starts on the first input, not at construction. Main capture resets
 /// CoreDevice's boot-bound state before HID asks for capabilities; starting
 /// setup earlier can bind the injector to a capability from the previous boot.
 public struct HIDInputSetup: Sendable {

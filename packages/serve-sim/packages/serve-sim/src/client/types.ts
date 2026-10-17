@@ -16,6 +16,7 @@ export interface StreamConfig extends HingeControlState {
   screenId?: number;
   /** Native input setup failed; video can continue without touch or keyboard. */
   inputUnavailable?: boolean;
+  keyboardUnavailable?: boolean;
   /** Whether this simulator exposes hinge angle control. */
   supportsHingeAngle?: boolean;
   /** Whether the active Duo surface can be selected without changing its hinge angle. */

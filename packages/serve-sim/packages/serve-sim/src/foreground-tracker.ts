@@ -102,6 +102,10 @@ class ForegroundTracker {
   private buf = "";
   private latest: ForegroundApp | null = null;
   private heardFromLog = false;
+  // `log stream` prints a "Filtering the log data" header line once it is attached. A line
+  // logged before that is lost, so a caller that launches an app waits for it.
+  private streaming = false;
+  private streamingWaiters: (() => void)[] = [];
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(app: ForegroundApp) => void>();
@@ -120,6 +124,16 @@ class ForegroundTracker {
   /** Number of active listeners (used for ref-counted eviction). */
   get listenerCount(): number {
     return this.listeners.size;
+  }
+
+  /** Resolves once the current log stream is attached; the next launch it then reports. */
+  whenStreaming(): Promise<void> {
+    if (this.streaming || this.stopped) return Promise.resolve();
+    return new Promise((resolve) => this.streamingWaiters.push(resolve));
+  }
+
+  private releaseStreamingWaiters(): void {
+    for (const resolve of this.streamingWaiters.splice(0)) resolve();
   }
 
   /** Register a change listener. */
@@ -151,6 +165,7 @@ class ForegroundTracker {
   private spawn(): void {
     const child = this.deps.spawnLogStream(this.udid);
     this.child = child;
+    this.streaming = false;
     child.stdout?.on("data", (chunk: Buffer) => this.consume(chunk.toString()));
     child.on("error", () => this.onChildGone());
     child.on("exit", () => this.onChildGone());
@@ -163,6 +178,7 @@ class ForegroundTracker {
   private onChildGone(): void {
     if (this.stopped || this.restartTimer) return;
     this.child = null;
+    this.streaming = false;
     if (this.listeners.size === 0) return;
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -181,6 +197,8 @@ class ForegroundTracker {
     this.child?.kill();
     this.child = null;
     this.buf = "";
+    this.streaming = false;
+    this.releaseStreamingWaiters();
   }
 
   /** Assemble log lines from a stdout chunk and adopt any visibility transitions. */
@@ -190,6 +208,11 @@ class ForegroundTracker {
     while ((nl = this.buf.indexOf("\n")) !== -1) {
       const line = this.buf.slice(0, nl).trim();
       this.buf = this.buf.slice(nl + 1);
+      // The first whole line is the header; a partial one does not prove the stream is attached.
+      if (!this.streaming) {
+        this.streaming = true;
+        this.releaseStreamingWaiters();
+      }
       if (!line) continue;
       const visible = visibilityAfterLogLine(this.latest, line);
       if (visible === this.latest) continue;
@@ -240,6 +263,10 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
     /** Latest known foreground app for a udid, or null when nothing is tracking it. */
     peek(udid: string): ForegroundApp | null {
       return byUdid.get(udid)?.current ?? null;
+    },
+    /** Resolves once the udid's log stream is attached, or at once when nothing tracks the udid. */
+    whenStreaming(udid: string): Promise<void> {
+      return byUdid.get(udid)?.whenStreaming() ?? Promise.resolve();
     },
     /**
      * Subscribe to foreground changes (or just keep the tail warm with no listener). New listeners

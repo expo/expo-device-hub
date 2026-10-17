@@ -40,6 +40,7 @@ let hingeEligibilityReads = 0;
 let hingeEligibilityError: Error | undefined;
 let hingeEligibilityGate: Promise<void> | undefined;
 let inputSetupError: Error | undefined;
+let keyboardAvailable = true;
 let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
 const inputCalls: string[] = [];
@@ -101,6 +102,7 @@ const addon = {
       await Bun.sleep(5);
       routedScreens.push(screenId);
       if (inputSetupError) throw inputSetupError;
+      return keyboardAvailable;
     }
     async touch(...args: unknown[]) {
       inputCalls.push("touch");
@@ -327,6 +329,7 @@ beforeEach(() => {
   screenUnsubscribes = 0;
   writeSavedHingeState(UDID, {});
   inputSetupError = undefined;
+  keyboardAvailable = true;
   failInputAfterPasteKeyUp = false;
   touchError = undefined;
   inputCalls.length = 0;
@@ -962,6 +965,22 @@ afterEach(async () => {
 });
 
 describe("native input failure isolation", () => {
+  test("missing key encoding is reported without disabling touch", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    keyboardAvailable = false;
+    const { configs } = await start({ width: 1170, height: 2532, screenId: 1 });
+    await waitUntil(() => configs.length > 0);
+    expect(configs.at(-1)).toMatchObject({ keyboardUnavailable: true, inputUnavailable: false });
+    const hid = new NativeHid("SCREEN-TEST");
+    await hid.setScreen(1);
+    inputCalls.length = 0;
+    await expect(hid.key("down", 4)).rejects.toThrow("keyboard input is unavailable");
+    await expect(hid.keyChecked("down", 4)).rejects.toThrow("keyboard input is unavailable");
+    expect(errorLog).toHaveBeenNthCalledWith(1, "[hid] key rejected:", "Simulator keyboard input is unavailable");
+    expect(errorLog).toHaveBeenNthCalledWith(2, "[hid] keyChecked rejected:", "Simulator keyboard input is unavailable");
+    await hid.touch("begin", 0.5, 0.5, 1170, 2532);
+    expect(inputCalls).toEqual(["touch"]);
+  });
   test("failed setup latches every input method until a new handle is created", async () => {
     errorLog = spyOn(console, "error").mockImplementation(() => {});
     inputSetupError = new Error("Digitizer symbols unavailable");
@@ -2429,7 +2448,7 @@ describe("native active screen config", () => {
     await response;
   });
 
-  test("restores legacy HID routing when active screen metadata disappears", async () => {
+  test("clears the capture screen ID when active screen metadata disappears", async () => {
     const { configs } = await start({ width: 2007, height: 2853, orientation: "landscape_left", screenId: 1 });
     await waitUntil(() => configs.length > 0);
     screen = { width: 2007, height: 2853 };

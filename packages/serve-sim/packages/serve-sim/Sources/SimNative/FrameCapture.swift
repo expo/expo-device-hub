@@ -139,7 +139,7 @@ actor FrameCapture {
         // before HID or display election asks for capabilities from this boot.
         displayProfile = SimulatorDisplayProfile.read(from: device)
         isFoldable = displayProfile.isFoldable
-        if displayProfile.resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }

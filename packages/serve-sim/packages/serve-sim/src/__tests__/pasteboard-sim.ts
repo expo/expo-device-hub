@@ -1,9 +1,9 @@
 import { execFileSync, spawnSync } from "child_process";
 import { simctlSync } from "../simctl";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { KeyEvent } from "../text-to-keys";
-import { foregroundTracker } from "../foreground-tracker";
+import { foregroundTracker, frontmostAppFromRecentLogs } from "../foreground-tracker";
 import {
   clearLaunchState,
   enableCapabilities,
@@ -44,6 +44,26 @@ export function writeTestPasteboard(
     env,
     stdio: ["pipe", "ignore", "pipe"],
   });
+}
+
+/** Wait until the running fixture has focused and selected its text; on iOS 27 that can take seconds. */
+export async function waitForFixtureSelection(udid: string): Promise<void> {
+  const pid = runningPid(udid, FIXTURE_BUNDLE);
+  if (pid == null) throw new Error(`${FIXTURE_BUNDLE} is not running`);
+  const container = simctlSync(["get_app_container", udid, FIXTURE_BUNDLE, "data"]).trim();
+  const marker = join(container, "tmp", "serve-sim-copy-fixture.selected");
+  const selected = () => {
+    try {
+      return readFileSync(marker, "utf8") === String(pid);
+    } catch {
+      return false;
+    }
+  };
+  const deadline = Date.now() + 15_000;
+  while (!selected()) {
+    if (Date.now() > deadline) throw new Error(`${FIXTURE_BUNDLE} (pid ${pid}) did not select its text within 15 s`);
+    await Bun.sleep(100);
+  }
 }
 
 export function runningPid(udid: string, bundleId: string): number | null {
@@ -108,6 +128,20 @@ export function ensureFixtureInstalled(udid: string): string {
   return FIXTURE_BUNDLE;
 }
 
+// The tracker misses an app that comes forward before its log stream is attached.
+async function subscribeToForeground(udid: string): Promise<{ unsubscribe: () => void }> {
+  const subscription = foregroundTracker.subscribe(udid);
+  const attached = await Promise.race([
+    foregroundTracker.whenStreaming(udid).then(() => true),
+    Bun.sleep(15_000).then(() => false),
+  ]);
+  if (!attached) {
+    subscription.unsubscribe();
+    throw new Error(`the foreground log stream for ${udid} did not start within 15 s`);
+  }
+  return subscription;
+}
+
 async function waitForLaunch(udid: string, bundleId: string, pid: number | null): Promise<number> {
   if (pid == null) throw new Error(`${bundleId} did not report a pid when it launched`);
   const deadline = Date.now() + 15_000;
@@ -119,8 +153,10 @@ async function waitForLaunch(udid: string, bundleId: string, pid: number | null)
     }
     await Bun.sleep(100);
   }
+  const history = await frontmostAppFromRecentLogs(udid).catch(() => null);
   throw new Error(
-    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it (peek=${JSON.stringify(foregroundTracker.peek(udid))})`,
+    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it ` +
+      `(peek=${JSON.stringify(foregroundTracker.peek(udid))}, SpringBoard log history=${JSON.stringify(history)})`,
   );
 }
 
@@ -145,7 +181,7 @@ export async function launchWithoutReader(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
   await resetLaunchState(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -154,7 +190,7 @@ export async function launchTrackedApp(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
   killSimApp(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -184,7 +220,7 @@ export async function openAppForPasteboard(
 ): Promise<{ unsubscribe: () => void; pid: number }> {
   const dylib = locatePasteboardReaderDylib();
   if (!dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
 
   const cleanup = () => {
     subscription.unsubscribe();
@@ -246,7 +282,9 @@ export async function sendSimTap(udid: string, x: number, y: number): Promise<vo
   await hid.touch("begin", x, y, 1, 1);
   await Bun.sleep(60);
   await hid.touch("end", x, y, 1, 1);
-  await Bun.sleep(300);
+  // WebKit commits a single tap after its double-tap delay, about 350 ms after touch-up on
+  // CoreDevice touch, and that commit clears a selection made by an earlier shortcut.
+  await Bun.sleep(750);
 }
 
 export async function sendSimSelectAllShortcut(udid: string): Promise<void> {

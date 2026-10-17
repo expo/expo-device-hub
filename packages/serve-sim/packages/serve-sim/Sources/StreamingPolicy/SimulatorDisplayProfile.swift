@@ -3,20 +3,11 @@ import Foundation
 /// Integrated panels from the existing simulator profile, excluding virtual outputs.
 public struct SimulatorDisplayProfile: Sendable {
     public let integratedDisplayCount: Int
+    public let singleIntegratedScreenID: UInt32?
     public let nativeRotations: [UInt32: Int]
     private let recordingScreens: [UInt32: RecordingScreen]
 
-    // The new path worked in iOS 27.2 testing. For older-runtime compatibility,
-    // keep it limited to foldables (two integrated displays) for now.
     public var isFoldable: Bool { integratedDisplayCount == 2 }
-
-    /// CoreDevice capabilities belong to one boot, so a new main capture of a
-    /// foldable drops them. This reads the static profile, not the framebuffer
-    /// panels, because a panel can appear after capture starts. Fixed-panel
-    /// feeds share the main session's input and never reset it.
-    public func resetsBootBoundStateOnCapture(fixedScreenID: UInt32?) -> Bool {
-        fixedScreenID == nil && isFoldable
-    }
 
     public func recordingScreen(screenID: UInt32, chromeIdentifier: String?) -> RecordingScreen? {
         guard let screen = recordingScreens[screenID] else { return nil }
@@ -40,6 +31,7 @@ public struct SimulatorDisplayProfile: Sendable {
             }
         }
         integratedDisplayCount = integratedIDs.count
+        singleIntegratedScreenID = integratedIDs.count == 1 ? integratedIDs.first : nil
         nativeRotations = rotations
         if integratedIDs.count == 2, panelIdentities.count == 2,
            let first = panelIdentities[0].1, let second = panelIdentities[1].1,
