@@ -1,4 +1,4 @@
-import { type DevicePlatform } from './types';
+import { type DevicePlatform } from "./types";
 
 /**
  * A Hub or serve-sim started with `--require-token` accepts its session token as a bearer header,
@@ -13,8 +13,8 @@ export type SessionToken = string | null | undefined;
 
 /** The subprotocol prefix each backend reads the token from. */
 const SUBPROTOCOL_PREFIXES: Record<DevicePlatform, string> = {
-  ios: 'serve-sim.token.',
-  android: 'serve-emu.token.',
+  ios: "serve-sim.token.",
+  android: "serve-emu.token.",
 };
 
 export type SessionFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -23,8 +23,10 @@ export type SessionFetch = (input: RequestInfo | URL, init?: RequestInit) => Pro
 export function sessionTokenFetch(token: SessionToken): SessionFetch {
   if (!token) return (input, init) => fetch(input, init);
   return (input, init) => {
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-    headers.set('Authorization', `Bearer ${token}`);
+    const headers = new Headers(
+      init?.headers ?? (input instanceof Request ? input.headers : undefined),
+    );
+    headers.set("Authorization", `Bearer ${token}`);
     return fetch(input, { ...init, headers });
   };
 }
@@ -32,7 +34,7 @@ export function sessionTokenFetch(token: SessionToken): SessionFetch {
 /** `url` with the token as `?token=`, for a request that cannot carry a header. */
 export function withSessionTokenQuery(url: string, token: SessionToken): string {
   if (!token) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 }
 
 /** WebSocket subprotocols that carry the token to `platform`'s backend; none without a token. */

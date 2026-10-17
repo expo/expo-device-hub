@@ -89,18 +89,9 @@ describe("text control packet parity", () => {
   });
 
   test("parsed and packet text match at multibyte and emoji boundaries", async () => {
-    await expectParsedPacketParity(
-      `${"a".repeat(298)}étail`,
-      `${"a".repeat(298)}é`,
-    );
-    await expectParsedPacketParity(
-      `${"a".repeat(296)}😀tail`,
-      `${"a".repeat(296)}😀`,
-    );
-    await expectParsedPacketParity(
-      `${"a".repeat(298)}😀tail`,
-      "a".repeat(298),
-    );
+    await expectParsedPacketParity(`${"a".repeat(298)}étail`, `${"a".repeat(298)}é`);
+    await expectParsedPacketParity(`${"a".repeat(296)}😀tail`, `${"a".repeat(296)}😀`);
+    await expectParsedPacketParity(`${"a".repeat(298)}😀tail`, "a".repeat(298));
   });
 
   test("dispatch normalizes callers that bypass parseGesture", async () => {

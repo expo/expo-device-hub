@@ -16,7 +16,9 @@ import {
 const HTTP_CODEC_STORAGE_KEY = "serve-sim:codec";
 const STREAM_SETTINGS_REVALIDATE_INTERVAL_MS = 3000;
 
-function initialControlSettings(initialSettings: StreamSettings | undefined): StreamControlSettings {
+function initialControlSettings(
+  initialSettings: StreamSettings | undefined,
+): StreamControlSettings {
   const settings = streamControlSettingsFrom(initialSettings);
   if (settings.transport !== "http" || settings.httpCodec !== "auto") return settings;
   try {
@@ -42,7 +44,7 @@ export function useStreamSettings({
 }) {
   const transportLocked = isWebRtcTransportLocked(initialSettings);
   const [settings, setSettings] = useState<StreamControlSettings>(() =>
-    initialControlSettings(initialSettings)
+    initialControlSettings(initialSettings),
   );
   const [pending, setPending] = useState(false);
   const settingsRef = useRef(settings);
@@ -75,7 +77,7 @@ export function useStreamSettings({
         const response = await fetch(endpoint, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
         const loaded = normalizeStreamEncoderSettings(
-          await response.json() as Partial<StreamEncoderSettings>,
+          (await response.json()) as Partial<StreamEncoderSettings>,
           streamEncoderSettingsFrom(settingsRef.current),
         );
         if (!controller.signal.aborted && requestVersionRef.current === version) {
@@ -123,69 +125,78 @@ export function useStreamSettings({
     };
   }, [device, endpoint, initialSettings]);
 
-  const updatePlayback = useCallback((patch: Partial<StreamPlaybackSettings>) => {
-    if (!transportLocked && patch.httpCodec !== undefined) {
-      try {
-        window.localStorage.setItem(HTTP_CODEC_STORAGE_KEY, patch.httpCodec);
-      } catch {
-        // Keep the in-memory preference when storage is unavailable.
+  const updatePlayback = useCallback(
+    (patch: Partial<StreamPlaybackSettings>) => {
+      if (!transportLocked && patch.httpCodec !== undefined) {
+        try {
+          window.localStorage.setItem(HTTP_CODEC_STORAGE_KEY, patch.httpCodec);
+        } catch {
+          // Keep the in-memory preference when storage is unavailable.
+        }
       }
-    }
-    const next = mergeStreamPlaybackSettings(settingsRef.current, patch, transportLocked);
-    if (next === settingsRef.current) return;
-    settingsRef.current = next;
-    setSettings(next);
-  }, [transportLocked]);
+      const next = mergeStreamPlaybackSettings(settingsRef.current, patch, transportLocked);
+      if (next === settingsRef.current) return;
+      settingsRef.current = next;
+      setSettings(next);
+    },
+    [transportLocked],
+  );
 
-  const updateEncoder = useCallback((patch: Partial<StreamEncoderSettings>) => {
-    if (!endpoint || pendingRef.current || Object.keys(patch).length === 0) return;
-    const previous = settingsRef.current;
-    const optimistic = mergeStreamEncoderSettings(previous, patch);
-    settingsRef.current = optimistic;
-    setSettings(optimistic);
-    loadControllerRef.current?.abort();
-    loadControllerRef.current = null;
-    const version = ++requestVersionRef.current;
-    const controller = new AbortController();
-    updateControllerRef.current = controller;
-    pendingRef.current = true;
-    setPending(true);
+  const updateEncoder = useCallback(
+    (patch: Partial<StreamEncoderSettings>) => {
+      if (!endpoint || pendingRef.current || Object.keys(patch).length === 0) return;
+      const previous = settingsRef.current;
+      const optimistic = mergeStreamEncoderSettings(previous, patch);
+      settingsRef.current = optimistic;
+      setSettings(optimistic);
+      loadControllerRef.current?.abort();
+      loadControllerRef.current = null;
+      const version = ++requestVersionRef.current;
+      const controller = new AbortController();
+      updateControllerRef.current = controller;
+      pendingRef.current = true;
+      setPending(true);
 
-    void fetch(endpoint, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
-      const updated = normalizeStreamEncoderSettings(
-        await response.json() as Partial<StreamEncoderSettings>,
-        streamEncoderSettingsFrom(optimistic),
-      );
-      if (!controller.signal.aborted && requestVersionRef.current === version) {
-        const next = mergeStreamEncoderSettings(settingsRef.current, updated);
-        settingsRef.current = next;
-        setSettings(next);
-      }
-    }).catch((error) => {
-      if (controller.signal.aborted) return;
-      console.warn("Failed to update stream settings", error);
-      if (requestVersionRef.current === version) {
-        const restored = mergeStreamEncoderSettings(
-          settingsRef.current,
-          streamEncoderSettingsFrom(previous),
-        );
-        settingsRef.current = restored;
-        setSettings(restored);
-      }
-    }).finally(() => {
-      if (updateControllerRef.current === controller) updateControllerRef.current = null;
-      if (!controller.signal.aborted && requestVersionRef.current === version) {
-        pendingRef.current = false;
-        setPending(false);
-      }
-    });
-  }, [endpoint]);
+      void fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
+          const updated = normalizeStreamEncoderSettings(
+            (await response.json()) as Partial<StreamEncoderSettings>,
+            streamEncoderSettingsFrom(optimistic),
+          );
+          if (!controller.signal.aborted && requestVersionRef.current === version) {
+            const next = mergeStreamEncoderSettings(settingsRef.current, updated);
+            settingsRef.current = next;
+            setSettings(next);
+          }
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.warn("Failed to update stream settings", error);
+          if (requestVersionRef.current === version) {
+            const restored = mergeStreamEncoderSettings(
+              settingsRef.current,
+              streamEncoderSettingsFrom(previous),
+            );
+            settingsRef.current = restored;
+            setSettings(restored);
+          }
+        })
+        .finally(() => {
+          if (updateControllerRef.current === controller) updateControllerRef.current = null;
+          if (!controller.signal.aborted && requestVersionRef.current === version) {
+            pendingRef.current = false;
+            setPending(false);
+          }
+        });
+    },
+    [endpoint],
+  );
 
   return {
     settings,

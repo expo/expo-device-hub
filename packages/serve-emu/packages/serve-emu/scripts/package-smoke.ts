@@ -1,13 +1,5 @@
 #!/usr/bin/env bun
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -99,14 +91,19 @@ function parsePackReport(output: string, label: string): PackReport {
     throw new Error(`${label} did not return valid JSON: ${String(error)}`);
   }
 
-  invariant(Array.isArray(value) && value.length === 1, `${label} must describe exactly one package`);
+  invariant(
+    Array.isArray(value) && value.length === 1,
+    `${label} must describe exactly one package`,
+  );
   const report = value[0] as Partial<PackReport>;
   invariant(typeof report.filename === "string", `${label} is missing its tarball filename`);
   invariant(Array.isArray(report.files), `${label} is missing its file manifest`);
   invariant(
     report.files.every(
       (file): file is PackFile =>
-        typeof file === "object" && file !== null && typeof (file as Partial<PackFile>).path === "string",
+        typeof file === "object" &&
+        file !== null &&
+        typeof (file as Partial<PackFile>).path === "string",
     ),
     `${label} contains an invalid file manifest entry`,
   );
@@ -139,7 +136,11 @@ async function requiredPackageFiles(): Promise<string[]> {
   return [...new Set([...REQUIRED_PACKAGE_FILES, ...sourceFiles, ...builtUiFiles])].sort();
 }
 
-function validateManifest(report: PackReport, requiredFiles: readonly string[], label: string): void {
+function validateManifest(
+  report: PackReport,
+  requiredFiles: readonly string[],
+  label: string,
+): void {
   const manifest = new Set(report.files.map((file) => file.path));
   const missing = requiredFiles.filter((file) => !manifest.has(file));
   invariant(missing.length === 0, `${label} is missing required files:\n${missing.join("\n")}`);
@@ -159,7 +160,10 @@ async function expectImportFailure(specifier: string, consumerDirectory: string)
     [bunExecutable, "--eval", `await import(${JSON.stringify(specifier)})`],
     consumerDirectory,
   );
-  invariant(result.exitCode !== 0, `Unsupported package import unexpectedly succeeded: ${specifier}`);
+  invariant(
+    result.exitCode !== 0,
+    `Unsupported package import unexpectedly succeeded: ${specifier}`,
+  );
 }
 
 async function expectImportSuccess(
@@ -185,13 +189,7 @@ async function expectNodeMmapRegionSuccess(consumerDirectory: string): Promise<v
     return;
   }
   const moduleUrl = pathToFileURL(
-    join(
-      consumerDirectory,
-      "node_modules",
-      "serve-emu",
-      "dist",
-      "grpc-mmap.js",
-    ),
+    join(consumerDirectory, "node_modules", "serve-emu", "dist", "grpc-mmap.js"),
   ).href;
   await runSuccessfully(
     [
@@ -255,7 +253,10 @@ async function main(): Promise<void> {
     );
     const tarballPath = join(packDirectory, packReport.filename);
     const tarball = await stat(tarballPath);
-    invariant(tarball.isFile() && tarball.size > 0, `npm did not create a non-empty tarball: ${tarballPath}`);
+    invariant(
+      tarball.isFile() && tarball.size > 0,
+      `npm did not create a non-empty tarball: ${tarballPath}`,
+    );
 
     await writeFile(
       join(consumerDirectory, "package.json"),
@@ -276,10 +277,7 @@ async function main(): Promise<void> {
     );
 
     const installedManifest = JSON.parse(
-      await readFile(
-        join(consumerDirectory, "node_modules", "serve-emu", "package.json"),
-        "utf8",
-      ),
+      await readFile(join(consumerDirectory, "node_modules", "serve-emu", "package.json"), "utf8"),
     ) as { exports?: unknown };
     invariant(
       typeof installedManifest.exports === "object" &&
@@ -287,17 +285,10 @@ async function main(): Promise<void> {
         !Array.isArray(installedManifest.exports),
       "Installed package does not contain an export map",
     );
-    const exportPaths = Object.keys(
-      installedManifest.exports as Record<string, unknown>,
-    ).sort();
+    const exportPaths = Object.keys(installedManifest.exports as Record<string, unknown>).sort();
     invariant(
       JSON.stringify(exportPaths) ===
-        JSON.stringify([
-          ".",
-          "./middleware",
-          "./stream-settings",
-          "./stream-socket",
-        ]),
+        JSON.stringify([".", "./middleware", "./stream-settings", "./stream-socket"]),
       `Installed package exports are incorrect: ${exportPaths.join(", ")}`,
     );
 
@@ -307,7 +298,9 @@ async function main(): Promise<void> {
       { ...process.env, SERVE_EMU_UPDATE_CHECK: "0" },
     );
     invariant(
-      cliResult.exitCode === 0 && cliResult.stdout.includes("Usage:") && cliResult.stdout.includes("serve-emu"),
+      cliResult.exitCode === 0 &&
+        cliResult.stdout.includes("Usage:") &&
+        cliResult.stdout.includes("serve-emu"),
       [
         "Installed serve-emu CLI did not print help successfully",
         cliResult.stdout.trim(),
@@ -318,25 +311,19 @@ async function main(): Promise<void> {
     );
 
     await expectImportSuccess("serve-emu", "createRouter", consumerDirectory);
-    await expectImportSuccess(
-      "serve-emu/middleware",
-      "createApp",
-      consumerDirectory,
-    );
+    await expectImportSuccess("serve-emu/middleware", "createApp", consumerDirectory);
     await expectImportSuccess(
       "serve-emu/stream-settings",
       "DEFAULT_STREAM_SETTINGS",
       consumerDirectory,
     );
-    await expectImportSuccess(
-      "serve-emu/stream-socket",
-      "fromBunSocket",
-      consumerDirectory,
-    );
+    await expectImportSuccess("serve-emu/stream-socket", "fromBunSocket", consumerDirectory);
     await expectNodeMmapRegionSuccess(consumerDirectory);
     await expectImportFailure("serve-emu/src/adb.ts", consumerDirectory);
 
-    console.log(`Package smoke test passed: ${packReport.filename} (${packReport.files.length} files)`);
+    console.log(
+      `Package smoke test passed: ${packReport.filename} (${packReport.files.length} files)`,
+    );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 3 });
   }

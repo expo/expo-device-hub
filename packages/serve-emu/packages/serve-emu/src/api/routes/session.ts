@@ -13,8 +13,7 @@ export function sessionRoutes(): ContractApiRoute<ApiDependencies>[] {
     {
       method: "DELETE",
       path: "/api/session",
-      handler: ({ deps }) =>
-        Response.json({ ok: true, session: deps.clearSession() }),
+      handler: ({ deps }) => Response.json({ ok: true, session: deps.clearSession() }),
     },
     {
       method: "POST",
@@ -34,10 +33,11 @@ export function sessionRoutes(): ContractApiRoute<ApiDependencies>[] {
     {
       method: "POST",
       path: "/api/session/replay/stop",
-      handler: ({ deps }) => Response.json({
-        ok: true,
-        session: deps.stopSessionReplay(),
-      }),
+      handler: ({ deps }) =>
+        Response.json({
+          ok: true,
+          session: deps.stopSessionReplay(),
+        }),
     },
   ];
 }

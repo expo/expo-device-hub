@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import {
-  LogcatHub,
-  type LogcatClock,
-} from "../src/logcat.ts";
+import { LogcatHub, type LogcatClock } from "../src/logcat.ts";
 
 class FakeLogcatChild extends EventEmitter {
   readonly stdout = new PassThrough();
@@ -66,9 +63,7 @@ type SseEvent = {
   data: unknown;
 };
 
-async function readEvent(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<SseEvent> {
+async function readEvent(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<SseEvent> {
   const result = await reader.read();
   expect(result.done).toBe(false);
   const text = new TextDecoder().decode(result.value);
@@ -85,9 +80,7 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve();
 }
 
-function makeHub(
-  options: ConstructorParameters<typeof LogcatHub>[1] = {},
-): {
+function makeHub(options: ConstructorParameters<typeof LogcatHub>[1] = {}): {
   hub: LogcatHub;
   clock: ManualClock;
   children: FakeLogcatChild[];
@@ -239,11 +232,7 @@ describe("LogcatHub", () => {
                 resolve(pids);
               },
             };
-            signal.addEventListener(
-              "abort",
-              () => lookup.resolve(new Set()),
-              { once: true },
-            );
+            signal.addEventListener("abort", () => lookup.resolve(new Set()), { once: true });
             pending.push(lookup);
           });
         },
@@ -256,9 +245,7 @@ describe("LogcatHub", () => {
     const reader = response.body!.getReader();
 
     await flushMicrotasks();
-    expect(calls).toEqual([
-      { serial: "emulator-old", packageName: "com.example.app" },
-    ]);
+    expect(calls).toEqual([{ serial: "emulator-old", packageName: "com.example.app" }]);
     clock.runIntervals();
     clock.runIntervals();
     await flushMicrotasks();

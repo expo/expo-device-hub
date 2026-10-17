@@ -25,8 +25,10 @@ const withoutLevels = (sdp: string): string[] =>
   sdp.split("\r\n").filter((line) => !line.includes("profile-level-id="));
 
 const raise = (value: string, level?: number) =>
-  raiseH264OfferLevel(`a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=${value}`, level)
-    .replace("a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=", "");
+  raiseH264OfferLevel(
+    `a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=${value}`,
+    level,
+  ).replace("a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=", "");
 
 describe("raiseH264OfferLevel", () => {
   it("raises every H.264 payload in a real Chrome offer to Level 5.2", () => {

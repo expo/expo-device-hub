@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
-import { duoFitScale, duoHingeDragAngle, duoPanelEdgeAnchor, duoProjectAnchor } from "../client/simulator/duo-layout";
+import {
+  duoFitScale,
+  duoHingeDragAngle,
+  duoPanelEdgeAnchor,
+  duoProjectAnchor,
+} from "../client/simulator/duo-layout";
 import { duoPose } from "../client/simulator/duo-pose";
 import type { HingePose } from "../hinge-control";
 
@@ -14,8 +19,8 @@ function rig() {
   const right = new Group();
   const leftBody = new Mesh(new BoxGeometry(8.245, 11.795, 0.56));
   leftBody.position.set(-8.245 / 2, 0, -0.244);
-  const rightBody = new Mesh(new BoxGeometry(8.290, 11.840, 1.133));
-  rightBody.position.set(8.290 / 2, 0.0225, -0.5305);
+  const rightBody = new Mesh(new BoxGeometry(8.29, 11.84, 1.133));
+  rightBody.position.set(8.29 / 2, 0.0225, -0.5305);
   left.add(leftBody);
   right.add(rightBody);
   root.add(left, right);
@@ -28,7 +33,10 @@ function rig() {
     left.rotation.y = target.fold;
     right.rotation.y = -target.fold;
     root.quaternion.setFromEuler(new Euler(...target.rotation, "YXZ"));
-    root.position.set(0, 0, 4.05 * Math.sin(target.fold)).applyQuaternion(root.quaternion).multiplyScalar(-1);
+    root.position
+      .set(0, 0, 4.05 * Math.sin(target.fold))
+      .applyQuaternion(root.quaternion)
+      .multiplyScalar(-1);
     root.updateMatrixWorld(true);
     camera.updateMatrixWorld(true);
   };
@@ -39,12 +47,16 @@ describe("Duo model fit", () => {
   test("every pose fits inside the stage inset and reaches a limiting edge", () => {
     const model = rig();
     for (const [angle, pose, roll] of [
-      [0, "closed", 0], [90, "book", 0], [180, "open", 0],
-      [180, "open", Math.PI / 2], [90, "laptop", 0], [80, "tent", 0],
+      [0, "closed", 0],
+      [90, "book", 0],
+      [180, "open", 0],
+      [180, "open", Math.PI / 2],
+      [90, "laptop", 0],
+      [80, "tent", 0],
     ] as const) {
       model.pose(angle, pose, roll);
       const factor = duoFitScale(model.root, model.camera, viewport, stage);
-      model.camera.zoom = stage.height / viewport.height * factor;
+      model.camera.zoom = (stage.height / viewport.height) * factor;
       model.camera.updateProjectionMatrix();
       let nearestMargin = Infinity;
       model.root.traverse((child) => {
@@ -55,9 +67,11 @@ describe("Duo model fit", () => {
             corner & 1 ? box.max.x : box.min.x,
             corner & 2 ? box.max.y : box.min.y,
             corner & 4 ? box.max.z : box.min.z,
-          ).applyMatrix4(child.matrixWorld).project(model.camera);
-          const marginX = stage.width / 2 - Math.abs(projected.x * viewport.width / 2);
-          const marginY = stage.height / 2 - Math.abs(projected.y * viewport.height / 2);
+          )
+            .applyMatrix4(child.matrixWorld)
+            .project(model.camera);
+          const marginX = stage.width / 2 - Math.abs((projected.x * viewport.width) / 2);
+          const marginY = stage.height / 2 - Math.abs((projected.y * viewport.height) / 2);
           expect(marginX).toBeGreaterThanOrEqual(24 - 1e-8);
           expect(marginY).toBeGreaterThanOrEqual(24 - 1e-8);
           nearestMargin = Math.min(nearestMargin, marginX, marginY);
@@ -70,7 +84,11 @@ describe("Duo model fit", () => {
   test("fit does not depend on prior camera zoom or modify the requested pose", () => {
     const model = rig();
     model.pose(80, "tent");
-    const before = [model.root.position.toArray(), model.root.quaternion.toArray(), model.left.rotation.toArray()];
+    const before = [
+      model.root.position.toArray(),
+      model.root.quaternion.toArray(),
+      model.left.rotation.toArray(),
+    ];
     const expected = duoFitScale(model.root, model.camera, viewport, stage);
     for (const zoom of [0.2, 0.75, 2]) {
       model.camera.zoom = zoom;
@@ -78,7 +96,11 @@ describe("Duo model fit", () => {
       expect(duoFitScale(model.root, model.camera, viewport, stage)).toBeCloseTo(expected, 10);
       expect(model.camera.zoom).toBe(zoom);
     }
-    expect([model.root.position.toArray(), model.root.quaternion.toArray(), model.left.rotation.toArray()]).toEqual(before);
+    expect([
+      model.root.position.toArray(),
+      model.root.quaternion.toArray(),
+      model.left.rotation.toArray(),
+    ]).toEqual(before);
   });
 
   test("empty, hidden, zero-size, and camera-crossing geometry keep normal framing", () => {
@@ -124,20 +146,33 @@ describe("Duo physical hinge handle", () => {
       expect(duoHingeDragAngle(angle, start, closed, open, { x: 0, y: 0 })).toBe(angle);
       if (angle < 180) {
         const remaining = open.x - start.x;
-        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining / 2, y: -20 })).toBeCloseTo(angle + (180 - angle) / 2, 8);
-        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining, y: -40 })).toBeCloseTo(180, 8);
+        expect(
+          duoHingeDragAngle(angle, start, closed, open, { x: remaining / 2, y: -20 }),
+        ).toBeCloseTo(angle + (180 - angle) / 2, 8);
+        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining, y: -40 })).toBeCloseTo(
+          180,
+          8,
+        );
       }
       if (angle > 0) {
         const remaining = closed.x - start.x;
-        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining / 2, y: -20 })).toBeCloseTo(angle / 2, 8);
-        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining, y: -40 })).toBeCloseTo(0, 8);
+        expect(
+          duoHingeDragAngle(angle, start, closed, open, { x: remaining / 2, y: -20 }),
+        ).toBeCloseTo(angle / 2, 8);
+        expect(duoHingeDragAngle(angle, start, closed, open, { x: remaining, y: -40 })).toBeCloseTo(
+          0,
+          8,
+        );
       }
     }
   });
 
   test("drag direction follows rotated endpoint axes and reverses around the same starting angle", () => {
     for (const rotation of [0, Math.PI / 2, Math.PI, 1.25]) {
-      const rotate = (x: number, y = 0) => ({ x: x * Math.cos(rotation) - y * Math.sin(rotation), y: x * Math.sin(rotation) + y * Math.cos(rotation) });
+      const rotate = (x: number, y = 0) => ({
+        x: x * Math.cos(rotation) - y * Math.sin(rotation),
+        y: x * Math.sin(rotation) + y * Math.cos(rotation),
+      });
       const closed = rotate(0);
       const open = rotate(400);
       const start = rotate(140, 25);

@@ -1,5 +1,10 @@
 import { GUEST_PATH, shellEscape, type TartGuest } from "./guest";
-import { parseSimctlDevices, pickAvailableNamed, pickBootedIphone, pickBootedNamed } from "./simctl";
+import {
+  parseSimctlDevices,
+  pickAvailableNamed,
+  pickBootedIphone,
+  pickBootedNamed,
+} from "./simctl";
 
 const DEVICE_NAME = process.env.TART_DEVICE_NAME ?? "iPhone 17";
 

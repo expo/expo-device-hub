@@ -8,10 +8,7 @@ import {
   stageMultipartUpload,
   type StageMultipartUploadOptions,
 } from "../src/multipart-upload.ts";
-import {
-  HttpBodyError,
-  MAX_REQUEST_BODY_CHUNKS,
-} from "../src/request-body.ts";
+import { HttpBodyError, MAX_REQUEST_BODY_CHUNKS } from "../src/request-body.ts";
 
 const encoder = new TextEncoder();
 
@@ -161,9 +158,7 @@ describe("stageMultipartUpload", () => {
 
       expect(staged.filename).toBe("demo.apk");
       expect(staged.path.endsWith("/upload.apk")).toBe(true);
-      expect(staged.mediaType).toBe(
-        "application/vnd.android.package-archive",
-      );
+      expect(staged.mediaType).toBe("application/vnd.android.package-archive");
       expect(staged.size).toBe(file.byteLength);
       expect(await readFile(staged.path)).toEqual(Buffer.from(file));
 
@@ -176,92 +171,69 @@ describe("stageMultipartUpload", () => {
     }
   });
 
-  test(
-    "handles a 200 KiB upload fragmented into one-byte chunks while timers advance",
-    async () => {
-      const root = await tempRoot();
-      try {
-        const boundary = "adversarial-fragmentation";
-        const file = new Uint8Array(200 * 1024).fill(0x5a);
-        const body = multipartBody(boundary, [
-          { name: "apk", filename: "fragmented.apk", data: file },
-        ]);
-        let completed = false;
-        let timerRanDuringUpload = false;
-        const progressTimer = setTimeout(() => {
-          timerRanDuringUpload = !completed;
-        }, 0);
-        const staged = await stageMultipartUpload(
-          byteFragmentedMultipartRequest(boundary, body),
+  test("handles a 200 KiB upload fragmented into one-byte chunks while timers advance", async () => {
+    const root = await tempRoot();
+    try {
+      const boundary = "adversarial-fragmentation";
+      const file = new Uint8Array(200 * 1024).fill(0x5a);
+      const body = multipartBody(boundary, [
+        { name: "apk", filename: "fragmented.apk", data: file },
+      ]);
+      let completed = false;
+      let timerRanDuringUpload = false;
+      const progressTimer = setTimeout(() => {
+        timerRanDuringUpload = !completed;
+      }, 0);
+      const staged = await stageMultipartUpload(
+        byteFragmentedMultipartRequest(boundary, body),
+        baseOptions(root, body.byteLength, file.byteLength),
+      );
+      completed = true;
+      clearTimeout(progressTimer);
+
+      expect(staged.size).toBe(file.byteLength);
+      expect(timerRanDuringUpload).toBe(true);
+      await staged.cleanup();
+      await expectNoUploads(root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 2_000);
+
+  test("rejects and cleans up multipart bodies above the stream chunk limit", async () => {
+    const root = await tempRoot();
+    try {
+      const boundary = "chunk-count-limit";
+      const file = new Uint8Array(MAX_REQUEST_BODY_CHUNKS).fill(0x61);
+      const body = multipartBody(boundary, [
+        { name: "apk", filename: "fragmented.apk", data: file },
+      ]);
+      const cancellations: unknown[] = [];
+      const error = await captureError(
+        stageMultipartUpload(
+          byteFragmentedMultipartRequest(boundary, body, (reason) => cancellations.push(reason)),
           baseOptions(root, body.byteLength, file.byteLength),
-        );
-        completed = true;
-        clearTimeout(progressTimer);
+        ),
+      );
 
-        expect(staged.size).toBe(file.byteLength);
-        expect(timerRanDuringUpload).toBe(true);
-        await staged.cleanup();
-        await expectNoUploads(root);
-      } finally {
-        await rm(root, { recursive: true, force: true });
-      }
-    },
-    2_000,
-  );
-
-  test(
-    "rejects and cleans up multipart bodies above the stream chunk limit",
-    async () => {
-      const root = await tempRoot();
-      try {
-        const boundary = "chunk-count-limit";
-        const file = new Uint8Array(MAX_REQUEST_BODY_CHUNKS).fill(0x61);
-        const body = multipartBody(boundary, [
-          { name: "apk", filename: "fragmented.apk", data: file },
-        ]);
-        const cancellations: unknown[] = [];
-        const error = await captureError(
-          stageMultipartUpload(
-            byteFragmentedMultipartRequest(
-              boundary,
-              body,
-              (reason) => cancellations.push(reason),
-            ),
-            baseOptions(root, body.byteLength, file.byteLength),
-          ),
-        );
-
-        expect(error).toBeInstanceOf(HttpBodyError);
-        expect((error as HttpBodyError).code).toBe("too-many-body-chunks");
-        expect((error as HttpBodyError).status).toBe(413);
-        expect(cancellations).toHaveLength(1);
-        await expectNoUploads(root);
-      } finally {
-        await rm(root, { recursive: true, force: true });
-      }
-    },
-    3_000,
-  );
+      expect(error).toBeInstanceOf(HttpBodyError);
+      expect((error as HttpBodyError).code).toBe("too-many-body-chunks");
+      expect((error as HttpBodyError).status).toBe(413);
+      expect(cancellations).toHaveLength(1);
+      await expectNoUploads(root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 3_000);
 
   test("preserves nonuniform file bytes when the parser ring wraps", async () => {
     const root = await tempRoot();
     try {
       for (const fileBytes of [
-        8_191,
-        8_192,
-        8_193,
-        65_535,
-        65_536,
-        65_537,
-        73_727,
-        73_728,
-        73_729,
+        8_191, 8_192, 8_193, 65_535, 65_536, 65_537, 73_727, 73_728, 73_729,
       ]) {
         const boundary = "boundary-0123456789";
-        const file = Uint8Array.from(
-          { length: fileBytes },
-          (_, index) => index % 251,
-        );
+        const file = Uint8Array.from({ length: fileBytes }, (_, index) => index % 251);
         const body = multipartBody(boundary, [
           { name: "apk", filename: `${fileBytes}.apk`, data: file },
         ]);
@@ -284,9 +256,7 @@ describe("stageMultipartUpload", () => {
     try {
       const boundary = "file-limit";
       const file = encoder.encode("12345");
-      const body = multipartBody(boundary, [
-        { name: "apk", filename: "large.apk", data: file },
-      ]);
+      const body = multipartBody(boundary, [{ name: "apk", filename: "large.apk", data: file }]);
       const error = await captureError(
         stageMultipartUpload(
           multipartRequest(boundary, splitEvery(body, 2)),
@@ -308,9 +278,7 @@ describe("stageMultipartUpload", () => {
     const root = await tempRoot();
     try {
       const boundary = "body-limit";
-      const body = multipartBody(boundary, [
-        { name: "apk", filename: "demo.apk", data: "ok" },
-      ]);
+      const body = multipartBody(boundary, [{ name: "apk", filename: "demo.apk", data: "ok" }]);
       const error = await captureError(
         stageMultipartUpload(
           multipartRequest(boundary, splitEvery(body, 3), {
@@ -365,9 +333,7 @@ describe("stageMultipartUpload", () => {
       );
 
       expect(error).toBeInstanceOf(MultipartUploadError);
-      expect((error as MultipartUploadError).code).toBe(
-        "unexpected-multipart-part",
-      );
+      expect((error as MultipartUploadError).code).toBe("unexpected-multipart-part");
       await expectNoUploads(root);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -387,14 +353,11 @@ describe("stageMultipartUpload", () => {
       try {
         const boundary = body[2] === 104 ? "headers" : "broken";
         const error = await captureError(
-          stageMultipartUpload(
-            multipartRequest(boundary, splitEvery(body, 2)),
-            {
-              ...baseOptions(root, body.byteLength, body.byteLength),
-              maxHeaderPairs: 2,
-              maxHeaderBytes: 128,
-            },
-          ),
+          stageMultipartUpload(multipartRequest(boundary, splitEvery(body, 2)), {
+            ...baseOptions(root, body.byteLength, body.byteLength),
+            maxHeaderPairs: 2,
+            maxHeaderBytes: 128,
+          }),
         );
         expect(error).toBeInstanceOf(MultipartUploadError);
         await expectNoUploads(root);
@@ -452,29 +415,22 @@ describe("stageMultipartUpload", () => {
     const root = await tempRoot();
     try {
       const boundary = "write-failure";
-      const body = multipartBody(boundary, [
-        { name: "apk", filename: "a.apk", data: "content" },
-      ]);
+      const body = multipartBody(boundary, [{ name: "apk", filename: "a.apk", data: "content" }]);
       const diskError = new Error("disk full");
       const error = await captureError(
-        stageMultipartUpload(
-          multipartRequest(boundary, splitEvery(body, 2)),
-          {
-            ...baseOptions(root, body.byteLength, 7),
-            writerFactory: () =>
-              new Writable({
-                write(_chunk, _encoding, callback) {
-                  queueMicrotask(() => callback(diskError));
-                },
-              }),
-          },
-        ),
+        stageMultipartUpload(multipartRequest(boundary, splitEvery(body, 2)), {
+          ...baseOptions(root, body.byteLength, 7),
+          writerFactory: () =>
+            new Writable({
+              write(_chunk, _encoding, callback) {
+                queueMicrotask(() => callback(diskError));
+              },
+            }),
+        }),
       );
 
       expect(error).toBeInstanceOf(MultipartUploadError);
-      expect((error as MultipartUploadError).code).toBe(
-        "upload-write-failed",
-      );
+      expect((error as MultipartUploadError).code).toBe("upload-write-failed");
       await expectNoUploads(root);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -485,23 +441,16 @@ describe("stageMultipartUpload", () => {
     const root = await tempRoot();
     try {
       const boundary = "missing-temp-root";
-      const body = multipartBody(boundary, [
-        { name: "apk", filename: "demo.apk", data: "apk" },
-      ]);
+      const body = multipartBody(boundary, [{ name: "apk", filename: "demo.apk", data: "apk" }]);
       const error = await captureError(
-        stageMultipartUpload(
-          multipartRequest(boundary, [body]),
-          {
-            ...baseOptions(root, body.byteLength, 3),
-            tempRoot: join(root, "missing"),
-          },
-        ),
+        stageMultipartUpload(multipartRequest(boundary, [body]), {
+          ...baseOptions(root, body.byteLength, 3),
+          tempRoot: join(root, "missing"),
+        }),
       );
 
       expect(error).toBeInstanceOf(MultipartUploadError);
-      expect((error as MultipartUploadError).code).toBe(
-        "upload-write-failed",
-      );
+      expect((error as MultipartUploadError).code).toBe("upload-write-failed");
       expect((error as MultipartUploadError).status).toBe(500);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -513,9 +462,7 @@ describe("stageMultipartUpload", () => {
     try {
       const boundary = "backpressure";
       const file = new Uint8Array(256 * 1024).fill(0x61);
-      const body = multipartBody(boundary, [
-        { name: "apk", filename: "a.apk", data: file },
-      ]);
+      const body = multipartBody(boundary, [{ name: "apk", filename: "a.apk", data: file }]);
       const chunks = splitEvery(body, 64);
       let pulls = 0;
       let releaseWrite!: () => void;

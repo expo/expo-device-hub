@@ -1,17 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { resolveSidebarLayout } from '../useSidebarLayout';
+import { resolveSidebarLayout } from "../useSidebarLayout";
 
 const base = {
-  leftPreference: 'auto' as const,
-  rightPreference: 'auto' as const,
+  leftPreference: "auto" as const,
+  rightPreference: "auto" as const,
   leftWidth: 400,
   rightWidth: 400,
   minStreamWidth: 320,
 };
 
-describe('resolveSidebarLayout', () => {
-  test('docks both automatically managed sidebars when they fit', () => {
+describe("resolveSidebarLayout", () => {
+  test("docks both automatically managed sidebars when they fit", () => {
     expect(resolveSidebarLayout({ ...base, containerWidth: 1200 })).toEqual({
       leftOpen: true,
       leftDocked: true,
@@ -22,7 +22,7 @@ describe('resolveSidebarLayout', () => {
     });
   });
 
-  test('keeps the automatically managed left sidebar closed until both sidebars fit', () => {
+  test("keeps the automatically managed left sidebar closed until both sidebars fit", () => {
     expect(resolveSidebarLayout({ ...base, containerWidth: 1119 })).toMatchObject({
       leftOpen: false,
       leftDocked: false,
@@ -35,7 +35,7 @@ describe('resolveSidebarLayout', () => {
     });
   });
 
-  test('keeps an automatically managed right sidebar closed when it does not fit', () => {
+  test("keeps an automatically managed right sidebar closed when it does not fit", () => {
     expect(resolveSidebarLayout({ ...base, containerWidth: 719 })).toMatchObject({
       rightOpen: false,
       rightDocked: false,
@@ -48,45 +48,45 @@ describe('resolveSidebarLayout', () => {
     });
   });
 
-  test('never reopens a right sidebar the user hid', () => {
+  test("never reopens a right sidebar the user hid", () => {
     expect(
-      resolveSidebarLayout({ ...base, containerWidth: 1600, rightPreference: 'hidden' })
+      resolveSidebarLayout({ ...base, containerWidth: 1600, rightPreference: "hidden" }),
     ).toMatchObject({ rightOpen: false });
   });
 
-  test('never reopens a left sidebar the user hid', () => {
+  test("never reopens a left sidebar the user hid", () => {
     expect(
-      resolveSidebarLayout({ ...base, containerWidth: 1600, leftPreference: 'hidden' })
+      resolveSidebarLayout({ ...base, containerWidth: 1600, leftPreference: "hidden" }),
     ).toMatchObject({ leftOpen: false });
   });
 
-  test('overlays a sidebar explicitly opened without enough room', () => {
+  test("overlays a sidebar explicitly opened without enough room", () => {
     expect(
-      resolveSidebarLayout({ ...base, containerWidth: 390, rightPreference: 'open' })
+      resolveSidebarLayout({ ...base, containerWidth: 390, rightPreference: "open" }),
     ).toMatchObject({ rightOpen: true, rightDocked: false, rightOverlay: true });
   });
 
-  test('allows both explicitly opened sidebars to overlap on mobile', () => {
+  test("allows both explicitly opened sidebars to overlap on mobile", () => {
     expect(
       resolveSidebarLayout({
         ...base,
         containerWidth: 390,
-        leftPreference: 'open',
-        rightPreference: 'open',
-      })
+        leftPreference: "open",
+        rightPreference: "open",
+      }),
     ).toMatchObject({ leftOverlay: true, rightOverlay: true });
   });
 
-  test('only docks the left sidebar when it fits beside the docked right sidebar', () => {
+  test("only docks the left sidebar when it fits beside the docked right sidebar", () => {
     expect(
-      resolveSidebarLayout({ ...base, containerWidth: 1000, leftPreference: 'open' })
+      resolveSidebarLayout({ ...base, containerWidth: 1000, leftPreference: "open" }),
     ).toMatchObject({
       leftDocked: false,
       leftOverlay: true,
       rightDocked: true,
     });
     expect(
-      resolveSidebarLayout({ ...base, containerWidth: 1200, leftPreference: 'open' })
+      resolveSidebarLayout({ ...base, containerWidth: 1200, leftPreference: "open" }),
     ).toMatchObject({
       leftDocked: true,
       leftOverlay: false,

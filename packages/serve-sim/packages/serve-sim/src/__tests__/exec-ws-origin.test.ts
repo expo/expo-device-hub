@@ -55,7 +55,12 @@ function connect(
     token = TOKEN,
     subprotocol = true,
     headers = {},
-  }: { port?: number; token?: string; subprotocol?: boolean; headers?: Record<string, string> } = {},
+  }: {
+    port?: number;
+    token?: string;
+    subprotocol?: boolean;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Outcome> {
   return new Promise((resolve) => {
     const ws = new WebSocket(
@@ -135,15 +140,17 @@ describe("exec-ws origin policy, token gate on", () => {
 
   test("refuses a configured origin presenting only the access cookie", async () => {
     const headers = { Cookie: `${accessCookieName(TOKEN)}=${TOKEN}` };
-    expect(await connect("https://expo.dev", { port: gatedPort, subprotocol: false, headers })).toBe(
-      "refused",
-    );
-    expect(await connect("https://evil.test", { port: gatedPort, subprotocol: false, headers })).toBe(
-      "refused",
-    );
+    expect(
+      await connect("https://expo.dev", { port: gatedPort, subprotocol: false, headers }),
+    ).toBe("refused");
+    expect(
+      await connect("https://evil.test", { port: gatedPort, subprotocol: false, headers }),
+    ).toBe("refused");
   });
 
   test("refuses a configured origin with no credential at all", async () => {
-    expect(await connect("https://expo.dev", { port: gatedPort, subprotocol: false })).toBe("refused");
+    expect(await connect("https://expo.dev", { port: gatedPort, subprotocol: false })).toBe(
+      "refused",
+    );
   });
 });

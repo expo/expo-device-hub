@@ -159,7 +159,7 @@ describe("exec-ws control channel", () => {
 
     const res = await fetch(`http://127.0.0.1:${server.port}/api/event-log?device=DEVICE-B`);
     expect(res.status).toBe(200);
-    const payload = await res.json() as { events: Array<{ msg: string; summary: string }> };
+    const payload = (await res.json()) as { events: Array<{ msg: string; summary: string }> };
     expect(payload.events.map((event) => event.msg)).toEqual(["Button volume-up"]);
     expect(payload.events.map((event) => event.summary)).toEqual(["Button volume-up"]);
   });
@@ -181,7 +181,7 @@ describe("exec-ws control channel", () => {
 
     const res = await fetch(`http://127.0.0.1:${server.port}/api/event-log`);
     expect(res.status).toBe(200);
-    const payload = await res.json() as { events: Array<{ summary: string }> };
+    const payload = (await res.json()) as { events: Array<{ summary: string }> };
     expect(payload.events.map((event) => event.summary)).toEqual([
       "Button home",
       "Button volume-up",

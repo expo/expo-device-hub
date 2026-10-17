@@ -1,12 +1,12 @@
-import { NO_PENDING_PERMISSION_WRITES } from './app-permissions';
-import { NO_PENDING_CAMERA_WRITES } from './device-camera';
-import { DeviceClient } from './types';
+import { NO_PENDING_PERMISSION_WRITES } from "./app-permissions";
+import { NO_PENDING_CAMERA_WRITES } from "./device-camera";
+import { DeviceClient } from "./types";
 
 /** Inert client returned while no device is selected — module-level so its
  *  identity is stable across renders. */
 export const NOOP_DEVICE_CLIENT: DeviceClient = {
-  platform: 'ios',
-  status: 'idle',
+  platform: "ios",
+  status: "idle",
   error: null,
   inputError: null,
   screen: null,
@@ -23,9 +23,9 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   detachEvents: () => {},
   clearEvents: () => {},
   activity: null,
-  activityStatus: 'idle',
+  activityStatus: "idle",
   deviceSettings: null,
-  deviceSettingsStatus: 'idle',
+  deviceSettingsStatus: "idle",
   deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
   displayWidthDp: null,
@@ -63,7 +63,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   setGrpcInputSource: () => {},
   streamStats: null,
   setStreamStatsEnabled: () => {},
-  webRtcCodec: 'h264',
+  webRtcCodec: "h264",
   setWebRtcCodec: () => {},
   capabilities: {
     deviceSettings: false,
@@ -76,7 +76,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     permissions: false,
   },
   foregroundApp: null,
-  videoKind: 'img',
+  videoKind: "img",
   attachVideo: () => {},
   sendTouch: () => {},
   sendKey: () => false,

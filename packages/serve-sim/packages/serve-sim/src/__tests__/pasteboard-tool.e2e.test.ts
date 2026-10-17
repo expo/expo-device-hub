@@ -17,7 +17,8 @@ requireE2E("native pasteboard inspection tool", ready);
 
 function installedApp(): string {
   return execFileSync("xcrun", ["simctl", "get_app_container", udid!, bundleId, "app"], {
-    encoding: "utf8", timeout: 30_000,
+    encoding: "utf8",
+    timeout: 30_000,
   }).trim();
 }
 
@@ -26,13 +27,18 @@ function uninstall(): void {
 }
 
 function changeCount(): number {
-  return Number(execFileSync("xcrun", ["simctl", "spawn", udid!, pasteboardTool!, "--change-count"], {
-    encoding: "utf8", timeout: 30_000,
-  }).trim());
+  return Number(
+    execFileSync("xcrun", ["simctl", "spawn", udid!, pasteboardTool!, "--change-count"], {
+      encoding: "utf8",
+      timeout: 30_000,
+    }).trim(),
+  );
 }
 
 function executableHash(appPath: string): string {
-  return createHash("sha256").update(readFileSync(join(appPath, "serve-sim-pasteboard"))).digest("hex");
+  return createHash("sha256")
+    .update(readFileSync(join(appPath, "serve-sim-pasteboard")))
+    .digest("hex");
 }
 
 function sizeAndTime(path: string): [number, number] {
@@ -45,12 +51,16 @@ function sizeAndTime(path: string): [number, number] {
     execFileSync("xcrun", ["simctl", "install", udid!, app!], { timeout: 30_000 });
     try {
       const tool = join(installedApp(), "serve-sim-pasteboard");
-      const run = (command: string) => execFileSync("xcrun", ["simctl", "spawn", udid!, tool, command], {
-        encoding: "utf8", timeout: 30_000,
-      });
+      const run = (command: string) =>
+        execFileSync("xcrun", ["simctl", "spawn", udid!, tool, command], {
+          encoding: "utf8",
+          timeout: 30_000,
+        });
       const expected = "clipboard inspection 🧪\nsecond line";
       execFileSync("xcrun", ["simctl", "spawn", udid!, tool, "--write"], {
-        input: expected, encoding: "utf8", timeout: 30_000,
+        input: expected,
+        encoding: "utf8",
+        timeout: 30_000,
       });
 
       expect(run("--change-count").trim()).toMatch(/^\d+$/);
@@ -68,9 +78,12 @@ function sizeAndTime(path: string): [number, number] {
     execFileSync("xcrun", ["simctl", "install", udid!, app!], { timeout: 30_000 });
     try {
       const tool = join(installedApp(), "serve-sim-pasteboard");
-      const spawnTool = (args: string[], input: string) => spawnSync("xcrun", ["simctl", "spawn", udid!, tool, ...args], {
-        input, encoding: "utf8", timeout: 30_000,
-      });
+      const spawnTool = (args: string[], input: string) =>
+        spawnSync("xcrun", ["simctl", "spawn", udid!, tool, ...args], {
+          input,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
       const read = () => spawnTool(["--read-text"], "").stdout;
       expect(spawnTool(["--write"], "kept").status).toBe(0);
       const before = changeCount();
@@ -94,15 +107,22 @@ function sizeAndTime(path: string): [number, number] {
     try {
       const expected = "launch probe";
       // Copy installs and grants the app. The copied text is the content that the launch must keep.
-      expect((await copyFromSim(udid!, async () => writeTestPasteboard(udid!, expected))).text).toBe(expected);
+      expect(
+        (await copyFromSim(udid!, async () => writeTestPasteboard(udid!, expected))).text,
+      ).toBe(expected);
       const before = changeCount();
 
       execFileSync("xcrun", ["simctl", "launch", udid!, bundleId], { timeout: 30_000 });
       await Bun.sleep(2_000);
 
-      const text = execFileSync("xcrun", ["simctl", "spawn", udid!, join(app!, "serve-sim-pasteboard"), "--read-text"], {
-        encoding: "utf8", timeout: 30_000,
-      });
+      const text = execFileSync(
+        "xcrun",
+        ["simctl", "spawn", udid!, join(app!, "serve-sim-pasteboard"), "--read-text"],
+        {
+          encoding: "utf8",
+          timeout: 30_000,
+        },
+      );
       expect(text).toBe(expected);
       expect(changeCount()).toBe(before);
     } finally {
@@ -118,16 +138,22 @@ function sizeAndTime(path: string): [number, number] {
       const outdated = join(dir, "ServeSimPasteboard.app");
       const shipped = join(app!, "serve-sim-pasteboard");
       cpSync(app!, outdated, { recursive: true });
-      execFileSync("codesign", ["--force", "--sign", "-", "--identifier", bundleId.toUpperCase(), outdated], {
-        stdio: "ignore",
-      });
+      execFileSync(
+        "codesign",
+        ["--force", "--sign", "-", "--identifier", bundleId.toUpperCase(), outdated],
+        {
+          stdio: "ignore",
+        },
+      );
       execFileSync("touch", ["-r", shipped, join(outdated, "serve-sim-pasteboard")]);
       expect(sizeAndTime(join(outdated, "serve-sim-pasteboard"))).toEqual(sizeAndTime(shipped));
       execFileSync("xcrun", ["simctl", "install", udid!, outdated], { timeout: 30_000 });
       expect(executableHash(installedApp())).not.toBe(executableHash(app!));
 
       const expected = "outdated helper probe";
-      expect((await copyFromSim(udid!, async () => writeTestPasteboard(udid!, expected))).text).toBe(expected);
+      expect(
+        (await copyFromSim(udid!, async () => writeTestPasteboard(udid!, expected))).text,
+      ).toBe(expected);
       const replaced = installedApp();
       expect(executableHash(replaced)).toBe(executableHash(app!));
 

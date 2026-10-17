@@ -1,7 +1,4 @@
-import type {
-  ApiErrorCode,
-  ApiFailure,
-} from "../shared/api-contracts.ts";
+import type { ApiErrorCode, ApiFailure } from "../shared/api-contracts.ts";
 
 export type { ApiErrorCode } from "../shared/api-contracts.ts";
 

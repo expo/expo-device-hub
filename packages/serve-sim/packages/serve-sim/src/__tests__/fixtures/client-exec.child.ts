@@ -62,7 +62,12 @@ beforeAll(async () => {
   (globals.WebSocket as { OPEN?: number }).OPEN = 1;
   globals.window = {
     __SIM_PREVIEW__: { execToken: TOKEN, basePath: "/" },
-    location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
+    location: {
+      href: "http://127.0.0.1:3100/",
+      protocol: "http:",
+      host: "127.0.0.1:3100",
+      pathname: "/",
+    },
   };
   ({ runHostAction } = await import("../../socket/client-control"));
   ({ fetchCapturedBody } = await import("../../client/hooks/use-capture-stream"));
@@ -88,7 +93,10 @@ async function request(
 
 describe("client runHostAction", () => {
   it("presents the preview token at the handshake rather than in a frame", async () => {
-    await request(() => runHostAction("appearance.get", { udid: "U" }), { stdout: "", exitCode: 0 });
+    await request(() => runHostAction("appearance.get", { udid: "U" }), {
+      stdout: "",
+      exitCode: 0,
+    });
     expect(offeredProtocols).toEqual([`serve-sim.token.${TOKEN}`]);
     expect(sentFrames[0]).toHaveProperty("id");
   });
@@ -162,7 +170,10 @@ describe("client runHostAction", () => {
     // Raced rather than awaited: if the drop stops rejecting, the promise never settles, and an
     // await would hang the whole run instead of failing this test.
     const outcome = await Promise.race([
-      call.then(() => "resolved", (e: Error) => e.message),
+      call.then(
+        () => "resolved",
+        (e: Error) => e.message,
+      ),
       new Promise<string>((r) => setTimeout(() => r("still pending"), 500)),
     ]);
     expect(outcome).toContain("control socket closed");

@@ -4,13 +4,13 @@ The `npx @expo/serve-sim ca-debug <option> <on|off>` command toggles CoreAnimati
 
 ## Valid options and aliases
 
-| Canonical option | Aliases accepted | What it shows |
-|---|---|---|
-| `debug_color_blended` | `blended` | Green = layer is opaque (good). Red = layer is blended (costs GPU). Use to find unnecessary transparency. |
-| `debug_color_copies` | `copies`, `copied` | Highlights layers that triggered a CPU-side copy. Frequent copies kill frame rate. |
-| `debug_color_misaligned` | `misaligned` | Magenta/yellow tints when a layer's pixels do not align to physical pixels. Indicates blurry text or images. |
-| `debug_color_offscreen` | `offscreen` | Yellow tint when a layer is rendered off-screen (e.g., for masks, shadows, `cornerRadius` on non-opaque content). Off-screen passes are expensive. |
-| `debug_slow_animations` | `slow-animations` | Slows all CoreAnimation animations by ~10×. Useful for catching jank, dropped frames, and choreography bugs. |
+| Canonical option         | Aliases accepted   | What it shows                                                                                                                                      |
+| ------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `debug_color_blended`    | `blended`          | Green = layer is opaque (good). Red = layer is blended (costs GPU). Use to find unnecessary transparency.                                          |
+| `debug_color_copies`     | `copies`, `copied` | Highlights layers that triggered a CPU-side copy. Frequent copies kill frame rate.                                                                 |
+| `debug_color_misaligned` | `misaligned`       | Magenta/yellow tints when a layer's pixels do not align to physical pixels. Indicates blurry text or images.                                       |
+| `debug_color_offscreen`  | `offscreen`        | Yellow tint when a layer is rendered off-screen (e.g., for masks, shadows, `cornerRadius` on non-opaque content). Off-screen passes are expensive. |
+| `debug_slow_animations`  | `slow-animations`  | Slows all CoreAnimation animations by ~10×. Useful for catching jank, dropped frames, and choreography bugs.                                       |
 
 ## On / off values
 

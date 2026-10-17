@@ -9,23 +9,15 @@ type SessionRoutePlaybackOpts = {
   serial: string;
   generation: number;
   getGeneration: () => number;
-  applyLocation: (
-    serial: string,
-    fix: GeoFix,
-    signal: AbortSignal,
-  ) => void | Promise<void>;
+  applyLocation: (serial: string, fix: GeoFix, signal: AbortSignal) => void | Promise<void>;
   onLocation: (fix: GeoFix & { appliedAt: string }) => void;
   clock?: RoutePlaybackClock;
 };
 
-export function createSessionRoutePlayback(
-  opts: SessionRoutePlaybackOpts,
-): RoutePlayback {
+export function createSessionRoutePlayback(opts: SessionRoutePlaybackOpts): RoutePlayback {
   const assertCurrentGeneration = () => {
     if (opts.generation !== opts.getGeneration()) {
-      throw new RoutePlaybackDisposedError(
-        "device session changed during route playback",
-      );
+      throw new RoutePlaybackDisposedError("device session changed during route playback");
     }
   };
 

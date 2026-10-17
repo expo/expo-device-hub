@@ -12,7 +12,7 @@ test("shutdown extends its grace only when the helper reports an active recordin
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ active }));
   });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("missing test port");
@@ -32,10 +32,14 @@ test("stream replacement waits for recording and returns its shutdown error", as
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end('{"active":true}');
   });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("missing test port");
-  const child = spawn(process.execPath, ["-e", `
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     const fs = require("node:fs");
     process.on("SIGTERM", () => {
       setTimeout(() => {
@@ -47,11 +51,16 @@ test("stream replacement waits for recording and returns its shutdown error", as
     });
     console.log("ready");
     setInterval(() => {}, 1000);
-  `], { stdio: ["ignore", "pipe", "ignore"] });
+  `,
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
   try {
     await once(child.stdout!, "data");
     const replacement = await stopForStreamReplacement({
-      pid: child.pid!, device: "replacement-test", port: address.port,
+      pid: child.pid!,
+      device: "replacement-test",
+      port: address.port,
       url: `http://127.0.0.1:${address.port}`,
       streamUrl: `http://127.0.0.1:${address.port}/stream.mjpeg`,
       wsUrl: `ws://127.0.0.1:${address.port}/ws`,
@@ -67,11 +76,18 @@ test("stream replacement waits for recording and returns its shutdown error", as
 });
 
 test("server shutdown waits for finalization and reports the child failure", async () => {
-  const child = spawn(process.execPath, ["-e", `
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     process.on("SIGTERM", () => setTimeout(() => process.exit(1), 800));
     console.log("ready");
     setInterval(() => {}, 1000);
-  `], { stdio: ["ignore", "pipe", "ignore"] });
+  `,
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
   try {
     await once(child.stdout!, "data");
     const started = Date.now();
@@ -84,11 +100,18 @@ test("server shutdown waits for finalization and reports the child failure", asy
 });
 
 test("server shutdown reports an external SIGKILL during finalization", async () => {
-  const child = spawn(process.execPath, ["-e", `
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     process.on("SIGTERM", () => setTimeout(() => process.exit(0), 800));
     console.log("ready");
     setInterval(() => {}, 1000);
-  `], { stdio: ["ignore", "pipe", "ignore"] });
+  `,
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
   try {
     await once(child.stdout!, "data");
     const stopping = stopProcess(child.pid!, child, 2_000);
@@ -101,11 +124,18 @@ test("server shutdown reports an external SIGKILL during finalization", async ()
 });
 
 test("server shutdown force-kills an unresponsive child after the default grace", async () => {
-  const child = spawn(process.execPath, ["-e", `
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `
     process.on("SIGTERM", () => {});
     console.log("ready");
     setInterval(() => {}, 1000);
-  `], { stdio: ["ignore", "pipe", "ignore"] });
+  `,
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
   try {
     await once(child.stdout!, "data");
     const started = Date.now();

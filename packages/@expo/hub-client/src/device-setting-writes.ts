@@ -1,4 +1,4 @@
-import { type DeviceSettingKey, type DeviceSettings } from './types';
+import { type DeviceSettingKey, type DeviceSettings } from "./types";
 
 /**
  * Apply the authoritative value for one failed option write without replacing
@@ -11,7 +11,7 @@ export function mergeAuthoritativeDeviceSetting(
 ): DeviceSettings {
   const next = { ...(current ?? {}) };
   const value = authoritative[key];
-  if (typeof value === 'string') next[key] = value;
+  if (typeof value === "string") next[key] = value;
   else delete next[key];
   return next;
 }

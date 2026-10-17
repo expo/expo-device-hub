@@ -147,10 +147,19 @@ export function RequestFacts({ request }: { request: CapturedRequest }) {
     <div className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-0.5 text-[10px]">
       <Fact label="Method" value={request.method} />
       <Fact label="Type" value={request.mimeType} />
-      <Fact label="Sent" value={request.requestBytes > 0 ? formatBytes(request.requestBytes) : null} />
-      <Fact label="Received" value={request.responseBytes > 0 ? formatBytes(request.responseBytes) : null} />
+      <Fact
+        label="Sent"
+        value={request.requestBytes > 0 ? formatBytes(request.requestBytes) : null}
+      />
+      <Fact
+        label="Received"
+        value={request.responseBytes > 0 ? formatBytes(request.responseBytes) : null}
+      />
       <Fact label="Waiting" value={request.ttfbMs !== null ? formatMs(request.ttfbMs) : null} />
-      <Fact label="Total" value={request.durationMs !== null ? formatMs(request.durationMs) : null} />
+      <Fact
+        label="Total"
+        value={request.durationMs !== null ? formatMs(request.durationMs) : null}
+      />
     </div>
   );
 }
@@ -195,9 +204,17 @@ export function requestKey(request: CapturedRequest): string {
 }
 
 /** Whether an expanded row says it has no body: only once the request settled and its lookup found none. */
-export function showsEmptyBodyNotice(
-  { settled, loading, bodyError, body }: { settled: boolean; loading: boolean; bodyError: string | null; body: CapturedBody | null },
-): boolean {
+export function showsEmptyBodyNotice({
+  settled,
+  loading,
+  bodyError,
+  body,
+}: {
+  settled: boolean;
+  loading: boolean;
+  bodyError: string | null;
+  body: CapturedBody | null;
+}): boolean {
   return settled && !loading && !bodyError && body === null;
 }
 
@@ -250,7 +267,9 @@ export const RequestRow = memo(function RequestRow({
       }
       setLoading(false);
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [expanded, settled, request.id, request.startedAt, udid, attempt]);
 
   return (
@@ -268,7 +287,9 @@ export const RequestRow = memo(function RequestRow({
           <span className="flex-1 truncate text-[11px] text-white/80" title={request.url}>
             {path}
           </span>
-          <span className="shrink-0 text-[10px] tabular-nums text-white/40">{formatBytes(payload)}</span>
+          <span className="shrink-0 text-[10px] tabular-nums text-white/40">
+            {formatBytes(payload)}
+          </span>
         </div>
         <TimingBar request={request} slowestMs={slowestMs} />
         <div className="mt-1 flex items-center gap-1.5 text-[10px] text-white/30">
@@ -302,7 +323,9 @@ export const RequestRow = memo(function RequestRow({
             </span>
           )}
           {body && <BodyDetail body={body} />}
-          {showsEmptyBodyNotice({ settled, loading, bodyError, body }) && <EmptyBodyNotice dropped={dropped} />}
+          {showsEmptyBodyNotice({ settled, loading, bodyError, body }) && (
+            <EmptyBodyNotice dropped={dropped} />
+          )}
         </div>
       )}
     </div>
@@ -360,7 +383,10 @@ export function BodySection({
   }
   if (!text) return null;
   return (
-    <DetailSection label={label} hint={truncated ? "truncated" : formatBytes(new TextEncoder().encode(text).byteLength)}>
+    <DetailSection
+      label={label}
+      hint={truncated ? "truncated" : formatBytes(new TextEncoder().encode(text).byteLength)}
+    >
       <pre className="thin-scroll max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/30 px-1.5 py-1 text-[10px] text-white/60">
         {text}
       </pre>
@@ -373,7 +399,8 @@ function HeaderList({ headers }: { headers: Record<string, string> }) {
     <div className="flex flex-col gap-0.5 text-[10px] leading-snug">
       {Object.entries(headers).map(([name, value]) => (
         <span key={name} className="break-all">
-          <span className="text-white/30">{name}</span> <span className="text-white/60">{value}</span>
+          <span className="text-white/30">{name}</span>{" "}
+          <span className="text-white/60">{value}</span>
         </span>
       ))}
     </div>

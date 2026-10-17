@@ -19,7 +19,9 @@ export const MAX_CONFIG_BYTES = 64 * 1024;
 const SCOPE_TOKEN: Record<CapabilityScope, string> = { userApps: "user", allApps: "all" };
 
 function assertNoSeparators(what: string, value: string): void {
-  const found = [...value].find((character) => character === "\t" || character === "\n" || character === ";");
+  const found = [...value].find(
+    (character) => character === "\t" || character === "\n" || character === ";",
+  );
   if (found !== undefined) {
     throw new Error(
       `${what} contains ${JSON.stringify(found)}, which separates fields in the capability ` +
@@ -28,9 +30,7 @@ function assertNoSeparators(what: string, value: string): void {
   }
 }
 
-export function formatCapabilityConfig(
-  capabilities: Record<string, RecordedCapability>,
-): string {
+export function formatCapabilityConfig(capabilities: Record<string, RecordedCapability>): string {
   const lines = Object.values(capabilities).map((capability) => {
     assertNoSeparators(`Dylib path for ${capability.name}`, capability.dylib);
     const env = Object.entries(capability.env ?? {})
@@ -48,12 +48,26 @@ export function formatCapabilityConfig(
       .join(";");
     const phase = capability.loadPhase ?? "deferred";
     if (phase !== "startup" && phase !== "deferred" && phase !== "startupAndDeferred") {
-      throw new Error(`Unknown load phase for ${capability.name}: ${phase}. Use startup, deferred, or startupAndDeferred.`);
+      throw new Error(
+        `Unknown load phase for ${capability.name}: ${phase}. Use startup, deferred, or startupAndDeferred.`,
+      );
     }
-    if (phase !== "deferred" && (!isAbsolute(capability.dylib) || capability.dylib.includes(":") || (capability.loadDelayMs ?? 0) !== 0)) {
-      throw new Error(`Startup capability ${capability.name} requires an absolute path without colons and no load delay.`);
+    if (
+      phase !== "deferred" &&
+      (!isAbsolute(capability.dylib) ||
+        capability.dylib.includes(":") ||
+        (capability.loadDelayMs ?? 0) !== 0)
+    ) {
+      throw new Error(
+        `Startup capability ${capability.name} requires an absolute path without colons and no load delay.`,
+      );
     }
-    const fields = [SCOPE_TOKEN[capability.scope], capability.dylib, env, capability.loadDelayMs ?? 0];
+    const fields = [
+      SCOPE_TOKEN[capability.scope],
+      capability.dylib,
+      env,
+      capability.loadDelayMs ?? 0,
+    ];
     const deferred = fields.join("\t");
     if (phase === "deferred") return deferred;
     const startup = `startup\t${deferred}`;
@@ -87,7 +101,6 @@ export function commitCapabilityConfig(udid: string, contents: string): void {
   renameSync(temp, target);
 }
 
-
 function startupInsertStatePath(udid: string): string {
   return join(stateDir(), `capability-inserts-${udid}.json`);
 }
@@ -101,8 +114,13 @@ export function managedStartupDylibs(udid: string): string[] {
     throw error;
   }
   const paths: unknown = JSON.parse(contents);
-  if (!Array.isArray(paths) || !paths.every((path) => typeof path === "string" && isAbsolute(path) && !path.includes(":"))) {
-    throw new Error(`Invalid startup capability ownership for ${udid}. Reboot the simulator before repairing its state.`);
+  if (
+    !Array.isArray(paths) ||
+    !paths.every((path) => typeof path === "string" && isAbsolute(path) && !path.includes(":"))
+  ) {
+    throw new Error(
+      `Invalid startup capability ownership for ${udid}. Reboot the simulator before repairing its state.`,
+    );
   }
   return paths;
 }

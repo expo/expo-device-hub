@@ -12,27 +12,36 @@ import {
 import { withShimsAsync } from "./helpers";
 
 test("history lookup keeps the latest app after more than 16 MiB of logs", async () => {
-  await withShimsAsync({
-    xcrun: `#!/usr/bin/env bun
+  await withShimsAsync(
+    {
+      xcrun: `#!/usr/bin/env bun
 const old = JSON.stringify({ eventMessage: "[app<com.example.old>:10] Setting process visibility to: Foreground" }) + "\\n";
 process.stdout.write(old.repeat(200000));
 process.stdout.write(JSON.stringify({ eventMessage: "[app<com.example.current>:42] Setting process visibility to: Foreground" }) + "\\n");
 `,
-  }, async () => {
-    expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toEqual({ bundleId: "com.example.current", pid: 42 });
-  });
+    },
+    async () => {
+      expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toEqual({
+        bundleId: "com.example.current",
+        pid: 42,
+      });
+    },
+  );
 });
 
 test("history lookup reports no app when the latest visible app went to the background", async () => {
-  await withShimsAsync({
-    xcrun: `#!/usr/bin/env bun
+  await withShimsAsync(
+    {
+      xcrun: `#!/usr/bin/env bun
 for (const state of ["Foreground", "Background"]) {
   console.log(JSON.stringify({ eventMessage: "[app<com.example.app>:42] Setting process visibility to: " + state }));
 }
 `,
-  }, async () => {
-    expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toBeNull();
-  });
+    },
+    async () => {
+      expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toBeNull();
+    },
+  );
 });
 
 test("a helper app from AX falls back to the latest visible app in recent history", async () => {
@@ -182,7 +191,10 @@ describe("createForegroundTrackerCache", () => {
     child.stdout.emit("data", logChunk("dev.expo.A", 11));
 
     expect(cache.peek("UDID")).toEqual({ bundleId: "dev.expo.A", pid: 11 });
-    expect(seen).toEqual([{ bundleId: "dev.expo.A", pid: 11 }, { bundleId: "dev.expo.A", pid: 11 }]);
+    expect(seen).toEqual([
+      { bundleId: "dev.expo.A", pid: 11 },
+      { bundleId: "dev.expo.A", pid: 11 },
+    ]);
     sub.unsubscribe();
   });
 
@@ -195,7 +207,10 @@ describe("createForegroundTrackerCache", () => {
         children.push(child);
         return child as unknown as ChildProcess;
       },
-      frontmostApp: () => new Promise((resolve) => { seed = resolve; }),
+      frontmostApp: () =>
+        new Promise((resolve) => {
+          seed = resolve;
+        }),
     });
     const sub = cache.subscribe("UDID");
 

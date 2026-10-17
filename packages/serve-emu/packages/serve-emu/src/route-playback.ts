@@ -10,13 +10,7 @@ export type RoutePlaybackRequest = {
   loop?: boolean;
 };
 
-export type RoutePlaybackStatus =
-  | "idle"
-  | "running"
-  | "paused"
-  | "completed"
-  | "error"
-  | "closed";
+export type RoutePlaybackStatus = "idle" | "running" | "paused" | "completed" | "error" | "closed";
 
 export type RoutePlaybackSnapshot = {
   status: RoutePlaybackStatus;
@@ -90,8 +84,7 @@ const MAX_INTERVAL_MS = 60_000;
 const SYSTEM_CLOCK: RoutePlaybackClock = {
   now: Date.now,
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
-  clearInterval: (handle) =>
-    clearInterval(handle as ReturnType<typeof setInterval>),
+  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
 };
 
 function finiteNumber(value: unknown, name: string): number {
@@ -123,9 +116,7 @@ function distanceMeters(a: RouteWaypoint, b: RouteWaypoint): number {
   const lat2 = radians(b.latitude);
   const dLat = lat2 - lat1;
   const dLon = radians(b.longitude - a.longitude);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * EARTH_RADIUS_METERS * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
@@ -134,10 +125,14 @@ function interpolate(a: RouteWaypoint, b: RouteWaypoint, t: number): GeoFix {
   const lon1 = radians(a.longitude);
   const lat2 = radians(b.latitude);
   const lon2 = radians(b.longitude);
-  const d = 2 * Math.asin(Math.sqrt(
-    Math.sin((lat2 - lat1) / 2) ** 2 +
-      Math.cos(lat1) * Math.cos(lat2) * Math.sin((lon2 - lon1) / 2) ** 2,
-  ));
+  const d =
+    2 *
+    Math.asin(
+      Math.sqrt(
+        Math.sin((lat2 - lat1) / 2) ** 2 +
+          Math.cos(lat1) * Math.cos(lat2) * Math.sin((lon2 - lon1) / 2) ** 2,
+      ),
+    );
 
   if (d === 0) return { ...a };
 
@@ -172,7 +167,10 @@ function parseWaypoint(value: unknown, index: number): RouteWaypoint {
     value.longitude ?? value.lng ?? value.lon,
     `waypoint ${index + 1} longitude`,
   );
-  const altitude = optionalNumber(value.altitude ?? value.alt ?? value.ele, `waypoint ${index + 1} altitude`);
+  const altitude = optionalNumber(
+    value.altitude ?? value.alt ?? value.ele,
+    `waypoint ${index + 1} altitude`,
+  );
 
   if (latitude < -90 || latitude > 90) {
     throw new Error(`waypoint ${index + 1} latitude must be between -90 and 90`);
@@ -222,7 +220,8 @@ export function parseRoutePlaybackRequest(value: unknown): RoutePlaybackRequest 
   if (!isRecord(value)) throw new Error("route payload must be an object");
   if (!Array.isArray(value.waypoints)) throw new Error("waypoints must be an array");
   if (value.waypoints.length < 1) throw new Error("route must include at least one waypoint");
-  if (value.waypoints.length > MAX_WAYPOINTS) throw new Error(`route cannot exceed ${MAX_WAYPOINTS} waypoints`);
+  if (value.waypoints.length > MAX_WAYPOINTS)
+    throw new Error(`route cannot exceed ${MAX_WAYPOINTS} waypoints`);
 
   const speedKph = optionalNumber(value.speedKph, "speedKph") ?? DEFAULT_SPEED_KPH;
   const multiplier = optionalNumber(value.multiplier, "multiplier") ?? 1;
@@ -278,9 +277,7 @@ export class RoutePlayback {
       throw new RoutePlaybackConflictError("route playback is closed");
     }
     if (this.#startingRunId === this.#runId) {
-      throw new RoutePlaybackConflictError(
-        "route playback start is already in progress",
-      );
+      throw new RoutePlaybackConflictError("route playback start is already in progress");
     }
 
     const runId = this.#beginRun();
@@ -302,9 +299,7 @@ export class RoutePlayback {
 
       const applied = await this.#applyCurrentLocation(runId, true);
       if (!applied || !this.#isRunActive(runId)) {
-        throw new RoutePlaybackConflictError(
-          "route playback start was cancelled",
-        );
+        throw new RoutePlaybackConflictError("route playback start was cancelled");
       }
       if (this.#status === "running") this.#scheduleTimer(runId);
       return this.snapshot();
@@ -323,11 +318,7 @@ export class RoutePlayback {
   }
 
   resume(): RoutePlaybackSnapshot {
-    if (
-      !this.#closed &&
-      this.#status === "paused" &&
-      this.#isRunActive(this.#runId)
-    ) {
+    if (!this.#closed && this.#status === "paused" && this.#isRunActive(this.#runId)) {
       this.#status = "running";
       this.#pausedAt = null;
       this.#lastTickMs = this.#clock.now();
@@ -379,11 +370,7 @@ export class RoutePlayback {
   }
 
   async #tickNow(runId: number): Promise<void> {
-    if (
-      !this.#isRunActive(runId) ||
-      this.#status !== "running" ||
-      this.#applyingRunId === runId
-    ) {
+    if (!this.#isRunActive(runId) || this.#status !== "running" || this.#applyingRunId === runId) {
       return;
     }
     const route = this.#route;
@@ -406,10 +393,7 @@ export class RoutePlayback {
     await this.#applyCurrentLocation(runId, false);
   }
 
-  async #applyCurrentLocation(
-    runId: number,
-    propagateError: boolean,
-  ): Promise<boolean> {
+  async #applyCurrentLocation(runId: number, propagateError: boolean): Promise<boolean> {
     if (!this.#isRunActive(runId)) return false;
     const route = this.#route;
     const controller = this.#runController;
@@ -473,10 +457,7 @@ export class RoutePlayback {
   #scheduleTimer(runId: number): void {
     if (!this.#isRunActive(runId) || this.#status !== "running") return;
     this.#clearTimer();
-    const handle = this.#clock.setInterval(
-      () => this.#tick(runId),
-      this.#intervalMs,
-    );
+    const handle = this.#clock.setInterval(() => this.#tick(runId), this.#intervalMs);
     if (!this.#isRunActive(runId) || this.#status !== "running") {
       this.#clock.clearInterval(handle);
       return;

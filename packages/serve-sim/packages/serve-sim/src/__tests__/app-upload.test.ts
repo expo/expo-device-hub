@@ -1,5 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync, linkSync, readdirSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  utimesSync,
+  writeFileSync,
+  linkSync,
+  readdirSync,
+} from "fs";
 import { dirname, join } from "path";
 import { open } from "fs/promises";
 import { UPLOAD_DIR, UPLOAD_ROOT } from "../host-paths";
@@ -28,13 +39,18 @@ describe("app fixture uploads", () => {
     const uploadId = "app-files-session.json";
     writeFileSync(join(UPLOAD_DIR, uploadId), '{"user":"test"}');
     try {
-      expect((await act("app.file.upload", { uploadId, relativePath: "Documents/session.json" })).exitCode).toBe(0);
+      expect(
+        (await act("app.file.upload", { uploadId, relativePath: "Documents/session.json" }))
+          .exitCode,
+      ).toBe(0);
       expect(readFileSync(join(root, "Documents/session.json"), "utf8")).toBe('{"user":"test"}');
       const read = await act("app.file.read", { relativePath: "Documents/session.json" });
       expect(Buffer.from(read.stdout, "base64").toString()).toBe('{"user":"test"}');
       const listing = await act("app.file.list", { relativePath: "Documents" });
       expect(JSON.parse(listing.stdout)).toContainEqual({ name: "session.json", type: "file" });
-      expect((await act("app.file.remove", { relativePath: "Documents/session.json" })).exitCode).toBe(0);
+      expect(
+        (await act("app.file.remove", { relativePath: "Documents/session.json" })).exitCode,
+      ).toBe(0);
       expect((await act("app.file.remove", { relativePath: "Documents" })).exitCode).toBe(1);
     } finally {
       rmSync(join(UPLOAD_DIR, uploadId), { force: true });
@@ -48,12 +64,24 @@ describe("app fixture uploads", () => {
     writeFileSync(outside, "old");
     linkSync(outside, join(root, "Documents/existing"));
     try {
-      expect((await act("app.file.upload", { uploadId, relativePath: "Documents/existing" })).exitCode).toBe(1);
+      expect(
+        (await act("app.file.upload", { uploadId, relativePath: "Documents/existing" })).exitCode,
+      ).toBe(1);
       expect(readFileSync(join(root, "Documents/existing"), "utf8")).toBe("old");
-      expect((await act("app.file.upload", { uploadId, relativePath: "Documents/existing", overwrite: true })).exitCode).toBe(0);
+      expect(
+        (
+          await act("app.file.upload", {
+            uploadId,
+            relativePath: "Documents/existing",
+            overwrite: true,
+          })
+        ).exitCode,
+      ).toBe(0);
       expect(readFileSync(join(root, "Documents/existing"), "utf8")).toBe("new");
       expect(readFileSync(outside, "utf8")).toBe("old");
-      expect(readdirSync(join(root,"Documents")).some((name)=>name.startsWith(".serve-sim-"))).toBe(false);
+      expect(
+        readdirSync(join(root, "Documents")).some((name) => name.startsWith(".serve-sim-")),
+      ).toBe(false);
     } finally {
       rmSync(join(UPLOAD_DIR, uploadId), { force: true });
       rmSync(outside, { force: true });
@@ -66,13 +94,26 @@ describe("app fixture uploads", () => {
     writeFileSync(source, "original");
     symlinkSync(source, join(root, "Documents/linked-file"));
     try {
-      expect((await act("app.file.upload", { uploadId, relativePath: "Documents/linked-file", overwrite: true })).exitCode).toBe(1);
+      expect(
+        (
+          await act("app.file.upload", {
+            uploadId,
+            relativePath: "Documents/linked-file",
+            overwrite: true,
+          })
+        ).exitCode,
+      ).toBe(1);
       expect(readFileSync(source, "utf8")).toBe("original");
       truncateSync(source, 10 * 1024 * 1024);
-      const atLimit = await act("app.file.upload", { uploadId, relativePath: "Documents/limit-file" });
+      const atLimit = await act("app.file.upload", {
+        uploadId,
+        relativePath: "Documents/limit-file",
+      });
       expect(JSON.parse(atLimit.stdout).bytes).toBe(10 * 1024 * 1024);
       truncateSync(source, 10 * 1024 * 1024 + 1);
-      expect((await act("app.file.upload", { uploadId, relativePath: "Documents/large-file" })).exitCode).toBe(1);
+      expect(
+        (await act("app.file.upload", { uploadId, relativePath: "Documents/large-file" })).exitCode,
+      ).toBe(1);
     } finally {
       rmSync(source, { force: true });
     }
@@ -80,202 +121,303 @@ describe("app fixture uploads", () => {
   it("creates nested parents, preserves binary bytes and retains the staged source", async () => {
     const uploadId = "app-upload-binary.db";
     const source = join(UPLOAD_DIR, uploadId);
-    const bytes = Buffer.from([0,255,1,128,0]);
+    const bytes = Buffer.from([0, 255, 1, 128, 0]);
     writeFileSync(source, bytes);
     try {
-      const results = await Promise.all([1,2].map(()=>act("app.file.upload", { uploadId, relativePath:"Library/seed/state.db" })));
-      expect(results.map((result)=>result.exitCode).sort()).toEqual([0,1]);
-      expect(readFileSync(join(root,"Library/seed/state.db"))).toEqual(bytes);
+      const results = await Promise.all(
+        [1, 2].map(() =>
+          act("app.file.upload", { uploadId, relativePath: "Library/seed/state.db" }),
+        ),
+      );
+      expect(results.map((result) => result.exitCode).sort()).toEqual([0, 1]);
+      expect(readFileSync(join(root, "Library/seed/state.db"))).toEqual(bytes);
       expect(readFileSync(source)).toEqual(bytes);
-    } finally { rmSync(source,{force:true}); }
+    } finally {
+      rmSync(source, { force: true });
+    }
   });
 
   it("refuses linked staged sources and invalid paths", async () => {
     const uploadId = "app-upload-source-link.db";
-    const source = join(UPLOAD_DIR,uploadId);
-    symlinkSync(join(root,"Documents/existing"),source);
+    const source = join(UPLOAD_DIR, uploadId);
+    symlinkSync(join(root, "Documents/existing"), source);
     try {
-      expect((await act("app.file.upload",{uploadId,relativePath:"Documents/rejected"})).exitCode).toBe(1);
-      for (const relativePath of ["../escape", "/tmp/escape", "Documents/../../escape", "Documents\\escape", ".", ""]) {
-        await expect(act("app.file.upload", {uploadId,relativePath})).rejects.toThrow();
+      expect(
+        (await act("app.file.upload", { uploadId, relativePath: "Documents/rejected" })).exitCode,
+      ).toBe(1);
+      for (const relativePath of [
+        "../escape",
+        "/tmp/escape",
+        "Documents/../../escape",
+        "Documents\\escape",
+        ".",
+        "",
+      ]) {
+        await expect(act("app.file.upload", { uploadId, relativePath })).rejects.toThrow();
       }
-    } finally { rmSync(source,{force:true}); }
+    } finally {
+      rmSync(source, { force: true });
+    }
   });
 
   it("refuses a linked parent with a valid staged source", async () => {
     const uploadId = "app-upload-parent.json";
     const source = join(UPLOAD_DIR, uploadId);
     writeFileSync(source, "fixture");
-    symlinkSync(UPLOAD_DIR,join(root,"Documents/linked-parent"));
+    symlinkSync(UPLOAD_DIR, join(root, "Documents/linked-parent"));
     try {
-      expect((await act("app.file.upload",{uploadId,relativePath:"Documents/linked-parent/outside.json"})).exitCode).toBe(1);
-      expect(readFileSync(source,"utf8")).toBe("fixture");
-    } finally { rmSync(source,{force:true}); }
+      expect(
+        (
+          await act("app.file.upload", {
+            uploadId,
+            relativePath: "Documents/linked-parent/outside.json",
+          })
+        ).exitCode,
+      ).toBe(1);
+      expect(readFileSync(source, "utf8")).toBe("fixture");
+    } finally {
+      rmSync(source, { force: true });
+    }
   });
 
   it("refuses source truncation during the read and preserves the destination", async () => {
     const uploadId = "app-upload-shrinking.db";
-    const source = join(UPLOAD_DIR,uploadId);
-    const destination = join(root,"Documents/shrinking.db");
-    writeFileSync(source,"complete source");
-    writeFileSync(destination,"old database");
-    const probe = await open(source,"r");
+    const source = join(UPLOAD_DIR, uploadId);
+    const destination = join(root, "Documents/shrinking.db");
+    writeFileSync(source, "complete source");
+    writeFileSync(destination, "old database");
+    const probe = await open(source, "r");
     const prototype = Object.getPrototypeOf(probe);
     await probe.close();
     const originalRead = prototype.read;
     let truncated = false;
     prototype.read = async function (...args: unknown[]) {
-      if (!truncated) { truncateSync(source,0); truncated = true; }
-      return originalRead.apply(this,args);
+      if (!truncated) {
+        truncateSync(source, 0);
+        truncated = true;
+      }
+      return originalRead.apply(this, args);
     };
     try {
-      const result = await act("app.file.upload",{uploadId,relativePath:"Documents/shrinking.db",overwrite:true});
+      const result = await act("app.file.upload", {
+        uploadId,
+        relativePath: "Documents/shrinking.db",
+        overwrite: true,
+      });
       expect(truncated).toBe(true);
       expect(result.exitCode).toBe(1);
-      expect(readFileSync(destination,"utf8")).toBe("old database");
-    } finally { prototype.read = originalRead; rmSync(source,{force:true}); }
+      expect(readFileSync(destination, "utf8")).toBe("old database");
+    } finally {
+      prototype.read = originalRead;
+      rmSync(source, { force: true });
+    }
   });
 
   it("holds resets and removal behind the upload action’s source read", async () => {
     const uploadId = "app-upload-queued.db";
-    const source = join(UPLOAD_DIR,uploadId);
-    writeFileSync(source,"original");
+    const source = join(UPLOAD_DIR, uploadId);
+    writeFileSync(source, "original");
     let release!: () => void;
     let entered!: () => void;
-    const gate = new Promise<void>((resolve)=> { release = resolve; });
-    const ready = new Promise<void>((resolve)=> { entered = resolve; });
-    const destination = join(root,"Documents/queued.db");
-    const probe = await open(source,"r");
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const destination = join(root, "Documents/queued.db");
+    const probe = await open(source, "r");
     const prototype = Object.getPrototypeOf(probe);
     await probe.close();
     const originalRead = prototype.read;
     let gated = false;
     prototype.read = async function (...args: unknown[]) {
-      if (!gated) { gated = true; entered(); await gate; }
-      return originalRead.apply(this,args);
+      if (!gated) {
+        gated = true;
+        entered();
+        await gate;
+      }
+      return originalRead.apply(this, args);
     };
-    const copy = act("app.file.upload",{uploadId,relativePath:"Documents/queued.db"});
+    const copy = act("app.file.upload", { uploadId, relativePath: "Documents/queued.db" });
     let resetDone = false;
     let removalDone = false;
     let reset: ReturnType<typeof act> | undefined;
     let removal: ReturnType<typeof act> | undefined;
     try {
-      await Promise.race([ready, Bun.sleep(1000).then(() => { throw new Error("upload did not start its source read"); })]);
-      reset = act("upload.append",{uploadId,data:Buffer.from("replacement").toString("base64"),first:true}).then((result)=> {resetDone = true;return result;});
-      removal = act("upload.remove",{uploadId}).then((result)=> {removalDone = true;return result;});
-      await new Promise((resolve)=>setTimeout(resolve,30));
+      await Promise.race([
+        ready,
+        Bun.sleep(1000).then(() => {
+          throw new Error("upload did not start its source read");
+        }),
+      ]);
+      reset = act("upload.append", {
+        uploadId,
+        data: Buffer.from("replacement").toString("base64"),
+        first: true,
+      }).then((result) => {
+        resetDone = true;
+        return result;
+      });
+      removal = act("upload.remove", { uploadId }).then((result) => {
+        removalDone = true;
+        return result;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 30));
       expect(resetDone).toBe(false);
       expect(removalDone).toBe(false);
       release();
       expect((await copy).exitCode).toBe(0);
-      expect(readFileSync(destination,"utf8")).toBe("original");
+      expect(readFileSync(destination, "utf8")).toBe("original");
       expect((await reset).exitCode).toBe(0);
       expect((await removal).exitCode).toBe(0);
     } finally {
       release();
-      await Promise.allSettled([copy,reset,removal]);
+      await Promise.allSettled([copy, reset, removal]);
       prototype.read = originalRead;
-      rmSync(source,{force:true});
+      rmSync(source, { force: true });
     }
   });
 
   // @ref LLP 0003#uploading-an-app-fixture — each server stages uploads in its own folder
   it("keeps another server process from resetting the staged source during a copy", async () => {
     const uploadId = "app-upload-two-servers.db";
-    const source = join(UPLOAD_DIR,uploadId);
-    const destination = join(root,"Documents/two-servers.db");
-    writeFileSync(source,"AAAAAAAA");
+    const source = join(UPLOAD_DIR, uploadId);
+    const destination = join(root, "Documents/two-servers.db");
+    writeFileSync(source, "AAAAAAAA");
     let release!: () => void;
     let entered!: () => void;
-    const gate = new Promise<void>((resolve)=> { release = resolve; });
-    const ready = new Promise<void>((resolve)=> { entered = resolve; });
-    const probe = await open(source,"r");
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const probe = await open(source, "r");
     const prototype = Object.getPrototypeOf(probe);
     await probe.close();
     const originalRead = prototype.read;
     let gated = false;
     prototype.read = async function (...args: unknown[]) {
-      if (!gated) { gated = true; entered(); await gate; }
-      return originalRead.apply(this,args);
+      if (!gated) {
+        gated = true;
+        entered();
+        await gate;
+      }
+      return originalRead.apply(this, args);
     };
-    const copy = act("app.file.upload",{uploadId,relativePath:"Documents/two-servers.db"});
+    const copy = act("app.file.upload", { uploadId, relativePath: "Documents/two-servers.db" });
     let otherStaged = "";
     try {
-      await Promise.race([ready, Bun.sleep(1000).then(() => { throw new Error("upload did not start its source read"); })]);
-      const store = JSON.stringify(join(import.meta.dir,"../upload-store.ts"));
-      const other = Bun.spawn([process.execPath,"-e",
-        `const { appendUploadChunkAsync } = await import(${store});
+      await Promise.race([
+        ready,
+        Bun.sleep(1000).then(() => {
+          throw new Error("upload did not start its source read");
+        }),
+      ]);
+      const store = JSON.stringify(join(import.meta.dir, "../upload-store.ts"));
+      const other = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `const { appendUploadChunkAsync } = await import(${store});
          const result = await appendUploadChunkAsync({ uploadId: ${JSON.stringify(uploadId)}, data: ${JSON.stringify(Buffer.from("BBBBBBBB").toString("base64"))}, first: true });
          if (result.exitCode !== 0) throw new Error(result.stderr);
-         console.log(result.stdout);`],{stdout:"pipe",stderr:"pipe"});
+         console.log(result.stdout);`,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
       expect(await other.exited).toBe(0);
       otherStaged = (await new Response(other.stdout).text()).trim();
       release();
       expect((await copy).exitCode).toBe(0);
-      expect(readFileSync(destination,"utf8")).toBe("AAAAAAAA");
-      expect(readFileSync(source,"utf8")).toBe("AAAAAAAA");
+      expect(readFileSync(destination, "utf8")).toBe("AAAAAAAA");
+      expect(readFileSync(source, "utf8")).toBe("AAAAAAAA");
       expect(otherStaged).not.toBe(source);
     } finally {
       release();
       await Promise.allSettled([copy]);
       prototype.read = originalRead;
-      rmSync(source,{force:true});
-      if (otherStaged && otherStaged !== source) rmSync(dirname(otherStaged),{recursive:true,force:true});
+      rmSync(source, { force: true });
+      if (otherStaged && otherStaged !== source)
+        rmSync(dirname(otherStaged), { recursive: true, force: true });
     }
   });
 
   it("removes the staging folders of servers that exited and keeps folders of running ones", async () => {
     const exited = Bun.spawn(["true"]);
     await exited.exited;
-    const abandoned = join(UPLOAD_ROOT,`${exited.pid}-0badf00d`);
-    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00d`);
-    for (const folder of [abandoned,running]) { mkdirSync(folder,{recursive:true}); writeFileSync(join(folder,"staged.bin"),"x"); }
+    const abandoned = join(UPLOAD_ROOT, `${exited.pid}-0badf00d`);
+    const running = join(UPLOAD_ROOT, `${process.ppid}-0badf00d`);
+    for (const folder of [abandoned, running]) {
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(join(folder, "staged.bin"), "x");
+    }
     const uploadId = "app-upload-prune.bin";
     try {
-      expect((await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true})).exitCode).toBe(0);
+      expect(
+        (
+          await act("upload.append", {
+            uploadId,
+            data: Buffer.from("y").toString("base64"),
+            first: true,
+          })
+        ).exitCode,
+      ).toBe(0);
       expect(readdirSync(UPLOAD_ROOT)).not.toContain(`${exited.pid}-0badf00d`);
-      expect(readFileSync(join(running,"staged.bin"),"utf8")).toBe("x");
+      expect(readFileSync(join(running, "staged.bin"), "utf8")).toBe("x");
     } finally {
-      rmSync(abandoned,{recursive:true,force:true});
-      rmSync(running,{recursive:true,force:true});
-      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
+      rmSync(abandoned, { recursive: true, force: true });
+      rmSync(running, { recursive: true, force: true });
+      rmSync(join(UPLOAD_DIR, uploadId), { force: true });
     }
   });
 
   it("removes expired uploads from a running server's folder", async () => {
-    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00e`);
-    mkdirSync(running,{recursive:true});
-    const expired = join(running,"expired.bin");
-    const fresh = join(running,"fresh.bin");
-    writeFileSync(expired,"old");
-    writeFileSync(fresh,"new");
+    const running = join(UPLOAD_ROOT, `${process.ppid}-0badf00e`);
+    mkdirSync(running, { recursive: true });
+    const expired = join(running, "expired.bin");
+    const fresh = join(running, "fresh.bin");
+    writeFileSync(expired, "old");
+    writeFileSync(fresh, "new");
     const sevenHoursAgo = new Date(Date.now() - 7 * 60 * 60 * 1000);
-    utimesSync(expired,sevenHoursAgo,sevenHoursAgo);
+    utimesSync(expired, sevenHoursAgo, sevenHoursAgo);
     const uploadId = "app-upload-expired.bin";
     try {
-      expect((await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true})).exitCode).toBe(0);
+      expect(
+        (
+          await act("upload.append", {
+            uploadId,
+            data: Buffer.from("y").toString("base64"),
+            first: true,
+          })
+        ).exitCode,
+      ).toBe(0);
       expect(readdirSync(running)).toEqual(["fresh.bin"]);
     } finally {
-      rmSync(running,{recursive:true,force:true});
-      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
+      rmSync(running, { recursive: true, force: true });
+      rmSync(join(UPLOAD_DIR, uploadId), { force: true });
     }
   });
 
   it("counts every server's folder against the staging ceiling", async () => {
-    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00f`);
-    mkdirSync(running,{recursive:true});
-    const filler = join(running,"filler.bin");
-    writeFileSync(filler,"");
-    truncateSync(filler,2 * 1024 * 1024 * 1024);
+    const running = join(UPLOAD_ROOT, `${process.ppid}-0badf00f`);
+    mkdirSync(running, { recursive: true });
+    const filler = join(running, "filler.bin");
+    writeFileSync(filler, "");
+    truncateSync(filler, 2 * 1024 * 1024 * 1024);
     const uploadId = "app-upload-ceiling.bin";
     try {
-      const result = await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true});
+      const result = await act("upload.append", {
+        uploadId,
+        data: Buffer.from("y").toString("base64"),
+        first: true,
+      });
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain("staging area is full");
     } finally {
-      rmSync(running,{recursive:true,force:true});
-      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
+      rmSync(running, { recursive: true, force: true });
+      rmSync(join(UPLOAD_DIR, uploadId), { force: true });
     }
   });
-
 });

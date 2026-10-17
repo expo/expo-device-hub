@@ -63,7 +63,7 @@ export async function closeWebRtcSession({
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so unload does not rely on a preflight.
-      if (beacon(beaconUrl, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
+      if (beacon(beaconUrl, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
     } catch {}
   }
   await fetchImpl(url, {
@@ -88,8 +88,11 @@ async function isSignalingBusy(response: Response): Promise<boolean> {
     error = body?.error;
     code = body?.code;
   } catch {}
-  return code === "webrtc_session_busy" || error === "webrtc_session_busy" ||
-    (code === undefined && error === undefined);
+  return (
+    code === "webrtc_session_busy" ||
+    error === "webrtc_session_busy" ||
+    (code === undefined && error === undefined)
+  );
 }
 
 /** Post an SDP offer, retrying while native offer setup is serialized. */

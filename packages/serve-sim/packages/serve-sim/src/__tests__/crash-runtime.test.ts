@@ -69,7 +69,7 @@ let errors: string[];
 let clock: number;
 
 function makeRuntime(
-  options: { failRead?: boolean; dirEntries?: string[]; mtimes?: Record<string, number> } = {}
+  options: { failRead?: boolean; dirEntries?: string[]; mtimes?: Record<string, number> } = {},
 ) {
   return createCrashRuntime({
     reportsDir: "/reports",
@@ -488,7 +488,8 @@ describe("createCrashRuntime back-scan", () => {
   test("records reports oldest first, so the newest ones survive the cap", async () => {
     const names = Array.from({ length: 21 }, (_, index) => `Demo-${index}.ips`);
     const mtimes = Object.fromEntries(names.map((name, index) => [name, 5_000 - index]));
-    for (const [index, name] of names.entries()) files.set(name, ips({ symbol: `crash${index}()` }));
+    for (const [index, name] of names.entries())
+      files.set(name, ips({ symbol: `crash${index}()` }));
     const runtime = makeRuntime({ dirEntries: names, mtimes });
 
     await runtime.start();
@@ -993,7 +994,10 @@ describe("createCrashRuntime meta", () => {
   test("says so when a simulator crash report will not parse", async () => {
     const runtime = makeRuntime();
     runtime.start();
-    files.set("Demo-1.ips", `${JSON.stringify({ app_name: "Demo", platform: 7, bundleID: "com.example.demo", bug_type: "309" })}\nnot json\n`);
+    files.set(
+      "Demo-1.ips",
+      `${JSON.stringify({ app_name: "Demo", platform: 7, bundleID: "com.example.demo", bug_type: "309" })}\nnot json\n`,
+    );
 
     emit("rename", "Demo-1.ips");
     await flush();
@@ -1058,7 +1062,10 @@ describe("createCrashRuntime meta", () => {
   test("makes a second caller wait for the backfill already running", async () => {
     files.set("A.ips", ips({ udid: UDID_A, symbol: "One.boom()" }));
     files.set("B.ips", ips({ udid: UDID_A, symbol: "Two.boom()" }));
-    const runtime = makeRuntime({ dirEntries: ["A.ips", "B.ips"], mtimes: { "A.ips": 2_000, "B.ips": 2_000 } });
+    const runtime = makeRuntime({
+      dirEntries: ["A.ips", "B.ips"],
+      mtimes: { "A.ips": 2_000, "B.ips": 2_000 },
+    });
 
     const first = runtime.start();
     await runtime.start();
@@ -1252,7 +1259,9 @@ describe("createCrashRuntime log tail", () => {
 
     const tail = runtime.listFor(UDID_A)[0]!;
     const detail = runtime.getFor(UDID_A, tail.id)!;
-    expect(detail.occurrences[0]!.logTail.map((raw) => JSON.parse(raw).m)).toEqual(["about to abort"]);
+    expect(detail.occurrences[0]!.logTail.map((raw) => JSON.parse(raw).m)).toEqual([
+      "about to abort",
+    ]);
     runtime.stop();
   });
 
@@ -1324,16 +1333,18 @@ describe("createCrashRuntime log tail", () => {
   });
 });
 
-
 test("a report read from a stopped generation cannot enter the replacement store", async () => {
   const pending = Promise.withResolvers<string>();
   let emit: Emit = () => {};
   let reads = 0;
   const runtime = createCrashRuntime({
     ensureDir: () => {},
-    watchDir: (_dir, listener) => { emit = listener; return { close: () => {} }; },
+    watchDir: (_dir, listener) => {
+      emit = listener;
+      return { close: () => {} };
+    },
     readDir: async () => [],
-    readReport: () => ++reads === 1 ? pending.promise : Promise.resolve(ips()),
+    readReport: () => (++reads === 1 ? pending.promise : Promise.resolve(ips())),
     statFile: async () => ({ mtimeMs: 0, ino: 1 }),
     onError: () => {},
   });
@@ -1350,5 +1361,7 @@ test("a report read from a stopped generation cannot enter the replacement store
     emit("rename", "generation-test.ips");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(runtime.listFor(UDID_A)).toHaveLength(1);
-  } finally { runtime.stop(); }
+  } finally {
+    runtime.stop();
+  }
 });

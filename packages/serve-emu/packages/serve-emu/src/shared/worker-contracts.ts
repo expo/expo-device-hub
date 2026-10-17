@@ -69,8 +69,8 @@ function stats(value: unknown): StreamStats {
 
 export function parseWorkerCommand<Canvas = unknown>(
   value: unknown,
-  isCanvas: (value: unknown) => value is Canvas = ((value): value is Canvas =>
-    typeof value === "object" && value !== null),
+  isCanvas: (value: unknown) => value is Canvas = (value): value is Canvas =>
+    typeof value === "object" && value !== null,
 ): WorkerCommand<Canvas> {
   const item = record(value, "worker command");
   switch (item.type) {

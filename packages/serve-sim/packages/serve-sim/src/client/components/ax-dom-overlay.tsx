@@ -1,18 +1,11 @@
-import {
-  useAxSelectionContext,
-  useAxSnapshotContext,
-} from "../hooks/use-ax-snapshot";
+import { useAxSelectionContext, useAxSnapshotContext } from "../hooks/use-ax-snapshot";
 import { axElementKey } from "../utils/ax";
 import { AxTarget } from "./ax-target";
 
 export function AxDomOverlay() {
   const { snapshot } = useAxSnapshotContext();
-  const {
-    highlightedKey,
-    selectedKey,
-    setHighlightedKey,
-    setSelectedKey,
-  } = useAxSelectionContext();
+  const { highlightedKey, selectedKey, setHighlightedKey, setSelectedKey } =
+    useAxSelectionContext();
 
   if (!snapshot?.screen.width || !snapshot?.screen.height) return null;
 

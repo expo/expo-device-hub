@@ -1,4 +1,4 @@
-import { type ControlSocket } from './control-socket';
+import { type ControlSocket } from "./control-socket";
 /**
  * One-shot requests over the serve-sim middleware's **exec-ws** control socket,
  * mirroring the serve-sim client's `utils/exec.ts` (serve-sim #136).
@@ -26,7 +26,10 @@ export interface HostActionResult {
 export type HostActionParams = Record<string, string | number | boolean | string[] | undefined>;
 
 /** Runs one typed serve-sim host action and resolves its output. */
-export type RunHostAction = (action: string, params?: HostActionParams) => Promise<HostActionResult>;
+export type RunHostAction = (
+  action: string,
+  params?: HostActionParams,
+) => Promise<HostActionResult>;
 
 export interface UiRequestPayload {
   device: string;
@@ -81,7 +84,7 @@ function execWsRequest(
       } catch {}
       run();
     };
-    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), timeoutMs);
+    timer = setTimeout(() => finish(() => reject(new Error("exec-ws timeout"))), timeoutMs);
     ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
     ws.onmessage = (event) => {
       if (settled) return;
@@ -103,8 +106,8 @@ function execWsRequest(
         else finish(() => resolve(msg));
       }
     };
-    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
-    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
+    ws.onerror = () => finish(() => reject(new Error("exec-ws error")));
+    ws.onclose = () => finish(() => reject(new Error("exec-ws closed")));
   });
 }
 
@@ -134,13 +137,13 @@ export async function runHostAction(
     );
   } catch (err) {
     if (err instanceof Error && isActionRejection(err.message)) {
-      return { stdout: '', stderr: err.message, exitCode: 1 };
+      return { stdout: "", stderr: err.message, exitCode: 1 };
     }
     throw err;
   }
   return {
-    stdout: reply.stdout ?? '',
-    stderr: reply.stderr ?? '',
+    stdout: reply.stdout ?? "",
+    stderr: reply.stderr ?? "",
     exitCode: reply.exitCode ?? 1,
   };
 }
@@ -148,7 +151,7 @@ export async function runHostAction(
 // Transport failures use these exact messages (see execWsRequest); anything
 // else came back from the server as an `{id, error}` reply.
 function isActionRejection(message: string): boolean {
-  return !['exec-ws timeout', 'exec-ws error', 'exec-ws closed'].includes(message);
+  return !["exec-ws timeout", "exec-ws error", "exec-ws closed"].includes(message);
 }
 
 /**

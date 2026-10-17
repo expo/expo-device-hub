@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  VisibilityPoller,
-  type VisibilityPollerClock,
-} from "../src/ui/lib/visibility-poller.ts";
+import { VisibilityPoller, type VisibilityPollerClock } from "../src/ui/lib/visibility-poller.ts";
 
 class ManualClock implements VisibilityPollerClock<number> {
   #nextId = 1;
@@ -19,9 +16,7 @@ class ManualClock implements VisibilityPollerClock<number> {
   }
 
   runNext(): void {
-    const entry = this.timers.entries().next().value as
-      | [number, () => void]
-      | undefined;
+    const entry = this.timers.entries().next().value as [number, () => void] | undefined;
     if (!entry) throw new Error("no timer scheduled");
     this.timers.delete(entry[0]);
     entry[1]();

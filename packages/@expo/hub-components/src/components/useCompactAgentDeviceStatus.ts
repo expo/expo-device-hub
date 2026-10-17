@@ -1,4 +1,4 @@
-import { type RefObject, useLayoutEffect, useState } from 'react';
+import { type RefObject, useLayoutEffect, useState } from "react";
 
 const DEVICE_ROW_GAP = 16;
 const DEVICE_NAME_STATUS_GAP = 8;
@@ -43,7 +43,7 @@ export function useCompactAgentDeviceStatus({
     const name = nameRef.current;
     const statusLabel = statusLabelRef.current;
     const version = versionRef.current;
-    const badge = button?.querySelector<HTMLElement>('[data-agent-device-badge]');
+    const badge = button?.querySelector<HTMLElement>("[data-agent-device-badge]");
     if (!button || !name || !statusLabel || !version || !badge) return;
 
     const measure = () => {
@@ -57,7 +57,7 @@ export function useCompactAgentDeviceStatus({
           version: version.scrollWidth,
           badge: badge.offsetWidth,
           label: statusLabel.scrollWidth,
-        })
+        }),
       );
     };
 

@@ -67,11 +67,7 @@ describe("setEmulatorLocationAsync", () => {
       error: new Error("deadline"),
     })) as typeof execText;
     await expect(
-      setEmulatorLocationAsync(
-        "emulator-5554",
-        { latitude: 0, longitude: 0 },
-        timedOut,
-      ),
+      setEmulatorLocationAsync("emulator-5554", { latitude: 0, longitude: 0 }, timedOut),
     ).rejects.toThrow("adb emu geo fix timed out");
 
     const rejected = (async () => ({
@@ -83,11 +79,7 @@ describe("setEmulatorLocationAsync", () => {
       error: null,
     })) as typeof execText;
     await expect(
-      setEmulatorLocationAsync(
-        "emulator-5554",
-        { latitude: 0, longitude: 0 },
-        rejected,
-      ),
+      setEmulatorLocationAsync("emulator-5554", { latitude: 0, longitude: 0 }, rejected),
     ).rejects.toThrow("adb emu geo fix failed: KO: bad coordinates");
   });
 });

@@ -3,19 +3,9 @@ import { Check, X } from "lucide-react";
 import { ReloadIcon } from "../icons";
 import { runHostAction } from "../../socket/client-control";
 import { CollapsibleSection } from "./collapsible-section";
-import {
-  PERMISSION_SERVICES,
-  type PermAction,
-  type PermState,
-} from "../utils/permissions";
+import { PERMISSION_SERVICES, type PermAction, type PermState } from "../utils/permissions";
 
-export function AppPermissionsTool({
-  udid,
-  bundleId,
-}: {
-  udid: string;
-  bundleId: string | null;
-}) {
+export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId: string | null }) {
   const [state, setState] = useState<PermState>({});
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +15,10 @@ export function AppPermissionsTool({
   // can't (push notifications via BulletinBoard, location's `i<bundleId>:`
   // clients.plist keys), so the UI drives it instead of calling simctl directly.
   // Reset assumed state whenever the foreground app changes.
-  useEffect(() => { setState({}); setError(null); }, [bundleId]);
+  useEffect(() => {
+    setState({});
+    setError(null);
+  }, [bundleId]);
 
   const apply = useCallback(
     async (service: string, action: PermAction) => {
@@ -74,7 +67,9 @@ export function AppPermissionsTool({
       summaryClassName="grid [grid-template-columns:auto_1fr_auto] items-center gap-2 text-left"
       summary={
         <>
-          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">Permissions</span>
+          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">
+            Permissions
+          </span>
           <span />
         </>
       }
@@ -86,52 +81,54 @@ export function AppPermissionsTool({
       )}
 
       <div className="relative">
-          <div className="max-h-[260px] overflow-y-auto flex flex-col gap-1 py-2 [scrollbar-width:thin]">
-            {PERMISSION_SERVICES.map(({ key, label }) => {
-              const current = state[key];
-              return (
-                <div key={key} className="flex items-center justify-between gap-2 px-0.5 py-1">
-                  <span className="text-[12px] text-white/90 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">{label}</span>
-                  <div
-                    className="flex gap-0.5 bg-white/[0.04] border border-white/8 rounded-md p-0.5"
-                    role="group"
-                    aria-label={label}
+        <div className="max-h-[260px] overflow-y-auto flex flex-col gap-1 py-2 [scrollbar-width:thin]">
+          {PERMISSION_SERVICES.map(({ key, label }) => {
+            const current = state[key];
+            return (
+              <div key={key} className="flex items-center justify-between gap-2 px-0.5 py-1">
+                <span className="text-[12px] text-white/90 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
+                  {label}
+                </span>
+                <div
+                  className="flex gap-0.5 bg-white/[0.04] border border-white/8 rounded-md p-0.5"
+                  role="group"
+                  aria-label={label}
+                >
+                  <PermBtn
+                    active={current === "grant"}
+                    pending={pending === `${key}:grant`}
+                    onClick={() => apply(key, "grant")}
+                    variant="grant"
+                    title="Allow"
                   >
-                    <PermBtn
-                      active={current === "grant"}
-                      pending={pending === `${key}:grant`}
-                      onClick={() => apply(key, "grant")}
-                      variant="grant"
-                      title="Allow"
-                    >
-                      <Check size={11} strokeWidth={3} />
-                    </PermBtn>
-                    <PermBtn
-                      active={current === "revoke"}
-                      pending={pending === `${key}:revoke`}
-                      onClick={() => apply(key, "revoke")}
-                      variant="revoke"
-                      title="Deny"
-                    >
-                      <X size={11} strokeWidth={3} />
-                    </PermBtn>
-                    <PermBtn
-                      active={false}
-                      pending={pending === `${key}:reset`}
-                      onClick={() => apply(key, "reset")}
-                      variant="reset"
-                      title="Reset"
-                    >
-                      <ReloadIcon size={11} strokeWidth={2.4} />
-                    </PermBtn>
-                  </div>
+                    <Check size={11} strokeWidth={3} />
+                  </PermBtn>
+                  <PermBtn
+                    active={current === "revoke"}
+                    pending={pending === `${key}:revoke`}
+                    onClick={() => apply(key, "revoke")}
+                    variant="revoke"
+                    title="Deny"
+                  >
+                    <X size={11} strokeWidth={3} />
+                  </PermBtn>
+                  <PermBtn
+                    active={false}
+                    pending={pending === `${key}:reset`}
+                    onClick={() => apply(key, "reset")}
+                    variant="reset"
+                    title="Reset"
+                  >
+                    <ReloadIcon size={11} strokeWidth={2.4} />
+                  </PermBtn>
                 </div>
-              );
-            })}
-          </div>
-          <div className="absolute top-0 left-0 right-0 h-[14px] pointer-events-none rounded-t-[10px] bg-[linear-gradient(to_bottom,#1c1c1e_0%,rgba(28,28,30,0)_100%)]" />
-          <div className="absolute bottom-0 left-0 right-0 h-[14px] pointer-events-none bg-[linear-gradient(to_top,#1c1c1e_0%,rgba(28,28,30,0)_100%)]" />
+              </div>
+            );
+          })}
         </div>
+        <div className="absolute top-0 left-0 right-0 h-[14px] pointer-events-none rounded-t-[10px] bg-[linear-gradient(to_bottom,#1c1c1e_0%,rgba(28,28,30,0)_100%)]" />
+        <div className="absolute bottom-0 left-0 right-0 h-[14px] pointer-events-none bg-[linear-gradient(to_top,#1c1c1e_0%,rgba(28,28,30,0)_100%)]" />
+      </div>
 
       <div className="flex justify-end">
         <button

@@ -15,8 +15,7 @@ describe("parseDetachState", () => {
     // colors) to stdout when --detach reclaims the default port from a server
     // the previous test was still tearing down.
     const stdout =
-      "\x1b[90mPort 3100 busy, killing listener pid(s): 83620\x1b[0m\n" +
-      `${STATE_LINE}\n`;
+      "\x1b[90mPort 3100 busy, killing listener pid(s): 83620\x1b[0m\n" + `${STATE_LINE}\n`;
     expect(parseDetachState<{ device: string }>(stdout).device).toBe("AC78FEE5");
   });
 

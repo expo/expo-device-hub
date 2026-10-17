@@ -3,9 +3,7 @@ const defaultFormatter = require("@changesets/cli/changelog").default;
 const commitPrefix = /^(?:[0-9a-f]{7})(?:, [0-9a-f]{7})*: /i;
 
 function formatWithoutGeneratedPrefix(summary) {
-  const [firstLine, ...futureLines] = summary
-    .split("\n")
-    .map((line) => line.trimEnd());
+  const [firstLine, ...futureLines] = summary.split("\n").map((line) => line.trimEnd());
 
   let result = `- ${firstLine}`;
   if (futureLines.length > 0) {
@@ -23,10 +21,6 @@ module.exports = {
   },
 
   getDependencyReleaseLine(changesets, dependenciesUpdated, options) {
-    return defaultFormatter.getDependencyReleaseLine(
-      changesets,
-      dependenciesUpdated,
-      options,
-    );
+    return defaultFormatter.getDependencyReleaseLine(changesets, dependenciesUpdated, options);
   },
 };

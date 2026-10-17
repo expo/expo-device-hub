@@ -148,7 +148,9 @@ describe("grid-booted devices", () => {
     // Capture commands read it; a public host without the gate refuses capture, so it stays out.
     expect(gridStateToken(TOKEN, { requirePreviewToken: true, loopbackOnly: false })).toBe(TOKEN);
     expect(gridStateToken(TOKEN, { requirePreviewToken: false, loopbackOnly: true })).toBe(TOKEN);
-    expect(gridStateToken(TOKEN, { requirePreviewToken: false, loopbackOnly: false })).toBeUndefined();
+    expect(
+      gridStateToken(TOKEN, { requirePreviewToken: false, loopbackOnly: false }),
+    ).toBeUndefined();
     expect(gridStateToken(TOKEN, { requirePreviewToken: false })).toBeUndefined();
   });
 });

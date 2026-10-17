@@ -53,7 +53,10 @@ afterAll(() => {
 describe("rebootWithCapture", () => {
   test("starts the new session with the fields the panel chose", async () => {
     const { runtime, deps } = harness();
-    const meta = await rebootWithCapture(UDID, /* enabled */ true, deps, ["header", "request-body"]);
+    const meta = await rebootWithCapture(UDID, /* enabled */ true, deps, [
+      "header",
+      "request-body",
+    ]);
     expect(meta.fields).toEqual(["header", "request-body"]);
     expect(runtime.metaFor(UDID).fields).toEqual(["header", "request-body"]);
   });
@@ -128,7 +131,9 @@ describe("rebootWithCapture", () => {
     const boot = async () => {
       throw new Error("bootstatus timed out");
     };
-    await expect(rebootWithCapture(UDID, true, { ...deps, boot })).rejects.toThrow("bootstatus timed out");
+    await expect(rebootWithCapture(UDID, true, { ...deps, boot })).rejects.toThrow(
+      "bootstatus timed out",
+    );
     expect(runtime.shouldCaptureDevice(UDID, false)).toBe(true);
   });
 
@@ -276,7 +281,7 @@ describe("rebootWithCapture", () => {
       trustCa: async () => {},
       dylib: () => "/fake/libSimNetProxy.dylib",
       configure: capabilityHarness(),
-    writeDiskArtifacts: false,
+      writeDiskArtifacts: false,
     });
 
     const meta = await rebootWithCapture(UDID, /* enabled */ true, {
@@ -297,7 +302,13 @@ describe("rebootWithCapture", () => {
 
     await rebootWithCapture(UDID, /* enabled */ false, deps);
 
-    expect(calls).toEqual(["injection-cleared", "session-closed", "device-shutdown", "device-booted", "capabilities-rearmed"]);
+    expect(calls).toEqual([
+      "injection-cleared",
+      "session-closed",
+      "device-shutdown",
+      "device-booted",
+      "capabilities-rearmed",
+    ]);
   });
 
   test("leaves a device this process never armed alone", async () => {

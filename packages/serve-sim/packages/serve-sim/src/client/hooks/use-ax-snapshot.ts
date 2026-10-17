@@ -22,9 +22,7 @@ export function useAxSnapshot(endpoint?: string) {
         const next = JSON.parse(event.data) as AxSnapshot;
         setSnapshot(next);
         setStatus(
-          isAxeUnavailable(next)
-            ? "AX unavailable"
-            : `${next.elements.length} AX elements`,
+          isAxeUnavailable(next) ? "AX unavailable" : `${next.elements.length} AX elements`,
         );
       } catch {
         setStatus("AX parse error");

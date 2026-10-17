@@ -16,11 +16,12 @@ export function resizedValue(
   direction: ResizeDirection,
 ): number {
   const pointerDelta = position - start;
-  const delta = direction === "right"
-    ? pointerDelta
-    : direction === "center-right"
-      ? pointerDelta * 2
-      : -pointerDelta;
+  const delta =
+    direction === "right"
+      ? pointerDelta
+      : direction === "center-right"
+        ? pointerDelta * 2
+        : -pointerDelta;
   return Math.max(min, Math.min(max, initialSize + delta));
 }
 
@@ -32,19 +33,19 @@ function useResizableSize(
   direction: ResizeDirection,
 ) {
   const vertical = direction === "up";
-  const clamp = useCallback(
-    (value: number) => Math.max(min, Math.min(max, value)),
-    [min, max],
-  );
+  const clamp = useCallback((value: number) => Math.max(min, Math.min(max, value)), [min, max]);
   const [size, setSize] = useState(() => {
     if (typeof window === "undefined") return defaultSize;
     const raw = window.localStorage.getItem(storageKey);
     const parsed = raw != null ? Number(raw) : NaN;
     return Number.isFinite(parsed) ? clamp(parsed) : defaultSize;
   });
-  const viewportLimit = typeof window === "undefined"
-    ? max
-    : vertical ? window.innerHeight - 48 : window.innerWidth - 32;
+  const viewportLimit =
+    typeof window === "undefined"
+      ? max
+      : vertical
+        ? window.innerHeight - 48
+        : window.innerWidth - 32;
   const effectiveSize = Math.max(min, Math.min(max, viewportLimit, size));
 
   const onPointerDown = useCallback(
@@ -77,8 +78,16 @@ function useResizableSize(
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       const change = vertical
-        ? event.key === "ArrowUp" ? 16 : event.key === "ArrowDown" ? -16 : 0
-        : event.key === "ArrowRight" ? 16 : event.key === "ArrowLeft" ? -16 : 0;
+        ? event.key === "ArrowUp"
+          ? 16
+          : event.key === "ArrowDown"
+            ? -16
+            : 0
+        : event.key === "ArrowRight"
+          ? 16
+          : event.key === "ArrowLeft"
+            ? -16
+            : 0;
       if (change === 0) return;
       event.preventDefault();
       event.stopPropagation();

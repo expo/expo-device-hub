@@ -26,12 +26,9 @@ describe("simulator geometry helpers", () => {
   });
 
   test("uses live stream dimensions for aspect ratio before fallback", () => {
-    expect(
-      simulatorAspectRatio(
-        { width: 2868, height: 1320 },
-        { width: 1320, height: 2868 },
-      ),
-    ).toBe("2868 / 1320");
+    expect(simulatorAspectRatio({ width: 2868, height: 1320 }, { width: 1320, height: 2868 })).toBe(
+      "2868 / 1320",
+    );
   });
 
   test("uses requested landscape orientation when the raw frame remains portrait", () => {

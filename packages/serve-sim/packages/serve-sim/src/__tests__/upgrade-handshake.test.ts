@@ -53,14 +53,14 @@ describe("upgrade handshake", () => {
     return new Promise<string>((resolve, reject) => {
       const socket = connect(port, "127.0.0.1", () => {
         socket.write(
-          `GET /devtools/page/${TARGET} HTTP/1.1\r\n`
-          + `Host: 127.0.0.1:${port}\r\n`
-          + "Upgrade: websocket\r\n"
-          + "Connection: Upgrade\r\n"
-          + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-          + "Sec-WebSocket-Version: 13\r\n"
-          + (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "")
-          + "\r\n",
+          `GET /devtools/page/${TARGET} HTTP/1.1\r\n` +
+            `Host: 127.0.0.1:${port}\r\n` +
+            "Upgrade: websocket\r\n" +
+            "Connection: Upgrade\r\n" +
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+            "Sec-WebSocket-Version: 13\r\n" +
+            (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "") +
+            "\r\n",
         );
       });
       const timer = setTimeout(() => {

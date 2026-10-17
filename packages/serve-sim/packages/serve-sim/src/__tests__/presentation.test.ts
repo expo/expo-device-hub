@@ -12,7 +12,10 @@ import {
 describe("presentationModeFromSearch", () => {
   test("is off by default", () => {
     expect(presentationModeFromSearch("")).toEqual({ initial: false, embedLocked: false });
-    expect(presentationModeFromSearch("?device=udid")).toEqual({ initial: false, embedLocked: false });
+    expect(presentationModeFromSearch("?device=udid")).toEqual({
+      initial: false,
+      embedLocked: false,
+    });
   });
 
   test("enters presentation from fullscreen=1", () => {

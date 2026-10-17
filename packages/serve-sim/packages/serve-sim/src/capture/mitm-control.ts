@@ -53,9 +53,7 @@ export function maxControlBodyBytes(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): number {
   const value = Number(env[MAX_CONTROL_BODY_BYTES_ENV]?.trim());
-  return Number.isFinite(value) && value >= 1
-    ? Math.floor(value)
-    : DEFAULT_MAX_CONTROL_BODY_BYTES;
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : DEFAULT_MAX_CONTROL_BODY_BYTES;
 }
 
 export function formatOversizedControlBodyWarning(info: OversizedControlBodyInfo): string {
@@ -126,7 +124,8 @@ function bodyText(part: RecordPart | undefined) {
 
 export function describeFailure(raw: string): string {
   const upstream = /refused HTTP CONNECT request: (\d{3}[^)]*)/.exec(raw);
-  if (upstream) return `The upstream proxy refused the connection: ${upstream[1]!.trim()}. (${raw})`;
+  if (upstream)
+    return `The upstream proxy refused the connection: ${upstream[1]!.trim()}. (${raw})`;
   if (/Errno 61|Connect call failed|refused/i.test(raw)) {
     return `Nothing was listening at the address the app connected to. (${raw})`;
   }
@@ -156,27 +155,37 @@ function finishRecord(
   const requestBytes = record.req?.size ?? 0;
   const responseBytes = record.res?.size ?? 0;
 
-  store.setBody(storeId, applyCaptureFields({
-    requestHeaders: redactHeaders(record.req?.headers ?? {}),
-    responseHeaders: redactHeaders(record.res?.headers ?? {}),
-    requestBody: request.text,
-    responseBody: response.text,
-    requestTruncated: request.truncated || (record.req?.truncated ?? false),
-    responseTruncated: response.truncated || (record.res?.truncated ?? false),
-    requestBinary: request.binary,
-    responseBinary: response.binary,
-  }, fields));
+  store.setBody(
+    storeId,
+    applyCaptureFields(
+      {
+        requestHeaders: redactHeaders(record.req?.headers ?? {}),
+        responseHeaders: redactHeaders(record.res?.headers ?? {}),
+        requestBody: request.text,
+        responseBody: response.text,
+        requestTruncated: request.truncated || (record.req?.truncated ?? false),
+        responseTruncated: response.truncated || (record.res?.truncated ?? false),
+        requestBinary: request.binary,
+        responseBinary: response.binary,
+      },
+      fields,
+    ),
+  );
   store.noteTraffic(responseBytes, requestBytes, record.durationMs ?? 0);
-  store.update(storeId, {
-    status: record.status ?? null,
-    mimeType: record.res?.mime ?? record.res?.headers?.["content-type"] ?? null,
-    requestMimeType: record.req?.mime ?? record.req?.headers?.["content-type"] ?? null,
-    requestBytes,
-    responseBytes,
-    ttfbMs: record.ttfbMs ?? null,
-    durationMs: record.durationMs ?? null,
-    failure: record.error ? describeFailure(record.error) : null,
-  }, /* settled */ true);
+  store.update(
+    storeId,
+    {
+      status: record.status ?? null,
+      mimeType: record.res?.mime ?? record.res?.headers?.["content-type"] ?? null,
+      requestMimeType: record.req?.mime ?? record.req?.headers?.["content-type"] ?? null,
+      requestBytes,
+      responseBytes,
+      ttfbMs: record.ttfbMs ?? null,
+      durationMs: record.durationMs ?? null,
+      failure: record.error ? describeFailure(record.error) : null,
+    },
+    /* settled */ true,
+  );
 }
 
 function reply(res: ServerResponse, status: number, body?: unknown): void {
@@ -240,53 +249,59 @@ export async function startMitmControl(options: {
       return reply(res, 200, { ok: true });
     }
 
-    void readJsonBody(req, options.bodyTimeoutMs).then((payload) => {
-      const record = (payload ?? {}) as FinishedRecord;
-      if (record.id == null) return reply(res, 200, { ok: false });
-      if (route.pathname === "/request") {
-        while (flowIds.size >= PENDING_LIMIT) {
-          const [oldFlow, oldRow] = flowIds.entries().next().value!;
-          flowIds.delete(oldFlow);
-          flowOfRow.delete(oldRow);
-        }
-        const row = options.store.start(record.method ?? "GET", record.url ?? "", record.startedAt);
-        flowIds.set(record.id, row);
-        flowOfRow.set(row, record.id);
-        return reply(res, 200, { ok: true });
-      }
-      if (route.pathname === "/response") {
-        const storeId = flowIds.get(record.id);
-        if (storeId == null) {
-          // Cleared on purpose, so not a loss: nothing to record and nothing to report.
-          if (clearedFlows.delete(record.id)) return reply(res, 200, { ok: true, cleared: true });
-          if (evictedFlows.delete(record.id)) {
-            // Delivered, so the addon does not count it lost; its row had already left the list.
-            lateResponses += 1;
-            if (lateResponses === 1) {
-              console.warn(
-                "Network capture: a request left the 500-row list before its response arrived, so the " +
-                  "response was not recorded. Clear the list or reduce traffic to keep slow requests.",
-              );
-            }
-            return reply(res, 200, { ok: true, evicted: true });
+    void readJsonBody(req, options.bodyTimeoutMs)
+      .then((payload) => {
+        const record = (payload ?? {}) as FinishedRecord;
+        if (record.id == null) return reply(res, 200, { ok: false });
+        if (route.pathname === "/request") {
+          while (flowIds.size >= PENDING_LIMIT) {
+            const [oldFlow, oldRow] = flowIds.entries().next().value!;
+            flowIds.delete(oldFlow);
+            flowOfRow.delete(oldRow);
           }
-          return reply(res, 200, { ok: false });
+          const row = options.store.start(
+            record.method ?? "GET",
+            record.url ?? "",
+            record.startedAt,
+          );
+          flowIds.set(record.id, row);
+          flowOfRow.set(row, record.id);
+          return reply(res, 200, { ok: true });
         }
-        flowIds.delete(record.id);
-        flowOfRow.delete(storeId);
-        finishRecord(options.store, storeId, record, fields);
-        return reply(res, 200, { ok: true });
-      }
-      return reply(res, 404);
-    }).catch((error) => {
-      // A stalled post's socket is already destroyed; there is nobody to answer.
-      if (error instanceof ControlBodyTimeoutError) return;
-      if (!(error instanceof ControlBodyTooLargeError)) return reply(res, 400);
-      const info = { bytesSeen: error.bytesSeen, limit: error.limit, path: route.pathname };
-      console.warn(formatOversizedControlBodyWarning(info));
-      options.onOversizedBody?.(info);
-      reply(res, 413);
-    });
+        if (route.pathname === "/response") {
+          const storeId = flowIds.get(record.id);
+          if (storeId == null) {
+            // Cleared on purpose, so not a loss: nothing to record and nothing to report.
+            if (clearedFlows.delete(record.id)) return reply(res, 200, { ok: true, cleared: true });
+            if (evictedFlows.delete(record.id)) {
+              // Delivered, so the addon does not count it lost; its row had already left the list.
+              lateResponses += 1;
+              if (lateResponses === 1) {
+                console.warn(
+                  "Network capture: a request left the 500-row list before its response arrived, so the " +
+                    "response was not recorded. Clear the list or reduce traffic to keep slow requests.",
+                );
+              }
+              return reply(res, 200, { ok: true, evicted: true });
+            }
+            return reply(res, 200, { ok: false });
+          }
+          flowIds.delete(record.id);
+          flowOfRow.delete(storeId);
+          finishRecord(options.store, storeId, record, fields);
+          return reply(res, 200, { ok: true });
+        }
+        return reply(res, 404);
+      })
+      .catch((error) => {
+        // A stalled post's socket is already destroyed; there is nobody to answer.
+        if (error instanceof ControlBodyTimeoutError) return;
+        if (!(error instanceof ControlBodyTooLargeError)) return reply(res, 400);
+        const info = { bytesSeen: error.bytesSeen, limit: error.limit, path: route.pathname };
+        console.warn(formatOversizedControlBodyWarning(info));
+        options.onOversizedBody?.(info);
+        reply(res, 413);
+      });
   });
 
   await new Promise<void>((resolve, reject) => {

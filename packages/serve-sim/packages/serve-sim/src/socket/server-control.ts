@@ -1,8 +1,4 @@
-import {
-  messageToString,
-  requestHost,
-  type SseRequestHandler,
-} from "./control-utils";
+import { messageToString, requestHost, type SseRequestHandler } from "./control-utils";
 import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
@@ -102,7 +98,8 @@ function wireExecSocket(
   };
 
   const offered = request.headers.get("sec-websocket-protocol") ?? undefined;
-  let authed = acceptedTokenSubprotocol({ "sec-websocket-protocol": offered }, opts.execToken) !== null;
+  let authed =
+    acceptedTokenSubprotocol({ "sec-websocket-protocol": offered }, opts.execToken) !== null;
   if (!authed && offered?.includes(TOKEN_SUBPROTOCOL_PREFIX)) {
     ws.close();
     return;
@@ -186,7 +183,9 @@ function wireExecSocket(
       } finally {
         active = false;
         if (reader) {
-          try { reader.releaseLock(); } catch {}
+          try {
+            reader.releaseLock();
+          } catch {}
         }
         if (subscriptions.get(sub) === subscription) {
           subscriptions.delete(sub);

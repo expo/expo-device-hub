@@ -102,14 +102,17 @@ export function connectToFetch(
     resolved = true;
     resolveResponse(response);
   };
-  const statusAllowsBody = () => status !== 101 && status !== 204 && status !== 205 && status !== 304;
+  const statusAllowsBody = () =>
+    status !== 101 && status !== 204 && status !== 205 && status !== 304;
   const ensureResponse = () => {
     if (headersSent) return;
     headersSent = true;
     for (const [name, value] of presetHeaders) {
       if (!responseHeaders.has(name)) responseHeaders.set(name, value);
     }
-    resolveOnce(new Response(statusAllowsBody() ? body : null, { status, headers: responseHeaders }));
+    resolveOnce(
+      new Response(statusAllowsBody() ? body : null, { status, headers: responseHeaders }),
+    );
   };
   const writeChunk = (chunk: Buffer | string | Uint8Array) => {
     ensureResponse();
@@ -128,13 +131,27 @@ export function connectToFetch(
   };
 
   const fakeRes = {
-    get headersSent() { return headersSent; },
-    get writableEnded() { return writableEnded; },
-    get writableFinished() { return writableFinished; },
-    get destroyed() { return responseDestroyed; },
-    get writableNeedDrain() { return writableNeedDrain; },
-    get statusCode() { return status; },
-    set statusCode(nextStatus: number) { status = nextStatus; },
+    get headersSent() {
+      return headersSent;
+    },
+    get writableEnded() {
+      return writableEnded;
+    },
+    get writableFinished() {
+      return writableFinished;
+    },
+    get destroyed() {
+      return responseDestroyed;
+    },
+    get writableNeedDrain() {
+      return writableNeedDrain;
+    },
+    get statusCode() {
+      return status;
+    },
+    set statusCode(nextStatus: number) {
+      status = nextStatus;
+    },
     setHeader(name: string, value: string) {
       presetHeaders.set(name, value);
     },
@@ -217,15 +234,17 @@ export function connectToFetch(
     handling = Promise.reject(error);
   }
   if (requestWasAlreadyAborted) handleRequestAbort();
-  void handling
-    .then(() => {
+  void handling.then(
+    () => {
       if (!resolved && writableEnded) {
         resolveOnce(new Response(null, { status, headers: responseHeaders }));
       }
-    }, (error) => {
+    },
+    (error) => {
       if (resolved) fakeRes.destroy(error instanceof Error ? error : undefined);
       else rejectResponse(error);
-    });
+    },
+  );
 
   void (async () => {
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -246,7 +265,9 @@ export function connectToFetch(
       if (requestBodyReader === reader) requestBodyReader = null;
       if (reader) {
         if (abortController.signal.aborted) await reader.cancel().catch(() => {});
-        try { reader.releaseLock(); } catch {}
+        try {
+          reader.releaseLock();
+        } catch {}
       }
     }
   })();

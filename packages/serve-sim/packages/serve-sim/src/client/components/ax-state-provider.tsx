@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  AxSelectionContext,
-  AxSnapshotContext,
-  useAxSnapshot,
-} from "../hooks/use-ax-snapshot";
+import { AxSelectionContext, AxSnapshotContext, useAxSnapshot } from "../hooks/use-ax-snapshot";
 
 export function AxStateProvider({
   endpoint,
@@ -23,10 +19,7 @@ export function AxStateProvider({
     }
   }, [endpoint]);
 
-  const snapshotValue = useMemo(
-    () => ({ snapshot, status }),
-    [snapshot, status],
-  );
+  const snapshotValue = useMemo(() => ({ snapshot, status }), [snapshot, status]);
   const selectionValue = useMemo(
     () => ({
       highlightedKey,
@@ -39,9 +32,7 @@ export function AxStateProvider({
 
   return (
     <AxSnapshotContext value={snapshotValue}>
-      <AxSelectionContext value={selectionValue}>
-        {children}
-      </AxSelectionContext>
+      <AxSelectionContext value={selectionValue}>{children}</AxSelectionContext>
     </AxSnapshotContext>
   );
 }

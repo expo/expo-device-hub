@@ -25,9 +25,7 @@ export interface MjpegFrameParser {
   push(value: Uint8Array): void;
 }
 
-export function createMjpegFrameParser(
-  emit: (jpeg: Uint8Array) => void,
-): MjpegFrameParser {
+export function createMjpegFrameParser(emit: (jpeg: Uint8Array) => void): MjpegFrameParser {
   // `len` is the logical end of valid bytes in `buffer`; `start` is the read
   // cursor of already-consumed bytes.
   let buffer = new Uint8Array(64 * 1024);
@@ -63,7 +61,12 @@ export function createMjpegFrameParser(
   const findHeaderEnd = (from: number): number => {
     const end = Math.min(len - 4, from + HEADER_WINDOW);
     for (let i = from; i <= end; i++) {
-      if (buffer[i] === 0x0d && buffer[i + 1] === 0x0a && buffer[i + 2] === 0x0d && buffer[i + 3] === 0x0a) {
+      if (
+        buffer[i] === 0x0d &&
+        buffer[i + 1] === 0x0a &&
+        buffer[i + 2] === 0x0d &&
+        buffer[i + 3] === 0x0a
+      ) {
         return i;
       }
     }
@@ -86,7 +89,10 @@ export function createMjpegFrameParser(
   const scanJpeg = (from: number): { s: number; e: number } | null => {
     let s = -1;
     for (let i = from; i < len - 1; i++) {
-      if (buffer[i] === 0xff && buffer[i + 1] === 0xd8) { s = i; break; }
+      if (buffer[i] === 0xff && buffer[i + 1] === 0xd8) {
+        s = i;
+        break;
+      }
     }
     if (s === -1) return null;
     for (let i = Math.max(s + 2, markerScanFrom); i < len - 1; i++) {

@@ -16,16 +16,16 @@ import {
   shutdownDevice as shutdownAndroidDevice,
   waitForAdbOffline,
   waitForAdbOnline,
-} from '@expo/hub-android-utils';
+} from "@expo/hub-android-utils";
 import {
   bootDevice as bootAppleSimulator,
   createDevice as createAppleSimulator,
   removeDevice as removeAppleDevice,
   shutdownDevice as shutdownAppleDevice,
-} from '@expo/hub-apple-utils';
+} from "@expo/hub-apple-utils";
 
-import { type HubDevicePlatform } from './devices';
-import { type SerializableError, toSerializableError } from './utility-errors';
+import { type HubDevicePlatform } from "./devices";
+import { type SerializableError, toSerializableError } from "./utility-errors";
 
 const ANDROID_AVD_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
@@ -68,19 +68,19 @@ export async function parseDeviceAction(request: Request): Promise<DeviceActionR
     return null;
   }
 
-  if (!data || typeof data !== 'object') return null;
+  if (!data || typeof data !== "object") return null;
   const { platform, id, name } = data as Record<string, unknown>;
 
-  if ((platform !== 'ios' && platform !== 'android') || typeof id !== 'string' || !id) {
+  if ((platform !== "ios" && platform !== "android") || typeof id !== "string" || !id) {
     return null;
   }
 
-  return { platform, id, name: typeof name === 'string' ? name : '' };
+  return { platform, id, name: typeof name === "string" ? name : "" };
 }
 
 /** Parse and validate the stable toolchain identifiers needed to create a device. */
 export async function parseCreateDeviceAction(
-  request: Request
+  request: Request,
 ): Promise<CreateDeviceActionRequest | null> {
   let data: unknown;
   try {
@@ -89,14 +89,14 @@ export async function parseCreateDeviceAction(
     return null;
   }
 
-  if (!data || typeof data !== 'object') return null;
+  if (!data || typeof data !== "object") return null;
   const { platform, name, runtime, deviceType } = data as Record<string, unknown>;
   if (
-    (platform !== 'ios' && platform !== 'android') ||
+    (platform !== "ios" && platform !== "android") ||
     !isNonEmptyString(name) ||
     !isNonEmptyString(runtime) ||
     !isNonEmptyString(deviceType) ||
-    (platform === 'android' && !ANDROID_AVD_NAME_PATTERN.test(name.trim()))
+    (platform === "android" && !ANDROID_AVD_NAME_PATTERN.test(name.trim()))
   ) {
     return null;
   }
@@ -110,7 +110,7 @@ export async function parseCreateDeviceAction(
 }
 
 function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 export interface DeviceActionResult {
@@ -145,7 +145,7 @@ export async function shutdownHubDevice({
   platform,
   id,
 }: DeviceActionRequest): Promise<DeviceActionResult> {
-  if (platform === 'ios') {
+  if (platform === "ios") {
     const result = await shutdownAppleDevice({ udid: id });
     return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
   }
@@ -163,7 +163,7 @@ export async function removeHubDevice({
   id,
   name,
 }: DeviceActionRequest): Promise<DeviceActionResult> {
-  if (platform === 'ios') {
+  if (platform === "ios") {
     const shutdown = await shutdownAppleDevice({ udid: id });
     if (shutdown.error || !shutdown.value) {
       return {
@@ -215,9 +215,9 @@ export interface BootDeviceResult {
  */
 export async function bootHubDevice(
   { platform, id, name }: DeviceActionRequest,
-  cameraFeeds: EmulatorCameraFeeds
+  cameraFeeds: EmulatorCameraFeeds,
 ): Promise<BootDeviceResult> {
-  if (platform === 'ios') {
+  if (platform === "ios") {
     const booted = await bootAppleSimulator({ udid: id });
     const errors = errorList(toSerializableError(booted.error));
     return booted.value
@@ -226,7 +226,7 @@ export async function bootHubDevice(
   }
 
   const avdName = name || id;
-  if (!avdName) return { ok: false, error: 'Missing AVD name', errors: [] };
+  if (!avdName) return { ok: false, error: "Missing AVD name", errors: [] };
 
   return bootAndroidHubDevice(avdName, cameraFeeds);
 }
@@ -234,9 +234,9 @@ export async function bootHubDevice(
 /** Create a new virtual device, then boot it through the same platform utility. */
 export async function createHubDevice(
   { platform, name, runtime, deviceType }: CreateDeviceActionRequest,
-  cameraFeeds: EmulatorCameraFeeds
+  cameraFeeds: EmulatorCameraFeeds,
 ): Promise<BootDeviceResult> {
-  if (platform === 'ios') {
+  if (platform === "ios") {
     const created = await createAppleSimulator({ name, runtime, deviceType });
     const udid = created.value;
     if (created.error || !udid) {
@@ -284,7 +284,7 @@ export async function createHubDevice(
  */
 async function bootAndroidHubDevice(
   avdName: string,
-  cameraFeeds: EmulatorCameraFeeds
+  cameraFeeds: EmulatorCameraFeeds,
 ): Promise<BootDeviceResult> {
   const allocated = await freeEmulatorPort();
   if (allocated.error || allocated.value === null) {
@@ -324,19 +324,19 @@ async function bootAndroidHubDevice(
   const abort = new AbortController();
   const outcome = await Promise.race([
     waitForAdbOnline(booted.serial, BOOT_READY_TIMEOUT_MS, { signal: abort.signal }).then(
-      (online) => ({ kind: 'wait' as const, online })
+      (online) => ({ kind: "wait" as const, online }),
     ),
-    booted.exited.then((exit) => ({ kind: 'exited' as const, exit })),
+    booted.exited.then((exit) => ({ kind: "exited" as const, exit })),
   ]);
   abort.abort();
 
-  if (outcome.kind === 'exited') {
+  if (outcome.kind === "exited") {
     const ended =
       outcome.exit.code != null
         ? `exited with code ${outcome.exit.code}`
         : outcome.exit.signal
-        ? `was killed by ${outcome.exit.signal}`
-        : 'exited';
+          ? `was killed by ${outcome.exit.signal}`
+          : "exited";
     return {
       ok: false,
       id: booted.serial,
@@ -364,7 +364,7 @@ async function bootAndroidHubDevice(
         ok: false,
         id: booted.serial,
         serial: booted.serial,
-        error: 'Timed out waiting for the emulator to come online',
+        error: "Timed out waiting for the emulator to come online",
         errors: seedErrors,
       };
 }

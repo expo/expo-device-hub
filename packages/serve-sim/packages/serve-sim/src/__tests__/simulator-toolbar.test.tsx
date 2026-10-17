@@ -14,7 +14,6 @@ beforeEach(() => {
 import { renderToStaticMarkup } from "react-dom/server";
 import { SimulatorToolbar, pressHomeAsync } from "../client/simulator/simulator-toolbar";
 
-
 describe("SimulatorToolbar.Title", () => {
   test("can hide the runtime subtitle", () => {
     const html = renderToStaticMarkup(
@@ -34,11 +33,7 @@ describe("SimulatorToolbar.Title", () => {
 
   test("can hide the chevron", () => {
     const html = renderToStaticMarkup(
-      <SimulatorToolbar
-        deviceUdid="booted"
-        deviceName="iPhone 16 (26.5)"
-        streaming
-      >
+      <SimulatorToolbar deviceUdid="booted" deviceName="iPhone 16 (26.5)" streaming>
         <SimulatorToolbar.Title hideChevron />
       </SimulatorToolbar>,
     );
@@ -128,7 +123,7 @@ describe("SimulatorToolbar.Button", () => {
       </SimulatorToolbar>,
     );
     expect(html).toContain('role="tooltip"');
-    expect(html).toContain("aria-label=\"Clipboard actions\"");
+    expect(html).toContain('aria-label="Clipboard actions"');
     expect(html).toContain(">Clipboard</span>");
     expect(html).not.toContain('title="Clipboard"');
   });

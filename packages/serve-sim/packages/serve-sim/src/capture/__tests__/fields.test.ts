@@ -87,10 +87,7 @@ describe("applyCaptureFields", () => {
 
   test("can keep all fields", () => {
     expect(
-      applyCaptureFields(
-        fullBody,
-        captureFieldSet(["header", "request-body", "response-body"]),
-      ),
+      applyCaptureFields(fullBody, captureFieldSet(["header", "request-body", "response-body"])),
     ).toEqual(fullBody);
   });
 });

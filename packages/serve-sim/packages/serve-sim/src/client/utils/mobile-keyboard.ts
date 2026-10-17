@@ -4,25 +4,31 @@ import { hidUsageForCode } from "./hid";
 const BACKSPACE = hidUsageForCode("Backspace")!;
 const ENTER = hidUsageForCode("Enter")!;
 
-export function shiftedCharacter(event: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">): string | undefined {
-  return event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
-    event.key.length === 1 && event.key !== " " ? event.key : undefined;
+export function shiftedCharacter(
+  event: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">,
+): string | undefined {
+  return event.shiftKey &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    event.key.length === 1 &&
+    event.key !== " "
+    ? event.key
+    : undefined;
 }
 
 function press(usage: number): KeyEvent[] {
-  return [{ type: "down", usage }, { type: "up", usage }];
+  return [
+    { type: "down", usage },
+    { type: "up", usage },
+  ];
 }
 
-export function keyEventsForInputType(
-  inputType: string,
-  data: string | null,
-): KeyEvent[] {
+export function keyEventsForInputType(inputType: string, data: string | null): KeyEvent[] {
   switch (inputType) {
     case "insertText":
     case "insertFromPaste":
-      return data != null && data !== ""
-        ? textToKeyEventsLenient(data).events
-        : [];
+      return data != null && data !== "" ? textToKeyEventsLenient(data).events : [];
     case "insertLineBreak":
     case "insertParagraph":
       return press(ENTER);
@@ -46,10 +52,7 @@ export function keyEventsForBeforeInput(inputType: string): KeyEvent[] {
   }
 }
 
-export function keyEventsForTextChange(
-  previous: string,
-  next: string,
-): KeyEvent[] {
+export function keyEventsForTextChange(previous: string, next: string): KeyEvent[] {
   const prev = Array.from(previous);
   const cur = Array.from(next);
   let common = 0;
@@ -73,9 +76,7 @@ export function keydownForward(
     // input: it fires no `input` for the value diff (e.g. a fresh reopen) and is
     // otherwise dropped when the sim isn't focused. The rest stays with the
     // input path so it is never sent twice.
-    return code === "Backspace" && state.captureInputEmpty
-      ? hidUsageForCode(code)
-      : null;
+    return code === "Backspace" && state.captureInputEmpty ? hidUsageForCode(code) : null;
   }
   if (!state.simFocused) return null;
   return hidUsageForCode(code);

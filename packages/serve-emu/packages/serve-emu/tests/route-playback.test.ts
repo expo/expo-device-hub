@@ -164,9 +164,7 @@ describe("RoutePlayback lifecycle", () => {
     clock.fireCleared();
     expect(clock.active.size).toBe(0);
     expect(playback.snapshot().status).toBe("closed");
-    await expect(playback.start(request)).rejects.toBeInstanceOf(
-      RoutePlaybackConflictError,
-    );
+    await expect(playback.start(request)).rejects.toBeInstanceOf(RoutePlaybackConflictError);
   });
 
   test("stop during the initial apply invalidates the run and remains reusable", async () => {
@@ -290,10 +288,7 @@ describe("RoutePlayback lifecycle", () => {
     applying.resolve();
     await expect(first).rejects.toBeInstanceOf(RoutePlaybackConflictError);
 
-    const disposedResponse = await startRoutePlaybackResponse(
-      playback,
-      request,
-    );
+    const disposedResponse = await startRoutePlaybackResponse(playback, request);
     expect(disposedResponse.status).toBe(409);
     expect(await disposedResponse.json()).toEqual({
       ok: false,
@@ -311,11 +306,7 @@ describe("RoutePlayback lifecycle", () => {
       onLocation: () => {},
     });
 
-    const response = await startRoutePlaybackResponse(
-      playback,
-      request,
-      () => false,
-    );
+    const response = await startRoutePlaybackResponse(playback, request, () => false);
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       ok: false,

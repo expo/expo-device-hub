@@ -80,8 +80,7 @@ export class CaptureDiskAccumulator {
 
   constructor(opts: CaptureDiskAccumulatorOptions) {
     this.dir = opts.dir;
-    this.networkCapturePath =
-      opts.networkCapturePath ?? join(opts.dir, NETWORK_CAPTURE_FILENAME);
+    this.networkCapturePath = opts.networkCapturePath ?? join(opts.dir, NETWORK_CAPTURE_FILENAME);
     this.harPath = opts.harPath ?? join(opts.dir, CAPTURE_HAR_FILENAME);
     this.entriesPath = opts.entriesPath ?? join(opts.dir, CAPTURE_ENTRIES_FILENAME);
     this.ownerFile = opts.ownerFile;
@@ -248,18 +247,29 @@ export class CaptureDiskAccumulator {
       await this.flush();
     } catch (error) {
       failure = error instanceof Error ? error : new Error(String(error));
-      console.warn(`Network capture: flush before end (${this.dir}) failed, so its files were kept:`, failure.message);
+      console.warn(
+        `Network capture: flush before end (${this.dir}) failed, so its files were kept:`,
+        failure.message,
+      );
     }
     // After a failed flush the recording stays claimed, so a retry can finish and remove it.
     if (failure) return failure;
     if (this.owner) {
       try {
-        releaseCaptureDirectory(this.dir, this.owner, this.removesDir(opts.removeDir), this.ownerFile);
+        releaseCaptureDirectory(
+          this.dir,
+          this.owner,
+          this.removesDir(opts.removeDir),
+          this.ownerFile,
+        );
       } catch (error) {
         // Same as a failed flush: the recording stays claimed and end() does not cache this result,
         // so a later cleanup can retry the release instead of reporting a clean stop over kept files.
         const release = error instanceof Error ? error : new Error(String(error));
-        console.warn(`Network capture: releasing ${this.dir} failed, so its files were kept:`, release.message);
+        console.warn(
+          `Network capture: releasing ${this.dir} failed, so its files were kept:`,
+          release.message,
+        );
         return release;
       }
     }

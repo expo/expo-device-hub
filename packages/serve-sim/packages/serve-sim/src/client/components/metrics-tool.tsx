@@ -47,25 +47,25 @@ export function MetricsTool({
           <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">
             Activity
           </span>
-          {live
-            ? !open && (
-                <span className="text-[11px] text-white/40 tabular-nums text-right">
-                  {formatCpu(latest.cpuPct)} · {formatMem(latest.memBytes)}
-                </span>
-              )
-            : (
-                <span
-                  data-metrics-warning
-                  role="status"
-                  className="group relative justify-self-end inline-flex items-center"
-                >
-                  <TriangleAlert aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="sr-only">{idleReason}</span>
-                  <span className="pointer-events-none absolute right-0 top-full z-10 mt-1 hidden w-max max-w-[220px] rounded-md bg-black/90 px-2 py-1 text-[11px] leading-snug text-white/90 shadow-lg group-hover:block">
-                    {idleReason}
-                  </span>
-                </span>
-              )}
+          {live ? (
+            !open && (
+              <span className="text-[11px] text-white/40 tabular-nums text-right">
+                {formatCpu(latest.cpuPct)} · {formatMem(latest.memBytes)}
+              </span>
+            )
+          ) : (
+            <span
+              data-metrics-warning
+              role="status"
+              className="group relative justify-self-end inline-flex items-center"
+            >
+              <TriangleAlert aria-hidden="true" className="w-3.5 h-3.5 text-amber-400" />
+              <span className="sr-only">{idleReason}</span>
+              <span className="pointer-events-none absolute right-0 top-full z-10 mt-1 hidden w-max max-w-[220px] rounded-md bg-black/90 px-2 py-1 text-[11px] leading-snug text-white/90 shadow-lg group-hover:block">
+                {idleReason}
+              </span>
+            </span>
+          )}
         </>
       }
     >
@@ -146,7 +146,10 @@ function NetworkRow({
         <span className="text-white/50 text-[11px]">
           Network
           {deviceWide && (
-            <span className="text-white/30 ml-1.5" title="While network capture is on, this is every app's proxied traffic">
+            <span
+              className="text-white/30 ml-1.5"
+              title="While network capture is on, this is every app's proxied traffic"
+            >
               all apps
             </span>
           )}

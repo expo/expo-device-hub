@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  ApiError,
-  apiErrorResponse,
-} from "../src/api/api-error.ts";
+import { ApiError, apiErrorResponse } from "../src/api/api-error.ts";
 import { readBodyBytes, readJsonBody } from "../src/api/body.ts";
 import {
   createApiRouter,
@@ -44,14 +41,10 @@ describe("ApiError", () => {
     [502, "downstream_failure"],
     [503, "service_unavailable"],
   ] as const)("serializes status %i and code %s", async (status, code) => {
-    const response = apiErrorResponse(
-      new ApiError(status, code, "Safe message"),
-    );
+    const response = apiErrorResponse(new ApiError(status, code, "Safe message"));
 
     expect(response.status).toBe(status);
-    expect(response.headers.get("content-type")).toBe(
-      "application/json; charset=utf-8",
-    );
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
     expect(await response.json()).toEqual({
       ok: false,
       error: { code, message: "Safe message" },
@@ -149,9 +142,9 @@ describe("bounded request bodies", () => {
       status: 400,
       code: "invalid_request",
     });
-    await expect(
-      readBodyBytes(new Request(url("/api/example")), -1),
-    ).rejects.toBeInstanceOf(RangeError);
+    await expect(readBodyBytes(new Request(url("/api/example")), -1)).rejects.toBeInstanceOf(
+      RangeError,
+    );
   });
 });
 
@@ -174,10 +167,7 @@ describe("createApiRouter", () => {
     ];
     const router = createApiRouter(routes);
 
-    const response = await router.handle(
-      new Request(url("/api/example?q=search")),
-      deps,
-    );
+    const response = await router.handle(new Request(url("/api/example?q=search")), deps);
     expect(await response!.json()).toEqual({
       method: "GET",
       query: "search",
@@ -189,10 +179,7 @@ describe("createApiRouter", () => {
 
   test("returns structured 404 only for claimed API paths", async () => {
     const router = createApiRouter<Deps>([]);
-    const response = await router.handle(
-      new Request(url("/api/missing")),
-      deps,
-    );
+    const response = await router.handle(new Request(url("/api/missing")), deps);
 
     expect(response!.status).toBe(404);
     expect(await errorJson(response)).toEqual({
@@ -231,9 +218,7 @@ describe("createApiRouter", () => {
       handler: () => Response.json({ ok: true }),
     };
 
-    expect(() => createApiRouter([route, route])).toThrow(
-      "Duplicate API route: GET /api/example",
-    );
+    expect(() => createApiRouter([route, route])).toThrow("Duplicate API route: GET /api/example");
   });
 
   test("preserves validation, conflict, and payload errors from handlers", async () => {
@@ -280,21 +265,13 @@ describe("createApiRouter", () => {
           method: "GET",
           path: "/api/example",
           handler: () => {
-            throw new ApiError(
-              502,
-              "downstream_failure",
-              "Device command failed",
-              { cause },
-            );
+            throw new ApiError(502, "downstream_failure", "Device command failed", { cause });
           },
         },
       ],
       { logger },
     );
-    const response = await router.handle(
-      new Request(url("/api/example?token=do-not-log")),
-      deps,
-    );
+    const response = await router.handle(new Request(url("/api/example?token=do-not-log")), deps);
     const text = await response!.text();
 
     expect(response!.status).toBe(502);
@@ -334,10 +311,7 @@ describe("createApiRouter", () => {
         },
       },
     );
-    const response = await router.handle(
-      new Request(url("/api/example?token=super-secret")),
-      deps,
-    );
+    const response = await router.handle(new Request(url("/api/example?token=super-secret")), deps);
     const text = await response!.text();
 
     expect(response!.status).toBe(500);

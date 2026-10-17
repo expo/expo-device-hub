@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { type DeviceClient } from '@expo/hub-client';
-import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
-import { ActivityCharts } from './ActivitySection';
-import { CollapsibleSection } from './CollapsibleSection';
+import { type DeviceClient } from "@expo/hub-client";
+import { bg, border, font, heading, icon, radius, text, textSize } from "../primitives";
+import { ActivityCharts } from "./ActivitySection";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 const APP_ICON_SIZE = 40;
-const UNKNOWN_VALUE = 'unknown';
+const UNKNOWN_VALUE = "unknown";
 
 type AppDetail = {
   label: string;
@@ -27,35 +27,37 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
 
   const details: AppDetail[] = [
-    { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
-    { label: 'Version', value: app?.version ?? UNKNOWN_VALUE },
-    { label: 'Build number', value: app?.build ?? UNKNOWN_VALUE },
+    { label: "App ID", value: app?.id ?? UNKNOWN_VALUE },
+    { label: "Version", value: app?.version ?? UNKNOWN_VALUE },
+    { label: "Build number", value: app?.build ?? UNKNOWN_VALUE },
   ];
 
   return (
     <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen} divider={false}>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
           gap: 16,
-          padding: '4px 0 12px',
-        }}>
-        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 4 }}>
+          padding: "4px 0 12px",
+        }}
+      >
+        <div style={{ display: "flex", minWidth: 0, flexDirection: "column", gap: 4 }}>
           <span
             title={name}
             style={{
               ...heading.base,
               color: app ? text.default : text.tertiary,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {name}
           </span>
           {(app?.isReactNative || app?.debuggable) && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {app?.isReactNative && <Badge color="info">React Native</Badge>}
               {app?.debuggable && <Badge color="warning">debuggable</Badge>}
             </div>
@@ -78,25 +80,26 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
     <span
       aria-hidden="true"
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         width: APP_ICON_SIZE,
         height: APP_ICON_SIZE,
         flexShrink: 0,
-        boxSizing: 'border-box',
-        overflow: 'hidden',
+        boxSizing: "border-box",
+        overflow: "hidden",
         border: iconDataUrl ? undefined : `1px solid ${border.default}`,
         borderRadius: radius.lg,
         backgroundColor: bg.element,
-      }}>
+      }}
+    >
       {iconDataUrl ? (
         <img
           src={iconDataUrl}
           alt=""
           width={APP_ICON_SIZE}
           height={APP_ICON_SIZE}
-          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -113,13 +116,16 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
         gap: 16,
-        padding: '8px 0',
-      }}>
-      <dt style={{ ...textSize.sm, fontWeight: 500, flexShrink: 0, margin: 0, color: text.secondary }}>
+        padding: "8px 0",
+      }}
+    >
+      <dt
+        style={{ ...textSize.sm, fontWeight: 500, flexShrink: 0, margin: 0, color: text.secondary }}
+      >
         {detail.label}
       </dt>
       <dd
@@ -130,19 +136,20 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
           margin: 0,
           color: text.default,
           fontFamily: font.mono,
-          textAlign: 'right',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          fontVariantNumeric: 'tabular-nums',
-        }}>
+          textAlign: "right",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
         {detail.value}
       </dd>
     </div>
   );
 }
 
-function Badge({ color, children }: { color: 'info' | 'warning'; children: string }) {
+function Badge({ color, children }: { color: "info" | "warning"; children: string }) {
   return (
     <span
       style={{
@@ -150,10 +157,11 @@ function Badge({ color, children }: { color: 'info' | 'warning'; children: strin
         color: text[color],
         background: bg[color],
         borderRadius: radius.full,
-        padding: '0 8px',
+        padding: "0 8px",
         fontWeight: 500,
         flexShrink: 0,
-      }}>
+      }}
+    >
       {children}
     </span>
   );

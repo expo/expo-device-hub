@@ -1,5 +1,16 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -50,12 +61,17 @@ describe("CaptureDiskAccumulator", () => {
       recordFinished(store, "https://first.test/");
       await disk.flush();
       const before = readFileSync(disk.harPath, "utf8");
-      const child = Bun.spawnSync([process.execPath, "-e", `
+      const child = Bun.spawnSync([
+        process.execPath,
+        "-e",
+        `
         import { CaptureDiskAccumulator } from ${JSON.stringify(import.meta.resolve("../disk"))};
         const disk = new CaptureDiskAccumulator({ dir: process.argv[1] });
         try { disk.begin(); process.exit(2); }
         catch (error) { console.log(error.message); }
-      `, dir]);
+      `,
+        dir,
+      ]);
       expect(child.exitCode).toBe(0);
       expect(child.stdout.toString()).toContain("Another recording holds");
       expect(readFileSync(disk.harPath, "utf8")).toBe(before);
@@ -72,12 +88,20 @@ describe("CaptureDiskAccumulator", () => {
     const disk = new CaptureDiskAccumulator({ dir });
     disk.begin();
     try {
-      const child = Bun.spawnSync([process.execPath, "-e", `
+      const child = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `
         import { CaptureDiskAccumulator } from ${JSON.stringify(import.meta.resolve("../disk"))};
         const disk = new CaptureDiskAccumulator({ dir: process.argv[1] });
         try { disk.begin(); process.exit(2); }
         catch (error) { console.log(error.message); }
-      `, dir], { env: { ...process.env, TZ: "Asia/Tokyo", LC_ALL: "fr_FR.UTF-8" } });
+      `,
+          dir,
+        ],
+        { env: { ...process.env, TZ: "Asia/Tokyo", LC_ALL: "fr_FR.UTF-8" } },
+      );
       expect(child.stdout.toString()).toContain("Another recording holds");
       expect(child.exitCode).toBe(0);
     } finally {
@@ -123,12 +147,17 @@ describe("CaptureDiskAccumulator", () => {
       // Written the way serve-sim reads it.
       const started = Bun.spawnSync(["ps", "-o", "lstart=", "-p", String(other.pid)], {
         env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
-      }).stdout.toString().trim();
+      })
+        .stdout.toString()
+        .trim();
       expect(started).not.toBe("");
       writeFileSync(join(dir, CAPTURE_OWNER_FILENAME), `${other.pid}\nold-claim\n${started}`);
       expect(() => new CaptureDiskAccumulator({ dir }).begin()).toThrow("Another recording holds");
 
-      writeFileSync(join(dir, CAPTURE_OWNER_FILENAME), `${other.pid}\nold-claim\nThu Jan  1 00:00:00 1970`);
+      writeFileSync(
+        join(dir, CAPTURE_OWNER_FILENAME),
+        `${other.pid}\nold-claim\nThu Jan  1 00:00:00 1970`,
+      );
       const disk = new CaptureDiskAccumulator({ dir });
       disk.begin();
       expect(existsSync(disk.harPath)).toBe(true);
@@ -142,20 +171,35 @@ describe("CaptureDiskAccumulator", () => {
   it("begins from a staged seed, and keeps an existing recording when building from it fails", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-disk-seed-"));
     const paths = {
-      harPath: join(dir, "a.har"), entriesPath: join(dir, "a.entries.ndjson"),
-      networkCapturePath: join(dir, "a.network-capture.json"), ownerFile: "a.owner.pid",
+      harPath: join(dir, "a.har"),
+      entriesPath: join(dir, "a.entries.ndjson"),
+      networkCapturePath: join(dir, "a.network-capture.json"),
+      ownerFile: "a.owner.pid",
     };
-    const kept = { har: '{"log":{"entries":["kept"]}}\n', entries: "kept-entry\n", events: "kept-event\n" };
+    const kept = {
+      har: '{"log":{"entries":["kept"]}}\n',
+      entries: "kept-entry\n",
+      events: "kept-event\n",
+    };
     writeFileSync(paths.harPath, kept.har);
     writeFileSync(paths.entriesPath, kept.entries);
     writeFileSync(paths.networkCapturePath, kept.events);
     const seedPath = join(dir, "a.seed.tmp");
-    const seed = ["r1", "r2"].map((id) => JSON.stringify({ _captureId: id, startedDateTime: "2026-01-01T00:00:00.000Z" })).join("\n") + "\n";
+    const seed =
+      ["r1", "r2"]
+        .map((id) =>
+          JSON.stringify({ _captureId: id, startedDateTime: "2026-01-01T00:00:00.000Z" }),
+        )
+        .join("\n") + "\n";
     writeFileSync(seedPath, seed);
     try {
       const failing = new CaptureDiskAccumulator({
-        dir, ...paths, flushIntervalMs: 60_000,
-        compact: async () => { throw new Error("ENOSPC: no space left on device"); },
+        dir,
+        ...paths,
+        flushIntervalMs: 60_000,
+        compact: async () => {
+          throw new Error("ENOSPC: no space left on device");
+        },
       });
       await expect(failing.beginFrom(seedPath)).rejects.toThrow("ENOSPC");
       expect(readFileSync(paths.harPath, "utf8")).toBe(kept.har);
@@ -168,7 +212,10 @@ describe("CaptureDiskAccumulator", () => {
       await disk.beginFrom(seedPath);
       expect(disk.size).toBe(2);
       expect(readFileSync(paths.entriesPath, "utf8")).toBe(seed);
-      expect((JSON.parse(readFileSync(paths.harPath, "utf8")) as { log: { entries: unknown[] } }).log.entries).toHaveLength(2);
+      expect(
+        (JSON.parse(readFileSync(paths.harPath, "utf8")) as { log: { entries: unknown[] } }).log
+          .entries,
+      ).toHaveLength(2);
       expect(readFileSync(paths.networkCapturePath, "utf8")).toBe("");
       expect(existsSync(seedPath)).toBe(false);
       await disk.stop();
@@ -203,7 +250,12 @@ describe("CaptureDiskAccumulator", () => {
   it("keeps the recording claimed when its release fails, so a retry can finish it", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-release-fails-"));
     const ownerFile = "morning.har.owner";
-    const disk = new CaptureDiskAccumulator({ dir, harPath: join(dir, "morning.har"), ownerFile, flushIntervalMs: 60_000 });
+    const disk = new CaptureDiskAccumulator({
+      dir,
+      harPath: join(dir, "morning.har"),
+      ownerFile,
+      flushIntervalMs: 60_000,
+    });
     try {
       disk.begin();
       // The owner file cannot be unlinked from a folder the process may not write.
@@ -211,7 +263,9 @@ describe("CaptureDiskAccumulator", () => {
       expect(await disk.end()).toBeInstanceOf(Error);
       expect(existsSync(join(dir, ownerFile))).toBe(true);
       // Still claimed: a second writer is refused, as during any live recording.
-      expect(() => new CaptureDiskAccumulator({ dir, harPath: join(dir, "morning.har"), ownerFile }).begin()).toThrow("Another recording holds");
+      expect(() =>
+        new CaptureDiskAccumulator({ dir, harPath: join(dir, "morning.har"), ownerFile }).begin(),
+      ).toThrow("Another recording holds");
 
       // Once the fault is gone, ending again releases the recording.
       chmodSync(dir, 0o700);
@@ -236,7 +290,12 @@ describe("CaptureDiskAccumulator", () => {
       await disk.flush();
       expect(mode(dir)).toBe(0o700);
       // The HAR is rebuilt through a temp file; the logs are created at begin and appended in place.
-      for (const path of [disk.harPath, disk.networkCapturePath, disk.entriesPath, join(dir, CAPTURE_OWNER_FILENAME)]) {
+      for (const path of [
+        disk.harPath,
+        disk.networkCapturePath,
+        disk.entriesPath,
+        join(dir, CAPTURE_OWNER_FILENAME),
+      ]) {
         expect(mode(path)).toBe(0o600);
       }
       await stop();
@@ -263,8 +322,12 @@ describe("CaptureDiskAccumulator", () => {
       mkdirSync(shared);
       chmodSync(shared, 0o755);
       const recording = new CaptureDiskAccumulator({
-        dir: shared, harPath: join(shared, "a.har"), entriesPath: join(shared, "a.entries.ndjson"),
-        networkCapturePath: join(shared, "a.network-capture.json"), ownerFile: "a.owner.pid", flushIntervalMs: 60_000,
+        dir: shared,
+        harPath: join(shared, "a.har"),
+        entriesPath: join(shared, "a.entries.ndjson"),
+        networkCapturePath: join(shared, "a.network-capture.json"),
+        ownerFile: "a.owner.pid",
+        flushIntervalMs: 60_000,
       });
       recording.begin();
       expect(mode(shared)).toBe(0o755);
@@ -279,15 +342,23 @@ describe("CaptureDiskAccumulator", () => {
     writeFileSync(join(dir, "unrelated.txt"), "keep me");
     try {
       const disk = new CaptureDiskAccumulator({
-        dir, harPath: join(dir, "a.har"), entriesPath: join(dir, "a.entries.ndjson"),
-        networkCapturePath: join(dir, "a.network-capture.json"), ownerFile: "a.owner.pid", flushIntervalMs: 60_000,
+        dir,
+        harPath: join(dir, "a.har"),
+        entriesPath: join(dir, "a.entries.ndjson"),
+        networkCapturePath: join(dir, "a.network-capture.json"),
+        ownerFile: "a.owner.pid",
+        flushIntervalMs: 60_000,
       });
       disk.begin();
       disk.discardSync();
       expect(readFileSync(join(dir, "unrelated.txt"), "utf8")).toBe("keep me");
       const again = new CaptureDiskAccumulator({
-        dir, harPath: join(dir, "b.har"), entriesPath: join(dir, "b.entries.ndjson"),
-        networkCapturePath: join(dir, "b.network-capture.json"), ownerFile: "b.owner.pid", flushIntervalMs: 60_000,
+        dir,
+        harPath: join(dir, "b.har"),
+        entriesPath: join(dir, "b.entries.ndjson"),
+        networkCapturePath: join(dir, "b.network-capture.json"),
+        ownerFile: "b.owner.pid",
+        flushIntervalMs: 60_000,
       });
       again.begin();
       await again.stop();
@@ -302,7 +373,11 @@ describe("CaptureDiskAccumulator", () => {
     const victim = join(dir, "victim.txt");
     writeFileSync(victim, "keep me");
     symlinkSync(victim, join(dir, "session.har"));
-    const disk = new CaptureDiskAccumulator({ dir, harPath: join(dir, "session.har"), flushIntervalMs: 60_000 });
+    const disk = new CaptureDiskAccumulator({
+      dir,
+      harPath: join(dir, "session.har"),
+      flushIntervalMs: 60_000,
+    });
     try {
       expect(() => disk.begin()).toThrow();
       expect(readFileSync(victim, "utf8")).toBe("keep me");
@@ -326,8 +401,17 @@ describe("CaptureDiskAccumulator", () => {
     try {
       disk.begin();
       disk.recordFinished({
-        id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: null,
-        requestBytes: 0, responseBytes: 0, startedAt: 0, ttfbMs: null, durationMs: 1, failure: null,
+        id: "r1",
+        method: "GET",
+        url: "https://a.test/",
+        status: 200,
+        mimeType: null,
+        requestBytes: 0,
+        responseBytes: 0,
+        startedAt: 0,
+        ttfbMs: null,
+        durationMs: 1,
+        failure: null,
       });
       await Bun.sleep(150);
       // Several ticks passed: the entry reached the log, but the whole HAR was not rewritten.
@@ -356,8 +440,17 @@ describe("CaptureDiskAccumulator", () => {
     try {
       disk.begin();
       disk.recordFinished({
-        id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: null,
-        requestBytes: 0, responseBytes: 0, startedAt: 0, ttfbMs: null, durationMs: 1, failure: null,
+        id: "r1",
+        method: "GET",
+        url: "https://a.test/",
+        status: 200,
+        mimeType: null,
+        requestBytes: 0,
+        responseBytes: 0,
+        startedAt: 0,
+        ttfbMs: null,
+        durationMs: 1,
+        failure: null,
       });
       await Promise.all([disk.flush(), disk.flush(), disk.flush(), disk.flush()]);
       expect(rebuilds).toBe(1);
@@ -506,7 +599,9 @@ describe("CaptureDiskAccumulator", () => {
       const rebuilding = disk.flush();
       // The rebuild writes through a temp file with a random name beside the HAR.
       const rebuildInProgress = () =>
-        readdirSync(dir).some((name) => name.startsWith(`${CAPTURE_HAR_FILENAME}.`) && name.endsWith(".har.tmp"));
+        readdirSync(dir).some(
+          (name) => name.startsWith(`${CAPTURE_HAR_FILENAME}.`) && name.endsWith(".har.tmp"),
+        );
       const deadline = Date.now() + 2_000;
       while (!rebuildInProgress() && Date.now() < deadline) await Bun.sleep(0);
       expect(rebuildInProgress()).toBe(true);
@@ -576,7 +671,9 @@ describe("sweepAbandonedCaptureDirs", () => {
     const disk = new CaptureDiskAccumulator({ dir, flushIntervalMs: 60_000 });
     try {
       const stop = disk.attach(store);
-      expect(readFileSync(join(dir, CAPTURE_OWNER_FILENAME), "utf8").split("\n")[0]).toBe(String(process.pid));
+      expect(readFileSync(join(dir, CAPTURE_OWNER_FILENAME), "utf8").split("\n")[0]).toBe(
+        String(process.pid),
+      );
       await stop();
     } finally {
       rmSync(dir, { recursive: true, force: true });

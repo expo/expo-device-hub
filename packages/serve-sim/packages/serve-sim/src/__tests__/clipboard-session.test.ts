@@ -3,7 +3,13 @@ import { spawn } from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createClipboardSession } from "../clipboard-session";
-import { capabilityConfigPath, enableCapabilities, isCapabilityEnabled, readLaunchState, releaseSessionSync } from "../launch-manager";
+import {
+  capabilityConfigPath,
+  enableCapabilities,
+  isCapabilityEnabled,
+  readLaunchState,
+  releaseSessionSync,
+} from "../launch-manager";
 import { writeLaunchState } from "../launch-state";
 import { simMiddleware } from "../middleware";
 import { clipboardCapability } from "../sim-pasteboard-reader";
@@ -11,7 +17,13 @@ import { installShims, recordState, useTempStateDir } from "./helpers";
 
 const UDID = `CLIPBOARD-SESSION-${process.pid}`;
 const READER = "/test/libSimPasteboardReader.dylib";
-const reader = { name: "clipboard", scope: "allApps" as const, dylib: READER, bundleId: null, ownerPid: process.pid };
+const reader = {
+  name: "clipboard",
+  scope: "allApps" as const,
+  dylib: READER,
+  bundleId: null,
+  ownerPid: process.pid,
+};
 let state: ReturnType<typeof useTempStateDir>;
 let shims: ReturnType<typeof installShims>;
 let prepare: ReturnType<typeof spyOn<typeof clipboardCapability, "setEnabled">>;
@@ -27,7 +39,8 @@ beforeEach(() => {
   process.env.TEST_CLIPBOARD_CALLS = join(state.dir, "calls");
   delete process.env.TEST_CLIPBOARD_FAIL_DEVICE;
   delete process.env.TEST_CLIPBOARD_OFF_DEVICE;
-  shims = installShims({ xcrun: `#!/usr/bin/env bun
+  shims = installShims({
+    xcrun: `#!/usr/bin/env bun
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 const args = process.argv.slice(2);
@@ -47,7 +60,8 @@ if (args[3] === "launchctl") {
     writeFileSync(file, JSON.stringify(env));
   }
 }
-` });
+`,
+  });
   prepare = spyOn(clipboardCapability, "setEnabled").mockImplementation(async ({ enabled }) =>
     enabled ? { dylib: READER } : null,
   );
@@ -71,7 +85,11 @@ afterEach(() => {
 describe("clipboard session", () => {
   test("initializes each device once, including simultaneous requests, without restarting apps", async () => {
     const clipboard = createClipboardSession();
-    await Promise.all([clipboard.initialize(UDID), clipboard.initialize(UDID), clipboard.initialize(`${UDID}-2`)]);
+    await Promise.all([
+      clipboard.initialize(UDID),
+      clipboard.initialize(UDID),
+      clipboard.initialize(`${UDID}-2`),
+    ]);
     await clipboard.initialize(UDID);
     expect(prepare).toHaveBeenCalledTimes(2);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
@@ -113,13 +131,19 @@ describe("clipboard session", () => {
 
   test("re-checks a finished setup at most once every 30 seconds", async () => {
     let time = 0;
-    const getenvCalls = () => readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8").split("\n")
-      .filter((line) => line.includes("launchctl getenv")).length;
+    const getenvCalls = () =>
+      readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8")
+        .split("\n")
+        .filter((line) => line.includes("launchctl getenv")).length;
     const clipboard = createClipboardSession(true, { now: () => time });
     await clipboard.initialize(UDID);
     const afterSetup = getenvCalls();
     time += 29_999;
-    await Promise.all([clipboard.initialize(UDID), clipboard.initialize(UDID), clipboard.initialize(UDID)]);
+    await Promise.all([
+      clipboard.initialize(UDID),
+      clipboard.initialize(UDID),
+      clipboard.initialize(UDID),
+    ]);
     expect(getenvCalls()).toBe(afterSetup);
 
     time += 1;
@@ -131,7 +155,8 @@ describe("clipboard session", () => {
 
   test("waits longer after each failed setup and does not retry in between", async () => {
     let time = 0;
-    prepare.mockRejectedValueOnce(new Error("reader could not load"))
+    prepare
+      .mockRejectedValueOnce(new Error("reader could not load"))
       .mockRejectedValueOnce(new Error("reader could not load"));
     const clipboard = createClipboardSession(true, { now: () => time });
     await expect(clipboard.initialize(UDID)).rejects.toThrow("reader could not load");
@@ -178,7 +203,9 @@ describe("clipboard session", () => {
     await clipboard.initialize(UDID);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
-    expect(readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8")).not.toContain("simctl terminate");
+    expect(readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8")).not.toContain(
+      "simctl terminate",
+    );
     await clipboard.dispose();
     expect(readLaunchState(UDID)).toBeNull();
   });
@@ -186,7 +213,12 @@ describe("clipboard session", () => {
   test("disposal leaves another capability and its loader ownership intact", async () => {
     const clipboard = createClipboardSession();
     await clipboard.initialize(UDID);
-    await enableCapabilities(UDID, null, [{ name: "camera", dylib: "/camera.dylib", scope: "allApps" }], { relaunch: false });
+    await enableCapabilities(
+      UDID,
+      null,
+      [{ name: "camera", dylib: "/camera.dylib", scope: "allApps" }],
+      { relaunch: false },
+    );
     await clipboard.dispose();
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
     expect(readLaunchState(UDID)?.capabilities.camera?.ownerPid).toBe(process.pid);
@@ -195,7 +227,9 @@ describe("clipboard session", () => {
 
   test("disposal waits for pending initialization before withdrawing it", async () => {
     let proceed!: () => void;
-    const blocked = new Promise<void>((resolve) => { proceed = resolve; });
+    const blocked = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
     prepare.mockImplementationOnce(async () => {
       await blocked;
       return { dylib: READER };
@@ -203,7 +237,9 @@ describe("clipboard session", () => {
     const clipboard = createClipboardSession();
     const initialized = clipboard.initialize(UDID);
     let disposed = false;
-    const disposal = clipboard.dispose().then(() => { disposed = true; });
+    const disposal = clipboard.dispose().then(() => {
+      disposed = true;
+    });
     await Bun.sleep(10);
     expect(disposed).toBe(false);
     proceed();
@@ -213,16 +249,20 @@ describe("clipboard session", () => {
 
   test("a reboot during pending initialization configures the new boot afterwards", async () => {
     let proceed!: () => void;
-    const blocked = new Promise<void>((resolve) => { proceed = resolve; });
-    const order: string[] = [];
-    prepare.mockImplementationOnce(async () => {
-      await blocked;
-      order.push("before reboot");
-      return { dylib: READER };
-    }).mockImplementationOnce(async () => {
-      order.push("after reboot");
-      return { dylib: READER };
+    const blocked = new Promise<void>((resolve) => {
+      proceed = resolve;
     });
+    const order: string[] = [];
+    prepare
+      .mockImplementationOnce(async () => {
+        await blocked;
+        order.push("before reboot");
+        return { dylib: READER };
+      })
+      .mockImplementationOnce(async () => {
+        order.push("after reboot");
+        return { dylib: READER };
+      });
     const clipboard = createClipboardSession();
     const pending = clipboard.initialize(UDID);
     const rebooted = clipboard.initialize(UDID, true);
@@ -234,7 +274,10 @@ describe("clipboard session", () => {
 
   test("an explicit disable withdraws stale config left by an exited reader owner", async () => {
     await enableCapabilities(UDID, null, [reader], { relaunch: false });
-    writeLaunchState(UDID, { launchArgs: [], capabilities: { clipboard: { ...reader, ownerPid: 2_147_483_647 } } });
+    writeLaunchState(UDID, {
+      launchArgs: [],
+      capabilities: { clipboard: { ...reader, ownerPid: 2_147_483_647 } },
+    });
     const clipboard = createClipboardSession(false);
     await clipboard.initialize(UDID);
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
@@ -275,7 +318,9 @@ describe("clipboard in the preview middleware", () => {
   test("answers /api without waiting for the setup it starts", async () => {
     const forgetState = recordState(UDID, process.pid, 3200);
     let proceed!: () => void;
-    const blocked = new Promise<void>((resolve) => { proceed = resolve; });
+    const blocked = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
     prepare.mockImplementationOnce(async () => {
       await blocked;
       return { dylib: READER };
@@ -285,7 +330,8 @@ describe("clipboard in the preview middleware", () => {
       expect((await middleware(apiRequest()))?.status).toBe(200);
       expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
       proceed();
-      for (let attempt = 0; attempt < 200 && !isCapabilityEnabled(UDID, "clipboard"); attempt++) await Bun.sleep(10);
+      for (let attempt = 0; attempt < 200 && !isCapabilityEnabled(UDID, "clipboard"); attempt++)
+        await Bun.sleep(10);
       expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
     } finally {
       proceed();
@@ -307,7 +353,9 @@ describe("clipboard in the preview middleware", () => {
       await middleware.dispose();
       expect(prepare).not.toHaveBeenCalled();
       expect(readLaunchState(UDID)).toEqual(armed);
-      const calls = readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8").slice(callsBefore.length);
+      const calls = readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8").slice(
+        callsBefore.length,
+      );
       expect(calls).not.toContain("launchctl");
     } finally {
       forgetState();
@@ -316,7 +364,8 @@ describe("clipboard in the preview middleware", () => {
 });
 
 describe("clipboard release at process exit", () => {
-  const env = () => JSON.parse(readFileSync(join(state.dir, `${UDID}.env`), "utf8")) as Record<string, string>;
+  const env = () =>
+    JSON.parse(readFileSync(join(state.dir, `${UDID}.env`), "utf8")) as Record<string, string>;
 
   // A host like the Hub: it sets up the reader, and its SIGINT handler ends with process.exit.
   async function runHost(beforeExit = "", { handlesSigint = true } = {}) {
@@ -333,10 +382,14 @@ describe("clipboard release at process exit", () => {
     `;
     const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "pipe"] });
     let stderr = "";
-    child.stderr!.on("data", (chunk) => { stderr += chunk; });
-    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-      child.once("exit", (code, signal) => resolve({ code, signal }));
+    child.stderr!.on("data", (chunk) => {
+      stderr += chunk;
     });
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+      (resolve) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+      },
+    );
     try {
       await new Promise<void>((resolve, reject) => {
         child.once("error", reject);

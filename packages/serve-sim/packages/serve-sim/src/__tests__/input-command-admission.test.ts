@@ -28,7 +28,8 @@ async function runInput(args: string[], admit: boolean, legacy = false) {
   let sentBeforeAdmission = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   const server = Bun.serve({
-    port: 0, hostname: "127.0.0.1",
+    port: 0,
+    hostname: "127.0.0.1",
     fetch(req, server) {
       if (server.upgrade(req)) return;
       return new Response("not a websocket", { status: 400 });
@@ -37,12 +38,18 @@ async function runInput(args: string[], admit: boolean, legacy = false) {
       open(socket) {
         // Older helpers never send the admission frame.
         if (legacy) return;
-        timers.push(setTimeout(() => {
-          if (admit) {
-            admitted = true;
-            socket.send(Buffer.from([0x83]));
-          } else socket.close(1013, "Simulator input unavailable; retry after other clients disconnect");
-        }, 200));
+        timers.push(
+          setTimeout(() => {
+            if (admit) {
+              admitted = true;
+              socket.send(Buffer.from([0x83]));
+            } else
+              socket.close(
+                1013,
+                "Simulator input unavailable; retry after other clients disconnect",
+              );
+          }, 200),
+        );
       },
       message(_socket, data) {
         if (!admitted) sentBeforeAdmission = true;
@@ -50,17 +57,27 @@ async function runInput(args: string[], admit: boolean, legacy = false) {
       },
     },
   });
-  writeFileSync(join(dir, "server-probe.json"), JSON.stringify({
-    pid: process.pid, device: "probe", port: server.port,
-    wsUrl: `ws://127.0.0.1:${server.port}`,
-    ...(legacy ? {} : { inputAdmission: true }),
-  }));
+  writeFileSync(
+    join(dir, "server-probe.json"),
+    JSON.stringify({
+      pid: process.pid,
+      device: "probe",
+      port: server.port,
+      wsUrl: `ws://127.0.0.1:${server.port}`,
+      ...(legacy ? {} : { inputAdmission: true }),
+    }),
+  );
   try {
     const child = Bun.spawn([process.execPath, CLI, ...args, "-d", "probe"], {
       env: { ...process.env, SERVE_SIM_STATE_DIR: dir, PATH: `${shim}:${process.env.PATH}` },
-      stdout: "pipe", stderr: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+    const [exitCode, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+      new Response(child.stdout).text(),
+    ]);
     return { exitCode, stderr, messages, sentBeforeAdmission };
   } finally {
     for (const timer of timers) clearTimeout(timer);
@@ -74,7 +91,9 @@ for (const { args, messages } of commands) {
     const result = await runInput(args, /* admit */ false);
     expect(result.exitCode).not.toBe(0);
     // Bun prints source excerpts too; only the actual error line proves the refusal.
-    expect(result.stderr).toMatch(/^error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect\. Try again shortly\.$/m);
+    expect(result.stderr).toMatch(
+      /^error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect\. Try again shortly\.$/m,
+    );
     expect(result.messages).toEqual([]);
   });
 
@@ -96,9 +115,21 @@ for (const { args, messages } of commands) {
 test("an open transport without admission fails by the deadline and terminates", async () => {
   let terminated = false;
   let sent = false;
-  const socket = Object.assign(new EventEmitter(), { terminate: () => { terminated = true; } });
-  const error = await new Promise<Error>(resolve => {
-    onCliInputReady(socket as unknown as WebSocket, /* requireAdmission */ true, () => { sent = true; }, resolve, 10);
+  const socket = Object.assign(new EventEmitter(), {
+    terminate: () => {
+      terminated = true;
+    },
+  });
+  const error = await new Promise<Error>((resolve) => {
+    onCliInputReady(
+      socket as unknown as WebSocket,
+      /* requireAdmission */ true,
+      () => {
+        sent = true;
+      },
+      resolve,
+      10,
+    );
     socket.emit("open");
   });
   expect(error.message).toContain("Simulator input was not admitted within");
@@ -110,10 +141,20 @@ test("a normal close before admission fails immediately and cancels the deadline
   const errors: Error[] = [];
   let sent = false;
   const socket = Object.assign(new EventEmitter(), { terminate: () => {} });
-  onCliInputReady(socket as unknown as WebSocket, /* requireAdmission */ true, () => { sent = true; }, error => errors.push(error), 10);
+  onCliInputReady(
+    socket as unknown as WebSocket,
+    /* requireAdmission */ true,
+    () => {
+      sent = true;
+    },
+    (error) => errors.push(error),
+    10,
+  );
   socket.emit("open");
   socket.emit("close", 1000, Buffer.from(""));
-  expect(errors.map(error => error.message)).toEqual(["Simulator input closed before admission (1000). Try again shortly."]);
+  expect(errors.map((error) => error.message)).toEqual([
+    "Simulator input closed before admission (1000). Try again shortly.",
+  ]);
   await Bun.sleep(25);
   expect(errors).toHaveLength(1);
   expect(sent).toBe(false);

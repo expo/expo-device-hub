@@ -99,9 +99,10 @@ export function selectH264Media(offerSdp: string): H264Media {
   const candidates: H264Media[] = [];
 
   const finishSection = () => {
-    if (!section?.mid || section.direction === "sendonly" || section.direction === "inactive") return;
+    if (!section?.mid || section.direction === "sendonly" || section.direction === "inactive")
+      return;
     const compatiblePayloadTypes = section.h264PayloadTypes.filter((payloadType) =>
-      hasPacketizationMode1(section!.fmtpByPayloadType.get(payloadType) ?? "")
+      hasPacketizationMode1(section!.fmtpByPayloadType.get(payloadType) ?? ""),
     );
     if (compatiblePayloadTypes.length === 0) return;
 
@@ -113,7 +114,7 @@ export function selectH264Media(offerSdp: string): H264Media {
       return 0;
     };
     const payloadType = compatiblePayloadTypes.reduce((best, pt) =>
-      score(pt) > score(best) ? pt : best
+      score(pt) > score(best) ? pt : best,
     );
     candidates.push({ payloadType, mid: section.mid });
   };
@@ -124,15 +125,16 @@ export function selectH264Media(offerSdp: string): H264Media {
       sawMediaSection = true;
       const parts = line.slice(2).trim().split(/\s+/);
       const port = parts[1]?.split("/", 1)[0];
-      section = parts[0] === "video" && port !== "0"
-        ? {
-            mid: null,
-            direction: sessionDirection,
-            offeredPayloadTypes: new Set(parts.slice(3)),
-            h264PayloadTypes: [],
-            fmtpByPayloadType: new Map(),
-          }
-        : null;
+      section =
+        parts[0] === "video" && port !== "0"
+          ? {
+              mid: null,
+              direction: sessionDirection,
+              offeredPayloadTypes: new Set(parts.slice(3)),
+              h264PayloadTypes: [],
+              fmtpByPayloadType: new Map(),
+            }
+          : null;
       continue;
     }
 
@@ -170,7 +172,10 @@ export function selectH264Media(offerSdp: string): H264Media {
   return selected;
 }
 
-function sectionForMid(lines: string[], mid: string): { start: number; end: number; midIndex: number } | null {
+function sectionForMid(
+  lines: string[],
+  mid: string,
+): { start: number; end: number; midIndex: number } | null {
   let sectionStart = -1;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!;
@@ -197,7 +202,8 @@ export function injectVideoSsrc(sdp: string, mid: string, ssrc: number): string 
     throw new Error(`WebRTC answer does not include the selected video mid "${mid}"`);
   }
   const ssrcPrefix = `a=ssrc:${ssrc} `;
-  if (lines.slice(section.start, section.end).some((line) => line.startsWith(ssrcPrefix))) return sdp;
+  if (lines.slice(section.start, section.end).some((line) => line.startsWith(ssrcPrefix)))
+    return sdp;
   lines.splice(section.midIndex + 1, 0, `a=ssrc:${ssrc} cname:serve-emu`);
   return lines.join(eol);
 }
@@ -266,9 +272,7 @@ function runPrebuildInstall(packageDir: string): Promise<void> {
         return;
       }
       reject(
-        new Error(
-          `prebuild-install exited with code ${code ?? "null"} signal ${signal ?? "null"}`,
-        ),
+        new Error(`prebuild-install exited with code ${code ?? "null"} signal ${signal ?? "null"}`),
       );
     });
   });
@@ -299,7 +303,9 @@ async function loadNodeDataChannel(): Promise<NodeDataChannel> {
   }
 }
 
-export async function createWebRtcPublisher(options: WebRtcPublisherOptions): Promise<WebRtcPublisher> {
+export async function createWebRtcPublisher(
+  options: WebRtcPublisherOptions,
+): Promise<WebRtcPublisher> {
   const ndc = await loadNodeDataChannel();
   if (!loggerInitialized) {
     loggerInitialized = true;
@@ -362,7 +368,8 @@ export class WebRtcPublisher {
         settings: this.options.settings,
         onKeyframeRequest: this.options.onKeyframeRequest,
         onClose: (closedPeer) => {
-          if (this.peers.get(closedPeer.sessionId) === closedPeer) this.peers.delete(closedPeer.sessionId);
+          if (this.peers.get(closedPeer.sessionId) === closedPeer)
+            this.peers.delete(closedPeer.sessionId);
         },
       });
       this.peers.set(offer.sessionId, peer);
@@ -394,9 +401,7 @@ export class WebRtcPublisher {
     }
     return {
       accepted,
-      awaitingKeyFrame: Array.from(this.peers.values()).some(
-        (peer) => peer.needsKeyFrame,
-      ),
+      awaitingKeyFrame: Array.from(this.peers.values()).some((peer) => peer.needsKeyFrame),
     };
   }
 
@@ -593,13 +598,7 @@ class WebRtcPeer {
 
   sendFrame(payload: Buffer, isKeyFrame: boolean): boolean {
     const track = this.track;
-    if (
-      this.closed ||
-      !track ||
-      !this.rtpConfig ||
-      !this.trackOpen ||
-      !track.isOpen()
-    ) {
+    if (this.closed || !track || !this.rtpConfig || !this.trackOpen || !track.isOpen()) {
       return false;
     }
     if (this.awaitingKeyFrame) {
@@ -769,5 +768,4 @@ class WebRtcPeer {
       });
     });
   }
-
 }

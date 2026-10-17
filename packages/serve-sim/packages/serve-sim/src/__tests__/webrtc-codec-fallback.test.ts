@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  nextWebRtcFallbackCodec,
-  webRtcFallbackDecision,
-} from "../client/webrtc-codec-fallback";
+import { nextWebRtcFallbackCodec, webRtcFallbackDecision } from "../client/webrtc-codec-fallback";
 
 describe("WebRTC codec fallback", () => {
   test("tries VP8 before VP9 when H264 produces no media", () => {

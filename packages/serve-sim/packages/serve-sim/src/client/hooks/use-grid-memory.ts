@@ -15,7 +15,10 @@ export function useGridMemory(endpoint: string | undefined, enabled: boolean) {
     };
     tick();
     const id = setInterval(tick, 5000);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [endpoint, enabled]);
   return report;
 }

@@ -25,12 +25,8 @@ export function cameraRoutes(): ContractApiRoute<ApiDependencies>[] {
       method: "GET",
       path: "/api/camera/image",
       handler: async ({ url, deps }) => {
-        const facing = parseInput(() =>
-          parseCameraFacing(url.searchParams.get("facing")),
-        );
-        const png = await downstream("read camera image", () =>
-          deps.readCameraImage(facing),
-        );
+        const facing = parseInput(() => parseCameraFacing(url.searchParams.get("facing")));
+        const png = await downstream("read camera image", () => deps.readCameraImage(facing));
         if (!png) {
           throw new ApiError(404, "not_found", "no camera image is set for this facing");
         }
@@ -41,9 +37,7 @@ export function cameraRoutes(): ContractApiRoute<ApiDependencies>[] {
       method: "POST",
       path: "/api/camera/image",
       handler: async ({ request, url, deps }) => {
-        const facing = parseInput(() =>
-          parseCameraFacing(url.searchParams.get("facing")),
-        );
+        const facing = parseInput(() => parseCameraFacing(url.searchParams.get("facing")));
         const png = await readBodyBytes(request, MAX_CAMERA_IMAGE_BYTES);
         parseInput(() => assertCameraImage(png));
         await downstream("set camera image", () => deps.setCameraImage(facing, png));
@@ -57,9 +51,7 @@ export function cameraRoutes(): ContractApiRoute<ApiDependencies>[] {
       method: "DELETE",
       path: "/api/camera/image",
       handler: async ({ url, deps }) => {
-        const facing = parseInput(() =>
-          parseCameraFacing(url.searchParams.get("facing")),
-        );
+        const facing = parseInput(() => parseCameraFacing(url.searchParams.get("facing")));
         await downstream("clear camera image", () => deps.clearCameraImage(facing));
         return Response.json({
           ok: true,

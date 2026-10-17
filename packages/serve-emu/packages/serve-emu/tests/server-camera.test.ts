@@ -3,11 +3,7 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
-import {
-  cameraFeedPath,
-  placeholderCameraImage,
-  readCameraFeed,
-} from "../src/camera.ts";
+import { cameraFeedPath, placeholderCameraImage, readCameraFeed } from "../src/camera.ts";
 import { solidPng } from "./fixtures/png.ts";
 import { startServer, type ServerDependencies } from "../src/server.ts";
 import { parseCameraStatusResponse } from "../src/shared/api-contracts.ts";
@@ -45,11 +41,7 @@ function capturingServe(captured: CapturedServer): typeof Bun.serve {
   }) as unknown as typeof Bun.serve;
 }
 
-function request(
-  captured: CapturedServer,
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
+function request(captured: CapturedServer, path: string, init?: RequestInit): Promise<Response> {
   const fetch = captured.options?.fetch as
     | ((request: Request, server: unknown) => Promise<Response>)
     | undefined;
@@ -59,11 +51,7 @@ function request(
   });
 }
 
-function postImage(
-  captured: CapturedServer,
-  body: BodyInit,
-  query = "",
-): Promise<Response> {
+function postImage(captured: CapturedServer, body: BodyInit, query = ""): Promise<Response> {
   return request(captured, `/api/camera/image${query}`, {
     method: "POST",
     headers: { "Content-Type": "image/png" },
@@ -82,9 +70,8 @@ function reattachedLaunch() {
 }
 
 async function readWired(captured: CapturedServer): Promise<boolean> {
-  return parseCameraStatusResponse(
-    await (await request(captured, "/api/camera")).json(),
-  ).camera.wiredAtLaunch;
+  return parseCameraStatusResponse(await (await request(captured, "/api/camera")).json()).camera
+    .wiredAtLaunch;
 }
 
 async function withServer(
@@ -193,9 +180,7 @@ describe("standalone server camera image API", () => {
       const response = await postImage(captured, Uint8Array.from(jpeg));
       expect(response.status).toBe(400);
       expect((await response.json()).error).toContain("PNG only");
-      expect((await readCameraFeed(SERIAL, "back")).digest).toBe(
-        placeholderCameraImage().digest,
-      );
+      expect((await readCameraFeed(SERIAL, "back")).digest).toBe(placeholderCameraImage().digest);
     });
   });
 
@@ -273,10 +258,7 @@ describe("standalone server camera image API", () => {
     await withServer(async (captured) => {
       await chmod(root, 0o500);
       try {
-        const response = await postImage(
-          captured,
-          Uint8Array.from(solidPng(16, 16, [7, 7, 7])),
-        );
+        const response = await postImage(captured, Uint8Array.from(solidPng(16, 16, [7, 7, 7])));
         expect(response.status).toBe(500);
         expect((await response.json()).error).toContain("EACCES");
       } finally {
@@ -304,25 +286,23 @@ describe("standalone server camera image API", () => {
       expect(missing.status).toBe(404);
 
       const png = solidPng(48, 36, [9, 8, 7]);
-      expect(
-        (await postImage(captured, Uint8Array.from(png), "?facing=front")).status,
-      ).toBe(200);
+      expect((await postImage(captured, Uint8Array.from(png), "?facing=front")).status).toBe(200);
 
       const served = await request(captured, "/api/camera/image?facing=front");
       expect(served.status).toBe(200);
       expect(served.headers.get("Content-Type")).toBe("image/png");
-      expect(new Uint8Array(await served.arrayBuffer())).toEqual(
-        Uint8Array.from(png),
-      );
+      expect(new Uint8Array(await served.arrayBuffer())).toEqual(Uint8Array.from(png));
 
-      const bad = await postImage(captured, Uint8Array.from(placeholderCameraImage().png), "?facing=selfie");
+      const bad = await postImage(
+        captured,
+        Uint8Array.from(placeholderCameraImage().png),
+        "?facing=selfie",
+      );
       expect(bad.status).toBe(400);
       expect((await bad.json()).error).toContain("facing must be one of");
 
       expect((await request(captured, "/api/camera", { method: "POST" })).status).toBe(405);
-      expect(
-        (await request(captured, "/api/camera/image", { method: "PUT" })).status,
-      ).toBe(405);
+      expect((await request(captured, "/api/camera/image", { method: "PUT" })).status).toBe(405);
     });
   });
 });

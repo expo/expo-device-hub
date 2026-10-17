@@ -1,4 +1,4 @@
-import { type DeviceEvent } from './types';
+import { type DeviceEvent } from "./types";
 
 export const MAX_ANDROID_DEVICE_EVENTS = 500;
 
@@ -44,8 +44,7 @@ export function mergeAndroidEventSnapshotCursor(
   );
   const restarted =
     cursor.hasSnapshot &&
-    ((cursor.latestId > 0 && latestId === 0) ||
-      (latestId > 0 && latestId < cursor.latestId));
+    ((cursor.latestId > 0 && latestId === 0) || (latestId > 0 && latestId < cursor.latestId));
   let clearedThroughId = restarted ? 0 : cursor.clearedThroughId;
   if (cursor.clearPending) clearedThroughId = Math.max(clearedThroughId, latestId);
 
@@ -84,7 +83,7 @@ function stableId(deviceSerial: string, eventId: number): string {
 }
 
 function percentage(value: unknown): string {
-  return typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value * 100)}%` : '?';
+  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value * 100)}%` : "?";
 }
 
 function point(x: unknown, y: unknown): string {
@@ -92,7 +91,7 @@ function point(x: unknown, y: unknown): string {
 }
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function titleCase(value: string): string {
@@ -100,15 +99,15 @@ function titleCase(value: string): string {
 }
 
 function textLength(value: unknown): number {
-  return typeof value === 'string' ? Array.from(value).length : 0;
+  return typeof value === "string" ? Array.from(value).length : 0;
 }
 
-function redactedGesture(gesture: AndroidSessionEvent['gesture']): Record<string, unknown> {
+function redactedGesture(gesture: AndroidSessionEvent["gesture"]): Record<string, unknown> {
   if (!gesture) return {};
-  if (gesture.type !== 'text') return { ...gesture };
+  if (gesture.type !== "text") return { ...gesture };
 
   return {
-    type: 'text',
+    type: "text",
     textLength: textLength(gesture.text),
     redacted: true,
   };
@@ -116,7 +115,7 @@ function redactedGesture(gesture: AndroidSessionEvent['gesture']): Record<string
 
 function mapGesture(event: AndroidSessionEvent, deviceSerial: string): DeviceEvent {
   const gesture = event.gesture;
-  const type = typeof gesture?.type === 'string' ? gesture.type : 'unknown';
+  const type = typeof gesture?.type === "string" ? gesture.type : "unknown";
   const base = {
     id: stableId(deviceSerial, event.id),
     timestamp: event.at,
@@ -128,65 +127,65 @@ function mapGesture(event: AndroidSessionEvent, deviceSerial: string): DeviceEve
   };
 
   switch (type) {
-    case 'touch': {
-      const action = typeof gesture?.action === 'string' ? gesture.action : 'unknown';
+    case "touch": {
+      const action = typeof gesture?.action === "string" ? gesture.action : "unknown";
       return {
         ...base,
-        kind: 'touch',
+        kind: "touch",
         action,
         message: `Touch ${action} at ${point(gesture?.x, gesture?.y)}`,
       };
     }
-    case 'tap':
+    case "tap":
       return {
         ...base,
-        kind: 'touch',
-        action: 'tap',
+        kind: "touch",
+        action: "tap",
         message: `Tap at ${point(gesture?.x, gesture?.y)}`,
       };
-    case 'swipe': {
+    case "swipe": {
       const durationMs = finiteNumber(gesture?.durationMs);
       return {
         ...base,
-        kind: 'touch',
-        action: 'swipe',
+        kind: "touch",
+        action: "swipe",
         message: `Swipe ${point(gesture?.x1, gesture?.y1)} → ${point(gesture?.x2, gesture?.y2)}${
-          durationMs === null ? '' : ` (${Math.round(durationMs)} ms)`
+          durationMs === null ? "" : ` (${Math.round(durationMs)} ms)`
         }`,
       };
     }
-    case 'key': {
+    case "key": {
       const keycode = finiteNumber(gesture?.keycode);
       return {
         ...base,
-        kind: 'keyboard',
-        action: 'key',
-        message: keycode === null ? 'Key input' : `Keycode ${keycode}`,
+        kind: "keyboard",
+        action: "key",
+        message: keycode === null ? "Key input" : `Keycode ${keycode}`,
       };
     }
-    case 'text': {
+    case "text": {
       const length = textLength(gesture?.text);
       return {
         ...base,
-        kind: 'keyboard',
-        action: 'text',
-        message: `Text input (${length} ${length === 1 ? 'character' : 'characters'}, redacted)`,
+        kind: "keyboard",
+        action: "text",
+        message: `Text input (${length} ${length === 1 ? "character" : "characters"}, redacted)`,
       };
     }
-    case 'back':
-    case 'home':
-    case 'recents':
-    case 'power':
+    case "back":
+    case "home":
+    case "recents":
+    case "power":
       return {
         ...base,
-        kind: 'button',
+        kind: "button",
         action: type,
         message: `Button ${titleCase(type)}`,
       };
     default:
       return {
         ...base,
-        kind: 'gesture',
+        kind: "gesture",
         action: type,
         message: `Gesture ${type}`,
       };
@@ -196,23 +195,23 @@ function mapGesture(event: AndroidSessionEvent, deviceSerial: string): DeviceEve
 /** Map one serve-emu session event into the Hub's canonical event shape. */
 export function mapAndroidSessionEvent(
   event: AndroidSessionEvent,
-  deviceSerial: string
+  deviceSerial: string,
 ): DeviceEvent {
-  if (event.kind === 'gesture') return mapGesture(event, deviceSerial);
+  if (event.kind === "gesture") return mapGesture(event, deviceSerial);
 
-  if (event.kind === 'location') {
+  if (event.kind === "location") {
     const latitude = finiteNumber(event.location?.latitude);
     const longitude = finiteNumber(event.location?.longitude);
     const coordinates =
       latitude === null || longitude === null
-        ? 'unknown coordinates'
+        ? "unknown coordinates"
         : `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
     return {
       id: stableId(deviceSerial, event.id),
       timestamp: event.at,
       source: event.source,
-      kind: 'location',
-      action: 'set',
+      kind: "location",
+      action: "set",
       message: `Location ${coordinates}`,
       details: {
         delayMs: event.delayMs,
@@ -225,8 +224,8 @@ export function mapAndroidSessionEvent(
     id: stableId(deviceSerial, event.id),
     timestamp: event.at,
     source: event.source,
-    kind: event.kind || 'event',
-    message: `Event ${event.kind || 'unknown'}`,
+    kind: event.kind || "event",
+    message: `Event ${event.kind || "unknown"}`,
     details: { delayMs: event.delayMs },
   };
 }
@@ -234,7 +233,7 @@ export function mapAndroidSessionEvent(
 /** Map an oldest-to-newest serve-emu snapshot, retaining only its latest rows. */
 export function mapAndroidSessionEvents(
   events: readonly AndroidSessionEvent[],
-  deviceSerial: string
+  deviceSerial: string,
 ): DeviceEvent[] {
   return events
     .slice(-MAX_ANDROID_DEVICE_EVENTS)

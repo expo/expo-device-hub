@@ -9,15 +9,7 @@
  * emulator exposes no console or gRPC command that re-points a running camera.
  */
 import { createHash, randomUUID } from "node:crypto";
-import {
-  mkdir,
-  readdir,
-  readFile,
-  rename,
-  stat,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -353,9 +345,7 @@ export async function readCameraWiring(
   }
   const values = iniValues(config);
   return CAMERA_FACINGS.every(
-    (facing) =>
-      values.get(`hw.camera.${facing}`) ===
-      `imagefile:${cameraFeedPath(serial, facing)}`,
+    (facing) => values.get(`hw.camera.${facing}`) === `imagefile:${cameraFeedPath(serial, facing)}`,
   );
 }
 
@@ -424,10 +414,7 @@ async function sweepStagingFiles(serial: string): Promise<void> {
   }
   await Promise.all(
     names
-      .filter(
-        (name) =>
-          name.endsWith(".tmp") && prefixes.some((prefix) => name.startsWith(prefix)),
-      )
+      .filter((name) => name.endsWith(".tmp") && prefixes.some((prefix) => name.startsWith(prefix)))
       .map((name) => unlink(join(root, name)).catch(() => {})),
   );
 }
@@ -444,9 +431,7 @@ export async function seedCameraFeeds(serial: string): Promise<void> {
   const { png } = placeholderCameraImage();
   await sweepStagingFiles(serial);
   await Promise.all(
-    CAMERA_FACINGS.map((facing) =>
-      writeFeedFile(cameraFeedPath(serial, facing), png),
-    ),
+    CAMERA_FACINGS.map((facing) => writeFeedFile(cameraFeedPath(serial, facing), png)),
   );
 }
 
@@ -469,11 +454,7 @@ export async function readCameraImage(
  * `SharedArrayBuffer`.
  */
 export function cameraImageResponse(png: Uint8Array): Response {
-  const bytes = new Uint8Array(
-    png.buffer as ArrayBuffer,
-    png.byteOffset,
-    png.byteLength,
-  );
+  const bytes = new Uint8Array(png.buffer as ArrayBuffer, png.byteOffset, png.byteLength);
   return new Response(bytes, {
     headers: { "Content-Type": "image/png", "Cache-Control": "no-store" },
   });

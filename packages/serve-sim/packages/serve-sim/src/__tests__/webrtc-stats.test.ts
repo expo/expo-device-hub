@@ -156,7 +156,9 @@ describe("frame pacing and decode", () => {
   // Four frames 16ms apart: mean 16ms, no spread.
   test("reads near zero when every frame arrives on cadence", () => {
     const previous = sampleAt(1_000, {
-      framesDecoded: 100, interFrameDelaySeconds: 0, interFrameDelaySquaredSeconds: 0,
+      framesDecoded: 100,
+      interFrameDelaySeconds: 0,
+      interFrameDelaySquaredSeconds: 0,
     });
     const current = sampleAt(3_000, {
       framesDecoded: 104,
@@ -170,7 +172,9 @@ describe("frame pacing and decode", () => {
   // Same four frames and the same mean, but delivered 2ms/30ms/2ms/30ms.
   test("separates a bursty stream from an even one at the same mean rate", () => {
     const previous = sampleAt(1_000, {
-      framesDecoded: 100, interFrameDelaySeconds: 0, interFrameDelaySquaredSeconds: 0,
+      framesDecoded: 100,
+      interFrameDelaySeconds: 0,
+      interFrameDelaySquaredSeconds: 0,
     });
     const current = sampleAt(3_000, {
       framesDecoded: 104,
@@ -182,10 +186,14 @@ describe("frame pacing and decode", () => {
 
   test("reports neither gap nor spread from a one-frame window, which has no spread by construction", () => {
     const previous = sampleAt(1_000, {
-      framesDecoded: 100, interFrameDelaySeconds: 1, interFrameDelaySquaredSeconds: 0.02,
+      framesDecoded: 100,
+      interFrameDelaySeconds: 1,
+      interFrameDelaySquaredSeconds: 0.02,
     });
     const current = sampleAt(3_000, {
-      framesDecoded: 101, interFrameDelaySeconds: 1.4, interFrameDelaySquaredSeconds: 0.18,
+      framesDecoded: 101,
+      interFrameDelaySeconds: 1.4,
+      interFrameDelaySquaredSeconds: 0.18,
     });
     const described = describeStreamStats(previous, current);
     expect(described.pacingDeviationMs).toBeNull();
@@ -194,10 +202,14 @@ describe("frame pacing and decode", () => {
 
   test("reports nothing rather than a negative spread when the stream was replaced", () => {
     const previous = sampleAt(1_000, {
-      framesDecoded: 100, interFrameDelaySeconds: 5, interFrameDelaySquaredSeconds: 0.4,
+      framesDecoded: 100,
+      interFrameDelaySeconds: 5,
+      interFrameDelaySquaredSeconds: 0.4,
     });
     const current = sampleAt(3_000, {
-      framesDecoded: 160, interFrameDelaySeconds: 1, interFrameDelaySquaredSeconds: 0.1,
+      framesDecoded: 160,
+      interFrameDelaySeconds: 1,
+      interFrameDelaySquaredSeconds: 0.1,
     });
     expect(describeStreamStats(previous, current).pacingDeviationMs).toBeNull();
   });

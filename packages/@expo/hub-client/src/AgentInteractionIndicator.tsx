@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 import {
   agentInteractionCursorExpiresAt,
@@ -6,11 +6,11 @@ import {
   agentInteractionPointsAt,
   agentInteractionPointsWithTravelAt,
   agentInteractionTravelMs,
-} from './agent-interaction-animation';
-import { AGENT_TOUCH_INDICATOR_STYLE } from './TouchIndicator';
-import { type AgentInteraction, type AgentInteractionPoint } from './types';
+} from "./agent-interaction-animation";
+import { AGENT_TOUCH_INDICATOR_STYLE } from "./TouchIndicator";
+import { type AgentInteraction, type AgentInteractionPoint } from "./types";
 
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 export function AgentInteractionIndicator({
   interaction,
@@ -90,7 +90,7 @@ export function AgentInteractionIndicator({
       paint(
         reduceMotion
           ? agentInteractionPointsAt(activeInteraction, elapsedMs)
-          : agentInteractionPointsWithTravelAt(activeInteraction, previousPoints, elapsedMs)
+          : agentInteractionPointsWithTravelAt(activeInteraction, previousPoints, elapsedMs),
       );
       if (!reduceMotion && elapsedMs < endMs) scheduleUpdate();
     }
@@ -107,7 +107,7 @@ export function AgentInteractionIndicator({
     <div
       aria-hidden="true"
       data-testid="agent-interaction-indicator"
-      style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
+      style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}
     >
       {[0, 1].map((index) => (
         <div
@@ -116,7 +116,7 @@ export function AgentInteractionIndicator({
             layerRefs.current[index] = element;
           }}
           hidden
-          style={{ position: 'absolute', inset: 0, willChange: 'transform' }}
+          style={{ position: "absolute", inset: 0, willChange: "transform" }}
         >
           <div
             data-agent-touch={index}
@@ -124,7 +124,7 @@ export function AgentInteractionIndicator({
               ...AGENT_TOUCH_INDICATOR_STYLE,
               left: 0,
               top: 0,
-              transform: 'translate(-50%, -50%)',
+              transform: "translate(-50%, -50%)",
             }}
           />
         </div>

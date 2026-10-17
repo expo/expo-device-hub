@@ -50,28 +50,37 @@ const Device = z
 // simctl reads "all" and "booted" as every device, and capture reboots what it is given.
 const DeviceUdid = z
   .string()
-  .regex(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i, "must be a simulator udid");
-const CaptureRequestId = z.string().max(64).regex(/^r[1-9]\d*$/, "must be a capture request id");
+  .regex(
+    /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
+    "must be a simulator udid",
+  );
+const CaptureRequestId = z
+  .string()
+  .max(64)
+  .regex(/^r[1-9]\d*$/, "must be a capture request id");
 
-const BundleId = z.string().max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
+const BundleId = z
+  .string()
+  .max(256)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
 
 /** An orientation or button name. Bounded rather than allowlisted, so a new button still works. */
-const Token = z.string().max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
+const Token = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
 
 const FileName = z.string().regex(/^(?!\.)[^/\\\n]{1,255}$/, "must be a plain file name");
 
 const Coordinate = z.number().finite();
 
-const FileSource = z.union([
-  z.object({ uploadId: UploadId }),
-  z.object({ path: ConfinedPath }),
-]);
+const FileSource = z.union([z.object({ uploadId: UploadId }), z.object({ path: ConfinedPath })]);
 
 /** Each capture field once; the four the capture proxy knows. */
-const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.length).refine(
-  (fields) => new Set(fields).size === fields.length,
-  "list each capture field once",
-);
+const CaptureFieldList = z
+  .array(z.enum(CAPTURE_FIELDS))
+  .max(CAPTURE_FIELDS.length)
+  .refine((fields) => new Set(fields).size === fields.length, "list each capture field once");
 
 const ACTION_SCHEMAS = {
   "appearance.get": z.object({ udid: Device }),
@@ -84,7 +93,10 @@ const ACTION_SCHEMAS = {
   button: z.object({ value: Token, udid: Device.optional() }),
   "server.detach": z.object({
     udid: Device.optional(),
-    port: z.string().regex(/^[0-9]{1,5}$/).optional(),
+    port: z
+      .string()
+      .regex(/^[0-9]{1,5}$/)
+      .optional(),
   }),
   "server.kill": z.object({}),
   "camera.listWebcams": z.object({}),
@@ -124,16 +136,45 @@ const ACTION_SCHEMAS = {
     service: Token,
   }),
   "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
-  "app.container": z.object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") }),
-  "app.file.upload": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) }),
-  "app.file.read": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
-  "app.file.list": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() }),
-  "app.file.remove": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
-  "app.stop": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId }),
+  "app.container": z.object({
+    udid: Device,
+    bundleId: BundleId,
+    type: z.enum(["app", "data"]).default("app"),
+  }),
+  "app.file.upload": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    relativePath: AppRelativePath,
+    uploadId: UploadId,
+    overwrite: z.boolean().default(false),
+  }),
+  "app.file.read": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    relativePath: AppRelativePath,
+  }),
+  "app.file.list": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    relativePath: AppRelativePath.optional(),
+  }),
+  "app.file.remove": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    relativePath: AppRelativePath,
+  }),
+  "app.stop": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+  }),
   "app.openUrl": z.object({
     udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
     bundleId: BundleId,
-    url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
+    url: z
+      .string()
+      .max(8192)
+      .url()
+      .refine((value) => !value.includes("\0"), "must not contain NUL"),
   }),
   "app.infoPlist": z.object({ path: ConfinedPath }),
   "app.install": z.object({ udid: Device }).and(FileSource),
@@ -174,7 +215,11 @@ const ACTION_SCHEMAS = {
     first: z.boolean().optional(),
   }),
   "upload.remove": z.object({ uploadId: UploadId }),
-  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean(), fields: CaptureFieldList.optional() }),
+  "capture.reboot": z.object({
+    udid: DeviceUdid,
+    enabled: z.boolean(),
+    fields: CaptureFieldList.optional(),
+  }),
   "capture.enable": z.object({ udid: DeviceUdid, fields: CaptureFieldList.optional() }),
   "capture.fields": z.object({ udid: DeviceUdid, fields: CaptureFieldList }),
   "capture.clear": z.object({ udid: DeviceUdid }),
@@ -374,10 +419,14 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
   switch (action) {
-    case "app.file.upload": return runAppFileAction("upload", parseParams(action, raw));
-    case "app.file.read": return runAppFileAction("read", parseParams(action, raw));
-    case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
-    case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));
+    case "app.file.upload":
+      return runAppFileAction("upload", parseParams(action, raw));
+    case "app.file.read":
+      return runAppFileAction("read", parseParams(action, raw));
+    case "app.file.list":
+      return runAppFileAction("list", parseParams(action, raw));
+    case "app.file.remove":
+      return runAppFileAction("remove", parseParams(action, raw));
     case "app.stop":
     case "app.openUrl": {
       const p = parseParams(action, raw);
@@ -386,7 +435,11 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
         else await stopApp(p.udid, p.bundleId);
         return ok();
       } catch (error) {
-        return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
       }
     }
     case "app.launch": {
@@ -414,7 +467,9 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
       const p = parseParams(action, raw);
       const { rebootWithCapture } = await import("./capture");
       try {
-        const meta = p.fields ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields) : await rebootWithCapture(p.udid, p.enabled);
+        const meta = p.fields
+          ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields)
+          : await rebootWithCapture(p.udid, p.enabled);
         // The device rebooted, but capture did not start: report a failed action, not a toggle.
         if (p.enabled && meta.attachment === "failed") {
           return {

@@ -81,7 +81,12 @@ function parseUserAppRows(output: string, udid: string): PsRow[] {
     if (!upper.includes(device) || !upper.includes("/CONTAINERS/BUNDLE/APPLICATION/")) continue;
     // First `.app` in the exec path; extensions live under it (…/MyApp.app/PlugIns/X.appex/X).
     const app = /^(.*?\.app)\//.exec(exe);
-    rows.push({ pid: +m[1]!, cpuSeconds: cputimeToSeconds(m[2]!), rssKb: +m[3]!, appPath: app ? app[1]! : exe });
+    rows.push({
+      pid: +m[1]!,
+      cpuSeconds: cputimeToSeconds(m[2]!),
+      rssKb: +m[3]!,
+      appPath: app ? app[1]! : exe,
+    });
   }
   return rows;
 }
@@ -129,7 +134,9 @@ export interface SampleDeps {
 
 /** Run a host command with a bounded timeout and output buffer, resolving its stdout. */
 const runCommand = (file: string, args: string[], signal?: AbortSignal): Promise<string> =>
-  execFileAsync(file, args, { timeout: 3000, maxBuffer: 8 * 1024 * 1024, signal }).then((r) => r.stdout);
+  execFileAsync(file, args, { timeout: 3000, maxBuffer: 8 * 1024 * 1024, signal }).then(
+    (r) => r.stdout,
+  );
 
 /** The current foreground app: the tracker when it's warm, else the AX bridge; null when unknown. */
 function frontmostAppFast(udid: string): Promise<ForegroundApp | null> {
@@ -164,7 +171,12 @@ async function sampleForegroundApp(
  */
 async function sampleMemoryBytes(procs: AppProcesses, deps: Required<SampleDeps>): Promise<number> {
   try {
-    const output = await deps.exec("footprint", ["--noCategories", "--format", "bytes", ...procs.pids.map(String)]);
+    const output = await deps.exec("footprint", [
+      "--noCategories",
+      "--format",
+      "bytes",
+      ...procs.pids.map(String),
+    ]);
     return sumPhysFootprintBytes(output) ?? procs.rssKb * 1024;
   } catch {
     // footprint can exit non-zero (all pids gone mid-tick); keep the RSS fallback.
@@ -349,7 +361,12 @@ export class MetricsSampler {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private startedAt: number | null = null;
   // Previous reading, to turn cumulative CPU time into a per-interval %.
-  private prev: { t: number; bundleId: string | null; processKey: string; cpuSeconds: number } | null = null;
+  private prev: {
+    t: number;
+    bundleId: string | null;
+    processKey: string;
+    cpuSeconds: number;
+  } | null = null;
   // The default sampler owns a nettop poller and feeds its rate into sampleUserApp; an injected
   // `sample` (tests) supplies the network rate itself, so no poller is spawned.
   private readonly network: NetworkThroughputMonitor | null;
@@ -365,7 +382,8 @@ export class MetricsSampler {
       const network = new NetworkThroughputMonitor();
       this.network = network;
       const override = opts.networkRateOverride;
-      this.sample = (udid) => sampleWithRateOverride(udid, override, (pids) => network.rateForPids(pids));
+      this.sample = (udid) =>
+        sampleWithRateOverride(udid, override, (pids) => network.rateForPids(pids));
     }
     this.meta = {
       schemaVersion: METRICS_SCHEMA_VERSION,
@@ -399,7 +417,12 @@ export class MetricsSampler {
     if (!reading) return null;
 
     const cpuPct = this.cpuPctSince(reading, t);
-    this.prev = { t, bundleId: reading.bundleId, processKey: reading.processKey, cpuSeconds: reading.cpuSeconds };
+    this.prev = {
+      t,
+      bundleId: reading.bundleId,
+      processKey: reading.processKey,
+      cpuSeconds: reading.cpuSeconds,
+    };
 
     const sample: MetricSample = {
       t,
@@ -428,7 +451,12 @@ export class MetricsSampler {
    */
   private cpuPctSince(reading: AppUsage, t: number): number {
     const prev = this.prev;
-    if (!prev || prev.bundleId !== reading.bundleId || prev.processKey !== reading.processKey || t <= prev.t) {
+    if (
+      !prev ||
+      prev.bundleId !== reading.bundleId ||
+      prev.processKey !== reading.processKey ||
+      t <= prev.t
+    ) {
       return 0;
     }
     const pct = ((reading.cpuSeconds - prev.cpuSeconds) / ((t - prev.t) / 1000)) * 100;

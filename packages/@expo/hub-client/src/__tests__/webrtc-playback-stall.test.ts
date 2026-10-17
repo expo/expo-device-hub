@@ -42,7 +42,12 @@ describe("tracking whether decoding has stopped", () => {
   });
 
   test("a long gap between polls is not itself a stall", () => {
-    expect(run([{ decoded: 5, received: 10 }, { decoded: 9, received: 99 }])).not.toContain(true);
+    expect(
+      run([
+        { decoded: 5, received: 10 },
+        { decoded: 9, received: 99 },
+      ]),
+    ).not.toContain(true);
   });
 
   test("never stalls while the decode counter is unavailable", () => {
@@ -101,8 +106,9 @@ describe("tracking whether decoding has stopped", () => {
   });
 
   test("the first sample only establishes a baseline", () => {
-    expect(nextPlaybackStallState(initialPlaybackStallState, { decoded: 7, received: 1 }).stalled)
-      .toBe(false);
+    expect(
+      nextPlaybackStallState(initialPlaybackStallState, { decoded: 7, received: 1 }).stalled,
+    ).toBe(false);
   });
 });
 
@@ -143,7 +149,6 @@ describe("choosing which inbound report to judge", () => {
   });
 });
 
-
 test("bursty active RTP still detects frozen decode beside a retired high-count SSRC", () => {
   let pinned: { id: string; framesReceived: number } | null = null;
   let previous: { id: string; framesReceived: number }[] = [];
@@ -155,7 +160,11 @@ test("bursty active RTP still detects frozen decode beside a retired high-count 
       { id: "retired", framesReceived: 10_000 },
       { id: "active", framesReceived: 100 + Math.floor(poll / 4) * 10 },
     ];
-    const selected: { id: string; framesReceived: number } = selectInboundReport(reports, pinned, previous)!;
+    const selected: { id: string; framesReceived: number } = selectInboundReport(
+      reports,
+      pinned,
+      previous,
+    )!;
     previous = reports;
     if (selectedActive) expect(selected.id).toBe("active");
     selectedActive ||= selected.id === "active";

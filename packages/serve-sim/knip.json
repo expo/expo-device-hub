@@ -3,20 +3,11 @@
   "ignoreExportsUsedInFile": true,
   "workspaces": {
     ".": {
-      "entry": [
-        ".codex/skills/*/scripts/*.mjs"
-      ]
+      "entry": [".codex/skills/*/scripts/*.mjs"]
     },
     "packages/serve-sim": {
-      "ignoreDependencies": [
-        "preact",
-        "node-swift"
-      ],
-      "ignoreBinaries": [
-        "mkfifo",
-        "Sources/ServeSimCapabilityLoader/tests/run.sh",
-        "sips"
-      ],
+      "ignoreDependencies": ["preact", "node-swift"],
+      "ignoreBinaries": ["mkfifo", "Sources/ServeSimCapabilityLoader/tests/run.sh", "sips"],
       "entry": [
         "src/index.ts",
         "src/client/client.tsx",

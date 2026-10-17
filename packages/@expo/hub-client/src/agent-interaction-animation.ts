@@ -2,7 +2,7 @@ import {
   type AgentInteraction,
   type AgentInteractionPoint,
   type AgentInteractionSegment,
-} from './types';
+} from "./types";
 
 const CURSOR_TRAVEL_MS = 220;
 export const AGENT_INTERACTION_IDLE_TIMEOUT_MS = 60 * 1000;
@@ -10,14 +10,14 @@ export const AGENT_INTERACTION_IDLE_TIMEOUT_MS = 60 * 1000;
 export function agentInteractionEndMs(interaction: AgentInteraction): number {
   return interaction.segments.reduce(
     (latest, segment) => Math.max(latest, segment.startMs + (segment.frames.at(-1)?.atMs ?? 0)),
-    0
+    0,
   );
 }
 
 /** Timestamp after which the settled cursor should no longer be visible. */
 export function agentInteractionCursorExpiresAt(
   interaction: AgentInteraction,
-  fallbackStartedAt = Date.now()
+  fallbackStartedAt = Date.now(),
 ): number {
   const parsedTimestamp = Date.parse(interaction.timestamp);
   const startedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : fallbackStartedAt;
@@ -27,7 +27,7 @@ export function agentInteractionCursorExpiresAt(
 /** Resolve the visible agent finger positions for one moment on the MCP-call timeline. */
 export function agentInteractionPointsAt(
   interaction: AgentInteraction,
-  elapsedMs: number
+  elapsedMs: number,
 ): AgentInteractionPoint[] {
   const firstSegment = interaction.segments[0];
   if (!firstSegment) return [];
@@ -51,7 +51,7 @@ export function agentInteractionPointsAt(
       return interpolatePoints(
         lastFrame.points,
         nextFrame.points,
-        easeInOutCubic((elapsedMs - segmentEndMs) / travelMs)
+        easeInOutCubic((elapsedMs - segmentEndMs) / travelMs),
       );
     }
   }
@@ -61,7 +61,7 @@ export function agentInteractionPointsAt(
 /** Duration of the synthetic cursor move between separate Argent log records. */
 export function agentInteractionTravelMs(
   previousPoints: AgentInteractionPoint[],
-  interaction: AgentInteraction
+  interaction: AgentInteraction,
 ): number {
   const nextPoints = agentInteractionPointsAt(interaction, 0);
   if (previousPoints.length !== nextPoints.length || previousPoints.length === 0) return 0;
@@ -77,7 +77,7 @@ export function agentInteractionTravelMs(
 export function agentInteractionPointsWithTravelAt(
   interaction: AgentInteraction,
   previousPoints: AgentInteractionPoint[],
-  elapsedMs: number
+  elapsedMs: number,
 ): AgentInteractionPoint[] {
   const travelMs = agentInteractionTravelMs(previousPoints, interaction);
   if (travelMs === 0) return agentInteractionPointsAt(interaction, elapsedMs);
@@ -87,13 +87,13 @@ export function agentInteractionPointsWithTravelAt(
   return interpolatePoints(
     previousPoints,
     agentInteractionPointsAt(interaction, 0),
-    easeInOutCubic(elapsedMs / travelMs)
+    easeInOutCubic(elapsedMs / travelMs),
   );
 }
 
 function pointsWithinSegment(
   segment: AgentInteractionSegment,
-  elapsedMs: number
+  elapsedMs: number,
 ): AgentInteractionPoint[] {
   const first = segment.frames[0];
   if (!first) return [];
@@ -109,7 +109,7 @@ function pointsWithinSegment(
 
     const linearProgress = (elapsedMs - from.atMs) / (to.atMs - from.atMs);
     const progress =
-      segment.easing === 'ease-out' ? 1 - Math.pow(1 - linearProgress, 3) : linearProgress;
+      segment.easing === "ease-out" ? 1 - Math.pow(1 - linearProgress, 3) : linearProgress;
     return interpolatePoints(from.points, to.points, progress);
   }
   return last.points;
@@ -118,7 +118,7 @@ function pointsWithinSegment(
 function interpolatePoints(
   from: AgentInteractionPoint[],
   to: AgentInteractionPoint[],
-  progress: number
+  progress: number,
 ): AgentInteractionPoint[] {
   const clampedProgress = Math.min(1, Math.max(0, progress));
   return from.map((point, index) => {

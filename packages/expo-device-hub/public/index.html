@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="%LANG_ISO_CODE%">
   <head>
     <meta charset="utf-8" />
@@ -10,22 +10,22 @@
     <script>
       (function () {
         // Skip if the {{mount}} placeholder was never substituted (served statically).
-        var mount = '{{mount}}';
-        if (mount.charAt(0) !== '{' && window.__EXPO_DEVICE_HUB_BASE_PATH__ == null) {
+        var mount = "{{mount}}";
+        if (mount.charAt(0) !== "{" && window.__EXPO_DEVICE_HUB_BASE_PATH__ == null) {
           window.__EXPO_DEVICE_HUB_BASE_PATH__ = mount;
         }
-        var platform = '{{platform}}';
-        if (platform === 'ios' || platform === 'android') {
+        var platform = "{{platform}}";
+        if (platform === "ios" || platform === "android") {
           window.__EXPO_DEVICE_HUB_PLATFORM__ = platform;
         }
-        var transport = '{{transport}}';
-        if (transport === 'mjpeg' || transport === 'h264' || transport === 'webrtc') {
+        var transport = "{{transport}}";
+        if (transport === "mjpeg" || transport === "h264" || transport === "webrtc") {
           window.__EXPO_DEVICE_HUB_TRANSPORT__ = transport;
         }
-        if ('{{hideSidebar}}' === 'true') {
+        if ("{{hideSidebar}}" === "true") {
           window.__EXPO_DEVICE_HUB_HIDE_SIDEBAR__ = true;
         }
-        if ('{{hideBootDevice}}' === 'true') {
+        if ("{{hideBootDevice}}" === "true") {
           window.__EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE__ = true;
         }
       })();

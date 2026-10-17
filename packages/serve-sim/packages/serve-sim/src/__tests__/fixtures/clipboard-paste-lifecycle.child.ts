@@ -13,14 +13,20 @@ mock.module("react", () => ({
     if (cleanup) cleanups.push(cleanup);
   },
 }));
-type ToastProps = { toast: { status: string; message: string }; onCopy?: () => void; onPaste?: (text: string) => void };
+type ToastProps = {
+  toast: { status: string; message: string };
+  onCopy?: () => void;
+  onPaste?: (text: string) => void;
+};
 const toasts = new Map<string, ToastProps>();
 mock.module("sonner", () => ({
   toast: {
     custom: (render: () => ReactElement<ToastProps>, options: { id: string }) => {
       toasts.set(options.id, render().props);
     },
-    dismiss: (id: string) => { toasts.delete(id); },
+    dismiss: (id: string) => {
+      toasts.delete(id);
+    },
   },
 }));
 mock.module("../../client/components/app-toasts", () => ({ ClipboardToastContent: () => null }));
@@ -34,7 +40,10 @@ Object.defineProperty(globalThis, "window", { value: win, configurable: true });
 function deferredRead() {
   let resolve!: (text: string) => void;
   let reject!: (error: Error) => void;
-  const result = new Promise<string>((accept, decline) => { resolve = accept; reject = decline; });
+  const result = new Promise<string>((accept, decline) => {
+    resolve = accept;
+    reject = decline;
+  });
   Object.defineProperty(globalThis, "navigator", {
     value: { clipboard: { readText: () => result } },
     configurable: true,
@@ -96,17 +105,20 @@ test("simulator clipboard fallback cancels an older toolbar clipboard read", asy
   expect(toasts.has(pasteToastId)).toBe(false);
 });
 
-test.each(["resolve", "reject"] as const)("leaving the device cancels a clipboard read that later %ss", async (outcome) => {
-  const read = deferredRead();
-  const { clipboard, sent, stop } = mount();
-  const older = clipboard.pasteFromDevice();
-  stop();
-  if (outcome === "resolve") read.resolve("text for the retired device");
-  else read.reject(new Error("Permission denied"));
-  await older;
-  expect(sent).toEqual([]);
-  expect(toasts.has(pasteToastId)).toBe(false);
-});
+test.each(["resolve", "reject"] as const)(
+  "leaving the device cancels a clipboard read that later %ss",
+  async (outcome) => {
+    const read = deferredRead();
+    const { clipboard, sent, stop } = mount();
+    const older = clipboard.pasteFromDevice();
+    stop();
+    if (outcome === "resolve") read.resolve("text for the retired device");
+    else read.reject(new Error("Permission denied"));
+    await older;
+    expect(sent).toEqual([]);
+    expect(toasts.has(pasteToastId)).toBe(false);
+  },
+);
 
 test("leaving the device dismisses manual Paste and invalidates its callback", async () => {
   const read = deferredRead();
@@ -126,18 +138,32 @@ test("leaving the device dismisses manual Paste and invalidates its callback", a
 
 test("denied browser writes offer manual Copy, and a throwing fallback reports failure", async () => {
   Object.defineProperty(globalThis, "navigator", {
-    value: { clipboard: { writeText: async () => { throw new Error("Permission denied"); } } },
+    value: {
+      clipboard: {
+        writeText: async () => {
+          throw new Error("Permission denied");
+        },
+      },
+    },
     configurable: true,
   });
   let removed = false;
   Object.defineProperty(globalThis, "document", {
     value: {
       createElement: () => ({
-        style: {}, setAttribute() {}, focus() {}, select() {}, setSelectionRange() {},
-        remove() { removed = true; },
+        style: {},
+        setAttribute() {},
+        focus() {},
+        select() {},
+        setSelectionRange() {},
+        remove() {
+          removed = true;
+        },
       }),
       body: { appendChild() {} },
-      execCommand: () => { throw new Error("Copy denied"); },
+      execCommand: () => {
+        throw new Error("Copy denied");
+      },
     },
     configurable: true,
   });
@@ -148,32 +174,42 @@ test("denied browser writes offer manual Copy, and a throwing fallback reports f
     expect(manual?.toast.status).toBe("manual");
     expect(() => manual!.onCopy!()).not.toThrow();
     expect(removed).toBe(true);
-    expect(toasts.get("sim-clipboard-manual")?.toast).toEqual({ status: "error", message: "Copy failed" });
+    expect(toasts.get("sim-clipboard-manual")?.toast).toEqual({
+      status: "error",
+      message: "Copy failed",
+    });
   } finally {
     Reflect.deleteProperty(globalThis, "document");
   }
 });
 
-test.each([false, true])("empty Copy clears the browser clipboard (write denied: %s)", async (denied) => {
-  const written: string[] = [];
-  Object.defineProperty(globalThis, "navigator", {
-    value: { clipboard: { writeText: async (text: string) => {
-      written.push(text);
-      if (denied) throw new Error("Permission denied");
-    } } },
-    configurable: true,
-  });
-  const { clipboard } = mount(async () => ({ text: "" }));
-  await clipboard.copyFromSim();
-  expect(written).toEqual([""]);
-  expect(toasts.get("sim-clipboard-copy")?.toast).toEqual({
-    status: denied ? "error" : "success",
-    message: denied
-      ? "Simulator clipboard is empty. The browser clipboard still has older text"
-      : "Simulator clipboard is empty",
-  });
-  expect(toasts.has("sim-clipboard-manual")).toBe(false);
-});
+test.each([false, true])(
+  "empty Copy clears the browser clipboard (write denied: %s)",
+  async (denied) => {
+    const written: string[] = [];
+    Object.defineProperty(globalThis, "navigator", {
+      value: {
+        clipboard: {
+          writeText: async (text: string) => {
+            written.push(text);
+            if (denied) throw new Error("Permission denied");
+          },
+        },
+      },
+      configurable: true,
+    });
+    const { clipboard } = mount(async () => ({ text: "" }));
+    await clipboard.copyFromSim();
+    expect(written).toEqual([""]);
+    expect(toasts.get("sim-clipboard-copy")?.toast).toEqual({
+      status: denied ? "error" : "success",
+      message: denied
+        ? "Simulator clipboard is empty. The browser clipboard still has older text"
+        : "Simulator clipboard is empty",
+    });
+    expect(toasts.has("sim-clipboard-manual")).toBe(false);
+  },
+);
 
 type Policy = { allowsFeature(feature: string): boolean };
 const allowsAll: Policy = { allowsFeature: () => true };
@@ -184,10 +220,15 @@ const allowsAll: Policy = { allowsFeature: () => true };
  */
 function framed(
   navigatorValue: object,
-  { afterRequest = true, policy = allowsAll }: { afterRequest?: boolean; policy?: Policy | null } = {},
+  {
+    afterRequest = true,
+    policy = allowsAll,
+  }: { afterRequest?: boolean; policy?: Policy | null } = {},
 ): { posted: unknown[]; restore: () => void } {
   const posted: unknown[] = [];
-  const stored = new Map(afterRequest ? [["serve-sim:frame-permission-requested:clipboard-read", "1"]] : []);
+  const stored = new Map(
+    afterRequest ? [["serve-sim:frame-permission-requested:clipboard-read", "1"]] : [],
+  );
   Object.defineProperty(globalThis, "window", {
     value: {
       parent: { postMessage: (message: unknown) => posted.push(message) },
@@ -214,7 +255,12 @@ function framed(
 }
 
 test.each([
-  ["allows it", "prompt", allowsAll, { status: "success", message: "Clipboard allowed. Paste again" }],
+  [
+    "allows it",
+    "prompt",
+    allowsAll,
+    { status: "success", message: "Clipboard allowed. Paste again" },
+  ],
   ["allows it", "denied", allowsAll, undefined],
   ["cannot be read", "prompt", null, { status: "info", message: "Paste again" }],
   ["cannot be read", "denied", null, undefined],
@@ -235,8 +281,17 @@ test.each([
 test("a Paste that starts during the grant check keeps its manual field", async () => {
   let answer!: (status: { state: string }) => void;
   const { restore } = framed({
-    permissions: { query: () => new Promise((resolve) => { answer = resolve; }) },
-    clipboard: { readText: async () => { throw new Error("Permission denied"); } },
+    permissions: {
+      query: () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    },
+    clipboard: {
+      readText: async () => {
+        throw new Error("Permission denied");
+      },
+    },
   });
   try {
     const { clipboard } = mount();
@@ -251,11 +306,23 @@ test("a Paste that starts during the grant check keeps its manual field", async 
   }
 });
 
-test.each([[true, 1], [false, 0]] as const)(
+test.each([
+  [true, 1],
+  [false, 0],
+] as const)(
   "a failed framed Paste asks the embedding page only when the browser has readText (has readText: %p)",
   async (hasReadText, requests) => {
-    const clipboard = hasReadText ? { readText: async () => { throw new Error("Permission denied"); } } : {};
-    const { posted, restore } = framed({ clipboard }, { afterRequest: false, policy: { allowsFeature: () => false } });
+    const clipboard = hasReadText
+      ? {
+          readText: async () => {
+            throw new Error("Permission denied");
+          },
+        }
+      : {};
+    const { posted, restore } = framed(
+      { clipboard },
+      { afterRequest: false, policy: { allowsFeature: () => false } },
+    );
     try {
       await mount().clipboard.pasteFromDevice();
       expect(toasts.get(pasteToastId)?.toast.status).toBe("paste");
@@ -269,11 +336,19 @@ test.each([[true, 1], [false, 0]] as const)(
 test("leaving the device cancels a pending Copy before it writes to the browser", async () => {
   const written: string[] = [];
   Object.defineProperty(globalThis, "navigator", {
-    value: { clipboard: { writeText: async (text: string) => { written.push(text); } } },
+    value: {
+      clipboard: {
+        writeText: async (text: string) => {
+          written.push(text);
+        },
+      },
+    },
     configurable: true,
   });
   let resolve!: (result: { text: string }) => void;
-  const read = new Promise<{ text: string }>((accept) => { resolve = accept; });
+  const read = new Promise<{ text: string }>((accept) => {
+    resolve = accept;
+  });
   const { clipboard, stop } = mount(() => read);
   const copy = clipboard.copyFromSim();
   stop();
@@ -288,6 +363,12 @@ test("failed Copy shows its key cleanup warning beside the error", async () => {
     throw new SimClipboardCopyError("No change", "A key may still be held");
   });
   await clipboard.copyFromSim();
-  expect(toasts.get("sim-clipboard-copy")?.toast).toEqual({ status: "error", message: "No change" });
-  expect(toasts.get("sim-clipboard-key-cleanup")?.toast).toEqual({ status: "error", message: "A key may still be held" });
+  expect(toasts.get("sim-clipboard-copy")?.toast).toEqual({
+    status: "error",
+    message: "No change",
+  });
+  expect(toasts.get("sim-clipboard-key-cleanup")?.toast).toEqual({
+    status: "error",
+    message: "A key may still be held",
+  });
 });

@@ -2,7 +2,15 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { simctl } from "./simctl";
-import { INPUT_PASTEBOARD_LOCK_TIMEOUT_MS, buildSimpbArtifact, locatePasteboardTool, locateSimpbArtifact, readPasteboardText, withSimPasteboardLock, type PasteboardReadResult } from "./sim-pasteboard";
+import {
+  INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
+  buildSimpbArtifact,
+  locatePasteboardTool,
+  locateSimpbArtifact,
+  readPasteboardText,
+  withSimPasteboardLock,
+  type PasteboardReadResult,
+} from "./sim-pasteboard";
 
 const COPY_CHANGE_TIMEOUT_MS = 5_000;
 const COPY_CHANGE_POLL_MS = 75;
@@ -10,7 +18,9 @@ const PASTEBOARD_APP_BUNDLE = "com.expo.serve-sim-pasteboard";
 
 export class PasteboardCopyTimeoutError extends Error {
   constructor() {
-    super("The simulator app did not update the clipboard after Copy. Try again after selecting text.");
+    super(
+      "The simulator app did not update the clipboard after Copy. Try again after selecting text.",
+    );
   }
 }
 
@@ -21,12 +31,14 @@ export function withCleanupWarning(error: unknown, cleanupWarning: string | null
 }
 
 export function cleanupWarningOf(error: unknown): { cleanupWarning?: string } {
-  const cleanupWarning = error instanceof Error ? (error as { cleanupWarning?: unknown }).cleanupWarning : undefined;
+  const cleanupWarning =
+    error instanceof Error ? (error as { cleanupWarning?: unknown }).cleanupWarning : undefined;
   return typeof cleanupWarning === "string" ? { cleanupWarning } : {};
 }
 
 async function pasteboardChangeCount(udid: string): Promise<number> {
-  const tool = locatePasteboardTool() ?? await buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard");
+  const tool =
+    locatePasteboardTool() ?? (await buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard"));
   const output = await simctl(["spawn", udid, tool, "--change-count"], 3_000);
   if (!/^\d+$/.test(output)) throw new Error("Invalid simulator pasteboard change count");
   const count = Number(output);
@@ -40,15 +52,17 @@ async function sameFile(left: string, right: string): Promise<boolean> {
 }
 
 async function installedPasteboardAppTool(udid: string): Promise<string> {
-  const app = locateSimpbArtifact("ServeSimPasteboard.app") ??
-    await buildSimpbArtifact("SimPasteboard", "ServeSimPasteboard.app");
+  const app =
+    locateSimpbArtifact("ServeSimPasteboard.app") ??
+    (await buildSimpbArtifact("SimPasteboard", "ServeSimPasteboard.app"));
   const tool = join(app, "serve-sim-pasteboard");
   // Check the simulator rather than caching by UDID: an erase removes installed apps.
-  const installed = await simctl(["get_app_container", udid, PASTEBOARD_APP_BUNDLE, "app"])
-    .catch(() => null);
+  const installed = await simctl(["get_app_container", udid, PASTEBOARD_APP_BUNDLE, "app"]).catch(
+    () => null,
+  );
   if (!installed || installed === "(null)") {
     await simctl(["install", udid, app]);
-  } else if (!await sameFile(join(installed, "serve-sim-pasteboard"), tool)) {
+  } else if (!(await sameFile(join(installed, "serve-sim-pasteboard"), tool))) {
     // An older build writes on a launch without arguments. An install over it kept the old
     // executable when both had the same size and modification time, so uninstall it first.
     await simctl(["uninstall", udid, PASTEBOARD_APP_BUNDLE]);
@@ -65,7 +79,7 @@ export async function waitForPasteboardChange(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (true) {
-    if (await readCount() !== baseline) return;
+    if ((await readCount()) !== baseline) return;
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new PasteboardCopyTimeoutError();
     await sleep(Math.min(COPY_CHANGE_POLL_MS, remaining));
@@ -83,15 +97,21 @@ export async function copyFromSim(
   sendCopyShortcut: () => Promise<void>,
   inInputTurn: (copy: () => Promise<string>) => Promise<string> = (copy) => copy(),
 ): Promise<PasteboardReadResult> {
-  const text = await inInputTurn(() => withSimPasteboardLock(udid, async () => {
-    // @ref LLP 0010#copy — replacing the helper must not interrupt another server's read.
-    const appTool = await installedPasteboardAppTool(udid);
-    // Native apps may write concurrently. Copy does not mutate the shared pasteboard itself.
-    // @ref LLP 0010#copy — why Copy waits for the first change and may time out on the same text
-    const before = await pasteboardChangeCount(udid);
-    await sendCopyShortcut();
-    await waitForPasteboardChange(() => pasteboardChangeCount(udid), before);
-    return readPasteboardText(["spawn", udid, appTool, "--read-text"], { timeout: 8_000 });
-  }, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS));
+  const text = await inInputTurn(() =>
+    withSimPasteboardLock(
+      udid,
+      async () => {
+        // @ref LLP 0010#copy — replacing the helper must not interrupt another server's read.
+        const appTool = await installedPasteboardAppTool(udid);
+        // Native apps may write concurrently. Copy does not mutate the shared pasteboard itself.
+        // @ref LLP 0010#copy — why Copy waits for the first change and may time out on the same text
+        const before = await pasteboardChangeCount(udid);
+        await sendCopyShortcut();
+        await waitForPasteboardChange(() => pasteboardChangeCount(udid), before);
+        return readPasteboardText(["spawn", udid, appTool, "--read-text"], { timeout: 8_000 });
+      },
+      INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
+    ),
+  );
   return { text };
 }

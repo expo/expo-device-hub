@@ -56,9 +56,7 @@ export type StreamDisplayStatus =
   | "disconnected"
   | "stopped";
 
-export type StreamFatalStatus =
-  | "WebCodecs unsupported"
-  | "canvas unavailable";
+export type StreamFatalStatus = "WebCodecs unsupported" | "canvas unavailable";
 
 export type StreamEventGenerationDisposition =
   | "invalid"
@@ -206,10 +204,7 @@ export function gateStreamEventGeneration(
   }
 
   if (gate.awaitingConnectBoundary) {
-    if (
-      disposition !== "new-generation" ||
-      boundaryReason !== "connect"
-    ) {
+    if (disposition !== "new-generation" || boundaryReason !== "connect") {
       return { gate, disposition: "awaiting-boundary" };
     }
     return {
@@ -303,11 +298,7 @@ export function deriveStreamDisplayStatus(
     DEFAULT_STREAM_WAITING_MS,
     "waitingMs",
   );
-  const stallMs = nonNegativeThreshold(
-    thresholds.stallMs,
-    DEFAULT_STREAM_STALL_MS,
-    "stallMs",
-  );
+  const stallMs = nonNegativeThreshold(thresholds.stallMs, DEFAULT_STREAM_STALL_MS, "stallMs");
   const packetFreshMs = nonNegativeThreshold(
     thresholds.packetFreshMs,
     DEFAULT_PACKET_FRESH_MS,
@@ -373,10 +364,7 @@ function positiveCapacity(value: number | undefined, fallback: number, name: str
  * Generation-scoped decoded-frame queue and timestamp metadata. It is generic
  * so cleanup behavior can be tested without constructing browser VideoFrames.
  */
-export class StreamSessionResources<
-  Frame extends ClosableStreamFrame,
-  Timing,
-> {
+export class StreamSessionResources<Frame extends ClosableStreamFrame, Timing> {
   readonly #frameCapacity: number;
   readonly #timingCapacity: number;
   readonly #frames: (Frame | null)[];

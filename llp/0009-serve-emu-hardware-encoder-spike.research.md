@@ -41,10 +41,10 @@ The original spike used six 128×128 RGB24 frames, 30 fps, 1 Mbps and a two-fram
 keyframe interval. For that experiment,
 `ffprobe -show_frames -show_streams` reported:
 
-| Encoder | Decoded frame types | Profile | B frames | AUD count | SPS/PPS count |
-| --- | --- | --- | --- | --- | --- |
-| libx264 | I, P, I, P, I, P | Constrained Baseline | 0 | 6 | 3 each |
-| h264_videotoolbox | I, P, I, P, I, P | Baseline | 0 | 6 | 3 each |
+| Encoder           | Decoded frame types | Profile              | B frames | AUD count | SPS/PPS count |
+| ----------------- | ------------------- | -------------------- | -------- | --------- | ------------- |
+| libx264           | I, P, I, P, I, P    | Constrained Baseline | 0        | 6         | 3 each        |
+| h264_videotoolbox | I, P, I, P, I, P    | Baseline             | 0        | 6         | 3 each        |
 
 VideoToolbox emitted 595 bytes. Each IDR was preceded by SPS/PPS, allowing the
 existing parser/config cache to support a new viewer. Three process-start,

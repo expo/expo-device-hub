@@ -17,16 +17,20 @@ export function drainSseChunk(
   chunk: string,
   emit: (block: ParsedSseBlock) => void,
 ): string {
-  let buffer = `${previous}${chunk}`.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let buffer = `${previous}${chunk}`.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   let boundary: number;
-  while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-    const lines = buffer.slice(0, boundary).split('\n');
+  while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+    const lines = buffer.slice(0, boundary).split("\n");
     buffer = buffer.slice(boundary + 2);
-    const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+    const event =
+      lines
+        .find((line) => line.startsWith("event:"))
+        ?.slice(6)
+        .trim() || "message";
     const data = lines
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).replace(/^ /, ''))
-      .join('\n');
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).replace(/^ /, ""))
+      .join("\n");
     if (data) emit({ event, data });
   }
   return buffer;
@@ -41,13 +45,13 @@ export async function readSseSnapshot(
 
   const controller = new AbortController();
   const abort = () => controller.abort();
-  signal.addEventListener('abort', abort);
+  signal.addEventListener("abort", abort);
   let settleTimer: ReturnType<typeof setTimeout> | null = null;
 
   try {
     const response = await fetchImpl(url, {
-      cache: 'no-store',
-      headers: { accept: 'text/event-stream' },
+      cache: "no-store",
+      headers: { accept: "text/event-stream" },
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -56,7 +60,7 @@ export async function readSseSnapshot(
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const received: string[] = [];
-    let buffer = '';
+    let buffer = "";
     try {
       while (received.length < 2) {
         const { done, value } = await reader.read();
@@ -75,6 +79,6 @@ export async function readSseSnapshot(
   } finally {
     if (settleTimer !== null) clearTimeout(settleTimer);
     controller.abort();
-    signal.removeEventListener('abort', abort);
+    signal.removeEventListener("abort", abort);
   }
 }

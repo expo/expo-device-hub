@@ -1,8 +1,8 @@
-import * as Tooltip from '@radix-ui/react-tooltip';
-import { type ReactNode, useState } from 'react';
+import * as Tooltip from "@radix-ui/react-tooltip";
+import { type ReactNode, useState } from "react";
 
-import { bg, border, radius, shadow, text, textSize } from '../theme/tokens';
-import { isFocusVisible } from './focusVisible';
+import { bg, border, radius, shadow, text, textSize } from "../theme/tokens";
+import { isFocusVisible } from "./focusVisible";
 
 /** Keeps a disabled control's explanation reachable by pointer and keyboard. */
 export function DisabledControlHint({
@@ -30,14 +30,15 @@ export function DisabledControlHint({
             onFocus={(event) => setFocused(isFocusVisible(event))}
             onBlur={() => setFocused(false)}
             style={{
-              display: 'inline-flex',
-              maxWidth: '100%',
+              display: "inline-flex",
+              maxWidth: "100%",
               borderRadius: radius.lg,
-              outline: 'none',
+              outline: "none",
               boxShadow: focused ? `0 0 0 2px ${border.secondary}` : shadow.none,
-              cursor: 'not-allowed',
-            }}>
-            <span style={{ display: 'inline-flex', maxWidth: '100%', pointerEvents: 'none' }}>
+              cursor: "not-allowed",
+            }}
+          >
+            <span style={{ display: "inline-flex", maxWidth: "100%", pointerEvents: "none" }}>
               {children}
             </span>
           </span>
@@ -51,13 +52,14 @@ export function DisabledControlHint({
             style={{
               ...textSize.xs,
               zIndex: 610,
-              maxWidth: 'min(260px, calc(100vw - 16px))',
-              padding: '6px 10px',
+              maxWidth: "min(260px, calc(100vw - 16px))",
+              padding: "6px 10px",
               borderRadius: radius.md,
               backgroundColor: text.default,
               color: bg.default,
               boxShadow: shadow.md,
-            }}>
+            }}
+          >
             {reason}
           </Tooltip.Content>
         </Tooltip.Portal>

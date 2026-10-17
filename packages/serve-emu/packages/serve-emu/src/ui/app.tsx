@@ -15,12 +15,7 @@ import { DevicePanel } from "./components/device-panel";
 import { DeviceStream } from "./components/device-stream";
 import { ControlBar, type HardwareKey } from "./components/control-bar";
 import { SideTools } from "./components/side-tools";
-import {
-  useStream,
-  type DeviceSize,
-  type Sender,
-  type StreamTransport,
-} from "./lib/use-stream";
+import { useStream, type DeviceSize, type Sender, type StreamTransport } from "./lib/use-stream";
 import {
   ViewerTransportControlsContext,
   type ViewerTransportControls,
@@ -150,8 +145,7 @@ export function App() {
 }
 
 const AppShell = memo(function AppShell() {
-  const { canvasRef, videoRef, send, deviceSize, transport } =
-    useStreamControls();
+  const { canvasRef, videoRef, send, deviceSize, transport } = useStreamControls();
   const keyboardProxyRef = useRef<HTMLInputElement>(null);
   const renderCountRef = useRef(0);
   renderCountRef.current += 1;
@@ -188,7 +182,7 @@ const AppShell = memo(function AppShell() {
         return;
       }
 
-      const shortcutKeycode = (e.ctrlKey || e.metaKey) ? SHORTCUT_KEYCODES[e.code] : undefined;
+      const shortcutKeycode = e.ctrlKey || e.metaKey ? SHORTCUT_KEYCODES[e.code] : undefined;
       if (shortcutKeycode !== undefined) {
         e.preventDefault();
         send({ type: "key", keycode: shortcutKeycode, metaState: AMETA_CTRL_ON });
@@ -234,10 +228,7 @@ const AppShell = memo(function AppShell() {
     };
   }, [send]);
 
-  const onPress = useCallback(
-    (key: HardwareKey) => send({ type: key }),
-    [send],
-  );
+  const onPress = useCallback((key: HardwareKey) => send({ type: key }), [send]);
 
   return (
     <>
@@ -311,7 +302,13 @@ function SidebarIcon({ collapsed }: { collapsed: boolean }) {
     >
       <rect x="3" y="3" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
       <path d="M8 3.75V16.25" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M12.5 7.5L10 10L12.5 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M12.5 7.5L10 10L12.5 12.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

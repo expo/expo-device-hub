@@ -90,7 +90,10 @@ export class UnknownCapabilityError extends Error {
  * Requested capabilities that did not apply. A name that `--disable` also names is left out: disable
  * wins, so it is not expected to apply.
  */
-export function missingCapabilities({ enable = [], disable = [] }: CapabilityOverrides, applied: readonly string[]): string[] {
+export function missingCapabilities(
+  { enable = [], disable = [] }: CapabilityOverrides,
+  applied: readonly string[],
+): string[] {
   return enable.filter((name) => !disable.includes(name) && !applied.includes(name));
 }
 

@@ -123,7 +123,10 @@ export function useSimulatorResize({
         reservedForChrome,
       );
       try {
-        window.localStorage.setItem(SIMULATOR_RESIZE_SCALE_STORAGE_KEY, String(clamped / defaultWidth));
+        window.localStorage.setItem(
+          SIMULATOR_RESIZE_SCALE_STORAGE_KEY,
+          String(clamped / defaultWidth),
+        );
       } catch {}
     },
     [aspectRatio, defaultWidth, reservedForChrome, viewportHeight, viewportWidth],
@@ -155,7 +158,16 @@ export function useSimulatorResize({
       reservedForChrome,
     );
     if (next !== current) writeWidth(next);
-  }, [aspectRatio, defaultWidth, isInertia, isResizing, reservedForChrome, viewportHeight, viewportWidth, writeWidth]);
+  }, [
+    aspectRatio,
+    defaultWidth,
+    isInertia,
+    isResizing,
+    reservedForChrome,
+    viewportHeight,
+    viewportWidth,
+    writeWidth,
+  ]);
 
   useEffect(() => {
     if (restoredDefaultWidthRef.current === defaultWidth) return;

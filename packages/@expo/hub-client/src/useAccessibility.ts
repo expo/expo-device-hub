@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type AccessibilityLoader } from './accessibility';
-import { type AccessibilitySnapshot, type DeviceClient } from './types';
+import { type AccessibilityLoader } from "./accessibility";
+import { type AccessibilitySnapshot, type DeviceClient } from "./types";
 
 type AccessibilityClientState = Pick<
   DeviceClient,
-  'accessibility' | 'accessibilityPending' | 'accessibilityError' | 'refreshAccessibility'
+  "accessibility" | "accessibilityPending" | "accessibilityError" | "refreshAccessibility"
 >;
 
 /** Well above the measured reads, 3.6 s on Android and 1.3 s on iOS. */
@@ -42,11 +42,11 @@ export function useAccessibility(
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         if (deadline.aborted) {
-          setAccessibilityError('The device did not answer in time');
+          setAccessibilityError("The device did not answer in time");
           return;
         }
-        const message = cause instanceof Error ? cause.message : '';
-        setAccessibilityError(message || 'Accessibility read failed');
+        const message = cause instanceof Error ? cause.message : "";
+        setAccessibilityError(message || "Accessibility read failed");
       })
       .finally(() => {
         if (controllerRef.current === controller) setAccessibilityPending(false);

@@ -169,9 +169,10 @@ function readSenderSession(raw: Record<string, unknown>): SenderStreamStats {
     reportedFps: maybeNumber(raw.framesPerSecond),
     targetKbps: targetBitrate === null ? null : targetBitrate / 1000,
     totalEncodeMs: totalEncodeTime === null ? null : totalEncodeTime * 1000,
-    encodeMsPerFrame: totalEncodeTime === null || framesEncoded <= 0
-      ? null
-      : (totalEncodeTime * 1000) / framesEncoded,
+    encodeMsPerFrame:
+      totalEncodeTime === null || framesEncoded <= 0
+        ? null
+        : (totalEncodeTime * 1000) / framesEncoded,
     width: maybeNumber(raw.frameWidth),
     height: maybeNumber(raw.frameHeight),
     packetsSent,
@@ -204,16 +205,22 @@ export function readSenderStats(raw: unknown): SenderStats {
     encoder: readEncoderIdentity(raw.encoder),
     viewerResize: isRecord(raw.viewerResize) ? raw.viewerResize : null,
     sharedCanvas: readSharedCanvas(raw.sharedCanvas),
-    sharedEncoderPeers: Array.isArray(raw.sharedEncoderPeers) ? raw.sharedEncoderPeers.filter(isRecord) : null,
+    sharedEncoderPeers: Array.isArray(raw.sharedEncoderPeers)
+      ? raw.sharedEncoderPeers.filter(isRecord)
+      : null,
   };
 }
 
 function readSharedCanvas(raw: unknown): SharedCanvas | null {
   if (!isRecord(raw)) return null;
   const { width, height, scale, step, steps } = raw;
-  if ([width, height, scale, step, steps].some(value => typeof value !== "number")) return null;
+  if ([width, height, scale, step, steps].some((value) => typeof value !== "number")) return null;
   return {
-    width: width as number, height: height as number, scale: scale as number, step: step as number, steps: steps as number,
+    width: width as number,
+    height: height as number,
+    scale: scale as number,
+    step: step as number,
+    steps: steps as number,
     starvedRecoveries: maybeNumber(raw.starvedRecoveries),
     lowLatencyFallbacks: maybeNumber(raw.lowLatencyFallbacks),
   };

@@ -1,6 +1,6 @@
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useState } from "react";
 
-import { bg, border, radius, text, textSize } from '../theme/tokens';
+import { bg, border, radius, text, textSize } from "../theme/tokens";
 
 /**
  * A circular on/off toggle with an optional caption, styled to match the
@@ -19,17 +19,17 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
   const [pressed, setPressed] = useState(false);
 
   const circleStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     width: 32,
     height: 32,
-    boxSizing: 'border-box',
+    boxSizing: "border-box",
     borderRadius: radius.full,
     border: `1px solid ${border.default}`,
-    backgroundColor: hovered ? bg.element : 'transparent',
-    transition: 'background-color 150ms ease, transform 100ms ease',
-    transform: pressed ? 'scale(0.98)' : undefined,
+    backgroundColor: hovered ? bg.element : "transparent",
+    transition: "background-color 150ms ease, transform 100ms ease",
+    transform: pressed ? "scale(0.98)" : undefined,
   };
 
   return (
@@ -47,23 +47,29 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
         gap: 6,
         padding: 0,
-        border: 'none',
-        background: 'none',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}>
+        border: "none",
+        background: "none",
+        cursor: "pointer",
+        fontFamily: "inherit",
+      }}
+    >
       <span style={circleStyle}>
         <span
-          style={{ width: 16, height: 16, borderRadius: radius.full, backgroundColor: text.default }}
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: radius.full,
+            backgroundColor: text.default,
+          }}
         />
       </span>
       {label && (
-        <span style={{ ...textSize['2xs'], color: text.secondary, textAlign: 'center' }}>
+        <span style={{ ...textSize["2xs"], color: text.secondary, textAlign: "center" }}>
           {label}
         </span>
       )}

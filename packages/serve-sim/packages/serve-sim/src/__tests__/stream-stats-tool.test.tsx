@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { StreamStatsBody, describeFaults, statsToJson } from "../client/components/stream-stats-tool";
+import {
+  StreamStatsBody,
+  describeFaults,
+  statsToJson,
+} from "../client/components/stream-stats-tool";
 import type { CaptureCounts } from "../webrtc-sender-stats";
 import type { CaptureWindow } from "../client/utils/capture-window";
 import type { StreamStats } from "../client/utils/webrtc-stats";
@@ -50,7 +54,10 @@ function row(markup: string, label: string): string | null {
   if (value === -1) return null;
   const start = markup.indexOf(">", value) + 1;
   const cell = markup.slice(start, markup.indexOf("</span>", start));
-  return cell.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return cell
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The hover description for one labelled row, which carries the meaning and the scope. */
@@ -61,27 +68,49 @@ function help(markup: string, label: string): string | null {
   if (tip === -1) return null;
   const start = markup.indexOf(">", tip) + 1;
   const body = markup.slice(start, markup.indexOf("</span></span>", start));
-  return body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return body
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The last line of a tooltip, which states the window the number covers. */
 function scopeOf(markup: string, label: string): string {
   const body = help(markup, label) ?? "";
   const scopes = [
-    "Last second", "Now", "Average per frame, this session",
-    "Average per frame, last second", "Since the session started",
+    "Last second",
+    "Now",
+    "Average per frame, this session",
+    "Average per frame, last second",
+    "Since the session started",
   ];
   return scopes.find((scope) => body.endsWith(scope)) ?? "";
 }
 
 const sender = {
-  sessionId: "s", codec: "VP8", connected: true,
-  qualityLimitationReason: "none", qualityLimitationMs: {},
-  framesEncoded: 100, framesSent: 100, reportedFps: 30, targetKbps: 3000,
-  totalEncodeMs: 240, encodeMsPerFrame: 2.4, width: 589, height: 1280,
-  packetsSent: 900, packetsLost: 0, lossRatio: 0, roundTripMs: 20,
-  path: "direct" as const, sourceFrames: 120, sourceFps: 30, sourceFramesDropped: 0,
-  sourceLongEdge: 2622, levelMaxLongEdge: 0,
+  sessionId: "s",
+  codec: "VP8",
+  connected: true,
+  qualityLimitationReason: "none",
+  qualityLimitationMs: {},
+  framesEncoded: 100,
+  framesSent: 100,
+  reportedFps: 30,
+  targetKbps: 3000,
+  totalEncodeMs: 240,
+  encodeMsPerFrame: 2.4,
+  width: 589,
+  height: 1280,
+  packetsSent: 900,
+  packetsLost: 0,
+  lossRatio: 0,
+  roundTripMs: 20,
+  path: "direct" as const,
+  sourceFrames: 120,
+  sourceFps: 30,
+  sourceFramesDropped: 0,
+  sourceLongEdge: 2622,
+  levelMaxLongEdge: 0,
 };
 
 describe("describeFaults", () => {
@@ -90,18 +119,21 @@ describe("describeFaults", () => {
   });
 
   test("counts freezes with the time lost in the same window", () => {
-    expect(describeFaults(stats({ freezesInWindow: 2, freezeMsInWindow: 1_500 })))
-      .toEqual(["2 freezes (1.5s)"]);
+    expect(describeFaults(stats({ freezesInWindow: 2, freezeMsInWindow: 1_500 }))).toEqual([
+      "2 freezes (1.5s)",
+    ]);
   });
 
   test("uses the singular for one freeze", () => {
-    expect(describeFaults(stats({ freezesInWindow: 1, freezeMsInWindow: 400 })))
-      .toEqual(["1 freeze (0.4s)"]);
+    expect(describeFaults(stats({ freezesInWindow: 1, freezeMsInWindow: 400 }))).toEqual([
+      "1 freeze (0.4s)",
+    ]);
   });
 
   test("omits the duration when only the count is known", () => {
-    expect(describeFaults(stats({ freezesInWindow: 1, freezeMsInWindow: 0 })))
-      .toEqual(["1 freeze"]);
+    expect(describeFaults(stats({ freezesInWindow: 1, freezeMsInWindow: 0 }))).toEqual([
+      "1 freeze",
+    ]);
   });
 
   test("reports dropped frames", () => {
@@ -117,28 +149,35 @@ describe("describeFaults", () => {
   });
 
   test("says nothing when a reading is unavailable", () => {
-    expect(describeFaults(stats({
-      freezesInWindow: null,
-      droppedInWindow: null,
-      lossRatio: null,
-    }))).toEqual([]);
+    expect(
+      describeFaults(
+        stats({
+          freezesInWindow: null,
+          droppedInWindow: null,
+          lossRatio: null,
+        }),
+      ),
+    ).toEqual([]);
   });
 
   test("says a CPU-bound encoder cannot keep up, rather than printing the reason code", () => {
-    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "cpu" }))
-      .toEqual(["Encoder cannot keep up (CPU)"]);
+    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "cpu" })).toEqual([
+      "Encoder cannot keep up (CPU)",
+    ]);
   });
 
   /// A stream can be bitrate-limited with no packet loss at all, so this never reads as a
   /// network fault.
   test("names the bitrate, not the network, when bandwidth is the limit", () => {
-    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "bandwidth" }))
-      .toEqual(["Quality reduced to fit the bitrate"]);
+    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "bandwidth" })).toEqual([
+      "Quality reduced to fit the bitrate",
+    ]);
   });
 
   test("keeps an unfamiliar reason code out of the UI", () => {
-    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "other" }))
-      .toEqual(["Encoder holding back (reason unknown)"]);
+    expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "other" })).toEqual([
+      "Encoder holding back (reason unknown)",
+    ]);
   });
 
   test("says nothing when the encoder is not holding back", () => {
@@ -154,20 +193,25 @@ describe("describeFaults", () => {
   });
 
   test("lists every fault at once", () => {
-    expect(describeFaults(stats({ freezesInWindow: 1, droppedInWindow: 4, lossRatio: 0.1 })))
-      .toHaveLength(3);
+    expect(
+      describeFaults(stats({ freezesInWindow: 1, droppedInWindow: 4, lossRatio: 0.1 })),
+    ).toHaveLength(3);
   });
 });
 
 describe("StreamStatsBody", () => {
   test("keeps a healthy window quiet rather than printing zeros", () => {
-    const markup = renderToStaticMarkup(<StreamStatsBody stats={stats()} history={[stats()]} faults={describeFaults(stats())} />);
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody stats={stats()} history={[stats()]} faults={describeFaults(stats())} />,
+    );
     expect(markup).toContain("No drops, freezes or loss in this window");
     expect(markup).not.toContain("text-warning");
   });
 
   test("files the all-clear behind the disclosure, since a quiet stream needs no line", () => {
-    const markup = renderToStaticMarkup(<StreamStatsBody stats={stats()} history={[stats()]} faults={[]} />);
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody stats={stats()} history={[stats()]} faults={[]} />,
+    );
     const [before] = markup.split("Diagnostics");
     expect(before).not.toContain("No drops");
   });
@@ -185,11 +229,19 @@ describe("StreamStatsBody", () => {
 
   test("does not claim health for a window it could not measure", () => {
     const unmeasured = stats({
-      fps: null, kbps: null, lossRatio: null, droppedInWindow: null,
-      freezesInWindow: null, freezeMsInWindow: null,
+      fps: null,
+      kbps: null,
+      lossRatio: null,
+      droppedInWindow: null,
+      freezesInWindow: null,
+      freezeMsInWindow: null,
     });
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={unmeasured} history={[unmeasured]} faults={describeFaults(unmeasured)} />,
+      <StreamStatsBody
+        stats={unmeasured}
+        history={[unmeasured]}
+        faults={describeFaults(unmeasured)}
+      />,
     );
     expect(markup).toContain("Measuring…");
     expect(markup).not.toContain("No drops");
@@ -206,14 +258,22 @@ describe("StreamStatsBody", () => {
 
   test("shows a fractional frame rate so a limping stream is not a dead one", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ fps: 0.4 })} history={[stats()]} faults={describeFaults(stats({ fps: 0.4 }))} />,
+      <StreamStatsBody
+        stats={stats({ fps: 0.4 })}
+        history={[stats()]}
+        faults={describeFaults(stats({ fps: 0.4 }))}
+      />,
     );
     expect(row(markup, "Frame rate")).toBe("0.4 fps");
   });
 
   test("shows the faults instead of the all-clear line", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ droppedInWindow: 3 })} history={[stats()]} faults={describeFaults(stats({ droppedInWindow: 3 }))} />,
+      <StreamStatsBody
+        stats={stats({ droppedInWindow: 3 })}
+        history={[stats()]}
+        faults={describeFaults(stats({ droppedInWindow: 3 }))}
+      />,
     );
     expect(markup).toContain("3 frames dropped");
     expect(markup).toContain("text-warning");
@@ -237,28 +297,45 @@ describe("StreamStatsBody", () => {
 
   test("shows the frame rate against the requested one", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ fps: 24 })} history={[stats()]} faults={describeFaults(stats({ fps: 24 }))} requestedFps={60} />,
+      <StreamStatsBody
+        stats={stats({ fps: 24 })}
+        history={[stats()]}
+        faults={describeFaults(stats({ fps: 24 }))}
+        requestedFps={60}
+      />,
     );
     expect(row(markup, "Frame rate")).toBe("24 fps of 60");
   });
 
   test("keeps a limping stream distinguishable from a dead one", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ kbps: 4 })} history={[stats()]} faults={describeFaults(stats({ kbps: 4 }))} />,
+      <StreamStatsBody
+        stats={stats({ kbps: 4 })}
+        history={[stats()]}
+        faults={describeFaults(stats({ kbps: 4 }))}
+      />,
     );
     expect(row(markup, "Bitrate")).toBe("4 kbps");
   });
 
   test("names a relayed route in words rather than an ICE term", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ path: "relay" })} history={[stats()]} faults={describeFaults(stats({ path: "relay" }))} />,
+      <StreamStatsBody
+        stats={stats({ path: "relay" })}
+        history={[stats()]}
+        faults={describeFaults(stats({ path: "relay" }))}
+      />,
     );
     expect(row(markup, "ICE route")).toBe("Via relay");
   });
 
   test("hides the route when it cannot be determined", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats({ path: "unknown" })} history={[stats()]} faults={describeFaults(stats({ path: "unknown" }))} />,
+      <StreamStatsBody
+        stats={stats({ path: "unknown" })}
+        history={[stats()]}
+        faults={describeFaults(stats({ path: "unknown" }))}
+      />,
     );
     expect(row(markup, "ICE route")).toBeNull();
   });
@@ -292,7 +369,12 @@ describe("StreamStatsBody", () => {
         history={[stats()]}
         faults={[]}
         sender={sender}
-        encoder={{ id: "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc", hardware: true, codec: "H264", probe: true }}
+        encoder={{
+          id: "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc",
+          hardware: true,
+          codec: "H264",
+          probe: true,
+        }}
       />,
     );
     expect(row(markup, "Encoder probe")).toBe("paravirt avc (hardware)");
@@ -349,15 +431,35 @@ describe("StreamStatsBody", () => {
 
 /** The download keeps the raw lifetime counters; only the panel reads the window. */
 const captureCounts: CaptureCounts = {
-  pickCount: 5400, pickSumMs: 53, pickMaxMs: 0.8,
-  screenFrames: 900, idleFrames: 12, offeredFrames: 880, forwardedFrames: 830,
-  pumpRestarts: 0, cpuFallbacks: 0, attempts: 5400, stalls: 0, gapSumMs: 90_000,
-  stallSumMs: 0, pollTicks: 2400, pollLateSumMs: 600,
+  pickCount: 5400,
+  pickSumMs: 53,
+  pickMaxMs: 0.8,
+  screenFrames: 900,
+  idleFrames: 12,
+  offeredFrames: 880,
+  forwardedFrames: 830,
+  pumpRestarts: 0,
+  cpuFallbacks: 0,
+  attempts: 5400,
+  stalls: 0,
+  gapSumMs: 90_000,
+  stallSumMs: 0,
+  pollTicks: 2400,
+  pollLateSumMs: 600,
 };
 
 const capture: CaptureWindow = {
-  screenFps: 60, idleFps: 0, deliveredFps: 60, submittedFps: 60, intervalMs: 8.3, pickMs: 0.01,
-  stalls: 0, stallSumMs: 0, cpuFallbacks: 0, poolDrops: 0, pumpRestarts: 0,
+  screenFps: 60,
+  idleFps: 0,
+  deliveredFps: 60,
+  submittedFps: 60,
+  intervalMs: 8.3,
+  pickMs: 0.01,
+  stalls: 0,
+  stallSumMs: 0,
+  cpuFallbacks: 0,
+  poolDrops: 0,
+  pumpRestarts: 0,
 };
 
 describe("stale samples", () => {
@@ -489,7 +591,9 @@ describe("diagnostics", () => {
         capture={capture}
       />,
     );
-    const labels = [...markup.matchAll(/data-stream-stat="([^"]+)"/g)].map(([, label]) => label ?? "");
+    const labels = [...markup.matchAll(/data-stream-stat="([^"]+)"/g)].map(
+      ([, label]) => label ?? "",
+    );
     expect(labels).toContain("Capture interval");
     for (const label of labels) {
       // The tooltip opens with the label, so the meaning and the scope are what is left.
@@ -511,8 +615,12 @@ describe("diagnostics", () => {
 
   test("reads a long stall in seconds, where milliseconds stop being legible", () => {
     const markup = renderToStaticMarkup(
-      <StreamStatsBody stats={stats()} history={[stats()]} faults={[]}
-        capture={{ ...capture, stallSumMs: 2_936 }} />,
+      <StreamStatsBody
+        stats={stats()}
+        history={[stats()]}
+        faults={[]}
+        capture={{ ...capture, stallSumMs: 2_936 }}
+      />,
     );
     expect(row(markup, "Stall time")).toBe("2.9 s");
   });
@@ -575,7 +683,10 @@ describe("statsToJson", () => {
   test("records the session context, so the file explains itself", () => {
     const parsed = JSON.parse(
       statsToJson([stats()], {
-        transport: "webrtc", codec: "video/VP8", sender, capture: captureCounts,
+        transport: "webrtc",
+        codec: "video/VP8",
+        sender,
+        capture: captureCounts,
       }),
     );
     expect(parsed.sender.encodeMsPerFrame).toBe(2.4);

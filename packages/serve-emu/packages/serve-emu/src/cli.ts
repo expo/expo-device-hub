@@ -3,11 +3,7 @@ import { parseArgs } from "node:util";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { pickDevice } from "./adb.ts";
-import {
-  assertCameraImage,
-  cameraLaunchIsWired,
-  setCameraImage,
-} from "./camera.ts";
+import { assertCameraImage, cameraLaunchIsWired, setCameraImage } from "./camera.ts";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
 import { SCRCPY_DEFAULTS } from "./scrcpy.ts";
 import { isUsableSessionToken } from "./session-token.ts";
@@ -100,9 +96,7 @@ function stringOption(name: string): string | undefined {
 }
 
 function optionProvided(name: string): boolean {
-  return argv.some(
-    (arg) => arg === `--${name}` || arg.startsWith(`--${name}=`),
-  );
+  return argv.some((arg) => arg === `--${name}` || arg.startsWith(`--${name}=`));
 }
 
 function streamSettingsFromOptions(): StreamSettings {
@@ -132,18 +126,11 @@ function streamSettingsFromOptions(): StreamSettings {
   const turnUrl = stringOption("turn-url");
   const turnUsername = stringOption("turn-username");
   const turnCredential = stringOption("turn-credential");
-  if (
-    (turnUsername !== undefined || turnCredential !== undefined) &&
-    turnUrl === undefined
-  ) {
-    throw new Error(
-      "--turn-username and --turn-credential require --turn-url.",
-    );
+  if ((turnUsername !== undefined || turnCredential !== undefined) && turnUrl === undefined) {
+    throw new Error("--turn-username and --turn-credential require --turn-url.");
   }
   if (turnUrl !== undefined && (!turnUsername || !turnCredential)) {
-    throw new Error(
-      "--turn-url requires both --turn-username and --turn-credential.",
-    );
+    throw new Error("--turn-url requires both --turn-username and --turn-credential.");
   }
   if (iceTransportPolicy === "relay" && turnUrl === undefined) {
     throw new Error("--webrtc-ice-policy relay requires --turn-url.");
@@ -319,7 +306,11 @@ async function main() {
 
   if (values["running-avds"]) {
     const running = await listRunningAvds();
-    console.log(running.length ? running.map((avd) => `${avd.serial}\t${avd.avd}\t${avd.state}`).join("\n") : "");
+    console.log(
+      running.length
+        ? running.map((avd) => `${avd.serial}\t${avd.avd}\t${avd.state}`).join("\n")
+        : "",
+    );
     return;
   }
 
@@ -346,29 +337,26 @@ async function main() {
     cameraImagePath === undefined ? undefined : await readCameraImage(cameraImagePath);
 
   if (values.avd && values.serial) {
-    throw new Error("Use either --avd to launch an emulator or --serial to attach to an existing device, not both.");
+    throw new Error(
+      "Use either --avd to launch an emulator or --serial to attach to an existing device, not both.",
+    );
   }
 
   const requestedStreamMode = stringOption("stream-mode");
-  if (
-    requestedStreamMode !== undefined &&
-    !isStreamMode(requestedStreamMode)
-  ) {
+  if (requestedStreamMode !== undefined && !isStreamMode(requestedStreamMode)) {
     throw new Error(
       `--stream-mode must be one of: ${STREAM_MODES.join(", ")}. Received "${requestedStreamMode}".`,
     );
   }
   const streamMode = requestedStreamMode ?? "scrcpy";
-  const requestedGrpcImageMode =
-    stringOption("grpc-image-mode") ?? DEFAULT_GRPC_IMAGE_MODE;
+  const requestedGrpcImageMode = stringOption("grpc-image-mode") ?? DEFAULT_GRPC_IMAGE_MODE;
   if (!isGrpcImageMode(requestedGrpcImageMode)) {
     throw new Error(
       `--grpc-image-mode must be one of: ${GRPC_IMAGE_MODES.join(", ")}. Received "${requestedGrpcImageMode}".`,
     );
   }
   const grpcImageMode = requestedGrpcImageMode;
-  const requestedInputSource =
-    stringOption("input-source") ?? DEFAULT_GRPC_INPUT_SOURCE;
+  const requestedInputSource = stringOption("input-source") ?? DEFAULT_GRPC_INPUT_SOURCE;
   if (!isInputSource(requestedInputSource)) {
     throw new Error(
       `--input-source must be one of: ${INPUT_SOURCES.join(", ")}. Received "${requestedInputSource}".`,
@@ -416,10 +404,16 @@ async function main() {
   const repeatFrameMs = numberOption("repeat-frame-ms", SCRCPY_DEFAULTS.repeatFrameMs);
   const streamSettings = streamSettingsFromOptions();
   const maxApkUploadBytes = numberOption("max-apk-upload-bytes", DEFAULT_MAX_APK_UPLOAD_BYTES);
-  const maxMediaUploadBytes = numberOption("max-media-upload-bytes", DEFAULT_MAX_MEDIA_UPLOAD_BYTES);
+  const maxMediaUploadBytes = numberOption(
+    "max-media-upload-bytes",
+    DEFAULT_MAX_MEDIA_UPLOAD_BYTES,
+  );
   const maxActiveUploads = numberOption("max-active-uploads", DEFAULT_MAX_ACTIVE_UPLOADS);
   const maxQueuedUploads = numberOption("max-queued-uploads", DEFAULT_MAX_QUEUED_UPLOADS);
-  const uploadQueueTimeoutMs = numberOption("upload-queue-timeout-ms", DEFAULT_UPLOAD_QUEUE_TIMEOUT_MS);
+  const uploadQueueTimeoutMs = numberOption(
+    "upload-queue-timeout-ms",
+    DEFAULT_UPLOAD_QUEUE_TIMEOUT_MS,
+  );
 
   const host = values.host ?? DEFAULT_HOST;
   const loopback = isLoopbackHost(host);
@@ -449,8 +443,7 @@ async function main() {
     lifecycleController.abort(new Error("serve-emu stopping"));
     stopping = (async () => {
       try {
-        const started =
-          activeServer ?? (await startupTask?.catch(() => null)) ?? null;
+        const started = activeServer ?? (await startupTask?.catch(() => null)) ?? null;
         await started?.stop();
       } finally {
         emulatorLaunch?.stop();

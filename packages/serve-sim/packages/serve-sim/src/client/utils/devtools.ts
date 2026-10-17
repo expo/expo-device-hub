@@ -38,7 +38,10 @@ export function proxyWebKitDevtoolsTargetForBrowser(
   let devtoolsFrontendUrl = target.devtoolsFrontendUrl;
 
   try {
-    const frontendUrl = new URL(target.devtoolsFrontendUrl, `${location.protocol}//${location.host}`);
+    const frontendUrl = new URL(
+      target.devtoolsFrontendUrl,
+      `${location.protocol}//${location.host}`,
+    );
     frontendUrl.searchParams.delete("ws");
     frontendUrl.searchParams.delete("wss");
     frontendUrl.searchParams.set(wsParamName, wsParamValue);

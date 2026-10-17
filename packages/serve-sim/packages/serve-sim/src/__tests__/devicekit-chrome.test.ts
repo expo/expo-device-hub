@@ -15,35 +15,57 @@ import {
 describe("DeviceKit chrome helpers", () => {
   test("reads each display's corner metadata without averaging or mixing displays", () => {
     const display = {
-      displayType: "integrated", screenID: 1,
+      displayType: "integrated",
+      screenID: 1,
       chromeIdentifier: "com.apple.dt.devicekit.chrome.phone15",
-      width: 1398, height: 2034, scale: 3,
-      cornerRadiusUL: 8, cornerRadiusUR: 59, cornerRadiusLR: 59, cornerRadiusLL: 8,
+      width: 1398,
+      height: 2034,
+      scale: 3,
+      cornerRadiusUL: 8,
+      cornerRadiusUR: 59,
+      cornerRadiusLR: 59,
+      cornerRadiusLL: 8,
       framebufferMaskIdentifier: "closed-mask",
     };
-    expect(parseDisplayProfiles([display])).toEqual([{
-      screenId: 1, chromeIdentifier: "phone15", screenSize: { width: 466, height: 678 },
-      cornerRadii: { topLeft: 8, topRight: 59, bottomRight: 59, bottomLeft: 8 },
-      framebufferMask: "closed-mask",
-    }]);
-    expect(parseDisplayProfiles([
-      { ...display, scale: 0 }, { ...display, cornerRadiusUL: undefined },
-      { ...display, displayType: "tvOut" },
-    ])).toEqual([]);
+    expect(parseDisplayProfiles([display])).toEqual([
+      {
+        screenId: 1,
+        chromeIdentifier: "phone15",
+        screenSize: { width: 466, height: 678 },
+        cornerRadii: { topLeft: 8, topRight: 59, bottomRight: 59, bottomLeft: 8 },
+        framebufferMask: "closed-mask",
+      },
+    ]);
+    expect(
+      parseDisplayProfiles([
+        { ...display, scale: 0 },
+        { ...display, cornerRadiusUL: undefined },
+        { ...display, displayType: "tvOut" },
+      ]),
+    ).toEqual([]);
   });
 
   test("keeps all four measured corners distinct when profile metadata is absent", () => {
-    const width = 40, height = 50;
+    const width = 40,
+      height = 50;
     const mask = new Uint8Array(width * height);
     for (let y = 5; y < 45; y++) {
       for (let x = 5; x < 35; x++) {
-        if ((x - 5) + (y - 5) < 2 || (34 - x) + (y - 5) < 8 ||
-            (34 - x) + (44 - y) < 6 || (x - 5) + (44 - y) < 4) continue;
+        if (
+          x - 5 + (y - 5) < 2 ||
+          34 - x + (y - 5) < 8 ||
+          34 - x + (44 - y) < 6 ||
+          x - 5 + (44 - y) < 4
+        )
+          continue;
         mask[y * width + x] = 1;
       }
     }
     expect(measureScreenOpening({ width, height, mask })).toEqual({
-      x: 5, y: 5, width: 30, height: 40,
+      x: 5,
+      y: 5,
+      width: 30,
+      height: 40,
       cornerRadii: { topLeft: 2, topRight: 8, bottomRight: 6, bottomLeft: 4 },
     });
   });
@@ -53,7 +75,12 @@ describe("DeviceKit chrome helpers", () => {
     const chrome = resolveDeviceKitChrome({ name: "iPhone Duo" });
     if (!chrome) return;
     expect(chrome.screenId).toBe(1);
-    expect(chrome.screenCornerRadii).toEqual({ topLeft: 8, topRight: 59, bottomRight: 59, bottomLeft: 8 });
+    expect(chrome.screenCornerRadii).toEqual({
+      topLeft: 8,
+      topRight: 59,
+      bottomRight: 59,
+      bottomLeft: 8,
+    });
     expect(chrome.screen.x - chrome.body.x).toBe(25);
     expect(chrome.screen.y - chrome.body.y).toBe(14);
     const inner = chrome.displayVariants?.[3];
@@ -63,13 +90,22 @@ describe("DeviceKit chrome helpers", () => {
     // phone14's button PDFs carry /Rotate 270; their rendered dimensions
     // must follow the declared left/top anchors rather than the raw MediaBox.
     expect(inner?.buttons.find((button) => button.name === "volume-up")?.frame).toEqual({
-      x: 7, y: 124, width: 16, height: 63,
+      x: 7,
+      y: 124,
+      width: 16,
+      height: 63,
     });
     expect(inner?.buttons.find((button) => button.name === "power")?.frame).toEqual({
-      x: 206, y: 6, width: 107, height: 16,
+      x: 206,
+      y: 6,
+      width: 107,
+      height: 16,
     });
     expect(chrome.buttons.find((button) => button.name === "volume-up")?.frame).toEqual({
-      x: 325, y: 5, width: 66, height: 16,
+      x: 325,
+      y: 5,
+      width: 66,
+      height: 16,
     });
     expect(() => JSON.stringify(chrome)).not.toThrow();
   });
@@ -113,7 +149,9 @@ describe("DeviceKit chrome helpers", () => {
         }
       }
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   });
 
@@ -127,15 +165,25 @@ describe("DeviceKit chrome helpers", () => {
   for (const rotation of [90, 270, -90, 450]) {
     test(`honors the PDF page rotation of ${rotation} degrees`, () => {
       expect(parsePdfPageSize(`/MediaBox [0 0 63 16] /Rotate ${rotation}`)).toEqual({
-        width: 16, height: 63,
+        width: 16,
+        height: 63,
       });
     });
   }
 
   test("keeps dimensions for a half-turn and uses the latest incremental rotation", () => {
-    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 180")).toEqual({ width: 63, height: 16 });
-    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 0\n%%EOF\n/Rotate 270")).toEqual({ width: 16, height: 63 });
-    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 270\n%%EOF\n/Rotate 0")).toEqual({ width: 63, height: 16 });
+    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 180")).toEqual({
+      width: 63,
+      height: 16,
+    });
+    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 0\n%%EOF\n/Rotate 270")).toEqual({
+      width: 16,
+      height: 63,
+    });
+    expect(parsePdfPageSize("/MediaBox [0 0 63 16] /Rotate 270\n%%EOF\n/Rotate 0")).toEqual({
+      width: 63,
+      height: 16,
+    });
   });
 
   test("prefers explicit main screen plist dimensions when present", () => {
@@ -170,7 +218,12 @@ describe("DeviceKit chrome helpers", () => {
   });
 
   test("resolves Device Hub-style placeholder assets from CoreTypes metadata", () => {
-    if (!fs.existsSync("/System/Library/CoreServices/CoreTypes.bundle/Contents/Library/MobileDevices.bundle")) return;
+    if (
+      !fs.existsSync(
+        "/System/Library/CoreServices/CoreTypes.bundle/Contents/Library/MobileDevices.bundle",
+      )
+    )
+      return;
 
     // The CoreTypes icon set ships with the host SDK, so older runner images
     // (e.g. GitHub's macos-latest) may not carry every current device's asset.

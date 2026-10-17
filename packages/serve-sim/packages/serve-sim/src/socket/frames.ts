@@ -25,7 +25,10 @@ type ParsedWebSocketFrame = {
   consumed: number;
 };
 
-export function parseWebSocketFrame(buffer: Buffer, maxPayloadBytes = Number.MAX_SAFE_INTEGER): ParsedWebSocketFrame | null {
+export function parseWebSocketFrame(
+  buffer: Buffer,
+  maxPayloadBytes = Number.MAX_SAFE_INTEGER,
+): ParsedWebSocketFrame | null {
   if (buffer.length < 2) return null;
   const opcode = buffer[0]! & 0x0f;
   const masked = (buffer[1]! & 0x80) !== 0;
@@ -58,7 +61,11 @@ export function parseWebSocketFrame(buffer: Buffer, maxPayloadBytes = Number.MAX
   return { opcode, payload, consumed: offset + length };
 }
 
-export function sendBrowserFrame(socket: Socket, opcode: number, payload: Buffer<ArrayBufferLike> = Buffer.alloc(0)): void {
+export function sendBrowserFrame(
+  socket: Socket,
+  opcode: number,
+  payload: Buffer<ArrayBufferLike> = Buffer.alloc(0),
+): void {
   if (socket.destroyed || !socket.writable) return;
   socket.write(websocketFrame(opcode, payload));
 }

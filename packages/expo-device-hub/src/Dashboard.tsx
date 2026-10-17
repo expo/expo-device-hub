@@ -1,14 +1,14 @@
-'use dom';
+"use dom";
 
-import '@expo/hub-components/theme.css';
-import '../global.css';
+import "@expo/hub-components/theme.css";
+import "../global.css";
 import {
   DeviceScreen,
   displayScreen,
   useActiveDeviceClient,
   type DeviceHttpCodec,
   type DeviceStreamMode,
-} from '@expo/hub-client';
+} from "@expo/hub-client";
 import {
   EmptyState,
   LogSidebar,
@@ -23,38 +23,38 @@ import {
   type AddDeviceTarget,
   type Device,
   type DeviceFrameAssets,
-} from '@expo/hub-components';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+} from "@expo/hub-components";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
-import pixel9DeviceFrame from '../assets/device-frames/pixel_9_obsidian.png';
-import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
-import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
-import { dashboardHideBootDevice } from './boot-device';
-import { basePath } from './dashboard/basePath';
-import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
-import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
+import pixelDeviceFrame from "../assets/device-frames/google-pixel-10-pro.png";
+import pixel9DeviceFrame from "../assets/device-frames/pixel_9_obsidian.png";
+import iphoneDeviceFrame from "../assets/device-frames/iphone-17-pro-silver.png";
+import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
+import { dashboardHideBootDevice } from "./boot-device";
+import { basePath } from "./dashboard/basePath";
+import { bootDevice, createDevice, removeDevice, shutdownDevice } from "./dashboard/deviceActions";
+import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardStore";
 import {
   useHideUnsupportedDevices,
   visibleDevices,
   visibleNewDeviceOptions,
-} from './dashboard/deviceVisibility';
-import { useColorScheme } from './dashboard/useColorScheme';
-import { useDeviceLists } from './dashboard/useDevices';
+} from "./dashboard/deviceVisibility";
+import { useColorScheme } from "./dashboard/useColorScheme";
+import { useDeviceLists } from "./dashboard/useDevices";
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleInset,
-} from './dashboard/FloatingSidebarToggle';
-import { useArgentInteractions } from './dashboard/useArgentInteraction';
-import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
-import { SidebarOverlay } from './dashboard/SidebarOverlay';
-import { useSidebarLayout } from './dashboard/useSidebarLayout';
+} from "./dashboard/FloatingSidebarToggle";
+import { useArgentInteractions } from "./dashboard/useArgentInteraction";
+import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
+import { SidebarOverlay } from "./dashboard/SidebarOverlay";
+import { useSidebarLayout } from "./dashboard/useSidebarLayout";
 import {
   androidStreamModeAvailability,
   browserStreamModeAvailability,
-} from './dashboard/streamMode';
-import { dashboardPlatformFilter } from './platform-filter';
+} from "./dashboard/streamMode";
+import { dashboardPlatformFilter } from "./platform-filter";
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -70,21 +70,21 @@ const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
 
 const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
-  'android:pixel-9': {
+  "android:pixel-9": {
     src: String(pixel9DeviceFrame),
     width: 1935,
     height: 4096,
     screen: { x: 95, y: 94, width: 1737, height: 3907 },
     screenRadius: 236,
   },
-  'android:pixel-10-pro': {
+  "android:pixel-10-pro": {
     src: String(pixelDeviceFrame),
     width: 1250,
     height: 2631,
     screen: { x: 50, y: 48, width: 1138, height: 2532 },
     screenRadius: 150,
   },
-  'ios:iphone-17-pro': {
+  "ios:iphone-17-pro": {
     src: String(iphoneDeviceFrame),
     width: 2620,
     height: 5420,
@@ -99,7 +99,7 @@ const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
  * sidebar (`otherWidth` is 0 when that sidebar is collapsed/overlaid).
  */
 function clampSidebarWidth(width: number, otherWidth: number): number {
-  const viewport = typeof window === 'undefined' ? Infinity : window.innerWidth;
+  const viewport = typeof window === "undefined" ? Infinity : window.innerWidth;
   const roomCap = viewport - otherWidth - MIN_STREAM_WIDTH;
   const upper = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, roomCap));
   return Math.min(Math.max(width, MIN_SIDEBAR_WIDTH), upper);
@@ -115,7 +115,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  * Sidebars dock whenever their measured widths leave enough room for the stream
  * and become toggleable overlays otherwise.
  */
-export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
+export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
   const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
@@ -125,23 +125,18 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const hideUnsupportedDevices = useHideUnsupportedDevices();
   const selectedId = useDashboardStore((state) => state.selectedDeviceId);
   const selectDevice = useDashboardStore((state) => state.selectDevice);
-  const reconcileSelectedDevice = useDashboardStore(
-    (state) => state.reconcileSelectedDevice
-  );
+  const reconcileSelectedDevice = useDashboardStore((state) => state.reconcileSelectedDevice);
   // Devices started through the picker are retained until host discovery catches up.
   const added = useDashboardStore((state) => state.addedDevices);
   const trackAddedDevice = useDashboardStore((state) => state.trackAddedDevice);
   const dismissDevice = useDashboardStore((state) => state.dismissDevice);
-  const streamModeAvailability = useMemo<StreamModeAvailability>(
-    browserStreamModeAvailability,
-    []
-  );
+  const streamModeAvailability = useMemo<StreamModeAvailability>(browserStreamModeAvailability, []);
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
   const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
   const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
-    streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
+    streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
   );
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
@@ -164,59 +159,59 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // id and split back into the two sections by platform.
   const simulators = useMemo(
     () =>
-      platform === 'android'
+      platform === "android"
         ? []
         : mergeById(
             booted.simulators,
-            added.filter((device) => device.platform === 'ios')
+            added.filter((device) => device.platform === "ios"),
           ),
-    [booted.simulators, added, platform]
+    [booted.simulators, added, platform],
   );
   const emulators = useMemo(
     () =>
-      platform === 'ios'
+      platform === "ios"
         ? []
         : mergeById(
             booted.emulators,
-            added.filter((device) => device.platform === 'android')
+            added.filter((device) => device.platform === "android"),
           ),
-    [booted.emulators, added, platform]
+    [booted.emulators, added, platform],
   );
   // The browser flag affects only shut-down recents and creation choices. Every
   // running device remains visible in the sidebar, including untested models.
   const recentSimulators = useMemo(
     () => visibleDevices(recent.simulators, hideUnsupportedDevices),
-    [recent.simulators, hideUnsupportedDevices]
+    [recent.simulators, hideUnsupportedDevices],
   );
   const recentEmulators = useMemo(
     () => visibleDevices(recent.emulators, hideUnsupportedDevices),
-    [recent.emulators, hideUnsupportedDevices]
+    [recent.emulators, hideUnsupportedDevices],
   );
   const simulatorOptions = useMemo(
     () => visibleNewDeviceOptions(newDeviceOptions.ios, hideUnsupportedDevices),
-    [newDeviceOptions.ios, hideUnsupportedDevices]
+    [newDeviceOptions.ios, hideUnsupportedDevices],
   );
   const emulatorOptions = useMemo(
     () => visibleNewDeviceOptions(newDeviceOptions.android, hideUnsupportedDevices),
-    [newDeviceOptions.android, hideUnsupportedDevices]
+    [newDeviceOptions.android, hideUnsupportedDevices],
   );
 
   // Create/boot the chosen target on the host. The modal awaits this result, so
   // it stays open during slow Android boots and can show failures in context.
   async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
     const result =
-      target.kind === 'new'
+      target.kind === "new"
         ? await createDevice(target.device)
         : target.device.booted
           ? { id: target.device.id, error: null }
           : await bootDevice(target.device);
 
     if (!result.id) {
-      return { ok: false, error: result.error ?? 'The device did not come online.' };
+      return { ok: false, error: result.error ?? "The device did not come online." };
     }
 
     const device: Device =
-      target.kind === 'new'
+      target.kind === "new"
         ? {
             id: result.id,
             name: target.device.name,
@@ -231,7 +226,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
 
     const replacedIds =
-      target.kind === 'new'
+      target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
     trackAddedDevice(device, replacedIds);
@@ -256,8 +251,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // the dark `--expo-theme-*` variables.
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('dark-theme', scheme === 'dark');
-    return () => root.classList.remove('dark-theme');
+    root.classList.toggle("dark-theme", scheme === "dark");
+    return () => root.classList.remove("dark-theme");
   }, [scheme]);
 
   // Keep a valid selection — default to the first device once the list loads.
@@ -272,10 +267,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const devices = [...simulators, ...emulators];
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
   const selectedStreamModeAvailability =
-    selected?.platform === 'android'
+    selected?.platform === "android"
       ? androidStreamModeAvailability(
           streamModeAvailability,
-          typeof window.MediaSource !== 'undefined'
+          typeof window.MediaSource !== "undefined",
         )
       : streamModeAvailability;
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
@@ -286,42 +281,44 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    connectionStatus === 'connected' && selected
+    connectionStatus === "connected" && selected
       ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
-    basePath()
+    basePath(),
   );
   const agentInteractions = useArgentInteractions();
-  const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
+  const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
   const agentDeviceIds = Object.keys(agentInteractions);
 
-  const connectionBlocked = connectionStatus !== 'connected';
+  const connectionBlocked = connectionStatus !== "connected";
 
   return (
     <div
       ref={sidebars.containerRef}
       aria-hidden={connectionBlocked || undefined}
-      className={scheme === 'dark' ? 'dark-theme' : undefined}
+      className={scheme === "dark" ? "dark-theme" : undefined}
       inert={connectionBlocked || undefined}
       style={{
-        display: 'flex',
-        position: 'relative',
+        display: "flex",
+        position: "relative",
         flex: 1,
-        width: '100%',
+        width: "100%",
         minWidth: 0,
-        height: '100vh',
-        boxSizing: 'border-box',
+        height: "100vh",
+        boxSizing: "border-box",
         backgroundColor: bg.default,
         color: text.default,
-        fontFamily: 'var(--expo-font-sans)',
-        overflow: 'hidden',
-      }}>
+        fontFamily: "var(--expo-font-sans)",
+        overflow: "hidden",
+      }}
+    >
       <AnimatedDockedSidebar
         side="left"
         width={sidebarWidth}
         open={sidebars.leftDocked}
         sidebarOpen={sidebars.leftOpen}
-        resizing={resizing}>
+        resizing={resizing}
+      >
         <Sidebar
           simulators={simulators}
           emulators={emulators}
@@ -349,11 +346,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
-              'left',
+              "left",
               clampSidebarWidth(
                 sidebarWidthStart.current + delta,
-                sidebars.rightDocked ? logsWidth : 0
-              )
+                sidebars.rightDocked ? logsWidth : 0,
+              ),
             )
           }
         />
@@ -388,11 +385,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
-              'right',
+              "right",
               clampSidebarWidth(
                 logsWidthStart.current + delta,
-                sidebars.leftDocked ? sidebarWidth : 0
-              )
+                sidebars.leftDocked ? sidebarWidth : 0,
+              ),
             )
           }
         />
@@ -402,7 +399,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         width={logsWidth}
         open={sidebars.rightDocked}
         sidebarOpen={sidebars.rightOpen}
-        resizing={resizing}>
+        resizing={resizing}
+      >
         <LogSidebar
           device={selected}
           client={client}
@@ -424,8 +422,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="left"
         open={sidebars.leftOverlay}
         sidebarOpen={sidebars.leftOpen}
-        topmost={sidebars.lastOpened === 'left' || !sidebars.rightOverlay}
-        onDismiss={sidebars.closeLeft}>
+        topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
+        onDismiss={sidebars.closeLeft}
+      >
         <Sidebar
           simulators={simulators}
           emulators={emulators}
@@ -447,8 +446,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="right"
         open={sidebars.rightOverlay}
         sidebarOpen={sidebars.rightOpen}
-        topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
-        onDismiss={sidebars.closeRight}>
+        topmost={sidebars.lastOpened === "right" || !sidebars.leftOverlay}
+        onDismiss={sidebars.closeRight}
+      >
         <LogSidebar
           device={selected}
           client={client}
@@ -472,7 +472,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           inset={floatingSidebarToggleInset(
             sidebars.rightOverlay,
             sidebars.containerWidth,
-            logsWidth
+            logsWidth,
           )}
           onClick={sidebars.openLeft}
         />
@@ -484,7 +484,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           inset={floatingSidebarToggleInset(
             sidebars.leftOverlay,
             sidebars.containerWidth,
-            sidebarWidth
+            sidebarWidth,
           )}
           onClick={sidebars.openRight}
         />
@@ -495,7 +495,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             status={connectionStatus}
             onReload={() => window.location.reload()}
           />,
-          document.body
+          document.body,
         )}
     </div>
   );

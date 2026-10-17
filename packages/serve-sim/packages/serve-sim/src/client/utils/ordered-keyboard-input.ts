@@ -56,8 +56,12 @@ export function createOrderedKeyboardInput({
   const isCurrentKey = (input: { device: string; connection: object | null }) =>
     input.device === getDevice() && input.connection === getKeyConnection();
   const sendEvent = (event: KeyboardInputEvent) => {
-    try { sendKey(event); }
-    catch (error) { cancel(); throw error; }
+    try {
+      sendKey(event);
+    } catch (error) {
+      cancel();
+      throw error;
+    }
   };
   const pacedKeys = createPacedKeySender((event) => {
     if (active?.kind === "keys" && isCurrentKey(active)) sendEvent(event);
@@ -90,9 +94,13 @@ export function createOrderedKeyboardInput({
         if (!input.connection || !isCurrent(input)) {
           input.reject(disconnected());
         } else {
-          input.timeout = setTimeout(() => finishInput(input, () => {
-            input.reject(new Error("Simulator clipboard action timed out"));
-          }), pasteTimeoutMs);
+          input.timeout = setTimeout(
+            () =>
+              finishInput(input, () => {
+                input.reject(new Error("Simulator clipboard action timed out"));
+              }),
+            pasteTimeoutMs,
+          );
           void (async () => {
             try {
               const result = await input.run(() => active === input && isCurrent(input));
@@ -101,7 +109,9 @@ export function createOrderedKeyboardInput({
                 else input.reject(disconnected());
               });
             } catch (error) {
-              finishInput(input, () => input.reject(error instanceof Error ? error : new Error(String(error))));
+              finishInput(input, () =>
+                input.reject(error instanceof Error ? error : new Error(String(error))),
+              );
             }
           })();
           return;
@@ -115,9 +125,13 @@ export function createOrderedKeyboardInput({
           if (!message) {
             input.reject(new Error("This text is too large to paste into the simulator"));
           } else {
-            input.timeout = setTimeout(() => finishInput(input, () => {
-              input.reject(new Error("Simulator paste timed out"));
-            }), pasteTimeoutMs);
+            input.timeout = setTimeout(
+              () =>
+                finishInput(input, () => {
+                  input.reject(new Error("Simulator paste timed out"));
+                }),
+              pasteTimeoutMs,
+            );
             if (sendPaste(connection, message)) return;
             clearTimeout(input.timeout);
             input.reject(disconnected());
@@ -148,37 +162,73 @@ export function createOrderedKeyboardInput({
 
   return {
     send(event: KeyboardInputEvent): void {
-      if (!disposed) enqueue({ kind: "key", event, device: getDevice(), connection: getKeyConnection() });
+      if (!disposed)
+        enqueue({ kind: "key", event, device: getDevice(), connection: getKeyConnection() });
     },
     enqueue(events: readonly KeyEvent[]): void {
-      if (!disposed && events.length > 0) enqueue({
-        kind: "keys", events: [...events], device: getDevice(), connection: getKeyConnection(),
-      });
+      if (!disposed && events.length > 0)
+        enqueue({
+          kind: "keys",
+          events: [...events],
+          device: getDevice(),
+          connection: getKeyConnection(),
+        });
     },
     paste(text?: string): Promise<PasteResult> {
       if (disposed) return Promise.reject(disconnected());
-      return new Promise((resolve, reject) => enqueue({
-        kind: "paste", requestId: ++nextRequestId,
-        device: getDevice(), connection: getConnection(), text, resolve, reject,
-      }));
+      return new Promise((resolve, reject) =>
+        enqueue({
+          kind: "paste",
+          requestId: ++nextRequestId,
+          device: getDevice(),
+          connection: getConnection(),
+          text,
+          resolve,
+          reject,
+        }),
+      );
     },
     run<T>(run: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
       if (disposed) return Promise.reject(disconnected());
-      return new Promise((resolve, reject) => enqueue({
-        kind: "action", run, device: getDevice(), connection: getConnection(),
-        resolve: (result) => resolve(result as T), reject,
-      }));
+      return new Promise((resolve, reject) =>
+        enqueue({
+          kind: "action",
+          run,
+          device: getDevice(),
+          connection: getConnection(),
+          resolve: (result) => resolve(result as T),
+          reject,
+        }),
+      );
     },
     receive(connection: object | null, value: unknown): boolean {
-      if (active?.kind !== "paste" || active.connection !== connection || !value || typeof value !== "object") return false;
-      const reply = value as { requestId?: unknown; ok?: unknown; error?: unknown; cleanupWarning?: unknown };
+      if (
+        active?.kind !== "paste" ||
+        active.connection !== connection ||
+        !value ||
+        typeof value !== "object"
+      )
+        return false;
+      const reply = value as {
+        requestId?: unknown;
+        ok?: unknown;
+        error?: unknown;
+        cleanupWarning?: unknown;
+      };
       if (reply.requestId !== active.requestId || typeof reply.ok !== "boolean") return false;
       const input = active;
       finishInput(input, () => {
-        if (reply.ok) input.resolve({
-          cleanupWarning: typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined,
-        });
-        else input.reject(new Error(typeof reply.error === "string" ? reply.error : "Could not paste into the simulator"));
+        if (reply.ok)
+          input.resolve({
+            cleanupWarning:
+              typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined,
+          });
+        else
+          input.reject(
+            new Error(
+              typeof reply.error === "string" ? reply.error : "Could not paste into the simulator",
+            ),
+          );
       });
       return true;
     },

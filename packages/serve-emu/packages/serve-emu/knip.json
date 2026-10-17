@@ -7,11 +7,7 @@
     "src/ui/lib/stream-worker.ts",
     "tests/**/*.test.ts"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.ts",
-    "tests/**/*.test.ts"
-  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "tests/**/*.test.ts"],
   "includeEntryExports": true,
   "ignoreBinaries": ["adb", "tsc"]
 }

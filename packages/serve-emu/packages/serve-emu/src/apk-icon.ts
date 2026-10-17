@@ -173,7 +173,13 @@ export async function findAapt2({
     const versions = (await list(buildTools).catch(() => [])).sort(compareVersions);
     for (const version of versions.reverse()) {
       const candidate = join(buildTools, version, executable);
-      if (await check(candidate).then(() => true, () => false)) return candidate;
+      if (
+        await check(candidate).then(
+          () => true,
+          () => false,
+        )
+      )
+        return candidate;
     }
   }
   const probe = await runExec(executable, ["version"], {

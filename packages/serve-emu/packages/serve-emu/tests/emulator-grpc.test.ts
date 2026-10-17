@@ -186,9 +186,7 @@ describe("emulator gRPC discovery", () => {
 
   test("parses active and newly started endpoint output", () => {
     expect(parseEmulatorGrpcPort('OK: { "port": "8554" }')).toBe(8554);
-    expect(
-      parseEmulatorGrpcPort("OK: gRPC endpoint available at port 43127"),
-    ).toBe(43127);
+    expect(parseEmulatorGrpcPort("OK: gRPC endpoint available at port 43127")).toBe(43127);
   });
 
   test("rejects missing and invalid ports", () => {
@@ -232,30 +230,25 @@ describe("emulator gRPC discovery", () => {
       timedOut: false,
       error: null,
     });
-    const endpoint = await ensureEmulatorGrpcEndpoint(
-      "emulator-5554",
-      undefined,
-      {
-        discoveryDirs: () => ["/run"],
-        readDirectory: () => (active ? ["pid_11.ini"] : []),
-        processIsAlive: () => true,
-        readText: () =>
-          "port.serial=5554\ngrpc.port=8554\ngrpc.token=secret\navd.name=Pixel_9",
-        modifiedMs: () => 1,
-        portIsReachable: async (port) => active && port === 8554,
-        pickAvailablePort: async () => 8554,
-        runAdb: async () => {
-          attempts++;
-          if (attempts === 1) {
-            return { ...success(), status: 1, stdout: "KO: busy" };
-          }
-          active = true;
-          return success();
-        },
-        wait: async () => {},
-        warn: (message) => warnings.push(message),
+    const endpoint = await ensureEmulatorGrpcEndpoint("emulator-5554", undefined, {
+      discoveryDirs: () => ["/run"],
+      readDirectory: () => (active ? ["pid_11.ini"] : []),
+      processIsAlive: () => true,
+      readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=secret\navd.name=Pixel_9",
+      modifiedMs: () => 1,
+      portIsReachable: async (port) => active && port === 8554,
+      pickAvailablePort: async () => 8554,
+      runAdb: async () => {
+        attempts++;
+        if (attempts === 1) {
+          return { ...success(), status: 1, stdout: "KO: busy" };
+        }
+        active = true;
+        return success();
       },
-    );
+      wait: async () => {},
+      warn: (message) => warnings.push(message),
+    });
 
     expect(attempts).toBe(2);
     expect(endpoint).toEqual({
@@ -296,8 +289,13 @@ describe("gRPC receive work scheduling", () => {
     const scheduler = new GrpcReadScheduler({
       stream: { pause() {}, resume() {} },
       batchBytes: 8,
-      consume(chunk) { chunks.push(chunk.length); parser.push(chunk); },
-      onError(error) { throw error; },
+      consume(chunk) {
+        chunks.push(chunk.length);
+        parser.push(chunk);
+      },
+      onError(error) {
+        throw error;
+      },
     });
     scheduler.push(Buffer.concat(["one", "two", "end"].map((s) => grpcFrame(Buffer.from(s)))));
     expect(messages).toEqual(["one"]);
@@ -313,10 +311,21 @@ describe("gRPC receive work scheduling", () => {
     let paused = false;
     let bytes = 0;
     const scheduler = new GrpcReadScheduler({
-      stream: { pause() { paused = true; }, resume() { paused = false; } },
+      stream: {
+        pause() {
+          paused = true;
+        },
+        resume() {
+          paused = false;
+        },
+      },
       batchBytes: 4,
-      consume(chunk) { bytes += chunk.length; },
-      onError(error) { throw error; },
+      consume(chunk) {
+        bytes += chunk.length;
+      },
+      onError(error) {
+        throw error;
+      },
     });
     scheduler.push(Buffer.alloc(2));
     expect(paused).toBe(false);
@@ -333,9 +342,15 @@ describe("gRPC receive work scheduling", () => {
       let bytes = 0;
       const errors: unknown[] = [];
       const scheduler = new GrpcReadScheduler({
-        stream: { pause() {}, resume() {} }, batchBytes: 4,
-        consume(chunk) { bytes += chunk.length; if (fails) throw new Error("bad frame"); },
-        onError(error) { errors.push(error); },
+        stream: { pause() {}, resume() {} },
+        batchBytes: 4,
+        consume(chunk) {
+          bytes += chunk.length;
+          if (fails) throw new Error("bad frame");
+        },
+        onError(error) {
+          errors.push(error);
+        },
       });
       scheduler.push(Buffer.alloc(20));
       scheduler.close();
@@ -370,12 +385,9 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       });
       stream.end(grpcFrame(imageBody));
     });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
-    );
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
-    if (!address || typeof address === "string")
-      throw new Error("missing test port");
+    if (!address || typeof address === "string") throw new Error("missing test port");
     const client = new EmulatorGrpcClient({
       port: address.port,
       token: "discovered-token",
@@ -411,12 +423,9 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       });
       stream.write(grpcFrame(imageBody));
     });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
-    );
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
-    if (!address || typeof address === "string")
-      throw new Error("missing test port");
+    if (!address || typeof address === "string") throw new Error("missing test port");
     const client = new EmulatorGrpcClient(
       { port: address.port, token: null, avdName: null },
       { unaryTimeoutMs: 25, streamInactivityTimeoutMs: 25 },
@@ -431,9 +440,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
           new AbortController().signal,
           { maxFps: 60 },
         ),
-      ).rejects.toThrow(
-        "no decoded message received for 25ms; health probe failed",
-      );
+      ).rejects.toThrow("no decoded message received for 25ms; health probe failed");
       expect(images).toHaveLength(1);
     } finally {
       client.close();
@@ -461,9 +468,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       stream.respond({
         ":status": 200,
         "content-type": "application/grpc",
-        ...(headers[":path"]?.toString().endsWith("/getScreenshot")
-          ? { "grpc-status": "0" }
-          : {}),
+        ...(headers[":path"]?.toString().endsWith("/getScreenshot") ? { "grpc-status": "0" } : {}),
       });
       if (headers[":path"]?.toString().endsWith("/getScreenshot")) {
         stream.end(grpcFrame(imageBody));
@@ -473,8 +478,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
-    if (!address || typeof address === "string")
-      throw new Error("missing test port");
+    if (!address || typeof address === "string") throw new Error("missing test port");
     const client = new EmulatorGrpcClient(
       { port: address.port, token: null, avdName: null },
       { unaryTimeoutMs: 100, streamInactivityTimeoutMs: 25 },
@@ -515,18 +519,16 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       );
     }
   });
-
-
 });
 
 describe("emulator image protobuf", () => {
   test("encodes RGB888 dimensions without a transport and preserves native-size zeros", () => {
-    expect(
-      encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 720, height: 720 }),
-    ).toEqual(Buffer.from([0x08, 0x02, 0x18, 0xd0, 0x05, 0x20, 0xd0, 0x05]));
-    expect(
-      encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 0, height: 0 }),
-    ).toEqual(Buffer.from([0x08, 0x02]));
+    expect(encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 720, height: 720 })).toEqual(
+      Buffer.from([0x08, 0x02, 0x18, 0xd0, 0x05, 0x20, 0xd0, 0x05]),
+    );
+    expect(encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 0, height: 0 })).toEqual(
+      Buffer.from([0x08, 0x02]),
+    );
   });
 
   test("encodes ImageFormat.transport field 6 with an MMAP file handle", () => {
@@ -605,12 +607,8 @@ describe("emulator image protobuf", () => {
   });
 
   test("rejects overlong varints", () => {
-    const overlong = Buffer.from([
-      0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    ]);
-    expect(() => decodeEmulatorImage(overlong)).toThrow(
-      "protobuf varint exceeds 10 bytes",
-    );
+    const overlong = Buffer.from([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]);
+    expect(() => decodeEmulatorImage(overlong)).toThrow("protobuf varint exceeds 10 bytes");
   });
 });
 
@@ -629,18 +627,15 @@ describe("emulator keyboard protobuf", () => {
 
   test("defaults key requests to a complete keypress", () => {
     expect(encodeKeyboardEvent({ key: "GoBack" })).toEqual(
-      Buffer.concat([
-        Buffer.from([0x10, 0x02, 0x22, 0x06]),
-        Buffer.from("GoBack"),
-      ]),
+      Buffer.concat([Buffer.from([0x10, 0x02, 0x22, 0x06]), Buffer.from("GoBack")]),
     );
   });
 });
 
 describe("emulator touch protobuf", () => {
   test("keeps an all-zero touch as a present empty sub-message", () => {
-    expect(
-      encodeTouchEvent([{ x: 0, y: 0, identifier: 0, pressure: 0 }]),
-    ).toEqual(Buffer.from([0x0a, 0x00]));
+    expect(encodeTouchEvent([{ x: 0, y: 0, identifier: 0, pressure: 0 }])).toEqual(
+      Buffer.from([0x0a, 0x00]),
+    );
   });
 });

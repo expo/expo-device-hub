@@ -10,21 +10,34 @@ function harness(paths = ["/0.ips", "/1.ips", "/2.ips"]) {
   for (const path of paths) store.record(report, path);
   const record = store.list()[0]!;
   const summary = summarizeCrash(record);
-  const requests: { index: number | undefined; key: number | undefined; signal: AbortSignal; reply: ReturnType<typeof Promise.withResolvers<CrashDetailResponse>> }[] = [];
-  const controller = createCrashDetailController((_id, index, signal, key) => {
-    const reply = Promise.withResolvers<CrashDetailResponse>();
-    requests.push({ index, key, signal, reply });
-    return reply.promise;
-  }, () => {});
+  const requests: {
+    index: number | undefined;
+    key: number | undefined;
+    signal: AbortSignal;
+    reply: ReturnType<typeof Promise.withResolvers<CrashDetailResponse>>;
+  }[] = [];
+  const controller = createCrashDetailController(
+    (_id, index, signal, key) => {
+      const reply = Promise.withResolvers<CrashDetailResponse>();
+      requests.push({ index, key, signal, reply });
+      return reply.promise;
+    },
+    () => {},
+  );
   controller.sync([summary]);
   const response = (index: number): CrashDetailResponse => ({
-    record: summary, occurrence: { ...record.occurrences[index]!, index, total: 3 },
-    report: "report", reportError: null,
+    record: summary,
+    occurrence: { ...record.occurrences[index]!, index, total: 3 },
+    report: "report",
+    reportError: null,
   });
   return { controller, requests, response, summary, store, report };
 }
 
-const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+const flush = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
 
 test("rapid paging aborts older requests and ignores their late replies", async () => {
   const { controller, requests, response } = harness();
@@ -63,8 +76,14 @@ test("retention remaps the displayed occurrence and paging cursor together", asy
   const first = controller.load("A");
   requests[0]!.reply.resolve(response(2));
   await first;
-  controller.sync([{ ...summary, count: 4, occurrenceCount: 2, occurrenceTimes: summary.occurrenceTimes.slice(1) }]);
-  expect(controller.snapshot().detail?.occurrence).toMatchObject({ rawPath: "/2.ips", index: 1, total: 2 });
+  controller.sync([
+    { ...summary, count: 4, occurrenceCount: 2, occurrenceTimes: summary.occurrenceTimes.slice(1) },
+  ]);
+  expect(controller.snapshot().detail?.occurrence).toMatchObject({
+    rawPath: "/2.ips",
+    index: 1,
+    total: 2,
+  });
   expect(controller.snapshot().pendingIndex).toBe(1);
   expect(requests).toHaveLength(1);
   controller.dispose();
@@ -75,7 +94,12 @@ test("an aged-out occurrence reloads only once even if its replacement fails", a
   const first = controller.load("A", 0);
   requests[0]!.reply.resolve(response(0));
   await first;
-  const next = { ...summary, count: 4, occurrenceCount: 2, occurrenceTimes: summary.occurrenceTimes.slice(1) };
+  const next = {
+    ...summary,
+    count: 4,
+    occurrenceCount: 2,
+    occurrenceTimes: summary.occurrenceTimes.slice(1),
+  };
   controller.sync([next]);
   expect(requests[1]!.index).toBe(1);
   requests[1]!.reply.reject(new Error("offline"));
@@ -104,14 +128,20 @@ test("a detail newer than the list waits for the list instead of reloading", asy
   const record = store.list()[0]!;
   const newer = summarizeCrash(record);
   requests[0]!.reply.resolve({
-    record: newer, occurrence: { ...record.occurrences[3]!, index: 3, total: 4 },
-    report: "report", reportError: null,
+    record: newer,
+    occurrence: { ...record.occurrences[3]!, index: 3, total: 4 },
+    report: "report",
+    reportError: null,
   });
   await first;
   expect(requests).toHaveLength(1);
 
   controller.sync([newer]);
-  expect(controller.snapshot().detail?.occurrence).toMatchObject({ rawPath: "/3.ips", index: 3, total: 4 });
+  expect(controller.snapshot().detail?.occurrence).toMatchObject({
+    rawPath: "/3.ips",
+    index: 3,
+    total: 4,
+  });
   expect(requests).toHaveLength(1);
   controller.dispose();
 });
@@ -119,7 +149,10 @@ test("a detail newer than the list waits for the list instead of reloading", asy
 test("occurrences that share a report path keep their own place", async () => {
   const { controller, requests, response } = harness(["/same.ips", "/same.ips"]);
   const first = controller.load("A");
-  requests[0]!.reply.resolve({ ...response(1), occurrence: { ...response(1).occurrence, total: 2 } });
+  requests[0]!.reply.resolve({
+    ...response(1),
+    occurrence: { ...response(1).occurrence, total: 2 },
+  });
   await first;
   expect(controller.snapshot().detail?.occurrence.index).toBe(1);
 

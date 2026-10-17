@@ -47,9 +47,13 @@ const EXEC_TOKEN = randomBytes(32).toString("base64url");
 // proxies helper/DevTools sockets through the single port like production.
 // Local dev knob: STREAM_TRANSPORT=webrtc starts the session locked to WebRTC, the way
 // `serve-sim --transport webrtc` does, so the locked code paths are reachable here.
-const devStreamSettings = process.env.STREAM_TRANSPORT === "webrtc"
-  ? { transport: "webrtc" as const, codec: (process.env.WEBRTC_CODEC ?? "h264") as "h264" | "vp8" | "vp9" }
-  : undefined;
+const devStreamSettings =
+  process.env.STREAM_TRANSPORT === "webrtc"
+    ? {
+        transport: "webrtc" as const,
+        codec: (process.env.WEBRTC_CODEC ?? "h264") as "h264" | "vp8" | "vp9",
+      }
+    : undefined;
 const middleware = simMiddleware({
   basePath: "/",
   execToken: EXEC_TOKEN,
@@ -100,7 +104,9 @@ async function buildClient() {
     clientJs = (await result.outputs[0]!.text()).replace(/<\/script>/gi, "<\\/script>");
     clientError = "";
     const ms = (performance.now() - start).toFixed(0);
-    console.log(`\x1b[32m✓\x1b[0m Bundled client.tsx (${(clientJs.length / 1024).toFixed(0)} KB) in ${ms}ms`);
+    console.log(
+      `\x1b[32m✓\x1b[0m Bundled client.tsx (${(clientJs.length / 1024).toFixed(0)} KB) in ${ms}ms`,
+    );
   } else {
     clientError = result.logs.map((l) => String(l)).join("\n");
     console.error("\x1b[31m✗\x1b[0m Build failed:\n" + clientError);
@@ -109,9 +115,7 @@ async function buildClient() {
 }
 
 function cssCommentEscape(value: string): string {
-  return value
-    .replace(/\*\//g, "* /")
-    .replace(/</g, "\\3C ");
+  return value.replace(/\*\//g, "* /").replace(/</g, "\\3C ");
 }
 
 async function buildTailwindCss() {
@@ -125,7 +129,9 @@ async function buildTailwindCss() {
     if (result.success) {
       tailwindCss = await result.outputs[0]!.text();
       const ms = (performance.now() - start).toFixed(0);
-      console.log(`\x1b[32m✓\x1b[0m Bundled global.css (${(tailwindCss.length / 1024).toFixed(0)} KB) in ${ms}ms`);
+      console.log(
+        `\x1b[32m✓\x1b[0m Bundled global.css (${(tailwindCss.length / 1024).toFixed(0)} KB) in ${ms}ms`,
+      );
     } else {
       const err = result.logs.map((l) => String(l)).join("\n");
       console.error("\x1b[31m✗\x1b[0m Tailwind build failed:\n" + err);
@@ -190,8 +196,7 @@ function scheduleWatchedBuild() {
     buildTimer = null;
     const shouldBuildClient = pendingClientBuild;
     const contentChanged = tailwindContentChanged();
-    const shouldBuildTailwind =
-      pendingTailwindBuild || (pendingClientBuild && contentChanged);
+    const shouldBuildTailwind = pendingTailwindBuild || (pendingClientBuild && contentChanged);
     pendingClientBuild = false;
     pendingTailwindBuild = false;
     if (shouldBuildClient) void buildClient();
@@ -206,9 +211,7 @@ async function buildHtml(selectedDevice?: string | null): Promise<string> {
   // Even with no helper attached the page polls the host (list/boot devices)
   // and streams `/api/events` over the control socket, so it always needs the
   // basePath + exec token.
-  const config = state
-    ? devPreviewConfig(state)
-    : { basePath: "", execToken: EXEC_TOKEN };
+  const config = state ? devPreviewConfig(state) : { basePath: "", execToken: EXEC_TOKEN };
   const configScript = `<script>window.__SIM_PREVIEW__=${JSON.stringify(config)}</script>`;
 
   return `<!doctype html>

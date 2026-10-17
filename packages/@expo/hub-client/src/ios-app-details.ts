@@ -1,6 +1,6 @@
-import { parseAppIconResponse } from './android-app-icon';
-import { type HostActionResult, type RunHostAction } from './exec-ws';
-import { type ForegroundApp } from './types';
+import { parseAppIconResponse } from "./android-app-icon";
+import { type HostActionResult, type RunHostAction } from "./exec-ws";
+import { type ForegroundApp } from "./types";
 
 /**
  * Host-side app-bundle introspection for iOS simulators, ported from the
@@ -10,12 +10,12 @@ import { type ForegroundApp } from './types';
  * transport `setAppearance` and logs already use — never a shell command.
  */
 
-export type { HostActionResult as ExecResult, RunHostAction } from './exec-ws';
+export type { HostActionResult as ExecResult, RunHostAction } from "./exec-ws";
 
 /** The {@link ForegroundApp} fields resolvable from the installed app bundle. */
 export type IosAppDetails = Pick<
   ForegroundApp,
-  'label' | 'version' | 'build' | 'minOS' | 'executable' | 'appPath' | 'iconDataUrl'
+  "label" | "version" | "build" | "minOS" | "executable" | "appPath" | "iconDataUrl"
 >;
 
 /**
@@ -34,12 +34,12 @@ export async function fetchIosAppDetails(
   bundleId: string,
   { includeIcon = true }: { includeIcon?: boolean } = {},
 ): Promise<IosAppDetails | null> {
-  const ctn: HostActionResult = await run('app.container', { udid, bundleId });
+  const ctn: HostActionResult = await run("app.container", { udid, bundleId });
   if (ctn.exitCode !== 0) return null;
   const appPath = ctn.stdout.trim();
   if (!appPath) return null;
 
-  const plist = await run('app.infoPlist', { path: `${appPath}/Info.plist` });
+  const plist = await run("app.infoPlist", { path: `${appPath}/Info.plist` });
   let info: any = {};
   if (plist.exitCode === 0) {
     try {
@@ -51,10 +51,10 @@ export async function fetchIosAppDetails(
   // largest variant), with the legacy flat keys as fallbacks.
   let iconName: string | undefined;
   const primary =
-    info?.CFBundleIcons?.CFBundlePrimaryIcon ?? info?.['CFBundleIcons~ipad']?.CFBundlePrimaryIcon;
+    info?.CFBundleIcons?.CFBundlePrimaryIcon ?? info?.["CFBundleIcons~ipad"]?.CFBundlePrimaryIcon;
   const iconFiles: string[] | undefined = primary?.CFBundleIconFiles ?? info?.CFBundleIconFiles;
   if (iconFiles && iconFiles.length > 0) iconName = iconFiles[iconFiles.length - 1];
-  else if (typeof info?.CFBundleIconFile === 'string') iconName = info.CFBundleIconFile;
+  else if (typeof info?.CFBundleIconFile === "string") iconName = info.CFBundleIconFile;
 
   let iconDataUrl: string | undefined;
   if (includeIcon && iconName) {
@@ -66,12 +66,12 @@ export async function fetchIosAppDetails(
       `${iconName}60x60@3x.png`,
       `${iconName}60x60@2x.png`,
     ];
-    const find = await run('app.iconPath', { appPath, candidates });
+    const find = await run("app.iconPath", { appPath, candidates });
     const iconPath = find.stdout.trim();
     if (iconPath) {
-      const b64 = await run('file.readBase64', { path: iconPath });
+      const b64 = await run("file.readBase64", { path: iconPath });
       if (b64.exitCode === 0) {
-        iconDataUrl = `data:image/png;base64,${b64.stdout.replace(/\s+/g, '')}`;
+        iconDataUrl = `data:image/png;base64,${b64.stdout.replace(/\s+/g, "")}`;
       }
     }
   }
@@ -112,12 +112,12 @@ export async function fetchIosAppIcon(
   }: { fetchImpl?: FetchImpl; signal?: AbortSignal; retryDelaysMs?: readonly number[] } = {},
 ): Promise<string | null> {
   const url = new URL(appIconUrl);
-  url.searchParams.set('bundleId', bundleId);
+  url.searchParams.set("bundleId", bundleId);
   for (let attempt = 0; ; attempt++) {
     const canRetry = attempt < retryDelaysMs.length;
     let res: Response;
     try {
-      res = await fetchImpl(url.toString(), { cache: 'no-store', signal });
+      res = await fetchImpl(url.toString(), { cache: "no-store", signal });
     } catch (err) {
       if (signal?.aborted || !canRetry) throw err;
       await delay(retryDelaysMs[attempt]!, signal);
@@ -139,10 +139,10 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
       reject(signal!.reason);
     };
     const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
+      signal?.removeEventListener("abort", onAbort);
       resolve();
     }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
 

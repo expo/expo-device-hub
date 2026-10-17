@@ -7,10 +7,7 @@ import {
   parseFramePacket,
   writeFrameMetaHeader,
 } from "../src/shared/frame-meta.ts";
-import {
-  PROTOCOL_GOLDEN_HEX,
-  goldenBytes,
-} from "./fixtures/protocol-golden.ts";
+import { PROTOCOL_GOLDEN_HEX, goldenBytes } from "./fixtures/protocol-golden.ts";
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -36,9 +33,7 @@ function packetWithHeader(
 describe("frame-meta wire format", () => {
   test("parses the exact documented SEMU v1 header", () => {
     const payload = Uint8Array.from([0, 0, 0, 1, 0x65]);
-    const parsed = parseFramePacket(
-      withPayload(goldenBytes("semu-v1"), payload),
-    );
+    const parsed = parseFramePacket(withPayload(goldenBytes("semu-v1"), payload));
     expect(parsed).toEqual({
       data: payload,
       isKey: true,
@@ -78,7 +73,10 @@ describe("frame-meta wire format", () => {
   });
 
   test("v2 header round-trips delta frames", () => {
-    const packet = packetWithHeader({ isKey: false, pts: 42n, serverTsMs: 5 }, Uint8Array.from([9]));
+    const packet = packetWithHeader(
+      { isKey: false, pts: 42n, serverTsMs: 5 },
+      Uint8Array.from([9]),
+    );
     const parsed = parseFramePacket(packet);
     expect(parsed.isKey).toBe(false);
     expect(parsed.timestamp).toBe(42);
@@ -86,7 +84,10 @@ describe("frame-meta wire format", () => {
   });
 
   test("accepts ArrayBuffer input like a WebSocket binary message", () => {
-    const packet = packetWithHeader({ isKey: true, pts: 7n, serverTsMs: 1 }, Uint8Array.from([1, 2]));
+    const packet = packetWithHeader(
+      { isKey: true, pts: 7n, serverTsMs: 1 },
+      Uint8Array.from([1, 2]),
+    );
     const buffer = packet.buffer.slice(packet.byteOffset, packet.byteOffset + packet.byteLength);
     const parsed = parseFramePacket(buffer as ArrayBuffer);
     expect(parsed.isKey).toBe(true);
@@ -94,7 +95,10 @@ describe("frame-meta wire format", () => {
   });
 
   test("parses packets that sit at a non-zero offset in their buffer", () => {
-    const packet = packetWithHeader({ isKey: true, pts: 9n, serverTsMs: 1234.5 }, Uint8Array.from([1, 2, 3, 4]));
+    const packet = packetWithHeader(
+      { isKey: true, pts: 9n, serverTsMs: 1234.5 },
+      Uint8Array.from([1, 2, 3, 4]),
+    );
     const padded = new Uint8Array(packet.length + 5);
     padded.set(packet, 5);
     const parsed = parseFramePacket(padded.subarray(5));
@@ -104,7 +108,10 @@ describe("frame-meta wire format", () => {
   });
 
   test("pts beyond Number range maps timestamp to null", () => {
-    const packet = packetWithHeader({ isKey: false, pts: 1n << 60n, serverTsMs: 0 }, Uint8Array.from([1]));
+    const packet = packetWithHeader(
+      { isKey: false, pts: 1n << 60n, serverTsMs: 0 },
+      Uint8Array.from([1]),
+    );
     expect(parseFramePacket(packet).timestamp).toBeNull();
   });
 

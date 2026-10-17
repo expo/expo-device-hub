@@ -32,7 +32,9 @@ export function StreamStatsBody({
   action?: ReactNode;
 }) {
   return (
-    <div className={`flex flex-col gap-2 border-b border-white/10 pb-2 ${stale ? "opacity-50" : ""}`}>
+    <div
+      className={`flex flex-col gap-2 border-b border-white/10 pb-2 ${stale ? "opacity-50" : ""}`}
+    >
       <Graph
         label="Frame rate"
         value={fps(stats.fps)}
@@ -55,9 +57,9 @@ export function StreamStatsBody({
         <Cell label="Frame gap" value={frameGap(stats.frameGapMs, stats.pacingDeviationMs)} />
         <Cell
           label="Resolution"
-          value={stats.width === null || stats.height === null
-            ? DASH
-            : `${stats.width}x${stats.height}`}
+          value={
+            stats.width === null || stats.height === null ? DASH : `${stats.width}x${stats.height}`
+          }
         />
       </div>
 
@@ -135,7 +137,12 @@ function Diagnostics({
           <Cell label="Frames sent" value={compact(sender.framesSent)} />
           <Cell label="Loss" value={percent(sender.lossRatio)} />
           {sender.codec && <Cell label="Codec" value={sender.codec.toLowerCase()} />}
-          {encoder && <Cell label={encoder.probe ? "Encoder probe" : "Encoder"} value={encoderLabel(encoder)} />}
+          {encoder && (
+            <Cell
+              label={encoder.probe ? "Encoder probe" : "Encoder"}
+              value={encoderLabel(encoder)}
+            />
+          )}
           {downscale && <Cell label="Scaled" value={downscale} />}
         </Group>
       )}
@@ -165,55 +172,107 @@ const PER_FRAME = "Average per frame, this session";
 const PER_FRAME_WINDOW = "Average per frame, last second";
 const SESSION = "Since the session started";
 
-type Scope = typeof WINDOW | typeof NOW | typeof PER_FRAME | typeof PER_FRAME_WINDOW
+type Scope =
+  | typeof WINDOW
+  | typeof NOW
+  | typeof PER_FRAME
+  | typeof PER_FRAME_WINDOW
   | typeof SESSION;
 
 const HELP: Record<string, { meaning: string; scope: Scope }> = {
   "Frame rate": { meaning: "Frames the browser painted.", scope: WINDOW },
   Bitrate: { meaning: "Rate of video data arriving.", scope: WINDOW },
   "Frame gap": {
-    meaning: "Time between frames. The number after the plus-minus is how much that time varies, so a small one means smooth playback.",
+    meaning:
+      "Time between frames. The number after the plus-minus is how much that time varies, so a small one means smooth playback.",
     scope: WINDOW,
   },
-  Resolution: { meaning: "Size of the video the browser receives. Not the device screen.", scope: NOW },
-  RTT: { meaning: "Round trip time to the simulator. A high value delays your taps, not the picture.", scope: NOW },
+  Resolution: {
+    meaning: "Size of the video the browser receives. Not the device screen.",
+    scope: NOW,
+  },
+  RTT: {
+    meaning: "Round trip time to the simulator. A high value delays your taps, not the picture.",
+    scope: NOW,
+  },
   Jitter: { meaning: "Variation in packet arrival time.", scope: NOW },
-  "Jitter buffer": { meaning: "How long the browser holds packets before it decodes them.", scope: NOW },
+  "Jitter buffer": {
+    meaning: "How long the browser holds packets before it decodes them.",
+    scope: NOW,
+  },
   Decode: { meaning: "Time the browser spends decoding one frame.", scope: PER_FRAME_WINDOW },
   "ICE route": {
     meaning: "Direct is peer to peer. Via relay goes through a TURN server and adds latency.",
     scope: NOW,
   },
   "Encode FPS": { meaning: "Frames the encoder produced.", scope: WINDOW },
-  Target: { meaning: "Bitrate the encoder aims for. It lowers this when the network is slow.", scope: NOW },
-  "Pacer FPS": { meaning: "Frames the pacer handed to the encoder. The pacer is the stage between capture and the encoder that holds the send cadence.", scope: WINDOW },
-  Encode: { meaning: "Time the encoder spends on one frame.", scope: PER_FRAME },
-  "Frames sent": { meaning: "Frames the encoder put on the wire, repeats included.", scope: SESSION },
-  Loss: { meaning: "Packets lost on the way to the browser.", scope: SESSION },
-  Codec: { meaning: "Codec negotiated for this live sender.", scope: NOW },
-  Encoder: { meaning: "Encoder implementation and whether it is using hardware or the CPU.", scope: NOW },
-  "Encoder probe": {
-    meaning: "The H.264 encoder a test encode on this machine used, and whether it ran on hardware. The live encoder does not report itself, so this is what the machine offers, not this stream.",
+  Target: {
+    meaning: "Bitrate the encoder aims for. It lowers this when the network is slow.",
     scope: NOW,
   },
-  Scaled: { meaning: "Encoded long edge compared with the selected size, plus the limiting cause when known.", scope: NOW },
+  "Pacer FPS": {
+    meaning:
+      "Frames the pacer handed to the encoder. The pacer is the stage between capture and the encoder that holds the send cadence.",
+    scope: WINDOW,
+  },
+  Encode: { meaning: "Time the encoder spends on one frame.", scope: PER_FRAME },
+  "Frames sent": {
+    meaning: "Frames the encoder put on the wire, repeats included.",
+    scope: SESSION,
+  },
+  Loss: { meaning: "Packets lost on the way to the browser.", scope: SESSION },
+  Codec: { meaning: "Codec negotiated for this live sender.", scope: NOW },
+  Encoder: {
+    meaning: "Encoder implementation and whether it is using hardware or the CPU.",
+    scope: NOW,
+  },
+  "Encoder probe": {
+    meaning:
+      "The H.264 encoder a test encode on this machine used, and whether it ran on hardware. The live encoder does not report itself, so this is what the machine offers, not this stream.",
+    scope: NOW,
+  },
+  Scaled: {
+    meaning:
+      "Encoded long edge compared with the selected size, plus the limiting cause when known.",
+    scope: NOW,
+  },
 
   "Screen frames": { meaning: "New images the simulator produced.", scope: WINDOW },
-  "Idle frames": { meaning: "Frames sent by the 5 per second idle refresh, because nothing had changed for 200 ms.", scope: WINDOW },
+  "Idle frames": {
+    meaning:
+      "Frames sent by the 5 per second idle refresh, because nothing had changed for 200 ms.",
+    scope: WINDOW,
+  },
   "Capture deliveries": { meaning: "Frames capture handed to the pacer.", scope: WINDOW },
   "Pacer submissions": {
-    meaning: "Frames the pacer handed to the encoder. If this is higher than capture deliveries, the pacer is repeating the last frame.",
+    meaning:
+      "Frames the pacer handed to the encoder. If this is higher than capture deliveries, the pacer is repeating the last frame.",
     scope: WINDOW,
   },
-  Stalls: { meaning: "Times the capture loop went over 100 ms without running. It measures scheduling, not whether the screen changed.", scope: SESSION },
+  Stalls: {
+    meaning:
+      "Times the capture loop went over 100 ms without running. It measures scheduling, not whether the screen changed.",
+    scope: SESSION,
+  },
   "Stall time": { meaning: "Total time spent in those stalls.", scope: SESSION },
-  "Capture interval": { meaning: "Average time between capture attempts. The timer and the simulator\u2019s own frame callback both count.", scope: WINDOW },
-  "Surface pick": {
-    meaning: "Time spent choosing which framebuffer to capture. It climbs while the compositor swaps surfaces during a transition.",
+  "Capture interval": {
+    meaning:
+      "Average time between capture attempts. The timer and the simulator\u2019s own frame callback both count.",
     scope: WINDOW,
   },
-  "CPU fallbacks": { meaning: "Frames copied on the CPU because the GPU transfer failed.", scope: SESSION },
-  "Capture pool drops": { meaning: "Frames dropped because a capture buffer could not be allocated.", scope: SESSION },
+  "Surface pick": {
+    meaning:
+      "Time spent choosing which framebuffer to capture. It climbs while the compositor swaps surfaces during a transition.",
+    scope: WINDOW,
+  },
+  "CPU fallbacks": {
+    meaning: "Frames copied on the CPU because the GPU transfer failed.",
+    scope: SESSION,
+  },
+  "Capture pool drops": {
+    meaning: "Frames dropped because a capture buffer could not be allocated.",
+    scope: SESSION,
+  },
   "Pump restarts": {
     meaning: "Times the WebRTC frame pump was restarted after its timer stopped ticking.",
     scope: SESSION,
@@ -236,7 +295,9 @@ function Label({ label, className }: { label: string; className: string }) {
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
     >
-      <span className={`block cursor-help decoration-dotted underline-offset-2 hover:underline ${className}`}>
+      <span
+        className={`block cursor-help decoration-dotted underline-offset-2 hover:underline ${className}`}
+      >
         {label}
       </span>
       <span
@@ -320,14 +381,15 @@ export function summariseStream(stats: StreamStats): string | null {
 }
 
 /** Only faults, so a healthy stream stays quiet. */
-export function describeFaults(
-  stats: StreamStats,
-  sender?: SenderStreamStats | null,
-): string[] {
+export function describeFaults(stats: StreamStats, sender?: SenderStreamStats | null): string[] {
   const faults: string[] = [];
   if (stats.freezesInWindow) {
-    const seconds = stats.freezeMsInWindow ? ` (${(stats.freezeMsInWindow / 1000).toFixed(1)}s)` : "";
-    faults.push(`${stats.freezesInWindow} freeze${stats.freezesInWindow === 1 ? "" : "s"}${seconds}`);
+    const seconds = stats.freezeMsInWindow
+      ? ` (${(stats.freezeMsInWindow / 1000).toFixed(1)}s)`
+      : "";
+    faults.push(
+      `${stats.freezesInWindow} freeze${stats.freezesInWindow === 1 ? "" : "s"}${seconds}`,
+    );
   }
   if (stats.droppedInWindow) faults.push(`${stats.droppedInWindow} frames dropped`);
   if (stats.lossRatio !== null && stats.lossRatio > 0.02) {
@@ -395,7 +457,10 @@ function Cell({ label, value }: { label: string; value: string }) {
       data-stream-stat={label}
     >
       <Label label={label} className="min-w-0 truncate text-[11px] text-white/50" />
-      <span data-stream-value className="ml-auto min-w-0 text-right tabular-nums text-[11px] text-white/90">
+      <span
+        data-stream-value
+        className="ml-auto min-w-0 text-right tabular-nums text-[11px] text-white/90"
+      >
         {value}
       </span>
     </div>

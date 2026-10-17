@@ -6,10 +6,7 @@ import {
   type ControlInputClock,
 } from "../src/control-input-queue.ts";
 import type { ScrcpySession } from "../src/scrcpy.ts";
-import {
-  startServer,
-  type ServerDependencies,
-} from "../src/server.ts";
+import { startServer, type ServerDependencies } from "../src/server.ts";
 
 const IMMEDIATE_CLOCK: ControlInputClock = {
   async sleep(_ms, signal) {
@@ -189,18 +186,16 @@ function fakeWebSocket(data: unknown): FakeWebSocket {
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
-async function createHarness(options: {
-  serials?: string[];
-  maxDepth?: number;
-  maxBytes?: number;
-} = {}) {
+async function createHarness(
+  options: {
+    serials?: string[];
+    maxDepth?: number;
+    maxBytes?: number;
+  } = {},
+) {
   const serials = options.serials ?? ["device-a"];
-  const sessions = new Map(
-    serials.map((serial) => [serial, fakeSession(serial)]),
-  );
-  const writers = new Map(
-    serials.map((serial) => [serial, new ControlledWriter()]),
-  );
+  const sessions = new Map(serials.map((serial) => [serial, fakeSession(serial)]));
+  const writers = new Map(serials.map((serial) => [serial, new ControlledWriter()]));
   const queues = new Map<string, ControlInputQueue>();
   const captured = captureServe();
   const dependencies: ServerDependencies = {
@@ -209,8 +204,7 @@ async function createHarness(options: {
       if (!session) throw new Error(`missing fake session ${serial}`);
       return session;
     },
-    listAllDevices: async () =>
-      serials.map((serial) => ({ serial, state: "device" })),
+    listAllDevices: async () => serials.map((serial) => ({ serial, state: "device" })),
     serve: captured.serve,
     createInputQueue: (session) => {
       const writer = writers.get(session.serial);
@@ -225,16 +219,10 @@ async function createHarness(options: {
       return queue;
     },
   };
-  const started = await startServer(
-    { serial: serials[0]!, port: 33_001 },
-    dependencies,
-  );
+  const started = await startServer({ serial: serials[0]!, port: 33_001 }, dependencies);
   const handlers = captured.options();
 
-  const request = async (
-    path: string,
-    init: RequestInit = {},
-  ): Promise<Response> => {
+  const request = async (path: string, init: RequestInit = {}): Promise<Response> => {
     const result = await handlers.fetch(
       new Request(`http://127.0.0.1:33001${path}`, init),
       captured.server,
@@ -253,10 +241,7 @@ async function createHarness(options: {
     });
 
   const openWebSocket = async (): Promise<FakeWebSocket> => {
-    const result = await handlers.fetch(
-      new Request("http://127.0.0.1:33001/ws"),
-      captured.server,
-    );
+    const result = await handlers.fetch(new Request("http://127.0.0.1:33001/ws"), captured.server);
     expect(result).toBeUndefined();
     const data = captured.upgrades.at(-1);
     if (!data) throw new Error("WebSocket upgrade data was not captured");
@@ -317,10 +302,7 @@ describe("server control input integration", () => {
         return snapshot.events.length === 2;
       }, "accepted inputs were not recorded");
 
-      expect(snapshot.events.map((event: any) => event.gesture.type)).toEqual([
-        "swipe",
-        "text",
-      ]);
+      expect(snapshot.events.map((event: any) => event.gesture.type)).toEqual(["swipe", "text"]);
       expect(snapshot.events[1].gesture.text).toBe("a".repeat(300));
 
       writer.release();
@@ -379,15 +361,20 @@ describe("server control input integration", () => {
         "initial reset-video packet did not drain",
       );
 
-      harness.handlers.websocket.message(
-        ws,
-        JSON.stringify({ type: "key", keycode: 66 }),
-      );
+      harness.handlers.websocket.message(ws, JSON.stringify({ type: "key", keycode: 66 }));
       await waitFor(() => ws.sent.length === 1, "completed ACK missing");
       expect(ws.sent[0]).toMatchObject({ ok: true, status: "completed" });
-      harness.handlers.websocket.message(ws, JSON.stringify({
-        type: "touch", action: "down", x: 0.2, y: 0.2, pointerId: 1, ack: false,
-      }));
+      harness.handlers.websocket.message(
+        ws,
+        JSON.stringify({
+          type: "touch",
+          action: "down",
+          x: 0.2,
+          y: 0.2,
+          pointerId: 1,
+          ack: false,
+        }),
+      );
       await waitFor(() => queue.snapshot().depth === 0);
 
       writer.blockNextWrite();
@@ -425,10 +412,7 @@ describe("server control input integration", () => {
       ]);
 
       writer.failNextWrite();
-      harness.handlers.websocket.message(
-        ws,
-        JSON.stringify({ type: "key", keycode: 20 }),
-      );
+      harness.handlers.websocket.message(ws, JSON.stringify({ type: "key", keycode: 20 }));
       await waitFor(() => ws.sent.length === 4, "failure ACK missing");
       expect(ws.sent[3]).toMatchObject({
         ok: false,
@@ -440,10 +424,7 @@ describe("server control input integration", () => {
         ws,
         JSON.stringify({ type: "key", keycode: 21, ack: false }),
       );
-      harness.handlers.websocket.message(
-        ws,
-        JSON.stringify({ type: "not-a-gesture", ack: false }),
-      );
+      harness.handlers.websocket.message(ws, JSON.stringify({ type: "not-a-gesture", ack: false }));
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(ws.sent).toHaveLength(4);
     } finally {
@@ -464,10 +445,7 @@ describe("server control input integration", () => {
       );
 
       writer.failNextWrite();
-      harness.handlers.websocket.message(
-        ws,
-        JSON.stringify({ type: "key", keycode: 20 }),
-      );
+      harness.handlers.websocket.message(ws, JSON.stringify({ type: "key", keycode: 20 }));
       await waitFor(() => ws.sent.length === 1, "failure ACK missing");
       expect(ws.sent[0]).toMatchObject({
         ok: false,
@@ -476,10 +454,7 @@ describe("server control input integration", () => {
       });
       expect(queue.snapshot().closed).toBe(true);
 
-      harness.handlers.websocket.message(
-        ws,
-        JSON.stringify({ type: "reset-video" }),
-      );
+      harness.handlers.websocket.message(ws, JSON.stringify({ type: "reset-video" }));
       await waitFor(() => ws.sent.length === 2, "reset rejection ACK missing");
       expect(ws.sent[1]).toMatchObject({
         ok: false,
@@ -543,7 +518,6 @@ describe("server control input integration", () => {
   });
 });
 
-
 test("disconnect releases only its viewer's held touches", async () => {
   const harness = await createHarness();
   const queue = harness.queues.get("device-a")!;
@@ -553,9 +527,16 @@ test("disconnect releases only its viewer's held touches", async () => {
     const second = await harness.openWebSocket();
     await waitFor(() => queue.snapshot().depth === 0);
     for (const ws of [first, second]) {
-      harness.handlers.websocket.message(ws, JSON.stringify({
-        type: "touch", action: "down", x: 0.4, y: 0.6, pointerId: 0,
-      }));
+      harness.handlers.websocket.message(
+        ws,
+        JSON.stringify({
+          type: "touch",
+          action: "down",
+          x: 0.4,
+          y: 0.6,
+          pointerId: 0,
+        }),
+      );
     }
     await waitFor(() => queue.snapshot().depth === 0);
     const downs = writer.packets.filter((packet) => packet[0] === 2 && packet[1] === 0);
@@ -571,5 +552,7 @@ test("disconnect releases only its viewer's held touches", async () => {
     harness.handlers.websocket.close(second);
     await waitFor(() => queue.snapshot().depth === 0);
     expect(queue.snapshot().reservedReleases).toBe(0);
-  } finally { await harness.started.stop(); }
+  } finally {
+    await harness.started.stop();
+  }
 });

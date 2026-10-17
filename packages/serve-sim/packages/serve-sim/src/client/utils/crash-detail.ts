@@ -6,15 +6,22 @@ export type CrashDetailState = {
   pendingIndex: number | null;
   error: string | null;
 };
-export const EMPTY_CRASH_DETAIL: CrashDetailState = { detail: null, pendingIndex: null, error: null };
+export const EMPTY_CRASH_DETAIL: CrashDetailState = {
+  detail: null,
+  pendingIndex: null,
+  error: null,
+};
 type LoadDetail = (
   id: string,
   occurrence: number | undefined,
   signal: AbortSignal,
-  key?: number
+  key?: number,
 ) => Promise<CrashDetailResponse>;
 
-export function createCrashDetailController(loadDetail: LoadDetail, onChange: (state: CrashDetailState) => void) {
+export function createCrashDetailController(
+  loadDetail: LoadDetail,
+  onChange: (state: CrashDetailState) => void,
+) {
   let state = EMPTY_CRASH_DETAIL;
   let crashes: CrashSummary[] = [];
   let request: AbortController | null = null;
@@ -72,7 +79,8 @@ export function createCrashDetailController(loadDetail: LoadDetail, onChange: (s
       listed.count === detail.record.count &&
       index === detail.occurrence.index &&
       listed.occurrenceCount === detail.occurrence.total
-    ) return;
+    )
+      return;
     publish({
       ...state,
       pendingIndex: state.pendingIndex === detail.occurrence.index ? index : state.pendingIndex,
@@ -86,7 +94,8 @@ export function createCrashDetailController(loadDetail: LoadDetail, onChange: (s
 
   const select = (index: number): boolean => {
     const detail = state.detail;
-    if (!detail || index < 0 || index >= detail.occurrence.total || index === state.pendingIndex) return false;
+    if (!detail || index < 0 || index >= detail.occurrence.total || index === state.pendingIndex)
+      return false;
     void load(detail.record.id, index, detail.record.occurrenceTimes[index]?.key);
     return true;
   };
@@ -95,7 +104,8 @@ export function createCrashDetailController(loadDetail: LoadDetail, onChange: (s
     load,
     sync,
     select,
-    step: (delta: number): boolean => select((state.pendingIndex ?? state.detail?.occurrence.index ?? 0) + delta),
+    step: (delta: number): boolean =>
+      select((state.pendingIndex ?? state.detail?.occurrence.index ?? 0) + delta),
     close: (): void => {
       cancel();
       reloadedFor = null;

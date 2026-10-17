@@ -13,13 +13,10 @@ export type RecoveryWatchdogClock = {
 export const SYSTEM_RECOVERY_WATCHDOG_CLOCK: RecoveryWatchdogClock = {
   now: Date.now,
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
-  clearInterval: (timer) =>
-    clearInterval(timer as ReturnType<typeof setInterval>),
+  clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
 };
 
-export type SessionRecoveryWatchdogOptions<
-  TClient extends RecoveryClientState,
-> = {
+export type SessionRecoveryWatchdogOptions<TClient extends RecoveryClientState> = {
   clock?: RecoveryWatchdogClock;
   clients: () => Iterable<TClient>;
   requestReset: (reason: string, nowMs: number) => boolean;
@@ -83,13 +80,10 @@ export class SessionRecoveryWatchdog<TClient extends RecoveryClientState> {
     this.#intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.#sessionResetCooldownMs =
       options.sessionResetCooldownMs ?? DEFAULT_SESSION_RESET_COOLDOWN_MS;
-    this.#firstFrameResetMs =
-      options.firstFrameResetMs ?? DEFAULT_FIRST_FRAME_RESET_MS;
-    this.#sourceStallResetMs =
-      options.sourceStallResetMs ?? DEFAULT_SOURCE_STALL_RESET_MS;
+    this.#firstFrameResetMs = options.firstFrameResetMs ?? DEFAULT_FIRST_FRAME_RESET_MS;
+    this.#sourceStallResetMs = options.sourceStallResetMs ?? DEFAULT_SOURCE_STALL_RESET_MS;
     this.#awaitingKeyFrameResetMs =
-      options.awaitingKeyFrameResetMs ??
-      DEFAULT_AWAITING_KEYFRAME_RESET_MS;
+      options.awaitingKeyFrameResetMs ?? DEFAULT_AWAITING_KEYFRAME_RESET_MS;
   }
 
   get running(): boolean {
@@ -171,27 +165,17 @@ export class SessionRecoveryWatchdog<TClient extends RecoveryClientState> {
     const clients = Array.from(this.#clients());
     if (clients.length === 0) return;
 
-    if (
-      this.#frameCount === 0 &&
-      now - this.startedMs >= this.#firstFrameResetMs
-    ) {
+    if (this.#frameCount === 0 && now - this.startedMs >= this.#firstFrameResetMs) {
       this.requestVideoReset("first video frame not received");
-    } else if (
-      this.#lastFrameMs !== null &&
-      now - this.#lastFrameMs >= this.#sourceStallResetMs
-    ) {
+    } else if (this.#lastFrameMs !== null && now - this.#lastFrameMs >= this.#sourceStallResetMs) {
       this.requestVideoReset("video source stalled");
     }
 
     const awaitingRetry = clients.some((client) => {
-      if (
-        !client.awaitingKeyFrame ||
-        client.awaitingKeyFrameSinceMs === null
-      ) {
+      if (!client.awaitingKeyFrame || client.awaitingKeyFrameSinceMs === null) {
         return false;
       }
-      const retryFrom =
-        client.lastKeyFrameRequestMs ?? client.awaitingKeyFrameSinceMs;
+      const retryFrom = client.lastKeyFrameRequestMs ?? client.awaitingKeyFrameSinceMs;
       return now - retryFrom >= this.#awaitingKeyFrameResetMs;
     });
     if (awaitingRetry) {
@@ -203,10 +187,7 @@ export class SessionRecoveryWatchdog<TClient extends RecoveryClientState> {
     let awaitingClients = 0;
     let oldestAwaitingAgeMs: number | null = null;
     for (const client of this.#clients()) {
-      if (
-        !client.awaitingKeyFrame ||
-        client.awaitingKeyFrameSinceMs === null
-      ) {
+      if (!client.awaitingKeyFrame || client.awaitingKeyFrameSinceMs === null) {
         continue;
       }
       awaitingClients++;
@@ -217,10 +198,7 @@ export class SessionRecoveryWatchdog<TClient extends RecoveryClientState> {
     return {
       sourceFps: this.#sourceFps,
       lastFrameMs: this.#lastFrameMs,
-      sourceFrameAgeMs: Math.max(
-        0,
-        nowMs - (this.#lastFrameMs ?? this.startedMs),
-      ),
+      sourceFrameAgeMs: Math.max(0, nowMs - (this.#lastFrameMs ?? this.startedMs)),
       awaitingClients,
       oldestAwaitingAgeMs,
       lastResetAttemptMs: this.#lastSessionResetAttemptMs,

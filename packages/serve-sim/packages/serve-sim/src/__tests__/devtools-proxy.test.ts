@@ -29,9 +29,13 @@ describe("devtools proxy", () => {
     cdp = null;
     preview?.stop(true);
     preview = null;
-    try { rmSync(stateFile); } catch {}
+    try {
+      rmSync(stateFile);
+    } catch {}
     if (fakeHelperProcess?.pid) {
-      try { fakeHelperProcess.kill("SIGKILL"); } catch {}
+      try {
+        fakeHelperProcess.kill("SIGKILL");
+      } catch {}
     }
     fakeHelperProcess = null;
   });
@@ -44,7 +48,8 @@ describe("devtools proxy", () => {
       port: cdpPort,
       fetch(req, server) {
         const url = new URL(req.url);
-        if (url.pathname.startsWith("/devtools/page/") && server.upgrade(req, { data: undefined })) return undefined;
+        if (url.pathname.startsWith("/devtools/page/") && server.upgrade(req, { data: undefined }))
+          return undefined;
         return new Response("not found", { status: 404 });
       },
       websocket: {
@@ -73,13 +78,15 @@ describe("devtools proxy", () => {
       port: cdpPort,
       cdpUrl: `http://127.0.0.1:${cdpPort}`,
       async listTargets() {
-        return [{
-          id: targetId,
-          title: "Example",
-          url: "https://example.test",
-          type: "page",
-          udid,
-        }];
+        return [
+          {
+            id: targetId,
+            title: "Example",
+            url: "https://example.test",
+            type: "page",
+            udid,
+          },
+        ];
       },
     };
 
@@ -94,15 +101,21 @@ describe("devtools proxy", () => {
       host: "127.0.0.1",
     });
 
-    const response = await fetch(`http://127.0.0.1:${previewPort}/devtools?device=${encodeURIComponent(udid)}`);
+    const response = await fetch(
+      `http://127.0.0.1:${previewPort}/devtools?device=${encodeURIComponent(udid)}`,
+    );
     expect(response.ok).toBe(true);
     const json = await response.json();
     const target = json.targets[0];
     const encodedTargetId = encodeURIComponent(targetId);
-    expect(target.webSocketDebuggerUrl).toBe(`ws://127.0.0.1:${previewPort}/devtools/page/${encodedTargetId}`);
+    expect(target.webSocketDebuggerUrl).toBe(
+      `ws://127.0.0.1:${previewPort}/devtools/page/${encodedTargetId}`,
+    );
     const frontendUrl = new URL(target.devtoolsFrontendUrl, `http://127.0.0.1:${previewPort}`);
     expect(frontendUrl.pathname).toBe("/devtools-frontend/inspector.html");
-    expect(frontendUrl.searchParams.get("ws")).toBe(`127.0.0.1:${previewPort}/devtools/page/${encodedTargetId}`);
+    expect(frontendUrl.searchParams.get("ws")).toBe(
+      `127.0.0.1:${previewPort}/devtools/page/${encodedTargetId}`,
+    );
     expect(frontendUrl.searchParams.has("wss")).toBe(false);
 
     const echoed = await new Promise<string>((resolve, reject) => {

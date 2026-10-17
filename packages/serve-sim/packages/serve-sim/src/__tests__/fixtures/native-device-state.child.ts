@@ -8,7 +8,10 @@ const addon = {
   SimCapture: class {
     async subscribeDeviceState(callback: typeof deliver) {
       deliver = callback;
-      return async () => { unsubscribeCalls++; await unsubscribeGate; };
+      return async () => {
+        unsubscribeCalls++;
+        await unsubscribeGate;
+      };
     }
   },
 };
@@ -18,19 +21,27 @@ mock.module("module", () => ({
   ...moduleExports,
   createRequire: (url: string | URL) => {
     const require = originalCreateRequire(url);
-    return Object.assign((path: string) => path.endsWith("serve-sim-native.node") ? addon : require(path), require);
+    return Object.assign(
+      (path: string) => (path.endsWith("serve-sim-native.node") ? addon : require(path)),
+      require,
+    );
   },
 }));
 const fsExports = await import("fs");
 mock.module("fs", () => ({ ...fsExports, existsSync: () => true }));
 const { NativeCapture } = await import("../../native");
 
-beforeEach(() => { unsubscribeCalls = 0; unsubscribeGate = undefined; });
+beforeEach(() => {
+  unsubscribeCalls = 0;
+  unsubscribeGate = undefined;
+});
 
 test("native JSON delivers complete snapshots including unknown fields", async () => {
   const received: NativeDeviceStateSnapshot[] = [];
   const capture = new NativeCapture("NATIVE-STATE-TEST");
-  const unsubscribe = await capture.subscribeDeviceState(async (snapshot) => { received.push(snapshot); });
+  const unsubscribe = await capture.subscribeDeviceState(async (snapshot) => {
+    received.push(snapshot);
+  });
   await deliver('{"generation":3,"revision":1,"state":{"hingeAngle":90.25,"tableMode":false}}');
   await deliver('{"generation":3,"revision":2,"state":{}}');
   expect(received).toEqual([
@@ -43,8 +54,14 @@ test("native JSON delivers complete snapshots including unknown fields", async (
 test("unsubscribe blocks queued callbacks before native cleanup completes", async () => {
   let calls = 0;
   let release!: () => void;
-  unsubscribeGate = new Promise<void>((resolve) => { release = resolve; });
-  const unsubscribe = await new NativeCapture("NATIVE-STATE-TEST").subscribeDeviceState(async () => { calls++; });
+  unsubscribeGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const unsubscribe = await new NativeCapture("NATIVE-STATE-TEST").subscribeDeviceState(
+    async () => {
+      calls++;
+    },
+  );
   const stopping = unsubscribe();
   await deliver('{"generation":3,"revision":2,"state":{"hingeAngle":45}}');
   await unsubscribe();

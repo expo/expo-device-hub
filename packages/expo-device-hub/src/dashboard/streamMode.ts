@@ -1,5 +1,5 @@
-import { type DeviceStreamMode } from '@expo/hub-client';
-import { type StreamModeAvailability } from '@expo/hub-components';
+import { type DeviceStreamMode } from "@expo/hub-client";
+import { type StreamModeAvailability } from "@expo/hub-components";
 
 export interface StreamBrowserFeatures {
   secureContext: boolean;
@@ -8,9 +8,7 @@ export interface StreamBrowserFeatures {
 }
 
 /** Derive selectable transports without granting secure-only APIs on LAN HTTP. */
-export function streamModeAvailability(
-  features: StreamBrowserFeatures,
-): StreamModeAvailability {
+export function streamModeAvailability(features: StreamBrowserFeatures): StreamModeAvailability {
   return {
     mjpeg: true,
     h264: features.secureContext && features.h264Decoder,
@@ -19,15 +17,15 @@ export function streamModeAvailability(
 }
 
 export function browserStreamModeAvailability(): StreamModeAvailability {
-  if (typeof window === 'undefined') {
+  if (typeof window === "undefined") {
     return { mjpeg: true, h264: false, webrtc: false };
   }
   return streamModeAvailability({
     secureContext: window.isSecureContext,
-    h264Decoder: typeof window.VideoDecoder !== 'undefined',
+    h264Decoder: typeof window.VideoDecoder !== "undefined",
     webRtc:
-      typeof window.RTCPeerConnection !== 'undefined' &&
-      typeof window.RTCRtpReceiver !== 'undefined',
+      typeof window.RTCPeerConnection !== "undefined" &&
+      typeof window.RTCRtpReceiver !== "undefined",
   });
 }
 
@@ -47,5 +45,5 @@ export function resolveStreamMode(
   requested: DeviceStreamMode,
   availability: StreamModeAvailability,
 ): DeviceStreamMode {
-  return availability[requested] ? requested : 'mjpeg';
+  return availability[requested] ? requested : "mjpeg";
 }

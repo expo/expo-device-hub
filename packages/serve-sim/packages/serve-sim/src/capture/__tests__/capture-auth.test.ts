@@ -6,7 +6,10 @@ import { useTempStateDir } from "../../__tests__/helpers";
 const TOKEN = "capture-token-xyz";
 
 async function withMiddleware(
-  fn: (origin: string, request: (path: string, init?: RequestInit) => Promise<Response>) => Promise<void>,
+  fn: (
+    origin: string,
+    request: (path: string, init?: RequestInit) => Promise<Response>,
+  ) => Promise<void>,
 ): Promise<void> {
   const handler = simMiddleware({ basePath: "/", execToken: TOKEN });
   const origin = "http://127.0.0.1:34567";
@@ -77,7 +80,11 @@ describe("network-capture auth", () => {
     await withMiddleware(async (origin, request) => {
       const r = await request("/network-capture", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}`, Origin: origin },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+          Origin: origin,
+        },
         body: "{}",
       });
       expect(r.status).toBe(405);

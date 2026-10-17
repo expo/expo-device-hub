@@ -11,18 +11,39 @@ import { freePortAsync, useTempStateDir } from "./helpers";
 const TOKEN = "host-allowlist-token";
 let tempState: ReturnType<typeof useTempStateDir>;
 
-beforeAll(() => { tempState = useTempStateDir(); });
-afterAll(() => { tempState?.restore(); });
+beforeAll(() => {
+  tempState = useTempStateDir();
+});
+afterAll(() => {
+  tempState?.restore();
+});
 
 describe("isAllowedHost", () => {
   test("allows localhost, IP literals, and a missing Host", () => {
-    for (const host of ["localhost", "localhost:3200", "app.localhost:3200", "127.0.0.1:3200", "10.0.1.112", "[::1]:3200", "::1", undefined, ""]) {
+    for (const host of [
+      "localhost",
+      "localhost:3200",
+      "app.localhost:3200",
+      "127.0.0.1:3200",
+      "10.0.1.112",
+      "[::1]:3200",
+      "::1",
+      undefined,
+      "",
+    ]) {
       expect(isAllowedHost(host)).toBe(true);
     }
   });
 
   test("refuses a loopback name followed by anything but a port number", () => {
-    for (const host of ["localhost:abc", "localhost:3200x", "localhost:", "127.0.0.1:@attacker.example", "[::1]x", "[::1]:abc"]) {
+    for (const host of [
+      "localhost:abc",
+      "localhost:3200x",
+      "localhost:",
+      "127.0.0.1:@attacker.example",
+      "[::1]x",
+      "[::1]:abc",
+    ]) {
       expect(isAllowedHost(host)).toBe(false);
     }
   });
@@ -36,18 +57,27 @@ describe("isAllowedHost", () => {
     const middleware = simMiddleware({ basePath: "/" });
     const socket = {
       closed: false,
-      close() { this.closed = true; },
+      close() {
+        this.closed = true;
+      },
       on() {},
     };
-    expect(middleware.handleWebSocket?.(
-      new Request("http://attacker.example/other/ws"),
-      socket as unknown as Parameters<NonNullable<typeof middleware.handleWebSocket>>[1],
-    )).toBe(true);
+    expect(
+      middleware.handleWebSocket?.(
+        new Request("http://attacker.example/other/ws"),
+        socket as unknown as Parameters<NonNullable<typeof middleware.handleWebSocket>>[1],
+      ),
+    ).toBe(true);
     expect(socket.closed).toBe(true);
   });
 
   test("refuses other names, including ones that only start like loopback", () => {
-    for (const host of ["attacker.example:3200", "127.0.0.1.attacker.example", "localhost.attacker.example", "mymac.local"]) {
+    for (const host of [
+      "attacker.example:3200",
+      "127.0.0.1.attacker.example",
+      "localhost.attacker.example",
+      "mymac.local",
+    ]) {
       expect(isAllowedHost(host)).toBe(false);
     }
   });
@@ -58,14 +88,21 @@ function get(
   path: string,
   host: string,
   headers: Record<string, string> = {},
-): Promise<{ status: number; body: string; headers: Record<string, string | string[] | undefined> }> {
+): Promise<{
+  status: number;
+  body: string;
+  headers: Record<string, string | string[] | undefined>;
+}> {
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: "127.0.0.1", port, path, headers: { ...headers, host } }, (res) => {
-      let body = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => (body += chunk));
-      res.on("end", () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
-    });
+    const req = httpRequest(
+      { host: "127.0.0.1", port, path, headers: { ...headers, host } },
+      (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, body, headers: res.headers }));
+      },
+    );
     req.on("error", reject);
     req.end();
   });
@@ -78,7 +115,9 @@ function get(
  */
 function authenticate(port: number, host: string): Promise<{ ready: boolean }> {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/exec-ws`, { headers: { host, origin: `http://${host}` } });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/exec-ws`, {
+      headers: { host, origin: `http://${host}` },
+    });
     let ready = false;
     ws.on("open", () => ws.send(JSON.stringify({ token: TOKEN })));
     ws.on("message", (raw) => {
@@ -98,7 +137,11 @@ describe("an ungated preview answers only for hosts it knows", () => {
 
   beforeAll(async () => {
     port = await freePortAsync();
-    const middleware = simMiddleware({ basePath: "/", execToken: TOKEN, corsOrigins: ["https://dashboard.example"] });
+    const middleware = simMiddleware({
+      basePath: "/",
+      execToken: TOKEN,
+      corsOrigins: ["https://dashboard.example"],
+    });
     server = await servePreview({ port, middleware, host: "127.0.0.1" });
   });
 
@@ -114,10 +157,14 @@ describe("an ungated preview answers only for hosts it knows", () => {
   });
 
   test("lets a configured origin read the refusal", async () => {
-    const refused = await get(port, "/healthz", "attacker.example", { origin: "https://dashboard.example" });
+    const refused = await get(port, "/healthz", "attacker.example", {
+      origin: "https://dashboard.example",
+    });
     expect(refused.status).toBe(403);
     expect(refused.headers["access-control-allow-origin"]).toBe("https://dashboard.example");
-    const other = await get(port, "/healthz", "attacker.example", { origin: "https://attacker.example" });
+    const other = await get(port, "/healthz", "attacker.example", {
+      origin: "https://attacker.example",
+    });
     expect(other.status).toBe(403);
     expect(other.headers["access-control-allow-origin"]).toBeUndefined();
   });
@@ -130,23 +177,24 @@ describe("an ungated preview answers only for hosts it knows", () => {
   });
 
   test("closes a helper socket for a rebinding host, and survives two Host headers", async () => {
-    const upgrade = (hosts: string[]) => new Promise<string>((resolve, reject) => {
-      const socket = connect(port, "127.0.0.1", () => {
-        socket.write(
-          `GET /helper/ws?device=D HTTP/1.1\r\n${hosts.map((host) => `Host: ${host}\r\n`).join("")}` +
-            "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n" +
-            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
-        );
+    const upgrade = (hosts: string[]) =>
+      new Promise<string>((resolve, reject) => {
+        const socket = connect(port, "127.0.0.1", () => {
+          socket.write(
+            `GET /helper/ws?device=D HTTP/1.1\r\n${hosts.map((host) => `Host: ${host}\r\n`).join("")}` +
+              "Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n" +
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n",
+          );
+        });
+        let reply = "";
+        socket.on("data", (chunk) => void (reply += chunk.toString()));
+        socket.on("close", () => resolve(reply));
+        socket.on("error", () => resolve(reply));
+        socket.setTimeout(2000, () => {
+          reject(new Error("refused upgrade did not close the socket"));
+          socket.destroy();
+        });
       });
-      let reply = "";
-      socket.on("data", (chunk) => void (reply += chunk.toString()));
-      socket.on("close", () => resolve(reply));
-      socket.on("error", () => resolve(reply));
-      socket.setTimeout(2000, () => {
-        reject(new Error("refused upgrade did not close the socket"));
-        socket.destroy();
-      });
-    });
     expect(await upgrade(["attacker.example"])).toBe("");
     expect(await upgrade(["localhost", "attacker.example"])).toBe("");
     // Still serving: the second request did not take the process down.
@@ -165,7 +213,11 @@ describe("--allow-any-host-when-insecure", () => {
 
   beforeAll(async () => {
     port = await freePortAsync();
-    server = await servePreview({ port, middleware: simMiddleware({ basePath: "/", allowAnyHostWhenInsecure: true }), host: "127.0.0.1" });
+    server = await servePreview({
+      port,
+      middleware: simMiddleware({ basePath: "/", allowAnyHostWhenInsecure: true }),
+      host: "127.0.0.1",
+    });
   });
 
   afterAll(() => {
@@ -185,7 +237,11 @@ describe("a token-gated preview", () => {
 
   beforeAll(async () => {
     port = await freePortAsync();
-    const middleware = simMiddleware({ basePath: "/", requirePreviewToken: true, execToken: "gated-token" });
+    const middleware = simMiddleware({
+      basePath: "/",
+      requirePreviewToken: true,
+      execToken: "gated-token",
+    });
     server = await servePreview({ port, middleware, host: "127.0.0.1" });
   });
 

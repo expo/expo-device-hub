@@ -16,7 +16,7 @@ function buildMap(): Record<string, KeySpec> {
   for (let i = 0; i < 26; i++) {
     const usage = 0x04 + i;
     map[String.fromCharCode(0x61 + i)] = { usage, shift: false }; // a-z
-    map[String.fromCharCode(0x41 + i)] = { usage, shift: true };  // A-Z
+    map[String.fromCharCode(0x41 + i)] = { usage, shift: true }; // A-Z
   }
 
   // Digits row: 1..9 then 0
@@ -79,15 +79,23 @@ export async function sendKeyEventsToWs(
     );
     ws.binaryType = "arraybuffer";
     let acknowledged = false;
-    const timeout = setTimeout(() => {
-      reject(new Error("Simulator keyboard input did not finish. Retry with a shorter string."));
-      ws.close();
-    }, Math.max(30_000, events.length * 1_000));
+    const timeout = setTimeout(
+      () => {
+        reject(new Error("Simulator keyboard input did not finish. Retry with a shorter string."));
+        ws.close();
+      },
+      Math.max(30_000, events.length * 1_000),
+    );
 
     ws.onclose = ({ code, reason }) => {
       clearTimeout(timeout);
       if (acknowledged) resolve();
-      else reject(new Error(`Keyboard input interrupted (${code}${reason ? `: ${reason}` : ""}). Some text may not have been delivered.`));
+      else
+        reject(
+          new Error(
+            `Keyboard input interrupted (${code}${reason ? `: ${reason}` : ""}). Some text may not have been delivered.`,
+          ),
+        );
     };
 
     ws.onmessage = ({ data }) => {

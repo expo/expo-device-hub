@@ -82,7 +82,7 @@ export class CrashStore {
     report: CrashReport,
     rawPath: string,
     logTail: string[] = [],
-    logTailSource: LogTailSource = "none"
+    logTailSource: LogTailSource = "none",
   ): CrashRecord {
     const at = this.now();
     const existing = this.bySignature.get(report.signature);
@@ -106,7 +106,9 @@ export class CrashStore {
       .sort((a, b) => crashTime(a) - crashTime(b))
       .slice(-MAX_OCCURRENCES);
     const summary =
-      !existing || occurrences.at(-1) === occurrence ? { ...report, rawPath, logTailSource } : existing;
+      !existing || occurrences.at(-1) === occurrence
+        ? { ...report, rawPath, logTailSource }
+        : existing;
     const record: CrashRecord = {
       ...summary,
       frames: copyFrames(summary.frames),

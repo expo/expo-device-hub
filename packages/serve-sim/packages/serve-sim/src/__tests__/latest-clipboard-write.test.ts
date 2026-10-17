@@ -4,7 +4,9 @@ import { createLatestClipboardWriter } from "../client/utils/latest-clipboard-wr
 test("a newer copy writes after an older browser clipboard write already in flight", async () => {
   const written: string[] = [];
   let releaseFirst!: () => void;
-  const firstWrite = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const firstWrite = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
   const writer = createLatestClipboardWriter(async (text) => {
     if (text === "old") await firstWrite;
     written.push(text);
@@ -22,7 +24,9 @@ test("a newer copy writes after an older browser clipboard write already in flig
 
 test("an old copy that finishes its read after a newer one cannot write", async () => {
   const written: string[] = [];
-  const writer = createLatestClipboardWriter(async (text) => { written.push(text); });
+  const writer = createLatestClipboardWriter(async (text) => {
+    written.push(text);
+  });
   const first = writer.begin();
   const second = writer.begin();
   expect(await writer.write(second, "new", () => true)).toBe(true);

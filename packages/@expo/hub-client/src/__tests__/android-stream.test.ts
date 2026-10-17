@@ -1,82 +1,79 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { DEVICE_STREAM_SETTING_BOUNDS } from '../stream-settings';
+import { DEVICE_STREAM_SETTING_BOUNDS } from "../stream-settings";
 
-import {
-  androidStreamSettingsPatch,
-  parseAndroidStreamSettings,
-} from '../android-stream-settings';
+import { androidStreamSettingsPatch, parseAndroidStreamSettings } from "../android-stream-settings";
 import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
-} from '../android-stream-source';
-import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
+} from "../android-stream-source";
+import { androidWsUrlFor, parseServeEmuStreamSettings } from "../useAndroidDevice";
 
-describe('serve-emu stream contract', () => {
-  test('uses a metadata video socket for H.264 and an input-only socket for WebRTC', () => {
-    expect(androidWsUrlFor('http://localhost:3400/vendor/serve-emu', 'emulator-5554', true)).toBe(
-      'ws://localhost:3400/vendor/serve-emu/ws?frame-meta=1&device=emulator-5554',
+describe("serve-emu stream contract", () => {
+  test("uses a metadata video socket for H.264 and an input-only socket for WebRTC", () => {
+    expect(androidWsUrlFor("http://localhost:3400/vendor/serve-emu", "emulator-5554", true)).toBe(
+      "ws://localhost:3400/vendor/serve-emu/ws?frame-meta=1&device=emulator-5554",
     );
-    expect(androidWsUrlFor('https://hub.test/vendor/serve-emu/', 'pixel 9', false)).toBe(
-      'wss://hub.test/vendor/serve-emu/ws?video=0&device=pixel+9',
+    expect(androidWsUrlFor("https://hub.test/vendor/serve-emu/", "pixel 9", false)).toBe(
+      "wss://hub.test/vendor/serve-emu/ws?video=0&device=pixel+9",
     );
   });
 
-  test('accepts the host-owned H.264 WebRTC configuration', () => {
+  test("accepts the host-owned H.264 WebRTC configuration", () => {
     expect(
       parseServeEmuStreamSettings({
-        transport: 'webrtc',
-        codec: 'h264',
+        transport: "webrtc",
+        codec: "h264",
         iceServers: [
-          { urls: ['stun:stun.example.test:3478'] },
+          { urls: ["stun:stun.example.test:3478"] },
           {
-            urls: ['turn:turn.example.test:3478'],
-            username: 'hub',
-            credential: 'secret',
+            urls: ["turn:turn.example.test:3478"],
+            username: "hub",
+            credential: "secret",
           },
         ],
-        iceTransportPolicy: 'relay',
+        iceTransportPolicy: "relay",
       }),
     ).toEqual({
-      transport: 'webrtc',
-      codec: 'h264',
+      transport: "webrtc",
+      codec: "h264",
       iceServers: [
-        { urls: ['stun:stun.example.test:3478'] },
+        { urls: ["stun:stun.example.test:3478"] },
         {
-          urls: ['turn:turn.example.test:3478'],
-          username: 'hub',
-          credential: 'secret',
+          urls: ["turn:turn.example.test:3478"],
+          username: "hub",
+          credential: "secret",
         },
       ],
-      iceTransportPolicy: 'relay',
+      iceTransportPolicy: "relay",
     });
   });
 
-  test('rejects unsupported codecs and malformed ICE settings', () => {
-    expect(parseServeEmuStreamSettings({ transport: 'websocket' })).toEqual({
-      transport: 'websocket',
+  test("rejects unsupported codecs and malformed ICE settings", () => {
+    expect(parseServeEmuStreamSettings({ transport: "websocket" })).toEqual({
+      transport: "websocket",
     });
     expect(
       parseServeEmuStreamSettings({
-        transport: 'webrtc',
-        codec: 'vp8',
+        transport: "webrtc",
+        codec: "vp8",
         iceServers: [],
-        iceTransportPolicy: 'all',
+        iceTransportPolicy: "all",
       }),
     ).toBeNull();
     expect(
       parseServeEmuStreamSettings({
-        transport: 'webrtc',
-        codec: 'h264',
-        iceServers: [{ urls: ['stun:ok.test'], credential: 123 }],
-        iceTransportPolicy: 'all',
+        transport: "webrtc",
+        codec: "h264",
+        iceServers: [{ urls: ["stun:ok.test"], credential: 123 }],
+        iceTransportPolicy: "all",
       }),
     ).toBeNull();
   });
 });
 
-describe('serve-emu runtime stream settings contract', () => {
-  test('patches Android encoder settings while omitting MJPEG-only fields', () => {
+describe("serve-emu runtime stream settings contract", () => {
+  test("patches Android encoder settings while omitting MJPEG-only fields", () => {
     expect(
       androidStreamSettingsPatch({
         maxDimension: 720,
@@ -87,7 +84,9 @@ describe('serve-emu runtime stream settings contract', () => {
       }),
     ).toEqual({ maxDimension: 720, h264Fps: 30, h264Bitrate: 3_000_000 });
     expect(androidStreamSettingsPatch({ h264Fps: 30 })).toEqual({ h264Fps: 30 });
-    expect(androidStreamSettingsPatch({ h264Bitrate: 8_000_000 })).toEqual({ h264Bitrate: 8_000_000 });
+    expect(androidStreamSettingsPatch({ h264Bitrate: 8_000_000 })).toEqual({
+      h264Bitrate: 8_000_000,
+    });
     expect(androidStreamSettingsPatch({})).toBeNull();
     expect(androidStreamSettingsPatch({ mjpegFps: 30 })).toBeNull();
     expect(androidStreamSettingsPatch({ maxDimension: Number.NaN })).toBeNull();
@@ -96,8 +95,8 @@ describe('serve-emu runtime stream settings contract', () => {
     expect(androidStreamSettingsPatch({ maxDimension: 4_097 })).toBeNull();
   });
 
-  test('validates FPS and bitrate bounds without sending partial invalid updates', () => {
-    for (const key of ['h264Fps', 'h264Bitrate'] as const) {
+  test("validates FPS and bitrate bounds without sending partial invalid updates", () => {
+    for (const key of ["h264Fps", "h264Bitrate"] as const) {
       const [min, max] = DEVICE_STREAM_SETTING_BOUNDS[key];
       for (const value of [min, max]) {
         expect(androidStreamSettingsPatch({ [key]: value })).toEqual({ [key]: value });
@@ -108,7 +107,7 @@ describe('serve-emu runtime stream settings contract', () => {
     }
   });
 
-  test('accepts only authoritative responses that include a valid max dimension', () => {
+  test("accepts only authoritative responses that include a valid max dimension", () => {
     expect(
       parseAndroidStreamSettings({
         maxDimension: 720,
@@ -123,109 +122,111 @@ describe('serve-emu runtime stream settings contract', () => {
       h264Fps: 30,
     });
     expect(parseAndroidStreamSettings({ h264Bitrate: 8_000_000, h264Fps: 30 })).toBeNull();
-    expect(parseAndroidStreamSettings({ maxDimension: '720' })).toBeNull();
+    expect(parseAndroidStreamSettings({ maxDimension: "720" })).toBeNull();
     expect(parseAndroidStreamSettings({ maxDimension: 720.5 })).toBeNull();
   });
 });
 
-describe('serve-emu capture source contract', () => {
-  test('surfaces backend source-switch failures with an HTTP fallback', () => {
+describe("serve-emu capture source contract", () => {
+  test("surfaces backend source-switch failures with an HTTP fallback", () => {
     expect(
-      androidStreamSourceErrorMessage(503, { error: 'Emulator gRPC endpoint is unavailable' }),
-    ).toBe('Unable to change stream source: Emulator gRPC endpoint is unavailable');
+      androidStreamSourceErrorMessage(503, { error: "Emulator gRPC endpoint is unavailable" }),
+    ).toBe("Unable to change stream source: Emulator gRPC endpoint is unavailable");
     expect(
-      androidStreamSourceErrorMessage(503, { error: 'Hardware H.264 probe failed: device unavailable' }),
-    ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
+      androidStreamSourceErrorMessage(503, {
+        error: "Hardware H.264 probe failed: device unavailable",
+      }),
+    ).toBe("Unable to change stream source: Hardware H.264 probe failed: device unavailable");
     expect(
       androidStreamSourceErrorMessage(503, {
         ok: false,
         error: {
-          code: 'service_unavailable',
-          message: 'Hardware H.264 probe failed: device unavailable',
+          code: "service_unavailable",
+          message: "Hardware H.264 probe failed: device unavailable",
         },
       }),
-    ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
+    ).toBe("Unable to change stream source: Hardware H.264 probe failed: device unavailable");
     expect(androidStreamSourceErrorMessage(500, null)).toBe(
-      'Unable to change stream source (HTTP 500).',
+      "Unable to change stream source (HTTP 500).",
     );
   });
 
-  test('accepts authoritative scrcpy and gRPC source responses', () => {
+  test("accepts authoritative scrcpy and gRPC source responses", () => {
     expect(
       parseAndroidStreamSource({
         ok: true,
-        serial: 'emulator-5554',
-        mode: 'grpc-screenshot',
-        grpcImageMode: 'mmap',
-        encoder: 'software',
-        encoderName: 'libx264',
-        availableEncoders: ['software', 'hardware'],
-        inputSource: 'scrcpy',
-        availableInputSources: ['scrcpy', 'grpc'],
-        availableModes: ['scrcpy', 'grpc-screenshot'],
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "mmap",
+        encoder: "software",
+        encoderName: "libx264",
+        availableEncoders: ["software", "hardware"],
+        inputSource: "scrcpy",
+        availableInputSources: ["scrcpy", "grpc"],
+        availableModes: ["scrcpy", "grpc-screenshot"],
         sessionGeneration: 2,
       }),
     ).toEqual({
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy", "grpc"],
+      availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 2,
     });
     expect(
       parseAndroidStreamSource({
         ok: true,
-        serial: 'usb-device',
-        mode: 'scrcpy',
-        grpcImageMode: 'png',
-        encoder: 'software',
-        encoderName: 'libx264',
-        availableEncoders: ['software', 'hardware'],
-        inputSource: 'scrcpy',
-        availableInputSources: ['scrcpy'],
-        availableModes: ['scrcpy'],
+        serial: "usb-device",
+        mode: "scrcpy",
+        grpcImageMode: "png",
+        encoder: "software",
+        encoderName: "libx264",
+        availableEncoders: ["software", "hardware"],
+        inputSource: "scrcpy",
+        availableInputSources: ["scrcpy"],
+        availableModes: ["scrcpy"],
         sessionGeneration: 0,
       }),
     ).toEqual({
-      mode: 'scrcpy',
-      grpcImageMode: 'png',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy'],
-      availableModes: ['scrcpy'],
+      mode: "scrcpy",
+      grpcImageMode: "png",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy"],
+      availableModes: ["scrcpy"],
       sessionGeneration: 0,
     });
   });
 
-  test('rejects malformed, inconsistent, and unsupported source responses', () => {
+  test("rejects malformed, inconsistent, and unsupported source responses", () => {
     expect(parseAndroidStreamSource({ ok: false })).toBeNull();
     expect(
       parseAndroidStreamSource({
         ok: true,
-        mode: 'grpc-screenshot',
-        availableModes: ['scrcpy'],
+        mode: "grpc-screenshot",
+        availableModes: ["scrcpy"],
         sessionGeneration: 0,
       }),
     ).toBeNull();
     expect(
       parseAndroidStreamSource({
         ok: true,
-        mode: 'camera',
-        availableModes: ['camera'],
+        mode: "camera",
+        availableModes: ["camera"],
         sessionGeneration: 0,
       }),
     ).toBeNull();
     expect(
       parseAndroidStreamSource({
         ok: true,
-        mode: 'scrcpy',
-        availableModes: ['scrcpy', 'scrcpy'],
+        mode: "scrcpy",
+        availableModes: ["scrcpy", "scrcpy"],
         sessionGeneration: -1,
       }),
     ).toBeNull();

@@ -92,7 +92,11 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 min-h-[30px]" data-setting-row={label} title={title}>
+    <div
+      className="flex items-center justify-between gap-2 min-h-[30px]"
+      data-setting-row={label}
+      title={title}
+    >
       <span className="flex shrink-0 items-center gap-2 text-[12px] text-white/90 whitespace-nowrap">
         <span className="flex size-[18px] items-center justify-center text-white">{icon}</span>
         {label}
@@ -166,7 +170,14 @@ function TextSizeSlider({
 
 /** Shared simulator slider presentation; each setting owns its update policy. */
 export function SettingSlider({
-  label, min = 0, max, step = 1, value, disabled = false, ticks, ...inputProps
+  label,
+  min = 0,
+  max,
+  step = 1,
+  value,
+  disabled = false,
+  ticks,
+  ...inputProps
 }: Omit<ComponentProps<"input">, "type" | "className" | "style" | "min" | "max" | "value"> & {
   label: string;
   min?: number;
@@ -205,11 +216,13 @@ export function SettingSlider({
         style={{ "--slider-fill": fill, "--slider-fill-color": fillColor } as CSSProperties}
         className={`h-[13px] w-full appearance-none rounded-full bg-transparent outline-none focus-visible:[outline:1.5px_solid_rgba(10,132,255,0.55)] focus-visible:outline-offset-4 ${disabled ? "cursor-default" : "cursor-pointer"} ${trackClasses} ${thumbClasses}`}
       />
-      {ticks && <span aria-hidden className="pointer-events-none mt-[3px] flex justify-between px-[5.5px]">
-        {ticks.map((category) => (
-          <span key={category} className="size-[2px] rounded-full bg-white/40" />
-        ))}
-      </span>}
+      {ticks && (
+        <span aria-hidden className="pointer-events-none mt-[3px] flex justify-between px-[5.5px]">
+          {ticks.map((category) => (
+            <span key={category} className="size-[2px] rounded-full bg-white/40" />
+          ))}
+        </span>
+      )}
     </span>
   );
 }
@@ -241,9 +254,21 @@ export function SettingSelect({
 
 /** Fold rows use the same controls and spacing as the other simulator options. */
 export function HingeSettings({
-  angle, pose, supported, tableMode, tableModeAvailable = false, pending = false, error, onChange,
-  viewMode = "3d", onViewModeChange, viewError,
-  cacheScreenOnFold = false, onCacheScreenOnFoldChange, sizeMode = "fill", onSizeModeChange,
+  angle,
+  pose,
+  supported,
+  tableMode,
+  tableModeAvailable = false,
+  pending = false,
+  error,
+  onChange,
+  viewMode = "3d",
+  onViewModeChange,
+  viewError,
+  cacheScreenOnFold = false,
+  onCacheScreenOnFoldChange,
+  sizeMode = "fill",
+  onSizeModeChange,
 }: HingeControlsProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -262,9 +287,16 @@ export function HingeSettings({
 
   if (!(supported ?? angle !== undefined)) return null;
   const displayedAngle = angleDraft ?? angle;
-  const selectedPose = angleDraft !== null ? null
-    : pose !== undefined ? pose
-      : angle === 0 ? "closed" : angle === 180 ? "open" : null;
+  const selectedPose =
+    angleDraft !== null
+      ? null
+      : pose !== undefined
+        ? pose
+        : angle === 0
+          ? "closed"
+          : angle === 180
+            ? "open"
+            : null;
   const canChangeTableMode = tableModeAvailable || tableMode === true;
   const changeAngle = (value: number) => {
     setAngleDraft(value);
@@ -272,7 +304,12 @@ export function HingeSettings({
   };
 
   return (
-    <div role="group" aria-label="Fold settings" aria-busy={pending} className="flex flex-col gap-1.5">
+    <div
+      role="group"
+      aria-label="Fold settings"
+      aria-busy={pending}
+      className="flex flex-col gap-1.5"
+    >
       <SettingRow icon={<FoldHorizontal size={14} strokeWidth={2} />} label="Fold pose">
         <SettingSelect
           label="Fold pose"
@@ -303,7 +340,19 @@ export function HingeSettings({
             onPointerUp={() => setAdjusting(false)}
             onPointerCancel={() => setAdjusting(false)}
             onKeyDown={(event) => {
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"].includes(event.key)) setAdjusting(true);
+              if (
+                [
+                  "ArrowLeft",
+                  "ArrowRight",
+                  "ArrowUp",
+                  "ArrowDown",
+                  "Home",
+                  "End",
+                  "PageUp",
+                  "PageDown",
+                ].includes(event.key)
+              )
+                setAdjusting(true);
             }}
             onKeyUp={() => setAdjusting(false)}
             onBlur={() => setAdjusting(false)}
@@ -317,7 +366,7 @@ export function HingeSettings({
               max={180}
               step="any"
               placeholder="—"
-              value={editing ? draft : displayedAngle ?? ""}
+              value={editing ? draft : (displayedAngle ?? "")}
               onFocus={() => {
                 setDraft(displayedAngle === undefined ? "" : String(displayedAngle));
                 setEditing(true);
@@ -325,10 +374,13 @@ export function HingeSettings({
               onChange={(event) => {
                 const { value, valueAsNumber } = event.currentTarget;
                 setDraft(value);
-                if (Number.isFinite(valueAsNumber) && valueAsNumber >= 0 && valueAsNumber <= 180) changeAngle(valueAsNumber);
+                if (Number.isFinite(valueAsNumber) && valueAsNumber >= 0 && valueAsNumber <= 180)
+                  changeAngle(valueAsNumber);
               }}
               onBlur={() => setEditing(false)}
-              onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
               className="w-[48px] min-w-0 bg-white/[0.06] border border-white/10 rounded-md text-white/90 text-[12px] py-0.5 px-1 text-right"
             />
           </label>
@@ -350,35 +402,52 @@ export function HingeSettings({
         <SettingSelect
           label="Preview mode"
           value={viewMode}
-          options={[{ value: "3d", label: "3D" }, { value: "2d", label: "2D" }]}
+          options={[
+            { value: "3d", label: "3D" },
+            { value: "2d", label: "2D" },
+          ]}
           disabled={!onViewModeChange}
-          onChange={(value) => { if (value === "2d" || value === "3d") onViewModeChange?.(value); }}
+          onChange={(value) => {
+            if (value === "2d" || value === "3d") onViewModeChange?.(value);
+          }}
         />
       </SettingRow>
-      {viewError && <span role="status" className="text-[11px] text-white/70">{viewError}</span>}
-      {viewMode === "3d" && <>
-        <SettingRow icon={<Image size={14} strokeWidth={2} />} label="Cache screen on fold">
-          <SettingSwitch
-            label="Cache screen on fold"
-            checked={cacheScreenOnFold}
-            disabled={!onCacheScreenOnFoldChange}
-            onChange={(enabled) => onCacheScreenOnFoldChange?.(enabled)}
-          />
-        </SettingRow>
-        <SettingRow icon={<Maximize size={14} strokeWidth={2} />} label="Preview size">
-          <SettingSelect
-            label="Preview size"
-            value={sizeMode}
-            options={[
-              { value: "physical", label: "Keep same size" },
-              { value: "fill", label: "Fill available space" },
-            ]}
-            disabled={!onSizeModeChange}
-            onChange={(value) => { if (value === "physical" || value === "fill") onSizeModeChange?.(value); }}
-          />
-        </SettingRow>
-      </>}
-      {error && <span role="alert" className="text-[11px] text-danger-soft">{error}</span>}
+      {viewError && (
+        <span role="status" className="text-[11px] text-white/70">
+          {viewError}
+        </span>
+      )}
+      {viewMode === "3d" && (
+        <>
+          <SettingRow icon={<Image size={14} strokeWidth={2} />} label="Cache screen on fold">
+            <SettingSwitch
+              label="Cache screen on fold"
+              checked={cacheScreenOnFold}
+              disabled={!onCacheScreenOnFoldChange}
+              onChange={(enabled) => onCacheScreenOnFoldChange?.(enabled)}
+            />
+          </SettingRow>
+          <SettingRow icon={<Maximize size={14} strokeWidth={2} />} label="Preview size">
+            <SettingSelect
+              label="Preview size"
+              value={sizeMode}
+              options={[
+                { value: "physical", label: "Keep same size" },
+                { value: "fill", label: "Fill available space" },
+              ]}
+              disabled={!onSizeModeChange}
+              onChange={(value) => {
+                if (value === "physical" || value === "fill") onSizeModeChange?.(value);
+              }}
+            />
+          </SettingRow>
+        </>
+      )}
+      {error && (
+        <span role="alert" className="text-[11px] text-danger-soft">
+          {error}
+        </span>
+      )}
     </div>
   );
 }
@@ -386,7 +455,16 @@ export function HingeSettings({
 // Inline 14px glyphs, stroked at full opacity (no dimmed icons).
 const I = {
   appearance: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 2v2" />
       <path d="M14.837 16.385a6 6 0 1 1-7.223-7.222c.624-.147.97.66.715 1.248a4 4 0 0 0 5.26 5.259c.589-.255 1.396.09 1.248.715" />
       <path d="M16 12a4 4 0 0 0-4-4" />
@@ -402,7 +480,16 @@ const I = {
     </svg>
   ),
   filter: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M11 17a4 4 0 0 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2Z" />
       <path d="M16.7 13H19a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7" />
       <path d="M 7 17h.01" />
@@ -415,19 +502,45 @@ const I = {
     </svg>
   ),
   motion: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
       <circle cx="14" cy="12" r="6" />
       <path d="M3 8h4M2 12h4M3 16h4" />
     </svg>
   ),
   contrast: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="12" cy="12" r="10" />
       <path d="M12 18a6 6 0 0 0 0-12v12z" />
     </svg>
   ),
   borders: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M5 21a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2" />
       <path d="M9 21h1" />
       <path d="M14 21h1" />
@@ -439,14 +552,32 @@ const I = {
     </svg>
   ),
   voiceover: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="m11 7.601-5.994 8.19a1 1 0 0 0 .1 1.298l.817.818a1 1 0 0 0 1.314.087L15.09 12" />
       <path d="M16.5 21.174C15.5 20.5 14.372 20 13 20c-2.058 0-3.928 2.356-6 2-2.072-.356-2.775-3.369-1.5-4.5" />
       <circle cx="16" cy="7" r="5" />
     </svg>
   ),
   keyboard: (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M10 8h.01M12 12h.01M14 8h.01M16 12h.01M18 8h.01M6 8h.01M7 16h10M8 12h.01" />
       <rect width="20" height="16" x="2" y="4" rx="2" />
     </svg>
@@ -487,10 +618,7 @@ export function SimulatorSettingsTool({
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const status = await hostUiRequest(
-        { device: udid },
-        { signal: AbortSignal.timeout(15_000) },
-      );
+      const status = await hostUiRequest({ device: udid }, { signal: AbortSignal.timeout(15_000) });
       if (status) setState(status);
       else setError("Unexpected simulator-settings reply");
     } catch (e) {
@@ -591,86 +719,84 @@ export function SimulatorSettingsTool({
         </div>
       ) : (
         <>
-      {error && (
-        <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md flex items-center justify-between gap-2">
-          <span className="min-w-0">{error}</span>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="shrink-0 cursor-pointer rounded border border-danger/30 bg-transparent px-1.5 py-0.5 text-[11px] text-danger-soft"
-          >
-            Retry
-          </button>
-        </div>
-      )}
+          {error && (
+            <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md flex items-center justify-between gap-2">
+              <span className="min-w-0">{error}</span>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                className="shrink-0 cursor-pointer rounded border border-danger/30 bg-transparent px-1.5 py-0.5 text-[11px] text-danger-soft"
+              >
+                Retry
+              </button>
+            </div>
+          )}
 
-      <div className="flex flex-col gap-1.5 pb-1.5">
-          {hingeControls && <HingeSettings key={udid} {...hingeControls} />}
-          <SettingRow icon={I.appearance} label="Appearance">
-            <SettingSelect
-              label="Appearance"
-              value={shown.appearance ?? "light"}
-              options={SELECT_OPTIONS.appearance!}
-              disabled={!ready || pending === "appearance"}
-              onChange={(v) => apply("appearance", v)}
-            />
-          </SettingRow>
-
-          <SettingRow icon={I.glass} label="Liquid Glass">
-            <SettingSelect
-              label="Liquid Glass"
-              value={shown["liquid-glass"] ?? "clear"}
-              options={SELECT_OPTIONS["liquid-glass"]!}
-              disabled={!ready || pending === "liquid-glass"}
-              onChange={(v) => apply("liquid-glass", v)}
-            />
-          </SettingRow>
-
-          <SettingRow icon={I.filter} label="Color Filter">
-            <SettingSelect
-              label="Color Filter"
-              value={shown["color-filter"] ?? "none"}
-              options={SELECT_OPTIONS["color-filter"]!}
-              disabled={!ready || pending === "color-filter"}
-              onChange={(v) => apply("color-filter", v)}
-            />
-          </SettingRow>
-
-          <SettingRow icon={I.textSize} label="Text Size">
-            <TextSizeSlider
-              value={textSizeIndex}
-              disabled={!ready}
-              onChange={applyTextSize}
-            />
-          </SettingRow>
-
-          {TOGGLE_OPTIONS.map(({ key, label }) => (
-            <SettingRow
-              key={key}
-              icon={I[
-                key === "hardware-keyboard"
-                  ? "keyboard"
-                  : key === "reduce-motion"
-                    ? "motion"
-                    : key === "increase-contrast"
-                      ? "contrast"
-                      : key === "show-borders"
-                        ? "borders"
-                        : key === "reduce-transparency"
-                          ? "transparency"
-                          : "voiceover"
-              ]}
-              label={label}
-            >
-              <SettingSwitch
-                label={label}
-                checked={shown[key] === "on"}
-                disabled={!ready || pending === key}
-                onChange={(next) => apply(key, next ? "on" : "off")}
+          <div className="flex flex-col gap-1.5 pb-1.5">
+            {hingeControls && <HingeSettings key={udid} {...hingeControls} />}
+            <SettingRow icon={I.appearance} label="Appearance">
+              <SettingSelect
+                label="Appearance"
+                value={shown.appearance ?? "light"}
+                options={SELECT_OPTIONS.appearance!}
+                disabled={!ready || pending === "appearance"}
+                onChange={(v) => apply("appearance", v)}
               />
             </SettingRow>
-          ))}
-        </div>
+
+            <SettingRow icon={I.glass} label="Liquid Glass">
+              <SettingSelect
+                label="Liquid Glass"
+                value={shown["liquid-glass"] ?? "clear"}
+                options={SELECT_OPTIONS["liquid-glass"]!}
+                disabled={!ready || pending === "liquid-glass"}
+                onChange={(v) => apply("liquid-glass", v)}
+              />
+            </SettingRow>
+
+            <SettingRow icon={I.filter} label="Color Filter">
+              <SettingSelect
+                label="Color Filter"
+                value={shown["color-filter"] ?? "none"}
+                options={SELECT_OPTIONS["color-filter"]!}
+                disabled={!ready || pending === "color-filter"}
+                onChange={(v) => apply("color-filter", v)}
+              />
+            </SettingRow>
+
+            <SettingRow icon={I.textSize} label="Text Size">
+              <TextSizeSlider value={textSizeIndex} disabled={!ready} onChange={applyTextSize} />
+            </SettingRow>
+
+            {TOGGLE_OPTIONS.map(({ key, label }) => (
+              <SettingRow
+                key={key}
+                icon={
+                  I[
+                    key === "hardware-keyboard"
+                      ? "keyboard"
+                      : key === "reduce-motion"
+                        ? "motion"
+                        : key === "increase-contrast"
+                          ? "contrast"
+                          : key === "show-borders"
+                            ? "borders"
+                            : key === "reduce-transparency"
+                              ? "transparency"
+                              : "voiceover"
+                  ]
+                }
+                label={label}
+              >
+                <SettingSwitch
+                  label={label}
+                  checked={shown[key] === "on"}
+                  disabled={!ready || pending === key}
+                  onChange={(next) => apply(key, next ? "on" : "off")}
+                />
+              </SettingRow>
+            ))}
+          </div>
         </>
       )}
     </CollapsibleSection>

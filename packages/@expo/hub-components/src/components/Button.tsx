@@ -1,6 +1,6 @@
-import { type CSSProperties, type ReactNode, useState } from 'react';
+import { type CSSProperties, type ReactNode, useState } from "react";
 
-import { radius, textSize } from '../theme/tokens';
+import { radius, textSize } from "../theme/tokens";
 
 /**
  * Button — ported from the universe website's `ui/components/Button`.
@@ -16,16 +16,16 @@ import { radius, textSize } from '../theme/tokens';
  */
 
 export type ButtonTheme =
-  | 'primary'
-  | 'secondary'
-  | 'tertiary'
-  | 'quaternary'
-  | 'primary-destructive'
-  | 'secondary-destructive'
-  | 'tertiary-destructive'
-  | 'agent-overlay';
+  | "primary"
+  | "secondary"
+  | "tertiary"
+  | "quaternary"
+  | "primary-destructive"
+  | "secondary-destructive"
+  | "tertiary-destructive"
+  | "agent-overlay";
 
-export type ButtonSize = '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+export type ButtonSize = "2xs" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
 
 type ThemeTokens = {
   background: string;
@@ -39,50 +39,60 @@ type ThemeTokens = {
 
 // Maps each theme to the matching `--expo-theme-button-*` CSS variables.
 const THEME_TOKENS: Record<ButtonTheme, ThemeTokens> = {
-  primary: cssTheme('primary'),
-  secondary: cssTheme('secondary'),
-  tertiary: cssTheme('tertiary'),
-  quaternary: cssTheme('quaternary'),
-  'primary-destructive': cssTheme('primary-destructive'),
-  'secondary-destructive': cssTheme('secondary-destructive'),
-  'tertiary-destructive': cssTheme('tertiary-destructive'),
-  'agent-overlay': cssTheme('agent-overlay'),
+  primary: cssTheme("primary"),
+  secondary: cssTheme("secondary"),
+  tertiary: cssTheme("tertiary"),
+  quaternary: cssTheme("quaternary"),
+  "primary-destructive": cssTheme("primary-destructive"),
+  "secondary-destructive": cssTheme("secondary-destructive"),
+  "tertiary-destructive": cssTheme("tertiary-destructive"),
+  "agent-overlay": cssTheme("agent-overlay"),
 };
 
 function cssTheme(name: string): ThemeTokens {
   const v = (suffix: string) => `var(--expo-theme-button-${name}-${suffix})`;
   return {
-    background: v('background'),
-    hover: v('hover'),
-    text: v('text'),
-    border: v('border'),
-    disabledBackground: v('disabled-background'),
-    disabledBorder: v('disabled-border'),
-    disabledText: v('disabled-text'),
+    background: v("background"),
+    hover: v("hover"),
+    text: v("text"),
+    border: v("border"),
+    disabledBackground: v("disabled-background"),
+    disabledBorder: v("disabled-border"),
+    disabledText: v("disabled-text"),
   };
 }
 
 /** Rendered height in px of each size — the website's `h-N` classes. */
 export const BUTTON_HEIGHTS: Record<ButtonSize, number> = {
-  '2xs': 28,
+  "2xs": 28,
   xs: 32,
   sm: 36,
   md: 40,
   lg: 44,
   xl: 48,
-  '2xl': 60,
+  "2xl": 60,
 };
 
 // Height / horizontal padding / radius / font size per size — mirrors the
 // website's getSizeClasses (h-N, px-N, rounded, text-*).
 const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
-  '2xs': { height: BUTTON_HEIGHTS['2xs'], paddingInline: 8, borderRadius: radius.lg, ...textSize.xs },
+  "2xs": {
+    height: BUTTON_HEIGHTS["2xs"],
+    paddingInline: 8,
+    borderRadius: radius.lg,
+    ...textSize.xs,
+  },
   xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
   sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
   md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
   lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
   xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  '2xl': { height: BUTTON_HEIGHTS['2xl'], paddingInline: 24, borderRadius: radius.lg, ...textSize.lg },
+  "2xl": {
+    height: BUTTON_HEIGHTS["2xl"],
+    paddingInline: 24,
+    borderRadius: radius.lg,
+    ...textSize.lg,
+  },
 };
 
 export type ButtonProps = {
@@ -97,7 +107,7 @@ export type ButtonProps = {
   block?: boolean;
   disabled?: boolean;
   /** Native button behavior. Ignored when rendering a link. */
-  type?: 'button' | 'submit' | 'reset';
+  type?: "button" | "submit" | "reset";
   /** Renders an `<a>` instead of a `<button>`. */
   href?: string;
   target?: string;
@@ -108,13 +118,13 @@ export type ButtonProps = {
 
 export function Button({
   children,
-  theme = 'primary',
-  size = 'sm',
+  theme = "primary",
+  size = "sm",
   leftSlot,
   rightSlot,
   block = false,
   disabled = false,
-  type = 'button',
+  type = "button",
   href,
   target,
   onClick,
@@ -127,31 +137,31 @@ export function Button({
   const t = THEME_TOKENS[theme];
 
   const baseStyle: CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: size === '2xs' ? 4 : size === 'xs' ? 6 : 8,
-    border: '1px solid',
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: size === "2xs" ? 4 : size === "xs" ? 6 : 8,
+    border: "1px solid",
     fontWeight: 500,
-    whiteSpace: 'nowrap',
-    cursor: disabled ? 'default' : 'pointer',
-    textDecoration: 'none',
-    transition: 'background-color 150ms ease, transform 100ms ease, opacity 150ms ease',
-    width: block ? '100%' : undefined,
-    transform: !disabled && pressed ? 'scale(0.98)' : undefined,
+    whiteSpace: "nowrap",
+    cursor: disabled ? "default" : "pointer",
+    textDecoration: "none",
+    transition: "background-color 150ms ease, transform 100ms ease, opacity 150ms ease",
+    width: block ? "100%" : undefined,
+    transform: !disabled && pressed ? "scale(0.98)" : undefined,
     ...SIZE_STYLES[size],
     backgroundColor: disabled ? t.disabledBackground : hovered ? t.hover : t.background,
     borderColor: disabled ? t.disabledBorder : t.border,
     color: disabled ? t.disabledText : t.text,
     opacity: disabled ? 0.8 : 1,
-    pointerEvents: disabled ? 'none' : undefined,
+    pointerEvents: disabled ? "none" : undefined,
     ...style,
   };
 
   const content = (
     <>
       {leftSlot}
-      {children != null && <span style={{ display: 'flex', lineHeight: 1 }}>{children}</span>}
+      {children != null && <span style={{ display: "flex", lineHeight: 1 }}>{children}</span>}
       {rightSlot}
     </>
   );
@@ -174,7 +184,8 @@ export function Button({
         className={className}
         style={baseStyle}
         onClick={disabled ? undefined : onClick}
-        {...handlers}>
+        {...handlers}
+      >
         {content}
       </a>
     );
@@ -187,7 +198,8 @@ export function Button({
       style={baseStyle}
       disabled={disabled}
       onClick={disabled ? undefined : onClick}
-      {...handlers}>
+      {...handlers}
+    >
       {content}
     </button>
   );

@@ -17,10 +17,7 @@ export function terminalTransitionAllowed(
 
 // scrcpy died unexpectedly when it exits with a non-zero code or is killed by a
 // signal. A clean code-0 exit is a normal shutdown, not a crash.
-export function isAbnormalExit(
-  code: number | null,
-  signal: NodeJS.Signals | null,
-): boolean {
+export function isAbnormalExit(code: number | null, signal: NodeJS.Signals | null): boolean {
   return signal !== null || (code ?? 0) !== 0;
 }
 

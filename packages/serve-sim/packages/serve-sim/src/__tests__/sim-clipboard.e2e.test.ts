@@ -52,7 +52,9 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
           resolve(JSON.parse(frame.subarray(1).toString()));
         });
       });
-      ws.send(Buffer.concat([Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId: 1, text }))]));
+      ws.send(
+        Buffer.concat([Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId: 1, text }))]),
+      );
       expect(await answer).toMatchObject({ ok: true });
     } finally {
       ws.close();

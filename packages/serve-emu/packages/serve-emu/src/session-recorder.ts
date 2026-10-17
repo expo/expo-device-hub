@@ -67,10 +67,7 @@ export const DEFAULT_MAX_SESSION_BYTES = 1024 * 1024;
 export type ReplayHandlers = {
   /** Release replay-owned input when the retained event sequence ends. */
   finish?: (signal: AbortSignal) => Promise<void> | void;
-  dispatchGesture: (
-    gesture: Gesture,
-    signal: AbortSignal,
-  ) => Promise<void> | void;
+  dispatchGesture: (gesture: Gesture, signal: AbortSignal) => Promise<void> | void;
   setLocation: (fix: GeoFix, signal: AbortSignal) => Promise<void> | void;
 };
 
@@ -106,9 +103,7 @@ export function sessionReplayErrorStatus(error: unknown): number {
 
 export function parseSessionReplayMultiplier(value: unknown): number {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new SessionReplayValidationError(
-      "session replay payload must be an object",
-    );
+    throw new SessionReplayValidationError("session replay payload must be an object");
   }
   const raw = (value as Record<string, unknown>).multiplier;
   if (raw !== undefined && typeof raw !== "number") {
@@ -169,9 +164,7 @@ const SYSTEM_REPLAY_CLOCK: SessionReplayClock = {
 
 function validateMultiplier(multiplier: number): void {
   if (!Number.isFinite(multiplier) || multiplier <= 0 || multiplier > 100) {
-    throw new SessionReplayValidationError(
-      "multiplier must be between 0 and 100",
-    );
+    throw new SessionReplayValidationError("multiplier must be between 0 and 100");
   }
 }
 
@@ -198,14 +191,8 @@ export class SessionRecorder {
   #legacySleep: (ms: number) => Promise<void>;
   #legacyStopReplay = false;
 
-  constructor(
-    clockOrOptions: SessionReplayClock | SessionRecorderOptions =
-      SYSTEM_REPLAY_CLOCK,
-  ) {
-    const options =
-      "delay" in clockOrOptions
-        ? { clock: clockOrOptions }
-        : clockOrOptions;
+  constructor(clockOrOptions: SessionReplayClock | SessionRecorderOptions = SYSTEM_REPLAY_CLOCK) {
+    const options = "delay" in clockOrOptions ? { clock: clockOrOptions } : clockOrOptions;
     this.#clock =
       options.clock ??
       (options.now || options.sleep
@@ -219,8 +206,7 @@ export class SessionRecorder {
           }
         : SYSTEM_REPLAY_CLOCK);
     this.#legacySleep =
-      options.sleep ??
-      ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+      options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.#maxEvents = options.maxEvents ?? DEFAULT_MAX_SESSION_EVENTS;
     this.#maxBytes = options.maxBytes ?? DEFAULT_MAX_SESSION_BYTES;
     if (!Number.isSafeInteger(this.#maxEvents) || this.#maxEvents <= 0) {
@@ -252,9 +238,7 @@ export class SessionRecorder {
       throw new SessionReplayConflictError("session recorder is closed");
     }
     if (this.#activeReplay) {
-      throw new SessionReplayConflictError(
-        "cannot clear session while replay is running",
-      );
+      throw new SessionReplayConflictError("cannot clear session while replay is running");
     }
     this.#admissionEpoch++;
     this.#events = [];
@@ -333,15 +317,14 @@ export class SessionRecorder {
     if (before !== undefined && (!Number.isSafeInteger(before) || before <= 0)) {
       throw new Error("before must be a positive safe integer");
     }
-    const eligible = before === undefined
-      ? this.#events
-      : this.#events.filter((event) => event.id < before);
+    const eligible =
+      before === undefined ? this.#events : this.#events.filter((event) => event.id < before);
     const events = eligible.slice(-limit).map(cloneEvent);
     const hasMore = eligible.length > events.length;
     return {
       session: this.summary(),
       events,
-      nextBefore: hasMore ? events[0]?.id ?? null : null,
+      nextBefore: hasMore ? (events[0]?.id ?? null) : null,
       hasMore,
     };
   }
@@ -406,14 +389,10 @@ export class SessionRecorder {
       throw new SessionReplayConflictError("session recorder is closed");
     }
     if (this.#activeReplay) {
-      throw new SessionReplayConflictError(
-        "session replay is already running",
-      );
+      throw new SessionReplayConflictError("session replay is already running");
     }
     if (this.#events.length === 0) {
-      throw new SessionReplayValidationError(
-        "session has no recorded events",
-      );
+      throw new SessionReplayValidationError("session has no recorded events");
     }
     validateMultiplier(multiplier);
 
@@ -446,29 +425,17 @@ export class SessionRecorder {
     try {
       for (const event of events) {
         this.#assertReplayActive(replay);
-        await this.#clock.delay(
-          Math.max(0, event.delayMs / multiplier),
-          replay.controller.signal,
-        );
+        await this.#clock.delay(Math.max(0, event.delayMs / multiplier), replay.controller.signal);
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
-          await handlers.dispatchGesture(
-            event.gesture,
-            replay.controller.signal,
-          );
+          await handlers.dispatchGesture(event.gesture, replay.controller.signal);
         } else {
-          await handlers.setLocation(
-            event.location,
-            replay.controller.signal,
-          );
+          await handlers.setLocation(event.location, replay.controller.signal);
         }
         this.#assertReplayActive(replay);
       }
     } catch (err) {
-      if (
-        replay.controller.signal.aborted ||
-        this.#activeReplay?.id !== replay.id
-      ) {
+      if (replay.controller.signal.aborted || this.#activeReplay?.id !== replay.id) {
         outcome = "cancelled";
       } else {
         outcome = "error";
@@ -490,10 +457,8 @@ export class SessionRecorder {
         const finishedAt = new Date(this.#clock.now()).toISOString();
         this.#replaying = false;
         this.#replayStatus = outcome;
-        this.#replayCompletedAt =
-          outcome === "completed" ? finishedAt : null;
-        this.#replayCancelledAt =
-          outcome === "cancelled" ? finishedAt : null;
+        this.#replayCompletedAt = outcome === "completed" ? finishedAt : null;
+        this.#replayCancelledAt = outcome === "cancelled" ? finishedAt : null;
         this.#activeReplay = null;
       }
     }
@@ -501,10 +466,7 @@ export class SessionRecorder {
   }
 
   #assertReplayActive(replay: ActiveReplay): void {
-    if (
-      replay.controller.signal.aborted ||
-      this.#activeReplay?.id !== replay.id
-    ) {
+    if (replay.controller.signal.aborted || this.#activeReplay?.id !== replay.id) {
       throw abortReason(replay.controller.signal);
     }
   }
@@ -516,10 +478,7 @@ export class SessionRecorder {
   ): void {
     if (this.#closed || !this.#recording || this.#replaying) return;
     const now = this.#clock.now();
-    const delayMs =
-      this.#lastEventMs !== null
-        ? Math.max(0, now - this.#lastEventMs)
-        : 0;
+    const delayMs = this.#lastEventMs !== null ? Math.max(0, now - this.#lastEventMs) : 0;
     this.#lastEventMs = now;
     const base = {
       id: this.#nextId++,
@@ -538,14 +497,10 @@ export class SessionRecorder {
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
-    while (
-      this.#events.length > this.#maxEvents ||
-      this.#retainedBytes > this.#maxBytes
-    ) {
+    while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
       const removed = this.#events.shift()!;
       this.#retainedBytes -=
-        Buffer.byteLength(JSON.stringify(removed), "utf8") +
-        (this.#events.length > 0 ? 1 : 0);
+        Buffer.byteLength(JSON.stringify(removed), "utf8") + (this.#events.length > 0 ? 1 : 0);
       this.#droppedEvents++;
     }
   }

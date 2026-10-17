@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { execFileSync } from "child_process";
 import { UPLOAD_DIR } from "../host-paths";
@@ -32,12 +40,22 @@ describe("app data files", () => {
     expect(Buffer.from(read.stdout, "base64").toString()).toBe('{"user":"test"}');
     const listing = await act("app.file.list", { relativePath: "Documents" });
     expect(JSON.parse(listing.stdout)).toContainEqual({ name: "session.json", type: "file" });
-    expect((await act("app.file.remove", { relativePath: "Documents/session.json" })).exitCode).toBe(0);
+    expect(
+      (await act("app.file.remove", { relativePath: "Documents/session.json" })).exitCode,
+    ).toBe(0);
     expect((await act("app.file.remove", { relativePath: "Documents" })).exitCode).toBe(1);
   });
 
   it("refuses traversal, absolute paths, and device aliases before spawning", async () => {
-    for (const relativePath of ["../escape", "/tmp/escape", "Documents/../../escape", "Documents\\escape", "Documents/a\nb", ".", ""]) {
+    for (const relativePath of [
+      "../escape",
+      "/tmp/escape",
+      "Documents/../../escape",
+      "Documents\\escape",
+      "Documents/a\nb",
+      ".",
+      "",
+    ]) {
       await expect(act("app.file.remove", { relativePath })).rejects.toThrow();
     }
     await expect(act("app.file.list", { udid: "booted" })).rejects.toThrow();
@@ -69,7 +87,10 @@ describe("app data files", () => {
       for (const container of [linked, join(linked, "container")]) {
         await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' '${container}'\n` }, async () => {
           for (const action of ["app.file.read", "app.file.remove", "app.file.list"]) {
-            expect((await act(action, action === "app.file.list" ? {} : { relativePath: "secret" })).exitCode).toBe(1);
+            expect(
+              (await act(action, action === "app.file.list" ? {} : { relativePath: "secret" }))
+                .exitCode,
+            ).toBe(1);
           }
         });
       }
@@ -84,10 +105,14 @@ describe("app data files", () => {
   it("lets another device list files while the first device waits for its launch lock", async () => {
     let release!: () => void;
     let acquired!: () => void;
-    const ready = new Promise<void>((resolve) => { acquired = resolve; });
+    const ready = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
     const held = withLaunchStateLock(UDID, async () => {
       acquired();
-      await new Promise<void>((resolve) => { release = resolve; });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
     });
     await ready;
     const blocked = act("app.file.list");
@@ -119,15 +144,17 @@ describe("app data files", () => {
 
   it("bounds directory listings and releases the queue after failure", async () => {
     mkdirSync(join(root, "many"));
-    for (let i=0; i<1000; i++) writeFileSync(join(root, "many", String(i)), "");
-    expect(JSON.parse((await act("app.file.list", { relativePath: "many" })).stdout)).toHaveLength(1000);
+    for (let i = 0; i < 1000; i++) writeFileSync(join(root, "many", String(i)), "");
+    expect(JSON.parse((await act("app.file.list", { relativePath: "many" })).stdout)).toHaveLength(
+      1000,
+    );
     writeFileSync(join(root, "many", "extra"), "");
     expect((await act("app.file.list", { relativePath: "many" })).exitCode).toBe(1);
     expect((await act("app.file.list")).exitCode).toBe(0);
   });
   it("reports lock acquisition failures as redacted action errors", async () => {
     const original = process.env.SERVE_SIM_STATE_DIR;
-    const invalid = join(root,"Documents/state-file");
+    const invalid = join(root, "Documents/state-file");
     writeFileSync(invalid, "fixture");
     process.env.SERVE_SIM_STATE_DIR = invalid;
     try {
@@ -139,5 +166,4 @@ describe("app data files", () => {
       else process.env.SERVE_SIM_STATE_DIR = original;
     }
   });
-
 });

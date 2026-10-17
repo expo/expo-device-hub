@@ -8,11 +8,7 @@ export const GUEST_SIMPB = "/tmp/simpb";
 
 function simpbFiles(pkgDir: string): string[] {
   const dir = join(pkgDir, "dist", "simpb");
-  return [
-    "libSimPasteboardReader.dylib",
-    "libSimPasteboardReaderUI.dylib",
-    "serve-sim-pasteboard",
-  ]
+  return ["libSimPasteboardReader.dylib", "libSimPasteboardReaderUI.dylib", "serve-sim-pasteboard"]
     .map((name) => join(dir, name))
     .filter((path) => existsSync(path));
 }
@@ -49,11 +45,16 @@ xcrun simctl privacy ${quoted} grant pasteboard dev.expo.serve-sim.pasteboard-fi
   if (code !== 0) throw new Error("failed to install the pasteboard fixture on the guest");
 }
 
-export async function runGuestTests(guest: TartGuest, files: string[], udid: string): Promise<number> {
+export async function runGuestTests(
+  guest: TartGuest,
+  files: string[],
+  udid: string,
+): Promise<number> {
   assertHostModules(guest.config);
   const shareModules = shellEscape(`${guestPkgPath(guest.config)}/node_modules`);
   const quoted = files.map(shellEscape).join(" ");
-  const rebootE2E = process.env.SERVE_SIM_DUO_REBOOT_E2E === "1" ? "export SERVE_SIM_DUO_REBOOT_E2E=1\n" : "";
+  const rebootE2E =
+    process.env.SERVE_SIM_DUO_REBOOT_E2E === "1" ? "export SERVE_SIM_DUO_REBOOT_E2E=1\n" : "";
   return guest.sshInherit(`${GUEST_PATH}
 set -euo pipefail
 chmod -R 755 ${GUEST_SIMPB}

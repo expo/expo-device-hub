@@ -39,7 +39,10 @@ function normalizedRequestOrigin(origin: string): string | null {
 }
 
 export function parseAllowedOrigins(value: string): string[] {
-  const origins = value.split(",").map((origin) => origin.trim()).filter(Boolean);
+  const origins = value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   const normalized = origins.map(normalizedHttpOrigin);
   if (normalized.length === 0 || normalized.some((origin) => origin === null)) {
     throw new Error("--allow-origin expects one or more comma-separated http(s) origins, or *.");
@@ -67,7 +70,8 @@ function originMatches(configured: string, origin: URL): boolean {
   if (parsed.origin === origin.origin) return true;
   // A wildcard must be spelled `*.` in the value itself: URL turns `%2A` and full-width or small
   // stars into `*`, which would otherwise grant a whole domain no one named.
-  if (!/^https?:\/\/\*\./i.test(configured.trim()) || !WILDCARD_HOST.test(parsed.hostname)) return false;
+  if (!/^https?:\/\/\*\./i.test(configured.trim()) || !WILDCARD_HOST.test(parsed.hostname))
+    return false;
   const suffix = parsed.hostname.slice(1).toLowerCase();
   const host = origin.hostname.toLowerCase();
   return (
@@ -84,10 +88,7 @@ function isConfiguredOrigin(normalizedOrigin: string, allowedOrigins: readonly s
   return allowedOrigins.some((allowed) => originMatches(allowed, origin));
 }
 
-export function isAllowedBrowserOrigin(
-  req: Request,
-  policy: BrowserOriginPolicy = {},
-): boolean {
+export function isAllowedBrowserOrigin(req: Request, policy: BrowserOriginPolicy = {}): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
   const normalizedOrigin = normalizedRequestOrigin(origin);
@@ -107,10 +108,7 @@ export function isAllowedBrowserOrigin(
  * Origin-less CLI/agent requests remain eligible for the surrounding auth
  * policy, while explicitly configured browser origins are also accepted.
  */
-export function isAllowedMutationOrigin(
-  req: Request,
-  policy: BrowserOriginPolicy = {},
-): boolean {
+export function isAllowedMutationOrigin(req: Request, policy: BrowserOriginPolicy = {}): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
   const normalizedOrigin = normalizedRequestOrigin(origin);
@@ -157,7 +155,11 @@ export function withCorsPolicy(
 ): Response {
   // A copy, because a response's headers may be immutable, as a redirect's are.
   const headers = new Headers(response.headers);
-  const vary = headers.get("vary")?.split(",").map((name) => name.trim().toLowerCase()) ?? [];
+  const vary =
+    headers
+      .get("vary")
+      ?.split(",")
+      .map((name) => name.trim().toLowerCase()) ?? [];
   if (!vary.includes("origin") && !vary.includes("*")) headers.append("Vary", "Origin");
   const allowOrigin = corsHeadersForRequest(req, policy)["Access-Control-Allow-Origin"];
   if (allowOrigin) headers.set("Access-Control-Allow-Origin", allowOrigin);

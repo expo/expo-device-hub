@@ -1,8 +1,8 @@
-import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
-import { useEffect, useState } from 'react';
+import { type NewDeviceOptions, type Platform } from "@expo/hub-components";
+import { useEffect, useState } from "react";
 
-import { basePath } from './basePath';
-import { logUtilityErrors, type UtilityError } from './utilityErrors';
+import { basePath } from "./basePath";
+import { logUtilityErrors, type UtilityError } from "./utilityErrors";
 
 /**
  * The installed runtimes/system images and models offered in the picker's
@@ -32,7 +32,7 @@ export function useNewDeviceOptions(): NewDeviceOptionsByPlatform {
     (async () => {
       try {
         const response = await fetch(newDeviceOptionsEndpoint(), {
-          headers: { Accept: 'application/json' },
+          headers: { Accept: "application/json" },
         });
         if (!response.ok) throw new Error(`Unexpected ${response.status}`);
         const data = (await response.json()) as NewDeviceOptionsByPlatform & {
@@ -42,8 +42,8 @@ export function useNewDeviceOptions(): NewDeviceOptionsByPlatform {
         if (!cancelled) setOptions({ ios: data.ios, android: data.android });
       } catch (error) {
         console.warn(
-          '[expo-device-hub] No new-device-options endpoint, using empty options:',
-          error
+          "[expo-device-hub] No new-device-options endpoint, using empty options:",
+          error,
         );
       }
     })();

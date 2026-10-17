@@ -1,4 +1,11 @@
-import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage, type WsMessagePayload, type WsMessageSent } from "./ws-send-queue";
+import {
+  flushWsMessageQueue,
+  sendOrQueueWsMessage,
+  trySendWsMessage,
+  type QueuedWsMessage,
+  type WsMessagePayload,
+  type WsMessageSent,
+} from "./ws-send-queue";
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
@@ -41,8 +48,13 @@ export function createInputSocket(
     if (stopped || socket) return;
     admitted = false;
     let ws: WebSocket;
-    try { ws = openSocket(url); } catch {
-      reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, reconnectDelayMs);
+    try {
+      ws = openSocket(url);
+    } catch {
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelayMs);
       return;
     }
     ws.binaryType = "arraybuffer";
@@ -77,8 +89,10 @@ export function createInputSocket(
     };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
-      const admissionFrame = event.data instanceof ArrayBuffer &&
-        event.data.byteLength === 1 && new Uint8Array(event.data)[0] === WS_MSG_INPUT_ADMITTED;
+      const admissionFrame =
+        event.data instanceof ArrayBuffer &&
+        event.data.byteLength === 1 &&
+        new Uint8Array(event.data)[0] === WS_MSG_INPUT_ADMITTED;
       const legacyAdmission = handlers.onMessage(event.data);
       if (admissionFrame || (!requireAdmission && legacyAdmission)) {
         admit(true);
@@ -115,14 +129,23 @@ export function createInputSocket(
         }, reconnectDelayMs);
       }
     };
-    ws.onerror = () => { if (!stopped && socket === ws) ws.close(); };
+    ws.onerror = () => {
+      if (!stopped && socket === ws) ws.close();
+    };
   };
 
   return {
     send(tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) {
       if (stopped) return;
       // New helpers require admission; legacy helpers keep their prior open behavior.
-      pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload, Date.now(), onSent);
+      pendingMessages = sendOrQueueWsMessage(
+        admitted ? socket : null,
+        pendingMessages,
+        tag,
+        payload,
+        Date.now(),
+        onSent,
+      );
     },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);

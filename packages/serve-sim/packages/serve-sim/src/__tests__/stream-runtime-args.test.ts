@@ -81,49 +81,58 @@ describe("streamRuntimeArgs", () => {
 describe("streamSettingsEqual", () => {
   test("treats missing legacy settings as the default HTTP transport", () => {
     expect(streamSettingsEqual(undefined, { transport: "http" })).toBe(true);
-    expect(streamSettingsEqual(
-      { codec: "auto", transport: "http" },
-      { transport: "http" },
-    )).toBe(true);
+    expect(streamSettingsEqual({ codec: "auto", transport: "http" }, { transport: "http" })).toBe(
+      true,
+    );
   });
 
   test("detects explicit transport and codec changes", () => {
-    expect(streamSettingsEqual(
-      { transport: "http", codec: "mjpeg" },
-      { transport: "webrtc", codec: "vp8" },
-    )).toBe(false);
-    expect(streamSettingsEqual(
-      { transport: "webrtc", codec: "vp8" },
-      { transport: "webrtc", codec: "vp9" },
-    )).toBe(false);
+    expect(
+      streamSettingsEqual(
+        { transport: "http", codec: "mjpeg" },
+        { transport: "webrtc", codec: "vp8" },
+      ),
+    ).toBe(false);
+    expect(
+      streamSettingsEqual(
+        { transport: "webrtc", codec: "vp8" },
+        { transport: "webrtc", codec: "vp9" },
+      ),
+    ).toBe(false);
   });
 
   test("compares normalized encoder settings", () => {
-    expect(streamSettingsEqual(
-      { transport: "webrtc", codec: "h264" },
-      {
-        transport: "webrtc",
-        codec: "h264",
-        mjpegFps: 60,
-        mjpegQuality: 0.7,
-        maxDimension: 0,
-        h264Bitrate: 6_000_000,
-        h264Fps: 60,
-      },
-    )).toBe(true);
-    expect(streamSettingsEqual(
-      { transport: "webrtc", codec: "h264", maxDimension: 1280 },
-      { transport: "webrtc", codec: "h264", maxDimension: 0 },
-    )).toBe(false);
+    expect(
+      streamSettingsEqual(
+        { transport: "webrtc", codec: "h264" },
+        {
+          transport: "webrtc",
+          codec: "h264",
+          mjpegFps: 60,
+          mjpegQuality: 0.7,
+          maxDimension: 0,
+          h264Bitrate: 6_000_000,
+          h264Fps: 60,
+        },
+      ),
+    ).toBe(true);
+    expect(
+      streamSettingsEqual(
+        { transport: "webrtc", codec: "h264", maxDimension: 1280 },
+        { transport: "webrtc", codec: "h264", maxDimension: 0 },
+      ),
+    ).toBe(false);
   });
 });
 
 describe("streamHelperArgs", () => {
   test("builds the re-exec arguments shared by detach and no-preview modes", () => {
-    expect(streamHelperArgs("DEVICE-A", 3100, "127.0.0.1", {
-      transport: "webrtc",
-      codec: "vp9",
-    })).toEqual([
+    expect(
+      streamHelperArgs("DEVICE-A", 3100, "127.0.0.1", {
+        transport: "webrtc",
+        codec: "vp9",
+      }),
+    ).toEqual([
       "DEVICE-A",
       "--port",
       "3100",

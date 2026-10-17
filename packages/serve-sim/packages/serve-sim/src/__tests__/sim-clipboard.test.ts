@@ -57,46 +57,68 @@ describe("copySimClipboardAfterInput", () => {
     return run(requests).finally(() => {
       globalThis.fetch = realFetch;
       if (realWindow === undefined) Reflect.deleteProperty(globalThis, "window");
-      else Object.defineProperty(globalThis, "window", { value: realWindow, configurable: true, writable: true });
+      else
+        Object.defineProperty(globalThis, "window", {
+          value: realWindow,
+          configurable: true,
+          writable: true,
+        });
     });
   }
 
   test("POSTs the selected device and returns the endpoint result", async () => {
-    await withStubs(
-      Response.json({ ok: true, text: "café 🎉" }),
-      async (requests) => {
-        expect(await copySimClipboardAfterInput("UDID-1", async () => {}, () => true)).toEqual({
-          text: "café 🎉",
-        });
-        expect(requests).toEqual([
-          {
-            input: "/api/pasteboard?device=UDID-1&copy=1",
-            init: {
-              method: "POST",
-              headers: { Authorization: "Bearer test-token" },
-            },
+    await withStubs(Response.json({ ok: true, text: "café 🎉" }), async (requests) => {
+      expect(
+        await copySimClipboardAfterInput(
+          "UDID-1",
+          async () => {},
+          () => true,
+        ),
+      ).toEqual({
+        text: "café 🎉",
+      });
+      expect(requests).toEqual([
+        {
+          input: "/api/pasteboard?device=UDID-1&copy=1",
+          init: {
+            method: "POST",
+            headers: { Authorization: "Bearer test-token" },
           },
-        ]);
-      },
-    );
+        },
+      ]);
+    });
   });
 
   test("holds the browser Copy request behind prior input and cancels it after a device switch", async () => {
     await withStubs(Response.json({ ok: true, text: "selected" }), async (requests) => {
       let release!: () => void;
-      const barrier = new Promise<void>((resolve) => { release = resolve; });
-      const copy = copySimClipboardAfterInput("UDID-1", () => barrier, () => true);
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const copy = copySimClipboardAfterInput(
+        "UDID-1",
+        () => barrier,
+        () => true,
+      );
       await Promise.resolve();
       expect(requests).toEqual([]);
       release();
       expect(await copy).toEqual({ text: "selected" });
-      expect(requests.map((request) => request.input)).toEqual(["/api/pasteboard?device=UDID-1&copy=1"]);
+      expect(requests.map((request) => request.input)).toEqual([
+        "/api/pasteboard?device=UDID-1&copy=1",
+      ]);
     });
     await withStubs(Response.json({ ok: true, text: "old" }), async (requests) => {
       let release!: () => void;
-      const barrier = new Promise<void>((resolve) => { release = resolve; });
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       let current = true;
-      const copy = copySimClipboardAfterInput("UDID-1", () => barrier, () => current);
+      const copy = copySimClipboardAfterInput(
+        "UDID-1",
+        () => barrier,
+        () => current,
+      );
       current = false;
       release();
       expect(await copy).toBeNull();
@@ -106,32 +128,69 @@ describe("copySimClipboardAfterInput", () => {
 
   test("surfaces the endpoint's own error message", async () => {
     await withStubs(
-      Response.json({ ok: false, error: "Timed out reading the simulator pasteboard" }, { status: 500 }),
+      Response.json(
+        { ok: false, error: "Timed out reading the simulator pasteboard" },
+        { status: 500 },
+      ),
       async () => {
-        await expect(copySimClipboardAfterInput("UDID-1", async () => {}, () => true)).rejects.toThrow(/Timed out/);
+        await expect(
+          copySimClipboardAfterInput(
+            "UDID-1",
+            async () => {},
+            () => true,
+          ),
+        ).rejects.toThrow(/Timed out/);
       },
     );
   });
 
   test("falls back to a status message when the body carries no error", async () => {
     await withStubs(Response.json({}, { status: 502 }), async () => {
-      await expect(copySimClipboardAfterInput("UDID-1", async () => {}, () => true)).rejects.toThrow(/502/);
+      await expect(
+        copySimClipboardAfterInput(
+          "UDID-1",
+          async () => {},
+          () => true,
+        ),
+      ).rejects.toThrow(/502/);
     });
   });
 
   test("falls back to a status message when the error body is not JSON", async () => {
-    await withStubs(new Response("Bad Gateway", { status: 502, headers: { "Content-Type": "text/plain" } }), async () => {
-      await expect(copySimClipboardAfterInput("UDID-1", async () => {}, () => true)).rejects.toThrow(/502/);
-    });
+    await withStubs(
+      new Response("Bad Gateway", { status: 502, headers: { "Content-Type": "text/plain" } }),
+      async () => {
+        await expect(
+          copySimClipboardAfterInput(
+            "UDID-1",
+            async () => {},
+            () => true,
+          ),
+        ).rejects.toThrow(/502/);
+      },
+    );
   });
 
   test("carries a key cleanup warning on a failed Copy", async () => {
     await withStubs(
-      Response.json({ ok: false, error: "No change", cleanupWarning: "A key may still be held" }, { status: 504 }),
+      Response.json(
+        { ok: false, error: "No change", cleanupWarning: "A key may still be held" },
+        { status: 504 },
+      ),
       async () => {
-        const error = await copySimClipboardAfterInput("UDID-1", async () => {}, () => true).then(() => null, (reason: unknown) => reason);
+        const error = await copySimClipboardAfterInput(
+          "UDID-1",
+          async () => {},
+          () => true,
+        ).then(
+          () => null,
+          (reason: unknown) => reason,
+        );
         expect(error).toBeInstanceOf(SimClipboardCopyError);
-        expect(error).toMatchObject({ message: "No change", cleanupWarning: "A key may still be held" });
+        expect(error).toMatchObject({
+          message: "No change",
+          cleanupWarning: "A key may still be held",
+        });
       },
     );
   });

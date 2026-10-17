@@ -1,5 +1,5 @@
-import { type PlatformFilter } from '../platform-filter';
-import { type Transport } from '../transport';
+import { type PlatformFilter } from "../platform-filter";
+import { type Transport } from "../transport";
 
 /** Fill the runtime values consumed by the exported dashboard shell. */
 export function configureClientShell(
@@ -8,12 +8,12 @@ export function configureClientShell(
   platform: PlatformFilter | undefined,
   transport: Transport | undefined,
   hideSidebar: boolean,
-  hideBootDevice: boolean
+  hideBootDevice: boolean,
 ): string {
   return html
-    .replaceAll('{{mount}}', mountPath)
-    .replaceAll('{{platform}}', platform ?? '')
-    .replaceAll('{{transport}}', transport ?? '')
-    .replaceAll('{{hideSidebar}}', String(hideSidebar))
-    .replaceAll('{{hideBootDevice}}', String(hideBootDevice));
+    .replaceAll("{{mount}}", mountPath)
+    .replaceAll("{{platform}}", platform ?? "")
+    .replaceAll("{{transport}}", transport ?? "")
+    .replaceAll("{{hideSidebar}}", String(hideSidebar))
+    .replaceAll("{{hideBootDevice}}", String(hideBootDevice));
 }

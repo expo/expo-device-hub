@@ -43,16 +43,18 @@ export function ToolSection({
         >
           <span>{title}</span>
           <svg aria-hidden="true" viewBox="0 0 16 16" fill="none">
-            <path d="M5 6.5L8 9.5L11 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M5 6.5L8 9.5L11 6.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       </h2>
       {/* Panel components already provide their own named section/aside. */}
-      <div
-        id={bodyId}
-        className="tool-section-body"
-        hidden={!expanded}
-      >
+      <div id={bodyId} className="tool-section-body" hidden={!expanded}>
         {expanded ? children : null}
       </div>
     </div>

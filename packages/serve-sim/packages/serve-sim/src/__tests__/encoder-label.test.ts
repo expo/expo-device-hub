@@ -4,11 +4,13 @@ import { encoderLabel } from "../client/components/stream-stats-labels";
 
 describe("encoderLabel", () => {
   it("names the guest's paravirtualized hardware encoder", () => {
-    expect(encoderLabel({
-      id: "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc",
-      hardware: true,
-      codec: "H264",
-    })).toBe("paravirt avc (hardware)");
+    expect(
+      encoderLabel({
+        id: "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc",
+        hardware: true,
+        codec: "H264",
+      }),
+    ).toBe("paravirt avc (hardware)");
   });
 
   it("names the codec when the session is not on H.264", () => {
@@ -17,11 +19,13 @@ describe("encoderLabel", () => {
   });
 
   it("marks a real software H.264 encoder as CPU", () => {
-    expect(encoderLabel({
-      id: "com.apple.videotoolbox.videoencoder.h264",
-      hardware: false,
-      codec: "H264",
-    })).toBe("h264 (CPU)");
+    expect(
+      encoderLabel({
+        id: "com.apple.videotoolbox.videoencoder.h264",
+        hardware: false,
+        codec: "H264",
+      }),
+    ).toBe("h264 (CPU)");
   });
 
   it("falls back to the kind alone when there is neither id nor codec", () => {

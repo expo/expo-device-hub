@@ -19,7 +19,8 @@ const APP = "dev.expo.serve-sim.launch-fixture";
 const PATH_MARKER = "/capture-e2e-marker";
 
 const udid = e2eDevice();
-const ready = udid !== null && existsSync(FIXTURE) && existsSync(DYLIB) && locateMitmdump() !== null;
+const ready =
+  udid !== null && existsSync(FIXTURE) && existsSync(DYLIB) && locateMitmdump() !== null;
 requireE2E("capture request round trip", ready);
 
 function simctl(args: string[]): string {

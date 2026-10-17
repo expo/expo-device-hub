@@ -3,15 +3,8 @@ import { ControlInputQueue } from "../src/control-input-queue.ts";
 import { SCRCPY_DEFAULTS } from "../src/scrcpy.ts";
 import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import { startServer } from "../src/server.ts";
-import type {
-  GrpcImageMode,
-  InputSource,
-  StreamMode,
-} from "../src/shared/api-contracts.ts";
-import type {
-  EmuSession,
-  StartEmuSessionOptions,
-} from "../src/stream-session.ts";
+import type { GrpcImageMode, InputSource, StreamMode } from "../src/shared/api-contracts.ts";
+import type { EmuSession, StartEmuSessionOptions } from "../src/stream-session.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -34,9 +27,7 @@ function fakeSession(
 ) {
   const end = deferred<null>();
   let closeCalls = 0;
-  const fatalListeners = new Set<
-    Parameters<EmuSession["onFatal"]>[0]
-  >();
+  const fatalListeners = new Set<Parameters<EmuSession["onFatal"]>[0]>();
   const controls = new ControlInputQueue({
     writer: { async write() {} },
   });
@@ -89,19 +80,12 @@ function capturingServe(captured: CapturedServer): typeof Bun.serve {
   }) as unknown as typeof Bun.serve;
 }
 
-function request(
-  captured: CapturedServer,
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
+function request(captured: CapturedServer, path: string, init?: RequestInit): Promise<Response> {
   const fetch = captured.options?.fetch as
     | ((request: Request, server: unknown) => Promise<Response>)
     | undefined;
   if (!fetch) throw new Error("server fetch handler was not captured");
-  return fetch(
-    new Request(`http://127.0.0.1:3300${path}`, init),
-    { upgrade: () => false },
-  );
+  return fetch(new Request(`http://127.0.0.1:3300${path}`, init), { upgrade: () => false });
 }
 
 const putMode = (
@@ -157,9 +141,7 @@ describe("standalone server stream settings", () => {
     );
 
     try {
-      expect(
-        await (await request(captured, "/api/stream-settings")).json(),
-      ).toEqual({
+      expect(await (await request(captured, "/api/stream-settings")).json()).toEqual({
         ok: true,
         maxDimension: SCRCPY_DEFAULTS.maxSize,
         h264Bitrate: SCRCPY_DEFAULTS.bitRate,
@@ -252,9 +234,7 @@ describe("standalone server stream settings", () => {
         error: "stream_settings_failed",
         message: "encoder rejected requested size",
       });
-      expect(
-        await (await request(captured, "/api/stream-settings")).json(),
-      ).toMatchObject({
+      expect(await (await request(captured, "/api/stream-settings")).json()).toMatchObject({
         ok: true,
         maxDimension: SCRCPY_DEFAULTS.maxSize,
       });
@@ -344,9 +324,7 @@ describe("server stream source switching", () => {
           serve: capturingServe({ options: null }),
         },
       ),
-    ).rejects.toThrow(
-      "grpc-screenshot is available only for Android Emulator devices",
-    );
+    ).rejects.toThrow("grpc-screenshot is available only for Android Emulator devices");
     expect(openCalls).toBe(0);
   });
 
@@ -375,12 +353,8 @@ describe("server stream source switching", () => {
         },
       );
 
-      expect(opened).toEqual([
-        { mode: "grpc-screenshot", grpcImageMode: imageMode },
-      ]);
-      expect(
-        await (await request(captured, "/api/stream-mode")).json(),
-      ).toMatchObject({
+      expect(opened).toEqual([{ mode: "grpc-screenshot", grpcImageMode: imageMode }]);
+      expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
         mode: "grpc-screenshot",
         grpcImageMode: imageMode,
       });
@@ -392,7 +366,6 @@ describe("server stream source switching", () => {
       await started.stop();
     },
   );
-
 
   test("switches gRPC input atomically and preserves it through an encoder restart", async () => {
     const opened: Array<{
@@ -426,20 +399,13 @@ describe("server stream source switching", () => {
     );
 
     try {
-      expect(
-        await (await request(captured, "/api/stream-mode")).json(),
-      ).toMatchObject({
+      expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
         mode: "grpc-screenshot",
         inputSource: "scrcpy",
         sessionGeneration: 0,
       });
 
-      const switched = await putMode(
-        captured,
-        "grpc-screenshot",
-        undefined,
-        "grpc",
-      );
+      const switched = await putMode(captured, "grpc-screenshot", undefined, "grpc");
       expect(switched.status).toBe(200);
       expect(await switched.json()).toMatchObject({
         mode: "grpc-screenshot",
@@ -451,9 +417,7 @@ describe("server stream source switching", () => {
         maxDimension: 720,
       });
       expect(resized.status).toBe(200);
-      expect(
-        await (await request(captured, "/api/stream-mode")).json(),
-      ).toMatchObject({
+      expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
         mode: "grpc-screenshot",
         inputSource: "grpc",
         sessionGeneration: 2,
@@ -534,9 +498,7 @@ describe("server stream source switching", () => {
     const switching = putMode(captured, "grpc-screenshot");
     await grpcStarted.promise;
     expect(initial.closeCalls()).toBe(0);
-    expect(
-      (await (await request(captured, "/api/stream-mode")).json()).mode,
-    ).toBe("scrcpy");
+    expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe("scrcpy");
 
     grpcGate.resolve(grpc.session);
     expect(await (await switching).json()).toMatchObject({
@@ -562,9 +524,9 @@ describe("server stream source switching", () => {
         message: "replacement failed",
       },
     });
-    expect(
-      (await (await request(captured, "/api/stream-mode")).json()).mode,
-    ).toBe("grpc-screenshot");
+    expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe(
+      "grpc-screenshot",
+    );
     expect(grpc.closeCalls()).toBe(0);
 
     await started.stop();
@@ -588,8 +550,7 @@ describe("server stream source switching", () => {
       { serial: "emulator-5554", port: 3300 },
       {
         openSession: async ({ mode, grpcImageMode }) => {
-          if (failRgb888 && grpcImageMode === "rgb888")
-            throw new Error("RGB888 startup failed");
+          if (failRgb888 && grpcImageMode === "rgb888") throw new Error("RGB888 startup failed");
           opened.push({ mode, grpcImageMode });
           const capture = captures[opened.length - 1];
           if (!capture) throw new Error("unexpected capture start");
@@ -612,9 +573,7 @@ describe("server stream source switching", () => {
     expect(await failedRgb888.json()).toMatchObject({
       error: { message: "RGB888 startup failed" },
     });
-    expect(
-      await (await request(captured, "/api/stream-mode")).json(),
-    ).toMatchObject({
+    expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
       mode: "grpc-screenshot",
       grpcImageMode: "mmap",
       sessionGeneration: 1,
@@ -628,9 +587,7 @@ describe("server stream source switching", () => {
       grpcImageMode: "rgb888",
       sessionGeneration: 2,
     });
-    expect(
-      await (await request(captured, "/api/stream-mode")).json(),
-    ).toMatchObject({
+    expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
       mode: "grpc-screenshot",
       grpcImageMode: "rgb888",
       sessionGeneration: 2,
@@ -712,9 +669,7 @@ describe("server stream source switching", () => {
     const switching = putMode(captured, "grpc-screenshot", "mmap");
     await closeStarted.promise;
     try {
-      expect(
-        await (await request(captured, "/api/stream-mode")).json(),
-      ).toMatchObject({
+      expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
         mode: "grpc-screenshot",
         grpcImageMode: "mmap",
         sessionGeneration: 1,
@@ -777,9 +732,7 @@ describe("server stream source switching", () => {
       ).status,
     ).toBe(200);
 
-    const before = (await (
-      await request(captured, "/health")
-    ).json()) as {
+    const before = (await (await request(captured, "/health")).json()) as {
       location: unknown;
       route: { status: string };
       session: { eventCount: number };
@@ -789,9 +742,7 @@ describe("server stream source switching", () => {
 
     expect((await putMode(captured, "grpc-screenshot")).status).toBe(200);
 
-    const after = (await (
-      await request(captured, "/health")
-    ).json()) as typeof before;
+    const after = (await (await request(captured, "/health")).json()) as typeof before;
     expect(after.session.eventCount).toBe(2);
     expect(after.location).toEqual(before.location);
     expect(after.route.status).toBe("running");
@@ -807,16 +758,13 @@ describe("server stream source switching", () => {
     const started = await startServer(
       { serial: "emulator-5554", port: 3300 },
       {
-        openSession: async () =>
-          openCount++ === 0 ? failed.session : replacement.session,
+        openSession: async () => (openCount++ === 0 ? failed.session : replacement.session),
         serve: capturingServe(captured),
       },
     );
 
     failed.fail("capture process exited");
-    expect((await (await request(captured, "/health")).json()).status).toBe(
-      "error",
-    );
+    expect((await (await request(captured, "/health")).json()).status).toBe("error");
 
     const response = await putMode(captured, "grpc-screenshot");
     expect(response.status).toBe(200);
@@ -886,14 +834,12 @@ describe("server stream source switching", () => {
       ok: false,
       error: {
         code: "invalid_request",
-        message:
-          "grpc-screenshot is available only for Android Emulator devices",
+        message: "grpc-screenshot is available only for Android Emulator devices",
       },
     });
     await started.stop();
   });
 });
-
 
 test("standalone encoder switches preserve selection and current capture after failure", async () => {
   const captured: CapturedServer = { options: null };
@@ -901,43 +847,74 @@ test("standalone encoder switches preserve selection and current capture after f
   const streams: ReturnType<typeof fakeSession>[] = [];
   let failHardware = false;
   let hardwareError: string | undefined;
-  const started = await startServer({ port: 3300, serial: "emulator-5554", streamMode: "grpc-screenshot", encoder: "hardware" }, {
-    serve: capturingServe(captured),
-    getHardwareEncoderError: () => hardwareError,
-    openSession: async (options) => {
-      if (options.encoder === "hardware" && failHardware) {
-        hardwareError = "Hardware encoder unavailable";
-        throw new Error(hardwareError);
-      }
-      if (options.encoder === "hardware") hardwareError = undefined;
-      opened.push(options);
-      const stream = fakeSession(options.serial, options.mode, options.grpcImageMode, options.inputSource);
-      streams.push(stream);
-      const diagnostics = new GrpcCaptureDiagnosticsTracker({ imageMode: options.grpcImageMode }).snapshot();
-      return { ...stream.session, diagnostics: () => ({ grpcCapture: { ...diagnostics, encoderName: options.encoder === "hardware" ? "h264_videotoolbox" : "libx264" } }) };
+  const started = await startServer(
+    { port: 3300, serial: "emulator-5554", streamMode: "grpc-screenshot", encoder: "hardware" },
+    {
+      serve: capturingServe(captured),
+      getHardwareEncoderError: () => hardwareError,
+      openSession: async (options) => {
+        if (options.encoder === "hardware" && failHardware) {
+          hardwareError = "Hardware encoder unavailable";
+          throw new Error(hardwareError);
+        }
+        if (options.encoder === "hardware") hardwareError = undefined;
+        opened.push(options);
+        const stream = fakeSession(
+          options.serial,
+          options.mode,
+          options.grpcImageMode,
+          options.inputSource,
+        );
+        streams.push(stream);
+        const diagnostics = new GrpcCaptureDiagnosticsTracker({
+          imageMode: options.grpcImageMode,
+        }).snapshot();
+        return {
+          ...stream.session,
+          diagnostics: () => ({
+            grpcCapture: {
+              ...diagnostics,
+              encoderName: options.encoder === "hardware" ? "h264_videotoolbox" : "libx264",
+            },
+          }),
+        };
+      },
     },
-  });
-  const setEncoder = (encoder: string) => request(captured, "/api/stream-mode", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "grpc-screenshot", encoder }),
-  });
+  );
+  const setEncoder = (encoder: string) =>
+    request(captured, "/api/stream-mode", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "grpc-screenshot", encoder }),
+    });
   try {
     for (const path of ["/api/stream-mode", "/health", "/api"]) {
-      expect(await (await request(captured, path)).json()).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox" });
+      expect(await (await request(captured, path)).json()).toMatchObject({
+        encoder: "hardware",
+        encoderName: "h264_videotoolbox",
+      });
     }
     expect((await setEncoder("software")).status).toBe(200);
     expect(streams[0]!.closeCalls()).toBe(1);
     failHardware = true;
     expect((await setEncoder("hardware")).status).toBe(503);
     expect(streams[1]!.closeCalls()).toBe(0);
-    expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({ encoder: "software", encoderName: "libx264", availableEncoders: ["software", "hardware"], hardwareEncoderError: hardwareError, sessionGeneration: 1 });
+    expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      hardwareEncoderError: hardwareError,
+      sessionGeneration: 1,
+    });
     await putMode(captured, "grpc-screenshot", "rgb888");
     expect(opened.at(-1)).toMatchObject({ encoder: "software", grpcImageMode: "rgb888" });
     await patchStreamSettings(captured, { h264Fps: 24 });
     expect(opened.at(-1)).toMatchObject({ encoder: "software", maxFps: 24 });
     failHardware = false;
     expect((await setEncoder("hardware")).status).toBe(200);
-    expect(await (await request(captured, "/api/stream-mode")).json()).not.toHaveProperty("hardwareEncoderError");
+    expect(await (await request(captured, "/api/stream-mode")).json()).not.toHaveProperty(
+      "hardwareEncoderError",
+    );
     const count = opened.length;
     expect((await setEncoder("hardware")).status).toBe(200);
     expect(opened).toHaveLength(count);

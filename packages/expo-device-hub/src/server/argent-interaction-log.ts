@@ -1,19 +1,19 @@
-import { stat } from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-import { type AgentInteraction } from '@expo/hub-client';
+import { type AgentInteraction } from "@expo/hub-client";
 
-import { parseArgentInteractionLogLine } from './argent-interaction-parser';
+import { parseArgentInteractionLogLine } from "./argent-interaction-parser";
 
-export const DEFAULT_ARGENT_MCP_LOG = join(homedir(), '.argent', 'mcp-calls.log');
+export const DEFAULT_ARGENT_MCP_LOG = join(homedir(), ".argent", "mcp-calls.log");
 
 /** Incrementally reads complete JSONL records from Argent's append-only MCP log. */
 export class ArgentInteractionLog {
   readonly #path: string;
   #offset = 0;
-  #remainder = '';
+  #remainder = "";
 
   constructor(path = process.env.ARGENT_MCP_LOG ?? DEFAULT_ARGENT_MCP_LOG) {
     this.#path = path;
@@ -29,14 +29,14 @@ export class ArgentInteractionLog {
 
     if (size < this.#offset) {
       this.#offset = 0;
-      this.#remainder = '';
+      this.#remainder = "";
     }
     if (size === this.#offset) return [];
 
     const chunk = await readUtf8Range(this.#path, this.#offset, size - 1);
     this.#offset = size;
-    const lines = `${this.#remainder}${chunk}`.split('\n');
-    this.#remainder = lines.pop() ?? '';
+    const lines = `${this.#remainder}${chunk}`.split("\n");
+    this.#remainder = lines.pop() ?? "";
     return lines
       .map(parseArgentInteractionLogLine)
       .filter((interaction): interaction is AgentInteraction => interaction !== null);
@@ -48,5 +48,5 @@ async function readUtf8Range(path: string, start: number, end: number): Promise<
   for await (const chunk of createReadStream(path, { start, end })) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks).toString("utf8");
 }

@@ -20,9 +20,9 @@ describe("control contract numeric boundaries", () => {
       "x must be a finite number",
     );
     for (const pointerId of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
-      expect(() =>
-        parseGesture({ type: "touch", action: "move", x: 0, y: 0, pointerId }),
-      ).toThrow("pointerId must be a non-negative safe integer");
+      expect(() => parseGesture({ type: "touch", action: "move", x: 0, y: 0, pointerId })).toThrow(
+        "pointerId must be a non-negative safe integer",
+      );
     }
     for (const metaState of [-1, 1.5, 0x80000000]) {
       expect(() => parseGesture({ type: "key", keycode: 1, metaState })).toThrow(
@@ -45,9 +45,7 @@ describe("WebSocket contract rejection boundaries", () => {
 
   test("validates server JSON, unsupported envelopes, and type guards", () => {
     expect(parseWsServerJson('{"ok":true}')).toEqual({ ok: true });
-    expect(() => parseWsServerJson("{")).toThrow(
-      "WebSocket server message must be valid JSON",
-    );
+    expect(() => parseWsServerJson("{")).toThrow("WebSocket server message must be valid JSON");
     expect(() => parseWsServerMessage({ ok: false, error: 1 })).toThrow(
       "unsupported WebSocket server message",
     );
@@ -59,15 +57,13 @@ describe("WebSocket contract rejection boundaries", () => {
 describe("worker contract rejection boundaries", () => {
   test("validates command containers and command-specific fields", () => {
     expect(() => parseWorkerCommand(null)).toThrow("worker command must be an object");
-    expect(() =>
-      parseWorkerCommand({ type: "init", canvas: {}, url: "" }),
-    ).toThrow("url must be a non-empty string");
+    expect(() => parseWorkerCommand({ type: "init", canvas: {}, url: "" })).toThrow(
+      "url must be a non-empty string",
+    );
     expect(() => parseWorkerCommand({ type: "send", text: 1 })).toThrow(
       "send text must be a string",
     );
-    expect(() => parseWorkerCommand({ type: "unknown" })).toThrow(
-      "unsupported worker command",
-    );
+    expect(() => parseWorkerCommand({ type: "unknown" })).toThrow("unsupported worker command");
     expect(isWorkerCommand({ type: "connect" })).toBe(true);
     expect(isWorkerCommand({ type: "send", text: null })).toBe(false);
   });
@@ -76,9 +72,9 @@ describe("worker contract rejection boundaries", () => {
     expect(() => parseWorkerEvent({ type: "status", status: 1 })).toThrow(
       "worker status must be a string",
     );
-    expect(() =>
-      parseWorkerEvent({ type: "session", size: { width: 0, height: 1 } }),
-    ).toThrow("dimensions must be positive");
+    expect(() => parseWorkerEvent({ type: "session", size: { width: 0, height: 1 } })).toThrow(
+      "dimensions must be positive",
+    );
     expect(() =>
       parseWorkerEvent({
         type: "stats",
@@ -105,9 +101,7 @@ describe("worker contract rejection boundaries", () => {
         },
       }),
     ).toThrow("rendered must be a boolean");
-    expect(() => parseWorkerEvent({ type: "unknown" })).toThrow(
-      "unsupported worker event",
-    );
+    expect(() => parseWorkerEvent({ type: "unknown" })).toThrow("unsupported worker event");
     expect(isWorkerEvent({ type: "rendered" })).toBe(true);
     expect(isWorkerEvent([])).toBe(false);
   });

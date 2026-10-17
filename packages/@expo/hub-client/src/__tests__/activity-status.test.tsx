@@ -33,7 +33,9 @@ class Socket {
     // serve-sim answers id-only health probes before host action dispatch.
     if (typeof message.id === "number" && !message.ui && !message.action)
       queueMicrotask(() =>
-        this.onmessage?.({ data: JSON.stringify({ id: message.id, error: "unsupported request" }) }),
+        this.onmessage?.({
+          data: JSON.stringify({ id: message.id, error: "unsupported request" }),
+        }),
       );
     if (message.ui)
       queueMicrotask(() =>

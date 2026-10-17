@@ -24,7 +24,12 @@ async function waitForAsync(check: () => boolean, timeoutMs = 90_000): Promise<v
 }
 
 // fetch cannot set Host, so this sends the tunnel's Host header with http.request.
-function postThroughTunnelHost(port: number, path: string, token: string, body: unknown): Promise<number> {
+function postThroughTunnelHost(
+  port: number,
+  path: string,
+  token: string,
+  body: unknown,
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const req = request(

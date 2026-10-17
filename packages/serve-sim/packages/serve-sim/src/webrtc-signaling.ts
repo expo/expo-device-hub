@@ -58,7 +58,12 @@ function parseIceServers(value: unknown): WebRtcIceServer[] | undefined {
   }
 
   return value.map((candidate) => {
-    if (!isRecord(candidate) || !Array.isArray(candidate.urls) || candidate.urls.length === 0 || candidate.urls.length > 16) {
+    if (
+      !isRecord(candidate) ||
+      !Array.isArray(candidate.urls) ||
+      candidate.urls.length === 0 ||
+      candidate.urls.length > 16
+    ) {
       throw new WebRtcSignalingError("Invalid ICE server", 400, "invalid_offer");
     }
     const urls = candidate.urls.map((url) => {

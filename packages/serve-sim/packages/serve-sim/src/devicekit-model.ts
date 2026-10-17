@@ -5,13 +5,20 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { homedir } from "os";
 import { dirname, join } from "path";
 
-const MODEL_RESOURCE = "SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources/V68.usdz";
+const MODEL_RESOURCE =
+  "SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources/V68.usdz";
 type XcodeLocations = { developerDir?: string; applicationsDirs?: string[] };
 
 function selectedDeveloperDir(): string {
   if (process.env.DEVELOPER_DIR) return process.env.DEVELOPER_DIR;
-  try { return execFileSync("/usr/bin/xcode-select", ["-p"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); }
-  catch { return ""; }
+  try {
+    return execFileSync("/usr/bin/xcode-select", ["-p"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
 }
 
 /** Like 2D DeviceKit chrome, Apple's model remains in the host's installation. */
@@ -19,14 +26,19 @@ export function resolveDeviceKitModel({
   developerDir = selectedDeveloperDir(),
   applicationsDirs = ["/Applications", join(homedir(), "Applications")],
 }: XcodeLocations = {}): string | null {
-  const contents = developerDir.endsWith(".app") ? join(developerDir, "Contents") : dirname(developerDir);
+  const contents = developerDir.endsWith(".app")
+    ? join(developerDir, "Contents")
+    : dirname(developerDir);
   const selected = join(contents, MODEL_RESOURCE);
   if (developerDir && existsSync(selected)) return selected;
   // The selected Xcode may predate Duo while a newer beta supplies its assets.
   for (const directory of applicationsDirs) {
     let apps: string[];
-    try { apps = readdirSync(directory).filter((name) => name.endsWith(".app")); }
-    catch { continue; }
+    try {
+      apps = readdirSync(directory).filter((name) => name.endsWith(".app"));
+    } catch {
+      continue;
+    }
     apps.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
     for (const app of apps) {
       const path = join(directory, app, "Contents", MODEL_RESOURCE);
@@ -38,7 +50,11 @@ export function resolveDeviceKitModel({
 
 let cached: { key: string; bytes: Buffer; etag: string } | undefined;
 
-export function serveDeviceKitModelAsset(req: IncomingMessage, res: ServerResponse, locations?: XcodeLocations): void {
+export function serveDeviceKitModelAsset(
+  req: IncomingMessage,
+  res: ServerResponse,
+  locations?: XcodeLocations,
+): void {
   // This route always serves V68; requests cannot select filesystem paths.
   const path = resolveDeviceKitModel(locations);
   if (!path) {
@@ -53,7 +69,11 @@ export function serveDeviceKitModelAsset(req: IncomingMessage, res: ServerRespon
       const bytes = readFileSync(path);
       cached = { key, bytes, etag: `"${createHash("sha256").update(bytes).digest("base64url")}"` };
     }
-    const headers = { "Content-Type": "model/vnd.usdz+zip", "Cache-Control": "private, no-cache", ETag: cached.etag };
+    const headers = {
+      "Content-Type": "model/vnd.usdz+zip",
+      "Cache-Control": "private, no-cache",
+      ETag: cached.etag,
+    };
     if (req.headers["if-none-match"] === cached.etag) {
       res.writeHead(304, headers);
       res.end();

@@ -42,13 +42,25 @@ describe("grid catalog and live status split", () => {
 
   test("requests a catalog page only when a newly relevant device is missing", () => {
     const loaded = [catalog[0]!];
-    expect(gridCatalogNeedsRefresh(loaded, [
-      { device: "A", state: "Booted", helper: null },
-      { device: "B", state: "Shutdown", helper: null },
-    ], 1)).toBe(false);
-    expect(gridCatalogNeedsRefresh(loaded, [
-      { device: "B", state: "Booted", helper: null },
-      { device: "A", state: "Shutdown", helper: null },
-    ], 1)).toBe(true);
+    expect(
+      gridCatalogNeedsRefresh(
+        loaded,
+        [
+          { device: "A", state: "Booted", helper: null },
+          { device: "B", state: "Shutdown", helper: null },
+        ],
+        1,
+      ),
+    ).toBe(false);
+    expect(
+      gridCatalogNeedsRefresh(
+        loaded,
+        [
+          { device: "B", state: "Booted", helper: null },
+          { device: "A", state: "Shutdown", helper: null },
+        ],
+        1,
+      ),
+    ).toBe(true);
   });
 });

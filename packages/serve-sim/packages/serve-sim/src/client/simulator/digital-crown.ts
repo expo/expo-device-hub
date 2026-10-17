@@ -18,9 +18,6 @@ export function digitalCrownDeltaFromWheel(
 
   // Browser wheel deltas already reflect the user's system scroll direction,
   // matching Simulator.app's AppKit scroll-wheel path.
-  const delta = Math.max(
-    -MAX_DIGITAL_CROWN_DELTA,
-    Math.min(MAX_DIGITAL_CROWN_DELTA, deltaPixels),
-  );
+  const delta = Math.max(-MAX_DIGITAL_CROWN_DELTA, Math.min(MAX_DIGITAL_CROWN_DELTA, deltaPixels));
   return Math.abs(delta) < MIN_DIGITAL_CROWN_DELTA ? null : delta;
 }

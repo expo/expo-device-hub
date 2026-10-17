@@ -1,4 +1,4 @@
-import { SidebarToggle } from '@expo/hub-components';
+import { SidebarToggle } from "@expo/hub-components";
 
 const DEFAULT_INSET = 24;
 const COLLISION_INSET = 80;
@@ -8,7 +8,7 @@ const COLLISION_BUFFER = 40;
 export function floatingSidebarToggleInset(
   oppositeOverlay: boolean,
   containerWidth: number,
-  oppositeSidebarWidth: number
+  oppositeSidebarWidth: number,
 ): number {
   return oppositeOverlay && containerWidth < oppositeSidebarWidth + COLLISION_BUFFER
     ? COLLISION_INSET
@@ -20,14 +20,15 @@ export function FloatingSidebarToggle({
   inset = DEFAULT_INSET,
   onClick,
 }: {
-  side: 'left' | 'right';
+  side: "left" | "right";
   inset?: number;
   onClick: () => void;
 }) {
   return (
     <div
       data-floating-sidebar-toggle={side}
-      style={{ position: 'absolute', top: 28, [side]: inset, zIndex: 15 }}>
+      style={{ position: "absolute", top: 28, [side]: inset, zIndex: 15 }}
+    >
       <SidebarToggle floating side={side} onClick={onClick} />
     </div>
   );

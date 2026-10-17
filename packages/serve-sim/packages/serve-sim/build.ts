@@ -38,7 +38,10 @@ const preactPlugin = {
   setup(build: any) {
     const preactCompat = resolve(root, "node_modules/preact/compat/dist/compat.module.js");
     const preactCompatClient = resolve(root, "node_modules/preact/compat/client.mjs");
-    const preactJsxRuntime = resolve(root, "node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js");
+    const preactJsxRuntime = resolve(
+      root,
+      "node_modules/preact/jsx-runtime/dist/jsxRuntime.module.js",
+    );
     build.onResolve({ filter: /^react-dom\/client$/ }, () => ({ path: preactCompatClient }));
     build.onResolve({ filter: /^react(-dom)?$/ }, () => ({ path: preactCompat }));
     build.onResolve({ filter: /^react\/jsx(-dev)?-runtime$/ }, () => ({ path: preactJsxRuntime }));
@@ -107,9 +110,8 @@ ${faviconTag}
 const htmlB64 = Buffer.from(html).toString("base64");
 console.log(`preview html      ${kb(html.length)}  (base64 ${kb(htmlB64.length)})`);
 
-const pkgVersion = JSON.parse(
-  readFileSync(resolve(root, "package.json"), "utf-8"),
-).version as string;
+const pkgVersion = JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8"))
+  .version as string;
 
 const PREVIEW_DEFINE = {
   __PREVIEW_HTML_B64__: JSON.stringify(htmlB64),
@@ -128,7 +130,24 @@ const mwResult = await Bun.build({
   format: "esm",
   minify: true,
   outdir: distDir,
-  external: ["fs", "path", "os", "child_process", "url", "net", "tls", "crypto", "stream", "events", "http", "https", "zlib", "buffer", "module", "ws"],
+  external: [
+    "fs",
+    "path",
+    "os",
+    "child_process",
+    "url",
+    "net",
+    "tls",
+    "crypto",
+    "stream",
+    "events",
+    "http",
+    "https",
+    "zlib",
+    "buffer",
+    "module",
+    "ws",
+  ],
   define: PREVIEW_DEFINE,
   sourcemap: "linked",
 });
@@ -171,7 +190,24 @@ const binJsResult = await Bun.build({
   minify: true,
   outdir: distDir,
   naming: "serve-sim.js",
-  external: ["fs", "path", "os", "child_process", "url", "net", "tls", "crypto", "stream", "events", "http", "https", "zlib", "buffer", "module", "ws"],
+  external: [
+    "fs",
+    "path",
+    "os",
+    "child_process",
+    "url",
+    "net",
+    "tls",
+    "crypto",
+    "stream",
+    "events",
+    "http",
+    "https",
+    "zlib",
+    "buffer",
+    "module",
+    "ws",
+  ],
   define: PREVIEW_DEFINE,
   sourcemap: "linked",
 });
@@ -212,10 +248,12 @@ try {
       "--compile",
       "--minify",
       resolve(compileDir, "serve-sim.js"),
-      "--outfile", resolve(distDir, "serve-sim"),
+      "--outfile",
+      resolve(distDir, "serve-sim"),
       // Keep ws external in both stages so Bun uses its native WebSocket
       // implementation; bundling Node's implementation breaks upgrades.
-      "--external", "ws",
+      "--external",
+      "ws",
     ],
     { stdio: "inherit" },
   );
@@ -243,17 +281,13 @@ console.log("dist/serve-sim      (compiled binary)");
   console.log("dist/capability-loader/libServeSimCapabilityLoader.dylib");
 }
 
-
 // ─── 6. SimCameraInjector dylib + SimCameraHelper host CLI ───────────────
 // Both ship in dist/simcam/ so they tarball alongside the JS bin. The CLI's
 // `camera` verb resolves them via locateCameraDylib / locateCameraHelper.
 
 const camBuild = spawnSync(
   "bash",
-  [
-    resolve(root, "Sources/SimCameraInjector/build.sh"),
-    resolve(distDir, "simcam"),
-  ],
+  [resolve(root, "Sources/SimCameraInjector/build.sh"), resolve(distDir, "simcam")],
   { stdio: "inherit" },
 );
 if (camBuild.status !== 0) {
@@ -264,10 +298,7 @@ console.log("dist/simcam/libSimCameraInjector.dylib");
 
 const helperBuild = spawnSync(
   "bash",
-  [
-    resolve(root, "Sources/SimCameraHelper/build.sh"),
-    resolve(distDir, "simcam"),
-  ],
+  [resolve(root, "Sources/SimCameraHelper/build.sh"), resolve(distDir, "simcam")],
   { stdio: "inherit" },
 );
 if (helperBuild.status !== 0) {
@@ -280,10 +311,7 @@ console.log("dist/simcam/serve-sim-camera-helper");
 
 const axSettingsBuild = spawnSync(
   "bash",
-  [
-    resolve(root, "Sources/SimAXSettings/build.sh"),
-    resolve(distDir, "simax"),
-  ],
+  [resolve(root, "Sources/SimAXSettings/build.sh"), resolve(distDir, "simax")],
   { stdio: "inherit" },
 );
 if (axSettingsBuild.status !== 0) {
@@ -298,11 +326,9 @@ for (const [name, script] of [
   ["SimPasteboard", "Sources/SimPasteboard/build.sh"],
   ["SimPasteboardReader", "Sources/SimPasteboardReader/build.sh"],
 ] as const) {
-  const result = spawnSync(
-    "bash",
-    [resolve(root, script), resolve(distDir, "simpb")],
-    { stdio: "inherit" },
-  );
+  const result = spawnSync("bash", [resolve(root, script), resolve(distDir, "simpb")], {
+    stdio: "inherit",
+  });
   if (result.status !== 0) {
     console.error(`${name} build failed.`);
     process.exit(result.status ?? 1);
@@ -318,10 +344,7 @@ console.log("dist/simpb/libSimPasteboardReader.dylib");
 
 const nativeBuild = spawnSync(
   "bash",
-  [
-    resolve(root, "Sources/SimNative/build.sh"),
-    resolve(distDir, "native"),
-  ],
+  [resolve(root, "Sources/SimNative/build.sh"), resolve(distDir, "native")],
   { stdio: "inherit" },
 );
 if (nativeBuild.status !== 0) {
@@ -329,7 +352,6 @@ if (nativeBuild.status !== 0) {
   process.exit(nativeBuild.status ?? 1);
 }
 console.log("dist/native/serve-sim-native.node");
-
 
 // Build the capture dylib for injection into third-party apps.
 

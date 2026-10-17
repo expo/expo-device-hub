@@ -35,14 +35,22 @@ export function bridgeWebSocketFrames(
   const closeBoth = () => {
     if (closed) return;
     closed = true;
-    try { upstream.close(); } catch {}
-    try { socket.end(websocketFrame(0x8, Buffer.alloc(0))); } catch {}
-    try { socket.destroy(); } catch {}
+    try {
+      upstream.close();
+    } catch {}
+    try {
+      socket.end(websocketFrame(0x8, Buffer.alloc(0)));
+    } catch {}
+    try {
+      socket.destroy();
+    } catch {}
   };
 
   const sendToUpstream = (frame: PendingWebSocketFrame) => {
     if (upstreamOpen && upstream.readyState === WebSocket.OPEN) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
+      upstream.send(
+        frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload),
+      );
       return;
     }
     pendingToUpstream.push({ opcode: frame.opcode, payload: Buffer.from(frame.payload) });
@@ -60,7 +68,7 @@ export function bridgeWebSocketFrames(
           return;
         }
         if (frame.opcode === 0x9) {
-          sendBrowserFrame(socket, 0xA, frame.payload);
+          sendBrowserFrame(socket, 0xa, frame.payload);
           continue;
         }
         if (frame.opcode === 0x1 || frame.opcode === 0x2) {
@@ -75,15 +83,15 @@ export function bridgeWebSocketFrames(
   upstream.onopen = () => {
     upstreamOpen = true;
     for (const frame of pendingToUpstream) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
+      upstream.send(
+        frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload),
+      );
     }
     pendingToUpstream = [];
   };
   upstream.onmessage = (event) => {
     const data = event.data;
-    const payload = typeof data === "string"
-      ? Buffer.from(data)
-      : Buffer.from(data as ArrayBuffer);
+    const payload = typeof data === "string" ? Buffer.from(data) : Buffer.from(data as ArrayBuffer);
     sendBrowserFrame(socket, typeof data === "string" ? 0x1 : 0x2, payload);
   };
   upstream.onerror = closeBoth;

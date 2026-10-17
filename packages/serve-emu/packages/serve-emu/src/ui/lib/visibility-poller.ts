@@ -151,13 +151,10 @@ export class VisibilityPoller<T, Handle = number> {
         if (this.#runAfterFlight) {
           this.#run();
         } else {
-          this.#timer = this.#clock.setTimeout(
-            () => {
-              this.#timer = null;
-              this.#run();
-            },
-            this.#intervalMs,
-          );
+          this.#timer = this.#clock.setTimeout(() => {
+            this.#timer = null;
+            this.#run();
+          }, this.#intervalMs);
         }
       });
   }

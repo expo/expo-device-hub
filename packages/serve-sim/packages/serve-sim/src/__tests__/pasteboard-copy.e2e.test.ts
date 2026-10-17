@@ -5,7 +5,10 @@ import { simMiddleware } from "../middleware";
 import { closeDeviceSession, getDeviceSession, peekDeviceSession } from "../device-session";
 import { locateNativeAddon } from "../native";
 import { locateSimpbArtifact } from "../sim-pasteboard";
-import { PasteboardCopyTimeoutError, copyFromSim as performCopyFromSim } from "../sim-pasteboard-copy";
+import {
+  PasteboardCopyTimeoutError,
+  copyFromSim as performCopyFromSim,
+} from "../sim-pasteboard-copy";
 import {
   COPY_FIXTURE_TEXT,
   ensureFixtureInstalled,
@@ -34,7 +37,12 @@ const describeCopy = copyReady ? describe : describe.skip;
 const describeUserApp = copyReady && pasteboardFixture ? describe : describe.skip;
 const SAFARI_COPY_TEXT = "serve-sim-safari-copy-probe";
 
-async function copyFromSim(): Promise<{ ok?: boolean; text?: string; error?: string; status: number }> {
+async function copyFromSim(): Promise<{
+  ok?: boolean;
+  text?: string;
+  error?: string;
+  status: number;
+}> {
   getDeviceSession(udid!);
   const res = await middleware(
     new Request(
@@ -56,7 +64,9 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
     let selectedText = "";
 
     beforeAll(async () => {
-      console.log(`[pasteboard-copy] device session before Safari: ${peekDeviceSession(udid!) ? "existing" : "none"}`);
+      console.log(
+        `[pasteboard-copy] device session before Safari: ${peekDeviceSession(udid!) ? "existing" : "none"}`,
+      );
       // An earlier suite can leave this device's session open; after a reboot, its Command+C no longer reaches the app.
       closeDeviceSession(udid!);
       let markRequested = () => {};
@@ -112,7 +122,8 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
           await sendSimTap(udid!, 0.5, 0.5);
           await sendSimSelectAllShortcut(udid!);
           const deadline = Date.now() + 2000;
-          while (!selectedText.includes(SAFARI_COPY_TEXT) && Date.now() < deadline) await Bun.sleep(100);
+          while (!selectedText.includes(SAFARI_COPY_TEXT) && Date.now() < deadline)
+            await Bun.sleep(100);
         }
         const selected = selectedText.includes(SAFARI_COPY_TEXT);
         if (selected) result = await copyFromSim();
@@ -141,7 +152,9 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
       const before = items();
       expect(before).toContain("public.html");
       expect(before).toContain("public.utf8-plain-text");
-      await expect(performCopyFromSim(udid!, async () => {})).rejects.toBeInstanceOf(PasteboardCopyTimeoutError);
+      await expect(performCopyFromSim(udid!, async () => {})).rejects.toBeInstanceOf(
+        PasteboardCopyTimeoutError,
+      );
       expect(items()).toBe(before);
     }, 120_000);
   });

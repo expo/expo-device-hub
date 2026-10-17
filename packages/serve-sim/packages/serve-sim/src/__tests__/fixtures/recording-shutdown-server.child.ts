@@ -10,12 +10,16 @@ const device = "00000000-0000-0000-0000-000000000288";
 const events = join(directory, "events.ndjson");
 const output = join(directory, "recording.mp4");
 const manifest = join(directory, "session.json");
-const event = (name: string) => appendFileSync(events, JSON.stringify({
-  name,
-  statePresent: existsSync(join(directory, `server-${device}.json`)),
-  reportPresent: existsSync(join(directory, `recording-shutdown-failed-${process.pid}.json`)),
-}) + "\n");
-const completed = new Promise<void>(resolve => process.stdin.once("data", () => resolve()));
+const event = (name: string) =>
+  appendFileSync(
+    events,
+    JSON.stringify({
+      name,
+      statePresent: existsSync(join(directory, `server-${device}.json`)),
+      reportPresent: existsSync(join(directory, `recording-shutdown-failed-${process.pid}.json`)),
+    }) + "\n",
+  );
+const completed = new Promise<void>((resolve) => process.stdin.once("data", () => resolve()));
 
 mock.module("child_process", () => ({
   ...childProcess,
@@ -26,7 +30,9 @@ mock.module("child_process", () => ({
     if (command === `xcrun simctl bootstatus ${device} -b`) return "";
     throw new Error(`Unexpected host command: ${command}`);
   },
-  execFileSync: () => { throw new Error("Unexpected host executable"); },
+  execFileSync: () => {
+    throw new Error("Unexpected host executable");
+  },
 }));
 const simctlModule = await import("../../simctl");
 mock.module("../../simctl", () => ({
@@ -39,7 +45,9 @@ mock.module("../../simctl", () => ({
 mock.module("../../clipboard-session", () => ({
   createClipboardSession: () => ({
     initialize: async () => {},
-    dispose: async () => { event("clipboard-dispose"); },
+    dispose: async () => {
+      event("clipboard-dispose");
+    },
   }),
 }));
 const simulatorHost = await import("../../simulator-host");
@@ -49,13 +57,16 @@ mock.module("../../native", () => ({
   ...native,
   NativeHid: class {},
   NativeCapture: class {
-    async startRecording() { writeFileSync(output, "unfinished"); }
+    async startRecording() {
+      writeFileSync(output, "unfinished");
+    }
     async stopRecording() {
       event("writer-start");
       await completed;
       writeFileSync(output, "finished");
       event("writer-finish");
-      if (process.env.RECORDING_SHUTDOWN_FAIL === "1") throw new Error("delayed native finish failed");
+      if (process.env.RECORDING_SHUTDOWN_FAIL === "1")
+        throw new Error("delayed native finish failed");
       writeFileSync(manifest, "{}");
       return manifest;
     }
@@ -67,19 +78,31 @@ mock.module("../../launch-manager", () => ({
   ...launchManager,
   applyDefaultCapabilities: async () => {},
   disarmStaleCapabilityLoader: async () => {},
-  armCapabilityLoader: async () => { armed = true; },
-  devicesArmedHere: () => armed ? [device] : [],
+  armCapabilityLoader: async () => {
+    armed = true;
+  },
+  devicesArmedHere: () => (armed ? [device] : []),
   waitForLaunchUpdates: async () => {},
-  releaseSession: async () => { event("device-disarm"); armed = false; },
-  releaseSessionSync: () => { event("device-disarm-sync"); armed = false; },
+  releaseSession: async () => {
+    event("device-disarm");
+    armed = false;
+  },
+  releaseSessionSync: () => {
+    event("device-disarm-sync");
+    armed = false;
+  },
 }));
 const { captureRuntime } = await import("../../capture/runtime");
-spyOn(captureRuntime, "disableAll").mockImplementation(async () => { event("capture-disable"); });
-const { DeviceSession } = await import("../../device-session");
-spyOn(DeviceSession.prototype, "start").mockImplementation(function (this: InstanceType<typeof DeviceSession>) {
-  (this as any).phase = "running";
-  return Promise.resolve();
+spyOn(captureRuntime, "disableAll").mockImplementation(async () => {
+  event("capture-disable");
 });
+const { DeviceSession } = await import("../../device-session");
+spyOn(DeviceSession.prototype, "start").mockImplementation(
+  function (this: InstanceType<typeof DeviceSession>) {
+    (this as any).phase = "running";
+    return Promise.resolve();
+  },
+);
 const setTimeoutOriginal = globalThis.setTimeout;
 globalThis.setTimeout = ((callback: TimerHandler, ms?: number, ...args: unknown[]) =>
   setTimeoutOriginal(callback, ms === 65_000 ? 50 : ms, ...args)) as typeof setTimeout;

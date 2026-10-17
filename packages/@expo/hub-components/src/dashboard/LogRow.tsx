@@ -1,5 +1,5 @@
-import { bg, border, font, radius, text, textSize } from '../primitives';
-import { type LogEntry } from './data';
+import { bg, border, font, radius, text, textSize } from "../primitives";
+import { type LogEntry } from "./data";
 
 /** A single log line: a monospace source chip followed by the message. */
 export function LogRow({ entry }: { entry: LogEntry }) {
@@ -8,23 +8,25 @@ export function LogRow({ entry }: { entry: LogEntry }) {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'flex-start',
+        display: "flex",
+        alignItems: "flex-start",
         gap: 8,
-        padding: '8px 0',
+        padding: "8px 0",
         borderBottom: `1px solid ${border.secondary}`,
-      }}>
+      }}
+    >
       <span
         style={{
-          ...textSize['2xs'],
-          padding: '1px 5px',
+          ...textSize["2xs"],
+          padding: "1px 5px",
           borderRadius: radius.sm,
           backgroundColor: bg.element,
           fontFamily: font.mono,
           color: text.tertiary,
           flexShrink: 0,
           marginTop: 1,
-        }}>
+        }}
+      >
         {entry.source}
       </span>
       <span
@@ -34,8 +36,9 @@ export function LogRow({ entry }: { entry: LogEntry }) {
           flex: 1,
           minWidth: 0,
           color: text.secondary,
-          overflowWrap: 'anywhere',
-        }}>
+          overflowWrap: "anywhere",
+        }}
+      >
         {message}
       </span>
     </div>

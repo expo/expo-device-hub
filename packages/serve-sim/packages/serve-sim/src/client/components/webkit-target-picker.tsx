@@ -88,69 +88,90 @@ export function WebKitTargetPicker({
           {groups.map((group) => {
             const iconUrl = group.bundleId ? icons[group.bundleId] : null;
             return (
-            <li key={group.key} className="list-none m-0 p-0">
-              <div className="flex items-center gap-2 px-1.5 pt-1 pb-0.5 text-[12px] font-semibold text-white/[0.92]">
-                {iconUrl ? (
-                  <img src={iconUrl} alt="" className="w-4 h-4 rounded-[3px] shrink-0 object-cover" />
-                ) : (
-                  <span className="w-4 h-4 rounded-[3px] shrink-0 object-cover" aria-hidden="true" />
-                )}
-                <span className="overflow-hidden text-ellipsis whitespace-nowrap">{group.appName}</span>
-              </div>
-              <ul role="group" className="list-none m-0 p-0 pl-[26px]">
-                {group.targets.map((target) => {
-                  const isSelected = selected?.id === target.id;
-                  const isDisabled = !!target.inUseByOtherInspector && !isSelected;
-                  const title = (target.title || target.url || target.appName || "Untitled").slice(0, 90);
-                  const hovered = hoveredId === target.id && !isDisabled;
-                  const baseCls = "flex flex-col px-2 py-[3px] rounded text-[12px] leading-[1.35]";
-                  const stateCls = isDisabled
-                    ? "opacity-40 cursor-not-allowed italic text-white/85"
-                    : hovered
-                    ? "bg-[rgba(10,132,255,0.22)] text-white/85 cursor-pointer"
-                    : isSelected
-                    ? "bg-white/[0.06] text-white/85 cursor-pointer"
-                    : "text-white/85 cursor-pointer";
-                  return (
-                    <li
-                      key={target.id}
-                      role="option"
-                      aria-selected={isSelected}
-                      aria-disabled={isDisabled}
-                      tabIndex={isDisabled ? -1 : 0}
-                      title={isDisabled ? "Already being inspected by another debugger" : undefined}
-                      onMouseEnter={() => {
-                        if (isDisabled) return;
-                        if (hoveredRef.current && hoveredRef.current !== target.id) {
-                          postHighlightTarget(hoveredRef.current, false);
+              <li key={group.key} className="list-none m-0 p-0">
+                <div className="flex items-center gap-2 px-1.5 pt-1 pb-0.5 text-[12px] font-semibold text-white/[0.92]">
+                  {iconUrl ? (
+                    <img
+                      src={iconUrl}
+                      alt=""
+                      className="w-4 h-4 rounded-[3px] shrink-0 object-cover"
+                    />
+                  ) : (
+                    <span
+                      className="w-4 h-4 rounded-[3px] shrink-0 object-cover"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                    {group.appName}
+                  </span>
+                </div>
+                <ul role="group" className="list-none m-0 p-0 pl-[26px]">
+                  {group.targets.map((target) => {
+                    const isSelected = selected?.id === target.id;
+                    const isDisabled = !!target.inUseByOtherInspector && !isSelected;
+                    const title = (
+                      target.title ||
+                      target.url ||
+                      target.appName ||
+                      "Untitled"
+                    ).slice(0, 90);
+                    const hovered = hoveredId === target.id && !isDisabled;
+                    const baseCls =
+                      "flex flex-col px-2 py-[3px] rounded text-[12px] leading-[1.35]";
+                    const stateCls = isDisabled
+                      ? "opacity-40 cursor-not-allowed italic text-white/85"
+                      : hovered
+                        ? "bg-[rgba(10,132,255,0.22)] text-white/85 cursor-pointer"
+                        : isSelected
+                          ? "bg-white/[0.06] text-white/85 cursor-pointer"
+                          : "text-white/85 cursor-pointer";
+                    return (
+                      <li
+                        key={target.id}
+                        role="option"
+                        aria-selected={isSelected}
+                        aria-disabled={isDisabled}
+                        tabIndex={isDisabled ? -1 : 0}
+                        title={
+                          isDisabled ? "Already being inspected by another debugger" : undefined
                         }
-                        hoveredRef.current = target.id;
-                        setHoveredId(target.id);
-                        postHighlightTarget(target.id, true);
-                      }}
-                      onMouseLeave={() => {
-                        if (hoveredRef.current === target.id) {
-                          postHighlightTarget(target.id, false);
-                          hoveredRef.current = null;
-                        }
-                        setHoveredId((prev) => (prev === target.id ? null : prev));
-                      }}
-                      onClick={() => {
-                        if (isDisabled) return;
-                        onSelectTarget(target.id);
-                        setOpen(false);
-                      }}
-                      className={`${baseCls} ${stateCls}`}
-                    >
-                      <span className="block overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
-                      {target.url && target.url !== "about:blank" && (
-                        <span className="block font-mono text-[10px] text-white/[0.42] overflow-hidden text-ellipsis whitespace-nowrap">{target.url}</span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </li>
+                        onMouseEnter={() => {
+                          if (isDisabled) return;
+                          if (hoveredRef.current && hoveredRef.current !== target.id) {
+                            postHighlightTarget(hoveredRef.current, false);
+                          }
+                          hoveredRef.current = target.id;
+                          setHoveredId(target.id);
+                          postHighlightTarget(target.id, true);
+                        }}
+                        onMouseLeave={() => {
+                          if (hoveredRef.current === target.id) {
+                            postHighlightTarget(target.id, false);
+                            hoveredRef.current = null;
+                          }
+                          setHoveredId((prev) => (prev === target.id ? null : prev));
+                        }}
+                        onClick={() => {
+                          if (isDisabled) return;
+                          onSelectTarget(target.id);
+                          setOpen(false);
+                        }}
+                        className={`${baseCls} ${stateCls}`}
+                      >
+                        <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
+                          {title}
+                        </span>
+                        {target.url && target.url !== "about:blank" && (
+                          <span className="block font-mono text-[10px] text-white/[0.42] overflow-hidden text-ellipsis whitespace-nowrap">
+                            {target.url}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
             );
           })}
         </ul>

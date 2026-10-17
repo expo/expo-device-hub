@@ -18,41 +18,41 @@ export type RouteFileLike = {
 
 export type RouteParserWorkerCommand =
   | {
-    type: "parse";
-    requestId: RouteParseRequestId;
-    file: RouteFileLike;
-    limits?: Partial<RouteParseLimits>;
-    maxFileBytes?: number;
-  }
+      type: "parse";
+      requestId: RouteParseRequestId;
+      file: RouteFileLike;
+      limits?: Partial<RouteParseLimits>;
+      maxFileBytes?: number;
+    }
   | { type: "cancel"; requestId?: RouteParseRequestId };
 
 export type RouteParserWorkerResponse =
   | {
-    type: "accepted";
-    requestId: RouteParseRequestId;
-    fileName: string;
-    totalBytes: number;
-  }
+      type: "accepted";
+      requestId: RouteParseRequestId;
+      fileName: string;
+      totalBytes: number;
+    }
   | {
-    type: "progress";
-    requestId: RouteParseRequestId;
-    stage: "reading" | "parsing";
-    bytesRead: number;
-    totalBytes: number;
-    processed: number;
-    waypoints: number;
-  }
+      type: "progress";
+      requestId: RouteParseRequestId;
+      stage: "reading" | "parsing";
+      bytesRead: number;
+      totalBytes: number;
+      processed: number;
+      waypoints: number;
+    }
   | { type: "result"; requestId: RouteParseRequestId; result: RouteParseResult }
   | {
-    type: "error";
-    requestId: RouteParseRequestId;
-    error: { code: RouteParseErrorCode; message: string };
-  }
+      type: "error";
+      requestId: RouteParseRequestId;
+      error: { code: RouteParseErrorCode; message: string };
+    }
   | {
-    type: "cancelled";
-    requestId: RouteParseRequestId;
-    reason: "cancelled" | "superseded";
-  };
+      type: "cancelled";
+      requestId: RouteParseRequestId;
+      reason: "cancelled" | "superseded";
+    };
 
 type ActiveParse = {
   requestId: RouteParseRequestId;
@@ -102,9 +102,10 @@ export class RouteParserWorkerController {
       cancelNotified: false,
     };
     this.#active = active;
-    const totalBytes = Number.isSafeInteger(command.file.size) && command.file.size >= 0
-      ? command.file.size
-      : Number.POSITIVE_INFINITY;
+    const totalBytes =
+      Number.isSafeInteger(command.file.size) && command.file.size >= 0
+        ? command.file.size
+        : Number.POSITIVE_INFINITY;
     this.#post({
       type: "accepted",
       requestId: command.requestId,
@@ -163,9 +164,13 @@ export class RouteParserWorkerController {
         if (!active.cancelNotified) this.#cancel(active, "cancelled");
         return;
       }
-      const routeError = error instanceof RouteParseError
-        ? error
-        : new RouteParseError("invalid-route", error instanceof Error ? error.message : String(error));
+      const routeError =
+        error instanceof RouteParseError
+          ? error
+          : new RouteParseError(
+              "invalid-route",
+              error instanceof Error ? error.message : String(error),
+            );
       this.#post({
         type: "error",
         requestId: command.requestId,
@@ -179,7 +184,10 @@ export class RouteParserWorkerController {
 
 type WorkerPort = {
   postMessage(message: RouteParserWorkerResponse): void;
-  addEventListener(type: "message", listener: (event: MessageEvent<RouteParserWorkerCommand>) => void): void;
+  addEventListener(
+    type: "message",
+    listener: (event: MessageEvent<RouteParserWorkerCommand>) => void,
+  ): void;
 };
 
 // Avoid installing a handler when tests import this module or when the types
@@ -191,7 +199,9 @@ if (
   typeof maybeWorkerPort.addEventListener === "function"
 ) {
   const workerPort = maybeWorkerPort as WorkerPort;
-  const controller = new RouteParserWorkerController((response) => workerPort.postMessage(response));
+  const controller = new RouteParserWorkerController((response) =>
+    workerPort.postMessage(response),
+  );
   workerPort.addEventListener("message", (event) => {
     void controller.handle(event.data);
   });

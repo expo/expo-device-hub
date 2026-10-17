@@ -7,11 +7,9 @@ import {
 
 describe("browser control acknowledgements", () => {
   test("formats negative control acknowledgements for the browser console", () => {
-    expect(
-      controlAcknowledgementMessage(
-        '{"ok":false,"error":"  gesture rejected  "}',
-      ),
-    ).toBe("gesture rejected");
+    expect(controlAcknowledgementMessage('{"ok":false,"error":"  gesture rejected  "}')).toBe(
+      "gesture rejected",
+    );
     expect(
       controlAcknowledgementError(
         JSON.stringify({
@@ -20,17 +18,13 @@ describe("browser control acknowledgements", () => {
           error: "grpc-screenshot text input supports ASCII only",
         }),
       ),
-    ).toBe(
-      "serve-emu control input rejected: grpc-screenshot text input supports ASCII only",
-    );
+    ).toBe("serve-emu control input rejected: grpc-screenshot text input supports ASCII only");
   });
 
   test("ignores success responses and non-acknowledgement socket messages", () => {
     expect(controlAcknowledgementError('{"ok":true}')).toBeNull();
     expect(
-      controlAcknowledgementError(
-        '{"type":"video-session","size":{"width":720,"height":1280}}',
-      ),
+      controlAcknowledgementError('{"type":"video-session","size":{"width":720,"height":1280}}'),
     ).toBeNull();
     expect(controlAcknowledgementError('{"ok":false,"error":"   "}')).toBeNull();
     expect(controlAcknowledgementError("not json")).toBeNull();

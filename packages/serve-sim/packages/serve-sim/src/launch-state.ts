@@ -59,14 +59,21 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
       ? launchArgs.filter((arg): arg is string => typeof arg === "string")
       : [],
     capabilities: recordedCapabilities(capabilities, retainOwnerPid),
-    ...(Array.isArray(sessionPids) ? { sessionPids: sessionPids.filter(
-      (pid) => Number.isInteger(pid) && pid > 0 && !ownerIsGone(pid),
-    ) } : {}),
+    ...(Array.isArray(sessionPids)
+      ? {
+          sessionPids: sessionPids.filter(
+            (pid) => Number.isInteger(pid) && pid > 0 && !ownerIsGone(pid),
+          ),
+        }
+      : {}),
   };
 }
 
 // Discard malformed records and capabilities whose owner has exited.
-function recordedCapabilities(value: unknown, retainOwnerPid?: number): Record<string, RecordedCapability> {
+function recordedCapabilities(
+  value: unknown,
+  retainOwnerPid?: number,
+): Record<string, RecordedCapability> {
   if (typeof value !== "object" || value === null) return {};
   const kept: Record<string, RecordedCapability> = {};
   for (const [key, record] of Object.entries(value)) {
@@ -87,7 +94,9 @@ function recordedCapabilities(value: unknown, retainOwnerPid?: number): Record<s
 }
 
 export function clearLaunchState(udid: string): void {
-  try { unlinkSync(stateFile(udid)); } catch {}
+  try {
+    unlinkSync(stateFile(udid));
+  } catch {}
 }
 
 export function writeLaunchState(udid: string, state: LaunchState): void {
@@ -97,4 +106,3 @@ export function writeLaunchState(udid: string, state: LaunchState): void {
   writeFileSync(temp, JSON.stringify(state));
   renameSync(temp, target);
 }
-

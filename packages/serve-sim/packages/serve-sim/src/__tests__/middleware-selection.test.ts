@@ -46,7 +46,9 @@ describe("selectServeSimState", () => {
 
 describe("previewConfigForState", () => {
   test("advertises input admission only for helpers that support it", () => {
-    expect(previewConfigForState(states[0]!, "/preview", "token-xyz").inputAdmission).toBeUndefined();
+    expect(
+      previewConfigForState(states[0]!, "/preview", "token-xyz").inputAdmission,
+    ).toBeUndefined();
     const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
     expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputAdmission).toBe(true);
   });
@@ -92,9 +94,12 @@ describe("previewConfigForState", () => {
 
   test("sets requireToken only when the preview is gated", () => {
     expect(
-      previewConfigForState(states[0]!, "/preview", "token-xyz", undefined, false, true).requireToken,
+      previewConfigForState(states[0]!, "/preview", "token-xyz", undefined, false, true)
+        .requireToken,
     ).toBe(true);
-    expect("requireToken" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
+    expect("requireToken" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(
+      false,
+    );
   });
 
   test("sets shareUrl only when one was passed", () => {
@@ -113,24 +118,40 @@ describe("previewConfigForState", () => {
   });
 
   test("keeps sharing disabled in device configs, including a supplied public share URL", () => {
-    expect(previewConfigForState(
-      states[0]!, "/preview", "token-xyz", undefined, false, true,
-      "https://expo.dev/simulator-preview/abc", true,
-    ).disableShare).toBe(true);
-    expect("disableShare" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
+    expect(
+      previewConfigForState(
+        states[0]!,
+        "/preview",
+        "token-xyz",
+        undefined,
+        false,
+        true,
+        "https://expo.dev/simulator-preview/abc",
+        true,
+      ).disableShare,
+    ).toBe(true);
+    expect("disableShare" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(
+      false,
+    );
   });
 
   test("omits stream settings when none are pinned", () => {
-    expect(
-      "streamSettings" in previewConfigForState(states[0]!, "/preview", "token-xyz"),
-    ).toBe(false);
+    expect("streamSettings" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(
+      false,
+    );
   });
 
   test("targets settings at the process that owns the rewritten stream", () => {
-    const state = rewriteStateForRequestHost(states[0]!, "preview.example.test", "/preview", "https", true);
-    expect(
-      previewConfigForState(state, "/preview", "token-xyz").streamSettingsEndpoint,
-    ).toBe("https://preview.example.test/preview/helper/DEVICE-A/stream-settings");
+    const state = rewriteStateForRequestHost(
+      states[0]!,
+      "preview.example.test",
+      "/preview",
+      "https",
+      true,
+    );
+    expect(previewConfigForState(state, "/preview", "token-xyz").streamSettingsEndpoint).toBe(
+      "https://preview.example.test/preview/helper/DEVICE-A/stream-settings",
+    );
   });
 
   test("pins the stream codec in the client config", () => {
@@ -143,12 +164,7 @@ describe("previewConfigForState", () => {
   });
 
   test("keeps the legacy codec argument compatible with stream settings", () => {
-    const config = previewConfigForState(
-      states[0]!,
-      "/preview",
-      "token-xyz",
-      "mjpeg",
-    );
+    const config = previewConfigForState(states[0]!, "/preview", "token-xyz", "mjpeg");
     expect(config.codec).toBe("mjpeg");
     expect(config.streamSettings).toEqual({ transport: "http", codec: "mjpeg" });
   });
@@ -163,9 +179,9 @@ describe("previewConfigForState", () => {
   });
 
   test("builds the camera status endpoint correctly at the root mount", () => {
-    expect(
-      previewConfigForState(states[0]!, "", "token-xyz").cameraStatusEndpoint,
-    ).toBe("/helper/DEVICE-A/camera/status");
+    expect(previewConfigForState(states[0]!, "", "token-xyz").cameraStatusEndpoint).toBe(
+      "/helper/DEVICE-A/camera/status",
+    );
   });
 });
 
@@ -311,7 +327,9 @@ describe("deviceNameFromBootedNames", () => {
   });
 
   test("returns undefined when the udid is unknown", () => {
-    expect(deviceNameFromBootedNames(names, "00000000-0000-0000-0000-000000000000")).toBeUndefined();
+    expect(
+      deviceNameFromBootedNames(names, "00000000-0000-0000-0000-000000000000"),
+    ).toBeUndefined();
   });
 });
 
@@ -349,7 +367,11 @@ describe("previewConfigForState session token", () => {
         transport: "webrtc",
         codec: "vp8",
         iceServers: [
-          { urls: ["turns:turn.example.test:443"], username: "TURN_USER", credential: "TURN_SECRET" },
+          {
+            urls: ["turns:turn.example.test:443"],
+            username: "TURN_USER",
+            credential: "TURN_SECRET",
+          },
         ],
       },
     };
@@ -357,7 +379,6 @@ describe("previewConfigForState session token", () => {
     const config = previewConfigForState(state, "", "MY_OWN_TOKEN");
 
     expect(JSON.stringify(config)).not.toContain("TURN_SECRET");
-
   });
 });
 

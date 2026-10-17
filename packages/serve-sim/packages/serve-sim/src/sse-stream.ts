@@ -12,7 +12,7 @@ export interface SseStream {
 export function openSseStream(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { onHeartbeat?: () => void } = {}
+  opts: { onHeartbeat?: () => void } = {},
 ): SseStream {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -37,7 +37,9 @@ export function openSseStream(
     req.off("close", closeAll);
     res.off?.("close", closeAll);
     while (teardowns.length > 0) {
-      try { teardowns.pop()!(); } catch {}
+      try {
+        teardowns.pop()!();
+      } catch {}
     }
   };
   req.on("close", closeAll);

@@ -38,9 +38,7 @@ function failed(stderr: string): AdbCommandResult {
 }
 
 function signalReason(signal: AbortSignal): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new Error("operation aborted");
+  return signal.reason instanceof Error ? signal.reason : new Error("operation aborted");
 }
 
 function waitForDeferred<T>(value: Deferred<T>, signal: AbortSignal): Promise<T> {
@@ -114,11 +112,7 @@ class FakeSocket extends EventEmitter {
   }
 
   #scheduleFlush(): void {
-    if (
-      this.#flushScheduled ||
-      this.#queuedData.length === 0 ||
-      this.listenerCount("data") === 0
-    ) {
+    if (this.#flushScheduled || this.#queuedData.length === 0 || this.listenerCount("data") === 0) {
       return;
     }
     this.#flushScheduled = true;
@@ -276,11 +270,7 @@ function createHarness(options: HarnessOptions = {}) {
       if (result.status === 0) state.activeForwards.delete(port);
       return result;
     }
-    if (
-      args[0] === "shell" &&
-      args[1] === "cat" &&
-      args[2] === "/proc/net/unix"
-    ) {
+    if (args[0] === "shell" && args[1] === "cat" && args[2] === "/proc/net/unix") {
       if (options.deferSocketPoll) {
         socketPollReached.resolve(call);
         return waitForDeferred(socketPollDeferred, commandOptions.signal);
@@ -437,20 +427,14 @@ describe("scrcpy async lifecycle", () => {
     harness.removeDeferred.resolve(ok());
     await closeOne;
 
-    expect(harness.state.sockets.slice(0, 2).map((socket) => socket.destroyCalls)).toEqual([
-      1,
-      1,
-    ]);
+    expect(harness.state.sockets.slice(0, 2).map((socket) => socket.destroyCalls)).toEqual([1, 1]);
     expect(harness.state.children[0].killSignals).toEqual(["SIGTERM"]);
 
     const second = await startWith(harness);
     expect(harness.state.pushCount).toBe(1);
     expect(
       harness.state.adbCalls.filter(
-        (call) =>
-          call.args[0] === "shell" &&
-          call.args[1] === "test" &&
-          call.args[2] === "-f",
+        (call) => call.args[0] === "shell" && call.args[1] === "test" && call.args[2] === "-f",
       ),
     ).toHaveLength(2);
     await second.close();
@@ -458,10 +442,7 @@ describe("scrcpy async lifecycle", () => {
 
   test("starts one control socket without scrcpy video or audio", async () => {
     const harness = createHarness();
-    const session = await startScrcpyControl(
-      { serial: SERIAL },
-      harness.deps,
-    );
+    const session = await startScrcpyControl({ serial: SERIAL }, harness.deps);
 
     expect(session.transport).toBe("scrcpy-control");
     expect(session.controlSocket).toBe(harness.state.sockets[0]);
@@ -531,8 +512,7 @@ describe("scrcpy async lifecycle", () => {
     expect(harness.state.activeForwards.size).toBe(0);
     expect(
       harness.state.adbCalls.some(
-        (call) =>
-          call.args[0] === "forward" && call.args[1] === "--remove",
+        (call) => call.args[0] === "forward" && call.args[1] === "--remove",
       ),
     ).toBe(true);
   });
@@ -572,9 +552,7 @@ describe("scrcpy async lifecycle", () => {
       fixedResults: Array.from({ length: 5 }, () => failed("port busy")),
     });
 
-    await expect(startWith(harness)).rejects.toThrow(
-      "Failed to create adb forward",
-    );
+    await expect(startWith(harness)).rejects.toThrow("Failed to create adb forward");
 
     expect(harness.state.spawnCalls).toHaveLength(0);
     expect(harness.state.fixedAttempt).toBe(5);
@@ -597,8 +575,7 @@ describe("scrcpy async lifecycle", () => {
 
     const session = await startWith(harness);
     const fixedCalls = harness.state.adbCalls.filter(
-      (call) =>
-        call.args[0] === "forward" && call.args[1] === "--no-rebind",
+      (call) => call.args[0] === "forward" && call.args[1] === "--no-rebind",
     );
     expect(fixedCalls).toHaveLength(1);
     expect(fixedCalls[0].args).toEqual([
@@ -657,10 +634,7 @@ describe("scrcpy async lifecycle", () => {
     const session = await startWith(harness);
 
     await expect(session.close()).rejects.toThrow("scrcpy cleanup failed");
-    expect(harness.state.children[0].killSignals).toEqual([
-      "SIGTERM",
-      "SIGKILL",
-    ]);
+    expect(harness.state.children[0].killSignals).toEqual(["SIGTERM", "SIGKILL"]);
     expect(harness.state.activeForwards.size).toBe(0);
   });
 
@@ -685,17 +659,12 @@ describe("scrcpy async lifecycle", () => {
     }
     expect(harness.state.timerDurations.length).toBeGreaterThan(0);
     expect(
-      harness.state.timerDurations.every(
-        (duration) => Number.isFinite(duration) && duration > 0,
-      ),
+      harness.state.timerDurations.every((duration) => Number.isFinite(duration) && duration > 0),
     ).toBe(true);
   });
 
   test("the scrcpy runtime contains no synchronous process calls", async () => {
-    const source = await readFile(
-      new URL("../src/scrcpy.ts", import.meta.url),
-      "utf8",
-    );
+    const source = await readFile(new URL("../src/scrcpy.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/import\s*\{[^}]*\bspawnSync\b/s);
     expect(source).not.toMatch(/\bspawnSync\s*\(/);
   });

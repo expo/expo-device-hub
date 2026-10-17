@@ -26,7 +26,11 @@ describe("androidSdkRoots", () => {
   test("orders ANDROID_HOME, ANDROID_SDK_ROOT, PATH, then the default folder", () => {
     const roots = androidSdkRoots(
       lookup(
-        { ANDROID_HOME: "/sdk/home", ANDROID_SDK_ROOT: "/sdk/root", PATH: "/sdk/path/platform-tools" },
+        {
+          ANDROID_HOME: "/sdk/home",
+          ANDROID_SDK_ROOT: "/sdk/root",
+          PATH: "/sdk/path/platform-tools",
+        },
         { "/sdk/path/platform-tools/adb": "/sdk/path/platform-tools/adb" },
       ),
     );
@@ -45,7 +49,10 @@ describe("androidSdkRoots", () => {
     const roots = androidSdkRoots(
       lookup(
         { PATH: `/usr/bin:${platformTools}:${emulator}` },
-        { [`${platformTools}/adb`]: `${platformTools}/adb`, [`${emulator}/emulator`]: `${emulator}/emulator` },
+        {
+          [`${platformTools}/adb`]: `${platformTools}/adb`,
+          [`${emulator}/emulator`]: `${emulator}/emulator`,
+        },
       ),
     );
     expect(roots[0]).toEqual({ path: "/Users/test/Library/Android/Sdk", source: "adb on PATH" });
@@ -65,7 +72,9 @@ describe("androidSdkRoots", () => {
     const roots = androidSdkRoots(
       lookup({ PATH: "/opt/homebrew/bin" }, { "/opt/homebrew/bin/adb": "/opt/homebrew/bin/adb" }),
     );
-    expect(roots).toEqual([{ path: "/Users/test/Library/Android/sdk", source: "default location" }]);
+    expect(roots).toEqual([
+      { path: "/Users/test/Library/Android/sdk", source: "default location" },
+    ]);
   });
 
   test("keeps the tool path when the link cannot be read", () => {
@@ -96,7 +105,10 @@ describe("androidSdkRoots", () => {
       androidSdkRoots(lookup(env, {}, platform)).map((root) => root.path);
     expect(defaultRoots({}, "darwin")).toEqual(["/Users/test/Library/Android/sdk"]);
     // Linux paths are case-sensitive, and tools disagree on the case.
-    expect(defaultRoots({}, "linux")).toEqual(["/Users/test/Android/Sdk", "/Users/test/Android/sdk"]);
+    expect(defaultRoots({}, "linux")).toEqual([
+      "/Users/test/Android/Sdk",
+      "/Users/test/Android/sdk",
+    ]);
     expect(defaultRoots({ LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local" }, "win32")).toEqual([
       "C:\\Users\\test\\AppData\\Local\\Android\\Sdk",
     ]);

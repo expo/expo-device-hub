@@ -1,6 +1,6 @@
-import { type CSSProperties } from 'react';
+import { type CSSProperties } from "react";
 
-import { bg, border, radius, shadow, text, textSize } from '../theme/tokens';
+import { bg, border, radius, shadow, text, textSize } from "../theme/tokens";
 
 export const PILL_CONTROL_HEIGHT = 28;
 
@@ -20,23 +20,23 @@ export function pillControlStyle({
   return {
     ...textSize.sm,
     fontWeight: 500,
-    display: 'inline-flex',
+    display: "inline-flex",
     height: PILL_CONTROL_HEIGHT,
     flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    boxSizing: 'border-box',
-    padding: '0 10px',
+    boxSizing: "border-box",
+    padding: "0 10px",
     border: `1px solid ${border.default}`,
     borderRadius: radius.lg,
-    outline: 'none',
+    outline: "none",
     backgroundColor: hovered && !disabled ? bg.hover : bg.element,
     boxShadow: focused ? `0 0 0 2px ${border.secondary}` : shadow.none,
     color: text.default,
-    fontFamily: 'inherit',
-    cursor: disabled ? 'default' : 'pointer',
+    fontFamily: "inherit",
+    cursor: disabled ? "default" : "pointer",
     opacity: disabled ? 0.5 : 1,
-    transition: 'background-color 120ms ease',
+    transition: "background-color 120ms ease",
   };
 }

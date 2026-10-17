@@ -17,7 +17,11 @@ beforeAll(async () => {
   server = await servePreview({
     port,
     host: "127.0.0.1",
-    middleware: simMiddleware({ basePath: "/", execToken: TOKEN, corsOrigins: ["https://expo.dev"] }),
+    middleware: simMiddleware({
+      basePath: "/",
+      execToken: TOKEN,
+      corsOrigins: ["https://expo.dev"],
+    }),
   });
 });
 
@@ -37,7 +41,12 @@ function subscribeToCapture(origin: string, headers: Record<string, string> = {}
       reject(new Error(`no end frame for ${origin}; got ${data}`));
     }, 5_000);
     ws.on("message", (raw) => {
-      const frame = JSON.parse(String(raw)) as { ready?: boolean; sub?: number; data?: string; end?: boolean };
+      const frame = JSON.parse(String(raw)) as {
+        ready?: boolean;
+        sub?: number;
+        data?: string;
+        end?: boolean;
+      };
       if (frame.ready) {
         ws.send(JSON.stringify({ sub: 1, path: `/network-capture?device=${UDID}` }));
         return;
@@ -54,7 +63,12 @@ function subscribeToCapture(origin: string, headers: Record<string, string> = {}
   });
 }
 
-function runCaptureAction(origin: string, action: string, params: Record<string, unknown>, headers: Record<string, string> = {}): Promise<{
+function runCaptureAction(
+  origin: string,
+  action: string,
+  params: Record<string, unknown>,
+  headers: Record<string, string> = {},
+): Promise<{
   stdout?: string;
   exitCode?: number;
   error?: string;
@@ -96,19 +110,25 @@ test("still serves capture to the preview's own origin through the exec socket",
 });
 
 test("refuses a subscription the browser marked cross-site, whatever its origin says", async () => {
-  const data = await subscribeToCapture(`http://127.0.0.1:${port}`, { "Sec-Fetch-Site": "cross-site" });
+  const data = await subscribeToCapture(`http://127.0.0.1:${port}`, {
+    "Sec-Fetch-Site": "cross-site",
+  });
   expect(data).toContain("same-origin only");
 });
 
 test("reads capture bodies through the same-origin control socket", async () => {
-  expect(await runCaptureAction(`http://127.0.0.1:${port}`, "capture.body", { udid: UDID, id: "r1" })).toMatchObject({
+  expect(
+    await runCaptureAction(`http://127.0.0.1:${port}`, "capture.body", { udid: UDID, id: "r1" }),
+  ).toMatchObject({
     stdout: "",
     exitCode: 0,
   });
 });
 
 test("refuses capture body reads from an allowed cross-origin page", async () => {
-  expect((await runCaptureAction("https://expo.dev", "capture.body", { udid: UDID, id: "r1" })).error).toContain("same-origin");
+  expect(
+    (await runCaptureAction("https://expo.dev", "capture.body", { udid: UDID, id: "r1" })).error,
+  ).toContain("same-origin");
 });
 
 test("refuses capture control from an allowed cross-origin page", async () => {

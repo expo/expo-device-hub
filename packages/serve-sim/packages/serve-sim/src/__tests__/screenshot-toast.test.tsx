@@ -71,7 +71,7 @@ describe("ScreenshotToast drag image", () => {
     expect(html).toContain('aria-label="Download screenshot again"');
     expect(html).toContain("Download again");
     expect(html).not.toContain("Open in Finder");
-    expect(html).not.toContain("draggable=\"true\"");
+    expect(html).not.toContain('draggable="true"');
   });
 
   test("local screenshot retains Finder and drag behavior", () => {
@@ -172,10 +172,12 @@ describe("browser download session artifact notice", () => {
   });
 
   test("warns for longer when the session artifact save failed", () => {
-    expect(browserDownloadNotice({ status: "failed", error: "EACCES: permission denied" })).toEqual({
-      message: "Downloaded. Not saved to session artifacts: EACCES: permission denied",
-      dismissMs: 12_000,
-    });
+    expect(browserDownloadNotice({ status: "failed", error: "EACCES: permission denied" })).toEqual(
+      {
+        message: "Downloaded. Not saved to session artifacts: EACCES: permission denied",
+        dismissMs: 12_000,
+      },
+    );
     expect(browserDownloadNotice({ status: "failed" })).toEqual({
       message: "Downloaded. Not saved to session artifacts",
       dismissMs: 12_000,

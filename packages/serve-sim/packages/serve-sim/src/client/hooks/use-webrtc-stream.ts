@@ -6,10 +6,7 @@ import {
 } from "./playback-stall-watchdog";
 import type { StatsSubscriber } from "./use-stream-stats";
 import type { WebRtcCodec, WebRtcStreamFailure } from "../webrtc-codec-fallback";
-import {
-  offerFailureIsTransient,
-  webRtcFailureDisposition,
-} from "../webrtc-failure-policy";
+import { offerFailureIsTransient, webRtcFailureDisposition } from "../webrtc-failure-policy";
 import { WEBRTC_ICE_TRANSPORT_POLICY, type IceServer } from "../webrtc-ice";
 import { raiseH264OfferLevel } from "../webrtc-sdp-level";
 import { webrtcSessionStatsUrl } from "../utils/sim-endpoint";
@@ -42,10 +39,14 @@ async function senderProgress(
       signal: AbortSignal.timeout(2_000),
     });
     if (!response.ok) return unknown;
-    const body = (await response.json()) as { capture?: { rebooting?: boolean }; sessions?: { framesEncoded?: number }[] };
+    const body = (await response.json()) as {
+      capture?: { rebooting?: boolean };
+      sessions?: { framesEncoded?: number }[];
+    };
     const sessions = Array.isArray(body.sessions) ? body.sessions : [];
     return {
-      encoding: sessions.length === 0 ? null : sessions.some((session) => (session.framesEncoded ?? 0) > 0),
+      encoding:
+        sessions.length === 0 ? null : sessions.some((session) => (session.framesEncoded ?? 0) > 0),
       rebooting: body.capture?.rebooting === true,
     };
   } catch {
@@ -108,7 +109,9 @@ export function useWebRtcStream({
   const subscribeStats: StatsSubscriber = useCallback((listener) => {
     const listeners = statsListenersRef.current;
     listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    return () => {
+      listeners.delete(listener);
+    };
   }, []);
   /// When this codec was last reconnected for a stall. Cleared when the codec changes.
   const stallReconnectAtRef = useRef<number | null>(null);
@@ -189,8 +192,12 @@ export function useWebRtcStream({
     const stall = startPlaybackStallWatchdog({
       peer: () => pc,
       readable,
-      judgeable: () => readable() && !failing && pc?.connectionState === "connected"
-        && firstFrameDecodedRef.current && judgeStallsRef.current,
+      judgeable: () =>
+        readable() &&
+        !failing &&
+        pc?.connectionState === "connected" &&
+        firstFrameDecodedRef.current &&
+        judgeStallsRef.current,
       publish: publishStats,
       capturePaused: async () => (await senderProgress(statsUrl, sessionId)).rebooting,
       reconnectedAt: stallReconnectAtRef,
@@ -289,19 +296,16 @@ export function useWebRtcStream({
 
         const videoTransceiver = pc.addTransceiver("video", { direction: "recvonly" });
         const videoCapabilities = RTCRtpReceiver.getCapabilities("video");
-        const preferredMimeType = codec === "h264"
-          ? "video/H264"
-          : codec === "vp9"
-            ? "video/VP9"
-            : "video/VP8";
+        const preferredMimeType =
+          codec === "h264" ? "video/H264" : codec === "vp9" ? "video/VP9" : "video/VP8";
         if (videoCapabilities?.codecs.length && "setCodecPreferences" in videoTransceiver) {
           const normalizedPreferredMimeType = preferredMimeType.toLowerCase();
           videoTransceiver.setCodecPreferences([
-            ...videoCapabilities.codecs.filter((candidate) =>
-              candidate.mimeType.toLowerCase() === normalizedPreferredMimeType
+            ...videoCapabilities.codecs.filter(
+              (candidate) => candidate.mimeType.toLowerCase() === normalizedPreferredMimeType,
             ),
-            ...videoCapabilities.codecs.filter((candidate) =>
-              candidate.mimeType.toLowerCase() !== normalizedPreferredMimeType
+            ...videoCapabilities.codecs.filter(
+              (candidate) => candidate.mimeType.toLowerCase() !== normalizedPreferredMimeType,
             ),
           ]);
         }
@@ -321,26 +325,37 @@ export function useWebRtcStream({
           armFirstFrameWatchdog = () => {
             firstFrameTimeoutRef.current = window.setTimeout(() => {
               firstFrameTimeoutRef.current = undefined;
-              if (stopped || firstFrameDecodedRef.current || document.visibilityState !== "visible") return;
+              if (stopped || firstFrameDecodedRef.current || document.visibilityState !== "visible")
+                return;
               const reading = firstFrameGeneration;
               void (async () => {
                 const firstFrameReport = await readStatsBeforeDeadline(pc, FIRST_FRAME_TIMEOUT_MS);
                 const reports = firstFrameReport ? parseInboundVideo(firstFrameReport) : [];
-                if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+                if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration)
+                  return;
                 const mediaArriving = reports.some((report) => report.framesReceived > 0);
                 const sender = await senderProgress(statsUrl, sessionId);
                 const senderEncoding = mediaArriving ? null : sender.encoding;
-                if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration
-                  || document.visibilityState !== "visible") return;
+                if (
+                  stopped ||
+                  firstFrameDecodedRef.current ||
+                  reading !== firstFrameGeneration ||
+                  document.visibilityState !== "visible"
+                )
+                  return;
                 if (sender.rebooting) {
                   graceUsed = false;
                   armFirstFrameWatchdog?.();
                   return;
                 }
-                const disposition = webRtcFailureDisposition("first-frame-timeout", pc?.connectionState ?? "closed", {
-                  mediaArriving,
-                  senderEncoding,
-                });
+                const disposition = webRtcFailureDisposition(
+                  "first-frame-timeout",
+                  pc?.connectionState ?? "closed",
+                  {
+                    mediaArriving,
+                    senderEncoding,
+                  },
+                );
                 if (disposition === "wait" && !graceUsed) {
                   graceUsed = true;
                   armFirstFrameWatchdog?.();
@@ -392,7 +407,7 @@ export function useWebRtcStream({
           else failPermanently(message);
           return;
         }
-        const answer = await response.json() as RTCSessionDescriptionInit;
+        const answer = (await response.json()) as RTCSessionDescriptionInit;
         if (stopped) {
           await closeRemoteSession(true);
           return;
@@ -411,10 +426,14 @@ export function useWebRtcStream({
           else failPermanently(caught.message);
           return;
         }
-        const message = caught instanceof WebRtcSignalingTimeoutError
-          ? "WebRTC signaling timed out."
-          : "WebRTC signaling failed.";
-        if (webRtcFailureDisposition("signaling-failed", pc?.connectionState ?? "closed") === "transport") {
+        const message =
+          caught instanceof WebRtcSignalingTimeoutError
+            ? "WebRTC signaling timed out."
+            : "WebRTC signaling failed.";
+        if (
+          webRtcFailureDisposition("signaling-failed", pc?.connectionState ?? "closed") ===
+          "transport"
+        ) {
           retryTransport(message);
         }
       }
@@ -440,5 +459,14 @@ export function useWebRtcStream({
     };
   }, [enabled, offerUrl, closeUrl, codec, iceServers, statsUrl, retryGeneration, transportLocked]);
 
-  return { stream, failure, error, markFrameDecoded, peerConnection, sessionId, retry, subscribeStats };
+  return {
+    stream,
+    failure,
+    error,
+    markFrameDecoded,
+    peerConnection,
+    sessionId,
+    retry,
+    subscribeStats,
+  };
 }

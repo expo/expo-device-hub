@@ -12,7 +12,11 @@ export function onCliInputReady(
 ): void {
   let ready = false;
   const timer = setTimeout(() => {
-    reject(new Error(`Simulator input was not admitted within ${timeoutMs / 1000} seconds. Try again shortly.`));
+    reject(
+      new Error(
+        `Simulator input was not admitted within ${timeoutMs / 1000} seconds. Try again shortly.`,
+      ),
+    );
     socket.terminate();
   }, timeoutMs);
   const admit = () => {
@@ -29,14 +33,18 @@ export function onCliInputReady(
   socket.on("open", () => {
     if (!requireAdmission) admit();
   });
-  socket.on("message", data => {
+  socket.on("message", (data) => {
     const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Buffer.from(data as Buffer);
     if (bytes.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) admit();
   });
   socket.on("close", (code, reason) => {
     clearTimeout(timer);
     if (code === 1013) {
-      reject(new Error(`Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`));
+      reject(
+        new Error(
+          `Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`,
+        ),
+      );
     } else if (!ready) {
       reject(new Error(`Simulator input closed before admission (${code}). Try again shortly.`));
     }

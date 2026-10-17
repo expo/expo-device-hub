@@ -18,25 +18,23 @@ describe("parseSessionPageQuery", () => {
       limit: 6,
       before: 42,
     });
-    expect(
-      parseSessionPageQuery(query(`limit=${MAX_SESSION_PAGE_LIMIT}`)),
-    ).toEqual({ limit: MAX_SESSION_PAGE_LIMIT });
+    expect(parseSessionPageQuery(query(`limit=${MAX_SESSION_PAGE_LIMIT}`))).toEqual({
+      limit: MAX_SESSION_PAGE_LIMIT,
+    });
   });
 
   test("rejects invalid, unsafe, and oversized parameters", () => {
     for (const value of ["0", "-1", "1.5", "six", ""]) {
       expect(() => parseSessionPageQuery(query(`limit=${value}`))).toThrow();
     }
-    expect(() =>
-      parseSessionPageQuery(query(`limit=${MAX_SESSION_PAGE_LIMIT + 1}`)),
-    ).toThrow("limit must be at most");
-    expect(() =>
-      parseSessionPageQuery(query("before=9007199254740992")),
-    ).toThrow("before must be a positive safe integer");
+    expect(() => parseSessionPageQuery(query(`limit=${MAX_SESSION_PAGE_LIMIT + 1}`))).toThrow(
+      "limit must be at most",
+    );
+    expect(() => parseSessionPageQuery(query("before=9007199254740992"))).toThrow(
+      "before must be a positive safe integer",
+    );
     for (const value of ["0", "-1", "1.5", "cursor", ""]) {
-      expect(() =>
-        parseSessionPageQuery(query(`before=${value}`)),
-      ).toThrow();
+      expect(() => parseSessionPageQuery(query(`before=${value}`))).toThrow();
     }
   });
 });

@@ -2,11 +2,17 @@
 export class KeyboardPasteGate {
   private waiting = false;
 
-  get isWaiting(): boolean { return this.waiting; }
+  get isWaiting(): boolean {
+    return this.waiting;
+  }
 
-  start(): void { this.waiting = true; }
+  start(): void {
+    this.waiting = true;
+  }
 
-  cancel(): void { this.waiting = false; }
+  cancel(): void {
+    this.waiting = false;
+  }
 
   /** Repeats are still the original held shortcut key, even after its modifier is released. */
   onVKeyDown(repeat: boolean): boolean {

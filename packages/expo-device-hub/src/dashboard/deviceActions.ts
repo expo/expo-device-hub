@@ -1,7 +1,7 @@
-import { type Device, type NewDeviceRequest } from '@expo/hub-components';
+import { type Device, type NewDeviceRequest } from "@expo/hub-components";
 
-import { basePath } from './basePath';
-import { logUtilityErrors, type UtilityError } from './utilityErrors';
+import { basePath } from "./basePath";
+import { logUtilityErrors, type UtilityError } from "./utilityErrors";
 
 /**
  * Device lifecycle actions, posted to the Hub server (see
@@ -20,8 +20,8 @@ const createEndpoint = () => `${basePath()}/api/devices/create`;
 async function postAction(endpoint: string, device: Device): Promise<boolean> {
   try {
     const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       // `id` is the udid (iOS) / serial (Android); `name` is the AVD name that
       // Android's `avdmanager delete avd` needs. The server ignores what it
       // doesn't use per platform.
@@ -32,7 +32,7 @@ async function postAction(endpoint: string, device: Device): Promise<boolean> {
     logUtilityErrors(data.errors);
     return data.ok === true;
   } catch (error) {
-    console.warn('[expo-device-hub] Device action failed:', error);
+    console.warn("[expo-device-hub] Device action failed:", error);
     return false;
   }
 }
@@ -79,12 +79,12 @@ export async function createDevice(device: NewDeviceRequest): Promise<StartDevic
 
 async function postStartDevice(
   endpoint: string,
-  body: Record<string, string>
+  body: Record<string, string>,
 ): Promise<StartDeviceOutcome> {
   try {
     const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(body),
       // A cold emulator boot can take a couple of minutes.
       signal: AbortSignal.timeout(200_000),
@@ -102,9 +102,9 @@ async function postStartDevice(
     }
     const id = data.id ?? data.serial;
     if (data.ok && id) return { id, error: null };
-    return { id: null, error: data.error ?? 'The device did not come online.' };
+    return { id: null, error: data.error ?? "The device did not come online." };
   } catch (error) {
-    console.warn('[expo-device-hub] Device start failed:', error);
+    console.warn("[expo-device-hub] Device start failed:", error);
     return { id: null, error: error instanceof Error ? error.message : String(error) };
   }
 }

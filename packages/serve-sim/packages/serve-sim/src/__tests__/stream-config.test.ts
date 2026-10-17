@@ -33,9 +33,7 @@ describe("streamConfigFrom", () => {
   });
 
   test("rejects the minimal empty-state injection", () => {
-    expect(
-      streamConfigFrom({ basePath: "", execToken: "tok" } as never),
-    ).toBeNull();
+    expect(streamConfigFrom({ basePath: "", execToken: "tok" } as never)).toBeNull();
   });
 
   test("rejects null and undefined", () => {
@@ -44,17 +42,13 @@ describe("streamConfigFrom", () => {
   });
 
   test("rejects a config missing the stream url", () => {
-    expect(
-      streamConfigFrom({ ...fullConfig, url: undefined } as never),
-    ).toBeNull();
+    expect(streamConfigFrom({ ...fullConfig, url: undefined } as never)).toBeNull();
   });
 });
 
 describe("mjpegStreamUrlFrom", () => {
   test("keeps local MJPEG helper URLs on the MJPEG endpoint", () => {
-    expect(mjpegStreamUrlFrom(fullConfig)).toBe(
-      "http://127.0.0.1:3100/stream.mjpeg",
-    );
+    expect(mjpegStreamUrlFrom(fullConfig)).toBe("http://127.0.0.1:3100/stream.mjpeg");
   });
 
   test("uses the helper base URL for tunneled AVCC configs", () => {
@@ -86,9 +80,7 @@ describe("mjpegStreamUrlFrom", () => {
 
 describe("webrtcOfferUrlFrom", () => {
   test("uses the helper base URL for direct helper configs", () => {
-    expect(webrtcOfferUrlFrom(fullConfig)).toBe(
-      "http://127.0.0.1:3100/webrtc/offer",
-    );
+    expect(webrtcOfferUrlFrom(fullConfig)).toBe("http://127.0.0.1:3100/webrtc/offer");
   });
 
   test("preserves in-process helper paths for embedded preview signaling", () => {

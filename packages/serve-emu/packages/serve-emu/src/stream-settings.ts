@@ -16,9 +16,7 @@ export type WebRtcStreamSettings = {
   iceTransportPolicy: WebRtcIceTransportPolicy;
 };
 
-export type StreamSettings =
-  | { transport: "websocket" }
-  | WebRtcStreamSettings;
+export type StreamSettings = { transport: "websocket" } | WebRtcStreamSettings;
 
 export type ViewerTransports = {
   /** Initial transport selected by clients that have no viewer-local preference. */
@@ -87,34 +85,23 @@ export class InvalidStreamSettingsError extends Error {}
 
 export class StreamSettingsUnavailableError extends Error {}
 
-export function parseStreamEncoderSettingsPatch(
-  value: unknown,
-): StreamEncoderSettingsPatch {
+export function parseStreamEncoderSettingsPatch(value: unknown): StreamEncoderSettingsPatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new InvalidStreamSettingsError("stream settings must be an object");
   }
   const input = value as Record<string, unknown>;
   const keys = Object.keys(input);
   if (keys.length === 0) {
-    throw new InvalidStreamSettingsError(
-      "stream settings patch must not be empty",
-    );
+    throw new InvalidStreamSettingsError("stream settings patch must not be empty");
   }
   const unknownKey = keys.find(
-    (key) =>
-      !STREAM_ENCODER_SETTING_KEYS.has(key as keyof StreamEncoderSettings),
+    (key) => !STREAM_ENCODER_SETTING_KEYS.has(key as keyof StreamEncoderSettings),
   );
   if (unknownKey !== undefined) {
-    throw new InvalidStreamSettingsError(
-      `unknown stream setting: ${unknownKey}`,
-    );
+    throw new InvalidStreamSettingsError(`unknown stream setting: ${unknownKey}`);
   }
 
-  const readInteger = (
-    key: keyof StreamEncoderSettings,
-    min: number,
-    max: number,
-  ) => {
+  const readInteger = (key: keyof StreamEncoderSettings, min: number, max: number) => {
     if (!(key in input)) return undefined;
     const setting = input[key];
     if (
@@ -124,23 +111,13 @@ export function parseStreamEncoderSettingsPatch(
       setting < min ||
       setting > max
     ) {
-      throw new InvalidStreamSettingsError(
-        `${key} must be an integer between ${min} and ${max}`,
-      );
+      throw new InvalidStreamSettingsError(`${key} must be an integer between ${min} and ${max}`);
     }
     return setting;
   };
 
-  const maxDimension = readInteger(
-    "maxDimension",
-    0,
-    MAX_STREAM_DIMENSION,
-  );
-  const h264Bitrate = readInteger(
-    "h264Bitrate",
-    MIN_H264_BITRATE,
-    MAX_H264_BITRATE,
-  );
+  const maxDimension = readInteger("maxDimension", 0, MAX_STREAM_DIMENSION);
+  const h264Bitrate = readInteger("h264Bitrate", MIN_H264_BITRATE, MAX_H264_BITRATE);
   const h264Fps = readInteger("h264Fps", 1, MAX_H264_FPS);
   return {
     ...(maxDimension !== undefined ? { maxDimension } : {}),
@@ -162,15 +139,20 @@ export function streamEncoderSettingsEqual(
 
 export function isJsonRequest(req: Request): boolean {
   const contentType = req.headers.get("content-type");
-  return (
-    contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json"
-  );
+  return contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/json";
 }
 
 export function parseIceUrlList(value: string, kind: "stun" | "turn"): string[] {
-  const urls = value.split(",").map((url) => url.trim()).filter(Boolean);
+  const urls = value
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
   const scheme = kind === "stun" ? /^stuns?:/i : /^turns?:/i;
-  if (urls.length === 0 || urls.length > 16 || urls.some((url) => url.length > 2_048 || !scheme.test(url))) {
+  if (
+    urls.length === 0 ||
+    urls.length > 16 ||
+    urls.some((url) => url.length > 2_048 || !scheme.test(url))
+  ) {
     throw new Error(`Expected one or more comma-separated ${kind.toUpperCase()} URLs`);
   }
   return urls;

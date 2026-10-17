@@ -102,8 +102,14 @@ beforeEach(() => {
 
 describe("handleLogsRequest", () => {
   test("filters live and replayed user-app logs without changing the default stream", () => {
-    const app = JSON.stringify({ processImagePath: "/private/var/containers/Bundle/Application/UUID/App.app/App", eventMessage: "hello" });
-    const system = JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: app });
+    const app = JSON.stringify({
+      processImagePath: "/private/var/containers/Bundle/Application/UUID/App.app/App",
+      eventMessage: "hello",
+    });
+    const system = JSON.stringify({
+      processImagePath: "/usr/libexec/runningboardd",
+      eventMessage: app,
+    });
     const req = fakeReq();
     const filtered = fakeRes();
     handleLogsRequest(req, filtered, state, "/logs?scope=user-apps", cache);
@@ -244,7 +250,13 @@ describe("handleLogsRequest", () => {
   test("lets snapshot=0 keep SSE for a caller that also accepts JSON", () => {
     warmWith(['{"m":1}']);
     const res = fakeRes();
-    handleLogsRequest(fakeReq({ accept: "application/json" }), res, state, "/logs?snapshot=0", cache);
+    handleLogsRequest(
+      fakeReq({ accept: "application/json" }),
+      res,
+      state,
+      "/logs?snapshot=0",
+      cache,
+    );
     expect(res.headers_["Content-Type"]).toBe("text/event-stream");
     expect(dataFrames(res.body_)).toEqual(['{"m":1}']);
   });
@@ -268,7 +280,7 @@ describe("handleLogsRequest", () => {
       fakeRes(),
       state,
       "/logs?follow=1",
-      cache
+      cache,
     );
     expect(cache.peek(UDID)).not.toBeNull();
     expect(spawned).toHaveLength(1);

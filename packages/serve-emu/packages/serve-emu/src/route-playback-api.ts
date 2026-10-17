@@ -28,9 +28,7 @@ export async function startRoutePlaybackResponse(
 ): Promise<Response> {
   if (!isCurrent()) {
     return routePlaybackErrorResponse(
-      new RoutePlaybackConflictError(
-        "device session changed before route playback start",
-      ),
+      new RoutePlaybackConflictError("device session changed before route playback start"),
     );
   }
   try {

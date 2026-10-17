@@ -29,11 +29,17 @@ export function ServeSimToaster() {
 }
 
 export function showInputSocketError(reason: string): void {
-  toast.custom(() => (
-    <div role="alert" className="max-w-[320px] rounded-md border border-white/12 bg-panel px-3 py-2 font-mono text-[12px] text-white shadow-lg">
-      Simulator input failed: {reason}
-    </div>
-  ), { id: INPUT_SOCKET_ERROR_TOAST_ID });
+  toast.custom(
+    () => (
+      <div
+        role="alert"
+        className="max-w-[320px] rounded-md border border-white/12 bg-panel px-3 py-2 font-mono text-[12px] text-white shadow-lg"
+      >
+        Simulator input failed: {reason}
+      </div>
+    ),
+    { id: INPUT_SOCKET_ERROR_TOAST_ID },
+  );
 }
 
 export function dismissInputSocketError(): void {
@@ -58,13 +64,14 @@ export function UploadToastContent({ toast }: { toast: UploadToast }) {
             background: isUploading
               ? "#a5b4fc"
               : toast.status === "success"
-              ? "#4ade80"
-              : "#f87171",
+                ? "#4ade80"
+                : "#f87171",
           }}
         />
         <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           {isUploading && transferring && `Uploading ${toast.name}… ${pct}%`}
-          {isUploading && !transferring &&
+          {isUploading &&
+            !transferring &&
             (toast.kind === "ipa" ? `Installing ${toast.name}…` : `Adding ${toast.name}…`)}
           {toast.status === "success" &&
             (toast.kind === "ipa" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
@@ -188,13 +195,14 @@ export function ClipboardToastContent({
   onPaste?: (text: string) => void;
 }) {
   const pending = toast.status === "pending";
-  const dotColor = pending || toast.status === "paste" || toast.status === "info"
-    ? "#a5b4fc"
-    : toast.status === "success"
-      ? "#4ade80"
-      : toast.status === "manual"
-        ? "#fcd34d"
-        : "#f87171";
+  const dotColor =
+    pending || toast.status === "paste" || toast.status === "info"
+      ? "#a5b4fc"
+      : toast.status === "success"
+        ? "#4ade80"
+        : toast.status === "manual"
+          ? "#fcd34d"
+          : "#f87171";
 
   return (
     <div
@@ -208,9 +216,7 @@ export function ClipboardToastContent({
       {toast.status === "paste" && onPaste ? (
         <PasteField message={toast.message} onSubmit={onPaste} />
       ) : (
-        <span className="min-w-0 flex-1 break-words whitespace-normal">
-          {toast.message}
-        </span>
+        <span className="min-w-0 flex-1 break-words whitespace-normal">{toast.message}</span>
       )}
       {toast.status === "manual" && (
         <button

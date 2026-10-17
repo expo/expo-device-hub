@@ -154,21 +154,17 @@ describe("stream quality form values", () => {
       sessionGeneration: 2,
     };
 
-    const applied = await applyStreamQualitySettings(
-      { h264Fps: 60 },
-      "emulator-5554",
-      {
-        store,
-        patchSettings: async () => {
-          calls.push("patch");
-          return { ok: true, ...CURRENT_SETTINGS, h264Fps: 60 };
-        },
-        readStreamMode: async () => {
-          calls.push("mode");
-          return streamMode;
-        },
+    const applied = await applyStreamQualitySettings({ h264Fps: 60 }, "emulator-5554", {
+      store,
+      patchSettings: async () => {
+        calls.push("patch");
+        return { ok: true, ...CURRENT_SETTINGS, h264Fps: 60 };
       },
-    );
+      readStreamMode: async () => {
+        calls.push("mode");
+        return streamMode;
+      },
+    });
 
     expect(calls).toEqual(["patch", "mode"]);
     expect(store.getSnapshot().sessionGeneration).toBe(2);
@@ -182,8 +178,7 @@ describe("stream quality form values", () => {
       streamQualityStatus({
         busy: false,
         transitioning: false,
-        selectionReady:
-          feedback.revision === store.getSnapshot().revision,
+        selectionReady: feedback.revision === store.getSnapshot().revision,
         feedback,
       }),
     ).toBe("Applied");
@@ -194,8 +189,7 @@ describe("stream quality form values", () => {
       streamQualityStatus({
         busy: false,
         transitioning: false,
-        selectionReady:
-          feedback.revision === store.getSnapshot().revision,
+        selectionReady: feedback.revision === store.getSnapshot().revision,
         feedback,
       }),
     ).toBe("Applied");

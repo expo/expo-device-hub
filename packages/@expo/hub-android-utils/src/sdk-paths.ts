@@ -65,9 +65,7 @@ export function resolveAvdmanagerPath(
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
-    avdmanagerPath(root, platform),
-  );
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => avdmanagerPath(root, platform));
 }
 
 /** Build the absolute path to the `sdkmanager` wrapper inside an SDK root. */
@@ -85,13 +83,14 @@ export function resolveSdkmanagerPath(
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
-    sdkmanagerPath(root, platform),
-  );
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => sdkmanagerPath(root, platform));
 }
 
 /** Build the absolute path to the `emulator` binary inside an SDK root. */
-export function emulatorPath(sdkRoot: string, platform: NodeJS.Platform = process.platform): string {
+export function emulatorPath(
+  sdkRoot: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
   return join(sdkRoot, "emulator", androidExecutable("emulator", platform));
 }
 

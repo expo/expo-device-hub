@@ -60,10 +60,7 @@ class FakeChild extends EventEmitter {
     return true;
   }
 
-  close(
-    status: number | null = 0,
-    signal: NodeJS.Signals | null = null,
-  ): void {
+  close(status: number | null = 0, signal: NodeJS.Signals | null = null): void {
     this.exitCode = status;
     this.signalCode = signal;
     this.stdout.end();
@@ -72,13 +69,15 @@ class FakeChild extends EventEmitter {
   }
 }
 
-function harness(options: {
-  maxActive?: number;
-  maxQueued?: number;
-  interactiveActiveReserve?: number;
-  interactiveQueueReserve?: number;
-  clock?: ExecClock;
-} = {}) {
+function harness(
+  options: {
+    maxActive?: number;
+    maxQueued?: number;
+    interactiveActiveReserve?: number;
+    interactiveQueueReserve?: number;
+    clock?: ExecClock;
+  } = {},
+) {
   const children: Array<{ cmd: string; args: string[]; child: FakeChild }> = [];
   const spawn: ExecSpawner = (cmd, args) => {
     const child = new FakeChild();
@@ -105,7 +104,8 @@ describe("ProcessExecutor", () => {
     const { executor, children } = harness({ maxActive: 1 });
     const active = executor.execText("active", []);
     const queued = executor.execBuffer("with-input", [], {
-      lane: "background", stdin: Buffer.from("probe input"),
+      lane: "background",
+      stdin: Buffer.from("probe input"),
     });
     expect(executor.snapshot().lanes.background.queued).toBe(1);
     expect(children).toHaveLength(1);
@@ -179,17 +179,10 @@ describe("ProcessExecutor", () => {
 
     children[0]!.child.close();
     expect((await active).status).toBe(0);
-    expect(children.map(({ cmd }) => cmd)).toEqual([
-      "active",
-      "interactive",
-    ]);
+    expect(children.map(({ cmd }) => cmd)).toEqual(["active", "interactive"]);
     children[1]!.child.close();
     expect((await interactive).status).toBe(0);
-    expect(children.map(({ cmd }) => cmd)).toEqual([
-      "active",
-      "interactive",
-      "background",
-    ]);
+    expect(children.map(({ cmd }) => cmd)).toEqual(["active", "interactive", "background"]);
     children[2]!.child.close();
     expect((await background).status).toBe(0);
     expect(executor.snapshot()).toMatchObject({
@@ -261,9 +254,7 @@ describe("ProcessExecutor", () => {
       interactiveQueueReserve: 1,
     });
     const active = executor.execText("active", []);
-    const queued = [0, 1, 2].map((index) =>
-      executor.execText(`default-${index}`, []),
-    );
+    const queued = [0, 1, 2].map((index) => executor.execText(`default-${index}`, []));
     const rejected = await executor.execText("default-rejected", []);
     const interactive = executor.execText("interactive", [], {
       lane: "interactive",

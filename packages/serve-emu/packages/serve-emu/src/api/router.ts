@@ -1,17 +1,6 @@
-import {
-  ApiError,
-  apiErrorResponse,
-  internalApiError,
-} from "./api-error.ts";
+import { ApiError, apiErrorResponse, internalApiError } from "./api-error.ts";
 
-export type ApiMethod =
-  | "GET"
-  | "HEAD"
-  | "POST"
-  | "PUT"
-  | "PATCH"
-  | "DELETE"
-  | "OPTIONS";
+export type ApiMethod = "GET" | "HEAD" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
 
 export type ApiRouteContext<Deps> = {
   readonly request: Request;
@@ -61,30 +50,20 @@ const METHOD_ORDER: readonly ApiMethod[] = [
   "OPTIONS",
 ];
 
-const METHOD_RANK = new Map<string, number>(
-  METHOD_ORDER.map((method, index) => [method, index]),
-);
+const METHOD_RANK = new Map<string, number>(METHOD_ORDER.map((method, index) => [method, index]));
 
 const defaultApiPath = (pathname: string): boolean =>
   pathname === "/api" || pathname.startsWith("/api/");
 
 function validateRoute<Deps>(route: ApiRoute<Deps>): void {
-  if (
-    !route.path.startsWith("/") ||
-    route.path.includes("?") ||
-    route.path.includes("#")
-  ) {
-    throw new TypeError(
-      `API route path must be an absolute pathname: ${route.path}`,
-    );
+  if (!route.path.startsWith("/") || route.path.includes("?") || route.path.includes("#")) {
+    throw new TypeError(`API route path must be an absolute pathname: ${route.path}`);
   }
   if (!METHOD_RANK.has(route.method)) {
     throw new TypeError(`Unsupported API method: ${route.method}`);
   }
   if (typeof route.handler !== "function") {
-    throw new TypeError(
-      `API route handler must be a function: ${route.method} ${route.path}`,
-    );
+    throw new TypeError(`API route handler must be a function: ${route.method} ${route.path}`);
   }
 }
 
@@ -94,12 +73,7 @@ function sortedMethods<Deps>(routes: readonly ApiRoute<Deps>[]): ApiMethod[] {
     .sort((a, b) => (METHOD_RANK.get(a) ?? 99) - (METHOD_RANK.get(b) ?? 99));
 }
 
-function logServerError(
-  logger: ApiLogger,
-  request: Request,
-  url: URL,
-  error: ApiError,
-): void {
+function logServerError(logger: ApiLogger, request: Request, url: URL, error: ApiError): void {
   try {
     logger.error("API request failed", {
       method: request.method,
@@ -117,9 +91,7 @@ export function createApiRouter<Deps>(
   definitions: readonly ApiRoute<Deps>[],
   options: ApiRouterOptions = {},
 ): ApiRouter<Deps> {
-  const routes = Object.freeze(
-    definitions.map((route) => Object.freeze({ ...route })),
-  );
+  const routes = Object.freeze(definitions.map((route) => Object.freeze({ ...route })));
   const routesByPath = new Map<string, ApiRoute<Deps>[]>();
   const registered = new Set<string>();
 
@@ -146,21 +118,16 @@ export function createApiRouter<Deps>(
 
       const pathRoutes = routesByPath.get(url.pathname);
       if (!pathRoutes) {
-        return apiErrorResponse(
-          new ApiError(404, "not_found", "API route not found"),
-        );
+        return apiErrorResponse(new ApiError(404, "not_found", "API route not found"));
       }
 
       const route = pathRoutes.find((item) => item.method === request.method);
       if (!route) {
         const allow = sortedMethods(pathRoutes);
         return apiErrorResponse(
-          new ApiError(
-            405,
-            "method_not_allowed",
-            "Method not allowed for this API route",
-            { headers: { Allow: allow.join(", ") } },
-          ),
+          new ApiError(405, "method_not_allowed", "Method not allowed for this API route", {
+            headers: { Allow: allow.join(", ") },
+          }),
         );
       }
 
@@ -171,8 +138,7 @@ export function createApiRouter<Deps>(
         }
         return response;
       } catch (cause) {
-        const error =
-          cause instanceof ApiError ? cause : internalApiError(cause);
+        const error = cause instanceof ApiError ? cause : internalApiError(cause);
         if (error.status >= 500) {
           logServerError(logger, request, url, error);
         }

@@ -113,10 +113,7 @@ export function getFixedScrollTopForIndex({
 
   const boundedIndex = Math.min(count - 1, Math.max(0, Math.floor(index)));
   const maxScrollTop = Math.max(0, count * rowHeight - viewportHeight);
-  const current = Math.min(
-    maxScrollTop,
-    Math.max(0, Number.isNaN(scrollTop) ? 0 : scrollTop),
-  );
+  const current = Math.min(maxScrollTop, Math.max(0, Number.isNaN(scrollTop) ? 0 : scrollTop));
   const rowTop = boundedIndex * rowHeight;
   const rowBottom = rowTop + rowHeight;
 
@@ -145,10 +142,7 @@ export function getFixedRovingIndex({
   }
 
   const maxScrollTop = Math.max(0, count * rowHeight - viewportHeight);
-  const current = Math.min(
-    maxScrollTop,
-    Math.max(0, Number.isNaN(scrollTop) ? 0 : scrollTop),
-  );
+  const current = Math.min(maxScrollTop, Math.max(0, Number.isNaN(scrollTop) ? 0 : scrollTop));
   const firstVisible = Math.min(count - 1, Math.floor(current / rowHeight));
   const lastVisible = Math.min(
     count - 1,

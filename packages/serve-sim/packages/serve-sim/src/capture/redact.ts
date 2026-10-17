@@ -22,15 +22,18 @@ const SENSITIVE_HEADER_SUBSTRING_PATTERN = /(token|secret|passw|credential|cooki
 export function isSensitiveHeaderName(name: string): boolean {
   const lower = name.toLowerCase();
   return (
-    SENSITIVE_HEADER_NAMES.has(lower)
-    || SENSITIVE_HEADER_PATTERN.test(lower)
-    || SENSITIVE_HEADER_PREFIX_PATTERN.test(lower)
-    || SENSITIVE_HEADER_SUBSTRING_PATTERN.test(lower)
+    SENSITIVE_HEADER_NAMES.has(lower) ||
+    SENSITIVE_HEADER_PATTERN.test(lower) ||
+    SENSITIVE_HEADER_PREFIX_PATTERN.test(lower) ||
+    SENSITIVE_HEADER_SUBSTRING_PATTERN.test(lower)
   );
 }
 
 export function redactHeaders(headers: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(headers).map(([name, value]) => [name, isSensitiveHeaderName(name) ? REDACTED : value]),
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      isSensitiveHeaderName(name) ? REDACTED : value,
+    ]),
   );
 }

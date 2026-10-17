@@ -10,9 +10,12 @@ import { textToKeyEventsLenient } from "../text-to-keys";
 
 describe("desktop shifted characters", () => {
   const event = { key: "Z", shiftKey: true, metaKey: false, ctrlKey: false, altKey: false };
-  test.each(["metaKey", "ctrlKey", "altKey"] as const)("does not type a %s shortcut", (modifier) => {
-    expect(shiftedCharacter({ ...event, [modifier]: true })).toBeUndefined();
-  });
+  test.each(["metaKey", "ctrlKey", "altKey"] as const)(
+    "does not type a %s shortcut",
+    (modifier) => {
+      expect(shiftedCharacter({ ...event, [modifier]: true })).toBeUndefined();
+    },
+  );
   test.each([" ", "Enter", "ArrowLeft"])("does not AX-press %s", (key) => {
     expect(shiftedCharacter({ ...event, key })).toBeUndefined();
   });

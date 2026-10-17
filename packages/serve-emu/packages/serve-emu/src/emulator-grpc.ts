@@ -4,10 +4,7 @@ import { createConnection, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import {
-  isEmulatorSerial,
-  parseEmulatorSerial,
-} from "./device-capabilities.ts";
+import { isEmulatorSerial, parseEmulatorSerial } from "./device-capabilities.ts";
 import { execText, type ExecResult } from "./exec.ts";
 
 /** Minimal dependency-free client for Android Emulator's control gRPC API. */
@@ -28,9 +25,7 @@ const UNARY_TIMEOUT_MS = 5_000;
 const STREAM_INACTIVITY_TIMEOUT_MS = 10_000;
 
 function abortReason(signal: AbortSignal, fallback: string): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException(fallback, "AbortError");
+  return signal.reason instanceof Error ? signal.reason : new DOMException(fallback, "AbortError");
 }
 
 function throwIfAborted(signal: AbortSignal | undefined, fallback: string) {
@@ -87,17 +82,13 @@ export function findEmulatorGrpcEndpoint(
   const directories = dependencies.discoveryDirs ?? discoveryDirs;
   const readDirectory = dependencies.readDirectory ?? readdirSync;
   const processIsAlive = dependencies.processIsAlive ?? discoveryProcessIsAlive;
-  const readText =
-    dependencies.readText ?? ((path: string) => readFileSync(path, "utf8"));
-  const readModifiedMs =
-    dependencies.modifiedMs ?? ((path: string) => statSync(path).mtimeMs);
+  const readText = dependencies.readText ?? ((path: string) => readFileSync(path, "utf8"));
+  const readModifiedMs = dependencies.modifiedMs ?? ((path: string) => statSync(path).mtimeMs);
   const candidates: Array<GrpcEndpoint & { modifiedMs: number }> = [];
   for (const dir of directories()) {
     let files: string[];
     try {
-      files = readDirectory(dir).filter((file) =>
-        /^pid_\d+(?:_info)?\.ini$/.test(file),
-      );
+      files = readDirectory(dir).filter((file) => /^pid_\d+(?:_info)?\.ini$/.test(file));
     } catch {
       continue;
     }
@@ -114,10 +105,7 @@ export function findEmulatorGrpcEndpoint(
       for (const line of text.split("\n")) {
         const separator = line.indexOf("=");
         if (separator <= 0) continue;
-        values.set(
-          line.slice(0, separator).trim(),
-          line.slice(separator + 1).trim(),
-        );
+        values.set(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
       }
       if (values.get("port.serial") !== parsedSerial.consolePort) continue;
       const port = Number(values.get("grpc.port"));
@@ -163,8 +151,7 @@ async function portIsReachable(
       if (error) reject(error);
       else resolve(reachable);
     };
-    const onAbort = () =>
-      finish(false, abortReason(signal!, "emulator gRPC discovery aborted"));
+    const onAbort = () => finish(false, abortReason(signal!, "emulator gRPC discovery aborted"));
     const timer = setTimeout(() => finish(false), timeoutMs);
     signal?.addEventListener("abort", onAbort, { once: true });
     socket.once("connect", () => finish(true));
@@ -209,10 +196,7 @@ function commandDetail(result: ExecResult<string>): string {
   );
 }
 
-async function runningAvdName(
-  serial: string,
-  signal?: AbortSignal,
-): Promise<string | null> {
+async function runningAvdName(serial: string, signal?: AbortSignal): Promise<string | null> {
   const result = await execText("adb", ["-s", serial, "emu", "avd", "name"], {
     timeout: 5_000,
     signal,
@@ -229,8 +213,7 @@ async function runningAvdName(
 
 export function parseEmulatorGrpcPort(output: string): number | null {
   const value = Number(
-    output.match(/["']?port["']?\s*:\s*["']?(\d+)/i)?.[1] ??
-      output.match(/\bport\s+(\d+)/i)?.[1],
+    output.match(/["']?port["']?\s*:\s*["']?(\d+)/i)?.[1] ?? output.match(/\bport\s+(\d+)/i)?.[1],
   );
   return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : null;
 }
@@ -242,9 +225,7 @@ export async function ensureEmulatorGrpcEndpoint(
   dependencies: EmulatorGrpcDiscoveryDependencies = {},
 ): Promise<GrpcEndpoint> {
   if (!isEmulatorSerial(serial)) {
-    throw new Error(
-      `gRPC screenshot streaming requires an emulator; received ${serial}`,
-    );
+    throw new Error(`gRPC screenshot streaming requires an emulator; received ${serial}`);
   }
   const checkPort = dependencies.portIsReachable ?? portIsReachable;
   const allocatePort = dependencies.pickAvailablePort ?? pickAvailablePort;
@@ -252,8 +233,7 @@ export async function ensureEmulatorGrpcEndpoint(
   const readAvdName = dependencies.readAvdName ?? runningAvdName;
   const wait =
     dependencies.wait ??
-    ((ms: number, waitSignal?: AbortSignal) =>
-      sleep(ms, undefined, { signal: waitSignal }));
+    ((ms: number, waitSignal?: AbortSignal) => sleep(ms, undefined, { signal: waitSignal }));
   const warn = dependencies.warn ?? console.warn;
   const useEndpoint = (endpoint: GrpcEndpoint): GrpcEndpoint => {
     if (!endpoint.token) {
@@ -275,11 +255,11 @@ export async function ensureEmulatorGrpcEndpoint(
   for (let attempt = 0; attempt < 5; attempt++) {
     throwIfAborted(signal, "emulator gRPC discovery aborted");
     const port = await allocatePort(signal);
-    const result = await runAdb(
-      "adb",
-      ["-s", serial, "emu", "grpc", String(port)],
-      { timeout: 5_000, signal, lane: "interactive" },
-    );
+    const result = await runAdb("adb", ["-s", serial, "emu", "grpc", String(port)], {
+      timeout: 5_000,
+      signal,
+      lane: "interactive",
+    });
     const output = `${result.stdout}\n${result.stderr}`.trim();
     if (result.status !== 0 || output.includes("KO:")) {
       lastError = commandDetail(result);
@@ -303,12 +283,9 @@ export async function ensureEmulatorGrpcEndpoint(
       }
       await wait(50, signal);
     }
-    lastError =
-      "emulator accepted the gRPC command, but no usable endpoint became reachable";
+    lastError = "emulator accepted the gRPC command, but no usable endpoint became reachable";
   }
-  throw new Error(
-    `could not enable the emulator gRPC endpoint for ${serial}: ${lastError}`,
-  );
+  throw new Error(`could not enable the emulator gRPC endpoint for ${serial}: ${lastError}`);
 }
 
 function writeVarint(output: number[], value: number | bigint): void {
@@ -327,22 +304,14 @@ function varintField(output: number[], fieldNo: number, value: number): void {
   writeVarint(output, value);
 }
 
-function lenField(
-  output: number[],
-  fieldNo: number,
-  bytes: number[] | Buffer,
-): void {
+function lenField(output: number[], fieldNo: number, bytes: number[] | Buffer): void {
   if (!bytes.length) return;
   writeVarint(output, (fieldNo << 3) | 2);
   writeVarint(output, bytes.length);
   for (const byte of bytes) output.push(byte);
 }
 
-function messageField(
-  output: number[],
-  fieldNo: number,
-  bytes: number[] | Buffer,
-): void {
+function messageField(output: number[], fieldNo: number, bytes: number[] | Buffer): void {
   writeVarint(output, (fieldNo << 3) | 2);
   writeVarint(output, bytes.length);
   for (const byte of bytes) output.push(byte);
@@ -436,13 +405,8 @@ export type ImageFormatRequest = {
 };
 
 function encodeImageTransport(request: ImageTransportRequest): Buffer {
-  if (
-    request.channel !== IMAGE_TRANSPORT_UNSPECIFIED &&
-    request.channel !== IMAGE_TRANSPORT_MMAP
-  ) {
-    throw new RangeError(
-      `unsupported image transport channel ${request.channel}`,
-    );
+  if (request.channel !== IMAGE_TRANSPORT_UNSPECIFIED && request.channel !== IMAGE_TRANSPORT_MMAP) {
+    throw new RangeError(`unsupported image transport channel ${request.channel}`);
   }
   if (request.channel === IMAGE_TRANSPORT_MMAP) {
     if (!request.handle?.startsWith("file:///")) {
@@ -522,9 +486,7 @@ export function decodeEmulatorImage(buffer: Buffer): EmuImage {
     image.width > 16_384 ||
     image.height > 16_384
   ) {
-    throw new Error(
-      `invalid emulator image size ${image.width}x${image.height}`,
-    );
+    throw new Error(`invalid emulator image size ${image.width}x${image.height}`);
   }
   return image;
 }
@@ -610,10 +572,7 @@ export class GrpcMessageParser {
     let offset = 0;
     while (offset < chunk.length) {
       if (this.#message === null) {
-        const copyBytes = Math.min(
-          5 - this.#headerBytes,
-          chunk.length - offset,
-        );
+        const copyBytes = Math.min(5 - this.#headerBytes, chunk.length - offset);
         chunk.copy(this.#header, this.#headerBytes, offset, offset + copyBytes);
         this.#headerBytes += copyBytes;
         offset += copyBytes;
@@ -635,10 +594,7 @@ export class GrpcMessageParser {
         continue;
       }
 
-      const copyBytes = Math.min(
-        this.#message.length - this.#messageBytes,
-        chunk.length - offset,
-      );
+      const copyBytes = Math.min(this.#message.length - this.#messageBytes, chunk.length - offset);
       chunk.copy(this.#message, this.#messageBytes, offset, offset + copyBytes);
       this.#messageBytes += copyBytes;
       offset += copyBytes;
@@ -769,8 +725,7 @@ export type GrpcImageDecodeEvent = {
 const SYSTEM_PACING_CLOCK: GrpcMessagePacingClock = {
   now: () => performance.now(),
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (handle) =>
-    clearTimeout(handle as ReturnType<typeof setTimeout>),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
 /**
@@ -805,18 +760,12 @@ export class GrpcMessagePacer {
     maxMessageBytes: number;
     messageIntervalMs: number;
     onMessage: (message: Buffer, receivedAtMs: number) => void;
-    onPacingEvent?: (
-      event: GrpcMessagePacingEvent,
-      detail: GrpcMessagePacingDetail,
-    ) => void;
+    onPacingEvent?: (event: GrpcMessagePacingEvent, detail: GrpcMessagePacingDetail) => void;
     onError: (error: Error) => void;
     signal?: AbortSignal;
     clock?: GrpcMessagePacingClock;
   }) {
-    if (
-      !Number.isFinite(options.messageIntervalMs) ||
-      options.messageIntervalMs <= 0
-    ) {
+    if (!Number.isFinite(options.messageIntervalMs) || options.messageIntervalMs <= 0) {
       throw new RangeError("messageIntervalMs must be a positive number");
     }
     this.#stream = options.stream;
@@ -830,8 +779,7 @@ export class GrpcMessagePacer {
     this.#clock = options.clock ?? SYSTEM_PACING_CLOCK;
     this.#signal = options.signal;
     if (options.signal?.aborted) this.#closed = true;
-    else
-      options.signal?.addEventListener("abort", this.#onAbort, { once: true });
+    else options.signal?.addEventListener("abort", this.#onAbort, { once: true });
   }
 
   push(chunk: Buffer): void {
@@ -908,11 +856,7 @@ export class GrpcMessagePacer {
       () => this.#onNextSlot(),
       Math.max(0, this.#nextMessageAt! - this.#clock.now()),
     );
-    if (
-      typeof this.#timer === "object" &&
-      this.#timer !== null &&
-      "unref" in this.#timer
-    ) {
+    if (typeof this.#timer === "object" && this.#timer !== null && "unref" in this.#timer) {
       (this.#timer as { unref(): void }).unref();
     }
   }
@@ -944,10 +888,7 @@ export class GrpcMessagePacer {
 
 type RequestOptions = {
   onMessage?: (message: Buffer, receivedAtMs: number) => void;
-  onPacingEvent?: (
-    event: GrpcMessagePacingEvent,
-    detail: GrpcMessagePacingDetail,
-  ) => void;
+  onPacingEvent?: (event: GrpcMessagePacingEvent, detail: GrpcMessagePacingDetail) => void;
   signal?: AbortSignal;
   timeoutMs?: number;
   maxMessageBytes?: number;
@@ -1008,11 +949,7 @@ export class EmulatorGrpcClient {
     return () => this.#errorListeners.delete(listener);
   }
 
-  #request(
-    method: string,
-    message: Buffer,
-    options: RequestOptions = {},
-  ): Promise<Buffer[]> {
+  #request(method: string, message: Buffer, options: RequestOptions = {}): Promise<Buffer[]> {
     return new Promise((resolve, reject) => {
       if (this.#closed) {
         reject(new Error("emulator gRPC client is closed"));
@@ -1074,8 +1011,7 @@ export class EmulatorGrpcClient {
               }
             } catch (error) {
               if (settled || generation !== activityGeneration) return;
-              const detail =
-                error instanceof Error ? error.message : String(error);
+              const detail = error instanceof Error ? error.message : String(error);
               settle(
                 new Error(
                   `${method}: no decoded message received for ${options.inactivityTimeoutMs}ms; health probe failed: ${detail}`,
@@ -1112,20 +1048,14 @@ export class EmulatorGrpcClient {
         if (values["grpc-status"] === undefined) return;
         grpcStatus = String(values["grpc-status"]);
         try {
-          grpcMessage = decodeURIComponent(
-            String(values["grpc-message"] ?? ""),
-          );
+          grpcMessage = decodeURIComponent(String(values["grpc-message"] ?? ""));
         } catch {
           grpcMessage = String(values["grpc-message"] ?? "");
         }
       };
       const cancelForFrameError = (error: unknown) => {
         const cause = error instanceof Error ? error : new Error(String(error));
-        settle(
-          cause instanceof GrpcFrameError
-            ? new Error(`${method}: ${cause.message}`)
-            : cause,
-        );
+        settle(cause instanceof GrpcFrameError ? new Error(`${method}: ${cause.message}`) : cause);
         stream.close(http2.constants.NGHTTP2_CANCEL);
       };
       if (options.messageIntervalMs) {
@@ -1146,12 +1076,8 @@ export class EmulatorGrpcClient {
         });
       }
 
-      stream.on("response", (values) =>
-        takeStatus(values as Record<string, unknown>),
-      );
-      stream.on("trailers", (values) =>
-        takeStatus(values as Record<string, unknown>),
-      );
+      stream.on("response", (values) => takeStatus(values as Record<string, unknown>));
+      stream.on("trailers", (values) => takeStatus(values as Record<string, unknown>));
       stream.on("data", (chunk: Buffer) => {
         if (settled) return;
         try {
@@ -1182,9 +1108,7 @@ export class EmulatorGrpcClient {
       });
       if (options.timeoutMs) {
         timer = setTimeout(() => {
-          settle(
-            new Error(`${method}: timed out after ${options.timeoutMs}ms`),
-          );
+          settle(new Error(`${method}: timed out after ${options.timeoutMs}ms`));
           stream.close(http2.constants.NGHTTP2_CANCEL);
         }, options.timeoutMs);
       }
@@ -1193,39 +1117,27 @@ export class EmulatorGrpcClient {
     });
   }
 
-  async getScreenshot(
-    format: ImageFormatRequest,
-    signal?: AbortSignal,
-  ): Promise<EmuImage> {
-    const [message] = await this.#request(
-      "getScreenshot",
-      encodeImageFormat(format),
-      { timeoutMs: this.#unaryTimeoutMs, signal },
-    );
+  async getScreenshot(format: ImageFormatRequest, signal?: AbortSignal): Promise<EmuImage> {
+    const [message] = await this.#request("getScreenshot", encodeImageFormat(format), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+    });
     if (!message) throw new Error("getScreenshot returned no image");
     return decodeEmulatorImage(message);
   }
 
   async streamScreenshot(
     format: ImageFormatRequest,
-    onImage: (
-      image: EmuImage,
-      source: GrpcScreenshotImageSource,
-      receivedAtMs: number,
-    ) => void,
+    onImage: (image: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number) => void,
     signal: AbortSignal,
     options: {
       maxFps?: number;
-      onPacingEvent?: (
-        event: GrpcMessagePacingEvent,
-        detail: GrpcMessagePacingDetail,
-      ) => void;
+      onPacingEvent?: (event: GrpcMessagePacingEvent, detail: GrpcMessagePacingDetail) => void;
       onDecode?: (event: GrpcImageDecodeEvent) => void;
     } = {},
   ): Promise<void> {
     let streamedImageGeneration = 0;
-    const messageIntervalMs =
-      options.maxFps === undefined ? undefined : 1_000 / options.maxFps;
+    const messageIntervalMs = options.maxFps === undefined ? undefined : 1_000 / options.maxFps;
     if (
       messageIntervalMs !== undefined &&
       (!Number.isFinite(messageIntervalMs) || messageIntervalMs <= 0)
@@ -1272,10 +1184,7 @@ export class EmulatorGrpcClient {
     });
   }
 
-  async sendKey(
-    event: KeyboardEventRequest,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  async sendKey(event: KeyboardEventRequest, signal?: AbortSignal): Promise<void> {
     await this.#request("sendKey", encodeKeyboardEvent(event), {
       timeoutMs: this.#unaryTimeoutMs,
       signal,
@@ -1283,10 +1192,7 @@ export class EmulatorGrpcClient {
     });
   }
 
-  async sendEvdevKeyPress(
-    keyCode: number,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  async sendEvdevKeyPress(keyCode: number, signal?: AbortSignal): Promise<void> {
     if (!Number.isInteger(keyCode) || keyCode <= 0) {
       throw new Error(`invalid evdev keycode ${keyCode}`);
     }

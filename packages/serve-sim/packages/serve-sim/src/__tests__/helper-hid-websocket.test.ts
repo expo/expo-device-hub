@@ -33,20 +33,14 @@ describe("handleWebSocket helper HID dispatch", () => {
 
   test("does not claim unrelated paths", () => {
     const ws = fakeSocket();
-    const handled = handleWebSocket(
-      upgradeRequest("http://localhost:3200/other/ws"),
-      ws,
-    );
+    const handled = handleWebSocket(upgradeRequest("http://localhost:3200/other/ws"), ws);
     expect(handled).toBe(false);
     expect(ws.closed).toBe(false);
   });
 
   test("still claims the exec-ws channel", () => {
     const ws = fakeSocket();
-    const handled = handleWebSocket(
-      upgradeRequest("http://localhost:3200/preview/exec-ws"),
-      ws,
-    );
+    const handled = handleWebSocket(upgradeRequest("http://localhost:3200/preview/exec-ws"), ws);
     expect(handled).toBe(true);
   });
 
@@ -72,10 +66,7 @@ describe("handleWebSocket helper HID dispatch", () => {
 
   test("closes a helper HID socket with no resolvable device", () => {
     const ws = fakeSocket();
-    const handled = handleWebSocket(
-      upgradeRequest("http://localhost:3200/preview/helper/ws"),
-      ws,
-    );
+    const handled = handleWebSocket(upgradeRequest("http://localhost:3200/preview/helper/ws"), ws);
     expect(handled).toBe(true);
     expect(ws.closed).toBe(true);
   });
@@ -99,9 +90,15 @@ test("host-accepted HID socket closes after its peer stops answering pings", asy
     readyState: 1,
     send() {},
     close() {},
-    ping() { pings++; },
-    terminate() { terminated = true; },
-    on(event: string, listener: (...args: never[]) => void) { (listeners[event] ??= []).push(listener); },
+    ping() {
+      pings++;
+    },
+    terminate() {
+      terminated = true;
+    },
+    on(event: string, listener: (...args: never[]) => void) {
+      (listeners[event] ??= []).push(listener);
+    },
   } as UpgradeHandlerWebSocket;
   // Claim through the same host-accepted route used by embedded previews.
   let closes = 0;
@@ -111,14 +108,24 @@ test("host-accepted HID socket closes after its peer stops answering pings", asy
     {
       helperProxyTarget: () => ({ device: "DEVICE", upstreamPath: "/ws" }),
       fallbackDevice: null,
-      resolveSession: () => ({ attachHidSocket(ws) { ws.on("close", () => { closes++; }); } }),
+      resolveSession: () => ({
+        attachHidSocket(ws) {
+          ws.on("close", () => {
+            closes++;
+          });
+        },
+      }),
     },
     { pingIntervalMs: 10, pongTimeoutMs: 40 },
   );
   expect(handled).toBe(true);
   await Promise.race([
-    (async () => { while (!terminated) await Bun.sleep(10); })(),
-    Bun.sleep(500).then(() => { throw new Error("Host HID socket did not time out"); }),
+    (async () => {
+      while (!terminated) await Bun.sleep(10);
+    })(),
+    Bun.sleep(500).then(() => {
+      throw new Error("Host HID socket did not time out");
+    }),
   ]);
   expect(pings).toBeGreaterThan(0);
   expect(closes).toBe(1);
@@ -130,7 +137,9 @@ test("host-accepted HID rejection preserves the retry code and reason", () => {
     OPEN: 1,
     readyState: 1,
     send() {},
-    close(code?: number, reason?: string) { closedWith = [code, reason]; },
+    close(code?: number, reason?: string) {
+      closedWith = [code, reason];
+    },
     ping() {},
     on() {},
   } as UpgradeHandlerWebSocket;
@@ -141,10 +150,15 @@ test("host-accepted HID rejection preserves the retry code and reason", () => {
       helperProxyTarget: () => ({ device: "DEVICE", upstreamPath: "/ws" }),
       fallbackDevice: null,
       resolveSession: () => ({
-        attachHidSocket(ws) { ws.close(1013, "Simulator input unavailable; retry after other clients disconnect"); },
+        attachHidSocket(ws) {
+          ws.close(1013, "Simulator input unavailable; retry after other clients disconnect");
+        },
       }),
     },
   );
   expect(handled).toBe(true);
-  expect(closedWith).toEqual([1013, "Simulator input unavailable; retry after other clients disconnect"]);
+  expect(closedWith).toEqual([
+    1013,
+    "Simulator input unavailable; retry after other clients disconnect",
+  ]);
 });

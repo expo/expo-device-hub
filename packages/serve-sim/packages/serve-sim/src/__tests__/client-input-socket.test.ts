@@ -13,9 +13,16 @@ class FakeSocket {
   onerror: (() => void) | null = null;
   closed = false;
 
-  open() { this.readyState = 1; this.onopen?.(); }
-  message(data: unknown) { this.onmessage?.({ data }); }
-  send(data: ArrayBuffer) { this.sent.push(data); }
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  message(data: unknown) {
+    this.onmessage?.({ data });
+  }
+  send(data: ArrayBuffer) {
+    this.sent.push(data);
+  }
   close(code = 1000, reason = "") {
     if (this.closed) return;
     this.closed = true;
@@ -30,37 +37,57 @@ function setup(requireAdmission = true) {
   let recoveries = 0;
   let admissions = 0;
   let disconnects = 0;
-  const input = createInputSocket("ws://localhost/ws", {
-    onAdmitted: () => { admissions++; },
-    onMessage: (data) => data === "admitted",
-    onDisconnect: () => { disconnects++; },
-    onRefused: (reason) => { errors.push(reason); },
-    onRecovered: () => { recoveries++; },
-  }, {
-    requireAdmission,
-    legacyOpenGraceMs: 20,
-    reconnectDelayMs: 10,
-    refusalDelayMs: 40,
-    openSocket: () => {
-      const socket = new FakeSocket();
-      sockets.push(socket);
-      return socket as unknown as WebSocket;
+  const input = createInputSocket(
+    "ws://localhost/ws",
+    {
+      onAdmitted: () => {
+        admissions++;
+      },
+      onMessage: (data) => data === "admitted",
+      onDisconnect: () => {
+        disconnects++;
+      },
+      onRefused: (reason) => {
+        errors.push(reason);
+      },
+      onRecovered: () => {
+        recoveries++;
+      },
     },
-  });
+    {
+      requireAdmission,
+      legacyOpenGraceMs: 20,
+      reconnectDelayMs: 10,
+      refusalDelayMs: 40,
+      openSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as WebSocket;
+      },
+    },
+  );
   return {
     input,
     sockets,
     errors,
-    get admissions() { return admissions; },
-    get disconnects() { return disconnects; },
-    get recoveries() { return recoveries; },
+    get admissions() {
+      return admissions;
+    },
+    get disconnects() {
+      return disconnects;
+    },
+    get recoveries() {
+      return recoveries;
+    },
   };
 }
 
 test("paced keyboard input survives admission of the same transport", async () => {
   const state = setup();
   let resolvePasteSent!: () => void;
-  const pasteSent = new Promise<void>((resolve) => { resolvePasteSent = resolve; });
+  const pasteSent = new Promise<void>((resolve) => {
+    resolvePasteSent = resolve;
+  });
   const keyboard = createOrderedKeyboardInput({
     getDevice: () => "device-a",
     getConnection: () => state.input.connection,
@@ -73,8 +100,10 @@ test("paced keyboard input survives admission of the same transport", async () =
     },
   });
   const events = [
-    { type: "down" as const, usage: 4 }, { type: "up" as const, usage: 4 },
-    { type: "down" as const, usage: 5 }, { type: "up" as const, usage: 5 },
+    { type: "down" as const, usage: 4 },
+    { type: "up" as const, usage: 4 },
+    { type: "down" as const, usage: 5 },
+    { type: "up" as const, usage: 5 },
   ];
   try {
     state.input.start();
@@ -85,9 +114,11 @@ test("paced keyboard input survives admission of the same transport", async () =
     await pasteSent;
     keyboard.receive(state.input.connection, { requestId: 1, ok: true });
     await paste;
-    expect(state.sockets[0]!.sent.filter((message) => new Uint8Array(message)[0] === 0x06).map((message) =>
-      JSON.parse(new TextDecoder().decode(new Uint8Array(message).subarray(1))),
-    )).toEqual(events);
+    expect(
+      state.sockets[0]!.sent.filter((message) => new Uint8Array(message)[0] === 0x06).map(
+        (message) => JSON.parse(new TextDecoder().decode(new Uint8Array(message).subarray(1))),
+      ),
+    ).toEqual(events);
   } finally {
     keyboard.dispose();
     state.input.dispose();

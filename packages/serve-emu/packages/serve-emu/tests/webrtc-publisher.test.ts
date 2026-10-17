@@ -12,12 +12,9 @@ const OFFER_SDP = [
   "a=fmtp:109 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
 ].join("\r\n");
 
-const ANSWER_SDP = [
-  "v=0",
-  "m=video 9 UDP/TLS/RTP/SAVPF 109",
-  "a=mid:video0",
-  "a=sendonly",
-].join("\r\n");
+const ANSWER_SDP = ["v=0", "m=video 9 UDP/TLS/RTP/SAVPF 109", "a=mid:video0", "a=sendonly"].join(
+  "\r\n",
+);
 
 class FakeMediaHandler {
   addToChain(_handler: FakeMediaHandler): void {}
@@ -221,7 +218,7 @@ describe("WebRTC publisher SDP helpers", () => {
             "a=rtpmap:109 H264/90000",
             "a=fmtp:109 packetization-mode=1;profile-level-id=42e01f",
           ].join("\r\n"),
-        )
+        ),
       ).toThrow(WebRtcSignalingError);
     }
   });
@@ -237,7 +234,7 @@ describe("WebRTC publisher SDP helpers", () => {
           "a=rtpmap:109 H264/90000",
           "a=fmtp:109 packetization-mode=1;profile-level-id=42e01f",
         ].join("\r\n"),
-      )
+      ),
     ).toThrow(WebRtcSignalingError);
   });
 
@@ -295,8 +292,9 @@ describe("WebRTC publisher SDP helpers", () => {
   });
 
   test("throws when the answer does not contain the selected video mid", () => {
-    expect(() => injectVideoSsrc("v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 109\r\na=mid:other", "video0", 1234))
-      .toThrow('WebRTC answer does not include the selected video mid "video0"');
+    expect(() =>
+      injectVideoSsrc("v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 109\r\na=mid:other", "video0", 1234),
+    ).toThrow('WebRTC answer does not include the selected video mid "video0"');
   });
 });
 
@@ -394,7 +392,11 @@ describe("WebRTC publisher signaling", () => {
       onKeyframeRequest() {},
     });
 
-    await publisher.handleOffer({ type: "offer", sdp: OFFER_SDP, sessionId: "00000000-0000-4000-8000-000000000000" });
+    await publisher.handleOffer({
+      type: "offer",
+      sdp: OFFER_SDP,
+      sessionId: "00000000-0000-4000-8000-000000000000",
+    });
 
     expect(peerConfigs[0]?.iceServers).toEqual(["turn:u:p@trusted.example:3478"]);
     publisher.close();
@@ -587,9 +589,7 @@ describe("WebRTC publisher signaling", () => {
       remoteCandidateTransport: "tcp",
       path: "relay",
     });
-    expect(
-      publisher.statsForSession("11111111-1111-4111-8111-111111111111"),
-    ).toBeNull();
+    expect(publisher.statsForSession("11111111-1111-4111-8111-111111111111")).toBeNull();
 
     connection.selectedCandidatePair.local.type = "unknown";
     connection.selectedCandidatePair.remote.type = "host";

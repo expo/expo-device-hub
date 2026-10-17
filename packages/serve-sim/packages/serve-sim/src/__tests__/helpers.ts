@@ -149,4 +149,3 @@ export function killHelpersForDevice(udid: string): void {
     } catch {}
   }
 }
-

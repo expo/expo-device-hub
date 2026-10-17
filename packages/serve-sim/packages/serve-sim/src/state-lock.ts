@@ -37,7 +37,9 @@ export async function withStateLock<T>(
       writeFileSync(fd, String(process.pid));
     } catch {
       if (lockHolderIsGone(path)) {
-        try { unlinkSync(path); } catch {}
+        try {
+          unlinkSync(path);
+        } catch {}
       }
       await new Promise((resolve) => setTimeout(resolve, STATE_LOCK_POLL_MS));
     }
@@ -46,7 +48,9 @@ export async function withStateLock<T>(
     return await fn();
   } finally {
     closeSync(fd);
-    try { unlinkSync(path); } catch {}
+    try {
+      unlinkSync(path);
+    } catch {}
   }
 }
 
@@ -68,10 +72,14 @@ export function withStateLockSync<T>(
       break;
     } catch {
       let holder: string | undefined;
-      try { holder = readFileSync(path, "utf8").trim(); } catch {}
+      try {
+        holder = readFileSync(path, "utf8").trim();
+      } catch {}
       if (holder === String(process.pid)) throw reentrantError();
       if (lockHolderIsGone(path)) {
-        try { unlinkSync(path); } catch {}
+        try {
+          unlinkSync(path);
+        } catch {}
       }
       if (Date.now() >= deadline) throw timeoutError();
       Atomics.wait(sleeper, 0, 0, STATE_LOCK_POLL_MS);
@@ -81,6 +89,8 @@ export function withStateLockSync<T>(
     return fn();
   } finally {
     closeSync(fd);
-    try { unlinkSync(path); } catch {}
+    try {
+      unlinkSync(path);
+    } catch {}
   }
 }

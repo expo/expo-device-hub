@@ -75,7 +75,10 @@ export function AppDetectionTool({
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!currentApp) { setDetails(null); return; }
+    if (!currentApp) {
+      setDetails(null);
+      return;
+    }
     let cancelled = false;
     setDetails({
       bundleId: currentApp.bundleId,
@@ -93,7 +96,9 @@ export function AppDetectionTool({
         ...extra,
       });
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [udid, currentApp, currentApp?.bundleId, currentApp?.pid, currentApp?.isReactNative]);
 
   if (!details) {
@@ -108,10 +113,7 @@ export function AppDetectionTool({
       summary={
         <>
           <AppIcon bundleId={details.bundleId} iconDataUrl={details.iconDataUrl} />
-          <AppSummaryLabel
-            bundleId={details.bundleId}
-            displayName={details.displayName}
-          />
+          <AppSummaryLabel bundleId={details.bundleId} displayName={details.displayName} />
         </>
       }
     >
@@ -122,28 +124,37 @@ export function AppDetectionTool({
       )}
 
       <dl className="m-0 flex flex-col gap-1.5">
-            <Row label="Version" value={details.shortVersion ? `${details.shortVersion} (${details.bundleVersion ?? "—"})` : details.loading ? "…" : "—"} />
-            <Row label="Min iOS" value={details.minOS ?? (details.loading ? "…" : "—")} />
-            <Row label="Executable" value={details.executable ?? (details.loading ? "…" : "—")} />
-            <Row label="PID" value={details.pid != null ? String(details.pid) : "—"} />
-            {details.isReactNative && <Row label="React Native" value="Yes" />}
-            <Row
-              label="App path"
-              value={details.appPath ?? (details.loading ? "…" : "—")}
-              mono
-              action={
-                details.appPath
-                  ? {
-                      title: "Reveal in Finder",
-                      onClick: () => { runHostAction("reveal", { path: details.appPath! }); },
-                      icon: (
-                        <ArrowUpRight size={11} strokeWidth={2.2} />
-                      ),
-                    }
-                  : undefined
-              }
-            />
-          </dl>
+        <Row
+          label="Version"
+          value={
+            details.shortVersion
+              ? `${details.shortVersion} (${details.bundleVersion ?? "—"})`
+              : details.loading
+                ? "…"
+                : "—"
+          }
+        />
+        <Row label="Min iOS" value={details.minOS ?? (details.loading ? "…" : "—")} />
+        <Row label="Executable" value={details.executable ?? (details.loading ? "…" : "—")} />
+        <Row label="PID" value={details.pid != null ? String(details.pid) : "—"} />
+        {details.isReactNative && <Row label="React Native" value="Yes" />}
+        <Row
+          label="App path"
+          value={details.appPath ?? (details.loading ? "…" : "—")}
+          mono
+          action={
+            details.appPath
+              ? {
+                  title: "Reveal in Finder",
+                  onClick: () => {
+                    runHostAction("reveal", { path: details.appPath! });
+                  },
+                  icon: <ArrowUpRight size={11} strokeWidth={2.2} />,
+                }
+              : undefined
+          }
+        />
+      </dl>
     </CollapsibleSection>
   );
 }
@@ -206,9 +217,7 @@ function Row({
       >
         {value}
         {action && (
-          <div
-            className="absolute top-0 right-0 bottom-0 pl-7 flex items-center justify-end bg-[linear-gradient(to_right,rgba(28,28,30,0)_0%,#1c1c1e_55%)] [transition:opacity_0.15s_ease,transform_0.15s_ease] opacity-0 translate-x-1 pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto"
-          >
+          <div className="absolute top-0 right-0 bottom-0 pl-7 flex items-center justify-end bg-[linear-gradient(to_right,rgba(28,28,30,0)_0%,#1c1c1e_55%)] [transition:opacity_0.15s_ease,transform_0.15s_ease] opacity-0 translate-x-1 pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto">
             <button
               type="button"
               onClick={action.onClick}

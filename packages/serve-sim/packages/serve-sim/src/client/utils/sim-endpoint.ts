@@ -72,9 +72,7 @@ declare global {
 export function streamConfigFrom(
   raw: Window["__SIM_PREVIEW__"] | null | undefined,
 ): NonNullable<Window["__SIM_PREVIEW__"]> | null {
-  return raw && typeof raw.device === "string" && typeof raw.url === "string"
-    ? raw
-    : null;
+  return raw && typeof raw.device === "string" && typeof raw.url === "string" ? raw : null;
 }
 
 export function mjpegStreamUrlFrom(config: NonNullable<Window["__SIM_PREVIEW__"]>): string {

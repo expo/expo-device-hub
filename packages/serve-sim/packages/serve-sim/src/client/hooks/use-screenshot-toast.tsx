@@ -47,7 +47,10 @@ function savedDismissMs(toast: ScreenshotToast): number {
   return toast.stagedOnly ? WARNING_DISMISS_MS : SAVED_DISMISS_MS;
 }
 
-export function browserDownloadNotice(artifact: ScreenshotArtifact | null): { message?: string; dismissMs: number } {
+export function browserDownloadNotice(artifact: ScreenshotArtifact | null): {
+  message?: string;
+  dismissMs: number;
+} {
   if (artifact === null) return { dismissMs: SAVED_DISMISS_MS };
   switch (artifact.status) {
     case "saved":
@@ -90,18 +93,21 @@ export function useScreenshotToast(deviceUdid?: string | null) {
     dismissDeadlineRef.current = null;
   }, []);
 
-  const dismiss = useCallback((id?: string | number) => {
-    const targetId = id ?? toastIdRef.current ?? undefined;
-    clearDismissTimer();
-    remainingDismissMsRef.current = null;
-    sonnerToast.dismiss(targetId);
-    if (targetId === undefined || toastIdRef.current === String(targetId)) {
-      const downloadUrl = toastRef.current?.downloadUrl;
-      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
-      toastRef.current = null;
-      toastIdRef.current = null;
-    }
-  }, [clearDismissTimer]);
+  const dismiss = useCallback(
+    (id?: string | number) => {
+      const targetId = id ?? toastIdRef.current ?? undefined;
+      clearDismissTimer();
+      remainingDismissMsRef.current = null;
+      sonnerToast.dismiss(targetId);
+      if (targetId === undefined || toastIdRef.current === String(targetId)) {
+        const downloadUrl = toastRef.current?.downloadUrl;
+        if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+        toastRef.current = null;
+        toastIdRef.current = null;
+      }
+    },
+    [clearDismissTimer],
+  );
 
   const reveal = useCallback(() => {
     const t = toastRef.current;
@@ -113,14 +119,17 @@ export function useScreenshotToast(deviceUdid?: string | null) {
     }
   }, []);
 
-  const scheduleDismiss = useCallback((ms: number) => {
-    clearDismissTimer();
-    const delay = Math.max(0, ms);
-    const id = toastIdRef.current;
-    remainingDismissMsRef.current = delay;
-    dismissDeadlineRef.current = Date.now() + delay;
-    dismissTimerRef.current = setTimeout(() => dismiss(id ?? undefined), delay);
-  }, [clearDismissTimer, dismiss]);
+  const scheduleDismiss = useCallback(
+    (ms: number) => {
+      clearDismissTimer();
+      const delay = Math.max(0, ms);
+      const id = toastIdRef.current;
+      remainingDismissMsRef.current = delay;
+      dismissDeadlineRef.current = Date.now() + delay;
+      dismissTimerRef.current = setTimeout(() => dismiss(id ?? undefined), delay);
+    },
+    [clearDismissTimer, dismiss],
+  );
 
   const pauseDismiss = useCallback(() => {
     if (!dismissTimerRef.current || dismissDeadlineRef.current == null) return;
@@ -134,27 +143,30 @@ export function useScreenshotToast(deviceUdid?: string | null) {
     scheduleDismiss(remaining);
   }, [scheduleDismiss]);
 
-  const render = useCallback((next: ScreenshotToast, duration = Infinity) => {
-    toastRef.current = next;
-    toastIdRef.current = next.id;
-    sonnerToast.custom(
-      (id) => (
-        <ScreenshotToast
-          toast={next}
-          onReveal={reveal}
-          onDismiss={() => dismiss(id)}
-          onPause={pauseDismiss}
-          onResume={resumeDismiss}
-        />
-      ),
-      { id: next.id, duration: Infinity },
-    );
-    if (Number.isFinite(duration)) scheduleDismiss(duration);
-    else {
-      clearDismissTimer();
-      remainingDismissMsRef.current = null;
-    }
-  }, [clearDismissTimer, dismiss, pauseDismiss, resumeDismiss, reveal, scheduleDismiss]);
+  const render = useCallback(
+    (next: ScreenshotToast, duration = Infinity) => {
+      toastRef.current = next;
+      toastIdRef.current = next.id;
+      sonnerToast.custom(
+        (id) => (
+          <ScreenshotToast
+            toast={next}
+            onReveal={reveal}
+            onDismiss={() => dismiss(id)}
+            onPause={pauseDismiss}
+            onResume={resumeDismiss}
+          />
+        ),
+        { id: next.id, duration: Infinity },
+      );
+      if (Number.isFinite(duration)) scheduleDismiss(duration);
+      else {
+        clearDismissTimer();
+        remainingDismissMsRef.current = null;
+      }
+    },
+    [clearDismissTimer, dismiss, pauseDismiss, resumeDismiss, reveal, scheduleDismiss],
+  );
 
   const capture = useCallback(async () => {
     if (!deviceUdid || captureInFlightRef.current) return;
@@ -176,15 +188,18 @@ export function useScreenshotToast(deviceUdid?: string | null) {
         const downloadUrl = URL.createObjectURL(png);
         triggerBrowserDownload(downloadUrl, fileName);
         const { message, dismissMs } = browserDownloadNotice(artifact);
-        render({
-          id,
-          status: "saved",
-          phase: "in",
-          downloadUrl,
-          downloadName: fileName,
-          thumb: downloadUrl,
-          message,
-        }, dismissMs);
+        render(
+          {
+            id,
+            status: "saved",
+            phase: "in",
+            downloadUrl,
+            downloadName: fileName,
+            thumb: downloadUrl,
+            message,
+          },
+          dismissMs,
+        );
         return;
       }
 
@@ -197,7 +212,10 @@ export function useScreenshotToast(deviceUdid?: string | null) {
       );
       const path = res.stdout.trim();
       if (res.exitCode !== 0 || !path) {
-        render({ id, status: "error", phase: "in", message: res.stderr.trim() || "Screenshot failed" }, ERROR_DISMISS_MS);
+        render(
+          { id, status: "error", phase: "in", message: res.stderr.trim() || "Screenshot failed" },
+          ERROR_DISMISS_MS,
+        );
         return;
       }
 
@@ -226,12 +244,15 @@ export function useScreenshotToast(deviceUdid?: string | null) {
         // ignore — the pill is fully functional without a preview.
       }
     } catch (e) {
-      render({
-        id,
-        status: "error",
-        phase: "in",
-        message: e instanceof Error ? e.message : "Screenshot failed",
-      }, ERROR_DISMISS_MS);
+      render(
+        {
+          id,
+          status: "error",
+          phase: "in",
+          message: e instanceof Error ? e.message : "Screenshot failed",
+        },
+        ERROR_DISMISS_MS,
+      );
     } finally {
       clearTimeout(captureTimer);
       captureInFlightRef.current = false;

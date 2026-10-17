@@ -83,7 +83,8 @@ export class AvccDemuxer {
     while (this.len - this.start >= 4) {
       const o = this.start;
       // Big-endian u32; `>>> 0` keeps it unsigned (bit 31 would otherwise sign).
-      const length = ((buf[o]! << 24) | (buf[o + 1]! << 16) | (buf[o + 2]! << 8) | buf[o + 3]!) >>> 0;
+      const length =
+        ((buf[o]! << 24) | (buf[o + 1]! << 16) | (buf[o + 2]! << 8) | buf[o + 3]!) >>> 0;
       // length covers the tag byte + payload; need that many bytes after the
       // 4-byte header before the chunk is complete.
       if (this.len - o - 4 < length) break;
@@ -129,5 +130,7 @@ export function avcCodecString(description: Uint8Array): string {
 
 /** True when the runtime can decode the AVCC stream (WebCodecs available). */
 export function isAvccSupported(): boolean {
-  return typeof globalThis !== "undefined" && typeof (globalThis as any).VideoDecoder !== "undefined";
+  return (
+    typeof globalThis !== "undefined" && typeof (globalThis as any).VideoDecoder !== "undefined"
+  );
 }

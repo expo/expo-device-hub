@@ -28,7 +28,9 @@ const skipOnCi = !!process.env.CI && process.env.SERVE_SIM_UI_E2E !== "1";
 function simctlUiUsable(): boolean {
   if (!udid) return false;
   if (skipOnCi) {
-    console.warn("[ui-settings.e2e] skipping on CI: `simctl ui` hangs intermittently on shared runners (set SERVE_SIM_UI_E2E=1 to force)");
+    console.warn(
+      "[ui-settings.e2e] skipping on CI: `simctl ui` hangs intermittently on shared runners (set SERVE_SIM_UI_E2E=1 to force)",
+    );
     return false;
   }
   try {
@@ -63,11 +65,11 @@ function cli(...args: string[]): string {
 
 function simDefault(domain: string, key: string): string {
   try {
-    return execFileSync(
-      "xcrun",
-      ["simctl", "spawn", udid!, "defaults", "read", domain, key],
-      { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: EXEC_TIMEOUT_MS },
-    ).trim();
+    return execFileSync("xcrun", ["simctl", "spawn", udid!, "defaults", "read", domain, key], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: EXEC_TIMEOUT_MS,
+    }).trim();
   } catch {
     return "<missing>";
   }
@@ -127,9 +129,9 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       expect(
         simDefault("com.apple.mediaaccessibility", "__Color__.MADisplayFilterCategoryEnabled"),
       ).toBe("1");
-      expect(
-        simDefault("com.apple.mediaaccessibility", "__Color__.MADisplayFilterType"),
-      ).toBe(type);
+      expect(simDefault("com.apple.mediaaccessibility", "__Color__.MADisplayFilterType")).toBe(
+        type,
+      );
       expect(cli("color-filter")).toBe(name);
     }
     // Grayscale additionally mirrors into the Accessibility domain.
@@ -161,14 +163,18 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
     ["show-borders", "ButtonShapesEnabled"],
     ["reduce-transparency", "EnhancedBackgroundContrastEnabled"],
     ["voiceover", "VoiceOverTouchEnabled"],
-  ] as const)("%s writes %s in com.apple.Accessibility", (option, key) => {
-    cli(option, "on");
-    expect(simDefault("com.apple.Accessibility", key)).toBe("1");
-    expect(cli(option)).toBe("on");
-    cli(option, "off");
-    expect(simDefault("com.apple.Accessibility", key)).toBe("0");
-    expect(cli(option)).toBe("off");
-  }, 15_000);
+  ] as const)(
+    "%s writes %s in com.apple.Accessibility",
+    (option, key) => {
+      cli(option, "on");
+      expect(simDefault("com.apple.Accessibility", key)).toBe("1");
+      expect(cli(option)).toBe("on");
+      cli(option, "off");
+      expect(simDefault("com.apple.Accessibility", key)).toBe("0");
+      expect(cli(option)).toBe("off");
+    },
+    15_000,
+  );
 
   test("status reports every option as json", () => {
     const status = JSON.parse(cli("status", "--json")) as Record<string, string>;
