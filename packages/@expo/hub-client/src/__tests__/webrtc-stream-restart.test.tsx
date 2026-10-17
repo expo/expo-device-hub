@@ -776,7 +776,7 @@ test("gRPC repeats at the eligibility boundary tolerate timer and delivery laten
   expect(peer.closeCount).toBe(1);
 });
 
-test("missing cadence metadata stays conservative and late discovery adopts the gRPC policy once", async () => {
+test("missing cadence metadata stays conservative and late discovery updates the existing watchdog", async () => {
   const hub = await androidHarness({ delaySource: true, sourceMode: "grpc-screenshot" });
   const initial = Peer.instances.at(-1)!;
   initial.getStats = async () =>
@@ -796,8 +796,8 @@ test("missing cadence metadata stays conservative and late discovery adopts the 
   expect(initial.closeCount).toBe(0);
   await hub.finishSource();
   const peer = Peer.instances.at(-1)!;
-  expect(peer).not.toBe(initial);
-  await hub.paintReplacement();
+  expect(peer).toBe(initial);
+  expect(peer.closeCount).toBe(0);
   expect(hub.client.status).toBe("streaming");
   const count = Peer.instances.length;
   peer.getStats = initial.getStats;
@@ -890,3 +890,43 @@ test("a legacy gRPC host with no cadence metadata remains usable without false s
   await hub.stallPlayback();
   expect(peer.closeCount).toBe(0);
 });
+
+for (const from of ["scrcpy", "grpc-screenshot"]) {
+  test(`late ${from} source-switch response keeps the painted replacement peer`, async () => {
+    const hub = await androidHarness({ sourceMode: from });
+    const to = from === "scrcpy" ? "grpc-screenshot" : "scrcpy";
+    await act(async () => hub.client.setStreamSource(to));
+    await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
+    await hub.fireTimer(100);
+    await act(async () => ControlSocket.instances.at(-1)!.open());
+    await hub.paintReplacement();
+    const peer = Peer.instances.at(-1)!;
+    expect(Peer.instances).toHaveLength(2);
+    await hub.finishWrite({
+      ...hub.source,
+      mode: to,
+      repeatFrameMs: to === "grpc-screenshot" ? 500 : 0,
+      sessionGeneration: 2,
+    });
+    expect(peer.closeCount).toBe(0);
+    expect(Peer.instances).toHaveLength(2);
+    expect(hub.client.status).toBe("streaming");
+    expect(hub.client.streamSourcePending).toBe(false);
+    expect(hub.client.streamSource?.mode).toBe(to);
+    peer.getStats = async () =>
+      new Map([
+        [
+          "video",
+          {
+            id: "video",
+            type: "inbound-rtp",
+            kind: "video",
+            framesReceived: 100,
+            framesDecoded: 100,
+          },
+        ],
+      ]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(to === "grpc-screenshot" ? 1 : 0);
+  });
+}
