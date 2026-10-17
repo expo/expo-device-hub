@@ -399,19 +399,11 @@ describe("scrcpy async lifecycle", () => {
       "scid=01234560",
       "log_level=info",
       "audio=false",
-      "video=true",
       "tunnel_forward=true",
-      "control=true",
-      "send_dummy_byte=true",
-      "send_stream_meta=true",
-      "send_frame_meta=true",
-      "send_device_meta=true",
       "max_size=1280",
-      "video_bit_rate=8000000",
       "max_fps=60",
       "video_codec_options=i-frame-interval=10",
       "clipboard_autosync=false",
-      "cleanup=true",
     ]);
     expect(harness.state.pushCount).toBe(1);
 
@@ -459,13 +451,11 @@ describe("scrcpy async lifecycle", () => {
       "audio=false",
       "video=false",
       "tunnel_forward=true",
-      "control=true",
       "send_dummy_byte=false",
       "send_stream_meta=false",
       "send_frame_meta=false",
       "send_device_meta=false",
       "clipboard_autosync=false",
-      "cleanup=true",
     ]);
 
     await session.close();
