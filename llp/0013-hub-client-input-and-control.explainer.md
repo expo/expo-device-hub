@@ -84,6 +84,12 @@ Window blur, a hidden tab, page hide, unmount, or a real input-owner change canc
 
 This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
 
+## Input feedback
+
+HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
+
+An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
+
 ## Open questions
 
 None at this time.

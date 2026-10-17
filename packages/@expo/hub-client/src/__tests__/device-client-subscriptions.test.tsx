@@ -161,10 +161,15 @@ test("screen, status, and error changes reach the screen subscriber", async () =
 
 test("device settings subscribers ignore video, FPS, metrics, and log updates", async () => {
   const store = createDeviceClientStore();
-  store.publish({ ...NOOP_DEVICE_CLIENT, deviceSettingsStatus: "ready", deviceSettings: { appearance: "dark" } });
+  store.publish({
+    ...NOOP_DEVICE_CLIENT,
+    deviceSettingsStatus: "ready",
+    deviceSettings: { appearance: "dark" },
+  });
   const renders = { tracked: 0, selected: 0 };
   function Tracked() {
-    const { deviceSettingsStatus, deviceSettings, deviceSettingsPending, setDeviceSetting } = useDeviceClient();
+    const { deviceSettingsStatus, deviceSettings, deviceSettingsPending, setDeviceSetting } =
+      useDeviceClient();
     expect(deviceSettingsStatus).toBe("ready");
     expect(deviceSettings?.appearance).toBe("dark");
     expect(deviceSettingsPending.size).toBe(0);
@@ -177,14 +182,24 @@ test("device settings subscribers ignore video, FPS, metrics, and log updates", 
     renders.selected++;
     return null;
   }
-  await mount(<DeviceClientStoreContext.Provider value={store}><Tracked /><Selected /></DeviceClientStoreContext.Provider>);
+  await mount(
+    <DeviceClientStoreContext.Provider value={store}>
+      <Tracked />
+      <Selected />
+    </DeviceClientStoreContext.Provider>,
+  );
   const before = { ...renders };
   for (const status of ["streaming", "reconnecting", "error", "streaming"] as const) {
-    await act(async () => store.publish({
-      ...store.getSnapshot(), status, fps: 30, error: "Video interrupted",
-      logs: [{ id: "test", source: "syslog", message: "Log update" }],
-      activity: { samples: [], hostCores: null, stale: false, errored: false },
-    }));
+    await act(async () =>
+      store.publish({
+        ...store.getSnapshot(),
+        status,
+        fps: 30,
+        error: "Video interrupted",
+        logs: [{ id: "test", source: "syslog", message: "Log update" }],
+        activity: { samples: [], hostCores: null, stale: false, errored: false },
+      }),
+    );
     expect(renders).toEqual(before);
   }
 });
@@ -372,4 +387,46 @@ test("server rendering starts idle without opening a connection", () => {
   );
   expect(html).toBe("<span>idle</span>");
   expect(requests).toHaveLength(0);
+});
+
+test("screen subscribers receive input failures and cancellation ownership updates", async () => {
+  const store = createDeviceClientStore();
+  let screen!: ReturnType<typeof useDeviceScreenClient>;
+  let cancelled = "";
+  let renders = 0;
+  function Screen() {
+    screen = useDeviceScreenClient();
+    renders++;
+    return null;
+  }
+  await mount(
+    <DeviceClientStoreContext.Provider value={store}>
+      <Screen />
+    </DeviceClientStoreContext.Provider>,
+  );
+  await act(async () =>
+    store.publish({
+      ...NOOP_DEVICE_CLIENT,
+      inputError: "Input unavailable",
+      cancelInput: () => {
+        cancelled = "first";
+      },
+    }),
+  );
+  expect(screen.inputError).toBe("Input unavailable");
+  screen.cancelInput?.();
+  expect(cancelled).toBe("first");
+  await act(async () =>
+    store.publish({
+      ...NOOP_DEVICE_CLIENT,
+      inputError: null,
+      cancelInput: () => {
+        cancelled = "replacement";
+      },
+    }),
+  );
+  expect(screen.inputError).toBeNull();
+  screen.cancelInput?.();
+  expect(cancelled).toBe("replacement");
+  expect(renders).toBe(3);
 });
