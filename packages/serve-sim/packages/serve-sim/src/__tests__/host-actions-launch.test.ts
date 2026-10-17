@@ -229,7 +229,8 @@ require('fs').appendFileSync(${JSON.stringify(log)},JSON.stringify(process.argv.
 });
 
 describe("app.approveUrlScheme", () => {
-  test("writes the approval for the canonical device without opening anything", async () => {
+  // The simulator matches the approval key case-sensitively, and URL parsing lowercases the scheme.
+  test.each(["myapp", "MyApp", "MYAPP"])("writes the lowercase approval for %s on the canonical device without opening anything", async (scheme) => {
     const state = useTempStateDir();
     const log = join(state.dir, "commands");
     writeFileSync(log, "");
@@ -238,7 +239,7 @@ require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv
 ` });
     try {
       const result = await runHostActionAsync(
-        { action: "app.approveUrlScheme", params: { udid: UDID.toLowerCase(), bundleId: "com.example.app", scheme: "myapp" } },
+        { action: "app.approveUrlScheme", params: { udid: UDID.toLowerCase(), bundleId: "com.example.app", scheme } },
         "true",
       );
       expect(result.exitCode).toBe(0);

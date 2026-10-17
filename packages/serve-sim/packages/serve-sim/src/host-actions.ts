@@ -66,7 +66,9 @@ const UrlScheme = z
   .string()
   .max(64)
   .regex(/^[A-Za-z][A-Za-z0-9+.-]*$/, "must be a URL scheme such as myapp")
-  .refine((scheme) => !["http", "https"].includes(scheme.toLowerCase()), "http and https links open without asking");
+  .refine((scheme) => !["http", "https"].includes(scheme.toLowerCase()), "http and https links open without asking")
+  // URL parsing lowercases the scheme, and the simulator only honors an approval whose key matches.
+  .transform((scheme) => scheme.toLowerCase());
 
 /** An orientation or button name. Bounded rather than allowlisted, so a new button still works. */
 const Token = z.string().max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
