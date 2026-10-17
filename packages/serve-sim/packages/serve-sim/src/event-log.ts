@@ -385,6 +385,16 @@ export function eventLogEventForAction(
         summary: action === "app.launch" ? "Launch app" : action === "app.stop" ? "Stop app" : "Open app URL",
         details,
       };
+    case "app.approveUrlScheme":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "app",
+        action: "approveUrlScheme",
+        status,
+        summary: `Approve ${String(params?.scheme ?? "")}: links`,
+        details,
+      };
     case "app.install":
       return {
         device,
@@ -458,6 +468,16 @@ export function eventLogEventForAction(
         status,
         summary: "Home",
         details: { ...details, bundleId: "com.apple.springboard" },
+      };
+    case "springboard.restart":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "springboard",
+        action: "restart",
+        status,
+        summary: "Restart SpringBoard",
+        details,
       };
     default:
       return null;

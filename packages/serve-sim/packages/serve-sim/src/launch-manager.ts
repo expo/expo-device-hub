@@ -463,6 +463,10 @@ export async function openUrlInApp(udid: string, bundleId: string, openUrl: stri
   await withLaunchStateLock(udid, () => openUrlInAppUnlocked(udid, bundleId, openUrl));
 }
 
+export async function approveUrlScheme(udid: string, bundleId: string, scheme: string): Promise<void> {
+  await withLaunchStateLock(udid, () => writeUrlSchemeApprovalAsync(udid, bundleId, scheme));
+}
+
 export async function stopApp(udid: string, bundleId: string): Promise<void> {
   await withLaunchStateLock(udid, () => simctl(["terminate", udid, bundleId]));
 }
@@ -756,18 +760,22 @@ async function preapproveUrlSchemeAsync(
   const scheme = new URL(openUrl).protocol.slice(0, -1);
   if (scheme === "http" || scheme === "https") return;
   try {
-    await simctl([
-      "spawn", udid, "defaults", "write",
-      URL_SCHEME_APPROVAL_DOMAIN,
-      `${URL_SCHEME_APPROVAL_KEY_PREFIX}${scheme}`,
-      "-string", bundleId,
-    ], 15_000);
+    await writeUrlSchemeApprovalAsync(udid, bundleId, scheme);
   } catch {
     console.error(
       `Could not pre-approve the ${scheme}: URL scheme for ${bundleId}. Opening the URL anyway; ` +
         `the Simulator may ask you to confirm it.`,
     );
   }
+}
+
+async function writeUrlSchemeApprovalAsync(udid: string, bundleId: string, scheme: string): Promise<void> {
+  await simctl([
+    "spawn", udid, "defaults", "write",
+    URL_SCHEME_APPROVAL_DOMAIN,
+    `${URL_SCHEME_APPROVAL_KEY_PREFIX}${scheme}`,
+    "-string", bundleId,
+  ], 15_000);
 }
 
 export async function isCapabilityArmed(

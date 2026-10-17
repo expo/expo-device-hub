@@ -117,6 +117,12 @@ describe("simctl-backed actions", () => {
     ]);
   });
 
+  it("builds springboard restart for the canonical device", async () => {
+    expect(await argv("springboard.restart", { udid: UDID.toLowerCase() })).toEqual([
+      "xcrun", "simctl", "spawn", UDID, "launchctl", "kickstart", "-k", "system/com.apple.SpringBoard",
+    ]);
+  });
+
   // The trailing "app" selects the bundle container rather than the data container.
   it("builds app container", async () => {
     expect(await argv("app.container", { udid: UDID, bundleId: BUNDLE })).toEqual([

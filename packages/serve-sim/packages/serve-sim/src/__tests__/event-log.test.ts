@@ -39,11 +39,21 @@ describe("eventLogEventForAction", () => {
       ["camera.switch", "camera"],
       ["home.springboard", "button"],
       ["home.watch", "button"],
+      ["springboard.restart", "springboard"],
+      ["app.approveUrlScheme", "app"],
     ];
     for (const [action, kind] of cases) {
       const event = eventLogEventForAction(action, { udid: "DEVICE-A", value: "home" }, { exitCode: 0 });
       expect(event).not.toBeNull();
       expect(event?.kind).toBe(kind);
+    }
+  });
+
+  // The log stream filters by the uppercase UDID, so a lowercase one would hide the entry.
+  test("records UDID-only actions under the canonical device", () => {
+    for (const action of ["springboard.restart", "app.approveUrlScheme"]) {
+      const event = eventLogEventForAction(action, { udid: "404f2659-7202-4450-8465-912bd2ab744b", scheme: "myapp" }, { exitCode: 0 });
+      expect(event?.device).toBe("404F2659-7202-4450-8465-912BD2AB744B");
     }
   });
 

@@ -15,7 +15,7 @@ import {
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync, newScreenshotName } from "./screenshot-store";
-import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
+import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
@@ -61,6 +61,12 @@ const DeviceUdid = z
 const CaptureRequestId = z.string().max(64).regex(/^r[1-9]\d*$/, "must be a capture request id");
 
 const BundleId = z.string().max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
+
+const UrlScheme = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9+.-]*$/, "must be a URL scheme such as myapp")
+  .refine((scheme) => !["http", "https"].includes(scheme.toLowerCase()), "http and https links open without asking");
 
 /** An orientation or button name. Bounded rather than allowlisted, so a new button still works. */
 const Token = z.string().max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
@@ -164,6 +170,9 @@ const ACTION_SCHEMAS = {
     .meta({ description: "Set the simulated location." }),
   "location.clear": z.object({ udid: Device }).meta({ description: "Stop simulating a location." }),
   "home.springboard": z.object({ udid: Device }).meta({ description: "Go to the Home screen." }),
+  "springboard.restart": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()) })
+    .meta({ description: "Restart SpringBoard. The foreground app goes to the background." }),
   "home.watch": z.object({ udid: Device.optional() }).meta({ hidden: true }),
   rotate: z.object({ udid: Device, value: Token }).meta({ description: "Rotate the device." }),
   button: z
@@ -260,6 +269,9 @@ const ACTION_SCHEMAS = {
       url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
     })
     .meta({ description: "Open a URL in an app." }),
+  "app.approveUrlScheme": z
+    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, scheme: UrlScheme })
+    .meta({ description: "Let links with a URL scheme open an app without asking first." }),
   "app.infoPlist": z
     .object({ path: ConfinedPath })
     .meta({ description: "Read an Info.plist as JSON." }),
@@ -357,6 +369,7 @@ const PROCEDURE_ACTIONS = [
   "app.file.remove",
   "app.stop",
   "app.openUrl",
+  "app.approveUrlScheme",
   "app.launch",
   "upload.append",
   "upload.remove",
@@ -515,6 +528,10 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const p = parseParams(action, raw);
       return simctl(["launch", p.udid, "com.apple.springboard"]);
     }
+    case "springboard.restart": {
+      const p = parseParams(action, raw);
+      return simctl(["spawn", p.udid, "launchctl", "kickstart", "-k", "system/com.apple.SpringBoard"]);
+    }
     case "home.watch":
       parseParams(action, raw);
       return {
@@ -656,10 +673,12 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
     case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
     case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));
     case "app.stop":
-    case "app.openUrl": {
+    case "app.openUrl":
+    case "app.approveUrlScheme": {
       const p = parseParams(action, raw);
       try {
         if ("url" in p) await openUrlInApp(p.udid, p.bundleId, p.url);
+        else if ("scheme" in p) await approveUrlScheme(p.udid, p.bundleId, p.scheme);
         else await stopApp(p.udid, p.bundleId);
         return ok();
       } catch (error) {

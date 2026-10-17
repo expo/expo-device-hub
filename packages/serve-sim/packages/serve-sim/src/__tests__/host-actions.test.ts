@@ -410,6 +410,15 @@ describe("capture actions", () => {
       await expect(
         runHostActionAsync({ action: "capture.reboot", params: { udid, enabled: true } }, BIN),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
+      await expect(
+        runHostActionAsync({ action: "springboard.restart", params: { udid } }, BIN),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
+      await expect(
+        runHostActionAsync(
+          { action: "app.approveUrlScheme", params: { udid, bundleId: "com.example.app", scheme: "myapp" } },
+          BIN,
+        ),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
     }
   });
 });
@@ -427,6 +436,10 @@ describe("action catalog", () => {
     expect(Object.keys(catalog["permissions.set"]?.properties ?? {})).toEqual([
       "udid", "action", "service", "bundleId",
     ]);
+    expect(Object.keys(catalog["app.approveUrlScheme"]?.properties ?? {})).toEqual([
+      "udid", "bundleId", "scheme",
+    ]);
+    expect(catalog["springboard.restart"]).toMatchObject({ required: ["udid"] });
   });
 
   it("gives every listed action a description", () => {

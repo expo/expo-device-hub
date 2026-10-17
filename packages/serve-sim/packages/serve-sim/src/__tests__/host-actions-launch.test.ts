@@ -227,3 +227,51 @@ require('fs').appendFileSync(${JSON.stringify(log)},JSON.stringify(process.argv.
     expect(readLaunchState(UDID)).toEqual(previous);
   } finally {shims.restore();state.restore();}
 });
+
+describe("app.approveUrlScheme", () => {
+  test("writes the approval for the canonical device without opening anything", async () => {
+    const state = useTempStateDir();
+    const log = join(state.dir, "commands");
+    writeFileSync(log, "");
+    const shims = installShims({ xcrun: `#!/usr/bin/env node
+require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2))+'\\n');
+` });
+    try {
+      const result = await runHostActionAsync(
+        { action: "app.approveUrlScheme", params: { udid: UDID.toLowerCase(), bundleId: "com.example.app", scheme: "myapp" } },
+        "true",
+      );
+      expect(result.exitCode).toBe(0);
+      const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(calls).toEqual([
+        [
+          "simctl", "spawn", UDID, "defaults", "write",
+          "com.apple.launchservices.schemeapproval",
+          "com.apple.CoreSimulator.CoreSimulatorBridge-->myapp",
+          "-string", "com.example.app",
+        ],
+      ]);
+    } finally { shims.restore(); state.restore(); }
+  });
+
+  test("reports a failed write", async () => {
+    const state = useTempStateDir();
+    const shims = installShims({ xcrun: "#!/bin/sh\necho 'defaults failed' >&2\nexit 1\n" });
+    try {
+      const result = await runHostActionAsync(
+        { action: "app.approveUrlScheme", params: { udid: UDID, bundleId: "com.example.app", scheme: "myapp" } },
+        "true",
+      );
+      expect(result.exitCode).toBe(1);
+    } finally { shims.restore(); state.restore(); }
+  });
+
+  test.each(["http", "HTTPS", "-flag", "my app", "a".repeat(65)])("refuses the scheme %s", async (scheme) => {
+    await expect(
+      runHostActionAsync(
+        { action: "app.approveUrlScheme", params: { udid: UDID, bundleId: "com.example.app", scheme } },
+        "true",
+      ),
+    ).rejects.toBeInstanceOf(InvalidHostActionError);
+  });
+});
