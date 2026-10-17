@@ -19,8 +19,24 @@ __attribute__((constructor)) static void prepareSession(void) {
 }
 
 
-@interface SimNetProbeDelegate : UIResponder <UIApplicationDelegate>
+// Apps linked with the iOS 27 SDK must adopt the scene lifecycle, or UIKit stops them at launch.
+@interface SimNetProbeSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
+@end
+
+@implementation SimNetProbeSceneDelegate
+
+- (void)scene:(UIScene *)scene
+    willConnectToSession:(__unused UISceneSession *)session
+                 options:(__unused UISceneConnectionOptions *)connectionOptions {
+  self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
+  self.window.rootViewController = [UIViewController new];
+  [self.window makeKeyAndVisible];
+}
+
+@end
+
+@interface SimNetProbeDelegate : UIResponder <UIApplicationDelegate>
 @end
 
 @implementation SimNetProbeDelegate
@@ -35,10 +51,6 @@ __attribute__((constructor)) static void prepareSession(void) {
 
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-  self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-  self.window.rootViewController = [UIViewController new];
-  [self.window makeKeyAndVisible];
-
   // SIMNET_PROBE_DELAY_MS creates the configuration that long after launch, so a test can change
   // the proxy's state between the capture library's startup and the app's first configuration.
   const char *delay = getenv("SIMNET_PROBE_DELAY_MS");
@@ -47,6 +59,15 @@ __attribute__((constructor)) static void prepareSession(void) {
     [self sendRequest];
   });
   return YES;
+}
+
+- (UISceneConfiguration *)application:(__unused UIApplication *)application
+    configurationForConnectingSceneSession:(UISceneSession *)session
+                                   options:(__unused UISceneConnectionOptions *)options {
+  UISceneConfiguration *configuration =
+      [UISceneConfiguration configurationWithName:nil sessionRole:session.role];
+  configuration.delegateClass = SimNetProbeSceneDelegate.class;
+  return configuration;
 }
 
 - (void)sendRequest {

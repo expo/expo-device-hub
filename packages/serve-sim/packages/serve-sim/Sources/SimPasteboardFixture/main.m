@@ -2,17 +2,19 @@
 
 static NSString *const kCopyFixtureText = @"serve-sim-copy-probe";
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
+// Apps linked with the iOS 27 SDK must adopt the scene lifecycle, or UIKit stops them at launch.
+@interface SceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) UITextView *textView;
 @end
 
-@implementation AppDelegate
-- (BOOL)application:(UIApplication *)application
-    didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-  (void)application;
-  (void)launchOptions;
-  self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+@implementation SceneDelegate
+- (void)scene:(UIScene *)scene
+    willConnectToSession:(UISceneSession *)session
+                 options:(UISceneConnectionOptions *)connectionOptions {
+  (void)session;
+  (void)connectionOptions;
+  self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
   UIViewController *root = [UIViewController new];
   root.view.backgroundColor = UIColor.systemBackgroundColor;
 
@@ -26,13 +28,28 @@ static NSString *const kCopyFixtureText = @"serve-sim-copy-probe";
 
   self.window.rootViewController = root;
   [self.window makeKeyAndVisible];
-  return YES;
 }
 
-- (void)applicationDidBecomeActive:(UIApplication *)application {
-  (void)application;
+- (void)sceneDidBecomeActive:(UIScene *)scene {
+  (void)scene;
   [self.textView becomeFirstResponder];
   self.textView.selectedRange = NSMakeRange(0, self.textView.text.length);
+}
+@end
+
+@interface AppDelegate : UIResponder <UIApplicationDelegate>
+@end
+
+@implementation AppDelegate
+- (UISceneConfiguration *)application:(UIApplication *)application
+    configurationForConnectingSceneSession:(UISceneSession *)session
+                                   options:(UISceneConnectionOptions *)options {
+  (void)application;
+  (void)options;
+  UISceneConfiguration *configuration =
+      [UISceneConfiguration configurationWithName:nil sessionRole:session.role];
+  configuration.delegateClass = SceneDelegate.class;
+  return configuration;
 }
 @end
 
