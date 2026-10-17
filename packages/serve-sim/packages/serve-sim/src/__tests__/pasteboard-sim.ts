@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "child_process";
 import { simctlSync } from "../simctl";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import type { KeyEvent } from "../text-to-keys";
 import { foregroundTracker, frontmostAppFromRecentLogs } from "../foreground-tracker";
@@ -44,6 +44,26 @@ export function writeTestPasteboard(
     env,
     stdio: ["pipe", "ignore", "pipe"],
   });
+}
+
+/** Wait until the running fixture has focused and selected its text; on iOS 27 that can take seconds. */
+export async function waitForFixtureSelection(udid: string): Promise<void> {
+  const pid = runningPid(udid, FIXTURE_BUNDLE);
+  if (pid == null) throw new Error(`${FIXTURE_BUNDLE} is not running`);
+  const container = simctlSync(["get_app_container", udid, FIXTURE_BUNDLE, "data"]).trim();
+  const marker = join(container, "tmp", "serve-sim-copy-fixture.selected");
+  const selected = () => {
+    try {
+      return readFileSync(marker, "utf8") === String(pid);
+    } catch {
+      return false;
+    }
+  };
+  const deadline = Date.now() + 15_000;
+  while (!selected()) {
+    if (Date.now() > deadline) throw new Error(`${FIXTURE_BUNDLE} (pid ${pid}) did not select its text within 15 s`);
+    await Bun.sleep(100);
+  }
 }
 
 export function runningPid(udid: string, bundleId: string): number | null {
