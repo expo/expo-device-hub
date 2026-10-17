@@ -766,8 +766,14 @@ function serveHelperInProcess(
     void live.handlePanel(req, res, Number(panelRoute[1]), panelRoute[2]!);
     return true;
   }
+  // Unknown and one-shot helper reads must not claim screenshot-owned capture.
+  if (!panelRoute && !["/stream.mjpeg", "/stream.avcc", "/stream-settings", "/config", "/health",
+    "/webrtc/offer", "/webrtc/close", "/recording/video", "/ax", "/foreground"].includes(endpoint ?? "")) return false;
+  const retainsCapture = Boolean(panelRoute) ||
+    ((endpoint === "/stream.mjpeg" || endpoint === "/stream.avcc") && req.method === "GET") ||
+    ((endpoint === "/webrtc/offer" || endpoint === "/recording/video") && req.method === "POST");
   try {
-    session = getDeviceSession(device, initialStreamSettings);
+    session = getDeviceSession(device, initialStreamSettings, retainsCapture);
   } catch {
     return false; // not booted / capture unavailable → 404
   }
