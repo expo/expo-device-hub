@@ -102,8 +102,8 @@ class ForegroundTracker {
   private buf = "";
   private latest: ForegroundApp | null = null;
   private heardFromLog = false;
-  // `log stream` prints a "Filtering the log data" header once it is attached. A line logged
-  // before that is lost, so a caller that launches an app waits for it.
+  // `log stream` prints a "Filtering the log data" header line once it is attached. A line
+  // logged before that is lost, so a caller that launches an app waits for it.
   private streaming = false;
   private streamingWaiters: (() => void)[] = [];
   private stopped = false;
@@ -203,15 +203,16 @@ class ForegroundTracker {
 
   /** Assemble log lines from a stdout chunk and adopt any visibility transitions. */
   private consume(text: string): void {
-    if (!this.streaming) {
-      this.streaming = true;
-      this.releaseStreamingWaiters();
-    }
     this.buf += text;
     let nl: number;
     while ((nl = this.buf.indexOf("\n")) !== -1) {
       const line = this.buf.slice(0, nl).trim();
       this.buf = this.buf.slice(nl + 1);
+      // The first whole line is the header; a partial one does not prove the stream is attached.
+      if (!this.streaming) {
+        this.streaming = true;
+        this.releaseStreamingWaiters();
+      }
       if (!line) continue;
       const visible = visibilityAfterLogLine(this.latest, line);
       if (visible === this.latest) continue;

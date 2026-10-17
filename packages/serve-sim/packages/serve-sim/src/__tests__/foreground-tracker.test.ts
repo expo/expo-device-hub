@@ -229,7 +229,7 @@ describe("createForegroundTrackerCache", () => {
     expect(children).toHaveLength(1); // no respawn once stopped
   });
 
-  test("reports the log stream live only after it prints its header", async () => {
+  test("reports the log stream live only after it prints its whole header", async () => {
     const { cache, children } = trackerWithFakeStream(0);
     const sub = cache.subscribe("UDID");
     let live = false;
@@ -237,7 +237,11 @@ describe("createForegroundTrackerCache", () => {
     await tick();
     expect(live).toBe(false); // `log stream` misses lines logged before it attaches
 
-    children[0]!.stdout.emit("data", Buffer.from('Filtering the log data using "process == SpringBoard"\n'));
+    children[0]!.stdout.emit("data", Buffer.from("Filtering the log data using "));
+    await tick();
+    expect(live).toBe(false); // a partial header is not proof that the stream is attached
+
+    children[0]!.stdout.emit("data", Buffer.from('"process == SpringBoard"\n'));
     await tick();
     expect(live).toBe(true);
 
