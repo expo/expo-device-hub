@@ -1769,6 +1769,7 @@ export class DeviceSession {
               ? {
                   hingeAngle: this.hingeAngle,
                   physicalOrientation: this.hingePhysicalOrientation,
+                  tableMode: undefined,
                   hingePose: this.hingePose,
                   tableModeAvailable: isTableModeAvailable(
                     this.hingeAngle,
