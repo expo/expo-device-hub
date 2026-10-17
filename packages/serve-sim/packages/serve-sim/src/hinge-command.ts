@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
-import type { HingePhysicalOrientation, HingePose } from "./hinge-control";
+import { observedHingeState, type HingePhysicalOrientation, type HingePose } from "./hinge-control";
 
 /** Resolve only after the native hinge operation has been acknowledged. */
 export async function sendHingeAngleToWs(
@@ -90,7 +90,10 @@ export async function readHingeStateFromWs(
     ws.on("message", (data) => {
       const frame = Buffer.from(data as Buffer);
       if (frame[0] !== 0x82) return;
-      let config: HingeStateReport & { supportsHingeAngle?: boolean };
+      let config: HingeStateReport & {
+        supportsHingeAngle?: boolean;
+        observedDeviceState?: HingeStateReport;
+      };
       try {
         config = JSON.parse(frame.subarray(1).toString());
       } catch {
@@ -102,7 +105,8 @@ export async function readHingeStateFromWs(
         finish(new Error("Hinge control is unavailable on this simulator"));
         return;
       }
-      const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } = config;
+      const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } =
+        config.observedDeviceState === undefined ? config : observedHingeState(config.observedDeviceState);
       finish({ hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable });
     });
     ws.on("error", (error) => finish(new Error(`Hinge state connection failed: ${error.message}`)));

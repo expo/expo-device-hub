@@ -75,6 +75,22 @@ export function observedHingePose(
   );
 }
 
+/** Native observations replace command state, including fields the native reader omits. */
+export function observedHingeState(state: {
+  hingeAngle?: number;
+  physicalOrientation?: HingePhysicalOrientation;
+  tableMode?: boolean;
+}) {
+  const { hingeAngle, physicalOrientation, tableMode } = state;
+  return {
+    hingeAngle,
+    physicalOrientation,
+    tableMode,
+    hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
+    tableModeAvailable: isTableModeAvailable(hingeAngle, physicalOrientation),
+  };
+}
+
 /** Native observation has reached every field that a local preview sets. */
 export function isHingePreviewObserved(
   preview: HingeControlState,

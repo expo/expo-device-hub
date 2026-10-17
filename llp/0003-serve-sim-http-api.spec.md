@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-15 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog)
+**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -481,7 +481,9 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.
 - `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
   `value` is `on` or `off`.
-- `hinge.get`: `{udid}`. Reads the hinge state as JSON.
+- `hinge.get`: `{udid}`. Reads the hinge state as JSON. When the helper reports
+  `observedDeviceState`, native observations replace the last commanded pose,
+  just as in the live Duo preview; omitted native fields stay unknown.
 - `hinge.set`: `{udid, value}`. `value` is `fold`, `half`, `unfold` or an angle from
   0 to 180.
 - `permissions.list`: `{udid, bundleId?}`. Returns the app permissions as JSON.

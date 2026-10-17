@@ -1,5 +1,5 @@
 import type { StreamConfig } from "../types.js";
-import { isTableModeAvailable, observedHingePose } from "../../hinge-control";
+import { observedHingeState } from "../../hinge-control";
 
 export type ScreenConfigSource = "external" | "media" | "reported";
 
@@ -66,13 +66,8 @@ export function resolveScreenConfigUpdate(
 /** Native snapshots own preview pose; omitted fields clear saved command state. */
 export function previewScreenConfig(config: StreamConfig): StreamConfig {
   if (config.observedDeviceState === undefined) return config;
-  const { hingeAngle, physicalOrientation, tableMode } = config.observedDeviceState;
   return {
     ...config,
-    hingeAngle,
-    physicalOrientation,
-    tableMode,
-    hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
-    tableModeAvailable: isTableModeAvailable(hingeAngle, physicalOrientation),
+    ...observedHingeState(config.observedDeviceState),
   };
 }
