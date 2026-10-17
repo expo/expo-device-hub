@@ -78,6 +78,9 @@ static void RequestIfAsked(void) {
 
 - (void)viewDidLoad {
   [super viewDidLoad];
+  [NSNotificationCenter.defaultCenter addObserver:self
+      selector:@selector(softwareKeyboardShown:)
+      name:UIKeyboardDidShowNotification object:nil];
   self.view.backgroundColor = UIColor.systemGreenColor;
   self.field = [[UITextField alloc] initWithFrame:CGRectMake(24, 100, 300, 44)];
   self.field.borderStyle = UITextBorderStyleRoundedRect;
@@ -97,6 +100,17 @@ static void RequestIfAsked(void) {
 
 - (void)textChanged:(UITextField *)field {
   Record(@"text", field.text ?: @"");
+}
+
+- (void)softwareKeyboardShown:(NSNotification *)notification {
+  CGRect frame = [notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+  if (CGRectIntersectsRect(frame, self.view.window.bounds)) {
+    Record(@"software-keyboard-ready", @"");
+  }
+}
+
+- (void)dealloc {
+  [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 @end
