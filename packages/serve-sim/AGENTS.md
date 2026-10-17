@@ -25,9 +25,11 @@ ignore `*.e2e.test.*` files, plus separate Simulator jobs with
 `SERVE_SIM_E2E_REQUIRED=1`. The package and fixtures are built once with pinned
 Xcode 26, and the Simulator jobs use that archive without rebuilding. The e2e files
 are split over two Simulator jobs: one runs the five slowest files listed in
-`.eas/functions/test-sim-runtime`, the other runs the rest. Test jobs pass
-`--retry=1`, so a failed test runs once more; a failed `beforeAll` and a file that
-fails to load stay red. Local checks do not replace the CI run.
+`.eas/functions/test-sim-runtime`, the other runs the rest. Fixture apps must adopt
+the scene lifecycle: UIKit stops an app linked with the iOS 27 SDK at launch if it
+does not. Test jobs pass `--retry=1`, so a failed test runs once more; a failed
+`beforeAll` and a file that fails to load stay red. Local checks do not replace the
+CI run.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
