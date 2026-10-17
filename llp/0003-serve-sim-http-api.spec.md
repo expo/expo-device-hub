@@ -18,23 +18,23 @@ Paths are relative to the mount point, which is `/` for a standalone
 All are `GET` unless marked. `device` takes a simulator udid and defaults to the
 server's selected device.
 
-| Path | What it is |
-| --- | --- |
-| `/healthz`, `/readyz` | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting. |
-| `/` | The preview page. |
-| `/api` | Current device and stream state, including `execToken`. |
-| `/api/screenshot` | `POST`. A still PNG. |
-| `/api/apps/icon?bundleId=<id>` | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
-| `/api/pasteboard` | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard). |
-| `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
-| `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
-| `/metrics` | CPU, memory and network samples, one per second. |
-| `/logs`, `/ax`, `/appstate` | Device log, accessibility tree, foreground app. |
-| `/grid/api`, `/grid/api/catalog`, `/grid/api/status`, `/grid/api/status/events`, `/grid/api/memory` | Grid state, bootable device types, status and host headroom. |
-| `/grid/api/start`, `/grid/api/shutdown` | `POST`. Boot or shut a device down. |
-| `/grid/api/devicekit-chrome`, `/grid/api/device-placeholder-asset` | Static artwork for the grid UI. |
-| `/devtools` | Inspectable WebKit targets, each with a `webSocketDebuggerUrl`. |
-| `/devtools/highlight`, `/devtools/release` | `POST`. Highlight a node, release the inspector. |
+| Path                                                                                                | What it is                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/healthz`, `/readyz`                                                                               | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting.                                                                                                                                                 |
+| `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
+| `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
+| `/api/screenshot`                                                                                   | `POST`. A still PNG.                                                                                                                                                                                                                                                                                  |
+| `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
+| `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
+| `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
+| `/api/events`, `/api/event-log`, `/api/event-log/events`                                            | Device events and the recorded log.                                                                                                                                                                                                                                                                   |
+| `/metrics`                                                                                          | CPU, memory and network samples, one per second.                                                                                                                                                                                                                                                      |
+| `/logs`, `/ax`, `/appstate`                                                                         | Device log, accessibility tree, foreground app.                                                                                                                                                                                                                                                       |
+| `/grid/api`, `/grid/api/catalog`, `/grid/api/status`, `/grid/api/status/events`, `/grid/api/memory` | Grid state, bootable device types, status and host headroom.                                                                                                                                                                                                                                          |
+| `/grid/api/start`, `/grid/api/shutdown`                                                             | `POST`. Boot or shut a device down.                                                                                                                                                                                                                                                                   |
+| `/grid/api/devicekit-chrome`, `/grid/api/device-placeholder-asset`                                  | Static artwork for the grid UI.                                                                                                                                                                                                                                                                       |
+| `/devtools`                                                                                         | Inspectable WebKit targets, each with a `webSocketDebuggerUrl`.                                                                                                                                                                                                                                       |
+| `/devtools/highlight`, `/devtools/release`                                                          | `POST`. Highlight a node, release the inspector.                                                                                                                                                                                                                                                      |
 
 `/metrics`, `/logs`, `/ax`, `/appstate`, `/api/events` and `/grid/api/status/events`
 are server-sent event streams; the rest return JSON.
@@ -73,7 +73,6 @@ while it is true. An absent field on older hosts does not imply a pause. New rec
 POSTs receive HTTP 503 `capture_rebooting`; an existing recording still accepts lease
 renewal and stop [observed: `Sources/SimNative/CaptureEngine.swift`, `src/device-session.ts`, and
 `src/client/hooks/use-webrtc-stream.ts`].
-
 
 ## Pasteboard
 
@@ -262,11 +261,11 @@ Without `--require-token`, the HID and CDP sockets need neither the token nor an
 allowed `Origin`. Only the `Host` check in [Allowed hosts](#allowed-hosts)
 applies. `/exec-ws` still checks the `Origin` and needs the token.
 
-| Path | Purpose |
-| --- | --- |
-| `{helper}/ws` | HID input. Pointer and key events, and Paste, to the device. |
-| `/exec-ws` | Scoped simulator actions. Request and response frames. |
-| `/devtools/page/{targetId}` | CDP bridge to an inspectable WebKit target. |
+| Path                        | Purpose                                                      |
+| --------------------------- | ------------------------------------------------------------ |
+| `{helper}/ws`               | HID input. Pointer and key events, and Paste, to the device. |
+| `/exec-ws`                  | Scoped simulator actions. Request and response frames.       |
+| `/devtools/page/{targetId}` | CDP bridge to an inspectable WebKit target.                  |
 
 `{helper}` is the helper proxy prefix under the mount point. The target ids for
 the DevTools bridge come from `GET /devtools`, which returns a

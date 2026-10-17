@@ -1,17 +1,17 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
 import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
   normalizeDeviceStreamSettings,
   sameDeviceStreamSettings,
-} from '../stream-settings';
+} from "../stream-settings";
 
-describe('device stream settings', () => {
-  test('uses backend defaults for malformed input', () => {
+describe("device stream settings", () => {
+  test("uses backend defaults for malformed input", () => {
     expect(normalizeDeviceStreamSettings(null)).toEqual(DEFAULT_DEVICE_STREAM_SETTINGS);
   });
 
-  test('clamps every setting to the serve-sim runtime ranges', () => {
+  test("clamps every setting to the serve-sim runtime ranges", () => {
     expect(
       normalizeDeviceStreamSettings({
         mjpegFps: 999,
@@ -29,7 +29,7 @@ describe('device stream settings', () => {
     });
   });
 
-  test('compares every normalized setting before publishing a refresh', () => {
+  test("compares every normalized setting before publishing a refresh", () => {
     expect(
       sameDeviceStreamSettings(DEFAULT_DEVICE_STREAM_SETTINGS, {
         ...DEFAULT_DEVICE_STREAM_SETTINGS,

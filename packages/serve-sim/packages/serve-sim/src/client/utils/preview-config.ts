@@ -14,9 +14,7 @@ export function proxyPreviewConfigForBrowser(
   // doesn't proxy.
   if (!config.proxyHelpers) return config;
 
-  const basePath = config.basePath === "/"
-    ? ""
-    : (config.basePath ?? "").replace(/\/+$/, "");
+  const basePath = config.basePath === "/" ? "" : (config.basePath ?? "").replace(/\/+$/, "");
   const devicePath = `${basePath}/helper/${encodeURIComponent(config.device)}`;
   const httpOrigin = `${location.protocol}//${location.host}`;
   const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";

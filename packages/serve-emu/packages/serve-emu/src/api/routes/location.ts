@@ -3,12 +3,7 @@ import { parseRoutePlaybackRequest } from "../../route-playback.ts";
 import { readJsonBody } from "../body.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ContractApiRoute } from "./types.ts";
-import {
-  downstream,
-  invalid,
-  parseInput,
-  readObject,
-} from "./route-helpers.ts";
+import { downstream, invalid, parseInput, readObject } from "./route-helpers.ts";
 
 const MAX_ROUTE_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -27,9 +22,7 @@ export function locationRoutes(): ContractApiRoute<ApiDependencies>[] {
         const fix = parseInput(() => parseGeoFix(body));
         return Response.json({
           ok: true,
-          location: await downstream("set emulator location", () =>
-            deps.setLocation(fix)
-          ),
+          location: await downstream("set emulator location", () => deps.setLocation(fix)),
         });
       },
     },

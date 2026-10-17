@@ -136,9 +136,7 @@ describe("tool resolution", () => {
     );
 
     setSystemTime(new Date("2026-10-13T00:00:10Z"));
-    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
-      "/opt/android/platform-tools/adb",
-    );
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe("/opt/android/platform-tools/adb");
   });
 
   test("rescans when the clock moves back", () => {
@@ -153,9 +151,7 @@ describe("tool resolution", () => {
 
     files.push("/opt/android/platform-tools/adb");
     setSystemTime(new Date("2026-10-13T11:00:00Z"));
-    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe(
-      "/opt/android/platform-tools/adb",
-    );
+    expect(resolveAdbPath(env, HOME, "darwin", fileSystem)).toBe("/opt/android/platform-tools/adb");
   });
 
   test("keeps the first SDK's path when no SDK has the tool", () => {

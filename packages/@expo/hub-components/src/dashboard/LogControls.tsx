@@ -1,11 +1,11 @@
-import { font, text, textSize } from '../primitives';
-import { SidebarActionButton } from './SidebarActionButton';
+import { font, text, textSize } from "../primitives";
+import { SidebarActionButton } from "./SidebarActionButton";
 
 /** Compact stream toolbar for pausing, resuming, and clearing device logs. */
 export function LogControls({
   count,
   running,
-  unit = 'line',
+  unit = "line",
   onClear,
   onStart,
   onStop,
@@ -20,29 +20,31 @@ export function LogControls({
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
+        display: "flex",
+        alignItems: "center",
         gap: 10,
-        width: '100%',
+        width: "100%",
         minWidth: 0,
-        boxSizing: 'border-box',
-      }}>
+        boxSizing: "border-box",
+      }}
+    >
       <span
         style={{
-          ...textSize['2xs'],
+          ...textSize["2xs"],
           flex: 1,
           minWidth: 0,
           fontFamily: font.mono,
           fontWeight: 400,
           color: text.tertiary,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
         {count} {count === 1 ? unit : `${unit}s`}
       </span>
       <SidebarActionButton onClick={running ? onStop : onStart}>
-        {running ? 'Stop' : 'Start'}
+        {running ? "Stop" : "Start"}
       </SidebarActionButton>
       <SidebarActionButton disabled={count === 0} onClick={onClear}>
         Clear

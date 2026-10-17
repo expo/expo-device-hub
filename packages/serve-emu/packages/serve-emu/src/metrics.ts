@@ -135,9 +135,7 @@ export function parseMetricsProbe(stdout: string): MetricsProbe | null {
     parseForegroundActivityDump((parts.get("fgact") ?? []).join("\n"));
   const packageName = component?.packageName ?? null;
   const stats =
-    packageName === null
-      ? undefined
-      : parseProcSection(parts.get("proc") ?? []).get(packageName);
+    packageName === null ? undefined : parseProcSection(parts.get("proc") ?? []).get(packageName);
   return {
     cores,
     totalJiffies,
@@ -163,7 +161,12 @@ export function deriveMetricSample(
     netOutBytesPerSec = Math.max(0, probe.netTxBytes - prev.probe.netTxBytes) / seconds;
     const deltaTotal = probe.totalJiffies - prev.probe.totalJiffies;
     const samePid = probe.pid !== null && probe.pid === prev.probe.pid;
-    if (samePid && probe.procJiffies !== null && prev.probe.procJiffies !== null && deltaTotal > 0) {
+    if (
+      samePid &&
+      probe.procJiffies !== null &&
+      prev.probe.procJiffies !== null &&
+      deltaTotal > 0
+    ) {
       const deltaProc = Math.max(0, probe.procJiffies - prev.probe.procJiffies);
       cpuPct = (deltaProc * probe.cores * 100) / deltaTotal;
     }

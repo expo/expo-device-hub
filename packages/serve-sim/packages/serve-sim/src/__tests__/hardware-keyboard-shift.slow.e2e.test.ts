@@ -27,11 +27,20 @@ requireE2E("hardware keyboard shift", ready);
 const describeWithSim = ready ? describe : describe.skip;
 
 function cli(...args: string[]): string {
-  return execFileSync("node", [CLI_PATH, ...args], { env: { ...process.env }, encoding: "utf8", timeout: 15_000 });
+  return execFileSync("node", [CLI_PATH, ...args], {
+    env: { ...process.env },
+    encoding: "utf8",
+    timeout: 15_000,
+  });
 }
 
 function simctl(...args: string[]): string {
-  return execFileSync("xcrun", ["simctl", ...args], { env: { ...process.env }, encoding: "utf8", stdio: "pipe", timeout: 30_000 });
+  return execFileSync("xcrun", ["simctl", ...args], {
+    env: { ...process.env },
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: 30_000,
+  });
 }
 
 describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<skipped>"})`, () => {
@@ -41,8 +50,11 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
   const sockets: WebSocket[] = [];
 
   function fixtureLines(): string[] {
-    try { return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean); }
-    catch { return []; }
+    try {
+      return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   async function waitFor<T>(read: () => T, expected: T, timeoutMs = 10_000): Promise<void> {
@@ -78,7 +90,8 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
         if (bytes?.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) finish();
       };
       socket.onerror = () => finish(new Error(`WebSocket connection failed: ${state.wsUrl}`));
-      socket.onclose = (event) => finish(new Error(`Input socket closed before admission (${event.code})`));
+      socket.onclose = (event) =>
+        finish(new Error(`Input socket closed before admission (${event.code})`));
     });
     sockets.push(socket);
     return socket;
@@ -104,7 +117,7 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
       headers: state.token ? { Authorization: `Bearer ${state.token}` } : undefined,
     });
     const nodes: unknown = await response.json();
-    return Array.isArray(nodes) ? nodes as AxNode[] : [];
+    return Array.isArray(nodes) ? (nodes as AxNode[]) : [];
   }
 
   function findAxNode(nodes: AxNode[], id: string): AxNode | undefined {
@@ -139,27 +152,44 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
 
   async function launchTextField(): Promise<number> {
     const start = fixtureLines().length;
-    try { simctl("terminate", udid!, APP); } catch {}
+    try {
+      simctl("terminate", udid!, APP);
+    } catch {}
     simctl("launch", udid!, APP, "--keyboard-test");
-    await waitFor(() => fixtureLines().slice(start).some((line) => line.startsWith("keyboard-ready\t")), true);
+    await waitFor(
+      () =>
+        fixtureLines()
+          .slice(start)
+          .some((line) => line.startsWith("keyboard-ready\t")),
+      true,
+    );
     return start;
   }
 
   function lastText(start: number): string | undefined {
-    return fixtureLines().slice(start).filter((line) => line.startsWith("text\t")).at(-1)?.split("\t")[2];
+    return fixtureLines()
+      .slice(start)
+      .filter((line) => line.startsWith("text\t"))
+      .at(-1)
+      ?.split("\t")[2];
   }
 
   function textChanges(start: number): string[] {
-    return fixtureLines().slice(start).filter((line) => line.startsWith("text\t")).map((line) => line.split("\t")[2]!);
+    return fixtureLines()
+      .slice(start)
+      .filter((line) => line.startsWith("text\t"))
+      .map((line) => line.split("\t")[2]!);
   }
 
   function countEvents(start: number, kind: string): number {
-    return fixtureLines().slice(start).filter((line) => line.startsWith(`${kind}\t`)).length;
+    return fixtureLines()
+      .slice(start)
+      .filter((line) => line.startsWith(`${kind}\t`)).length;
   }
 
   function expectEveryCharacterChange(start: number, text: string): void {
     let prefix = "";
-    expect(textChanges(start)).toEqual([...text].map((character) => prefix += character));
+    expect(textChanges(start)).toEqual([...text].map((character) => (prefix += character)));
   }
 
   async function startPreview(): Promise<ServeSimDeviceState> {
@@ -171,20 +201,31 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
       timeout: 120_000,
     });
     if (detach.status !== 0 || !detach.stdout) {
-      throw new Error(`serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\nstdout: ${detach.stdout}`);
+      throw new Error(
+        `serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\nstdout: ${detach.stdout}`,
+      );
     }
     const preview = parseDetachState<ServeSimDeviceState>(detach.stdout);
-    const saved = JSON.parse(readFileSync(join(tempState.dir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState;
+    const saved = JSON.parse(
+      readFileSync(join(tempState.dir, `server-${udid}.json`), "utf8"),
+    ) as ServeSimDeviceState;
     expect(saved.wsUrl).toBe(preview.wsUrl);
     return preview;
   }
 
   beforeAll(async () => {
     tempState = useTempStateDir();
-    try { cli("--kill", udid!); } catch {}
-    try { simctl("uninstall", udid!, APP); } catch {}
+    try {
+      cli("--kill", udid!);
+    } catch {}
+    try {
+      simctl("uninstall", udid!, APP);
+    } catch {}
     simctl("install", udid!, FIXTURE);
-    fixtureLog = join(simctl("get_app_container", udid!, APP, "data").trim(), "Documents/launches.tsv");
+    fixtureLog = join(
+      simctl("get_app_container", udid!, APP, "data").trim(),
+      "Documents/launches.tsv",
+    );
 
     state = await startPreview();
   }, 180_000);
@@ -195,17 +236,27 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
 
   afterEach(async () => {
     for (const socket of sockets.splice(0)) socket.close();
-    try { cli("ui", "hardware-keyboard", "on", "-d", udid!); } catch {}
+    try {
+      cli("ui", "hardware-keyboard", "on", "-d", udid!);
+    } catch {}
     await Bun.sleep(500);
   });
 
   afterAll(() => {
     if (process.env.DEBUG?.includes("keyboard")) {
-      try { console.error(readFileSync(join(tempState.dir, `server-${udid}.log`), "utf8")); } catch {}
+      try {
+        console.error(readFileSync(join(tempState.dir, `server-${udid}.log`), "utf8"));
+      } catch {}
     }
-    try { cli("--kill", udid!); } catch {}
-    try { simctl("terminate", udid!, APP); } catch {}
-    try { simctl("uninstall", udid!, APP); } catch {}
+    try {
+      cli("--kill", udid!);
+    } catch {}
+    try {
+      simctl("terminate", udid!, APP);
+    } catch {}
+    try {
+      simctl("uninstall", udid!, APP);
+    } catch {}
     tempState.restore();
   }, 60_000);
 
@@ -233,7 +284,10 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     send(desktop, 0x0e, { enabled: false });
     const start = await launchTextField();
     await waitForSoftwareKeyboard();
-    for (const [usage, key] of [[0x1c, "z"], [0x1d, "y"]] as const) {
+    for (const [usage, key] of [
+      [0x1c, "z"],
+      [0x1d, "y"],
+    ] as const) {
       send(desktop, 0x06, { type: "down", usage, key });
       send(desktop, 0x06, { type: "up", usage });
       await Bun.sleep(30);
@@ -248,7 +302,10 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     // beforeEach left hardware input on. Match the client's admission burst:
     // setup and queued keys arrive together, without waiting for setting readback.
     send(desktop, 0x0e, { enabled: false });
-    for (const [usage, key] of [[0x1c, "z"], [0x1d, "y"]] as const) {
+    for (const [usage, key] of [
+      [0x1c, "z"],
+      [0x1d, "y"],
+    ] as const) {
       send(desktop, 0x06, { type: "down", usage, key });
       send(desktop, 0x06, { type: "up", usage });
     }
@@ -271,7 +328,10 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     send(touch, 0x0e, { enabled: false });
     const start = await launchTextField();
     await waitForSoftwareKeyboard();
-    await sendKeyEventsToWs(state.wsUrl, textToKeyEvents("ABCD"), { token: state.token, perEventDelayMs: 0 });
+    await sendKeyEventsToWs(state.wsUrl, textToKeyEvents("ABCD"), {
+      token: state.token,
+      perEventDelayMs: 0,
+    });
     await waitFor(() => lastText(start), "ABCD", 30_000);
     expectEveryCharacterChange(start, "ABCD");
   }, 90_000);
@@ -307,8 +367,8 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
       await waitFor(() => lastText(start), text === "A" ? "A" : "A_");
       // Queue a key-plane tap behind restoration; numbers -> letters.
       await pressSoftwareKey(desktop, "more");
-      const hasLetter = (nodes: AxNode[]): boolean => nodes.some((node) =>
-        node.AXLabel?.toLowerCase() === "a" || hasLetter(node.children ?? []));
+      const hasLetter = (nodes: AxNode[]): boolean =>
+        nodes.some((node) => node.AXLabel?.toLowerCase() === "a" || hasLetter(node.children ?? []));
       let lettersVisible = false;
       for (let attempt = 0; attempt < 50 && !lettersVisible; attempt++) {
         lettersVisible = hasLetter(await axRoots());
@@ -335,7 +395,9 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
   test("tap, drag, and scroll still reach UIKit", async () => {
     const socket = await openSocket();
     const start = fixtureLines().length;
-    try { simctl("terminate", udid!, APP); } catch {}
+    try {
+      simctl("terminate", udid!, APP);
+    } catch {}
     simctl("launch", udid!, APP, "--input-test");
     await waitFor(() => countEvents(start, "input-ready"), 1);
     // CoreDevice touch drops a gesture that starts within about 250 ms of a relaunch, even

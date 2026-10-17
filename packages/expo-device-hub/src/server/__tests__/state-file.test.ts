@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
@@ -9,9 +9,9 @@ import {
   rmdirSync,
   rmSync,
   statSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   clearHubState,
@@ -19,45 +19,49 @@ import {
   localHubUrl,
   publishHubState,
   writeHubState,
-} from '../cli/state-file';
+} from "../cli/state-file";
 
 const directories: string[] = [];
 function stateEnv(): Record<string, string | undefined> {
-  const directory = mkdtempSync(join(tmpdir(), 'hub-state-test-'));
+  const directory = mkdtempSync(join(tmpdir(), "hub-state-test-"));
   directories.push(directory);
-  return { EXPO_DEVICE_HUB_STATE_DIR: join(directory, 'nested') };
+  return { EXPO_DEVICE_HUB_STATE_DIR: join(directory, "nested") };
 }
 
 afterEach(() => {
-  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
 
 // The EAS worker reads the token here, as it reads serve-sim's from `server-<udid>.json`.
-describe('the CLI state file', () => {
-  test('records the port, URL, and token where the process that started the Hub finds them', () => {
+describe("the CLI state file", () => {
+  test("records the port, URL, and token where the process that started the Hub finds them", () => {
     const env = stateEnv();
 
-    const file = writeHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400', token: 'tok-1' }, env);
+    const file = writeHubState(
+      { pid: 4242, port: 3400, url: "http://127.0.0.1:3400", token: "tok-1" },
+      env,
+    );
 
-    expect(file).toBe(join(env.EXPO_DEVICE_HUB_STATE_DIR!, 'server-3400.json'));
-    expect(JSON.parse(readFileSync(file, 'utf-8'))).toEqual({
+    expect(file).toBe(join(env.EXPO_DEVICE_HUB_STATE_DIR!, "server-3400.json"));
+    expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
       pid: 4242,
       port: 3400,
-      url: 'http://127.0.0.1:3400',
-      token: 'tok-1',
+      url: "http://127.0.0.1:3400",
+      token: "tok-1",
     });
     // Only the owner can read the token, and no temporary file is left behind.
     expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(readdirSync(env.EXPO_DEVICE_HUB_STATE_DIR!)).toEqual(['server-3400.json']);
+    expect(readdirSync(env.EXPO_DEVICE_HUB_STATE_DIR!)).toEqual(["server-3400.json"]);
   });
 
-  test('defaults to an expo-device-hub directory in the temporary directory', () => {
-    expect(hubStateFile(3400, {})).toBe(join(tmpdir(), 'expo-device-hub', 'server-3400.json'));
+  test("defaults to an expo-device-hub directory in the temporary directory", () => {
+    expect(hubStateFile(3400, {})).toBe(join(tmpdir(), "expo-device-hub", "server-3400.json"));
   });
 
-  test('is removed only by the process that wrote it', () => {
+  test("is removed only by the process that wrote it", () => {
     const env = stateEnv();
-    const file = writeHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    const file = writeHubState({ pid: 4242, port: 3400, url: "http://127.0.0.1:3400" }, env);
 
     clearHubState(3400, 1111, env);
     expect(existsSync(file)).toBe(true);
@@ -70,7 +74,7 @@ describe('the CLI state file', () => {
   // The CLI withdraws the record when shutdown starts, and again at exit as a fallback.
   test("withdraws a published record, and leaves a newer Hub's record in place", () => {
     const env = stateEnv();
-    const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    const withdraw = publishHubState({ pid: 4242, port: 3400, url: "http://127.0.0.1:3400" }, env);
     const file = hubStateFile(3400, env);
     expect(existsSync(file)).toBe(true);
 
@@ -78,14 +82,14 @@ describe('the CLI state file', () => {
     expect(existsSync(file)).toBe(false);
 
     // A Hub that started on the same port in the meantime keeps its record.
-    writeHubState({ pid: 5151, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    writeHubState({ pid: 5151, port: 3400, url: "http://127.0.0.1:3400" }, env);
     withdraw();
     expect(existsSync(file)).toBe(true);
   });
 
-  test('retries a withdrawal that failed', () => {
+  test("retries a withdrawal that failed", () => {
     const env = stateEnv();
-    const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    const withdraw = publishHubState({ pid: 4242, port: 3400, url: "http://127.0.0.1:3400" }, env);
     const file = hubStateFile(3400, env);
 
     // A directory in place of the record makes the removal fail, even for root.
@@ -100,10 +104,10 @@ describe('the CLI state file', () => {
     expect(existsSync(file)).toBe(false);
   });
 
-  test('names a URL that answers on this machine', () => {
-    expect(localHubUrl('127.0.0.1', 3400)).toBe('http://127.0.0.1:3400');
-    expect(localHubUrl('0.0.0.0', 3400)).toBe('http://127.0.0.1:3400');
-    expect(localHubUrl('::', 3400)).toBe('http://[::1]:3400');
-    expect(localHubUrl('192.168.1.20', 3400)).toBe('http://192.168.1.20:3400');
+  test("names a URL that answers on this machine", () => {
+    expect(localHubUrl("127.0.0.1", 3400)).toBe("http://127.0.0.1:3400");
+    expect(localHubUrl("0.0.0.0", 3400)).toBe("http://127.0.0.1:3400");
+    expect(localHubUrl("::", 3400)).toBe("http://[::1]:3400");
+    expect(localHubUrl("192.168.1.20", 3400)).toBe("http://192.168.1.20:3400");
   });
 });

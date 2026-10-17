@@ -33,8 +33,19 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
-import { INPUT_PASTEBOARD_LOCK_TIMEOUT_MS, MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError, type PasteboardReadResult, withSimPasteboardLock } from "./sim-pasteboard";
-import { isLiftedModifier, KEY_C, KEY_V, simCommandShortcutHidEvents } from "./sim-command-shortcut";
+import {
+  INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
+  MAX_PASTEBOARD_TEXT_BYTES,
+  PasteboardBusyError,
+  type PasteboardReadResult,
+  withSimPasteboardLock,
+} from "./sim-pasteboard";
+import {
+  isLiftedModifier,
+  KEY_C,
+  KEY_V,
+  simCommandShortcutHidEvents,
+} from "./sim-command-shortcut";
 import { pasteTextIntoSim } from "./sim-pasteboard-paste";
 import { copyFromSim, withCleanupWarning } from "./sim-pasteboard-copy";
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./socket/control-utils";
@@ -42,10 +53,32 @@ import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
-import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
-import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
-import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
-import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./socket/input-protocol";
+import {
+  isHingeControlCommand,
+  hingeControlState,
+  hingePoseOrientation,
+  isTableModeAvailable,
+  type HingeControlCommand,
+  type HingePose,
+  type HingePhysicalOrientation,
+} from "./hinge-control";
+import {
+  getUiOption,
+  refreshDeviceOptionState,
+  setUiOption,
+  setUiOptionIfRevision,
+} from "./ui-settings";
+import {
+  eventLogEventForHidMessage,
+  formatEventLogPoint,
+  recordEventLogEvent,
+  updateEventLogEvent,
+} from "./event-log";
+import {
+  WS_MSG_CONFIG,
+  WS_MSG_INPUT_ADMITTED,
+  WS_REASON_INPUT_UNAVAILABLE,
+} from "./socket/input-protocol";
 import {
   MAX_WEBRTC_SIGNALING_BODY_BYTES,
   WebRtcSignalingError,
@@ -136,7 +169,10 @@ function newTouchGesture(payload: { x: number; y: number; edge?: number }): Touc
 }
 
 function mjpegHeader(jpegLength: number): Buffer {
-  return Buffer.from(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpegLength}\r\n\r\n`, "ascii");
+  return Buffer.from(
+    `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpegLength}\r\n\r\n`,
+    "ascii",
+  );
 }
 
 function avccSeed(jpeg: Uint8Array): Buffer {
@@ -227,7 +263,9 @@ function readRequestBody(
       settled = true;
       resolve(Buffer.concat(chunks));
     });
-    req.on("aborted", () => fail(new WebRtcSignalingError("Request aborted", 400, "request_aborted")));
+    req.on("aborted", () =>
+      fail(new WebRtcSignalingError("Request aborted", 400, "request_aborted")),
+    );
     req.on("error", fail);
   });
 }
@@ -341,9 +379,13 @@ export class DeviceSession {
   private hardwareKeyboardRevision?: string;
   private softwareKeyboardReadyUntil = 0;
   private softwareKeyboardSetupRevision = 0;
-  private softwareKeyboardVisibilityProbe: { revision: number; result: Promise<boolean> } | null = null;
+  private softwareKeyboardVisibilityProbe: { revision: number; result: Promise<boolean> } | null =
+    null;
 
-  constructor(public readonly udid: string, initialStreamSettings?: StreamSettings) {
+  constructor(
+    public readonly udid: string,
+    initialStreamSettings?: StreamSettings,
+  ) {
     const streamSettings = streamControlSettingsFrom(initialStreamSettings);
     this.transport = streamSettings.transport;
     this.encoderSettings = streamEncoderSettingsFrom(streamSettings);
@@ -357,29 +399,42 @@ export class DeviceSession {
     if (this.phase === "running") return this.captureStart ?? Promise.resolve();
     if (this.phase === "stopped") return Promise.reject(new Error("Capture session is stopped"));
     this.phase = "running";
-    this.captureStart = refreshDeviceOptionState(this.udid).then(() => this.capture.start()).then(async () => {
-      const unsubscribe = await this.capture.subscribeScreenChanges(async () => {
-        if (this.phase !== "running") return;
-        try {
-          if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
-        } catch { /* The periodic refresh retries transient read failures. */ }
+    this.captureStart = refreshDeviceOptionState(this.udid)
+      .then(() => this.capture.start())
+      .then(async () => {
+        const unsubscribe = await this.capture.subscribeScreenChanges(async () => {
+          if (this.phase !== "running") return;
+          try {
+            if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
+          } catch {
+            /* The periodic refresh retries transient read failures. */
+          }
+        });
+        if (this.phase !== "running") {
+          await unsubscribe();
+          return;
+        }
+        this.unsubscribeScreenChanges = unsubscribe;
+        void this.capture
+          .subscribeDeviceState(async (snapshot) => {
+            this.applyDeviceState(snapshot);
+          })
+          .then(async (unsubscribeDeviceState) => {
+            if (this.phase !== "running") {
+              await unsubscribeDeviceState();
+              return;
+            }
+            this.unsubscribeDeviceState = unsubscribeDeviceState;
+          })
+          .catch((error) => {
+            console.error(`[capture] Device state observation unavailable: ${error}`);
+          });
+        if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
+        this.scheduleScreenRefresh();
+        // Discover fold controls without delaying the first frame or inventing
+        // an initial angle when CoreDevice has not reported one.
+        void this.discoverHingeCapabilities().catch(() => {});
       });
-      if (this.phase !== "running") { await unsubscribe(); return; }
-      this.unsubscribeScreenChanges = unsubscribe;
-      void this.capture.subscribeDeviceState(async (snapshot) => {
-        this.applyDeviceState(snapshot);
-      }).then(async (unsubscribeDeviceState) => {
-        if (this.phase !== "running") { await unsubscribeDeviceState(); return; }
-        this.unsubscribeDeviceState = unsubscribeDeviceState;
-      }).catch((error) => {
-        console.error(`[capture] Device state observation unavailable: ${error}`);
-      });
-      if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
-      this.scheduleScreenRefresh();
-      // Discover fold controls without delaying the first frame or inventing
-      // an initial angle when CoreDevice has not reported one.
-      void this.discoverHingeCapabilities().catch(() => {});
-    });
     return this.captureStart;
   }
 
@@ -449,27 +504,29 @@ export class DeviceSession {
     }
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
-    trackClosedSessionStop((async () => {
-      await this.captureStart?.catch(() => {});
-      await Promise.all([screenChangesDetached, deviceStateDetached]);
-      let recordingError: unknown = this.recordingFailure;
-      try {
-        await this.recordingStart;
-      } catch (error) {
-        if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
-      }
-      try {
-        await this.recordingFinishing;
-      } catch (error) {
-        recordingError ??= error;
-      }
-      try {
-        await this.capture.stop();
-      } catch (error) {
-        recordingError ??= error;
-      }
-      if (recordingError) throw recordingError;
-    })());
+    trackClosedSessionStop(
+      (async () => {
+        await this.captureStart?.catch(() => {});
+        await Promise.all([screenChangesDetached, deviceStateDetached]);
+        let recordingError: unknown = this.recordingFailure;
+        try {
+          await this.recordingStart;
+        } catch (error) {
+          if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
+        }
+        try {
+          await this.recordingFinishing;
+        } catch (error) {
+          recordingError ??= error;
+        }
+        try {
+          await this.capture.stop();
+        } catch (error) {
+          recordingError ??= error;
+        }
+        if (recordingError) throw recordingError;
+      })(),
+    );
   }
 
   async finishRecordingForShutdown(): Promise<void> {
@@ -514,7 +571,10 @@ export class DeviceSession {
     }
     if (req.method === "POST") {
       if (this.rebootSuspended) {
-        this.sendJson(res, 503, { error: "capture_rebooting", message: "Wait for boot and fresh capture before starting a recording" });
+        this.sendJson(res, 503, {
+          error: "capture_rebooting",
+          message: "Wait for boot and fresh capture before starting a recording",
+        });
         return;
       }
       try {
@@ -523,12 +583,25 @@ export class DeviceSession {
           this.sendJson(res, 503, { error: "server_stopping", message: "serve-sim is stopping" });
           return;
         }
-        if (typeof body !== "object" || body === null || !("start" in body) || body.start !== true
-          || !("output" in body) || typeof body.output !== "string" || body.output.length === 0
-          || !("recordingId" in body) || typeof body.recordingId !== "string"
-          || body.recordingId.length === 0 || body.recordingId.length > 128
-          || INVALID_RECORDING_ID_CHAR.test(body.recordingId)) {
-          this.sendJson(res, 400, { error: "invalid_recording_request", message: "Pass start: true, output, and an alphanumeric recordingId (hyphens and underscores allowed)" });
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("start" in body) ||
+          body.start !== true ||
+          !("output" in body) ||
+          typeof body.output !== "string" ||
+          body.output.length === 0 ||
+          !("recordingId" in body) ||
+          typeof body.recordingId !== "string" ||
+          body.recordingId.length === 0 ||
+          body.recordingId.length > 128 ||
+          INVALID_RECORDING_ID_CHAR.test(body.recordingId)
+        ) {
+          this.sendJson(res, 400, {
+            error: "invalid_recording_request",
+            message:
+              "Pass start: true, output, and an alphanumeric recordingId (hyphens and underscores allowed)",
+          });
           return;
         }
         const cancelledUntil = this.cancelledBeforeStart.get(body.recordingId);
@@ -537,7 +610,10 @@ export class DeviceSession {
           return;
         }
         if (this.recordingLease || this.recordingStarting || this.recordingFinishing) {
-          this.sendJson(res, 409, { error: "recording_active", message: "A recording is already active; stop it or wait for its lease to expire" });
+          this.sendJson(res, 409, {
+            error: "recording_active",
+            message: "A recording is already active; stop it or wait for its lease to expire",
+          });
           return;
         }
         this.recordingStarting = true;
@@ -555,7 +631,8 @@ export class DeviceSession {
           await this.capture.startRecording(output);
           if (this.recordingStartCancelled || this.phase !== "running") {
             this.cancelledRecordingStart = {
-              id: recordingId, manifest: await this.capture.stopRecording(),
+              id: recordingId,
+              manifest: await this.capture.stopRecording(),
             };
             throw new RecordingStartCancelled("Recording start was cancelled");
           }
@@ -567,8 +644,18 @@ export class DeviceSession {
         this.lastFailedRecording = undefined;
         this.sendJson(res, 200, { recording: true });
       } catch (error) {
-        const status = error instanceof RecordingStartRebooting ? 503 : error instanceof WebRtcSignalingError ? error.status : 500;
-        const code = error instanceof RecordingStartRebooting ? "capture_rebooting" : error instanceof WebRtcSignalingError ? error.code : "recording_start_failed";
+        const status =
+          error instanceof RecordingStartRebooting
+            ? 503
+            : error instanceof WebRtcSignalingError
+              ? error.status
+              : 500;
+        const code =
+          error instanceof RecordingStartRebooting
+            ? "capture_rebooting"
+            : error instanceof WebRtcSignalingError
+              ? error.code
+              : "recording_start_failed";
         this.sendJson(res, status, { error: code, message: String(error) });
       } finally {
         this.recordingStart = undefined;
@@ -591,14 +678,19 @@ export class DeviceSession {
     if (req.method === "DELETE") {
       try {
         const recordingId = req.headers["x-recording-id"];
-        if (typeof recordingId === "string" && this.recordingStarting
-          && recordingId === this.recordingStartingId) {
+        if (
+          typeof recordingId === "string" &&
+          this.recordingStarting &&
+          recordingId === this.recordingStartingId
+        ) {
           this.recordingStartCancelled = true;
           await this.recordingStart?.catch(() => {});
-          const manifest = this.recordingLease?.id === recordingId
-            ? await this.finishRecording(recordingId)
-            : this.cancelledRecordingStart?.id === recordingId
-              ? this.cancelledRecordingStart.manifest : undefined;
+          const manifest =
+            this.recordingLease?.id === recordingId
+              ? await this.finishRecording(recordingId)
+              : this.cancelledRecordingStart?.id === recordingId
+                ? this.cancelledRecordingStart.manifest
+                : undefined;
           this.sendJson(res, manifest ? 200 : 202, manifest ? { manifest } : { cancelled: true });
           return;
         }
@@ -617,17 +709,27 @@ export class DeviceSession {
           return;
         }
         if (typeof recordingId === "string" && this.lastFailedRecording?.id === recordingId) {
-          this.sendJson(res, 500, { error: "recording_stop_failed", message: String(this.lastFailedRecording.error) });
+          this.sendJson(res, 500, {
+            error: "recording_stop_failed",
+            message: String(this.lastFailedRecording.error),
+          });
           return;
         }
-        if (typeof recordingId === "string" && recordingId.length > 0 && recordingId.length <= 128
-          && !INVALID_RECORDING_ID_CHAR.test(recordingId)
-          && recordingId !== this.recordingLease?.id) {
+        if (
+          typeof recordingId === "string" &&
+          recordingId.length > 0 &&
+          recordingId.length <= 128 &&
+          !INVALID_RECORDING_ID_CHAR.test(recordingId) &&
+          recordingId !== this.recordingLease?.id
+        ) {
           const now = Date.now();
           for (const [id, until] of this.cancelledBeforeStart) {
             if (until <= now) this.cancelledBeforeStart.delete(id);
           }
-          if (!this.cancelledBeforeStart.has(recordingId) && this.cancelledBeforeStart.size >= 512) {
+          if (
+            !this.cancelledBeforeStart.has(recordingId) &&
+            this.cancelledBeforeStart.size >= 512
+          ) {
             this.sendJson(res, 503, { error: "recording_cancellation_limit" });
             return;
           }
@@ -653,7 +755,7 @@ export class DeviceSession {
   private refreshRecordingLease(id: string): void {
     if (this.recordingLease) clearTimeout(this.recordingLease.timer);
     const timer = setTimeout(() => {
-      void this.finishRecording(id).catch(error => {
+      void this.finishRecording(id).catch((error) => {
         console.warn(`Could not finish expired recording ${id}: ${String(error)}`);
       });
     }, this.recordingLeaseMs);
@@ -715,18 +817,36 @@ export class DeviceSession {
   // ── HTTP handlers ────────────────────────────────────────────────────────
 
   /** Fixed-panel feeds share the existing transport implementation, never HID state. */
-  async handlePanel(req: IncomingMessage, res: ServerResponse, screenId: number, endpoint: string): Promise<void> {
+  async handlePanel(
+    req: IncomingMessage,
+    res: ServerResponse,
+    screenId: number,
+    endpoint: string,
+  ): Promise<void> {
     const isStream = endpoint === "stream.mjpeg" || endpoint === "stream.avcc";
     const createsCapture = isStream || endpoint === "webrtc/offer";
     const route = validatePanelRoute(screenId, endpoint, req.method);
-    if ("error" in route) { this.sendJson(res, route.status, { error: route.error }); return; }
-    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
-    if (isStream && this.transport === "webrtc") { this.sendTransportLocked(res); return; }
+    if ("error" in route) {
+      this.sendJson(res, route.status, { error: route.error });
+      return;
+    }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (isStream && this.transport === "webrtc") {
+      this.sendTransportLocked(res);
+      return;
+    }
     // Install body listeners before capture startup yields: Fetch requests may
     // deliver their entire body while the native panel is still opening.
-    const body = createsCapture && !isStream
-      ? readRequestBody(req, MAX_WEBRTC_SIGNALING_BODY_BYTES)
-      : endpoint === "webrtc/close" ? readRequestBody(req, 4 * 1024) : undefined;
+    const body =
+      createsCapture && !isStream
+        ? readRequestBody(req, MAX_WEBRTC_SIGNALING_BODY_BYTES)
+        : endpoint === "webrtc/close"
+          ? readRequestBody(req, 4 * 1024)
+          : undefined;
     void body?.catch(() => {});
     let panel: PanelCapture | undefined;
     let closed = false;
@@ -738,14 +858,18 @@ export class DeviceSession {
       if (panel) this.releasePanelIfIdle(panel);
     };
     this.panelRequests.add(res);
-    req.once("aborted", () => { release(); res.destroy(); });
+    req.once("aborted", () => {
+      release();
+      res.destroy();
+    });
     res.once("close", release);
     res.once("finish", release);
     res.once("error", release);
     try {
       await this.waitForCapture();
-      if (!(this.supportsHingeAngle ?? await this.hid.supportsHingeAngle())) {
-        this.sendJson(res, 409, { error: "panel_streams_unsupported" }); return;
+      if (!(this.supportsHingeAngle ?? (await this.hid.supportsHingeAngle()))) {
+        this.sendJson(res, 409, { error: "panel_streams_unsupported" });
+        return;
       }
       // New panel captures must see the latest completed encoder-settings transaction.
       for (;;) {
@@ -757,12 +881,21 @@ export class DeviceSession {
       panel = this.panels.get(screenId);
       if (!panel && createsCapture) {
         const capture = new NativeCapture(this.udid, this.encoderSettings, screenId);
-        panel = { screenId: route.screenId, capture, start: capture.start(), responses: new Set(), sessions: new Set(), stopped: false };
+        panel = {
+          screenId: route.screenId,
+          capture,
+          start: capture.start(),
+          responses: new Set(),
+          sessions: new Set(),
+          stopped: false,
+        };
         this.panels.set(screenId, panel);
       }
       if (!panel) {
-        if (endpoint === "webrtc/close") { res.writeHead(204); res.end(); }
-        else this.sendJson(res, 404, { error: "panel_stream_not_running" });
+        if (endpoint === "webrtc/close") {
+          res.writeHead(204);
+          res.end();
+        } else this.sendJson(res, 404, { error: "panel_stream_not_running" });
         return;
       }
       panel.responses.add(res);
@@ -775,7 +908,8 @@ export class DeviceSession {
       else await this.handleWebRTCStats(req, res, panel);
     } catch {
       release();
-      if (!res.headersSent && !res.destroyed) this.sendJson(res, 503, { error: "panel_stream_unavailable" });
+      if (!res.headersSent && !res.destroyed)
+        this.sendJson(res, 503, { error: "panel_stream_unavailable" });
       else res.destroy();
     }
   }
@@ -790,11 +924,16 @@ export class DeviceSession {
     if (this.panels.get(panel.screenId) === panel) this.panels.delete(panel.screenId);
     for (const res of panel.responses) res.destroy();
     panel.responses.clear();
-    void panel.start.catch(() => {}).then(async () => {
-      await Promise.allSettled([...panel.sessions].map((id) => panel.capture.closeWebRTCSession(id)));
-      panel.sessions.clear();
-      await panel.capture.stop();
-    }).catch(() => {});
+    void panel.start
+      .catch(() => {})
+      .then(async () => {
+        await Promise.allSettled(
+          [...panel.sessions].map((id) => panel.capture.closeWebRTCSession(id)),
+        );
+        panel.sessions.clear();
+        await panel.capture.stop();
+      })
+      .catch(() => {});
   }
 
   handleMjpeg(req: IncomingMessage, res: ServerResponse, panel?: PanelCapture): void {
@@ -805,7 +944,9 @@ export class DeviceSession {
     }
     const raw = new URL(req.url ?? "", "http://x").searchParams.get("raw") === "1";
     res.writeHead(200, {
-      "Content-Type": raw ? "application/octet-stream" : "multipart/x-mixed-replace; boundary=frame",
+      "Content-Type": raw
+        ? "application/octet-stream"
+        : "multipart/x-mixed-replace; boundary=frame",
       "Cache-Control": "no-cache, no-store",
       Connection: "keep-alive",
       ...(panel ? { "X-Screen-Id": String(panel.screenId) } : {}),
@@ -984,19 +1125,11 @@ export class DeviceSession {
         this.transport,
       );
       if (!patch) {
-        throw new WebRtcSignalingError(
-          "Invalid stream settings",
-          400,
-          "invalid_stream_settings",
-        );
+        throw new WebRtcSignalingError("Invalid stream settings", 400, "invalid_stream_settings");
       }
       const settings = await this.updateStreamSettings(patch);
       if (!res.writableEnded && !res.destroyed) {
-        this.sendJson(
-          res,
-          200,
-          streamEncoderSettingsForTransport(settings, this.transport),
-        );
+        this.sendJson(res, 200, streamEncoderSettingsForTransport(settings, this.transport));
       }
     } catch (error) {
       if (res.writableEnded || res.destroyed) return;
@@ -1015,18 +1148,28 @@ export class DeviceSession {
         this.encoderSettings,
       );
       await this.capture.updateStreamSettings(next);
-      await Promise.all([...this.panels.values()].map(async (panel) => {
-        await panel.start;
-        if (!panel.stopped) await panel.capture.updateStreamSettings(next);
-      }));
+      await Promise.all(
+        [...this.panels.values()].map(async (panel) => {
+          await panel.start;
+          if (!panel.stopped) await panel.capture.updateStreamSettings(next);
+        }),
+      );
       this.encoderSettings = next;
       return next;
     });
-    this.streamSettingsUpdate = update.then(() => {}, () => {});
+    this.streamSettingsUpdate = update.then(
+      () => {},
+      () => {},
+    );
     return update;
   }
 
-  async handleWebRTCOffer(req: IncomingMessage, res: ServerResponse, panel?: PanelCapture, pendingBody?: Promise<Buffer>): Promise<void> {
+  async handleWebRTCOffer(
+    req: IncomingMessage,
+    res: ServerResponse,
+    panel?: PanelCapture,
+    pendingBody?: Promise<Buffer>,
+  ): Promise<void> {
     const capture = panel?.capture ?? this.capture;
     let sessionId: string | undefined;
     let sessionEstablished = false;
@@ -1051,13 +1194,17 @@ export class DeviceSession {
         throw new WebRtcSignalingError("WebRTC offers require POST", 405, "method_not_allowed");
       }
       if (!isJsonRequest(req)) {
-        throw new WebRtcSignalingError("WebRTC offers require application/json", 415, "unsupported_media_type");
+        throw new WebRtcSignalingError(
+          "WebRTC offers require application/json",
+          415,
+          "unsupported_media_type",
+        );
       }
       const body = await (pendingBody ?? readRequestBody(req, MAX_WEBRTC_SIGNALING_BODY_BYTES));
       const offer = parseWebRtcOffer(parseJsonBody(body, "invalid_offer"));
       sessionId = offer.sessionId;
       await this.waitForCapture();
-      if (!panel && await this.refreshScreenSizeFromNative()) this.broadcastConfig();
+      if (!panel && (await this.refreshScreenSizeFromNative())) this.broadcastConfig();
       const answer = await capture.handleWebRTCOffer(offer);
       panel?.sessions.add(sessionId);
       sessionEstablished = true;
@@ -1073,14 +1220,15 @@ export class DeviceSession {
     } catch (err) {
       if (sessionEstablished) await cancelSession();
       if (res.writableEnded || res.destroyed) return;
-      const busy = err instanceof Error &&
-        err.message.includes("WebRTC signaling already in progress");
+      const busy =
+        err instanceof Error && err.message.includes("WebRTC signaling already in progress");
       const status = err instanceof WebRtcSignalingError ? err.status : busy ? 409 : 500;
-      const code = err instanceof WebRtcSignalingError
-        ? err.code
-        : busy
-          ? "webrtc_session_busy"
-          : "webrtc_offer_failed";
+      const code =
+        err instanceof WebRtcSignalingError
+          ? err.code
+          : busy
+            ? "webrtc_session_busy"
+            : "webrtc_offer_failed";
       this.sendJson(res, status, {
         error: code,
         message: err instanceof Error ? err.message : String(err),
@@ -1090,7 +1238,12 @@ export class DeviceSession {
     }
   }
 
-  async handleWebRTCClose(req: IncomingMessage, res: ServerResponse, panel?: PanelCapture, pendingBody?: Promise<Buffer>): Promise<void> {
+  async handleWebRTCClose(
+    req: IncomingMessage,
+    res: ServerResponse,
+    panel?: PanelCapture,
+    pendingBody?: Promise<Buffer>,
+  ): Promise<void> {
     try {
       if (req.method !== "POST") {
         throw new WebRtcSignalingError("WebRTC close requires POST", 405, "method_not_allowed");
@@ -1114,7 +1267,11 @@ export class DeviceSession {
     }
   }
 
-  async handleWebRTCStats(req: IncomingMessage, res: ServerResponse, panel?: PanelCapture): Promise<void> {
+  async handleWebRTCStats(
+    req: IncomingMessage,
+    res: ServerResponse,
+    panel?: PanelCapture,
+  ): Promise<void> {
     if (req.method !== "GET") {
       this.sendJson(res, 405, { error: "method_not_allowed" });
       return;
@@ -1153,7 +1310,11 @@ export class DeviceSession {
   }
 
   /** Run a native AX probe and stream its JSON, or 503 with `errorCode` if it's not ready. */
-  private async serveAxJson(res: ServerResponse, probe: () => Promise<string>, errorCode: string): Promise<void> {
+  private async serveAxJson(
+    res: ServerResponse,
+    probe: () => Promise<string>,
+    errorCode: string,
+  ): Promise<void> {
     try {
       const json = await probe();
       if (res.writableEnded) return;
@@ -1170,7 +1331,11 @@ export class DeviceSession {
   // ── HID WebSocket ────────────────────────────────────────────────────────
 
   attachHidSocket(ws: HidSocket): void {
-    if (this.phase !== "running" || this.rebootSuspended || this.hidSockets.size >= MAX_HID_SOCKETS) {
+    if (
+      this.phase !== "running" ||
+      this.rebootSuspended ||
+      this.hidSockets.size >= MAX_HID_SOCKETS
+    ) {
       ws.close(1013, WS_REASON_INPUT_UNAVAILABLE);
       return;
     }
@@ -1181,10 +1346,15 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(ws, new Set());
     this.axHandledKeyUsages.set(ws, new Set());
     ws.on("message", (data: Buffer) => {
-      if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
+      if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws))
+        return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      const isOrderedMessage = buffer[0] === 0x03 || buffer[0] === 0x05 ||
-        buffer[0] === 0x06 || buffer[0] === 0x0b || buffer[0] === 0x0e;
+      const isOrderedMessage =
+        buffer[0] === 0x03 ||
+        buffer[0] === 0x05 ||
+        buffer[0] === 0x06 ||
+        buffer[0] === 0x0b ||
+        buffer[0] === 0x0e;
       const inFlight = this.inFlightHidMessages.get(ws) ?? 0;
       if (inFlight >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
         this.overloadHidSocket(ws);
@@ -1195,9 +1365,8 @@ export class DeviceSession {
       if (isOrderedMessage) {
         this.inFlightOrderedMessages.set(ws, (this.inFlightOrderedMessages.get(ws) ?? 0) + 1);
       }
-      const priorOrderedMessages = buffer[0] === 0x11
-        ? [...(this.pendingOrderedMessages.get(ws) ?? [])]
-        : undefined;
+      const priorOrderedMessages =
+        buffer[0] === 0x11 ? [...(this.pendingOrderedMessages.get(ws) ?? [])] : undefined;
       const operation = this.handleHidMessage(buffer, ws, priorOrderedMessages)
         .catch(() => {
           if (isOrderedMessage) this.failedInputSockets.add(ws);
@@ -1209,7 +1378,8 @@ export class DeviceSession {
           if (isOrderedMessage) {
             const remainingOrdered = (this.inFlightOrderedMessages.get(ws) ?? 1) - 1;
             this.inFlightOrderedMessages.set(ws, remainingOrdered);
-            if (remainingOrdered === 0 && this.detachedHidSockets.has(ws)) this.finishDetachedHidSocket(ws);
+            if (remainingOrdered === 0 && this.detachedHidSockets.has(ws))
+              this.finishDetachedHidSocket(ws);
           }
           this.notifyInputStateChanged();
         })
@@ -1245,7 +1415,11 @@ export class DeviceSession {
     }
   }
 
-  private async handleHidMessage(data: Buffer, ws: HidSocket, priorOrderedMessages?: Promise<void>[]): Promise<void> {
+  private async handleHidMessage(
+    data: Buffer,
+    ws: HidSocket,
+    priorOrderedMessages?: Promise<void>[],
+  ): Promise<void> {
     if (data.length < 1) return;
     const generation = this.inputGeneration;
     try {
@@ -1278,11 +1452,17 @@ export class DeviceSession {
             if (m.type === "begin" && this.scrollOwner) {
               await this.hid.cancelScroll();
               this.scrollOwner = undefined;
-              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+              if (
+                this.phase !== "running" ||
+                this.detachedHidSockets.has(ws) ||
+                this.overloadedHidSockets.has(ws)
+              )
+                return;
             }
             await this.hid.touch(m.type as "begin" | "move" | "end", m.x, m.y, W, H, m.edge ?? 0);
             if (m.type === "end") this.activeTouches.delete(ws);
-            else this.activeTouches.set(ws, () => this.hid.touch("end", m.x, m.y, W, H, m.edge ?? 0));
+            else
+              this.activeTouches.set(ws, () => this.hid.touch("end", m.x, m.y, W, H, m.edge ?? 0));
           });
           if (operation) await operation;
         }
@@ -1293,7 +1473,11 @@ export class DeviceSession {
         if (!m) break;
         this.recordHidEvent(tag, m);
         if (m.page != null && m.usage != null) {
-          await this.hid.buttonHid(m.page, m.usage, (m.phase as "down" | "up" | "press") ?? "press");
+          await this.hid.buttonHid(
+            m.page,
+            m.usage,
+            (m.phase as "down" | "up" | "press") ?? "press",
+          );
         } else {
           await this.hid.button(m.button);
         }
@@ -1307,11 +1491,27 @@ export class DeviceSession {
             if (m.type === "begin" && this.scrollOwner) {
               await this.hid.cancelScroll();
               this.scrollOwner = undefined;
-              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+              if (
+                this.phase !== "running" ||
+                this.detachedHidSockets.has(ws) ||
+                this.overloadedHidSockets.has(ws)
+              )
+                return;
             }
-            await this.hid.multiTouch(m.type as "begin" | "move" | "end", m.x1, m.y1, m.x2, m.y2, W, H);
+            await this.hid.multiTouch(
+              m.type as "begin" | "move" | "end",
+              m.x1,
+              m.y1,
+              m.x2,
+              m.y2,
+              W,
+              H,
+            );
             if (m.type === "end") this.activeMultiTouches.delete(ws);
-            else this.activeMultiTouches.set(ws, () => this.hid.multiTouch("end", m.x1, m.y1, m.x2, m.y2, W, H));
+            else
+              this.activeMultiTouches.set(ws, () =>
+                this.hid.multiTouch("end", m.x1, m.y1, m.x2, m.y2, W, H),
+              );
           });
           if (operation) await operation;
         }
@@ -1319,22 +1519,36 @@ export class DeviceSession {
       }
       case 0x06: {
         const m = json<{ type: string; usage: number; key?: string; shifted?: boolean }>();
-        if (m && (m.type === "down" || m.type === "up") &&
-          Number.isInteger(m.usage) && m.usage >= 0 && m.usage <= 0xff) {
+        if (
+          m &&
+          (m.type === "down" || m.type === "up") &&
+          Number.isInteger(m.usage) &&
+          m.usage >= 0 &&
+          m.usage <= 0xff
+        ) {
           this.recordHidEvent(tag, m);
           const operation = this.queueInputOperation(ws, async () => {
             const axHandledKeyUsages = this.axHandledKeyUsages.get(ws)!;
             const generation = this.inputGeneration;
-            const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
+            const supportsHingeAngle =
+              this.supportsHingeAngle ?? (await this.hid.supportsHingeAngle());
             this.supportsHingeAngle ??= supportsHingeAngle;
             const character = typeof m.key === "string" && m.key.length === 1 ? m.key : undefined;
             const physical = character === undefined ? undefined : US_KEYBOARD_MAP[character];
             // Matching US keys retain the fast HID path; layout differences need the character.
-            const needsCharacter = m.shifted === true || !physical || physical.shift || physical.usage !== m.usage;
-            if (m.type === "down" && !supportsHingeAngle && character !== undefined && needsCharacter) {
+            const needsCharacter =
+              m.shifted === true || !physical || physical.shift || physical.usage !== m.usage;
+            if (
+              m.type === "down" &&
+              !supportsHingeAngle &&
+              character !== undefined &&
+              needsCharacter
+            ) {
               const hardwareKeyboard = await getUiOption(this.udid, "hardware-keyboard");
-              if (hardwareKeyboard === "off" &&
-                await this.typeSoftwareKeyboardCharacter(character, ws, generation)) {
+              if (
+                hardwareKeyboard === "off" &&
+                (await this.typeSoftwareKeyboardCharacter(character, ws, generation))
+              ) {
                 if (this.activeHidKeyUsages.get(ws)?.has(m.usage)) {
                   await this.updateHidKey(ws, "up", m.usage);
                 }
@@ -1357,11 +1571,17 @@ export class DeviceSession {
         const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
-          if (!this.canRunInputControl(generation) || value == null || !await this.hid.orientation(value)) return;
+          if (
+            !this.canRunInputControl(generation) ||
+            value == null ||
+            !(await this.hid.orientation(value))
+          )
+            return;
           if (!this.canRunInputControl(generation)) return;
           this.hingeRotated = true;
           // Only startup hydration advertises hinge support, after it reads the angle.
-          const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
+          const supportsHingeAngle =
+            this.supportsHingeAngle ?? (await this.hid.supportsHingeAngle());
           if (!this.canRunInputControl(generation)) return;
           this.recordHidEvent(tag, m);
           if (supportsHingeAngle) {
@@ -1416,12 +1636,23 @@ export class DeviceSession {
             this.recordHidEvent(tag, m);
             const dx = m.dx * W;
             const dy = m.dy * H;
-            if (Number.isFinite(dx) && Number.isFinite(dy) && (dx !== 0 || dy !== 0) && W > 0 && H > 0) {
+            if (
+              Number.isFinite(dx) &&
+              Number.isFinite(dy) &&
+              (dx !== 0 || dy !== 0) &&
+              W > 0 &&
+              H > 0
+            ) {
               if (this.scrollOwner && this.scrollOwner !== ws) {
                 await this.hid.cancelScroll();
                 this.scrollOwner = undefined;
               }
-              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+              if (
+                this.phase !== "running" ||
+                this.detachedHidSockets.has(ws) ||
+                this.overloadedHidSockets.has(ws)
+              )
+                return;
               this.scrollOwner = ws;
             }
             await this.hid.scroll(dx, dy, W, H, m.x, m.y);
@@ -1501,40 +1732,73 @@ export class DeviceSession {
         const command = message?.command;
         let ok = false;
         let error: string | undefined;
-        if (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0 || !isHingeControlCommand(command)) {
+        if (
+          typeof requestId !== "number" ||
+          !Number.isSafeInteger(requestId) ||
+          requestId <= 0 ||
+          !isHingeControlCommand(command)
+        ) {
           error = "Invalid hinge control request.";
         } else {
           ok = await this.queueHingeControl(command);
           if (ok) this.recordHidEvent(tag, command);
           else error = "Simulator could not change the device pose.";
         }
-        try { ws.send(Buffer.concat([Buffer.from([0x90]), Buffer.from(JSON.stringify({ requestId, ok, ...(error ? { error } : {}) }))])); }
-        catch { /* The requester may disconnect during the native operation. */ }
+        try {
+          ws.send(
+            Buffer.concat([
+              Buffer.from([0x90]),
+              Buffer.from(JSON.stringify({ requestId, ok, ...(error ? { error } : {}) })),
+            ]),
+          );
+        } catch {
+          /* The requester may disconnect during the native operation. */
+        }
         break;
       }
       case 0x11: {
-        const requestId = data.length === 1 ? undefined : json<{ requestId?: unknown }>()?.requestId;
-        if (data.length !== 1 && (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0)) break;
+        const requestId =
+          data.length === 1 ? undefined : json<{ requestId?: unknown }>()?.requestId;
+        if (
+          data.length !== 1 &&
+          (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0)
+        )
+          break;
         // Snapshot only input received before this barrier. Newer keys may keep arriving
         // while it waits, but must not postpone the acknowledgment forever.
         await Promise.all(priorOrderedMessages ?? []);
         if (this.phase === "running" && this.hidSockets.has(ws)) {
           const ok = !this.failedInputSockets.has(ws) && !this.hid.inputUnavailable;
-          ws.send(requestId === undefined
-            ? Buffer.from([0x91, ok ? 1 : 0])
-            : Buffer.concat([Buffer.from([0x91]), Buffer.from(JSON.stringify({ requestId, ok }))]));
+          ws.send(
+            requestId === undefined
+              ? Buffer.from([0x91, ok ? 1 : 0])
+              : Buffer.concat([
+                  Buffer.from([0x91]),
+                  Buffer.from(JSON.stringify({ requestId, ok })),
+                ]),
+          );
         }
         break;
       }
       case 0x12: {
         // The browser refuses larger requests itself; don't parse one from a direct client.
-        const m = data.length - 1 > EXEC_WS_MAX_MESSAGE_BYTES ? null : json<{ requestId: unknown; text: unknown }>();
+        const m =
+          data.length - 1 > EXEC_WS_MAX_MESSAGE_BYTES
+            ? null
+            : json<{ requestId: unknown; text: unknown }>();
         const requestId = m?.requestId;
         let ok = false;
         let cleanupWarning: string | null = null;
         let pasteError = "Could not paste into the simulator";
-        if (m && typeof requestId === "number" && Number.isSafeInteger(requestId) && requestId > 0 &&
-          (m.text === undefined || (typeof m.text === "string" && Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES))) {
+        if (
+          m &&
+          typeof requestId === "number" &&
+          Number.isSafeInteger(requestId) &&
+          requestId > 0 &&
+          (m.text === undefined ||
+            (typeof m.text === "string" &&
+              Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES))
+        ) {
           const text = m.text;
           // @ref LLP 0010#paste — Paste takes its turn in the input queue every viewer shares when it
           // arrives, then holds the pasteboard lock through the write and the chord, so it stays in
@@ -1552,11 +1816,21 @@ export class DeviceSession {
           };
           try {
             if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-            const operation = this.queueInputOperation(ws, async () => {
-              if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-              if (typeof text === "string") await pasteTextIntoSim(this.udid, text, sendShortcut, assertViewer);
-              else await withSimPasteboardLock(this.udid, sendShortcut, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS);
-            }, { clipboard: true });
+            const operation = this.queueInputOperation(
+              ws,
+              async () => {
+                if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+                if (typeof text === "string")
+                  await pasteTextIntoSim(this.udid, text, sendShortcut, assertViewer);
+                else
+                  await withSimPasteboardLock(
+                    this.udid,
+                    sendShortcut,
+                    INPUT_PASTEBOARD_LOCK_TIMEOUT_MS,
+                  );
+              },
+              { clipboard: true },
+            );
             if (!operation) throw new Error("Clipboard viewer disconnected");
             await operation;
             ok = true;
@@ -1569,8 +1843,9 @@ export class DeviceSession {
           const reply = ok
             ? { requestId, ok, ...(cleanupWarning ? { cleanupWarning } : {}) }
             : { requestId, ok, error: pasteError };
-          try { ws.send(Buffer.concat([Buffer.from([0x92]), Buffer.from(JSON.stringify(reply))])); }
-          catch {}
+          try {
+            ws.send(Buffer.concat([Buffer.from([0x92]), Buffer.from(JSON.stringify(reply))]));
+          } catch {}
         }
         break;
       }
@@ -1580,19 +1855,18 @@ export class DeviceSession {
   private async discoverHingeCapabilities(refreshState = false): Promise<void> {
     const generation = this.inputGeneration;
     const hid = this.hid;
-    await Promise.all([
-      hid.supportsHingeAngle(),
-      hid.supportsPhysicalOrientation(),
-    ]).then(async ([supportsHingeAngle, supportsPhysicalOrientation]) => {
-      if (!this.canReadHingeState(generation, refreshState)) return;
-      this.supportsPhysicalOrientation = supportsPhysicalOrientation;
-      if (supportsHingeAngle) {
-        await this.hydrateHingeState(refreshState);
-        return;
-      }
-      this.supportsHingeAngle = false;
-      this.broadcastConfig();
-    });
+    await Promise.all([hid.supportsHingeAngle(), hid.supportsPhysicalOrientation()]).then(
+      async ([supportsHingeAngle, supportsPhysicalOrientation]) => {
+        if (!this.canReadHingeState(generation, refreshState)) return;
+        this.supportsPhysicalOrientation = supportsPhysicalOrientation;
+        if (supportsHingeAngle) {
+          await this.hydrateHingeState(refreshState);
+          return;
+        }
+        this.supportsHingeAngle = false;
+        this.broadcastConfig();
+      },
+    );
   }
 
   /** Seed the hinge from native before advertising it, so clients never see support without state. */
@@ -1623,14 +1897,20 @@ export class DeviceSession {
   private applyNativeHingeState(state: NativeHingeState): void {
     const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
     this.hingeAngle = state.hingeAngle;
-    this.tableMode = this.hingeRotated ? false : state.tableMode ?? saved?.tableMode;
-    this.hingePhysicalOrientation = this.hingeRotated ? undefined : state.physicalOrientation ?? saved?.physicalOrientation;
-    this.hingePose = this.hingeRotated ? null : saved?.hingePose ?? null;
+    this.tableMode = this.hingeRotated ? false : (state.tableMode ?? saved?.tableMode);
+    this.hingePhysicalOrientation = this.hingeRotated
+      ? undefined
+      : (state.physicalOrientation ?? saved?.physicalOrientation);
+    this.hingePose = this.hingeRotated ? null : (saved?.hingePose ?? null);
     if (this.hingeRotated) this.saveHingeState();
   }
 
   private canReadHingeState(generation: number, restoring: boolean): boolean {
-    return this.phase === "running" && generation === this.inputGeneration && (!this.rebootSuspended || restoring);
+    return (
+      this.phase === "running" &&
+      generation === this.inputGeneration &&
+      (!this.rebootSuspended || restoring)
+    );
   }
 
   private canRunInputControl(generation: number): boolean {
@@ -1649,29 +1929,52 @@ export class DeviceSession {
         if (!this.canRunInputControl(generation)) return false;
         this.applyNativeHingeState(state);
       }
-      if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
-      if (command.control === "physical" && command.value === "facedown" &&
-          this.observedDeviceState === undefined && this.hingeAngle === undefined) {
+      if (command.control === "physical" && this.supportsPhysicalOrientation === false)
+        return false;
+      if (
+        command.control === "physical" &&
+        command.value === "facedown" &&
+        this.observedDeviceState === undefined &&
+        this.hingeAngle === undefined
+      ) {
         const state = await this.hid.hingeState();
         if (!this.canRunInputControl(generation)) return false;
         if (this.observedDeviceState === undefined) this.hingeAngle = state.hingeAngle;
       }
-      const needsPose = (command.control === "table" && command.value) ||
+      const needsPose =
+        (command.control === "table" && command.value) ||
         (command.control === "physical" && command.value === "facedown");
       // @ref LLP 0004#live-pose-observation — eligibility orders native samples against successful sends
-      const eligibility = needsPose && this.observedDeviceState !== undefined
-        ? await this.hid.hingeControlEligibility()
-        : { hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation };
+      const eligibility =
+        needsPose && this.observedDeviceState !== undefined
+          ? await this.hid.hingeControlEligibility()
+          : { hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation };
       if (!this.canRunInputControl(generation)) return false;
-      if (command.control === "table" && command.value &&
-          !isTableModeAvailable(eligibility.hingeAngle, eligibility.physicalOrientation)) return false;
-      if (command.control === "physical" && command.value === "facedown" &&
-          !(eligibility.hingeAngle !== undefined && eligibility.hingeAngle > 0 && eligibility.hingeAngle < 180)) return false;
+      if (
+        command.control === "table" &&
+        command.value &&
+        !isTableModeAvailable(eligibility.hingeAngle, eligibility.physicalOrientation)
+      )
+        return false;
+      if (
+        command.control === "physical" &&
+        command.value === "facedown" &&
+        !(
+          eligibility.hingeAngle !== undefined &&
+          eligibility.hingeAngle > 0 &&
+          eligibility.hingeAngle < 180
+        )
+      )
+        return false;
       this.hingeControlled = true;
-      const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
-        : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
-        : command.control === "table" ? await this.hid.setTableMode(command.value)
-        : await this.hid.setHingeAngle(command.value);
+      const ok =
+        command.control === "pose"
+          ? await this.hid.setHingePose(command.value)
+          : command.control === "physical"
+            ? await this.hid.setPhysicalOrientation(command.value)
+            : command.control === "table"
+              ? await this.hid.setTableMode(command.value)
+              : await this.hid.setHingeAngle(command.value);
       if (!this.canRunInputControl(generation)) return false;
       if (ok) {
         const state = hingeControlState(command);
@@ -1680,7 +1983,8 @@ export class DeviceSession {
         this.hingePose = state.hingePose ?? null;
         if (state.tableMode !== undefined) this.tableMode = state.tableMode;
         if (command.control === "physical") this.hingePhysicalOrientation = command.value;
-        if (command.control === "pose") this.hingePhysicalOrientation = hingePoseOrientation(command.value);
+        if (command.control === "pose")
+          this.hingePhysicalOrientation = hingePoseOrientation(command.value);
         this.saveHingeState();
         this.broadcastConfig();
       } else {
@@ -1691,21 +1995,28 @@ export class DeviceSession {
         if (!this.canRunInputControl(generation)) return false;
         this.hingeAngle = recovered.hingeAngle ?? this.hingeAngle;
         this.tableMode = recovered.tableMode;
-        this.hingePhysicalOrientation = recovered.physicalOrientation ?? this.hingePhysicalOrientation;
+        this.hingePhysicalOrientation =
+          recovered.physicalOrientation ?? this.hingePhysicalOrientation;
         writeSavedHingeState(this.udid, {
           hingeAngle: recovered.hingeAngle,
           hingePose: null,
           physicalOrientation: this.hingePhysicalOrientation,
           tableMode: this.tableMode,
         });
-        try { await this.refreshScreenSizeFromNative(); }
-        catch { /* Preserve the last readable screen through a transient failure. */ }
+        try {
+          await this.refreshScreenSizeFromNative();
+        } catch {
+          /* Preserve the last readable screen through a transient failure. */
+        }
         if (!this.canRunInputControl(generation)) return false;
         this.broadcastConfig();
       }
       return ok;
     });
-    this.hingeControlUpdate = operation.then(() => {}, () => {});
+    this.hingeControlUpdate = operation.then(
+      () => {},
+      () => {},
+    );
     return operation;
   }
 
@@ -1733,7 +2044,9 @@ export class DeviceSession {
       queued.request = request;
     } else {
       let complete!: () => void;
-      const completion = new Promise<void>((resolve) => { complete = resolve; });
+      const completion = new Promise<void>((resolve) => {
+        complete = resolve;
+      });
       queued = { request, completion, complete };
       requests.push(queued);
     }
@@ -1744,7 +2057,9 @@ export class DeviceSession {
       this.softwareKeyboardSync = this.softwareKeyboardSync.then(drain, drain);
     }
     return ws
-      ? queued.completion.finally(() => { this.pendingSoftwareKeyboardMessages--; })
+      ? queued.completion.finally(() => {
+          this.pendingSoftwareKeyboardMessages--;
+        })
       : queued.completion;
   }
 
@@ -1753,8 +2068,15 @@ export class DeviceSession {
   }
 
   // @ref LLP 0003#printable-key-characters — accepted keyboard setup can precede guest visibility
-  private async typeSoftwareKeyboardCharacter(character: string, ws: HidSocket, generation: number): Promise<boolean> {
-    const canType = () => this.canRunInputControl(generation) && this.hidSockets.has(ws) && !this.detachedHidSockets.has(ws);
+  private async typeSoftwareKeyboardCharacter(
+    character: string,
+    ws: HidSocket,
+    generation: number,
+  ): Promise<boolean> {
+    const canType = () =>
+      this.canRunInputControl(generation) &&
+      this.hidSockets.has(ws) &&
+      !this.detachedHidSockets.has(ws);
     const deadline = this.softwareKeyboardReadyUntil;
     debugKeyboard("character readiness remaining=%d", Math.max(0, deadline - Date.now()));
     while (canType() && Date.now() < deadline) {
@@ -1763,23 +2085,31 @@ export class DeviceSession {
       let probe = this.softwareKeyboardVisibilityProbe;
       if (!probe) {
         const started = Date.now();
-        probe = { revision: this.softwareKeyboardSetupRevision, result: axKeyboardVisibleAsync(this.udid).catch(() => false) };
-        void probe.result.then(visible => debugKeyboard("readiness probe visible=%s elapsed=%d", visible, Date.now() - started));
+        probe = {
+          revision: this.softwareKeyboardSetupRevision,
+          result: axKeyboardVisibleAsync(this.udid).catch(() => false),
+        };
+        void probe.result.then((visible) =>
+          debugKeyboard("readiness probe visible=%s elapsed=%d", visible, Date.now() - started),
+        );
         this.softwareKeyboardVisibilityProbe = probe;
         void probe.result.then(() => {
-          if (this.softwareKeyboardVisibilityProbe === probe) this.softwareKeyboardVisibilityProbe = null;
+          if (this.softwareKeyboardVisibilityProbe === probe)
+            this.softwareKeyboardVisibilityProbe = null;
         });
       }
       const visible = await Promise.race([
         probe.result,
-        new Promise<undefined>(resolve => setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now())))),
+        new Promise<undefined>((resolve) =>
+          setTimeout(resolve, Math.max(1, Math.min(25, deadline - Date.now()))),
+        ),
       ]);
       if (!canType()) return false;
       if (visible === true && probe.revision === this.softwareKeyboardSetupRevision) {
         this.softwareKeyboardReadyUntil = 0;
         break;
       }
-      if (visible === false) await new Promise(resolve => setTimeout(resolve, 25));
+      if (visible === false) await new Promise((resolve) => setTimeout(resolve, 25));
     }
     // A timed-out native read may still finish; it must never trigger typing
     // later or overlap another character attempt. Retain the HID fallback.
@@ -1806,16 +2136,20 @@ export class DeviceSession {
     assertInput();
     let cleanupWarning: string | null = null;
     let completed = false;
-    const turn = this.queueInputOperation(this.serverInput, async () => {
-      assertInput();
-      const sendShortcut = async () => {
+    const turn = this.queueInputOperation(
+      this.serverInput,
+      async () => {
         assertInput();
-        cleanupWarning = await this.sendCommandShortcut(KEY_V, null);
-      };
-      if (text !== undefined) await pasteTextIntoSim(this.udid, text, sendShortcut, assertInput);
-      else await withSimPasteboardLock(this.udid, sendShortcut, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS);
-      completed = true;
-    }, { clipboard: true });
+        const sendShortcut = async () => {
+          assertInput();
+          cleanupWarning = await this.sendCommandShortcut(KEY_V, null);
+        };
+        if (text !== undefined) await pasteTextIntoSim(this.udid, text, sendShortcut, assertInput);
+        else await withSimPasteboardLock(this.udid, sendShortcut, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS);
+        completed = true;
+      },
+      { clipboard: true },
+    );
     if (!turn) throw new Error("Simulator input is unavailable");
     await turn;
     if (!completed) throw new Error("Simulator input is unavailable");
@@ -1826,24 +2160,34 @@ export class DeviceSession {
   async copyPasteboard(): Promise<PasteboardReadResult> {
     // Capture startup configures HID's target, as for viewer input.
     await this.waitForCapture();
-    if (this.rebootSuspended || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+    if (this.rebootSuspended || this.hid.inputUnavailable)
+      throw new Error("Simulator input is unavailable");
     let cleanupWarning: string | null = null;
     let copied: PasteboardReadResult;
     try {
-      copied = await copyFromSim(this.udid, async () => {
-        cleanupWarning = await this.sendCommandShortcut(KEY_C, null);
-      }, async (copy) => {
-        let text: string | undefined;
-        const turn = this.queueInputOperation(this.serverInput, async () => {
-          // The session can stop while Copy waits for the lock or its turn.
-          if (this.phase !== "running" || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-          text = await copy();
-        }, { clipboard: true });
-        if (!turn) throw new Error("Simulator input is unavailable");
-        await turn;
-        if (text === undefined) throw new Error("Simulator input is unavailable");
-        return text;
-      });
+      copied = await copyFromSim(
+        this.udid,
+        async () => {
+          cleanupWarning = await this.sendCommandShortcut(KEY_C, null);
+        },
+        async (copy) => {
+          let text: string | undefined;
+          const turn = this.queueInputOperation(
+            this.serverInput,
+            async () => {
+              // The session can stop while Copy waits for the lock or its turn.
+              if (this.phase !== "running" || this.hid.inputUnavailable)
+                throw new Error("Simulator input is unavailable");
+              text = await copy();
+            },
+            { clipboard: true },
+          );
+          if (!turn) throw new Error("Simulator input is unavailable");
+          await turn;
+          if (text === undefined) throw new Error("Simulator input is unavailable");
+          return text;
+        },
+      );
     } catch (error) {
       // A chord can leave Command held and still fail its change wait or read; report both.
       throw withCleanupWarning(error, cleanupWarning);
@@ -1855,7 +2199,10 @@ export class DeviceSession {
   // then restore them. A held Command serves the chord. Keep a held shortcut key lifted after a
   // successful chord so restoring it does not type the letter again. The server's own chord keys
   // are tracked so disconnect cleanup can release them.
-  private async sendCommandShortcut(shortcutKey: typeof KEY_C | typeof KEY_V, ws: HidSocket | null): Promise<string | null> {
+  private async sendCommandShortcut(
+    shortcutKey: typeof KEY_C | typeof KEY_V,
+    ws: HidSocket | null,
+  ): Promise<string | null> {
     if (this.phase !== "running") throw new Error("Simulator input is unavailable");
     if (ws && !this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
     await this.releaseHidKeys(this.serverInput, true);
@@ -1876,7 +2223,8 @@ export class DeviceSession {
       }
       for (const event of simCommandShortcutHidEvents(pressedAtSimulator, shortcutKey)) {
         if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
-        if (!shortcutKeyReleased && (this.phase !== "running" || this.hid.inputUnavailable)) throw new Error("Simulator input is unavailable");
+        if (!shortcutKeyReleased && (this.phase !== "running" || this.hid.inputUnavailable))
+          throw new Error("Simulator input is unavailable");
         try {
           if (isLiftedModifier(event.usage)) {
             await this.hid.keyChecked(event.type, event.usage);
@@ -1901,11 +2249,22 @@ export class DeviceSession {
       }
     } finally {
       // A failed chord must not leave its own keys down or another viewer's modifier up.
-      for (const usage of unownedKeysDown) await this.hid.keyChecked("up", usage).catch(() => { cleanupFailed = true; });
-      for (const usage of ownedKeysDown) await this.updateHidKey(owner, "up", usage, true).catch(() => { cleanupFailed = true; });
-      for (const usage of liftedModifiers) await this.hid.keyChecked("down", usage).catch(() => { cleanupFailed = true; });
+      for (const usage of unownedKeysDown)
+        await this.hid.keyChecked("up", usage).catch(() => {
+          cleanupFailed = true;
+        });
+      for (const usage of ownedKeysDown)
+        await this.updateHidKey(owner, "up", usage, true).catch(() => {
+          cleanupFailed = true;
+        });
+      for (const usage of liftedModifiers)
+        await this.hid.keyChecked("down", usage).catch(() => {
+          cleanupFailed = true;
+        });
       if (liftedShortcutKey && !shortcutKeyReleased && !shortcutKeyPressed) {
-        await this.hid.keyChecked("down", shortcutKey).catch(() => { cleanupFailed = true; });
+        await this.hid.keyChecked("down", shortcutKey).catch(() => {
+          cleanupFailed = true;
+        });
       }
     }
     return cleanupFailed || this.activeHidKeyUsages.get(this.serverInput)?.size
@@ -1913,10 +2272,16 @@ export class DeviceSession {
       : null;
   }
 
-  private async updateHidKey(ws: HidSocket, type: "down" | "up", usage: number, checked = false): Promise<void> {
+  private async updateHidKey(
+    ws: HidSocket,
+    type: "down" | "up",
+    usage: number,
+    checked = false,
+  ): Promise<void> {
     const socketUsages = this.activeHidKeyUsages.get(ws);
     if (!socketUsages) return;
-    const key = (phase: "down" | "up") => checked ? this.hid.keyChecked(phase, usage) : this.hid.key(phase, usage);
+    const key = (phase: "down" | "up") =>
+      checked ? this.hid.keyChecked(phase, usage) : this.hid.key(phase, usage);
     const owners = this.activeHidKeyUsageCounts.get(usage) ?? 0;
     if (type === "down") {
       if (socketUsages.has(usage)) {
@@ -1938,8 +2303,18 @@ export class DeviceSession {
     socketUsages.delete(usage);
   }
 
-  private queueInputOperation(ws: HidSocket, run: () => Promise<void>, options: { clipboard?: boolean } = {}): Promise<void> | null {
-    if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return null;
+  private queueInputOperation(
+    ws: HidSocket,
+    run: () => Promise<void>,
+    options: { clipboard?: boolean } = {},
+  ): Promise<void> | null {
+    if (
+      this.phase !== "running" ||
+      this.rebootSuspended ||
+      this.detachedHidSockets.has(ws) ||
+      this.overloadedHidSockets.has(ws)
+    )
+      return null;
     const queue = this.inputOperationQueues.get(ws) ?? [];
     if (queue.length >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
       if (ws !== this.serverInput) this.overloadHidSocket(ws);
@@ -2040,8 +2415,8 @@ export class DeviceSession {
   }
 
   private hasDetachedOrderedMessagesInFlight(): boolean {
-    return [...this.admittedHidSockets].some((ws) =>
-      this.detachedHidSockets.has(ws) && (this.inFlightOrderedMessages.get(ws) ?? 0) > 0,
+    return [...this.admittedHidSockets].some(
+      (ws) => this.detachedHidSockets.has(ws) && (this.inFlightOrderedMessages.get(ws) ?? 0) > 0,
     );
   }
 
@@ -2065,8 +2440,10 @@ export class DeviceSession {
               const next = this.inputOperationQueues.get(socket)?.[0];
               return next && (next.priorityCleanup || next.sequence < barrier);
             });
-            if (index < 0) index = this.inputSocketOrder.findIndex((socket) =>
-              this.inputOperationQueues.get(socket)?.[0]?.sequence === barrier);
+            if (index < 0)
+              index = this.inputSocketOrder.findIndex(
+                (socket) => this.inputOperationQueues.get(socket)?.[0]?.sequence === barrier,
+              );
           }
         }
         const ws = this.inputSocketOrder.splice(index, 1)[0]!;
@@ -2093,8 +2470,9 @@ export class DeviceSession {
         }
         await Promise.resolve();
       }
-      const detachedAdmissionPending = [...this.admittedHidSockets]
-        .some((ws) => this.detachedHidSockets.has(ws));
+      const detachedAdmissionPending = [...this.admittedHidSockets].some((ws) =>
+        this.detachedHidSockets.has(ws),
+      );
       if (this.restoreHardwareKeyboardWhenIdle && !detachedAdmissionPending) {
         this.restoreHardwareKeyboardWhenIdle = false;
         const revision = this.hardwareKeyboardRevision;
@@ -2102,11 +2480,15 @@ export class DeviceSession {
           for (let attempt = 0; attempt < 3; attempt++) {
             try {
               await setUiOptionIfRevision(this.udid, "hardware-keyboard", "on", revision);
-              if (this.hardwareKeyboardRevision === revision) this.hardwareKeyboardRevision = undefined;
+              if (this.hardwareKeyboardRevision === revision)
+                this.hardwareKeyboardRevision = undefined;
               break;
             } catch (error) {
               if (attempt === 2) {
-                console.error("[serve-sim] Could not restore the hardware keyboard. Reconnect or run `serve-sim ui hardware-keyboard on`:", error);
+                console.error(
+                  "[serve-sim] Could not restore the hardware keyboard. Reconnect or run `serve-sim ui hardware-keyboard on`:",
+                  error,
+                );
               } else {
                 await new Promise((resolve) => setTimeout(resolve, 100));
               }
@@ -2275,29 +2657,39 @@ export class DeviceSession {
   }
 
   private recordHidEvent(tag: number, payload: Record<string, unknown>): void {
-    const event = eventLogEventForHidMessage(
-      this.udid,
-      tag,
-      payload,
-      this.eventLogScreen(),
-    );
+    const event = eventLogEventForHidMessage(this.udid, tag, payload, this.eventLogScreen());
     if (event) recordEventLogEvent(event);
   }
 
   // ── Config ───────────────────────────────────────────────────────────────
 
   private applyDeviceState(snapshot: NativeDeviceStateSnapshot): void {
-    if (this.phase !== "running" || !Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 ||
-        !Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0 || !snapshot.state) return;
+    if (
+      this.phase !== "running" ||
+      !Number.isSafeInteger(snapshot.generation) ||
+      snapshot.generation < 0 ||
+      !Number.isSafeInteger(snapshot.revision) ||
+      snapshot.revision < 0 ||
+      !snapshot.state
+    )
+      return;
     const previous = this.deviceStateVersion;
-    if (previous && (snapshot.generation < previous.generation ||
-        (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))) return;
+    if (
+      previous &&
+      (snapshot.generation < previous.generation ||
+        (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))
+    )
+      return;
     this.deviceStateVersion = { generation: snapshot.generation, revision: snapshot.revision };
     const previousState = this.observedDeviceState;
     const { hingeAngle, physicalOrientation, tableMode } = snapshot.state;
     this.observedDeviceState = { hingeAngle, physicalOrientation, tableMode };
-    if (!previousState || previousState.hingeAngle !== hingeAngle ||
-        previousState.physicalOrientation !== physicalOrientation || previousState.tableMode !== tableMode) {
+    if (
+      !previousState ||
+      previousState.hingeAngle !== hingeAngle ||
+      previousState.physicalOrientation !== physicalOrientation ||
+      previousState.tableMode !== tableMode
+    ) {
       this.broadcastConfig();
     }
   }
@@ -2324,20 +2716,41 @@ export class DeviceSession {
       orientation: this.orientation,
       inputUnavailable: this.hid.inputUnavailable,
       keyboardUnavailable: this.hid.keyboardUnavailable,
-      ...(this.nativeScreen?.screenId !== undefined ? { screenId: this.nativeScreen.screenId } : {}),
-      ...(this.supportsPhysicalOrientation !== undefined ? { supportsPhysicalOrientation: this.supportsPhysicalOrientation } : {}),
-      ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle } : {}),
+      ...(this.nativeScreen?.screenId !== undefined
+        ? { screenId: this.nativeScreen.screenId }
+        : {}),
+      ...(this.supportsPhysicalOrientation !== undefined
+        ? { supportsPhysicalOrientation: this.supportsPhysicalOrientation }
+        : {}),
+      ...(this.supportsHingeAngle !== undefined
+        ? { supportsHingeAngle: this.supportsHingeAngle }
+        : {}),
       ...(this.hingeAngle !== undefined ? { hingeAngle: this.hingeAngle } : {}),
-      ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
-      ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined ? { physicalOrientation: this.hingePhysicalOrientation } : {}),
+      ...(this.supportsHingeAngle
+        ? {
+            hingePose: this.hingePose,
+            tableModeAvailable: isTableModeAvailable(
+              this.hingeAngle,
+              this.hingePhysicalOrientation,
+            ),
+          }
+        : {}),
+      ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined
+        ? { physicalOrientation: this.hingePhysicalOrientation }
+        : {}),
       ...(this.tableMode !== undefined ? { tableMode: this.tableMode } : {}),
-      ...(this.observedDeviceState !== undefined ? { observedDeviceState: this.observedDeviceState } : {}),
+      ...(this.observedDeviceState !== undefined
+        ? { observedDeviceState: this.observedDeviceState }
+        : {}),
     };
   }
 
   private configFrame(): Buffer | null {
     if (this.width === 0 && this.height === 0) return null;
-    return Buffer.concat([Buffer.from([WS_MSG_CONFIG]), Buffer.from(JSON.stringify(this.screenConfig()))]);
+    return Buffer.concat([
+      Buffer.from([WS_MSG_CONFIG]),
+      Buffer.from(JSON.stringify(this.screenConfig())),
+    ]);
   }
 
   private refreshScreenSizeFromNative(): Promise<boolean> {
@@ -2347,7 +2760,7 @@ export class DeviceSession {
       let changed = false;
       do {
         this.screenRefreshRequested = false;
-        changed = await this.readScreenFromNative() || changed;
+        changed = (await this.readScreenFromNative()) || changed;
       } while (this.phase === "running" && this.screenRefreshRequested);
       return changed;
     })().finally(() => {
@@ -2370,13 +2783,18 @@ export class DeviceSession {
     }
     // Encoders can publish smaller frames than the native framebuffer. Only a
     // change in the framebuffer itself should replace those encoded dimensions.
-    if (screen.width > 0 && screen.height > 0 &&
-        (screen.width !== previous?.width || screen.height !== previous?.height)) {
+    if (
+      screen.width > 0 &&
+      screen.height > 0 &&
+      (screen.width !== previous?.width || screen.height !== previous?.height)
+    ) {
       this.width = screen.width;
       this.height = screen.height;
       changed = true;
     }
-    const orientation = this.supportsHingeAngle ? screen.orientation : this.requestedOrientation ?? screen.orientation;
+    const orientation = this.supportsHingeAngle
+      ? screen.orientation
+      : (this.requestedOrientation ?? screen.orientation);
     if (orientation !== undefined && orientation !== this.orientation) {
       this.orientation = orientation;
       changed = true;
@@ -2444,12 +2862,14 @@ const closedSessionStopErrors: unknown[] = [];
 let recordingsShuttingDown = false;
 
 function trackClosedSessionStop(stopping: Promise<void>): void {
-  const tracked = stopping.catch(error => {
-    closedSessionStopErrors.push(error);
-    console.error(`Device session finalization failed: ${String(error)}`);
-  }).finally(() => {
-    closedSessionStops.delete(tracked);
-  });
+  const tracked = stopping
+    .catch((error) => {
+      closedSessionStopErrors.push(error);
+      console.error(`Device session finalization failed: ${String(error)}`);
+    })
+    .finally(() => {
+      closedSessionStops.delete(tracked);
+    });
   closedSessionStops.add(tracked);
 }
 
@@ -2462,7 +2882,10 @@ export function peekDeviceSession(udid: string): DeviceSession | undefined {
  * Get (lazily creating + starting) the in-process session for `udid`. Throws if
  * the device isn't booted. The session lives until `closeDeviceSession`.
  */
-export function getDeviceSession(udid: string, initialStreamSettings?: StreamSettings): DeviceSession {
+export function getDeviceSession(
+  udid: string,
+  initialStreamSettings?: StreamSettings,
+): DeviceSession {
   let session = sessions.get(udid);
   if (!session) {
     const createdSession = new DeviceSession(udid, initialStreamSettings);
@@ -2505,7 +2928,7 @@ export async function finishDeviceRecordingsForShutdown(
 ): Promise<boolean> {
   recordingsShuttingDown = true;
   const results = await Promise.allSettled(
-    [...sessions.values()].map(session => session.finishRecordingForShutdown())
+    [...sessions.values()].map((session) => session.finishRecordingForShutdown()),
   );
   while (closedSessionStops.size > 0) {
     await Promise.all(closedSessionStops);
@@ -2517,7 +2940,9 @@ export async function finishDeviceRecordingsForShutdown(
     if (result.status === "rejected") {
       succeeded = false;
       onFailure?.(result.reason);
-      console.error(`Recording finalization failed during serve-sim shutdown: ${String(result.reason)}`);
+      console.error(
+        `Recording finalization failed during serve-sim shutdown: ${String(result.reason)}`,
+      );
     }
   }
   return succeeded;

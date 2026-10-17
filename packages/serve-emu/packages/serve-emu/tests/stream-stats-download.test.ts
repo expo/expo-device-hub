@@ -64,9 +64,7 @@ describe("stream statistics download", () => {
       cache: "no-store",
       credentials: "same-origin",
     });
-    expect(result.filename).toBe(
-      "serve-emu-emulator-5554-websocket-2026-09-02T12-34-56-789Z.json",
-    );
+    expect(result.filename).toBe("serve-emu-emulator-5554-websocket-2026-09-02T12-34-56-789Z.json");
     expect(result.blob.type).toStartWith("application/json");
     expect(result.document).toEqual({
       schemaVersion: 1,
@@ -93,9 +91,7 @@ describe("stream statistics download", () => {
       },
       errors: [],
     });
-    expect(downloads).toEqual([
-      { filename: result.filename, blob: result.blob },
-    ]);
+    expect(downloads).toEqual([{ filename: result.filename, blob: result.blob }]);
     expect(JSON.parse(await result.blob.text())).toEqual(result.document);
   });
 
@@ -146,10 +142,7 @@ describe("stream statistics download", () => {
       },
     );
 
-    expect(requests.sort()).toEqual([
-      "/health",
-      `/webrtc/stats?sessionId=${SESSION_ID}`,
-    ]);
+    expect(requests.sort()).toEqual(["/health", `/webrtc/stats?sessionId=${SESSION_ID}`]);
     const serialized = await result.blob.text();
     for (const secret of [
       "health-secret",
@@ -193,9 +186,7 @@ describe("stream statistics download", () => {
       ],
       note: "[redacted]",
     });
-    expect(result.filename).toBe(
-      "serve-emu-Pixel-8-API-35-webrtc-2026-09-02T12-34-56-789Z.json",
-    );
+    expect(result.filename).toBe("serve-emu-Pixel-8-API-35-webrtc-2026-09-02T12-34-56-789Z.json");
   });
 
   test("downloads partial data with safe errors when requests fail", async () => {
@@ -428,7 +419,7 @@ describe("stream statistics download", () => {
       failingAdapter({
         filename: "stats.json",
         blob: new Blob(["{}"], { type: "application/json" }),
-      })
+      }),
     ).toThrow("remove failed");
     expect(cleanupEvents).toEqual(["remove", "revoke:blob:failing-stats"]);
   });

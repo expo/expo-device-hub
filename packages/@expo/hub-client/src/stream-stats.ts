@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
-import { readStatsBeforeDeadline } from './bounded-webrtc-stats';
+import { useEffect, useRef, useState } from "react";
+import { readStatsBeforeDeadline } from "./bounded-webrtc-stats";
 
-import { type SessionFetch } from './session-token';
+import { type SessionFetch } from "./session-token";
 import {
   type DeviceStreamCaptureStats,
   type DeviceStreamEncoderStats,
   type DeviceStreamStats,
   type DeviceStreamStatsSample,
-} from './types';
+} from "./types";
 
 const MIN_WINDOW_MS = 250;
 const POLL_MS = 1_000;
@@ -33,7 +33,7 @@ export type WebRtcClientCounters = {
   jitterBufferDelaySeconds: number | null;
   jitterBufferEmittedCount: number | null;
   roundTripMs: number | null;
-  icePath: DeviceStreamStatsSample['clientIcePath'];
+  icePath: DeviceStreamStatsSample["clientIcePath"];
 };
 
 export type WebRtcServerStats = {
@@ -51,33 +51,33 @@ export type WebRtcPublisherCounters = {
 
 export type WebRtcPublisherDescription = Pick<
   DeviceStreamEncoderStats,
-  'publisherFps' | 'payloadBitrateBps'
+  "publisherFps" | "payloadBitrateBps"
 >;
 
 type WebRtcClientDescription = Pick<
   DeviceStreamStatsSample,
-  | 'clientFps'
-  | 'clientBitrateBps'
-  | 'clientPacketLossRatio'
-  | 'clientJitterMs'
-  | 'clientJitterBufferMs'
-  | 'clientDroppedFrames'
-  | 'clientFreezeCount'
-  | 'clientFreezeDurationMs'
-  | 'clientRoundTripMs'
-  | 'clientIcePath'
+  | "clientFps"
+  | "clientBitrateBps"
+  | "clientPacketLossRatio"
+  | "clientJitterMs"
+  | "clientJitterBufferMs"
+  | "clientDroppedFrames"
+  | "clientFreezeCount"
+  | "clientFreezeDurationMs"
+  | "clientRoundTripMs"
+  | "clientIcePath"
 >;
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function nonEmptyString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Read cumulative receiver counters and point-in-time path health for the live video stream. */
@@ -98,28 +98,28 @@ export function readWebRtcClientCounters(
   for (const rawEntry of report.values()) {
     const entry = rawEntry as unknown as Record<string, unknown>;
     switch (entry.type) {
-      case 'inbound-rtp': {
-        if (entry.kind !== 'video' && entry.mediaType !== 'video') break;
+      case "inbound-rtp": {
+        if (entry.kind !== "video" && entry.mediaType !== "video") break;
         const framesDecoded = finiteNumber(entry.framesDecoded) ?? 0;
         if (framesDecoded < mostDecodedFrames) break;
         mostDecodedFrames = framesDecoded;
         video = entry;
         break;
       }
-      case 'transport':
-        if (typeof entry.selectedCandidatePairId === 'string') {
+      case "transport":
+        if (typeof entry.selectedCandidatePairId === "string") {
           selectedPairId = entry.selectedCandidatePairId;
         }
         break;
-      case 'candidate-pair':
-        if (typeof entry.id === 'string') pairsById.set(entry.id, entry);
+      case "candidate-pair":
+        if (typeof entry.id === "string") pairsById.set(entry.id, entry);
         if (entry.selected === true) selectedPair = entry;
-        else if (entry.nominated === true && entry.state === 'succeeded') nominatedPair ??= entry;
-        else if (entry.state === 'succeeded') succeededPair ??= entry;
+        else if (entry.nominated === true && entry.state === "succeeded") nominatedPair ??= entry;
+        else if (entry.state === "succeeded") succeededPair ??= entry;
         break;
-      case 'local-candidate':
-      case 'remote-candidate':
-        if (typeof entry.id === 'string') candidatesById.set(entry.id, entry);
+      case "local-candidate":
+      case "remote-candidate":
+        if (typeof entry.id === "string") candidatesById.set(entry.id, entry);
         break;
     }
   }
@@ -129,13 +129,13 @@ export function readWebRtcClientCounters(
   let pair = selectedPair ?? nominatedPair ?? succeededPair;
   if (selectedPairId !== null) pair = pairsById.get(selectedPairId) ?? pair;
   const roundTripSeconds = pair === null ? null : finiteNumber(pair.currentRoundTripTime);
-  let icePath: WebRtcClientCounters['icePath'] = 'unknown';
+  let icePath: WebRtcClientCounters["icePath"] = "unknown";
   if (pair !== null) {
     const candidateTypes = [pair.localCandidateId, pair.remoteCandidateId].map((id) =>
-      typeof id === 'string' ? nonEmptyString(candidatesById.get(id)?.candidateType) : null,
+      typeof id === "string" ? nonEmptyString(candidatesById.get(id)?.candidateType) : null,
     );
     if (candidateTypes.every((type) => type !== null)) {
-      icePath = candidateTypes.includes('relay') ? 'relay' : 'direct';
+      icePath = candidateTypes.includes("relay") ? "relay" : "direct";
     }
   }
 
@@ -280,7 +280,7 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
     };
   };
   return {
-    ...(typeof value.rebooting === 'boolean' ? { rebooting: value.rebooting } : {}),
+    ...(typeof value.rebooting === "boolean" ? { rebooting: value.rebooting } : {}),
     screenFrames: finiteNumber(value.screenFrames),
     idleFrames: finiteNumber(value.idleFrames),
     offeredFrames: finiteNumber(value.offeredFrames),
@@ -291,7 +291,7 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
         ? null
         : {
             imageMode:
-              grpc.imageMode === 'png' || grpc.imageMode === 'mmap' || grpc.imageMode === 'rgb888'
+              grpc.imageMode === "png" || grpc.imageMode === "mmap" || grpc.imageMode === "rgb888"
                 ? grpc.imageMode
                 : null,
             producerFps: finiteNumber(grpc.sourceTimestampFps),
@@ -308,10 +308,10 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
             mmapFileBytesRead: finiteNumber(grpc.mmapFileBytesRead),
             mmapReadRetries: finiteNumber(grpc.mmapReadRetries),
             mmapTornFramesDropped: finiteNumber(grpc.mmapTornFramesDropped),
-            productionToReceiveLatencyMs: timing('productionToReceiveLatencyMs'),
-            productionToUsableLatencyMs: timing('productionToUsableLatencyMs'),
-            protobufDecodeTimeMs: timing('protobufDecodeTimeMs'),
-            mmapReadCopyTimeMs: timing('sharedReadCopyTimeMs'),
+            productionToReceiveLatencyMs: timing("productionToReceiveLatencyMs"),
+            productionToUsableLatencyMs: timing("productionToUsableLatencyMs"),
+            protobufDecodeTimeMs: timing("protobufDecodeTimeMs"),
+            mmapReadCopyTimeMs: timing("sharedReadCopyTimeMs"),
           },
   };
 }
@@ -417,8 +417,8 @@ export async function requestWebRtcServerStats(
   fetchImpl: SessionFetch,
 ): Promise<WebRtcServerStats> {
   const url = new URL(statsUrl, window.location.href);
-  url.searchParams.set('sessionId', sessionId);
-  const response = await fetchImpl(url, { cache: 'no-store', signal });
+  url.searchParams.set("sessionId", sessionId);
+  const response = await fetchImpl(url, { cache: "no-store", signal });
   if (!response.ok) {
     await response.body?.cancel();
     throw new Error(`WebRTC server statistics unavailable (${response.status})`);
@@ -436,7 +436,9 @@ function emptyStats(): DeviceStreamStats {
   };
 }
 
-export type SubscribeClientStats = (listener: (report: RTCStatsReport, at: number) => void) => () => void;
+export type SubscribeClientStats = (
+  listener: (report: RTCStatsReport, at: number) => void,
+) => () => void;
 
 /** Retain per-peer history and consume shared receiver samples when available. */
 export function useWebRtcStreamStats(

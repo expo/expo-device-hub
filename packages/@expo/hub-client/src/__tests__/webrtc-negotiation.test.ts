@@ -5,7 +5,7 @@ import {
   postWebRtcOffer,
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
-} from '../webrtc-negotiation';
+} from "../webrtc-negotiation";
 
 describe("WebRTC offer negotiation", () => {
   test("retries serve-emu's coded contention response", async () => {
@@ -20,7 +20,11 @@ describe("WebRTC offer negotiation", () => {
         requests++;
         return requests === 1
           ? Response.json(
-              { ok: false, code: "webrtc_session_busy", error: "WebRTC signaling already in progress" },
+              {
+                ok: false,
+                code: "webrtc_session_busy",
+                error: "WebRTC signaling already in progress",
+              },
               { status: 409 },
             )
           : Response.json({ type: "answer", sdp: "answer" });
@@ -184,13 +188,13 @@ describe("WebRTC offer negotiation", () => {
   });
 
   // A beacon cannot set a header, so only it may carry the token in its URL. Proxy logs record URLs.
-  test('sends the beacon URL only to the beacon, and the plain URL to a POST', async () => {
+  test("sends the beacon URL only to the beacon, and the plain URL to a POST", async () => {
     const beaconUrls: string[] = [];
     const fetchedUrls: string[] = [];
     await closeWebRtcSession({
-      url: 'https://example.test/webrtc/close',
-      beaconUrl: 'https://example.test/webrtc/close?token=tok-1',
-      sessionId: 'session-1',
+      url: "https://example.test/webrtc/close",
+      beaconUrl: "https://example.test/webrtc/close?token=tok-1",
+      sessionId: "session-1",
       keepalive: true,
       sendBeacon: (url) => {
         beaconUrls.push(String(url));
@@ -201,7 +205,7 @@ describe("WebRTC offer negotiation", () => {
         return new Response(null, { status: 204 });
       },
     });
-    expect(beaconUrls).toEqual(['https://example.test/webrtc/close?token=tok-1']);
-    expect(fetchedUrls).toEqual(['https://example.test/webrtc/close']);
+    expect(beaconUrls).toEqual(["https://example.test/webrtc/close?token=tok-1"]);
+    expect(fetchedUrls).toEqual(["https://example.test/webrtc/close"]);
   });
 });

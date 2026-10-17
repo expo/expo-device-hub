@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from "bun:test";
 
-import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../../device-list-protocol';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from "../../device-list-protocol";
 import {
   devicesWebSocketUrl,
   parseDeviceListMessage,
@@ -8,31 +8,31 @@ import {
   splitDeviceList,
   subscribeToDeviceList,
   type DeviceList,
-} from '../useDevices';
+} from "../useDevices";
 
 const list: DeviceList = {
   simulators: [
     {
-      id: 'booted-ios',
-      name: 'iPhone',
-      version: 'iOS 27.0',
-      platform: 'ios',
+      id: "booted-ios",
+      name: "iPhone",
+      version: "iOS 27.0",
+      platform: "ios",
       booted: true,
       physical: false,
       supported: true,
-      deviceFrame: 'ios:iphone-17-pro',
+      deviceFrame: "ios:iphone-17-pro",
     },
   ],
   emulators: [
     {
-      id: 'idle-android',
-      name: 'Pixel',
-      version: 'Android 17.0',
-      platform: 'android',
+      id: "idle-android",
+      name: "Pixel",
+      version: "Android 17.0",
+      platform: "android",
       booted: false,
       physical: false,
       supported: true,
-      deviceFrame: 'android:pixel-10-pro',
+      deviceFrame: "android:pixel-10-pro",
     },
   ],
 };
@@ -41,23 +41,23 @@ afterEach(() => {
   delete (globalThis as any).window;
 });
 
-describe('device-list WebSocket client helpers', () => {
-  test('builds ws and wss URLs under the configured mount', () => {
-    (globalThis as any).window = { __EXPO_DEVICE_HUB_BASE_PATH__: '/hub/' };
-    expect(devicesWebSocketUrl('http://localhost:3400/dashboard')).toBe(
-      'ws://localhost:3400/hub/api/devices/ws',
+describe("device-list WebSocket client helpers", () => {
+  test("builds ws and wss URLs under the configured mount", () => {
+    (globalThis as any).window = { __EXPO_DEVICE_HUB_BASE_PATH__: "/hub/" };
+    expect(devicesWebSocketUrl("http://localhost:3400/dashboard")).toBe(
+      "ws://localhost:3400/hub/api/devices/ws",
     );
-    expect(devicesWebSocketUrl('https://example.com/dashboard')).toBe(
-      'wss://example.com/hub/api/devices/ws',
+    expect(devicesWebSocketUrl("https://example.com/dashboard")).toBe(
+      "wss://example.com/hub/api/devices/ws",
     );
   });
 
-  test('accepts device-list messages and ignores other payloads', () => {
+  test("accepts device-list messages and ignores other payloads", () => {
     expect(
       parseDeviceListMessage(JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: list })),
     ).toEqual(list);
-    expect(parseDeviceListMessage(JSON.stringify({ type: 'other', devices: list }))).toBeNull();
-    expect(parseDeviceListMessage('not json')).toBeNull();
+    expect(parseDeviceListMessage(JSON.stringify({ type: "other", devices: list }))).toBeNull();
+    expect(parseDeviceListMessage("not json")).toBeNull();
     expect(
       parseDeviceListMessage(
         JSON.stringify({
@@ -68,7 +68,7 @@ describe('device-list WebSocket client helpers', () => {
     ).toBeNull();
   });
 
-  test('accepts heartbeat messages without treating them as device lists', () => {
+  test("accepts heartbeat messages without treating them as device lists", () => {
     const heartbeat = JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE });
     expect(parseDeviceListSocketMessage(heartbeat)).toEqual({
       type: HEARTBEAT_MESSAGE_TYPE,
@@ -76,12 +76,12 @@ describe('device-list WebSocket client helpers', () => {
     expect(parseDeviceListMessage(heartbeat)).toBeNull();
   });
 
-  test('preserves captured utility errors for the browser console', () => {
+  test("preserves captured utility errors for the browser console", () => {
     const errors = [
       {
-        id: 'Error:spawn avdmanager ENOENT',
-        message: '[android-utils] Failed to run `avdmanager list avd`:',
-        error: 'Error: spawn avdmanager ENOENT',
+        id: "Error:spawn avdmanager ENOENT",
+        message: "[android-utils] Failed to run `avdmanager list avd`:",
+        error: "Error: spawn avdmanager ENOENT",
       },
     ];
 
@@ -95,7 +95,7 @@ describe('device-list WebSocket client helpers', () => {
     ).toEqual({ ...list, errors });
   });
 
-  test('derives booted and recent devices from one snapshot', () => {
+  test("derives booted and recent devices from one snapshot", () => {
     expect(splitDeviceList(list)).toEqual({
       booted: { simulators: [list.simulators[0]], emulators: [] },
       recent: { simulators: [], emulators: [list.emulators[0]] },
@@ -139,13 +139,13 @@ function manualTimers() {
   };
 }
 
-describe('device-list WebSocket subscription', () => {
-  test('reports a closed server immediately after a live connection', () => {
+describe("device-list WebSocket subscription", () => {
+  test("reports a closed server immediately after a live connection", () => {
     const timers = manualTimers();
     const socket = new FakeSocket();
     const statuses: string[] = [];
     const unsubscribe = subscribeToDeviceList({
-      url: 'ws://localhost/devices',
+      url: "ws://localhost/devices",
       createSocket: () => socket,
       schedule: timers.schedule,
       cancelSchedule: timers.cancelSchedule,
@@ -159,16 +159,16 @@ describe('device-list WebSocket subscription', () => {
     socket.message(JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE }));
     socket.onclose?.();
 
-    expect(statuses).toEqual(['connecting', 'connected', 'disconnected']);
+    expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
     unsubscribe();
   });
 
-  test('times out when the server never sends a valid protocol message', () => {
+  test("times out when the server never sends a valid protocol message", () => {
     const timers = manualTimers();
     const socket = new FakeSocket();
     const statuses: string[] = [];
     const unsubscribe = subscribeToDeviceList({
-      url: 'ws://localhost/devices',
+      url: "ws://localhost/devices",
       createSocket: () => socket,
       schedule: timers.schedule,
       cancelSchedule: timers.cancelSchedule,
@@ -179,21 +179,21 @@ describe('device-list WebSocket subscription', () => {
       onStatus: (status) => statuses.push(status),
     });
 
-    socket.message('not json');
+    socket.message("not json");
     timers.runDelay(60);
 
     expect(socket.closed).toBe(true);
-    expect(statuses).toEqual(['connecting', 'disconnected']);
+    expect(statuses).toEqual(["connecting", "disconnected"]);
     unsubscribe();
   });
 
-  test('requires valid messages, detects a missed heartbeat, and reconnects', () => {
+  test("requires valid messages, detects a missed heartbeat, and reconnects", () => {
     const timers = manualTimers();
     const sockets: FakeSocket[] = [];
     const statuses: string[] = [];
     const snapshots: unknown[] = [];
     const unsubscribe = subscribeToDeviceList({
-      url: 'ws://localhost/devices',
+      url: "ws://localhost/devices",
       createSocket: () => {
         const socket = new FakeSocket();
         sockets.push(socket);
@@ -208,36 +208,36 @@ describe('device-list WebSocket subscription', () => {
       onStatus: (status) => statuses.push(status),
     });
 
-    expect(statuses).toEqual(['connecting']);
-    sockets[0].message('not json');
-    expect(statuses).toEqual(['connecting']);
+    expect(statuses).toEqual(["connecting"]);
+    sockets[0].message("not json");
+    expect(statuses).toEqual(["connecting"]);
 
     sockets[0].message(JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE }));
-    expect(statuses).toEqual(['connecting', 'connected']);
+    expect(statuses).toEqual(["connecting", "connected"]);
 
     timers.runDelay(60);
     expect(sockets[0].closed).toBe(true);
-    expect(statuses).toEqual(['connecting', 'connected', 'disconnected']);
+    expect(statuses).toEqual(["connecting", "connected", "disconnected"]);
 
     timers.runDelay(5);
     expect(sockets).toHaveLength(2);
     sockets[1].message(JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: list }));
-    expect(statuses).toEqual(['connecting', 'connected', 'disconnected', 'connected']);
+    expect(statuses).toEqual(["connecting", "connected", "disconnected", "connected"]);
     expect(snapshots).toEqual([list]);
 
     unsubscribe();
     expect(sockets[1].closed).toBe(true);
   });
 
-  test('marks connection failures as disconnected and retries with backoff', () => {
+  test("marks connection failures as disconnected and retries with backoff", () => {
     const timers = manualTimers();
     let attempts = 0;
     const statuses: string[] = [];
     const unsubscribe = subscribeToDeviceList({
-      url: 'ws://localhost/devices',
+      url: "ws://localhost/devices",
       createSocket: () => {
         attempts++;
-        throw new Error('server unavailable');
+        throw new Error("server unavailable");
       },
       schedule: timers.schedule,
       cancelSchedule: timers.cancelSchedule,
@@ -249,11 +249,11 @@ describe('device-list WebSocket subscription', () => {
     });
 
     expect(attempts).toBe(1);
-    expect(statuses).toEqual(['connecting', 'disconnected']);
+    expect(statuses).toEqual(["connecting", "disconnected"]);
     timers.runDelay(5);
     timers.runDelay(10);
     expect(attempts).toBe(3);
-    expect(statuses).toEqual(['connecting', 'disconnected']);
+    expect(statuses).toEqual(["connecting", "disconnected"]);
 
     unsubscribe();
   });

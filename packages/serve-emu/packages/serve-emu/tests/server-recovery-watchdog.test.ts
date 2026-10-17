@@ -1,10 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "bun:test";
 import type { VideoPacket, ScrcpySession } from "../src/scrcpy.ts";
-import {
-  startServer,
-  type ServerDependencies,
-} from "../src/server.ts";
+import { startServer, type ServerDependencies } from "../src/server.ts";
 import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts";
 import type { StreamSettings } from "../src/stream-settings.ts";
 
@@ -220,10 +217,7 @@ class FakeWebRtcPublisher {
   resetVideoSource(): void {}
 
   statsForSession(sessionId: string) {
-    if (
-      this.sessionId === null ||
-      sessionId !== this.sessionId
-    ) {
+    if (this.sessionId === null || sessionId !== this.sessionId) {
       return null;
     }
     return {
@@ -264,10 +258,7 @@ class FakeWebRtcPublisher {
   }
 }
 
-function fakeWebSocket(
-  data: unknown,
-  options: FakeWebSocketOptions = {},
-): FakeWebSocket {
+function fakeWebSocket(data: unknown, options: FakeWebSocketOptions = {}): FakeWebSocket {
   const sentJson: unknown[] = [];
   const sentFrames: Buffer[] = [];
   const closes: Array<{ code?: number; reason?: string }> = [];
@@ -326,22 +317,19 @@ const keyFrame = (): VideoPacket => ({
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
-async function createHarness(options: {
-  serials?: string[];
-  delayedSerials?: string[];
-  webRtcPublisher?: FakeWebRtcPublisher;
-  webRtcPublisherGate?: Deferred<void>;
-  streamSettings?: StreamSettings;
-} = {}) {
+async function createHarness(
+  options: {
+    serials?: string[];
+    delayedSerials?: string[];
+    webRtcPublisher?: FakeWebRtcPublisher;
+    webRtcPublisherGate?: Deferred<void>;
+    streamSettings?: StreamSettings;
+  } = {},
+) {
   const serials = options.serials ?? ["A"];
-  const sessions = new Map(
-    serials.map((serial) => [serial, fakeSession(serial)]),
-  );
+  const sessions = new Map(serials.map((serial) => [serial, fakeSession(serial)]));
   const startGates = new Map(
-    (options.delayedSerials ?? []).map((serial) => [
-      serial,
-      deferred<void>(),
-    ]),
+    (options.delayedSerials ?? []).map((serial) => [serial, deferred<void>()]),
   );
   const startCalls: string[] = [];
   const clock = new ManualClock();
@@ -357,8 +345,7 @@ async function createHarness(options: {
       if (!session) throw new Error(`missing fake session ${serial}`);
       return session;
     },
-    listAllDevices: async () =>
-      serials.map((serial) => ({ serial, state: "device" })),
+    listAllDevices: async () => serials.map((serial) => ({ serial, state: "device" })),
     serve: captured.serve,
     recoveryClock: clock,
   };
@@ -366,8 +353,7 @@ async function createHarness(options: {
     dependencies.createWebRtcPublisher = async (publisherOptions) => {
       webRtcPublisherCreateCalls++;
       openedWebRtcSettings = publisherOptions.settings;
-      options.webRtcPublisher!.onKeyframeRequest =
-        publisherOptions.onKeyframeRequest;
+      options.webRtcPublisher!.onKeyframeRequest = publisherOptions.onKeyframeRequest;
       await options.webRtcPublisherGate?.promise;
       return options.webRtcPublisher!;
     };
@@ -379,33 +365,27 @@ async function createHarness(options: {
       ...(options.streamSettings
         ? { streamSettings: options.streamSettings }
         : options.webRtcPublisher
-        ? {
-            streamSettings: {
-              transport: "webrtc" as const,
-              codec: "h264" as const,
-              iceServers: [],
-              iceTransportPolicy: "all" as const,
-            },
-          }
-        : {}),
+          ? {
+              streamSettings: {
+                transport: "webrtc" as const,
+                codec: "h264" as const,
+                iceServers: [],
+                iceTransportPolicy: "all" as const,
+              },
+            }
+          : {}),
     },
     dependencies,
   );
   const handlers = captured.options();
 
-  const request = async (
-    path: string,
-    init: RequestInit = {},
-  ): Promise<Response> => {
-    const response = await handlers.fetch(
-      new Request(`http://127.0.0.1:33030${path}`, init),
-      {
-        upgrade(_req: Request, upgrade: { data: unknown }) {
-          captured.upgrades.push(upgrade.data);
-          return true;
-        },
+  const request = async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const response = await handlers.fetch(new Request(`http://127.0.0.1:33030${path}`, init), {
+      upgrade(_req: Request, upgrade: { data: unknown }) {
+        captured.upgrades.push(upgrade.data);
+        return true;
       },
-    );
+    });
     if (!(response instanceof Response)) {
       throw new Error(`${path} did not return a Response`);
     }
@@ -420,15 +400,12 @@ async function createHarness(options: {
     });
 
   const upgrade = async (): Promise<unknown> => {
-    const result = await handlers.fetch(
-      new Request("http://127.0.0.1:33030/ws"),
-      {
-        upgrade(_req: Request, next: { data: unknown }) {
-          captured.upgrades.push(next.data);
-          return true;
-        },
+    const result = await handlers.fetch(new Request("http://127.0.0.1:33030/ws"), {
+      upgrade(_req: Request, next: { data: unknown }) {
+        captured.upgrades.push(next.data);
+        return true;
       },
-    );
+    });
     expect(result).toBeUndefined();
     const data = captured.upgrades.at(-1);
     if (!data) throw new Error("upgrade data was not captured");
@@ -444,8 +421,7 @@ async function createHarness(options: {
     return ws;
   };
 
-  const health = async (): Promise<any> =>
-    (await request("/health")).json();
+  const health = async (): Promise<any> => (await request("/health")).json();
 
   return {
     started,
@@ -563,9 +539,7 @@ describe("server recovery watchdog", () => {
       });
       await pushFrame(harness, "A", keyFrame(), 1);
 
-      const response = await harness.request(
-        `/webrtc/stats?sessionId=${sessionId}&device=A`,
-      );
+      const response = await harness.request(`/webrtc/stats?sessionId=${sessionId}&device=A`);
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(await response.json()).toMatchObject({
@@ -577,11 +551,13 @@ describe("server recovery watchdog", () => {
           configuredBitrateBps: 8_000_000,
           frameStats: { windowFrames: 1 },
         },
-        sessions: [{
-          sessionId,
-          submittedFrames: 1,
-          publisherDroppedFrames: 0,
-        }],
+        sessions: [
+          {
+            sessionId,
+            submittedFrames: 1,
+            publisherDroppedFrames: 0,
+          },
+        ],
         capture: { offeredFrames: 1, forwardedFrames: 1 },
       });
 
@@ -623,13 +599,8 @@ describe("server recovery watchdog", () => {
 
       harness.clock.advance(2_500);
       harness.clock.fireActive();
-      await waitFor(
-        () =>
-          harness.sessions.get("A")!.fakeControlSocket.writes.length === 1,
-      );
-      expect(harness.sessions.get("A")!.fakeControlSocket.writes).toHaveLength(
-        1,
-      );
+      await waitFor(() => harness.sessions.get("A")!.fakeControlSocket.writes.length === 1);
+      expect(harness.sessions.get("A")!.fakeControlSocket.writes).toHaveLength(1);
     } finally {
       await harness.started.stop();
     }
@@ -650,9 +621,7 @@ describe("server recovery watchdog", () => {
       expect(offer.status).toBe(200);
 
       await pushFrame(harness, "A", keyFrame(), 1);
-      expect((await harness.health()).keyFrameRecovery.awaitingClients).toBe(
-        0,
-      );
+      expect((await harness.health()).keyFrameRecovery.awaitingClients).toBe(0);
 
       publisher.requestKeyframe("WebRTC peer backpressure");
       await waitFor(() => session.fakeControlSocket.writes.length === 1);
@@ -746,16 +715,17 @@ describe("server recovery watchdog", () => {
       expect(health.status).toBe("streaming");
       expect(health.clients).toBe(4);
       expect(health.keyFrameRecovery.awaitingClients).toBe(2);
-      expect(
-        health.clientsDetail.map((entry: any) => entry.awaitingKeyFrame),
-      ).toEqual([false, true, true, false]);
+      expect(health.clientsDetail.map((entry: any) => entry.awaitingKeyFrame)).toEqual([
+        false,
+        true,
+        true,
+        false,
+      ]);
       expect(accepted.sentFrames).toHaveLength(1);
       expect(backpressured.sentFrames).toHaveLength(1);
       expect(closed.sentFrames).toHaveLength(1);
       expect(throwing.sentFrames).toHaveLength(0);
-      expect(throwing.closes).toEqual([
-        { code: 1011, reason: "frame send failed" },
-      ]);
+      expect(throwing.closes).toEqual([{ code: 1011, reason: "frame send failed" }]);
       expect(buffered.sentFrames).toHaveLength(0);
       expect(healthyAfterThrow.sentFrames).toHaveLength(1);
     } finally {
@@ -784,10 +754,7 @@ describe("server recovery watchdog", () => {
       expect(selectedC.status).toBe(200);
       expect(harness.clock.activeTimers).toBe(1);
       const clientC = await harness.openWebSocket();
-      await waitFor(
-        () =>
-          harness.sessions.get("C")!.fakeControlSocket.writes.length === 1,
-      );
+      await waitFor(() => harness.sessions.get("C")!.fakeControlSocket.writes.length === 1);
       expect(harness.sessions.get("C")!.fakeControlSocket.writes).toHaveLength(1);
 
       harness.clock.advance(5_000);
@@ -883,16 +850,9 @@ describe("server recovery watchdog", () => {
       expect(response.status).toBe(200);
 
       const stale = await harness.openWebSocket({}, staleData);
-      expect(stale.closes).toEqual([
-        { code: 1012, reason: "device session changed" },
-      ]);
-      harness.handlers.websocket.message(
-        stale,
-        JSON.stringify({ type: "reset-video" }),
-      );
-      expect(stale.sentJson).toEqual([
-        expect.objectContaining({ ok: false }),
-      ]);
+      expect(stale.closes).toEqual([{ code: 1012, reason: "device session changed" }]);
+      harness.handlers.websocket.message(stale, JSON.stringify({ type: "reset-video" }));
+      expect(stale.sentJson).toEqual([expect.objectContaining({ ok: false })]);
       expect(harness.sessions.get("A")!.fakeControlSocket.writes).toHaveLength(0);
       expect(harness.sessions.get("B")!.fakeControlSocket.writes).toHaveLength(0);
     } finally {
@@ -917,24 +877,17 @@ describe("server recovery watchdog", () => {
           lastResetAttemptAt: "1970-01-01T00:00:00.000Z",
         },
       });
-      expect(health.clientsDetail[0].lastKeyFrameRequestAt).toBe(
-        "1970-01-01T00:00:00.000Z",
-      );
+      expect(health.clientsDetail[0].lastKeyFrameRequestAt).toBe("1970-01-01T00:00:00.000Z");
 
       const secondClient = await harness.openWebSocket();
-      harness.handlers.websocket.message(
-        secondClient,
-        JSON.stringify({ type: "reset-video" }),
-      );
+      harness.handlers.websocket.message(secondClient, JSON.stringify({ type: "reset-video" }));
       expect(session.fakeControlSocket.writes).toHaveLength(1);
 
       harness.clock.advance(2_500);
       harness.clock.fireActive();
       health = await harness.health();
       expect(session.fakeControlSocket.writes).toHaveLength(1);
-      expect(health.keyFrameRecovery.lastResetAttemptAt).toBe(
-        "1970-01-01T00:00:02.500Z",
-      );
+      expect(health.keyFrameRecovery.lastResetAttemptAt).toBe("1970-01-01T00:00:02.500Z");
       expect(health.videoResetRequests).toBe(1);
     } finally {
       harness.started.stop();

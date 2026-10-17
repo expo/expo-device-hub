@@ -71,9 +71,7 @@ describe("procExitDetail", () => {
   });
 
   test("ignores a blank stderr tail and bounds a long one to 2 KiB", () => {
-    expect(procExitDetail(1, null, "  \n").reason).toBe(
-      "scrcpy exited with code 1 signal null",
-    );
+    expect(procExitDetail(1, null, "  \n").reason).toBe("scrcpy exited with code 1 signal null");
     const long = "x".repeat(5_000);
     const d = procExitDetail(1, null, long);
     expect(d.reason).toBe(`scrcpy exited with code 1 signal null: ${"x".repeat(2_048)}`);

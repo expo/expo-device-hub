@@ -7,7 +7,9 @@ import { rememberLocalPort } from "./request-local-port";
 type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
 
 /** Fetch-style middleware signature, matching what `simMiddleware` returns. */
-export type WebMiddleware = ((request: Request) => Response | undefined | Promise<Response | undefined>) & {
+export type WebMiddleware = ((
+  request: Request,
+) => Response | undefined | Promise<Response | undefined>) & {
   /** WebSocket hook (exec channel); returns true when handled. */
   handleWebSocket?: (request: Request, websocket: UpgradeHandlerWebSocket) => boolean;
 };

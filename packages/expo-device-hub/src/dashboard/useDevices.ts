@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-import { type Device } from '@expo/hub-components';
+import { type Device } from "@expo/hub-components";
 
-import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../device-list-protocol';
-import { basePath } from './basePath';
-import { isUtilityError, logUtilityErrors, type UtilityError } from './utilityErrors';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from "../device-list-protocol";
+import { basePath } from "./basePath";
+import { isUtilityError, logUtilityErrors, type UtilityError } from "./utilityErrors";
 
 /**
  * The Expo Hub server (`src/server/`) exposes the live device list here,
@@ -14,7 +14,7 @@ import { isUtilityError, logUtilityErrors, type UtilityError } from './utilityEr
  */
 export function devicesWebSocketUrl(locationHref = window.location.href): string {
   const url = new URL(`${basePath()}/api/devices/ws`, locationHref);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
 }
 
@@ -24,7 +24,7 @@ export type DeviceList = {
 };
 
 export type DeviceListSnapshot = DeviceList & { errors?: UtilityError[] };
-export type DeviceListConnectionStatus = 'connecting' | 'connected' | 'disconnected';
+export type DeviceListConnectionStatus = "connecting" | "connected" | "disconnected";
 
 export type DeviceListSocketMessage =
   | { type: typeof HEARTBEAT_MESSAGE_TYPE }
@@ -77,7 +77,7 @@ export function subscribeToDeviceList({
   let reconnectTimer: ConnectionTimer | null = null;
   let watchdogTimer: ConnectionTimer | null = null;
   let reconnectDelay = reconnectMinMs;
-  let status: DeviceListConnectionStatus = 'connecting';
+  let status: DeviceListConnectionStatus = "connecting";
 
   const updateStatus = (next: DeviceListConnectionStatus) => {
     if (status === next) return;
@@ -104,7 +104,7 @@ export function subscribeToDeviceList({
     if (cancelled || socket !== target) return;
     socket = null;
     clearWatchdog();
-    updateStatus('disconnected');
+    updateStatus("disconnected");
     try {
       target.close();
     } catch {}
@@ -119,7 +119,7 @@ export function subscribeToDeviceList({
   const markAlive = (target: DeviceListSocket) => {
     if (cancelled || socket !== target) return;
     reconnectDelay = reconnectMinMs;
-    updateStatus('connected');
+    updateStatus("connected");
     armWatchdog(target);
   };
 
@@ -130,7 +130,7 @@ export function subscribeToDeviceList({
     try {
       nextSocket = createSocket(url);
     } catch {
-      updateStatus('disconnected');
+      updateStatus("disconnected");
       scheduleReconnect();
       return;
     }
@@ -176,7 +176,7 @@ function useDeviceList(): {
 } {
   const [devices, setDevices] = useState<DeviceList>(EMPTY);
   const [connectionStatus, setConnectionStatus] =
-    useState<DeviceListConnectionStatus>('connecting');
+    useState<DeviceListConnectionStatus>("connecting");
 
   useEffect(() => {
     let activeErrorIds = new Set<string>();
@@ -195,7 +195,7 @@ function useDeviceList(): {
 }
 
 export function parseDeviceListSocketMessage(data: unknown): DeviceListSocketMessage | null {
-  if (typeof data !== 'string') return null;
+  if (typeof data !== "string") return null;
   try {
     const message = JSON.parse(data) as {
       type?: unknown;

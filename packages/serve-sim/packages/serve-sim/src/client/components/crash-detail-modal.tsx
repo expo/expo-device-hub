@@ -95,10 +95,9 @@ function StackTrace({ frames }: { frames: CrashFrame[] }) {
   );
 }
 
-
-
 function emptyTailReason(source: CrashOccurrence["logTailSource"]): string {
-  if (source === "buffer-rolled-past") return "The retained device logs do not cover this crash. Keep the Crashes panel open to collect logs for the next one.";
+  if (source === "buffer-rolled-past")
+    return "The retained device logs do not cover this crash. Keep the Crashes panel open to collect logs for the next one.";
   if (source === "no-app-lines") return "The app logged nothing in the lines before this crash.";
   return "No device logs for this crash.";
 }
@@ -140,7 +139,10 @@ export function CrashDetailModal({
     CRASH_DETAIL_MAX_WIDTH,
   );
   const ago = formatCrashAgo(occurrence.capturedAtMs, now);
-  const clock = formatOccurrenceClock(occurrence.capturedAtMs, occurrence.capturedAt ?? "unknown time");
+  const clock = formatOccurrenceClock(
+    occurrence.capturedAtMs,
+    occurrence.capturedAt ?? "unknown time",
+  );
   const frames = occurrence.frames;
 
   useEffect(() => {
@@ -234,7 +236,9 @@ export function CrashDetailModal({
             </p>
             <p className="mt-0.5 text-[11px] text-white/40" title={clock}>
               {ago !== "" ? ago : clock}
-              {occurrence.pid !== null && <span className="text-white/25"> · pid {occurrence.pid}</span>}
+              {occurrence.pid !== null && (
+                <span className="text-white/25"> · pid {occurrence.pid}</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -287,7 +291,7 @@ export function CrashDetailModal({
                       aria-label={`Crash ${index + 1} of ${occurrence.total}`}
                       title={formatOccurrenceClock(
                         record.occurrenceTimes[index]?.capturedAtMs ?? null,
-                        record.occurrenceTimes[index]?.capturedAt ?? ""
+                        record.occurrenceTimes[index]?.capturedAt ?? "",
                       )}
                       onClick={() => onSelectOccurrence(index)}
                       className={`flex h-7 w-7 items-center justify-center rounded-full ${
@@ -332,9 +336,15 @@ export function CrashDetailModal({
 
         <div className="flex flex-col gap-2 border-b border-white/8 px-4 py-3">
           <Row label="Bundle" value={record.bundleId ?? "unknown"} />
-          <Row label="Exception" value={`${record.exceptionType ?? "?"} · ${record.terminationIndicator ?? "?"}`} />
+          <Row
+            label="Exception"
+            value={`${record.exceptionType ?? "?"} · ${record.terminationIndicator ?? "?"}`}
+          />
           <Row label="Thread" value={occurrence.faultingQueue ?? "unknown queue"} />
-          <Row label="Version" value={`${occurrence.appVersion ?? "?"} (${occurrence.buildVersion ?? "?"})`} />
+          <Row
+            label="Version"
+            value={`${occurrence.appVersion ?? "?"} (${occurrence.buildVersion ?? "?"})`}
+          />
           <Row label="Report" value={occurrence.rawPath} />
         </div>
 
@@ -348,7 +358,9 @@ export function CrashDetailModal({
                 tab === id ? "bg-white/10 text-white/90" : "text-white/45 hover:bg-white/5"
               }`}
             >
-              {id === "stack" ? `Stack (${frames.length})` : `Log tail (${occurrence.logTail.length})`}
+              {id === "stack"
+                ? `Stack (${frames.length})`
+                : `Log tail (${occurrence.logTail.length})`}
             </button>
           ))}
           <button
@@ -359,10 +371,10 @@ export function CrashDetailModal({
                   ? frames
                       .map(
                         (frame, index) =>
-                          `${index}\t${frame.image}\t${frame.symbol ?? `+${frame.imageOffset ?? 0}`}`
+                          `${index}\t${frame.image}\t${frame.symbol ?? `+${frame.imageOffset ?? 0}`}`,
                       )
                       .join("\n")
-                  : occurrence.logTail.map(messageOf).join("\n")
+                  : occurrence.logTail.map(messageOf).join("\n"),
               )
             }
             className="ml-auto rounded-md px-2 py-1 text-[11px] text-white/45 hover:bg-white/5"
@@ -399,9 +411,7 @@ export function CrashDetailModal({
                       {index + 1}
                     </span>
                     <span className="tabular-nums text-white/30">{time || "\u00a0"}</span>
-                    <span className="whitespace-pre-wrap break-all">
-                      {fields?.message ?? raw}
-                    </span>
+                    <span className="whitespace-pre-wrap break-all">{fields?.message ?? raw}</span>
                   </li>
                 );
               })}
@@ -410,6 +420,6 @@ export function CrashDetailModal({
         </div>
       </div>
     </div>,
-    document.body
+    document.body,
   );
 }

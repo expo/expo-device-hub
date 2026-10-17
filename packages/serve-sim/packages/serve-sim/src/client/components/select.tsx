@@ -41,7 +41,7 @@ export function Dropdown({
     setPos((prev) =>
       prev && prev.top === next.top && prev.left === next.left && prev.minWidth === next.minWidth
         ? prev
-        : next
+        : next,
     );
   };
 
@@ -61,11 +61,12 @@ export function Dropdown({
     const maxLeft = window.innerWidth - popup.offsetWidth - margin;
     const left = pos.left > maxLeft ? Math.max(margin, maxLeft) : pos.left;
     const above = rect.top - popup.offsetHeight - 4;
-    const top = pos.top + popup.offsetHeight <= window.innerHeight - margin
-      ? pos.top
-      : above >= margin
-        ? above
-        : Math.max(margin, window.innerHeight - popup.offsetHeight - margin);
+    const top =
+      pos.top + popup.offsetHeight <= window.innerHeight - margin
+        ? pos.top
+        : above >= margin
+          ? above
+          : Math.max(margin, window.innerHeight - popup.offsetHeight - margin);
     if (top !== pos.top || left !== pos.left) setPos({ ...pos, top, left });
   }, [open, pos]);
 
@@ -107,7 +108,9 @@ export function Dropdown({
       return;
     }
     if (!pos || focusedThisOpen.current) return;
-    const items = [...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? [])];
+    const items = [
+      ...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? []),
+    ];
     if (!items.length) return;
     focusedThisOpen.current = true;
     const selected = multiple
@@ -117,11 +120,14 @@ export function Dropdown({
   }, [open, pos, multiple]);
 
   const onPopupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const items = [...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? [])];
+    const items = [
+      ...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? []),
+    ];
     const idx = items.indexOf(document.activeElement as HTMLButtonElement);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const next = e.key === "ArrowDown" ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+      const next =
+        e.key === "ArrowDown" ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
       items[next]?.focus();
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -130,7 +136,6 @@ export function Dropdown({
       triggerRef.current?.focus();
     }
   };
-
 
   return (
     <>

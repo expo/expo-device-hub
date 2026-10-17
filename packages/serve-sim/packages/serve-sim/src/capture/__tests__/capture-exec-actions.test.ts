@@ -19,7 +19,11 @@ beforeAll(async () => {
   server = await servePreview({
     port,
     host: "127.0.0.1",
-    middleware: simMiddleware({ basePath: "/", execToken: TOKEN, corsOrigins: ["https://expo.dev"] }),
+    middleware: simMiddleware({
+      basePath: "/",
+      execToken: TOKEN,
+      corsOrigins: ["https://expo.dev"],
+    }),
   });
 });
 
@@ -28,15 +32,26 @@ afterAll(() => {
   stateDir?.restore();
 });
 
-function runAction(origin: string, action: string, params: Record<string, unknown>): Promise<{ error?: string; exitCode?: number }> {
+function runAction(
+  origin: string,
+  action: string,
+  params: Record<string, unknown>,
+): Promise<{ error?: string; exitCode?: number }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/exec-ws`, [`serve-sim.token.${TOKEN}`], { headers: { Origin: origin } });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/exec-ws`, [`serve-sim.token.${TOKEN}`], {
+      headers: { Origin: origin },
+    });
     const timer = setTimeout(() => {
       ws.terminate();
       reject(new Error(`no reply for ${action} from ${origin}`));
     }, 5_000);
     ws.on("message", (raw) => {
-      const frame = JSON.parse(String(raw)) as { ready?: boolean; id?: number; error?: string; exitCode?: number };
+      const frame = JSON.parse(String(raw)) as {
+        ready?: boolean;
+        id?: number;
+        error?: string;
+        exitCode?: number;
+      };
       if (frame.ready) {
         ws.send(JSON.stringify({ id: 1, action, params }));
         return;
@@ -52,7 +67,9 @@ function runAction(origin: string, action: string, params: Record<string, unknow
 
 for (const action of ["capture.enable", "capture.reboot", "capture.clear"]) {
   test(`refuses ${action} from an allowed cross-origin page`, async () => {
-    expect(await runAction("https://expo.dev", action, { udid: UDID, enabled: false })).toMatchObject({
+    expect(
+      await runAction("https://expo.dev", action, { udid: UDID, enabled: false }),
+    ).toMatchObject({
       error: "Network capture is same-origin only.",
     });
   });

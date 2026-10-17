@@ -1,8 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import {
-  PLAYBACK_STALL_POLLS,
-  PLAYBACK_STALL_POLL_MS,
-} from "../../client/webrtc-playback-stall";
+import { PLAYBACK_STALL_POLLS, PLAYBACK_STALL_POLL_MS } from "../../client/webrtc-playback-stall";
 
 let effects: (() => void | (() => void))[] = [];
 let updates: unknown[] = [];
@@ -28,15 +25,23 @@ class FakePeer {
   iceGatheringState = "complete";
   localDescription = { type: "offer", sdp: "v=0" };
   ontrack?: (event: { track: object; streams: object[] }) => void;
-  constructor() { peers.push(this); }
-  addTransceiver() { return {}; }
-  async createOffer() { return this.localDescription; }
+  constructor() {
+    peers.push(this);
+  }
+  addTransceiver() {
+    return {};
+  }
+  async createOffer() {
+    return this.localDescription;
+  }
   async setLocalDescription() {}
   async setRemoteDescription() {}
   getStats() {
     return new Promise<Map<string, unknown>>((resolve) => pendingStats.push({ resolve }));
   }
-  close() { closed += 1; }
+  close() {
+    closed += 1;
+  }
 }
 
 mock.module("react", () => ({
@@ -69,12 +74,15 @@ Object.assign(globalThis, {
   setTimeout: fakeSetTimeout,
   clearTimeout: fakeClearTimeout,
   document: {
-    get visibilityState() { return visibility; },
+    get visibilityState() {
+      return visibility;
+    },
     addEventListener(name: string, listener: () => void) {
       if (name === "visibilitychange") visibilityListener = listener;
     },
     removeEventListener(name: string, listener: () => void) {
-      if (name === "visibilitychange" && visibilityListener === listener) visibilityListener = undefined;
+      if (name === "visibilitychange" && visibilityListener === listener)
+        visibilityListener = undefined;
     },
   },
   window: {
@@ -94,7 +102,12 @@ Object.assign(globalThis, {
   MediaStream: class {},
   fetch: async (input: string) => {
     if (input.includes("/stats")) {
-      return new Response(JSON.stringify({ capture: { rebooting: captureRebooting }, sessions: [{ framesEncoded: 0 }] }));
+      return new Response(
+        JSON.stringify({
+          capture: { rebooting: captureRebooting },
+          sessions: [{ framesEncoded: 0 }],
+        }),
+      );
     }
     if (input.includes("/offer")) offersPosted += 1;
     if (input.includes("/offer") && offerStatus !== 200) {
@@ -171,13 +184,20 @@ function fireTimer() {
 function resolveStats(framesReceived: number, framesDecoded = framesReceived, id = "video") {
   const read = pendingStats.shift();
   if (!read) throw new Error("Expected an inbound stats read");
-  read.resolve(new Map([[id, {
-    id,
-    type: "inbound-rtp",
-    kind: "video",
-    framesReceived,
-    framesDecoded,
-  }]]));
+  read.resolve(
+    new Map([
+      [
+        id,
+        {
+          id,
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived,
+          framesDecoded,
+        },
+      ],
+    ]),
+  );
 }
 
 /// Drive the stall watchdog with one sample per poll, advancing the clock like a real timer.
@@ -211,8 +231,10 @@ function deadRun(at: number) {
 const STALLED = "WebRTC playback stalled. Retrying...";
 
 function failures() {
-  return updates.filter((value): value is { kind: string } =>
-    typeof value === "object" && value !== null && "kind" in value);
+  return updates.filter(
+    (value): value is { kind: string } =>
+      typeof value === "object" && value !== null && "kind" in value,
+  );
 }
 
 test("first-frame watchdog pauses while hidden and restarts on resume", async () => {
@@ -263,7 +285,10 @@ test("stall-timer ticks do not retire the first-frame watchdog", async () => {
   await flush();
   expect(pendingStats).toHaveLength(1);
   // The read is in flight; the stall timer keeps ticking because nothing has painted yet.
-  for (const tick of intervals.values()) { tick(); tick(); }
+  for (const tick of intervals.values()) {
+    tick();
+    tick();
+  }
   await flush();
   resolveStats(0);
   await flush();
@@ -278,7 +303,6 @@ test("the first stall reconnects on the same codec", async () => {
   expect(failures()).toEqual([]);
   expect(updates).toContain(STALLED);
 });
-
 
 test("a stall with no media arriving is charged to the transport", async () => {
   const hook = await start();
@@ -445,7 +469,10 @@ test("the panel is fed before the stream paints", async () => {
   const hook = await start();
   const seen: number[] = [];
   hook.subscribeStats((report) => seen.push(report.size));
-  await pollStall([{ received: 0, decoded: 0 }, { received: 0, decoded: 0 }]);
+  await pollStall([
+    { received: 0, decoded: 0 },
+    { received: 0, decoded: 0 },
+  ]);
   expect(seen).toEqual([1, 1]);
   expect(failures()).toEqual([]);
   expect(updates).not.toContain(STALLED);
@@ -491,7 +518,10 @@ test("a run does not survive a brief hide with no visibility event", async () =>
   await pollStall(frozenRun(100).slice(0, PLAYBACK_STALL_POLLS));
   visibility = "hidden";
   // Short enough that the gap guard would not catch it.
-  await pollStall([{ received: 800, decoded: 100 }, { received: 800, decoded: 100 }]);
+  await pollStall([
+    { received: 800, decoded: 100 },
+    { received: 800, decoded: 100 },
+  ]);
   expect(pendingStats).toHaveLength(0);
   visibility = "visible";
   await pollStall([
@@ -570,7 +600,20 @@ test("a read that lands after its peer was replaced never reaches the panel", as
   await tick();
   const late = pendingStats.shift()!;
   await reconnect();
-  late.resolve(new Map([["video", { id: "video", type: "inbound-rtp", kind: "video", framesReceived: 900, framesDecoded: 900 }]]));
+  late.resolve(
+    new Map([
+      [
+        "video",
+        {
+          id: "video",
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived: 900,
+          framesDecoded: 900,
+        },
+      ],
+    ]),
+  );
   await flush();
   expect(seen).toEqual([]);
 });
@@ -659,13 +702,17 @@ test("first-frame timeout defers through reboot without demoting the codec", asy
   captureRebooting = true;
   for (let i = 0; i < 3; i++) {
     expect(fireTimer()).toBe(4_000);
-    await flush(); resolveStats(0); await flush();
+    await flush();
+    resolveStats(0);
+    await flush();
     expect(closed).toBe(0);
     expect(failures()).toEqual([]);
   }
   captureRebooting = false;
   expect(fireTimer()).toBe(4_000);
-  await flush(); resolveStats(0); await flush();
+  await flush();
+  resolveStats(0);
+  await flush();
   expect(closed).toBe(1);
   expect(failures()).toMatchObject([{ kind: "codec" }]);
 });

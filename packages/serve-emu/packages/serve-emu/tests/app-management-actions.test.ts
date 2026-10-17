@@ -20,9 +20,7 @@ type ExecCall = {
   opts: ExecOpts;
 };
 
-function result(
-  overrides: Partial<ExecResult<string>> = {},
-): ExecResult<string> {
+function result(overrides: Partial<ExecResult<string>> = {}): ExecResult<string> {
   return {
     status: 0,
     signal: null,
@@ -34,9 +32,7 @@ function result(
   };
 }
 
-function upload(
-  overrides: Partial<LocalUploadFile> = {},
-): LocalUploadFile {
+function upload(overrides: Partial<LocalUploadFile> = {}): LocalUploadFile {
   return {
     path: "/private/tmp/serve-emu-upload/staged",
     filename: "sample.apk",
@@ -60,12 +56,8 @@ describe("app management identifiers", () => {
   test("trims valid package, activity, and permission names", () => {
     expect(packageName("  Com_Example.app2  ")).toBe("Com_Example.app2");
     expect(activityName("  .MainActivity  ")).toBe(".MainActivity");
-    expect(activityName("  com.example/.MainActivity  ")).toBe(
-      "com.example/.MainActivity",
-    );
-    expect(permissionName("  android.permission.CAMERA  ")).toBe(
-      "android.permission.CAMERA",
-    );
+    expect(activityName("  com.example/.MainActivity  ")).toBe("com.example/.MainActivity");
+    expect(permissionName("  android.permission.CAMERA  ")).toBe("android.permission.CAMERA");
   });
 
   test("rejects malformed package names", () => {
@@ -84,14 +76,7 @@ describe("app management identifiers", () => {
   });
 
   test("rejects malformed activities and permissions", () => {
-    for (const value of [
-      undefined,
-      null,
-      "",
-      "/",
-      "1Main",
-      "bad activity",
-    ]) {
+    for (const value of [undefined, null, "", "/", "1Main", "bad activity"]) {
       expect(() => activityName(value)).toThrow("activity is invalid");
     }
     for (const value of [
@@ -110,10 +95,7 @@ describe("app management identifiers", () => {
 describe("app management actions", () => {
   test("builds default, relative, and explicit-component launch commands", async () => {
     const calls: ExecCall[] = [];
-    const run = recordingExec(
-      calls,
-      result({ stdout: "Starting\n", stderr: "warning\n" }),
-    );
+    const run = recordingExec(calls, result({ stdout: "Starting\n", stderr: "warning\n" }));
 
     expect(
       await launchApp("device-a", " com.example.app ", undefined, {
@@ -123,12 +105,7 @@ describe("app management actions", () => {
     await launchApp("device-a", "com.example.app", " .MainActivity ", {
       execText: run,
     });
-    await launchApp(
-      "device-a",
-      "com.example.app",
-      " com.other/.Entry ",
-      { execText: run },
-    );
+    await launchApp("device-a", "com.example.app", " com.other/.Entry ", { execText: run });
 
     expect(calls.map((call) => call.args)).toEqual([
       [
@@ -142,24 +119,8 @@ describe("app management actions", () => {
         "android.intent.category.LAUNCHER",
         "1",
       ],
-      [
-        "-s",
-        "device-a",
-        "shell",
-        "am",
-        "start",
-        "-n",
-        "com.example.app/.MainActivity",
-      ],
-      [
-        "-s",
-        "device-a",
-        "shell",
-        "am",
-        "start",
-        "-n",
-        "com.other/.Entry",
-      ],
+      ["-s", "device-a", "shell", "am", "start", "-n", "com.example.app/.MainActivity"],
+      ["-s", "device-a", "shell", "am", "start", "-n", "com.other/.Entry"],
     ]);
     expect(calls.every((call) => call.cmd === "adb")).toBe(true);
     expect(calls.every((call) => call.opts.timeout === 30_000)).toBe(true);
@@ -171,36 +132,19 @@ describe("app management actions", () => {
     const calls: ExecCall[] = [];
     const run = recordingExec(calls, result({ stdout: "Success\n" }));
 
-    expect(
-      await clearAppData("device-b", " com.example.app ", { execText: run }),
-    ).toEqual({ ok: true, output: "Success" });
+    expect(await clearAppData("device-b", " com.example.app ", { execText: run })).toEqual({
+      ok: true,
+      output: "Success",
+    });
     await forceStopApp("device-b", "com.example.app", { execText: run });
-    await grantPermission(
-      "device-b",
-      " com.example.app ",
-      " android.permission.CAMERA ",
-      { execText: run },
-    );
+    await grantPermission("device-b", " com.example.app ", " android.permission.CAMERA ", {
+      execText: run,
+    });
 
     expect(calls.map((call) => call.args)).toEqual([
       ["-s", "device-b", "shell", "pm", "clear", "com.example.app"],
-      [
-        "-s",
-        "device-b",
-        "shell",
-        "am",
-        "force-stop",
-        "com.example.app",
-      ],
-      [
-        "-s",
-        "device-b",
-        "shell",
-        "pm",
-        "grant",
-        "com.example.app",
-        "android.permission.CAMERA",
-      ],
+      ["-s", "device-b", "shell", "am", "force-stop", "com.example.app"],
+      ["-s", "device-b", "shell", "pm", "grant", "com.example.app", "android.permission.CAMERA"],
     ]);
   });
 
@@ -208,31 +152,21 @@ describe("app management actions", () => {
     const calls: ExecCall[] = [];
     const dependencies = { execText: recordingExec(calls) };
 
-    expect(() =>
-      launchApp("device-a", "invalid", undefined, dependencies),
-    ).toThrow("packageName is invalid");
-    expect(() =>
-      launchApp(
-        "device-a",
-        "com.example.app",
-        "bad activity",
-        dependencies,
-      ),
-    ).toThrow("activity is invalid");
+    expect(() => launchApp("device-a", "invalid", undefined, dependencies)).toThrow(
+      "packageName is invalid",
+    );
+    expect(() => launchApp("device-a", "com.example.app", "bad activity", dependencies)).toThrow(
+      "activity is invalid",
+    );
     expect(() => clearAppData("device-a", "invalid", dependencies)).toThrow(
       "packageName is invalid",
     );
     expect(() => forceStopApp("device-a", "invalid", dependencies)).toThrow(
       "packageName is invalid",
     );
-    expect(() =>
-      grantPermission(
-        "device-a",
-        "com.example.app",
-        "CAMERA",
-        dependencies,
-      ),
-    ).toThrow("permission is invalid");
+    expect(() => grantPermission("device-a", "com.example.app", "CAMERA", dependencies)).toThrow(
+      "permission is invalid",
+    );
     expect(calls).toEqual([]);
   });
 
@@ -248,8 +182,7 @@ describe("app management actions", () => {
 
     const spawnError = new Error("spawn adb ENOENT");
     const failed = forceStopApp("device-a", "com.example.app", {
-      execText: async () =>
-        result({ status: null, error: spawnError, stderr: "adb unavailable" }),
+      execText: async () => result({ status: null, error: spawnError, stderr: "adb unavailable" }),
     });
     await expect(failed).rejects.toMatchObject({
       code: "adb-failed",
@@ -258,19 +191,12 @@ describe("app management actions", () => {
     });
 
     const timeoutError = new Error("deadline exceeded");
-    const timedOut = grantPermission(
-      "device-a",
-      "com.example.app",
-      "android.permission.CAMERA",
-      {
-        execText: async () =>
-          result({ status: null, timedOut: true, error: timeoutError }),
-      },
-    );
+    const timedOut = grantPermission("device-a", "com.example.app", "android.permission.CAMERA", {
+      execText: async () => result({ status: null, timedOut: true, error: timeoutError }),
+    });
     await expect(timedOut).rejects.toMatchObject({
       code: "adb-timeout",
-      message:
-        "adb shell pm grant com.example.app android.permission.CAMERA timed out",
+      message: "adb shell pm grant com.example.app android.permission.CAMERA timed out",
       cause: timeoutError,
     });
   });
@@ -305,24 +231,17 @@ describe("app management install and import boundaries", () => {
     let invoked = false;
 
     try {
-      await installApk(
-        "device-a",
-        upload(),
-        controller.signal,
-        {
-          execText: async () => {
-            invoked = true;
-            return result();
-          },
+      await installApk("device-a", upload(), controller.signal, {
+        execText: async () => {
+          invoked = true;
+          return result();
         },
-      );
+      });
       throw new Error("expected install to be cancelled");
     } catch (error) {
       expect(error).toBeInstanceOf(DOMException);
       expect((error as DOMException).name).toBe("AbortError");
-      expect((error as DOMException).message).toBe(
-        "The operation was aborted",
-      );
+      expect((error as DOMException).message).toBe("The operation was aborted");
     }
     expect(invoked).toBe(false);
   });
@@ -350,12 +269,7 @@ describe("app management install and import boundaries", () => {
         kind,
         path: `${directory}/${filename}`,
       });
-      expect(calls[0]?.args.slice(2)).toEqual([
-        "shell",
-        "mkdir",
-        "-p",
-        directory,
-      ]);
+      expect(calls[0]?.args.slice(2)).toEqual(["shell", "mkdir", "-p", directory]);
     },
   );
 

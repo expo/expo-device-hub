@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  LogcatBatchPublisher,
-  LogcatRingBuffer,
-  type LogcatEntry,
-} from "../lib/logcat-buffer";
+import { LogcatBatchPublisher, LogcatRingBuffer, type LogcatEntry } from "../lib/logcat-buffer";
 
 type LogcatBatch = {
   lines?: unknown;
@@ -12,11 +8,7 @@ type LogcatBatch = {
 };
 
 function nonNegativeInteger(value: unknown): number {
-  return typeof value === "number" &&
-    Number.isSafeInteger(value) &&
-    value >= 0
-    ? value
-    : 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
 function parseLine(value: unknown): LogcatEntry | null {
@@ -37,10 +29,7 @@ export function LogcatPanel() {
   const [view, setView] = useState(() => bufferRef.current!.snapshot());
   const publisherRef = useRef<LogcatBatchPublisher | null>(null);
   if (!publisherRef.current) {
-    publisherRef.current = new LogcatBatchPublisher(
-      bufferRef.current,
-      setView,
-    );
+    publisherRef.current = new LogcatBatchPublisher(bufferRef.current, setView);
   }
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -77,9 +66,7 @@ export function LogcatPanel() {
       try {
         const data = JSON.parse((event as MessageEvent).data) as LogcatBatch;
         const lines = Array.isArray(data.lines)
-          ? data.lines
-              .map(parseLine)
-              .filter((line): line is LogcatEntry => line !== null)
+          ? data.lines.map(parseLine).filter((line): line is LogcatEntry => line !== null)
           : [];
         if (lines.length > 0) publisherRef.current?.append(lines);
         const nextDrops = {
@@ -87,8 +74,7 @@ export function LogcatPanel() {
           source: nonNegativeInteger(data.sourceDropped),
         };
         setServerDrops((current) =>
-          current.queue === nextDrops.queue &&
-          current.source === nextDrops.source
+          current.queue === nextDrops.queue && current.source === nextDrops.source
             ? current
             : nextDrops,
         );
@@ -150,8 +136,7 @@ export function LogcatPanel() {
     }
   };
 
-  const totalDropped =
-    serverDrops.queue + serverDrops.source + view.dropped;
+  const totalDropped = serverDrops.queue + serverDrops.source + view.dropped;
   const dropStatus =
     totalDropped > 0
       ? ` • dropped ${totalDropped} (server ${serverDrops.queue + serverDrops.source}, view ${view.dropped})`
@@ -162,7 +147,8 @@ export function LogcatPanel() {
       <div className="panel-heading">
         <h2>Logcat</h2>
         <div className="location-status">
-          {status} • {view.count}{dropStatus}
+          {status} • {view.count}
+          {dropStatus}
         </div>
       </div>
       <div className="coordinate-grid">
@@ -185,7 +171,9 @@ export function LogcatPanel() {
       </div>
       <div className="panel-actions">
         <button onClick={connect}>{enabled ? "Apply" : "Start"}</button>
-        <button onClick={disconnect} disabled={!enabled}>Stop</button>
+        <button onClick={disconnect} disabled={!enabled}>
+          Stop
+        </button>
         <button onClick={togglePause} disabled={!enabled}>
           {paused ? "Resume" : "Pause"}
         </button>

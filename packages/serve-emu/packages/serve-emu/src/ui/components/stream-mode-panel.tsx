@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  STREAM_TRANSPORTS,
-  type StreamTransport,
-} from "../../stream-settings";
+import { STREAM_TRANSPORTS, type StreamTransport } from "../../stream-settings";
 import {
   GRPC_ENCODERS,
   isGrpcEncoder,
@@ -14,10 +11,7 @@ import {
   type StreamModeResponse,
 } from "../../shared/api-contracts";
 import { apiRequest } from "../lib/api-client";
-import {
-  deviceSessionStore,
-  useDeviceSessionSnapshot,
-} from "../lib/device-session-store";
+import { deviceSessionStore, useDeviceSessionSnapshot } from "../lib/device-session-store";
 import { usePoll } from "../lib/use-poll";
 import { useViewerTransportControls } from "../lib/viewer-transport-context";
 import { StreamSettingsPanel } from "./stream-settings-panel";
@@ -33,10 +27,13 @@ const OPTION_COPY = {
     label: "gRPC screenshot",
     description: "Emulator host capture",
   },
-} satisfies Record<StreamMode, {
-  label: string;
-  description: string;
-}>;
+} satisfies Record<
+  StreamMode,
+  {
+    label: string;
+    description: string;
+  }
+>;
 
 const OPTIONS = STREAM_MODES.map((mode) => ({ mode, ...OPTION_COPY[mode] }));
 const GRPC_IMAGE_MODE_COPY = {
@@ -52,10 +49,13 @@ const GRPC_IMAGE_MODE_COPY = {
     label: "MMAP",
     description: "Shared-memory raw pixels",
   },
-} satisfies Record<GrpcImageMode, {
-  label: string;
-  description: string;
-}>;
+} satisfies Record<
+  GrpcImageMode,
+  {
+    label: string;
+    description: string;
+  }
+>;
 const GRPC_IMAGE_OPTIONS = GRPC_IMAGE_MODES.map((mode) => ({
   mode,
   ...GRPC_IMAGE_MODE_COPY[mode],
@@ -73,10 +73,13 @@ const VIEWER_TRANSPORT_COPY = {
     label: "WebRTC",
     description: "Browser media path",
   },
-} satisfies Record<StreamTransport, {
-  label: string;
-  description: string;
-}>;
+} satisfies Record<
+  StreamTransport,
+  {
+    label: string;
+    description: string;
+  }
+>;
 
 type ViewerTransportSelectorProps = {
   value: StreamTransport | null;
@@ -101,13 +104,7 @@ export function ViewerTransportSelector({
       : label
         ? `${label} live`
         : "Loading viewer transports…";
-  const feedbackState = switchingTo
-    ? "switching"
-    : error
-      ? "error"
-      : value
-        ? "live"
-        : "loading";
+  const feedbackState = switchingTo ? "switching" : error ? "error" : value ? "live" : "loading";
 
   return (
     <div className="viewer-transport-control">
@@ -167,8 +164,7 @@ export function StreamStatsDownloadControl({
   onDownload,
 }: StreamStatsDownloadControlProps) {
   const downloading = status === "downloading";
-  const feedback = message ??
-    "Download a redacted JSON snapshot of viewer and server statistics.";
+  const feedback = message ?? "Download a redacted JSON snapshot of viewer and server statistics.";
 
   return (
     <div className="stream-stats-download">
@@ -204,11 +200,7 @@ type GrpcImageModeSelectorProps = {
   onChange: (mode: GrpcImageMode) => void;
 };
 
-export function GrpcImageModeSelector({
-  value,
-  disabled,
-  onChange,
-}: GrpcImageModeSelectorProps) {
+export function GrpcImageModeSelector({ value, disabled, onChange }: GrpcImageModeSelectorProps) {
   return (
     <fieldset
       className="stream-mode-fieldset grpc-image-mode-fieldset"
@@ -267,21 +259,17 @@ export function GrpcEncoderSelector({
         }}
       >
         {GRPC_ENCODERS.map((encoder) => (
-          <option
-            key={encoder}
-            value={encoder}
-            disabled={!available.includes(encoder)}
-          >
+          <option key={encoder} value={encoder} disabled={!available.includes(encoder)}>
             {encoder === "software" ? "Software" : "Hardware"}
           </option>
         ))}
       </select>
       <div id="grpc-encoder-status" aria-live="polite">
-        {encoderName ? (
-          <p className="stream-mode-help">Active encoder: {encoderName}</p>
-        ) : null}
+        {encoderName ? <p className="stream-mode-help">Active encoder: {encoderName}</p> : null}
         {hardwareEncoderError ? (
-          <p className="stream-mode-help" role="alert">{hardwareEncoderError}</p>
+          <p className="stream-mode-help" role="alert">
+            {hardwareEncoderError}
+          </p>
         ) : null}
       </div>
     </fieldset>
@@ -316,16 +304,12 @@ export function StreamModePanel() {
     onResult: (response, context) => {
       deviceSessionStore.applyHealth(response);
       const current = deviceSessionStore.getSnapshot();
-      const revision = current.serial === response.serial
-        ? current.revision
-        : context.key;
+      const revision = current.serial === response.serial ? current.revision : context.key;
       setLoaded({ ...response, revision });
       setFeedback({ revision, message: "Ready" });
     },
     onError: (error, context) => {
-      setLoaded((current) =>
-        current?.revision === context.key ? current : null
-      );
+      setLoaded((current) => (current?.revision === context.key ? current : null));
       setFeedback({ revision: context.key, message: errorMessage(error) });
     },
     intervalMs: STREAM_MODE_POLL_INTERVAL_MS,
@@ -335,9 +319,8 @@ export function StreamModePanel() {
 
   const selectionReady =
     !deviceSession.transitioning && loaded?.revision === deviceSession.revision;
-  const displayedMode = busy ? loaded?.mode ?? null : selectionReady ? loaded.mode : null;
-  const availableModes =
-    busy || selectionReady ? loaded?.availableModes ?? [] : [];
+  const displayedMode = busy ? (loaded?.mode ?? null) : selectionReady ? loaded.mode : null;
+  const availableModes = busy || selectionReady ? (loaded?.availableModes ?? []) : [];
   const status =
     busy || deviceSession.transitioning
       ? "Switching…"
@@ -346,20 +329,14 @@ export function StreamModePanel() {
         : "Loading…";
 
   const apply = useCallback(
-    async (
-      nextMode: StreamMode,
-      nextGrpcImageMode: GrpcImageMode,
-      nextEncoder: GrpcEncoder,
-    ) => {
+    async (nextMode: StreamMode, nextGrpcImageMode: GrpcImageMode, nextEncoder: GrpcEncoder) => {
       if (
         busy ||
         !selectionReady ||
         !loaded ||
-        (
-          nextMode === loaded.mode &&
+        (nextMode === loaded.mode &&
           nextGrpcImageMode === loaded.grpcImageMode &&
-          nextEncoder === loaded.encoder
-        ) ||
+          nextEncoder === loaded.encoder) ||
         !loaded.availableModes.includes(nextMode)
       ) {
         return;
@@ -375,13 +352,14 @@ export function StreamModePanel() {
       try {
         response = await apiRequest("/api/stream-mode", {
           method: "PUT",
-          body: nextMode === "grpc-screenshot"
-            ? {
-                mode: nextMode,
-                grpcImageMode: nextGrpcImageMode,
-                encoder: nextEncoder,
-              }
-            : { mode: nextMode },
+          body:
+            nextMode === "grpc-screenshot"
+              ? {
+                  mode: nextMode,
+                  grpcImageMode: nextGrpcImageMode,
+                  encoder: nextEncoder,
+                }
+              : { mode: nextMode },
         });
       } catch (error) {
         failure = error;
@@ -397,11 +375,7 @@ export function StreamModePanel() {
 
       if (id !== actionId.current) return;
 
-      if (
-        response &&
-        !currentSession.transitioning &&
-        currentSession.serial === response.serial
-      ) {
+      if (response && !currentSession.transitioning && currentSession.serial === response.serial) {
         setLoaded({ ...response, revision: currentSession.revision });
         setFeedback({ revision: currentSession.revision, message: "Ready" });
       } else if (
@@ -425,36 +399,29 @@ export function StreamModePanel() {
   const grpcAvailable = availableModes.includes("grpc-screenshot");
   const grpcSelected = displayedMode === "grpc-screenshot";
   const grpcImageModeDisabled =
-    busy ||
-    deviceSession.transitioning ||
-    !selectionReady ||
-    !grpcSelected;
-  const help = busy || deviceSession.transitioning
-    ? "Changing the stream capture and reconnecting the browser stream…"
-    : !selectionReady
-      ? status === "Loading…"
-        ? "Checking the available stream sources…"
-        : "Stream source details are unavailable."
-      : !grpcAvailable
-        ? "gRPC screenshot is available only for Android Emulator devices."
-        : loaded.mode === "grpc-screenshot"
-          ? loaded.grpcImageMode === "mmap"
-            ? `Frames use the emulator's shared-memory MMAP path; input uses ${loaded.inputSource}.`
-            : loaded.grpcImageMode === "rgb888"
-              ? `Frames use raw RGB888 pixels over gRPC; input uses ${loaded.inputSource}.`
-              : `Frames use in-band PNG images; input uses ${loaded.inputSource}.`
-          : "Frames and input use the scrcpy server on the device.";
+    busy || deviceSession.transitioning || !selectionReady || !grpcSelected;
+  const help =
+    busy || deviceSession.transitioning
+      ? "Changing the stream capture and reconnecting the browser stream…"
+      : !selectionReady
+        ? status === "Loading…"
+          ? "Checking the available stream sources…"
+          : "Stream source details are unavailable."
+        : !grpcAvailable
+          ? "gRPC screenshot is available only for Android Emulator devices."
+          : loaded.mode === "grpc-screenshot"
+            ? loaded.grpcImageMode === "mmap"
+              ? `Frames use the emulator's shared-memory MMAP path; input uses ${loaded.inputSource}.`
+              : loaded.grpcImageMode === "rgb888"
+                ? `Frames use raw RGB888 pixels over gRPC; input uses ${loaded.inputSource}.`
+                : `Frames use in-band PNG images; input uses ${loaded.inputSource}.`
+            : "Frames and input use the scrcpy server on the device.";
 
   return (
     <section className="tool-panel stream-mode-panel">
       <div className="panel-heading">
         <h2>Stream Source</h2>
-        <div
-          className="location-status"
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-        >
+        <div className="location-status" role="status" aria-live="polite" aria-atomic="true">
           {status}
         </div>
       </div>

@@ -11,7 +11,8 @@ export type TartConfig = {
   pkgDir: string;
 };
 
-export const GUEST_PATH = 'export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"';
+export const GUEST_PATH =
+  'export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"';
 
 export const SSH_OPTS = [
   "-o",
@@ -140,7 +141,10 @@ export class TartGuest {
   }
 
   async tarTo(srcDir: string, paths: string[], destDir: string): Promise<void> {
-    const tar = spawn(["tar", "-C", srcDir, "-cf", "-", ...paths], { stdout: "pipe", stderr: "pipe" });
+    const tar = spawn(["tar", "-C", srcDir, "-cf", "-", ...paths], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const ssh = spawn(["ssh", ...SSH_OPTS, this.sshTarget(), "tar", "-C", destDir, "-xf", "-"], {
       stdin: tar.stdout,
       stdout: "pipe",
@@ -187,7 +191,9 @@ export class TartGuest {
       if (this.ip && (await this.sshOk(["true"]))) return;
       await Bun.sleep(2000);
     }
-    throw new Error(`could not SSH to ${this.config.user}@${this.config.vm}. Run: bun run tart setup`);
+    throw new Error(
+      `could not SSH to ${this.config.user}@${this.config.vm}. Run: bun run tart setup`,
+    );
   }
 
   async ensureRunning(): Promise<void> {
@@ -196,7 +202,9 @@ export class TartGuest {
       return;
     }
 
-    console.log(`starting ${this.config.vm} with ${this.config.repoDir} mounted as ${this.config.shareName}`);
+    console.log(
+      `starting ${this.config.vm} with ${this.config.repoDir} mounted as ${this.config.shareName}`,
+    );
     const logDir = join(this.config.pkgDir, "dist");
     mkdirSync(logDir, { recursive: true });
     const log = join(logDir, "tart-run.log");
@@ -296,14 +304,29 @@ export async function setupGuest(guest: TartGuest): Promise<void> {
   await guest.connect();
 
   if (!(await guest.execOk(["id", user]))) {
-    await guest.exec(["sudo", "sysadminctl", "-addUser", user, "-password", user, "-fullName", user]);
+    await guest.exec([
+      "sudo",
+      "sysadminctl",
+      "-addUser",
+      user,
+      "-password",
+      user,
+      "-fullName",
+      user,
+    ]);
   }
   await guest.exec(["sudo", "systemsetup", "-setremotelogin", "on"], { allowFail: true });
-  await guest.exec(["sudo", "dseditgroup", "-o", "edit", "-a", user, "-t", "user", "com.apple.access_ssh"], {
-    allowFail: true,
-  });
+  await guest.exec(
+    ["sudo", "dseditgroup", "-o", "edit", "-a", user, "-t", "user", "com.apple.access_ssh"],
+    {
+      allowFail: true,
+    },
+  );
 
-  const hom = (await guest.exec(["dscl", ".", "-read", `/Users/${user}`, "NFSHomeDirectory"])).trim().split(/\s+/).at(-1);
+  const hom = (await guest.exec(["dscl", ".", "-read", `/Users/${user}`, "NFSHomeDirectory"]))
+    .trim()
+    .split(/\s+/)
+    .at(-1);
   if (!hom?.startsWith("/")) throw new Error(`no home directory for ${user}`);
   const sshDir = `${hom}/.ssh`;
   const keys = `${sshDir}/authorized_keys`;
@@ -322,7 +345,9 @@ export async function setupGuest(guest: TartGuest): Promise<void> {
     const bunBin = Bun.which("bun");
     if (!bunBin) throw new Error("bun is not on the host PATH");
     await guest.scp([bunBin], "/tmp/bun");
-    await guest.ssh('mkdir -p "$HOME/.bun/bin" && mv /tmp/bun "$HOME/.bun/bin/bun" && chmod +x "$HOME/.bun/bin/bun"');
+    await guest.ssh(
+      'mkdir -p "$HOME/.bun/bin" && mv /tmp/bun "$HOME/.bun/bin/bun" && chmod +x "$HOME/.bun/bin/bun"',
+    );
   }
   console.log(`setup ok (${guest.config.user}@${guest.ip})`);
 }

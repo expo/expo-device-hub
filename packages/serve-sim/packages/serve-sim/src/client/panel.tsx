@@ -15,8 +15,7 @@ export function Panel({
   style?: CSSProperties;
   side?: "left" | "right";
 }) {
-  const closedTransform =
-    side === "left" ? "translateX(-100%)" : "translateX(calc(100% + 24px))";
+  const closedTransform = side === "left" ? "translateX(-100%)" : "translateX(calc(100% + 24px))";
   const chromeClass =
     side === "left"
       ? "top-0 bottom-0 left-0 rounded-none border-0 border-r border-white/10 shadow-[8px_0_32px_rgba(0,0,0,0.35)]"
@@ -40,14 +39,15 @@ export function Panel({
   );
 }
 
-export function PanelHeader({
-  children,
-  style,
-}: {
-  children: ReactNode;
-  style?: CSSProperties;
-}) {
-  return <header className="flex shrink-0 items-center justify-between gap-2.5 px-2.5 py-1.5 pl-3" style={style}>{children}</header>;
+export function PanelHeader({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <header
+      className="flex shrink-0 items-center justify-between gap-2.5 px-2.5 py-1.5 pl-3"
+      style={style}
+    >
+      {children}
+    </header>
+  );
 }
 
 export function PanelTitle({ children }: { children: ReactNode }) {

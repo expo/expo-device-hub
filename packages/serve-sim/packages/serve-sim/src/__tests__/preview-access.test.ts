@@ -12,9 +12,16 @@ const TOKEN = "preview-token-xyz";
 const ORIGIN = "http://192.168.1.20:34567";
 
 function gated(requirePreviewToken: boolean, frameAncestors: string[] = []) {
-  const handler = simMiddleware({ basePath: "/", execToken: TOKEN, requirePreviewToken, frameAncestors });
+  const handler = simMiddleware({
+    basePath: "/",
+    execToken: TOKEN,
+    requirePreviewToken,
+    frameAncestors,
+  });
   return async (path: string, init?: RequestInit) => {
-    const response = await handler(new Request(`${ORIGIN}${path}`, { redirect: "manual", ...init }));
+    const response = await handler(
+      new Request(`${ORIGIN}${path}`, { redirect: "manual", ...init }),
+    );
     if (!response) throw new Error(`Unhandled request: ${path}`);
     return response;
   };
@@ -224,24 +231,36 @@ describe("websocket upgrades with --require-token", () => {
     const handler = simMiddleware({ basePath: "/", execToken: TOKEN, requirePreviewToken: false });
     const { calls, ws } = fakeWebSocket();
 
-    handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`, { headers: { host: new URL(ORIGIN).host } }), ws);
+    handler.handleWebSocket?.(
+      new Request(`${ORIGIN}/exec-ws`, { headers: { host: new URL(ORIGIN).host } }),
+      ws,
+    );
 
     expect(calls.closed).toBe(false);
     expect(calls.events).toContain("message");
   });
 });
 
-
 test("rejected log and crash requests start neither the watcher nor the log child", async () => {
   const start = crashRuntime.start;
   const ensure = logBufferCache.ensure;
   let watcherStarts = 0;
   let logStarts = 0;
-  crashRuntime.start = async () => { watcherStarts += 1; };
-  logBufferCache.ensure = () => { logStarts += 1; throw new Error("Unexpected log startup"); };
+  crashRuntime.start = async () => {
+    watcherStarts += 1;
+  };
+  logBufferCache.ensure = () => {
+    logStarts += 1;
+    throw new Error("Unexpected log startup");
+  };
   try {
     const request = gated(true);
-    for (const path of ["/logs?follow=1&snapshot=1", "/logs", "/crashes?tail=1", "/crashes/INC-1"]) {
+    for (const path of [
+      "/logs?follow=1&snapshot=1",
+      "/logs",
+      "/crashes?tail=1",
+      "/crashes/INC-1",
+    ]) {
       for (const accept of ["application/json", "text/event-stream"]) {
         expect((await request(path, { headers: { accept } })).status).toBe(401);
       }

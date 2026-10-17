@@ -1,12 +1,6 @@
 import { simEndpoint } from "./sim-endpoint";
 
-const LOOPBACK_HOSTNAMES = new Set([
-  "localhost",
-  "127.0.0.1",
-  "::1",
-  "[::1]",
-  "0.0.0.0",
-]);
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
 export function isLoopbackPreviewHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/\.$/, "");

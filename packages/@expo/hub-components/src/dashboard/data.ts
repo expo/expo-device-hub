@@ -6,13 +6,13 @@
  * components are typed against.
  */
 
-export type Platform = 'ios' | 'android';
+export type Platform = "ios" | "android";
 
 /** Exact device profile with frame artwork bundled by Hub. */
 export const DEVICE_FRAME_PROFILE_IDS = [
-  'ios:iphone-17-pro',
-  'android:pixel-9',
-  'android:pixel-10-pro',
+  "ios:iphone-17-pro",
+  "android:pixel-9",
+  "android:pixel-10-pro",
 ] as const;
 export type DeviceFrameProfileId = (typeof DEVICE_FRAME_PROFILE_IDS)[number];
 
@@ -55,7 +55,7 @@ export type LogEntry = {
  * Active UI color scheme. The consumer owns how it's resolved (system setting +
  * override); the components just read it and render light/dark accordingly.
  */
-export type ColorScheme = 'light' | 'dark';
+export type ColorScheme = "light" | "dark";
 
 /** A host toolchain device type/profile that can be used to create a device. */
 export type NewDeviceModelOption = {
@@ -102,8 +102,8 @@ export type NewDeviceRequest = {
 
 /** The mutually exclusive target selected in the add-device picker. */
 export type AddDeviceTarget =
-  | { kind: 'recent'; device: Device }
-  | { kind: 'new'; device: NewDeviceRequest };
+  | { kind: "recent"; device: Device }
+  | { kind: "new"; device: NewDeviceRequest };
 
 /** Result returned to the picker after its async boot/create request. */
 export type AddDeviceOutcome = { ok: true } | { ok: false; error: string };

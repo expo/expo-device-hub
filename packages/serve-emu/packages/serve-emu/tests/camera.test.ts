@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  chmod,
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -101,12 +94,8 @@ afterEach(async () => {
 describe("camera feed paths", () => {
   test("derives one path per facing under the overridable root", () => {
     expect(cameraFeedRoot()).toBe(root);
-    expect(cameraFeedPath("emulator-5554", "back")).toBe(
-      join(root, "emulator-5554-back.png"),
-    );
-    expect(cameraFeedPath("emulator-5554", "front")).toBe(
-      join(root, "emulator-5554-front.png"),
-    );
+    expect(cameraFeedPath("emulator-5554", "back")).toBe(join(root, "emulator-5554-back.png"));
+    expect(cameraFeedPath("emulator-5554", "front")).toBe(join(root, "emulator-5554-front.png"));
   });
 
   test("keeps a hostile serial inside the feed directory", () => {
@@ -150,29 +139,20 @@ describe("camera input validation", () => {
     expect(() => assertCameraImage(placeholderCameraImage().png.subarray(0, 16))).toThrow(
       "must be a PNG",
     );
-    expect(() =>
-      assertCameraImage(new Uint8Array(MAX_CAMERA_IMAGE_BYTES + 1)),
-    ).toThrow("exceeds");
+    expect(() => assertCameraImage(new Uint8Array(MAX_CAMERA_IMAGE_BYTES + 1))).toThrow("exceeds");
   });
 
   test("rejects a PNG the emulator could not decode", () => {
-    expect(() => assertCameraImage(headerOnlyPng(4000, 3000, 4096))).toThrow(
-      "truncated",
-    );
+    expect(() => assertCameraImage(headerOnlyPng(4000, 3000, 4096))).toThrow("truncated");
 
     const real = solidPng(8, 8, [10, 20, 30]);
-    expect(() => assertCameraImage(real.subarray(0, real.length - 20))).toThrow(
-      "truncated",
-    );
+    expect(() => assertCameraImage(real.subarray(0, real.length - 20))).toThrow("truncated");
 
     const corruptIdat = Buffer.from(real);
     corruptIdat[corruptIdat.length - 20] ^= 0xff;
     expect(() => assertCameraImage(corruptIdat)).toThrow("corrupt IDAT chunk");
 
-    const noImageData = Buffer.concat([
-      real.subarray(0, 8 + 25),
-      real.subarray(real.length - 12),
-    ]);
+    const noImageData = Buffer.concat([real.subarray(0, 8 + 25), real.subarray(real.length - 12)]);
     expect(() => assertCameraImage(noImageData)).toThrow("no IDAT chunk");
   });
 
@@ -194,9 +174,7 @@ describe("camera input validation", () => {
   });
 
   test("refuses a physical device serial", () => {
-    expect(() => assertCameraSupported("R3CN90ABCDE")).toThrow(
-      "Android Emulator serials only",
-    );
+    expect(() => assertCameraSupported("R3CN90ABCDE")).toThrow("Android Emulator serials only");
     expect(() => assertCameraSupported("emulator-5554")).not.toThrow();
   });
 });
@@ -240,9 +218,7 @@ describe("camera feed writes", () => {
     const variants = Array.from({ length: 8 }, (_, i) =>
       solidPng(120 + i * 40, 90 + i * 30, [i, 0x40 + i, 0x80 + i]),
     );
-    await Promise.all(
-      variants.map((png) => setCameraImage("emulator-5554", "back", png)),
-    );
+    await Promise.all(variants.map((png) => setCameraImage("emulator-5554", "back", png)));
 
     const published = await readFile(cameraFeedPath("emulator-5554", "back"));
     expect(variants.some((variant) => variant.equals(published))).toBe(true);
@@ -316,9 +292,9 @@ describe("readCameraStatus", () => {
       supported: true,
       wiredAtLaunch: false,
     });
-    await expect(
-      readCameraStatus("emulator-5554", async () => true),
-    ).resolves.toMatchObject({ wiredAtLaunch: true });
+    await expect(readCameraStatus("emulator-5554", async () => true)).resolves.toMatchObject({
+      wiredAtLaunch: true,
+    });
     await expect(readCameraStatus("R3CN90ABCDE", unwired)).resolves.toMatchObject({
       supported: false,
     });
@@ -442,8 +418,6 @@ describe("cameraLaunchIsWired", () => {
     await expect(
       cameraLaunchIsWired({ serial, cameraFeed: false }, async () => true),
     ).resolves.toBe(true);
-    await expect(
-      cameraLaunchIsWired({ serial, cameraFeed: false }, unwired),
-    ).resolves.toBe(false);
+    await expect(cameraLaunchIsWired({ serial, cameraFeed: false }, unwired)).resolves.toBe(false);
   });
 });

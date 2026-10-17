@@ -122,7 +122,9 @@ async function indexEntryLines(entriesPath: string): Promise<IndexedLine[]> {
     if (line.length > 0) {
       let start = Number.POSITIVE_INFINITY;
       try {
-        const parsed = Date.parse((JSON.parse(line.toString("utf8")) as { startedDateTime?: string }).startedDateTime ?? "");
+        const parsed = Date.parse(
+          (JSON.parse(line.toString("utf8")) as { startedDateTime?: string }).startedDateTime ?? "",
+        );
         if (!Number.isNaN(parsed)) start = parsed;
       } catch {
         // An unreadable line keeps its place after the dated ones.

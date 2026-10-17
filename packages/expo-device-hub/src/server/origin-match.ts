@@ -22,7 +22,7 @@ export function originMatches(configured: string, origin: URL): boolean {
   } catch {
     return false;
   }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
   if (parsed.origin === origin.origin) return true;
   if (!WILDCARD_HOST.test(parsed.hostname)) return false;
   const suffix = parsed.hostname.slice(1).toLowerCase();

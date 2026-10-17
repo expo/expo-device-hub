@@ -45,7 +45,9 @@ function writeRawState(contents: string): void {
 
 afterEach(() => {
   clearLaunchState(UDID);
-  try { unlinkSync(capabilityConfigPath(UDID)); } catch {}
+  try {
+    unlinkSync(capabilityConfigPath(UDID));
+  } catch {}
 });
 
 describe("formatCapabilityConfig", () => {
@@ -78,7 +80,14 @@ describe("formatCapabilityConfig", () => {
         ownerPid: null,
         loadDelayMs: 500,
       },
-      fps: { name: "fps", bundleId: "a", scope: "allApps", dylib: "/fps.dylib", env: { SERVE_SIM_FPS_FILE: "/f" }, ownerPid: null },
+      fps: {
+        name: "fps",
+        bundleId: "a",
+        scope: "allApps",
+        dylib: "/fps.dylib",
+        env: { SERVE_SIM_FPS_FILE: "/f" },
+        ownerPid: null,
+      },
     });
     expect(config.trim().split("\n")).toEqual([
       "all\t/cam.dylib\t\t500",
@@ -146,9 +155,9 @@ describe("config size limit", () => {
   };
 
   test("a capability set that would not fit is refused", () => {
-    expect(() =>
-      renderCapabilityConfig({ launchArgs: [], capabilities: huge }),
-    ).toThrow("The capability loader would load nothing");
+    expect(() => renderCapabilityConfig({ launchArgs: [], capabilities: huge })).toThrow(
+      "The capability loader would load nothing",
+    );
   });
 
   test("a capability set that fits is rendered", () => {
@@ -184,7 +193,14 @@ describe("config field separators", () => {
     for (const value of ["a\tb", "a\nb", "a;b"]) {
       expect(() =>
         formatCapabilityConfig({
-          "x": { name: "x", bundleId: "a", scope: "allApps", dylib: "/x.dylib", env: { K: value }, ownerPid: null },
+          x: {
+            name: "x",
+            bundleId: "a",
+            scope: "allApps",
+            dylib: "/x.dylib",
+            env: { K: value },
+            ownerPid: null,
+          },
         }),
       ).toThrow("separates fields");
     }
@@ -193,7 +209,14 @@ describe("config field separators", () => {
   test("a name carrying the pair separator is refused", () => {
     expect(() =>
       formatCapabilityConfig({
-        "x": { name: "x", bundleId: "a", scope: "allApps", dylib: "/x.dylib", env: { "K=V": "1" }, ownerPid: null },
+        x: {
+          name: "x",
+          bundleId: "a",
+          scope: "allApps",
+          dylib: "/x.dylib",
+          env: { "K=V": "1" },
+          ownerPid: null,
+        },
       }),
     ).toThrow('contains "="');
   });
@@ -264,7 +287,13 @@ describe("capability scopes", () => {
       JSON.stringify({
         launchArgs: [],
         capabilities: {
-          camera: { name: "camera", bundleId: null, scope: "everything", dylib: "/cam.dylib", ownerPid: null },
+          camera: {
+            name: "camera",
+            bundleId: null,
+            scope: "everything",
+            dylib: "/cam.dylib",
+            ownerPid: null,
+          },
         },
       }),
     );
@@ -292,7 +321,10 @@ describe("releaseLaunchState", () => {
     writeRawState(
       JSON.stringify({
         launchArgs: [],
-        capabilities: { probe: record(process.pid), other: { ...record(process.ppid), name: "other" } },
+        capabilities: {
+          probe: record(process.pid),
+          other: { ...record(process.ppid), name: "other" },
+        },
       }),
     );
 
@@ -301,18 +333,14 @@ describe("releaseLaunchState", () => {
   });
 
   test("reports nothing left when only our records were there", () => {
-    writeRawState(
-      JSON.stringify({ launchArgs: [], capabilities: { probe: record(process.pid) } }),
-    );
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { probe: record(process.pid) } }));
 
     expect(releaseLaunchState(UDID, process.pid)).toBe(false);
     expect(readLaunchState(UDID)).toBeNull();
   });
 
   test("keeps a record no session owns, so a one-shot command survives", () => {
-    writeRawState(
-      JSON.stringify({ launchArgs: [], capabilities: { probe: record(null) } }),
-    );
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { probe: record(null) } }));
 
     expect(releaseLaunchState(UDID, process.pid)).toBe(true);
     expect(listCapabilities(UDID)).toEqual(["probe"]);
@@ -320,20 +348,21 @@ describe("releaseLaunchState", () => {
 
   test("drops a record whose owner died without disarming", () => {
     const dead = 999_999;
-    writeRawState(
-      JSON.stringify({ launchArgs: [], capabilities: { probe: record(dead) } }),
-    );
+    writeRawState(JSON.stringify({ launchArgs: [], capabilities: { probe: record(dead) } }));
 
     expect(listCapabilities(UDID)).toEqual([]);
   });
 });
 
-
 describe("session cleanup", () => {
   test("keeps another armed session even with no capabilities", () => {
-    writeRawState(JSON.stringify({
-      launchArgs: [], capabilities: {}, sessionPids: [process.pid, process.ppid],
-    }));
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        capabilities: {},
+        sessionPids: [process.pid, process.ppid],
+      }),
+    );
     expect(releaseLaunchState(UDID, process.pid)).toBe(true);
     expect(readLaunchState(UDID)?.sessionPids).toEqual([process.ppid]);
     expect(listCapabilities(UDID)).toEqual([]);
@@ -341,16 +370,23 @@ describe("session cleanup", () => {
 
   test("releases only our host resources and preserves persistent capabilities", () => {
     const capability = (name: string, ownerPid: number | null) => ({
-      name, ownerPid, bundleId: null, scope: "allApps", dylib: "/probe.dylib",
+      name,
+      ownerPid,
+      bundleId: null,
+      scope: "allApps",
+      dylib: "/probe.dylib",
     });
-    writeRawState(JSON.stringify({
-      launchArgs: [], sessionPids: [process.pid, process.ppid],
-      capabilities: {
-        ours: capability("ours", process.pid),
-        theirs: capability("theirs", process.ppid),
-        persistent: capability("persistent", null),
-      },
-    }));
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        sessionPids: [process.pid, process.ppid],
+        capabilities: {
+          ours: capability("ours", process.pid),
+          theirs: capability("theirs", process.ppid),
+          persistent: capability("persistent", null),
+        },
+      }),
+    );
     const released: string[] = [];
     releaseSessionSync(UDID, process.pid, (record) => released.push(record.name));
     expect(released).toEqual(["ours"]);
@@ -373,9 +409,14 @@ describe("session cleanup", () => {
     const lock = join(stateDir(), `launch-${UDID}.lock`);
     const target = join(stateDir(), `launch-${UDID}.json`);
     const ready = join(stateDir(), "cleanup-lock-ready");
-    writeRawState(JSON.stringify({ launchArgs: [], capabilities: {
-      sentinel: { name: "sentinel", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
-    } }));
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        capabilities: {
+          sentinel: { name: "sentinel", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
+        },
+      }),
+    );
     const script = `
       const fs = require("fs");
       fs.writeFileSync(${JSON.stringify(lock)}, String(process.pid), { flag: "wx" });
@@ -392,7 +433,9 @@ describe("session cleanup", () => {
     const child = spawn(process.execPath, ["-e", script], { stdio: "ignore" });
     const exited = new Promise<void>((resolve, reject) => {
       child.once("error", reject);
-      child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`writer exited ${code}`)));
+      child.once("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error(`writer exited ${code}`)),
+      );
     });
     const deadline = Date.now() + 3000;
     while (!existsSync(ready) && Date.now() < deadline) {
@@ -409,15 +452,25 @@ describe("session cleanup", () => {
   });
 });
 
-
 describe("graceful launch shutdown", () => {
   test("awaits an active launch transaction before releasing its capabilities", async () => {
-    writeRawState(JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.ppid] }));
+    writeRawState(
+      JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.ppid] }),
+    );
     await withShimsAsync({ xcrun: "#!/bin/sh\nsleep 0.15\nexit 0\n" }, async () => {
       const released: string[] = [];
-      const update = enableCapabilities(UDID, null, [{
-        name: "camera", scope: "allApps", dylib: "/camera.dylib",
-      }], { relaunch: false });
+      const update = enableCapabilities(
+        UDID,
+        null,
+        [
+          {
+            name: "camera",
+            scope: "allApps",
+            dylib: "/camera.dylib",
+          },
+        ],
+        { relaunch: false },
+      );
       const shutdown = releaseSession(UDID, process.pid, (record) => released.push(record.name));
       await Promise.all([update, shutdown]);
       expect(released).toEqual(["camera"]);
@@ -429,7 +482,11 @@ describe("graceful launch shutdown", () => {
   test("--kill waits for owner cleanup and preserves another live session", async () => {
     const marker = join(stateDir(), "owner-cleaned");
     const manager = join(import.meta.dir, "../launch-manager.ts");
-    const child = spawn(process.execPath, ["-e", `
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `
       const { releaseSessionSync } = await import(${JSON.stringify(manager)});
       const fs = require("fs");
       process.on("SIGTERM", () => setTimeout(() => {
@@ -440,16 +497,29 @@ describe("graceful launch shutdown", () => {
       }, 100));
       setInterval(() => {}, 1000);
       console.log("ready");
-    `], { stdio: ["ignore", "pipe", "pipe"] });
+    `,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
     try {
       await new Promise<void>((resolve, reject) => {
         child.once("error", reject);
         child.stdout?.once("data", () => resolve());
       });
-      writeRawState(JSON.stringify({
-        launchArgs: [], sessionPids: [child.pid, process.pid],
-        capabilities: { camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: child.pid } },
-      }));
+      writeRawState(
+        JSON.stringify({
+          launchArgs: [],
+          sessionPids: [child.pid, process.pid],
+          capabilities: {
+            camera: {
+              name: "camera",
+              scope: "allApps",
+              dylib: "/camera.dylib",
+              ownerPid: child.pid,
+            },
+          },
+        }),
+      );
       const fallback: string[] = [];
       await stopLaunchSession(UDID, child.pid!, (record) => fallback.push(record.name));
       expect(readFileSync(marker, "utf-8")).toBe("camera");
@@ -462,13 +532,16 @@ describe("graceful launch shutdown", () => {
 
   test("--kill releases a dead owner's resources without removing persistent ones", async () => {
     const dead = 999_999;
-    writeRawState(JSON.stringify({
-      launchArgs: [], sessionPids: [process.pid],
-      capabilities: {
-        camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
-        probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
-      },
-    }));
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        sessionPids: [process.pid],
+        capabilities: {
+          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
+          probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
+        },
+      }),
+    );
     const released: string[] = [];
     await stopLaunchSession(UDID, dead, (record) => released.push(record.name));
     expect(released).toEqual(["camera"]);
@@ -477,25 +550,42 @@ describe("graceful launch shutdown", () => {
   });
 });
 
-
 describe("startup capability loading", () => {
   test("defaults do not restart a remembered app and explicit launch starts once", async () => {
     const log = join(stateDir(), "simctl-startup-calls");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
     clearRegisteredCapabilities();
-    registerCapability({ name: "camera", defaultEnabled: false, scope: "allApps", async setEnabled() {
-      return { dylib: "/camera.dylib" };
-    } });
+    registerCapability({
+      name: "camera",
+      defaultEnabled: false,
+      scope: "allApps",
+      async setEnabled() {
+        return { dylib: "/camera.dylib" };
+      },
+    });
     try {
-      await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedLog}\nexit 0\n` }, async () => {
-        writeRawState(JSON.stringify({ bundleId: "remembered.app", launchArgs: [], capabilities: {} }));
-        await applyDefaultCapabilities(UDID, null, { enable: ["camera"] });
-        const calls = () => readFileSync(log, "utf-8").split("\n");
-        expect(calls().filter((line) => /^simctl (launch|terminate) /.test(line))).toEqual([]);
-        await launchAppAsync(UDID, { bundleId: "explicit.app", launchArgs: [], capabilities: { enable: ["camera"] } });
-        expect(calls().filter((line) => line.startsWith("simctl launch "))).toEqual([`simctl launch ${UDID} explicit.app`]);
-        expect(calls().filter((line) => line.startsWith("simctl terminate "))).toEqual([`simctl terminate ${UDID} explicit.app`]);
-      });
+      await withShimsAsync(
+        { xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedLog}\nexit 0\n` },
+        async () => {
+          writeRawState(
+            JSON.stringify({ bundleId: "remembered.app", launchArgs: [], capabilities: {} }),
+          );
+          await applyDefaultCapabilities(UDID, null, { enable: ["camera"] });
+          const calls = () => readFileSync(log, "utf-8").split("\n");
+          expect(calls().filter((line) => /^simctl (launch|terminate) /.test(line))).toEqual([]);
+          await launchAppAsync(UDID, {
+            bundleId: "explicit.app",
+            launchArgs: [],
+            capabilities: { enable: ["camera"] },
+          });
+          expect(calls().filter((line) => line.startsWith("simctl launch "))).toEqual([
+            `simctl launch ${UDID} explicit.app`,
+          ]);
+          expect(calls().filter((line) => line.startsWith("simctl terminate "))).toEqual([
+            `simctl terminate ${UDID} explicit.app`,
+          ]);
+        },
+      );
     } finally {
       clearRegisteredCapabilities();
     }
@@ -506,26 +596,38 @@ describe("startup capability loading", () => {
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
     const quotedConfig = "'" + capabilityConfigPath(UDID).replaceAll("'", "'\\''") + "'";
     clearRegisteredCapabilities();
-    registerCapability({ name: "camera", defaultEnabled: false, scope: "allApps", async setEnabled() {
-      return { dylib: "/camera.dylib" };
-    } });
+    registerCapability({
+      name: "camera",
+      defaultEnabled: false,
+      scope: "allApps",
+      async setEnabled() {
+        return { dylib: "/camera.dylib" };
+      },
+    });
     try {
-      await withShimsAsync({ xcrun: `#!/bin/sh
+      await withShimsAsync(
+        {
+          xcrun: `#!/bin/sh
 printf '%s\\n' "$*" >> ${quotedLog}
 if [ "$1" = "simctl" ] && [ "$2" = "launch" ]; then
   printf 'config-at-launch:%s\\n' "$(tr '\\t\\n' '  ' < ${quotedConfig} 2>/dev/null)" >> ${quotedLog}
 fi
 exit 0
-` }, async () => {
-        writeRawState(JSON.stringify({ launchArgs: [], capabilities: {} }));
-        await launchAppAsync(UDID, {
-          bundleId: "explicit.app",
-          launchArgs: [],
-          capabilities: { enable: ["camera"] },
-        });
-        const calls = readFileSync(log, "utf-8").split("\n");
-        expect(calls.find((line) => line.startsWith("config-at-launch:"))).toContain("/camera.dylib");
-      });
+`,
+        },
+        async () => {
+          writeRawState(JSON.stringify({ launchArgs: [], capabilities: {} }));
+          await launchAppAsync(UDID, {
+            bundleId: "explicit.app",
+            launchArgs: [],
+            capabilities: { enable: ["camera"] },
+          });
+          const calls = readFileSync(log, "utf-8").split("\n");
+          expect(calls.find((line) => line.startsWith("config-at-launch:"))).toContain(
+            "/camera.dylib",
+          );
+        },
+      );
     } finally {
       clearRegisteredCapabilities();
     }

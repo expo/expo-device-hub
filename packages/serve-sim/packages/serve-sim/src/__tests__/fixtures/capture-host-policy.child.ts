@@ -23,7 +23,10 @@ mock.module("../../capture", () => ({ ...capture, captureRuntime }));
 const { simMiddleware } = await import("../../middleware");
 
 async function enableError(): Promise<string> {
-  const error = await captureRuntime.enableForDevice(UDID).then(() => "", (e: unknown) => String((e as { meta?: { attachError?: string } }).meta?.attachError ?? e));
+  const error = await captureRuntime.enableForDevice(UDID).then(
+    () => "",
+    (e: unknown) => String((e as { meta?: { attachError?: string } }).meta?.attachError ?? e),
+  );
   await captureRuntime.disableForDevice(UDID);
   return error;
 }
@@ -36,8 +39,11 @@ test("recreating middleware without an upstream restores direct egress for new c
     startProxy: async (_store, deps) => {
       upstreams.push(deps.upstream);
       return {
-        address: "127.0.0.1:9999", portFile: "/tmp/fake-proxy-port",
-        caPem: async () => "test-ca", setFields: () => {}, close: async () => {},
+        address: "127.0.0.1:9999",
+        portFile: "/tmp/fake-proxy-port",
+        caPem: async () => "test-ca",
+        setFields: () => {},
+        close: async () => {},
       };
     },
     trustCa: async () => {},
@@ -49,7 +55,12 @@ test("recreating middleware without an upstream restores direct egress for new c
   // Keep the middleware's real configuration path; replace only the device-facing runtime.
   const setUpstream = spyOn(captureRuntime, "setUpstream").mockImplementation(runtime.setUpstream);
   try {
-    for (const networkCaptureProxy of ["http://user:password@proxy.invalid:8899", undefined, "http://proxy.invalid:8899", "none"]) {
+    for (const networkCaptureProxy of [
+      "http://user:password@proxy.invalid:8899",
+      undefined,
+      "http://proxy.invalid:8899",
+      "none",
+    ]) {
       simMiddleware({ basePath: "/", loopbackOnly: true, networkCaptureProxy });
       await runtime.enableForDevice(UDID);
       await runtime.disableForDevice(UDID);
@@ -60,7 +71,11 @@ test("recreating middleware without an upstream restores direct egress for new c
       { url: "http://proxy.invalid:8899/" },
       null,
     ]);
-    simMiddleware({ basePath: "/", loopbackOnly: true, networkCaptureProxy: "http://proxy.invalid:8899" });
+    simMiddleware({
+      basePath: "/",
+      loopbackOnly: true,
+      networkCaptureProxy: "http://proxy.invalid:8899",
+    });
     await runtime.enableForDevice(UDID);
     simMiddleware({ basePath: "/", loopbackOnly: true });
     await runtime.enableForDevice(UDID);

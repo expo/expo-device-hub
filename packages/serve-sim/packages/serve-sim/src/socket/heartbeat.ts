@@ -24,7 +24,12 @@ export function createSocketHeartbeat(
       return;
     }
     pendingSince = Date.now();
-    try { ping(); } catch { stop(); onTimeout(); }
+    try {
+      ping();
+    } catch {
+      stop();
+      onTimeout();
+    }
   };
   return {
     start() {
@@ -36,7 +41,9 @@ export function createSocketHeartbeat(
         timer.unref?.();
       }
     },
-    pong() { pendingSince = null; },
+    pong() {
+      pendingSince = null;
+    },
     stop,
   };
 }

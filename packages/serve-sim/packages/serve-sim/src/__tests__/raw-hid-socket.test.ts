@@ -30,7 +30,9 @@ class FakeSocket extends EventEmitter {
     this.writable = false;
     if (this.closeOnEnd) this.destroy();
   }
-  destroySoon(): void { this.destroy(); }
+  destroySoon(): void {
+    this.destroy();
+  }
   destroy(): void {
     this.destroyCalls++;
     if (this.destroyed) return;
@@ -49,7 +51,9 @@ describe("raw HID socket heartbeat", () => {
     header.writeBigUInt64BE(4n * 1024n * 1024n + 1n, 2);
     const ws = rawHidSocket(socket as unknown as Socket, header);
     let closes = 0;
-    ws.on("close", () => { closes++; });
+    ws.on("close", () => {
+      closes++;
+    });
     expect(closes).toBe(1);
     expect(socket.destroyed).toBe(true);
   });
@@ -58,7 +62,9 @@ describe("raw HID socket heartbeat", () => {
     const socket = new FakeSocket();
     const ws = rawHidSocket(socket as unknown as Socket, Buffer.from([0x88, 0x00]));
     let closes = 0;
-    ws.on("close", () => { closes++; });
+    ws.on("close", () => {
+      closes++;
+    });
     expect(closes).toBe(1);
     expect(socket.destroyed).toBe(true);
   });
@@ -71,10 +77,17 @@ describe("raw HID socket heartbeat", () => {
         pongTimeoutMs: 40,
       });
       let closes = 0;
-      const closed = new Promise<void>((resolve) => ws.on("close", () => { closes++; resolve(); }));
+      const closed = new Promise<void>((resolve) =>
+        ws.on("close", () => {
+          closes++;
+          resolve();
+        }),
+      );
       await Promise.race([
         closed,
-        Bun.sleep(500).then(() => { throw new Error("Stale HID socket was not closed"); }),
+        Bun.sleep(500).then(() => {
+          throw new Error("Stale HID socket was not closed");
+        }),
       ]);
       expect(socket.pingCount).toBeGreaterThan(0);
       expect(closes).toBe(1);
@@ -92,7 +105,9 @@ describe("raw HID socket heartbeat", () => {
         pongTimeoutMs: 40,
       });
       let closes = 0;
-      ws.on("close", () => { closes++; });
+      ws.on("close", () => {
+        closes++;
+      });
       await Bun.sleep(100);
       expect(socket.pingCount).toBeGreaterThan(1);
       expect(socket.destroyed).toBe(false);
@@ -114,7 +129,9 @@ describe("raw HID socket close delivery", () => {
       const ws = rawHidSocket(stalled as unknown as Socket, Buffer.alloc(0));
       const other = rawHidSocket(responsive as unknown as Socket, Buffer.alloc(0));
       let closes = 0;
-      ws.on("close", () => { closes++; });
+      ws.on("close", () => {
+        closes++;
+      });
       ws.close(1013, "retry later");
       expect(closes).toBe(1);
       expect(stalled.destroyed).toBe(false);
@@ -140,7 +157,10 @@ describe("raw HID socket close delivery", () => {
     try {
       const ws = rawHidSocket(socket as unknown as Socket, Buffer.alloc(0));
       let messages = 0;
-      ws.on("message", () => { messages++; ws.close(1013, "retry later"); });
+      ws.on("message", () => {
+        messages++;
+        ws.close(1013, "retry later");
+      });
       const input = websocketFrame(0x2, Buffer.from([0x03]));
       socket.emit("data", Buffer.concat([input, input]));
       socket.emit("data", input);
@@ -168,7 +188,12 @@ describe("raw HID socket close delivery", () => {
         encoding: "utf8",
         timeout: 8_000,
       });
-      expect(JSON.parse(output)).toEqual({ code: 1013, reason: "Simulator input unavailable; retry after other clients disconnect", messages: 1, closes: 1 });
+      expect(JSON.parse(output)).toEqual({
+        code: 1013,
+        reason: "Simulator input unavailable; retry after other clients disconnect",
+        messages: 1,
+        closes: 1,
+      });
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

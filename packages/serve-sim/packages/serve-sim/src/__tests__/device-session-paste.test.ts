@@ -18,7 +18,11 @@ const KeyC = HID_USAGE_BY_CODE.KeyC!;
 
 type KeyCall = [type: "down" | "up", usage: number];
 
-function session(failOn?: (call: KeyCall) => boolean, udid = "SESSION-TEST", onKey?: (call: KeyCall) => void) {
+function session(
+  failOn?: (call: KeyCall) => boolean,
+  udid = "SESSION-TEST",
+  onKey?: (call: KeyCall) => void,
+) {
   const calls: KeyCall[] = [];
   const s = Object.create(DeviceSession.prototype) as DeviceSession;
   const key = async (type: "down" | "up", usage: number) => {
@@ -102,37 +106,47 @@ test("checked shortcut keys surface native rejection while ordinary input remain
 });
 
 describe("sendPasteShortcut", () => {
-  test.each(["MetaLeft", "MetaRight"])("preserves shared modifiers and reuses held %s", async (code) => {
-    const { calls, internals, viewer } = session();
-    const a = viewer();
-    const b = viewer();
-    const command = HID_USAGE_BY_CODE[code]!;
-    const modifiers = ["ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft", "AltRight"]
-      .map((modifier) => HID_USAGE_BY_CODE[modifier]!);
-    for (const usage of modifiers) {
-      await internals.updateHidKey(a, "down", usage);
-      await internals.updateHidKey(b, "down", usage);
-    }
-    await internals.updateHidKey(a, "down", command);
-    calls.length = 0;
+  test.each(["MetaLeft", "MetaRight"])(
+    "preserves shared modifiers and reuses held %s",
+    async (code) => {
+      const { calls, internals, viewer } = session();
+      const a = viewer();
+      const b = viewer();
+      const command = HID_USAGE_BY_CODE[code]!;
+      const modifiers = [
+        "ControlLeft",
+        "ControlRight",
+        "ShiftLeft",
+        "ShiftRight",
+        "AltLeft",
+        "AltRight",
+      ].map((modifier) => HID_USAGE_BY_CODE[modifier]!);
+      for (const usage of modifiers) {
+        await internals.updateHidKey(a, "down", usage);
+        await internals.updateHidKey(b, "down", usage);
+      }
+      await internals.updateHidKey(a, "down", command);
+      calls.length = 0;
 
-    expect(await internals.sendPasteShortcut(b)).toBeNull();
-    expect(calls).toEqual([
-      ...modifiers.map<KeyCall>((usage) => ["up", usage]),
-      ["down", KeyV], ["up", KeyV],
-      ...modifiers.map<KeyCall>((usage) => ["down", usage]),
-    ]);
-    expect(internals.activeHidKeyUsageCounts.get(command)).toBe(1);
-    calls.length = 0;
-    for (const usage of modifiers) {
-      expect(internals.activeHidKeyUsageCounts.get(usage)).toBe(2);
-      await internals.updateHidKey(a, "up", usage);
-      expect(calls).toEqual([]);
-    }
-    for (const usage of modifiers) await internals.updateHidKey(b, "up", usage);
-    expect(calls).toEqual(modifiers.map<KeyCall>((usage) => ["up", usage]));
-    expect(internals.activeHidKeyUsages.get(b)?.size).toBe(0);
-  });
+      expect(await internals.sendPasteShortcut(b)).toBeNull();
+      expect(calls).toEqual([
+        ...modifiers.map<KeyCall>((usage) => ["up", usage]),
+        ["down", KeyV],
+        ["up", KeyV],
+        ...modifiers.map<KeyCall>((usage) => ["down", usage]),
+      ]);
+      expect(internals.activeHidKeyUsageCounts.get(command)).toBe(1);
+      calls.length = 0;
+      for (const usage of modifiers) {
+        expect(internals.activeHidKeyUsageCounts.get(usage)).toBe(2);
+        await internals.updateHidKey(a, "up", usage);
+        expect(calls).toEqual([]);
+      }
+      for (const usage of modifiers) await internals.updateHidKey(b, "up", usage);
+      expect(calls).toEqual(modifiers.map<KeyCall>((usage) => ["up", usage]));
+      expect(internals.activeHidKeyUsages.get(b)?.size).toBe(0);
+    },
+  );
 
   test("taps a held V without typing it again or changing its owner", async () => {
     const { calls, internals, viewer } = session();
@@ -143,7 +157,11 @@ describe("sendPasteShortcut", () => {
 
     await internals.sendPasteShortcut(b);
     expect(calls).toEqual([
-      ["up", KeyV], ["down", MetaLeft], ["down", KeyV], ["up", KeyV], ["up", MetaLeft],
+      ["up", KeyV],
+      ["down", MetaLeft],
+      ["down", KeyV],
+      ["up", KeyV],
+      ["up", MetaLeft],
     ]);
     expect(internals.activeHidKeyUsageCounts.get(KeyV)).toBe(1);
     expect(internals.activeHidKeyUsages.get(a)?.has(KeyV)).toBe(true);
@@ -151,18 +169,26 @@ describe("sendPasteShortcut", () => {
     calls.length = 0;
     await internals.updateHidKey(a, "down", KeyV);
     await internals.updateHidKey(a, "up", KeyV);
-    expect(calls).toEqual([["down", KeyV], ["up", KeyV]]);
+    expect(calls).toEqual([
+      ["down", KeyV],
+      ["up", KeyV],
+    ]);
   });
 
   test("restores another viewer's held V if Command fails before the tap", async () => {
-    const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === MetaLeft);
+    const { calls, internals, viewer } = session(
+      ([type, usage]) => type === "down" && usage === MetaLeft,
+    );
     const a = viewer();
     const b = viewer();
     await internals.updateHidKey(a, "down", KeyV);
     calls.length = 0;
 
     await expect(internals.sendPasteShortcut(b)).rejects.toThrow("HID failed");
-    expect(calls).toEqual([["up", KeyV], ["down", KeyV]]);
+    expect(calls).toEqual([
+      ["up", KeyV],
+      ["down", KeyV],
+    ]);
     expect(internals.activeHidKeyUsageCounts.get(KeyV)).toBe(1);
   });
 
@@ -184,7 +210,9 @@ describe("sendPasteShortcut", () => {
   });
 
   test("releases its Command and restores another viewer's modifier when V-down fails", async () => {
-    const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyV);
+    const { calls, internals, viewer } = session(
+      ([type, usage]) => type === "down" && usage === KeyV,
+    );
     const a = viewer();
     const b = viewer();
     await internals.updateHidKey(a, "down", ControlLeft);
@@ -192,7 +220,10 @@ describe("sendPasteShortcut", () => {
 
     await expect(internals.sendPasteShortcut(b)).rejects.toThrow("HID failed");
     expect(calls).toEqual([
-      ["up", ControlLeft], ["down", MetaLeft], ["up", MetaLeft], ["down", ControlLeft],
+      ["up", ControlLeft],
+      ["down", MetaLeft],
+      ["up", MetaLeft],
+      ["down", ControlLeft],
     ]);
     expect(internals.activeHidKeyUsageCounts.get(ControlLeft)).toBe(1);
     expect(internals.activeHidKeyUsages.get(b)?.size).toBe(0);
@@ -202,26 +233,34 @@ describe("sendPasteShortcut", () => {
     expect(internals.activeHidKeyUsageCounts.has(MetaLeft)).toBe(false);
   });
 
-  test.each(["transient", "permanent"])("retries %s Command cleanup and warns only if it stays held", async (failure) => {
-    const permanent = failure === "permanent";
-    let releases = 0;
-    const { internals, viewer } = session(([type, usage]) =>
-      type === "up" && usage === MetaLeft && (++releases === 1 || permanent));
+  test.each(["transient", "permanent"])(
+    "retries %s Command cleanup and warns only if it stays held",
+    async (failure) => {
+      const permanent = failure === "permanent";
+      let releases = 0;
+      const { internals, viewer } = session(
+        ([type, usage]) => type === "up" && usage === MetaLeft && (++releases === 1 || permanent),
+      );
 
-    const warning = await internals.sendPasteShortcut(viewer());
-    if (permanent) expect(warning).toContain("key may still be held");
-    else expect(warning).toBeNull();
-    expect(releases).toBe(2);
-    expect(internals.activeHidKeyUsageCounts.get(MetaLeft)).toBe(permanent ? 1 : undefined);
-  });
+      const warning = await internals.sendPasteShortcut(viewer());
+      if (permanent) expect(warning).toContain("key may still be held");
+      else expect(warning).toBeNull();
+      expect(releases).toBe(2);
+      expect(internals.activeHidKeyUsageCounts.get(MetaLeft)).toBe(permanent ? 1 : undefined);
+    },
+  );
 });
 
 test("input barrier waits for earlier keys but ignores later ones", async () => {
   const { calls, hid, internals } = session();
   let finishEarlier!: () => void;
-  const earlier = new Promise<void>((resolve) => { finishEarlier = resolve; });
+  const earlier = new Promise<void>((resolve) => {
+    finishEarlier = resolve;
+  });
   let finishLater!: () => void;
-  const later = new Promise<void>((resolve) => { finishLater = resolve; });
+  const later = new Promise<void>((resolve) => {
+    finishLater = resolve;
+  });
   const key = hid.key;
   hid.key = async (type, usage) => {
     if (type === "down") await (usage === KeyA ? earlier : later);
@@ -231,14 +270,24 @@ test("input barrier waits for earlier keys but ignores later ones", async () => 
   const handlers = new Map<string, (data?: Buffer) => void>();
   const replies: Buffer[] = [];
   const ws = {
-    send: (message: Buffer) => { replies.push(message); },
-    on: (event: string, handler: (data?: Buffer) => void) => { handlers.set(event, handler); },
+    send: (message: Buffer) => {
+      replies.push(message);
+    },
+    on: (event: string, handler: (data?: Buffer) => void) => {
+      handlers.set(event, handler);
+    },
     close() {},
   };
-  Object.assign(internals, { inFlightHidMessages: new WeakMap(), supportsHingeAngle: true, configFrame: () => null });
+  Object.assign(internals, {
+    inFlightHidMessages: new WeakMap(),
+    supportsHingeAngle: true,
+    configFrame: () => null,
+  });
   (internals as unknown as { attachHidSocket(ws: object): void }).attachHidSocket(ws);
   const send = (tag: number, body?: object) =>
-    handlers.get("message")!(Buffer.concat([Buffer.from([tag]), Buffer.from(body ? JSON.stringify(body) : "")]));
+    handlers.get("message")!(
+      Buffer.concat([Buffer.from([tag]), Buffer.from(body ? JSON.stringify(body) : "")]),
+    );
   const barrierReplies = () => replies.filter((reply) => reply[0] === 0x91);
 
   send(0x06, { type: "down", usage: KeyA });
@@ -255,49 +304,73 @@ test("input barrier waits for earlier keys but ignores later ones", async () => 
 
   finishLater();
   while (calls.length < 2 && Date.now() < deadline) await Bun.sleep(5);
-  expect(calls).toEqual([["down", KeyA], ["down", KeyV]]);
+  expect(calls).toEqual([
+    ["down", KeyA],
+    ["down", KeyV],
+  ]);
 });
 
-test.each([true, false])("correlates an input barrier acknowledgement (available: %s)", async (available) => {
-  const { hid, internals, viewer } = session();
-  hid.inputUnavailable = !available;
-  const ws = viewer() as { send(message: Buffer): void };
-  const replies: Buffer[] = [];
-  ws.send = (message) => replies.push(message);
-  const handler = internals as typeof internals & {
-    handleHidMessage(data: Buffer, ws: object): Promise<void>;
-  };
+test.each([true, false])(
+  "correlates an input barrier acknowledgement (available: %s)",
+  async (available) => {
+    const { hid, internals, viewer } = session();
+    hid.inputUnavailable = !available;
+    const ws = viewer() as { send(message: Buffer): void };
+    const replies: Buffer[] = [];
+    ws.send = (message) => replies.push(message);
+    const handler = internals as typeof internals & {
+      handleHidMessage(data: Buffer, ws: object): Promise<void>;
+    };
 
-  await handler.handleHidMessage(Buffer.concat([
-    Buffer.from([0x11]), Buffer.from(JSON.stringify({ requestId: 23 })),
-  ]), ws);
+    await handler.handleHidMessage(
+      Buffer.concat([Buffer.from([0x11]), Buffer.from(JSON.stringify({ requestId: 23 }))]),
+      ws,
+    );
 
-  expect(replies[0]?.[0]).toBe(0x91);
-  expect(JSON.parse(replies[0]!.subarray(1).toString())).toEqual({ requestId: 23, ok: available });
-});
+    expect(replies[0]?.[0]).toBe(0x91);
+    expect(JSON.parse(replies[0]!.subarray(1).toString())).toEqual({
+      requestId: 23,
+      ok: available,
+    });
+  },
+);
 
-test.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("ignores an invalid input barrier ID %s", async (requestId) => {
-  const { internals, viewer } = session();
-  const ws = viewer() as { send(message: Buffer): void };
-  const replies: Buffer[] = [];
-  ws.send = (message) => replies.push(message);
-  const handler = internals as typeof internals & {
-    handleHidMessage(data: Buffer, ws: object): Promise<void>;
-  };
+test.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  "ignores an invalid input barrier ID %s",
+  async (requestId) => {
+    const { internals, viewer } = session();
+    const ws = viewer() as { send(message: Buffer): void };
+    const replies: Buffer[] = [];
+    ws.send = (message) => replies.push(message);
+    const handler = internals as typeof internals & {
+      handleHidMessage(data: Buffer, ws: object): Promise<void>;
+    };
 
-  await handler.handleHidMessage(Buffer.concat([
-    Buffer.from([0x11]), Buffer.from(JSON.stringify({ requestId })),
-  ]), ws);
+    await handler.handleHidMessage(
+      Buffer.concat([Buffer.from([0x11]), Buffer.from(JSON.stringify({ requestId }))]),
+      ws,
+    );
 
-  expect(replies).toEqual([]);
-});
+    expect(replies).toEqual([]);
+  },
+);
 
 test("a full server input queue rejects only the excess turn and recovers", async () => {
   const { internals } = session();
   let release!: () => void;
-  const first = internals.queueInputOperation(internals.serverInput, () => new Promise<void>((resolve) => { release = resolve; }));
+  const first = internals.queueInputOperation(
+    internals.serverInput,
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   let completed = 0;
-  const queued = Array.from({ length: 1024 }, () => internals.queueInputOperation(internals.serverInput, async () => { completed++; }));
+  const queued = Array.from({ length: 1024 }, () =>
+    internals.queueInputOperation(internals.serverInput, async () => {
+      completed++;
+    }),
+  );
   try {
     expect(internals.queueInputOperation(internals.serverInput, async () => {})).toBeNull();
   } finally {
@@ -305,7 +378,9 @@ test("a full server input queue rejects only the excess turn and recovers", asyn
     await Promise.all([first, ...queued]);
   }
   expect(completed).toBe(1024);
-  const next = internals.queueInputOperation(internals.serverInput, async () => { completed++; });
+  const next = internals.queueInputOperation(internals.serverInput, async () => {
+    completed++;
+  });
   expect(next).not.toBeNull();
   await next;
   expect(completed).toBe(1025);
@@ -332,7 +407,9 @@ describe("copy shortcut", () => {
   });
 
   test("releases its own Command when the chord fails", async () => {
-    const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyC);
+    const { calls, internals, viewer } = session(
+      ([type, usage]) => type === "down" && usage === KeyC,
+    );
     const a = viewer();
     await internals.updateHidKey(a, "down", ControlLeft);
     calls.length = 0;
@@ -349,8 +426,9 @@ describe("copy shortcut", () => {
 
   test("reports a warning when restoring another viewer's modifier fails", async () => {
     let restores = 0;
-    const { internals, viewer } = session(([type, usage]) =>
-      type === "down" && usage === ControlLeft && ++restores > 1);
+    const { internals, viewer } = session(
+      ([type, usage]) => type === "down" && usage === ControlLeft && ++restores > 1,
+    );
     const a = viewer();
     await internals.updateHidKey(a, "down", ControlLeft);
 
@@ -359,8 +437,9 @@ describe("copy shortcut", () => {
 
   test("retains a failed Copy Command release so reconnect cleanup can retry it", async () => {
     let rejectReleases = true;
-    const { calls, internals, viewer } = session(([type, usage]) =>
-      rejectReleases && type === "up" && usage === MetaLeft);
+    const { calls, internals, viewer } = session(
+      ([type, usage]) => rejectReleases && type === "up" && usage === MetaLeft,
+    );
     const a = viewer();
 
     expect(await internals.sendCommandShortcut(KeyC, null)).toContain("key may still be held");
@@ -378,8 +457,9 @@ describe("copy shortcut", () => {
 
   test("retries a server-owned Command before the next clipboard chord", async () => {
     let releases = 0;
-    const { calls, internals } = session(([type, usage]) =>
-      type === "up" && usage === MetaLeft && ++releases <= 2);
+    const { calls, internals } = session(
+      ([type, usage]) => type === "up" && usage === MetaLeft && ++releases <= 2,
+    );
 
     expect(await internals.sendCommandShortcut(KeyC, null)).toContain("key may still be held");
     calls.length = 0;
@@ -389,14 +469,19 @@ describe("copy shortcut", () => {
     expect(releases).toBe(4);
     expect(internals.activeHidKeyUsageCounts.has(MetaLeft)).toBe(false);
   });
-
 });
 
 describe("pastePasteboard", () => {
   test("does not report success when reboot discards a queued paste", async () => {
     const { calls, internals, viewer } = session();
     let release!: () => void;
-    const earlier = internals.queueInputOperation(viewer(), () => new Promise<void>((resolve) => { release = resolve; }));
+    const earlier = internals.queueInputOperation(
+      viewer(),
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
     const paste = internals.pastePasteboard();
     await Bun.sleep(20);
     internals.discardQueuedInput(internals.serverInput);
@@ -407,9 +492,18 @@ describe("pastePasteboard", () => {
   });
 
   test("waits behind prior input and holds later input through its chord", async () => {
-    const { calls, internals, viewer } = session(undefined, `PASTE-HOST-${process.pid}-${Math.random()}`);
+    const { calls, internals, viewer } = session(
+      undefined,
+      `PASTE-HOST-${process.pid}-${Math.random()}`,
+    );
     let release!: () => void;
-    const earlier = internals.queueInputOperation(viewer(), () => new Promise<void>((resolve) => { release = resolve; }));
+    const earlier = internals.queueInputOperation(
+      viewer(),
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
     const paste = internals.pastePasteboard();
     await Bun.sleep(20);
     let laterRan = false;
@@ -431,10 +525,14 @@ describe("pastePasteboard", () => {
     const { calls, internals } = session(undefined, udid);
     let release!: () => void;
     let acquired!: () => void;
-    const locked = new Promise<void>((resolve) => { acquired = resolve; });
+    const locked = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
     const holder = withSimPasteboardLock(udid, async () => {
       acquired();
-      await new Promise<void>((resolve) => { release = resolve; });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
     });
     await locked;
     const paste = internals.pastePasteboard("");
@@ -455,7 +553,17 @@ describe("pastePasteboard", () => {
 });
 
 describe("copyPasteboard", () => {
-  async function withPasteboard(text: string, readDelay: string, run: (udid: string, board: string, markCopy: (call: KeyCall) => void, shortcutDone: Promise<void>, helperChecks: string) => Promise<void>) {
+  async function withPasteboard(
+    text: string,
+    readDelay: string,
+    run: (
+      udid: string,
+      board: string,
+      markCopy: (call: KeyCall) => void,
+      shortcutDone: Promise<void>,
+      helperChecks: string,
+    ) => Promise<void>,
+  ) {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-turn-test-"));
     const board = join(dir, "pasteboard");
     const changeCount = join(dir, "change-count");
@@ -472,7 +580,9 @@ else cat > '${board}'; count=$(cat '${changeCount}'); printf '%s' "$((count + 1)
 fi
 `;
     let resolveShortcut!: () => void;
-    const shortcutDone = new Promise<void>((resolve) => { resolveShortcut = resolve; });
+    const shortcutDone = new Promise<void>((resolve) => {
+      resolveShortcut = resolve;
+    });
     const markCopy = ([type, usage]: KeyCall) => {
       if (type === "up" && usage === KeyC) {
         writeFileSync(board, text);
@@ -481,7 +591,15 @@ fi
       }
     };
     try {
-      await withShimsAsync({ xcrun }, () => run(`COPY-TURN-TEST-${process.pid}-${Math.random()}`, board, markCopy, shortcutDone, helperChecks));
+      await withShimsAsync({ xcrun }, () =>
+        run(
+          `COPY-TURN-TEST-${process.pid}-${Math.random()}`,
+          board,
+          markCopy,
+          shortcutDone,
+          helperChecks,
+        ),
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -490,47 +608,69 @@ fi
   test("returns a key cleanup warning with copied text", async () => {
     await withPasteboard("copied", "0", async (udid, _board, markCopy) => {
       let commandReleases = 0;
-      const { internals } = session(([type, usage]) => {
-        if (type !== "up" || usage !== MetaLeft) return false;
-        commandReleases++;
-        return true; // Every Command release fails.
-      }, udid, markCopy);
+      const { internals } = session(
+        ([type, usage]) => {
+          if (type !== "up" || usage !== MetaLeft) return false;
+          commandReleases++;
+          return true; // Every Command release fails.
+        },
+        udid,
+        markCopy,
+      );
 
       const result = await internals.copyPasteboard();
       expect(result.text).toBe("copied");
-      expect((result as { cleanupWarning?: string }).cleanupWarning).toContain("key may still be held");
+      expect((result as { cleanupWarning?: string }).cleanupWarning).toContain(
+        "key may still be held",
+      );
       expect(commandReleases).toBe(2);
     });
   });
 
   test("serializes helper installation behind another server's pasteboard lock", async () => {
-    await withPasteboard("copied", "0", async (udid, _board, markCopy, _shortcutDone, helperChecks) => {
-      let acquired!: () => void;
-      let release!: () => void;
-      const locked = new Promise<void>((resolve) => { acquired = resolve; });
-      const holder = withSimPasteboardLock(udid, async () => {
-        acquired();
-        await new Promise<void>((resolve) => { release = resolve; });
-      });
-      await locked;
-      let admitted!: () => void;
-      const inputTurn = new Promise<void>((resolve) => { admitted = resolve; });
-      const copy = copyFromSim(udid, async () => { markCopy(["up", KeyC]); }, async (run) => {
-        admitted();
-        return run();
-      });
-      let checksWhileLocked: string;
-      try {
-        await inputTurn;
-        checksWhileLocked = readFileSync(helperChecks, "utf8");
-      } finally {
-        release();
-        await holder;
-      }
-      expect((await copy).text).toBe("copied");
-      expect(checksWhileLocked!).toBe("");
-      expect(readFileSync(helperChecks, "utf8")).toBe("check\n");
-    });
+    await withPasteboard(
+      "copied",
+      "0",
+      async (udid, _board, markCopy, _shortcutDone, helperChecks) => {
+        let acquired!: () => void;
+        let release!: () => void;
+        const locked = new Promise<void>((resolve) => {
+          acquired = resolve;
+        });
+        const holder = withSimPasteboardLock(udid, async () => {
+          acquired();
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        });
+        await locked;
+        let admitted!: () => void;
+        const inputTurn = new Promise<void>((resolve) => {
+          admitted = resolve;
+        });
+        const copy = copyFromSim(
+          udid,
+          async () => {
+            markCopy(["up", KeyC]);
+          },
+          async (run) => {
+            admitted();
+            return run();
+          },
+        );
+        let checksWhileLocked: string;
+        try {
+          await inputTurn;
+          checksWhileLocked = readFileSync(helperChecks, "utf8");
+        } finally {
+          release();
+          await holder;
+        }
+        expect((await copy).text).toBe("copied");
+        expect(checksWhileLocked!).toBe("");
+        expect(readFileSync(helperChecks, "utf8")).toBe("check\n");
+      },
+    );
   });
 
   test("keeps the key cleanup warning when Copy then times out", async () => {
@@ -538,9 +678,14 @@ fi
       // No markCopy: the pasteboard never changes, so the wait times out after the chord.
       const { internals } = session(([type, usage]) => type === "up" && usage === MetaLeft, udid);
 
-      const error = await internals.copyPasteboard().then(() => null, (reason: unknown) => reason);
+      const error = await internals.copyPasteboard().then(
+        () => null,
+        (reason: unknown) => reason,
+      );
       expect(error).toBeInstanceOf(PasteboardCopyTimeoutError);
-      expect((error as { cleanupWarning?: string }).cleanupWarning).toContain("key may still be held");
+      expect((error as { cleanupWarning?: string }).cleanupWarning).toContain(
+        "key may still be held",
+      );
     });
   }, 10_000);
 
@@ -548,7 +693,9 @@ fi
     await withPasteboard("copied", "0.8", async (udid, board, markCopy, shortcutDone) => {
       const { calls, internals, viewer } = session(undefined, udid, markCopy);
       let release!: () => void;
-      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       const earlier = internals.queueInputOperation(viewer(), () => gate);
       const b = viewer();
       let copyDone = false;
@@ -586,7 +733,9 @@ fi
 
   test("leaves the prior text untouched when Copy never updates the pasteboard", async () => {
     await withPasteboard("previous text", "0", async (udid, board) => {
-      await expect(copyFromSim(udid, async () => {})).rejects.toBeInstanceOf(PasteboardCopyTimeoutError);
+      await expect(copyFromSim(udid, async () => {})).rejects.toBeInstanceOf(
+        PasteboardCopyTimeoutError,
+      );
       expect(readFileSync(board, "utf8")).toBe("previous text");
     });
   }, 10_000);
@@ -595,10 +744,13 @@ fi
     await withPasteboard("previous text", "0", async (udid) => {
       const { calls, internals, viewer } = session(undefined, udid);
       let release!: () => void;
-      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       const earlier = internals.queueInputOperation(viewer(), () => gate);
       const copy = internals.copyPasteboard();
-      const queues = (internals as unknown as { inputOperationQueues: Map<object, unknown[]> }).inputOperationQueues;
+      const queues = (internals as unknown as { inputOperationQueues: Map<object, unknown[]> })
+        .inputOperationQueues;
       while (!queues.get(internals.serverInput)?.length) await Bun.sleep(5);
       (internals as unknown as { phase: string }).phase = "stopped";
       release();
@@ -613,10 +765,14 @@ fi
       const { calls, internals } = session(undefined, udid);
       let release!: () => void;
       let acquired!: () => void;
-      const locked = new Promise<void>((resolve) => { acquired = resolve; });
+      const locked = new Promise<void>((resolve) => {
+        acquired = resolve;
+      });
       const holder = withSimPasteboardLock(udid, async () => {
         acquired();
-        await new Promise<void>((resolve) => { release = resolve; });
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
       });
       await locked;
       const copy = internals.copyPasteboard();
@@ -635,7 +791,11 @@ fi
     await withPasteboard("copied", "0", async (udid, _board, markCopy) => {
       const { calls, internals } = session(undefined, udid, markCopy);
       let started!: () => void;
-      Object.assign(internals, { captureStart: new Promise<void>((resolve) => { started = resolve; }) });
+      Object.assign(internals, {
+        captureStart: new Promise<void>((resolve) => {
+          started = resolve;
+        }),
+      });
       const copy = internals.copyPasteboard();
       await Bun.sleep(300);
       expect(calls).toEqual([]);
@@ -648,7 +808,11 @@ fi
   test("sends nothing if the session stops during capture start", async () => {
     const { calls, internals } = session();
     let started!: () => void;
-    Object.assign(internals, { captureStart: new Promise<void>((resolve) => { started = resolve; }) });
+    Object.assign(internals, {
+      captureStart: new Promise<void>((resolve) => {
+        started = resolve;
+      }),
+    });
     const copy = internals.copyPasteboard();
     (internals as unknown as { phase: string }).phase = "stopped";
     started();
@@ -661,12 +825,16 @@ fi
       const { internals, viewer } = session(undefined, udid, markCopy);
       const a = viewer();
       let release!: () => void;
-      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       const earlier = internals.queueInputOperation(viewer(), () => gate);
       const copy = internals.copyPasteboard();
       await Bun.sleep(100);
       // Paste waits for its turn, then takes the lock, as the 0x12 handler does.
-      const paste = internals.queueInputOperation(a, () => pasteTextIntoSim(udid, "pasted", async () => {}))!;
+      const paste = internals.queueInputOperation(a, () =>
+        pasteTextIntoSim(udid, "pasted", async () => {}),
+      )!;
       await Bun.sleep(100);
       release();
       await earlier;
@@ -685,16 +853,24 @@ fi
       const ws = viewer() as { send(message: Buffer): void };
       ws.send = () => {};
       let release!: () => void;
-      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       // An earlier key operation that copies text in the app once it runs.
       const earlier = internals.queueInputOperation(ws, async () => {
         await gate;
         writeFileSync(board, "copied by the app");
       });
-      const handler = internals as typeof internals & { handleHidMessage(data: Buffer, ws: object): Promise<void> };
-      const paste = handler.handleHidMessage(Buffer.concat([
-        Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId: 1, text: "browser text" })),
-      ]), ws);
+      const handler = internals as typeof internals & {
+        handleHidMessage(data: Buffer, ws: object): Promise<void>;
+      };
+      const paste = handler.handleHidMessage(
+        Buffer.concat([
+          Buffer.from([0x12]),
+          Buffer.from(JSON.stringify({ requestId: 1, text: "browser text" })),
+        ]),
+        ws,
+      );
       // Long enough for a write that does not wait for its turn to land.
       await Bun.sleep(1000);
       expect(readFileSync(board, "utf8")).toBe("old");

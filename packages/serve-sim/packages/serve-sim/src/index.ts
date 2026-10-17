@@ -1,10 +1,23 @@
 #!/usr/bin/env node
-import { RECORDING_FINALIZATION_WAIT_MS, RECORDING_RECONCILIATION_WAIT_MS } from "./recording-timeouts";
+import {
+  RECORDING_FINALIZATION_WAIT_MS,
+  RECORDING_RECONCILIATION_WAIT_MS,
+} from "./recording-timeouts";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
-import { existsSync, statSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  statSync,
+  mkdirSync,
+  openSync,
+  closeSync,
+  readSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import { createHash, randomBytes } from "crypto";
 import { networkInterfaces } from "os";
 import { extname, join, resolve } from "path";
@@ -33,11 +46,7 @@ import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
-import {
-  assertKnownCapabilities,
-  missingCapabilities,
-  registerCapability,
-} from "./capabilities";
+import { assertKnownCapabilities, missingCapabilities, registerCapability } from "./capabilities";
 import {
   applyDefaultCapabilities,
   armCapabilityLoader,
@@ -115,12 +124,16 @@ let replacementRecordingFailed = false;
 async function replaceHelper(state: ServerState): Promise<void> {
   const result = await stopForStreamReplacement(state);
   if (result.forced) {
-    console.error(`Previous serve-sim helper ${state.pid} required SIGKILL during stream-settings replacement.`);
+    console.error(
+      `Previous serve-sim helper ${state.pid} required SIGKILL during stream-settings replacement.`,
+    );
   }
   if (result.recordingError) {
     replacementRecordingFailed = true;
     process.exitCode = 1;
-    console.error(`Recording finalization failed while replacing helper ${state.pid}: ${result.recordingError}. Starting the replacement helper.`);
+    console.error(
+      `Recording finalization failed while replacing helper ${state.pid}: ${result.recordingError}. Starting the replacement helper.`,
+    );
   }
 }
 
@@ -183,10 +196,12 @@ function readDeviceState(deviceArg?: string): ServerState | null {
   const direct = readState(deviceArg);
   if (direct) return direct;
   const states = resolveDeviceMatches(deviceArg)
-    .map(udid => readState(udid))
-    .filter(state => state !== null);
+    .map((udid) => readState(udid))
+    .filter((state) => state !== null);
   if (states.length > 1) {
-    console.error(`Ambiguous streaming device "${deviceArg}": ${states.map(state => state.device).join(", ")}. Use --device <UDID> to select one.`);
+    console.error(
+      `Ambiguous streaming device "${deviceArg}": ${states.map((state) => state.device).join(", ")}. Use --device <UDID> to select one.`,
+    );
     process.exit(1);
   }
   return states[0] ?? null;
@@ -224,7 +239,9 @@ function readStateFile(file: string): ServerState | null {
         // ourselves — that would take the whole server down. Just drop the
         // stale file; the live server reaps its own sessions on grid polls.
         debugState("dropping own stale state for non-booted device %s", state.device);
-        try { unlinkSync(file); } catch {}
+        try {
+          unlinkSync(file);
+        } catch {}
         return null;
       }
       debugState(
@@ -235,8 +252,12 @@ function readStateFile(file: string): ServerState | null {
       console.error(
         `[serve-sim] Helper pid ${state.pid} is bound to device ${state.device} which is no longer booted — killing stale helper.`,
       );
-      try { process.kill(state.pid, "SIGTERM"); } catch {}
-      try { unlinkSync(file); } catch {}
+      try {
+        process.kill(state.pid, "SIGTERM");
+      } catch {}
+      try {
+        unlinkSync(file);
+      } catch {}
       return null;
     }
     debugState("state ok pid=%d device=%s port=%d", state.pid, state.device, state.port);
@@ -284,10 +305,18 @@ function sendHelperMessage(state: ServerState, message: Uint8Array): Promise<voi
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
     ws.binaryType = "arraybuffer";
-    onCliInputReady(ws, state.inputAdmission === true, () => {
-      ws.send(message);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
-    }, reject);
+    onCliInputReady(
+      ws,
+      state.inputAdmission === true,
+      () => {
+        ws.send(message);
+        setTimeout(() => {
+          ws.close();
+          resolve();
+        }, 50);
+      },
+      reject,
+    );
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -295,15 +324,18 @@ function sendHelperMessage(state: ServerState, message: Uint8Array): Promise<voi
   });
 }
 
-
 function clearState(udid?: string) {
   if (udid) {
     debugState("clearState device=%s", udid);
-    try { unlinkSync(stateFileForDevice(udid)); } catch {}
+    try {
+      unlinkSync(stateFileForDevice(udid));
+    } catch {}
   } else {
     debugState("clearState (all)");
     for (const file of listStateFiles()) {
-      try { unlinkSync(file); } catch {}
+      try {
+        unlinkSync(file);
+      } catch {}
     }
   }
 }
@@ -318,7 +350,10 @@ function pickDefaultDevice(): { udid: string; name: string } | null {
   try {
     const output = execSync("xcrun simctl list devices -j", { encoding: "utf-8" });
     const data = JSON.parse(output) as {
-      devices: Record<string, Array<{ udid: string; name: string; state: string; isAvailable?: boolean }>>;
+      devices: Record<
+        string,
+        Array<{ udid: string; name: string; state: string; isAvailable?: boolean }>
+      >;
     };
     const iosRuntimes = Object.keys(data.devices)
       .filter((k) => /SimRuntime\.iOS-/i.test(k))
@@ -329,9 +364,7 @@ function pickDefaultDevice(): { udid: string; name: string } | null {
       });
     for (const runtime of iosRuntimes) {
       const devices = data.devices[runtime] ?? [];
-      const iphone = devices.find(
-        (d) => d.isAvailable !== false && /^iPhone\b/i.test(d.name),
-      );
+      const iphone = devices.find((d) => d.isAvailable !== false && /^iPhone\b/i.test(d.name));
       if (iphone) return { udid: iphone.udid, name: iphone.name };
     }
   } catch {}
@@ -374,13 +407,22 @@ function isDeviceBooted(udid: string): boolean {
 }
 
 function isProcessAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function bootDevice(udid: string): void {
   if (!isDeviceBooted(udid)) {
     try {
-      execFileSync("xcrun", ["simctl", "boot", udid], { encoding: "utf-8", stdio: "pipe", env: simulatorBootEnv(udid) });
+      execFileSync("xcrun", ["simctl", "boot", udid], {
+        encoding: "utf-8",
+        stdio: "pipe",
+        env: simulatorBootEnv(udid),
+      });
     } catch (err: any) {
       const msg = (err.stderr ?? err.message ?? "").toLowerCase();
       if (!msg.includes("booted") && !msg.includes("current state")) {
@@ -444,7 +486,9 @@ function disarmDevicesArmedHere(): void {
         if (capability.name === "camera") stopExistingHelper(udid);
       });
     } catch (error) {
-      console.error(`Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }
@@ -454,7 +498,7 @@ let previewShutdownReady = false;
 let releasingDevices: Promise<void> | undefined;
 
 function disarmDevicesArmedHereAsync(): Promise<void> {
-  return releasingDevices ??= (async () => {
+  return (releasingDevices ??= (async () => {
     await waitForLaunchUpdates();
     // Per device, like disarmDevicesArmedHere: one device that fails to release (shut down while
     // another session holds it) must not leave the devices after it armed.
@@ -464,10 +508,12 @@ function disarmDevicesArmedHereAsync(): Promise<void> {
           if (capability.name === "camera") stopExistingHelper(udid);
         });
       } catch (error) {
-        console.error(`Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`);
+        console.error(
+          `Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
-  })();
+  })());
 }
 
 // A stream helper outlives the session that spawned it, so it must not arm the
@@ -531,7 +577,9 @@ async function startHelper(
   if (!state) {
     if (child.pid) await stopProcess(child.pid, child);
     let log = "";
-    try { log = readFileSync(logFile, "utf-8").trim(); } catch {}
+    try {
+      log = readFileSync(logFile, "utf-8").trim();
+    } catch {}
     console.error(log ? `Preview server failed:\n${log}` : "Preview server failed to start");
     process.exit(1);
   }
@@ -549,21 +597,22 @@ async function follow(
   replaceMismatchedStream = false,
 ) {
   debugCli("follow devices=%o startPort=%d", devices, startPort);
-  const udids = devices.length > 0
-    ? devices.map(resolveDevice)
-    : (() => {
-        const booted = findBootedDevice();
-        if (booted) return [booted];
-        const fallback = pickDefaultDevice();
-        if (!fallback) {
-          console.error("No device specified and no available iOS simulator found.");
-          process.exit(1);
-        }
-        if (!quiet) {
-          console.log(`No booted simulator — booting ${fallback.name}...`);
-        }
-        return [fallback.udid];
-      })();
+  const udids =
+    devices.length > 0
+      ? devices.map(resolveDevice)
+      : (() => {
+          const booted = findBootedDevice();
+          if (booted) return [booted];
+          const fallback = pickDefaultDevice();
+          if (!fallback) {
+            console.error("No device specified and no available iOS simulator found.");
+            process.exit(1);
+          }
+          if (!quiet) {
+            console.log(`No booted simulator — booting ${fallback.name}...`);
+          }
+          return [fallback.udid];
+        })();
 
   const children = new Map<string, ChildProcess>();
   const states: ServerState[] = [];
@@ -615,15 +664,27 @@ async function follow(
   // Machine-readable JSON to stdout
   if (states.length === 1) {
     const s = states[0]!;
-    console.log(JSON.stringify({
-      url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl, port: s.port, device: s.device,
-    }));
+    console.log(
+      JSON.stringify({
+        url: s.url,
+        streamUrl: s.streamUrl,
+        wsUrl: s.wsUrl,
+        port: s.port,
+        device: s.device,
+      }),
+    );
   } else {
-    console.log(JSON.stringify({
-      devices: states.map((s) => ({
-        url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl, port: s.port, device: s.device,
-      })),
-    }));
+    console.log(
+      JSON.stringify({
+        devices: states.map((s) => ({
+          url: s.url,
+          streamUrl: s.streamUrl,
+          wsUrl: s.wsUrl,
+          port: s.port,
+          device: s.device,
+        })),
+      }),
+    );
   }
 
   // If no new children were spawned (all already running), exit
@@ -638,22 +699,29 @@ async function follow(
     if (!quiet) console.log("\nShutting down...");
     logBufferCache.stopAll();
     crashRuntime.stop();
-    const stopped = await Promise.all([...children].map(async ([udid, child]) => {
-      const pid = child.pid;
-      const state = states.find(current => current.device === udid);
-      const graceMs = state
-        ? await recordingShutdownGraceMs(
-            state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"), state.token,
-          )
-        : undefined;
-      const result = pid ? await stopProcess(pid, child, graceMs) : { exitCode: null, signalCode: null, forced: false };
-      clearState(udid);
-      return result;
-    }));
+    const stopped = await Promise.all(
+      [...children].map(async ([udid, child]) => {
+        const pid = child.pid;
+        const state = states.find((current) => current.device === udid);
+        const graceMs = state
+          ? await recordingShutdownGraceMs(
+              state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"),
+              state.token,
+            )
+          : undefined;
+        const result = pid
+          ? await stopProcess(pid, child, graceMs)
+          : { exitCode: null, signalCode: null, forced: false };
+        clearState(udid);
+        return result;
+      }),
+    );
     await disarmDevicesArmedHereAsync();
     children.clear();
-    const childFailed = stopped.some(({ exitCode: childCode, signalCode, forced }) =>
-      forced || signalCode !== null || (childCode !== null && childCode !== 0));
+    const childFailed = stopped.some(
+      ({ exitCode: childCode, signalCode, forced }) =>
+        forced || signalCode !== null || (childCode !== null && childCode !== 0),
+    );
     process.exit(childFailed || replacementRecordingFailed ? 1 : exitCode);
   };
 
@@ -679,8 +747,12 @@ async function follow(
     logBufferCache.stopAll();
     crashRuntime.stop();
     for (const [udid, child] of children) {
-      try { if (child.pid) process.kill(child.pid, "SIGTERM"); } catch {}
-      try { clearState(udid); } catch {}
+      try {
+        if (child.pid) process.kill(child.pid, "SIGTERM");
+      } catch {}
+      try {
+        clearState(udid);
+      } catch {}
     }
   });
 
@@ -696,18 +768,19 @@ async function detach(
   replaceMismatchedStream = false,
 ): Promise<ServerState[]> {
   debugCli("detach devices=%o startPort=%d", devices, startPort);
-  const udids = devices.length > 0
-    ? devices.map(resolveDevice)
-    : (() => {
-        const booted = findBootedDevice();
-        if (booted) return [booted];
-        const fallback = pickDefaultDevice();
-        if (!fallback) {
-          console.error("No device specified and no available iOS simulator found.");
-          process.exit(1);
-        }
-        return [fallback.udid];
-      })();
+  const udids =
+    devices.length > 0
+      ? devices.map(resolveDevice)
+      : (() => {
+          const booted = findBootedDevice();
+          if (booted) return [booted];
+          const fallback = pickDefaultDevice();
+          if (!fallback) {
+            console.error("No device specified and no available iOS simulator found.");
+            process.exit(1);
+          }
+          return [fallback.udid];
+        })();
 
   const states: ServerState[] = [];
   let port = startPort;
@@ -739,15 +812,27 @@ async function detach(
 function printStatesJSON(states: ServerState[]) {
   if (states.length === 1) {
     const s = states[0]!;
-    console.log(JSON.stringify({
-      url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl, port: s.port, device: s.device,
-    }));
+    console.log(
+      JSON.stringify({
+        url: s.url,
+        streamUrl: s.streamUrl,
+        wsUrl: s.wsUrl,
+        port: s.port,
+        device: s.device,
+      }),
+    );
   } else {
-    console.log(JSON.stringify({
-      devices: states.map((s) => ({
-        url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl, port: s.port, device: s.device,
-      })),
-    }));
+    console.log(
+      JSON.stringify({
+        devices: states.map((s) => ({
+          url: s.url,
+          streamUrl: s.streamUrl,
+          wsUrl: s.wsUrl,
+          port: s.port,
+          device: s.device,
+        })),
+      }),
+    );
   }
 }
 
@@ -759,11 +844,17 @@ function listStreams(deviceArg?: string) {
     if (!state) {
       console.log(JSON.stringify({ running: false, device: udid }));
     } else {
-      console.log(JSON.stringify({
-        running: true,
-        url: state.url, streamUrl: state.streamUrl, wsUrl: state.wsUrl,
-        port: state.port, device: state.device, pid: state.pid,
-      }));
+      console.log(
+        JSON.stringify({
+          running: true,
+          url: state.url,
+          streamUrl: state.streamUrl,
+          wsUrl: state.wsUrl,
+          port: state.port,
+          device: state.device,
+          pid: state.pid,
+        }),
+      );
     }
     return;
   }
@@ -773,19 +864,31 @@ function listStreams(deviceArg?: string) {
     console.log(JSON.stringify({ running: false }));
   } else if (states.length === 1) {
     const s = states[0]!;
-    console.log(JSON.stringify({
-      running: true,
-      url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl,
-      port: s.port, device: s.device, pid: s.pid,
-    }));
+    console.log(
+      JSON.stringify({
+        running: true,
+        url: s.url,
+        streamUrl: s.streamUrl,
+        wsUrl: s.wsUrl,
+        port: s.port,
+        device: s.device,
+        pid: s.pid,
+      }),
+    );
   } else {
-    console.log(JSON.stringify({
-      running: true,
-      streams: states.map((s) => ({
-        url: s.url, streamUrl: s.streamUrl, wsUrl: s.wsUrl,
-        port: s.port, device: s.device, pid: s.pid,
-      })),
-    }));
+    console.log(
+      JSON.stringify({
+        running: true,
+        streams: states.map((s) => ({
+          url: s.url,
+          streamUrl: s.streamUrl,
+          wsUrl: s.wsUrl,
+          port: s.port,
+          device: s.device,
+          pid: s.pid,
+        })),
+      }),
+    );
   }
 }
 
@@ -800,15 +903,16 @@ async function killStreams(deviceArg?: string): Promise<void> {
     });
     clearServeSimState(current.device, current.pid);
   }
-  console.log(JSON.stringify(udid
-    ? { disconnected: true, device: udid }
-    : { disconnected: true, devices: states.map((current) => current.device) }));
+  console.log(
+    JSON.stringify(
+      udid
+        ? { disconnected: true, device: udid }
+        : { disconnected: true, devices: states.map((current) => current.device) },
+    ),
+  );
 }
 
-async function eventLog(
-  deviceArg?: string,
-  opts: { json?: boolean; limit?: string } = {},
-) {
+async function eventLog(deviceArg?: string, opts: { json?: boolean; limit?: string } = {}) {
   const udid = deviceArg ? resolveDevice(deviceArg) : undefined;
   const state = readState(udid);
   if (!state) {
@@ -827,7 +931,7 @@ async function eventLog(
       headers: state.token ? { Authorization: `Bearer ${state.token}` } : undefined,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    payload = await res.json() as { events: EventLogEntry[] };
+    payload = (await res.json()) as { events: EventLogEntry[] };
   } catch (err) {
     console.error(`Failed to read event log: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
@@ -843,9 +947,11 @@ async function eventLog(
   }
   const deviceLabels = deviceLabelsForEvents(payload.events);
   for (const entry of payload.events) {
-    console.log(formatEventLogLine(entry, {
-      deviceLabel: entry.device ? deviceLabels.get(entry.device) : null,
-    }));
+    console.log(
+      formatEventLogLine(entry, {
+        deviceLabel: entry.device ? deviceLabels.get(entry.device) : null,
+      }),
+    );
   }
 }
 
@@ -860,7 +966,9 @@ function parseEventLogLimit(value: string | undefined): number | undefined {
 }
 
 function deviceLabelsForEvents(events: EventLogEntry[]): Map<string, string> {
-  const devices = [...new Set(events.map((event) => event.device).filter((device): device is string => !!device))];
+  const devices = [
+    ...new Set(events.map((event) => event.device).filter((device): device is string => !!device)),
+  ];
   const names = new Map<string, string>();
   const deviceNames = readDeviceNamesByUdid();
   for (const device of devices) {
@@ -988,7 +1096,12 @@ async function hinge(angle: number | undefined, deviceArg?: string) {
   }
   try {
     if (angle === undefined) {
-      console.log(JSON.stringify({ device: state.device, ...await readHingeStateFromWs(state.wsUrl, { token: state.token }) }));
+      console.log(
+        JSON.stringify({
+          device: state.device,
+          ...(await readHingeStateFromWs(state.wsUrl, { token: state.token })),
+        }),
+      );
       return;
     }
     await sendHingeAngleToWs(state.wsUrl, angle, { token: state.token });
@@ -1006,16 +1119,9 @@ async function rotate(orientation: string, deviceArg?: string) {
     process.exit(1);
   }
 
-  const valid = new Set([
-    "portrait",
-    "portrait_upside_down",
-    "landscape_left",
-    "landscape_right",
-  ]);
+  const valid = new Set(["portrait", "portrait_upside_down", "landscape_left", "landscape_right"]);
   if (!orientation || !valid.has(orientation)) {
-    console.error(
-      `Usage: serve-sim rotate <${[...valid].join("|")}> [-d udid]`,
-    );
+    console.error(`Usage: serve-sim rotate <${[...valid].join("|")}> [-d udid]`);
     process.exit(1);
   }
 
@@ -1101,8 +1207,7 @@ function locateCameraDylib(): string | null {
   const candidates = [
     join(__dirname, "..", "dist", "simcam", "libSimCameraInjector.dylib"),
     join(__dirname, "simcam", "libSimCameraInjector.dylib"),
-    join(__dirname, "..", "Sources", "SimCameraInjector", "build",
-         "libSimCameraInjector.dylib"),
+    join(__dirname, "..", "Sources", "SimCameraInjector", "build", "libSimCameraInjector.dylib"),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return resolve(p);
@@ -1115,7 +1220,7 @@ function buildCameraDylib(): string {
   if (!existsSync(buildScript)) {
     throw new Error(
       "SimCameraInjector source not found — this build of serve-sim does not " +
-      "include camera support sources. Reinstall from a recent release.",
+        "include camera support sources. Reinstall from a recent release.",
     );
   }
   console.error("[serve-sim] building libSimCameraInjector.dylib (one-time)…");
@@ -1139,7 +1244,7 @@ function buildCameraHelper(): string {
   if (!existsSync(buildScript)) {
     throw new Error(
       "SimCameraHelper source not found — webcam support requires building " +
-      "from a checkout that includes Sources/SimCameraHelper.",
+        "from a checkout that includes Sources/SimCameraHelper.",
     );
   }
   console.error("[serve-sim] building serve-sim-camera-helper (one-time)…");
@@ -1164,7 +1269,9 @@ function recordInjectedBundle(udid: string, bundleId: string, helperPid: number)
 }
 
 function clearInjectedBundles(udid: string): void {
-  try { unlinkSync(helperBundlesFile(udid)); } catch {}
+  try {
+    unlinkSync(helperBundlesFile(udid));
+  } catch {}
 }
 
 function stopExistingHelper(udid: string) {
@@ -1172,12 +1279,16 @@ function stopExistingHelper(udid: string) {
   if (!existsSync(pf)) return;
   const pid = Number(readFileSync(pf, "utf-8").trim());
   if (Number.isFinite(pid) && isProcessAlive(pid)) {
-    try { process.kill(pid, "SIGTERM"); } catch {}
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {}
     // Give it a moment to clean up the shm region.
     const start = Date.now();
     while (isProcessAlive(pid) && Date.now() - start < 1500) sleepSync(50);
   }
-  try { unlinkSync(pf); } catch {}
+  try {
+    unlinkSync(pf);
+  } catch {}
   clearInjectedBundles(udid);
 }
 
@@ -1195,11 +1306,7 @@ function spawnCameraHelper(args: {
   mkdirSync(camDir, { recursive: true });
   const logPath = join(camDir, `${args.udid}.log`);
   const out = openSync(logPath, "a");
-  const argv = [
-    "--shm", args.shmName,
-    "--socket", args.socketPath,
-    "--source", args.source,
-  ];
+  const argv = ["--shm", args.shmName, "--socket", args.socketPath, "--source", args.source];
   if (args.arg) argv.push("--arg", args.arg);
   if (args.width) argv.push("--width", String(args.width));
   if (args.height) argv.push("--height", String(args.height));
@@ -1227,7 +1334,10 @@ function spawnCameraHelper(args: {
 
 type CamSourceKind = "placeholder" | "webcam" | "image" | "video";
 
-interface ResolvedSource { kind: CamSourceKind; arg?: string }
+interface ResolvedSource {
+  kind: CamSourceKind;
+  arg?: string;
+}
 
 // Tell image/video apart from a path. We sniff the file's magic bytes
 // rather than trusting the extension because:
@@ -1236,11 +1346,31 @@ interface ResolvedSource { kind: CamSourceKind; arg?: string }
 //   2) callers pass real-world paths like .heic / .mov / .gif that
 //      shouldn't need a separate flag in the CLI surface.
 const VIDEO_EXTS = new Set([
-  "mp4", "m4v", "mov", "qt", "avi", "mkv", "webm", "mpg", "mpeg",
-  "3gp", "3g2", "ts", "wmv",
+  "mp4",
+  "m4v",
+  "mov",
+  "qt",
+  "avi",
+  "mkv",
+  "webm",
+  "mpg",
+  "mpeg",
+  "3gp",
+  "3g2",
+  "ts",
+  "wmv",
 ]);
 const IMAGE_EXTS = new Set([
-  "png", "jpg", "jpeg", "gif", "heic", "heif", "webp", "bmp", "tif", "tiff",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "heic",
+  "heif",
+  "webp",
+  "bmp",
+  "tif",
+  "tiff",
 ]);
 
 function detectMediaKind(filePath: string): "image" | "video" | null {
@@ -1287,10 +1417,7 @@ function detectMediaKind(filePath: string): "image" | "video" | null {
   return null;
 }
 
-function resolveSourceArg(opts: {
-  file?: string;
-  webcam?: string | true;
-}): ResolvedSource {
+function resolveSourceArg(opts: { file?: string; webcam?: string | true }): ResolvedSource {
   if (opts.file) {
     const abs = resolve(opts.file);
     const kind = detectMediaKind(abs);
@@ -1361,7 +1488,10 @@ async function camera(args: string[], quiet = false) {
   const filtered: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
-    if (a === "--device" || a === "-d") { deviceArg = args[++i]; continue; }
+    if (a === "--device" || a === "-d") {
+      deviceArg = args[++i];
+      continue;
+    }
     if (a === "--file" || a === "-f" || a === "--image" || a === "-i" || a === "--video") {
       // --image / --video are kept as silent aliases so existing scripts
       // and the in-page client can land on `--file` without a flag day.
@@ -1370,24 +1500,44 @@ async function camera(args: string[], quiet = false) {
     }
     if (a === "--webcam") {
       const next = args[i + 1];
-      if (next && !next.startsWith("-")) { webcam = next; i++; }
-      else { webcam = true; }
+      if (next && !next.startsWith("-")) {
+        webcam = next;
+        i++;
+      } else {
+        webcam = true;
+      }
       continue;
     }
-    if (a === "--list-webcams") { listWebcams = true; continue; }
-    if (a === "--stop-webcam") { stopWebcam = true; continue; }
-    if (a === "--build") { forceBuild = true; continue; }
-    if (a === "--quiet" || a === "-q") { quiet = true; continue; }
+    if (a === "--list-webcams") {
+      listWebcams = true;
+      continue;
+    }
+    if (a === "--stop-webcam") {
+      stopWebcam = true;
+      continue;
+    }
+    if (a === "--build") {
+      forceBuild = true;
+      continue;
+    }
+    if (a === "--quiet" || a === "-q") {
+      quiet = true;
+      continue;
+    }
     if (a === "--mirror") {
       const next = args[i + 1];
       if (next === "on" || next === "off" || next === "auto") {
-        mirror = next; i++;
+        mirror = next;
+        i++;
       } else {
         mirror = "on";
       }
       continue;
     }
-    if (a === "--no-mirror") { mirror = "off"; continue; }
+    if (a === "--no-mirror") {
+      mirror = "off";
+      continue;
+    }
     if (a === "--help" || a === "-h") {
       console.log(`Usage: serve-sim camera <bundle-id> [-d udid] [source-options] [--build]
        serve-sim camera switch <placeholder|webcam|file> [arg] [-d udid]
@@ -1441,7 +1591,10 @@ Examples:
 
   if (stopWebcam) {
     const udid = deviceArg ? resolveDevice(deviceArg) : findBootedDevice();
-    if (!udid) { console.error("No booted simulator."); process.exit(1); }
+    if (!udid) {
+      console.error("No booted simulator.");
+      process.exit(1);
+    }
     const injectedBundles = readInjectedBundles(udid);
     const terminated: string[] = [];
     for (const b of injectedBundles) {
@@ -1463,14 +1616,19 @@ Examples:
   // Hot-swap the preview-layer mirror mode without touching the app.
   if (filtered[0] === "mirror") {
     const udid = deviceArg ? resolveDevice(deviceArg) : findBootedDevice();
-    if (!udid) { console.error("No booted simulator."); process.exit(1); }
+    if (!udid) {
+      console.error("No booted simulator.");
+      process.exit(1);
+    }
     const mode = filtered[1];
     if (mode !== "auto" && mode !== "on" && mode !== "off") {
       console.error("Usage: serve-sim camera mirror <auto|on|off> [-d udid]");
       process.exit(1);
     }
     if (!isHelperAlive(udid)) {
-      console.error("camera helper not running for this device — run `serve-sim camera <bundle-id>` first.");
+      console.error(
+        "camera helper not running for this device — run `serve-sim camera <bundle-id>` first.",
+      );
       process.exit(1);
     }
     try {
@@ -1492,15 +1650,26 @@ Examples:
   // Hot-swap the helper's source without touching the simulator app.
   if (filtered[0] === "switch") {
     const udid = deviceArg ? resolveDevice(deviceArg) : findBootedDevice();
-    if (!udid) { console.error("No booted simulator."); process.exit(1); }
+    if (!udid) {
+      console.error("No booted simulator.");
+      process.exit(1);
+    }
     let wanted = filtered[1];
     let arg: string | undefined = filtered[2];
     // `camera switch /path/to/clip.mov` — sniff the file and pick the kind.
-    if (wanted && wanted !== "placeholder" && wanted !== "webcam"
-        && wanted !== "image" && wanted !== "video"
-        && wanted !== "file") {
+    if (
+      wanted &&
+      wanted !== "placeholder" &&
+      wanted !== "webcam" &&
+      wanted !== "image" &&
+      wanted !== "video" &&
+      wanted !== "file"
+    ) {
       const candidate = resolve(wanted);
-      if (existsSync(candidate)) { arg = candidate; wanted = "file"; }
+      if (existsSync(candidate)) {
+        arg = candidate;
+        wanted = "file";
+      }
     }
     if (wanted === "file") {
       if (!arg) {
@@ -1515,13 +1684,18 @@ Examples:
       }
       wanted = detected;
     }
-    if (!wanted || (wanted !== "placeholder" && wanted !== "webcam" && wanted !== "image" && wanted !== "video")) {
+    if (
+      !wanted ||
+      (wanted !== "placeholder" && wanted !== "webcam" && wanted !== "image" && wanted !== "video")
+    ) {
       console.error("Usage: serve-sim camera switch <placeholder|webcam|file> [arg] [-d udid]");
       process.exit(1);
     }
     if ((wanted === "image" || wanted === "video") && arg) arg = resolve(arg);
     if (!isHelperAlive(udid)) {
-      console.error("camera helper not running for this device — run `serve-sim camera <bundle-id>` first.");
+      console.error(
+        "camera helper not running for this device — run `serve-sim camera <bundle-id>` first.",
+      );
       process.exit(1);
     }
     try {
@@ -1531,7 +1705,8 @@ Examples:
         process.exit(1);
       }
       if (quiet) console.log(JSON.stringify({ udid, ...reply }));
-      else console.log(`📷 Switched ${udid} → ${reply.source}${reply.arg ? ` (${reply.arg})` : ""}`);
+      else
+        console.log(`📷 Switched ${udid} → ${reply.source}${reply.arg ? ` (${reply.arg})` : ""}`);
     } catch (e: any) {
       console.error(`switch failed: ${e?.message ?? e}`);
       process.exit(1);
@@ -1573,8 +1748,9 @@ Examples:
 
   let dylib = forceBuild ? null : locateCameraDylib();
   if (!dylib) {
-    try { dylib = buildCameraDylib(); }
-    catch (e: any) {
+    try {
+      dylib = buildCameraDylib();
+    } catch (e: any) {
       console.error(`Failed to obtain camera dylib: ${e?.message ?? e}`);
       process.exit(1);
     }
@@ -1772,7 +1948,11 @@ async function serve(
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
-  await startNetworkCapture(options.networkCapture ? targetDevices : [], options.networkCaptureFields, quiet);
+  await startNetworkCapture(
+    options.networkCapture ? targetDevices : [],
+    options.networkCaptureFields,
+    quiet,
+  );
   if (sessionStopping) return;
 
   const { simMiddleware } = await import("./middleware");
@@ -1846,14 +2026,20 @@ async function serve(
   }
   const clearAll = () => {
     for (const udid of targetDevices) {
-      try { clearServeSimState(udid, process.pid); } catch {}
+      try {
+        clearServeSimState(udid, process.pid);
+      } catch {}
     }
     disarmDevicesArmedHere();
   };
   process.on("exit", () => {
     // This process owns the device tails and the crash watcher; `follow` never mounts them.
-    try { logBufferCache.stopAll(); } catch {}
-    try { crashRuntime.stop(); } catch {}
+    try {
+      logBufferCache.stopAll();
+    } catch {}
+    try {
+      crashRuntime.stop();
+    } catch {}
     clearAll();
   });
 
@@ -1887,12 +2073,14 @@ async function serve(
       console.log(
         requirePreviewToken
           ? "  This server is listening on the network. The links above carry a token because anyone who " +
-            "has it can read captured traffic and run commands on this machine."
+              "has it can read captured traffic and run commands on this machine."
           : "  This server is listening on the network with no token required. Anyone who can reach it can " +
-            "read captured traffic and run commands on this machine. Pass --require-token to gate it.",
+              "read captured traffic and run commands on this machine. Pass --require-token to gate it.",
       );
     } else if (networkIP) {
-      console.log(`  - Network: \x1b[2muse --host 0.0.0.0 to expose on http://${networkIP}:${boundPort}\x1b[0m`);
+      console.log(
+        `  - Network: \x1b[2muse --host 0.0.0.0 to expose on http://${networkIP}:${boundPort}\x1b[0m`,
+      );
     } else {
       console.log("  - Network: \x1b[2muse --host 0.0.0.0 to expose on the LAN\x1b[0m");
     }
@@ -1908,23 +2096,28 @@ async function serve(
     sessionStopping = true;
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
-      finishRecordings: () => finishDeviceRecordingsForShutdown(
-        error => recordingErrors.push(String(error))
-      ),
+      finishRecordings: () =>
+        finishDeviceRecordingsForShutdown((error) => recordingErrors.push(String(error))),
       timeoutMs: RECORDING_SHUTDOWN_TIMEOUT_MS,
       onTimeout: () => {
-        const error = `Recording shutdown exceeded ${RECORDING_SHUTDOWN_TIMEOUT_MS / 1000} seconds. ` +
+        const error =
+          `Recording shutdown exceeded ${RECORDING_SHUTDOWN_TIMEOUT_MS / 1000} seconds. ` +
           `PID ${process.pid} and its state remain alive to preserve the output; ` +
           "shutdown will finish when recording finalization completes.";
         recordingErrors.push(error);
         console.error(error);
       },
-      completeShutdown: async recordingsFinished => {
+      completeShutdown: async (recordingsFinished) => {
         if (!recordingsFinished) {
           try {
-            writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
-              pid: process.pid, errors: recordingErrors,
-            }), { mode: 0o600 });
+            writeFileSync(
+              recordingShutdownFailureFile(process.pid),
+              JSON.stringify({
+                pid: process.pid,
+                errors: recordingErrors,
+              }),
+              { mode: 0o600 },
+            );
           } catch (error) {
             console.error(`Could not report recording shutdown failure: ${String(error)}`);
           }
@@ -1953,7 +2146,11 @@ async function serve(
   await new Promise(() => {});
 }
 
-function bindPreviewServer(port: number, middleware: ReturnType<typeof import("./middleware").simMiddleware>, host: string) {
+function bindPreviewServer(
+  port: number,
+  middleware: ReturnType<typeof import("./middleware").simMiddleware>,
+  host: string,
+) {
   return servePreview({ port, middleware, host });
 }
 
@@ -1967,7 +2164,12 @@ function parseNumberInRange(
   integer = false,
 ): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed)) || parsed < min || parsed > max) {
+  if (
+    !Number.isFinite(parsed) ||
+    (integer && !Number.isInteger(parsed)) ||
+    parsed < min ||
+    parsed > max
+  ) {
     const kind = integer ? "integer" : "number";
     throw new InvalidArgumentError(`${option} must be a ${kind} from ${min} to ${max}.`);
   }
@@ -1991,7 +2193,9 @@ program
   .helpOption("-h, --help", "Show this help")
   // The default command: start the preview server (or stream / list / kill).
   .argument("[devices...]", "Simulator(s) to target (udid or name; default: booted)")
-  .option("-p, --port <port>", "Starting port (preview default: 3200; helper default: 3100)", (v) => parseInt(v, 10))
+  .option("-p, --port <port>", "Starting port (preview default: 3200; helper default: 3100)", (v) =>
+    parseInt(v, 10),
+  )
   .option(
     "--host <addr>",
     "Interface to bind the preview server to. Use 0.0.0.0 to expose on the " +
@@ -2038,7 +2242,10 @@ program
     "Forward captured traffic through one HTTP proxy (http://[user:password@]host:port), or none for direct. Defaults to direct.",
   )
   .option("--transport <http|webrtc>", "Stream transport", "http")
-  .option("--install-app-path <path>", "Install this .app after boot, before any requested app launch.")
+  .option(
+    "--install-app-path <path>",
+    "Install this .app after boot, before any requested app launch.",
+  )
   .option(
     "--launch-app-identifier <id>",
     "Bundle identifier of the app to launch once the simulator boots",
@@ -2058,16 +2265,14 @@ program
     "Turn off a capability that is on by default. Repeat for multiple.",
     (value: string, previous: string[] = []) => [...previous, value],
   )
-  .option(
-    "--open-url <url>",
-    "URL to open in the app after it launches",
-    (value) => {
-      if (!URL.canParse(value)) {
-        throw new InvalidArgumentError(`Invalid URL '${value}'. Pass a full URL, such as exp://127.0.0.1:8081.`);
-      }
-      return value;
-    },
-  )
+  .option("--open-url <url>", "URL to open in the app after it launches", (value) => {
+    if (!URL.canParse(value)) {
+      throw new InvalidArgumentError(
+        `Invalid URL '${value}'. Pass a full URL, such as exp://127.0.0.1:8081.`,
+      );
+    }
+    return value;
+  })
   .option(
     "--codec <codec>",
     "Stream codec for the preview UI: 'auto', 'h264', or 'mjpeg'. Use --transport webrtc for WebRTC.",
@@ -2075,7 +2280,9 @@ program
       const v = value.toLowerCase();
       const allowed = ["auto", "h264", "mjpeg"];
       if (!allowed.includes(v)) {
-        throw new InvalidArgumentError(`Unsupported codec '${value}'. Supported: ${allowed.join(", ")}.`);
+        throw new InvalidArgumentError(
+          `Unsupported codec '${value}'. Supported: ${allowed.join(", ")}.`,
+        );
       }
       return v;
     },
@@ -2086,7 +2293,9 @@ program
     (value) => {
       const codec = value.toLowerCase();
       if (codec !== "vp8" && codec !== "vp9" && codec !== "h264") {
-        throw new InvalidArgumentError(`Unsupported WebRTC codec '${value}'. Supported: vp8, vp9, h264.`);
+        throw new InvalidArgumentError(
+          `Unsupported WebRTC codec '${value}'. Supported: vp8, vp9, h264.`,
+        );
       }
       return codec;
     },
@@ -2108,15 +2317,11 @@ program
   })
   .option("--turn-username <username>", "TURN username")
   .option("--turn-credential <credential>", "TURN credential")
-  .option(
-    "--mjpeg-fps <fps>",
-    `MJPEG frame rate (1-${MAX_MJPEG_STREAM_FPS})`,
-    (value) => parseNumberInRange(value, "--mjpeg-fps", 1, MAX_MJPEG_STREAM_FPS, true),
+  .option("--mjpeg-fps <fps>", `MJPEG frame rate (1-${MAX_MJPEG_STREAM_FPS})`, (value) =>
+    parseNumberInRange(value, "--mjpeg-fps", 1, MAX_MJPEG_STREAM_FPS, true),
   )
-  .option(
-    "--mjpeg-quality <quality>",
-    "MJPEG quality (0.05-1)",
-    (value) => parseNumberInRange(value, "--mjpeg-quality", 0.05, 1),
+  .option("--mjpeg-quality <quality>", "MJPEG quality (0.05-1)", (value) =>
+    parseNumberInRange(value, "--mjpeg-quality", 0.05, 1),
   )
   .option(
     "--max-dimension <pixels>",
@@ -2128,10 +2333,8 @@ program
     "H.264/WebRTC target bitrate (100000-50000000)",
     (value) => parseNumberInRange(value, "--video-bitrate", 100_000, 50_000_000, true),
   )
-  .option(
-    "--video-fps <fps>",
-    `H.264/WebRTC frame rate (1-${MAX_VIDEO_STREAM_FPS})`,
-    (value) => parseNumberInRange(value, "--video-fps", 1, MAX_VIDEO_STREAM_FPS, true),
+  .option("--video-fps <fps>", `H.264/WebRTC frame rate (1-${MAX_VIDEO_STREAM_FPS})`, (value) =>
+    parseNumberInRange(value, "--video-fps", 1, MAX_VIDEO_STREAM_FPS, true),
   )
   .option(
     "--debug-stream <path>",
@@ -2228,7 +2431,9 @@ Examples:
       process.exit(1);
     }
     if (opts.transport === "webrtc" && wasProvided("codec")) {
-      console.error("--codec configures HTTP streaming; use --webrtc-codec with --transport webrtc.");
+      console.error(
+        "--codec configures HTTP streaming; use --webrtc-codec with --transport webrtc.",
+      );
       process.exit(1);
     }
     if ((opts.turnUsername === undefined) !== (opts.turnCredential === undefined)) {
@@ -2263,37 +2468,53 @@ Examples:
       ...(wasProvided("videoBitrate") ? { h264Bitrate: opts.videoBitrate } : {}),
       ...(wasProvided("videoFps") ? { h264Fps: opts.videoFps } : {}),
     };
-    const stream: StreamRuntimeOptions = opts.transport === "webrtc"
-      ? {
-          transport: "webrtc",
-          codec: opts.webrtcCodec,
-          ...(webrtcIceServers.length ? { iceServers: webrtcIceServers } : {}),
-          ...encoderOptions,
-        }
-      : {
-          transport: "http",
-          codec: opts.codec,
-          ...encoderOptions,
-        };
+    const stream: StreamRuntimeOptions =
+      opts.transport === "webrtc"
+        ? {
+            transport: "webrtc",
+            codec: opts.webrtcCodec,
+            ...(webrtcIceServers.length ? { iceServers: webrtcIceServers } : {}),
+            ...encoderOptions,
+          }
+        : {
+            transport: "http",
+            codec: opts.codec,
+            ...encoderOptions,
+          };
     const bundleId =
       typeof opts.launchAppIdentifier === "string" ? opts.launchAppIdentifier.trim() : "";
     if (opts.launchAppIdentifier !== undefined && !bundleId) {
-      console.error("--launch-app-identifier needs an app bundle identifier, such as host.exp.Exponent.");
+      console.error(
+        "--launch-app-identifier needs an app bundle identifier, such as host.exp.Exponent.",
+      );
       process.exit(1);
     }
-    const installAppPath = opts.installAppPath === undefined ? undefined : resolve(opts.installAppPath);
+    const installAppPath =
+      opts.installAppPath === undefined ? undefined : resolve(opts.installAppPath);
     if (installAppPath) {
       try {
         if (extname(installAppPath) !== ".app" || !statSync(installAppPath).isDirectory()) {
           throw new Error("expected a .app directory");
         }
       } catch {
-        printStartupError(`--install-app-path needs an existing .app directory: ${installAppPath}`, !!opts.quiet);
+        printStartupError(
+          `--install-app-path needs an existing .app directory: ${installAppPath}`,
+          !!opts.quiet,
+        );
         process.exit(1);
       }
       const info = await runInvocation({
         file: "plutil",
-        args: ["-extract", "CFBundleIdentifier", "raw", "-expect", "string", "-o", "-", join(installAppPath, "Info.plist")],
+        args: [
+          "-extract",
+          "CFBundleIdentifier",
+          "raw",
+          "-expect",
+          "string",
+          "-o",
+          "-",
+          join(installAppPath, "Info.plist"),
+        ],
       });
       if (info.exitCode !== 0 || !info.stdout.trim()) {
         printStartupError(
@@ -2324,10 +2545,11 @@ Examples:
     const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
 
     const startPort: number | undefined = opts.port;
-    const streamOptionsProvided = wasProvided("transport")
-      || wasProvided("codec")
-      || webRtcOptionProvided
-      || encoderOptionNames.some(wasProvided);
+    const streamOptionsProvided =
+      wasProvided("transport") ||
+      wasProvided("codec") ||
+      webRtcOptionProvided ||
+      encoderOptionNames.some(wasProvided);
     const debugStreamPath = opts.debugStream?.trim();
     if (opts.debugStream !== undefined) {
       // Every run mode that would record nothing useful, rather than accepting the flag and
@@ -2353,7 +2575,8 @@ Examples:
     }
     const captureFlag = opts.networkCapture
       ? "--network-capture"
-      : capabilities.enable.includes("networkCapture") && !capabilities.disable.includes("networkCapture")
+      : capabilities.enable.includes("networkCapture") &&
+          !capabilities.disable.includes("networkCapture")
         ? "--enable networkCapture"
         : null;
     if (captureFlag && !opts.requireToken && !isLoopbackHost(opts.host)) {
@@ -2442,15 +2665,23 @@ Examples:
         }
         // Set before any capability is applied: `--enable networkCapture` starts capture here, before
         // serve() runs. The flag check above already refuses it; this keeps the runtime in step.
-        (await import("./capture")).captureRuntime.refuseCapture(publicCaptureRefusal(opts.host, !!opts.requireToken));
-        await startNetworkCapture(opts.networkCapture ? targets : [], opts.networkCaptureField, !!opts.quiet);
+        (await import("./capture")).captureRuntime.refuseCapture(
+          publicCaptureRefusal(opts.host, !!opts.requireToken),
+        );
+        await startNetworkCapture(
+          opts.networkCapture ? targets : [],
+          opts.networkCaptureField,
+          !!opts.quiet,
+        );
         if (sessionStopping) return;
         for (const udid of isStreamHelper ? [] : targets) {
           if (sessionStopping) return;
           if (installAppPath) {
             const result = await runInvocation(installAppInvocation(udid, installAppPath));
             if (result.exitCode !== 0) {
-              throw new Error(`Could not install ${installAppPath} on ${udid}: ${result.stderr.trim() || `simctl exited ${result.exitCode}`}`);
+              throw new Error(
+                `Could not install ${installAppPath} on ${udid}: ${result.stderr.trim() || `simctl exited ${result.exitCode}`}`,
+              );
             }
             if (sessionStopping) return;
           }
@@ -2510,7 +2741,7 @@ const deviceOpt = ["-d, --device <udid>", "Target a specific simulator (udid or 
 async function waitForRecordingManifest(path: string, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (!existsSync(path) && Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
   return existsSync(path);
 }
@@ -2518,27 +2749,42 @@ async function waitForRecordingManifest(path: string, timeoutMs: number): Promis
 async function waitForServerExit(pid: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    try { process.kill(pid, 0); } catch { return true; }
-    await new Promise(resolve => setTimeout(resolve, 250));
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  try { process.kill(pid, 0); } catch { return true; }
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return true;
+  }
   return false;
 }
 
 async function recordVideo(udid: string, output: string): Promise<void> {
   const state = readState(udid);
-  if (!state) throw new Error(`No running serve-sim session found for ${udid}; start serve-sim for this device and retry.`);
+  if (!state)
+    throw new Error(
+      `No running serve-sim session found for ${udid}; start serve-sim for this device and retry.`,
+    );
   const url = state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video");
   const outputDirectory = resolve(output);
   const manifestPath = join(outputDirectory, "session.json");
   if (existsSync(manifestPath)) {
-    throw new Error(`Recording manifest already exists at ${manifestPath}; choose an empty output directory.`);
+    throw new Error(
+      `Recording manifest already exists at ${manifestPath}; choose an empty output directory.`,
+    );
   }
   const recordingId = randomBytes(16).toString("hex");
   const headers: Record<string, string> = { "x-recording-id": recordingId };
   if (state.token) headers.Authorization = `Bearer ${state.token}`;
   let resolveStop: () => void = () => {};
-  const stopping = new Promise<void>((resolve) => { resolveStop = resolve; });
+  const stopping = new Promise<void>((resolve) => {
+    resolveStop = resolve;
+  });
   let stopRequested = false;
   let recordingStarted = false;
   const startAbort = new AbortController();
@@ -2553,7 +2799,9 @@ async function recordVideo(udid: string, output: string): Promise<void> {
   const heartbeatAbort = new AbortController();
   let recordingStopStarted = false;
   let rejectLease: (error: Error) => void = () => {};
-  const lostLease = new Promise<never>((_, reject) => { rejectLease = reject; });
+  const lostLease = new Promise<never>((_, reject) => {
+    rejectLease = reject;
+  });
   void lostLease.catch(() => {});
   let finished = false;
   let startupCancellationDelivered = false;
@@ -2574,12 +2822,17 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     } catch (error) {
       if (!stopRequested) throw error;
       const cancelled = await fetch(url, {
-        method: "DELETE", headers, signal: AbortSignal.timeout(120_000),
+        method: "DELETE",
+        headers,
+        signal: AbortSignal.timeout(120_000),
       });
       startupCancellationDelivered = true;
       if (cancelled.status === 200) {
-        const result = await cancelled.json() as { manifest?: string };
-        if (result.manifest === manifestPath && await waitForRecordingManifest(manifestPath, 120_000)) {
+        const result = (await cancelled.json()) as { manifest?: string };
+        if (
+          result.manifest === manifestPath &&
+          (await waitForRecordingManifest(manifestPath, 120_000))
+        ) {
           finished = true;
           console.log(manifestPath);
           return;
@@ -2593,20 +2846,32 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       if (recordingStopStarted || heartbeatInFlight) return;
       heartbeatInFlight = true;
       // @ref LLP 0001#recording-stall-recovery — a transient control timeout does not prove ownership was lost.
-      void fetch(url, { method: "PUT", headers, signal: AbortSignal.any([AbortSignal.timeout(120_000), heartbeatAbort.signal]) })
-        .then(async response => {
-          if (!response.ok && response.status < 500 && response.status !== 408 && response.status !== 429 && !recordingStopStarted) {
+      void fetch(url, {
+        method: "PUT",
+        headers,
+        signal: AbortSignal.any([AbortSignal.timeout(120_000), heartbeatAbort.signal]),
+      })
+        .then(async (response) => {
+          if (
+            !response.ok &&
+            response.status < 500 &&
+            response.status !== 408 &&
+            response.status !== 429 &&
+            !recordingStopStarted
+          ) {
             // The status establishes loss of ownership even if its body stalls or fails.
             rejectLease(new Error(`Recording lease was lost (${response.status})`));
           }
           await response.body?.cancel();
         })
-        .catch(async error => {
-          if (!recordingStopStarted && await waitForServerExit(state.pid, 0)) {
+        .catch(async (error) => {
+          if (!recordingStopStarted && (await waitForServerExit(state.pid, 0))) {
             rejectLease(error instanceof Error ? error : new Error(String(error)));
           }
         })
-        .finally(() => { heartbeatInFlight = false; });
+        .finally(() => {
+          heartbeatInFlight = false;
+        });
     }, 5_000);
     let leaseError: unknown;
     try {
@@ -2634,7 +2899,7 @@ async function recordVideo(udid: string, output: string): Promise<void> {
         throw error;
       }
       if (!stop.ok) throw new Error(`Recording stop failed (${stop.status}): ${await stop.text()}`);
-      const result = await stop.json() as { manifest?: string };
+      const result = (await stop.json()) as { manifest?: string };
       if (result.manifest !== manifestPath) {
         throw new Error("Recording stop returned an unexpected manifest path");
       }
@@ -2648,18 +2913,31 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     }
     if (stopError && !stopRequestAmbiguous) throw stopError;
     const manifestWaitMs = stopRequestAmbiguous
-      ? RECORDING_RECONCILIATION_WAIT_MS : RECORDING_FINALIZATION_WAIT_MS;
-    if (!await waitForRecordingManifest(manifestPath, manifestWaitMs)) {
-      throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
+      ? RECORDING_RECONCILIATION_WAIT_MS
+      : RECORDING_FINALIZATION_WAIT_MS;
+    if (!(await waitForRecordingManifest(manifestPath, manifestWaitMs))) {
+      throw (
+        stopError ??
+        new Error(
+          "Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.",
+        )
+      );
     }
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { status?: string; error?: string };
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      status?: string;
+      error?: string;
+    };
     if (manifest.status === "failed") {
       recordingFinalized = true;
-      throw new Error(`Recording finalized a partial MP4: ${manifest.error ?? "native recording failed"}. Saved manifest: ${manifestPath}`);
+      throw new Error(
+        `Recording finalized a partial MP4: ${manifest.error ?? "native recording failed"}. Saved manifest: ${manifestPath}`,
+      );
     }
-    if (stopError && !stopRequested && !await waitForServerExit(state.pid, 5_000)) {
+    if (stopError && !stopRequested && !(await waitForServerExit(state.pid, 5_000))) {
       if (!stopRequested) {
-        throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+        throw new Error(
+          `Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`,
+        );
       }
     }
     finished = true;
@@ -2722,8 +3000,7 @@ program
 program
   .command("rotate")
   .description(
-    "Set device orientation " +
-      "(portrait|portrait_upside_down|landscape_left|landscape_right)",
+    "Set device orientation " + "(portrait|portrait_upside_down|landscape_left|landscape_right)",
   )
   .argument("<orientation>")
   .option(...deviceOpt)
@@ -2731,10 +3008,13 @@ program
 
 program
   .command("hinge")
-  .description("Set or read a foldable simulator's hinge angle (0° folded, 90° half folded, 180° unfolded)")
+  .description(
+    "Set or read a foldable simulator's hinge angle (0° folded, 90° half folded, 180° unfolded)",
+  )
   .argument("[position]", "fold|half|unfold or an angle from 0 to 180 degrees", (value: string) => {
     const angle = parseHingeAngle(value);
-    if (angle === undefined) throw new InvalidArgumentError("Expected fold, half, unfold, or an angle from 0 to 180");
+    if (angle === undefined)
+      throw new InvalidArgumentError("Expected fold, half, unfold, or an angle from 0 to 180");
     return angle;
   })
   .option(...deviceOpt)
@@ -2807,7 +3087,10 @@ registerCapability(captureRuntime.capability);
     .command("har")
     .description("Follow the capture stream; write a HAR and its event log")
     .requiredOption("-o, --out <path>", "HAR file to keep rewriting")
-    .option("--events <path>", "NDJSON event log (default: <name>.network-capture.json beside the HAR)")
+    .option(
+      "--events <path>",
+      "NDJSON event log (default: <name>.network-capture.json beside the HAR)",
+    )
     .option(...deviceOpt)
     .option(
       "--flush-ms <ms>",
@@ -2816,71 +3099,80 @@ registerCapability(captureRuntime.capability);
       5000,
     )
     .option("--force", "Replace a recording that already holds requests at --out")
-    .action(async (opts: {
-      out: string;
-      events?: string;
-      device?: string;
-      flushMs: number;
-      force?: boolean;
-    }) => {
-      const udid = opts.device ? resolveDevice(opts.device) : undefined;
-      const state = readState(udid);
-      if (!state) {
-        console.error("No serve-sim server running. Run `serve-sim --network-capture` first.");
-        process.exit(1);
-      }
-      if (!state.token) {
-        // Written only under --require-token or on loopback; a public host without the gate refuses capture.
-        console.error(
-          "This serve-sim session recorded no access token, so the capture routes cannot be reached. " +
-            "Restart serve-sim on localhost, or with --require-token.",
-        );
-        process.exit(1);
-      }
-      const outPath = resolve(opts.out);
-      const eventsPath = opts.events ? resolve(opts.events) : undefined;
-      const ac = new AbortController();
-      const stop = () => ac.abort();
-      process.on("SIGINT", stop);
-      process.on("SIGTERM", stop);
-      console.error(
-        `Recording capture for ${state.device} → ${outPath} (+ ${eventsPath ?? captureHarPaths(outPath).eventsPath}) (Ctrl-C to stop)`,
-      );
-      let began = false;
-      try {
-        const result = await followCaptureHar({
-          onBegin: () => { began = true; },
-          onPause: (reason) => console.error(
-            `${reason}\nStill recording to ${outPath}; requests are appended when capture is on again (Ctrl-C to stop).`,
-          ),
-          onResume: () => console.error("Capture is on again; recording continues."),
-          replace: !!opts.force,
-          baseUrl: serverBaseUrl(state),
-          device: state.device,
-          outPath,
-          eventsPath,
-          flushIntervalMs: opts.flushMs,
-          signal: ac.signal,
-          version: resolveVersion(),
-          token: state.token,
-        });
-        console.error(
-          `The capture stream closed before you stopped the recording, so later requests are not in the HAR. ` +
-            `serve-sim stopped or the connection dropped. To keep recording, run \`serve-sim capture har\` ` +
-            `again with a new --out path. ` +
-            `Wrote ${result.size} entries to ${outPath}.`,
-        );
-        process.exit(1);
-      } catch (err) {
-        if ((err as { name?: string })?.name === "AbortError") {
-          // Stopped before the stream showed capture on: nothing was recorded, and --out is untouched.
-          console.error(began ? `Stopped. HAR at ${outPath}` : `Stopped before recording began; ${outPath} was not written.`);
-          return;
+    .action(
+      async (opts: {
+        out: string;
+        events?: string;
+        device?: string;
+        flushMs: number;
+        force?: boolean;
+      }) => {
+        const udid = opts.device ? resolveDevice(opts.device) : undefined;
+        const state = readState(udid);
+        if (!state) {
+          console.error("No serve-sim server running. Run `serve-sim --network-capture` first.");
+          process.exit(1);
         }
-        console.error(err instanceof Error ? err.message : String(err));
-        process.exit(1);
-      }
-    });
+        if (!state.token) {
+          // Written only under --require-token or on loopback; a public host without the gate refuses capture.
+          console.error(
+            "This serve-sim session recorded no access token, so the capture routes cannot be reached. " +
+              "Restart serve-sim on localhost, or with --require-token.",
+          );
+          process.exit(1);
+        }
+        const outPath = resolve(opts.out);
+        const eventsPath = opts.events ? resolve(opts.events) : undefined;
+        const ac = new AbortController();
+        const stop = () => ac.abort();
+        process.on("SIGINT", stop);
+        process.on("SIGTERM", stop);
+        console.error(
+          `Recording capture for ${state.device} → ${outPath} (+ ${eventsPath ?? captureHarPaths(outPath).eventsPath}) (Ctrl-C to stop)`,
+        );
+        let began = false;
+        try {
+          const result = await followCaptureHar({
+            onBegin: () => {
+              began = true;
+            },
+            onPause: (reason) =>
+              console.error(
+                `${reason}\nStill recording to ${outPath}; requests are appended when capture is on again (Ctrl-C to stop).`,
+              ),
+            onResume: () => console.error("Capture is on again; recording continues."),
+            replace: !!opts.force,
+            baseUrl: serverBaseUrl(state),
+            device: state.device,
+            outPath,
+            eventsPath,
+            flushIntervalMs: opts.flushMs,
+            signal: ac.signal,
+            version: resolveVersion(),
+            token: state.token,
+          });
+          console.error(
+            `The capture stream closed before you stopped the recording, so later requests are not in the HAR. ` +
+              `serve-sim stopped or the connection dropped. To keep recording, run \`serve-sim capture har\` ` +
+              `again with a new --out path. ` +
+              `Wrote ${result.size} entries to ${outPath}.`,
+          );
+          process.exit(1);
+        } catch (err) {
+          if ((err as { name?: string })?.name === "AbortError") {
+            // Stopped before the stream showed capture on: nothing was recorded, and --out is untouched.
+            console.error(
+              began
+                ? `Stopped. HAR at ${outPath}`
+                : `Stopped before recording began; ${outPath} was not written.`,
+            );
+            return;
+          }
+          console.error(err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      },
+    );
 }
 
 await program.parseAsync(process.argv);

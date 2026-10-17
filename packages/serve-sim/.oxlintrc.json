@@ -1,11 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript",
-    "react",
-    "import",
-    "unicorn"
-  ],
+  "plugins": ["typescript", "react", "import", "unicorn"],
   "categories": {
     "correctness": "error"
   },
@@ -46,9 +41,5 @@
       }
     }
   ],
-  "ignorePatterns": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/build/**"
-  ]
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "**/build/**"]
 }

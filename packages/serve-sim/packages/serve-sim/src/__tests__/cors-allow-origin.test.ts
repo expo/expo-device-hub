@@ -33,7 +33,11 @@ describe("corsAllowOriginHeaders", () => {
   });
 
   test("matches a subdomain through a wildcard, so deploy previews work", () => {
-    for (const origin of ["https://pr-31018.expo.dev", "https://staging.expo.dev", "https://a.b.expo.dev"]) {
+    for (const origin of [
+      "https://pr-31018.expo.dev",
+      "https://staging.expo.dev",
+      "https://a.b.expo.dev",
+    ]) {
       expect(corsAllowOriginHeaders(origin, ["https://*.expo.dev"])).toEqual({
         "Access-Control-Allow-Origin": origin,
       });
@@ -57,7 +61,9 @@ describe("corsAllowOriginHeaders", () => {
 
   test("a wildcard still pins the scheme and the port", () => {
     expect(corsAllowOriginHeaders("http://pr-1.expo.dev", ["https://*.expo.dev"])).toEqual({});
-    expect(corsAllowOriginHeaders("https://pr-1.expo.dev:8081", ["https://*.expo.dev"])).toEqual({});
+    expect(corsAllowOriginHeaders("https://pr-1.expo.dev:8081", ["https://*.expo.dev"])).toEqual(
+      {},
+    );
   });
 
   test("refuses a scheme the frame policy would drop, even on an exact match", () => {
@@ -66,7 +72,9 @@ describe("corsAllowOriginHeaders", () => {
   });
 
   test("refuses an opaque origin, which every such scheme canonicalizes to the same 'null'", () => {
-    expect(corsAllowOriginHeaders("foo://evil", ["chrome-extension://abcdefghijklmnop"])).toEqual({});
+    expect(corsAllowOriginHeaders("foo://evil", ["chrome-extension://abcdefghijklmnop"])).toEqual(
+      {},
+    );
     // A loopback host on a scheme no browser sends must not reach the loopback grant either.
     expect(corsAllowOriginHeaders("foo://localhost", [])).toEqual({});
   });
@@ -97,7 +105,9 @@ describe("corsAllowOriginHeaders", () => {
 
 describe("frameAncestorsPolicy", () => {
   test("names the origin allowed to embed the preview", () => {
-    expect(frameAncestorsPolicy(["https://expo.dev"])).toBe("frame-ancestors 'self' https://expo.dev");
+    expect(frameAncestorsPolicy(["https://expo.dev"])).toBe(
+      "frame-ancestors 'self' https://expo.dev",
+    );
   });
 
   test("allows nobody else when no origin is configured", () => {

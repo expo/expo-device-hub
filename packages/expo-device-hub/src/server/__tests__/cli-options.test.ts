@@ -1,19 +1,26 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { HELP, parseCliOptions } from '../cli/options';
+import { HELP, parseCliOptions } from "../cli/options";
 
-describe('parseCliOptions', () => {
-  test('accepts a recording directory only with the Android platform', () => {
-    expect(parseCliOptions(['--platform', 'android', '--android-recording-directory', '/tmp/session']).androidRecordingDirectory).toBe('/tmp/session');
-    expect(() => parseCliOptions(['--android-recording-directory', '/tmp/session'])).toThrow();
-    expect(() => parseCliOptions(['--platform', 'ios', '--android-recording-directory', '/tmp/session'])).toThrow();
-    expect(() => parseCliOptions(['--platform', 'android', '--android-recording-directory', ''])).toThrow();
+describe("parseCliOptions", () => {
+  test("accepts a recording directory only with the Android platform", () => {
+    expect(
+      parseCliOptions(["--platform", "android", "--android-recording-directory", "/tmp/session"])
+        .androidRecordingDirectory,
+    ).toBe("/tmp/session");
+    expect(() => parseCliOptions(["--android-recording-directory", "/tmp/session"])).toThrow();
+    expect(() =>
+      parseCliOptions(["--platform", "ios", "--android-recording-directory", "/tmp/session"]),
+    ).toThrow();
+    expect(() =>
+      parseCliOptions(["--platform", "android", "--android-recording-directory", ""]),
+    ).toThrow();
   });
 
-  test('keeps the existing defaults when no options are provided', () => {
+  test("keeps the existing defaults when no options are provided", () => {
     expect(parseCliOptions([])).toEqual({
       port: undefined,
-      host: '127.0.0.1',
+      host: "127.0.0.1",
       platform: undefined,
       transport: undefined,
       webrtcCodec: undefined,
@@ -39,322 +46,319 @@ describe('parseCliOptions', () => {
     });
   });
 
-  test('accepts each supported platform', () => {
-    expect(parseCliOptions(['--platform', 'ios']).platform).toBe('ios');
-    expect(parseCliOptions(['--platform=android']).platform).toBe('android');
+  test("accepts each supported platform", () => {
+    expect(parseCliOptions(["--platform", "ios"]).platform).toBe("ios");
+    expect(parseCliOptions(["--platform=android"]).platform).toBe("android");
   });
 
-  test('rejects unsupported platforms', () => {
-    expect(() => parseCliOptions(['--platform', 'web'])).toThrow('Invalid --platform: web');
+  test("rejects unsupported platforms", () => {
+    expect(() => parseCliOptions(["--platform", "web"])).toThrow("Invalid --platform: web");
   });
 
-  test('accepts each supported transport', () => {
-    expect(parseCliOptions(['--transport', 'mjpeg']).transport).toBe('mjpeg');
-    expect(parseCliOptions(['--transport=h264']).transport).toBe('h264');
-    expect(parseCliOptions(['--transport', 'webrtc']).transport).toBe('webrtc');
+  test("accepts each supported transport", () => {
+    expect(parseCliOptions(["--transport", "mjpeg"]).transport).toBe("mjpeg");
+    expect(parseCliOptions(["--transport=h264"]).transport).toBe("h264");
+    expect(parseCliOptions(["--transport", "webrtc"]).transport).toBe("webrtc");
   });
 
-  test('rejects unsupported transports', () => {
-    expect(() => parseCliOptions(['--transport', 'auto'])).toThrow('Invalid --transport: auto');
+  test("rejects unsupported transports", () => {
+    expect(() => parseCliOptions(["--transport", "auto"])).toThrow("Invalid --transport: auto");
   });
 
-  test('parses serve-sim WebRTC options', () => {
+  test("parses serve-sim WebRTC options", () => {
     expect(
       parseCliOptions([
-        '--transport',
-        'webrtc',
-        '--webrtc-codec',
-        'VP8',
-        '--stun-url',
-        'stun:one.test,stuns:two.test',
-        '--turn-url=turn:relay.test,turns:secure-relay.test',
-        '--turn-username',
-        'alice',
-        '--turn-credential',
-        'secret',
-        '--webrtc-ice-policy',
-        'relay',
-      ])
+        "--transport",
+        "webrtc",
+        "--webrtc-codec",
+        "VP8",
+        "--stun-url",
+        "stun:one.test,stuns:two.test",
+        "--turn-url=turn:relay.test,turns:secure-relay.test",
+        "--turn-username",
+        "alice",
+        "--turn-credential",
+        "secret",
+        "--webrtc-ice-policy",
+        "relay",
+      ]),
     ).toMatchObject({
-      transport: 'webrtc',
-      webrtcCodec: 'vp8',
-      stunUrls: ['stun:one.test', 'stuns:two.test'],
-      turnUrls: ['turn:relay.test', 'turns:secure-relay.test'],
-      turnUsername: 'alice',
-      turnCredential: 'secret',
-      webrtcIcePolicy: 'relay',
+      transport: "webrtc",
+      webrtcCodec: "vp8",
+      stunUrls: ["stun:one.test", "stuns:two.test"],
+      turnUrls: ["turn:relay.test", "turns:secure-relay.test"],
+      turnUsername: "alice",
+      turnCredential: "secret",
+      webrtcIcePolicy: "relay",
     });
   });
 
-  test('parses serve-sim encoder and metrics options', () => {
+  test("parses serve-sim encoder and metrics options", () => {
     expect(
       parseCliOptions([
-        '--max-dimension=1920',
-        '--mjpeg-quality',
-        '0.8',
-        '--video-bitrate',
-        '8000000',
-        '--video-fps',
-        '30',
-        '--metrics-cors-origin',
-        'https://one.test',
-        '--metrics-cors-origin=https://two.test',
-      ])
+        "--max-dimension=1920",
+        "--mjpeg-quality",
+        "0.8",
+        "--video-bitrate",
+        "8000000",
+        "--video-fps",
+        "30",
+        "--metrics-cors-origin",
+        "https://one.test",
+        "--metrics-cors-origin=https://two.test",
+      ]),
     ).toMatchObject({
       maxDimension: 1920,
       mjpegQuality: 0.8,
       videoBitrate: 8_000_000,
       videoFps: 30,
-      metricsCorsOrigins: ['https://one.test', 'https://two.test'],
+      metricsCorsOrigins: ["https://one.test", "https://two.test"],
     });
   });
 
-  test('selects the Android gRPC source and its explicit image mode', () => {
+  test("selects the Android gRPC source and its explicit image mode", () => {
     expect(
       parseCliOptions([
-        '--platform',
-        'android',
-        '--stream-source',
-        'GRPC-SCREENSHOT',
-        '--grpc-image-mode',
-        'MMAP',
+        "--platform",
+        "android",
+        "--stream-source",
+        "GRPC-SCREENSHOT",
+        "--grpc-image-mode",
+        "MMAP",
       ]),
     ).toMatchObject({
-      streamSource: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
+      streamSource: "grpc-screenshot",
+      grpcImageMode: "mmap",
     });
   });
 
-  test('selects software or hardware encoding for Android', () => {
-    expect(parseCliOptions(['--platform', 'android', '--encoder', 'HARDWARE']).encoder).toBe(
-      'hardware',
+  test("selects software or hardware encoding for Android", () => {
+    expect(parseCliOptions(["--platform", "android", "--encoder", "HARDWARE"]).encoder).toBe(
+      "hardware",
     );
-    expect(parseCliOptions(['--encoder', 'software']).encoder).toBe('software');
-    expect(() => parseCliOptions(['--encoder', 'nvenc'])).toThrow('Invalid --encoder: nvenc');
-    expect(() => parseCliOptions(['--encoder', 'hardware', '--platform', 'ios'])).toThrow(
-      '--encoder is supported only for Android',
+    expect(parseCliOptions(["--encoder", "software"]).encoder).toBe("software");
+    expect(() => parseCliOptions(["--encoder", "nvenc"])).toThrow("Invalid --encoder: nvenc");
+    expect(() => parseCliOptions(["--encoder", "hardware", "--platform", "ios"])).toThrow(
+      "--encoder is supported only for Android",
     );
   });
 
-  test('validates Android stream-source options', () => {
-    expect(() => parseCliOptions(['--stream-source', 'camera'])).toThrow(
-      'Invalid --stream-source: camera',
+  test("validates Android stream-source options", () => {
+    expect(() => parseCliOptions(["--stream-source", "camera"])).toThrow(
+      "Invalid --stream-source: camera",
     );
-    expect(() => parseCliOptions(['--grpc-image-mode', 'rgb'])).toThrow(
-      'Invalid --grpc-image-mode: rgb',
+    expect(() => parseCliOptions(["--grpc-image-mode", "rgb"])).toThrow(
+      "Invalid --grpc-image-mode: rgb",
     );
     expect(() =>
-      parseCliOptions(['--platform', 'ios', '--stream-source', 'grpc-screenshot'])
-    ).toThrow('--stream-source and --grpc-image-mode are supported only for Android');
+      parseCliOptions(["--platform", "ios", "--stream-source", "grpc-screenshot"]),
+    ).toThrow("--stream-source and --grpc-image-mode are supported only for Android");
   });
 
-  test('validates serve-sim option ranges and values', () => {
-    expect(() => parseCliOptions(['--webrtc-codec', 'av1'])).toThrow(
-      'Invalid --webrtc-codec: av1'
+  test("validates serve-sim option ranges and values", () => {
+    expect(() => parseCliOptions(["--webrtc-codec", "av1"])).toThrow("Invalid --webrtc-codec: av1");
+    expect(() => parseCliOptions(["--max-dimension", "4097"])).toThrow(
+      "Invalid --max-dimension: 4097",
     );
-    expect(() => parseCliOptions(['--max-dimension', '4097'])).toThrow(
-      'Invalid --max-dimension: 4097'
+    expect(() => parseCliOptions(["--mjpeg-quality", "0"])).toThrow("Invalid --mjpeg-quality: 0");
+    expect(() => parseCliOptions(["--video-bitrate", "99999"])).toThrow(
+      "Invalid --video-bitrate: 99999",
     );
-    expect(() => parseCliOptions(['--mjpeg-quality', '0'])).toThrow(
-      'Invalid --mjpeg-quality: 0'
-    );
-    expect(() => parseCliOptions(['--video-bitrate', '99999'])).toThrow(
-      'Invalid --video-bitrate: 99999'
-    );
-    expect(() => parseCliOptions(['--video-fps', '29.97'])).toThrow(
-      'Invalid --video-fps: 29.97'
-    );
+    expect(() => parseCliOptions(["--video-fps", "29.97"])).toThrow("Invalid --video-fps: 29.97");
     expect(() =>
-      parseCliOptions(['--transport', 'webrtc', '--stun-url', 'https://bad.test'])
-    ).toThrow('Invalid --stun-url');
+      parseCliOptions(["--transport", "webrtc", "--stun-url", "https://bad.test"]),
+    ).toThrow("Invalid --stun-url");
   });
 
-  test('requires a WebRTC transport and complete TURN credentials', () => {
-    expect(() => parseCliOptions(['--webrtc-codec', 'vp8'])).toThrow(
-      'WebRTC options require --transport webrtc'
+  test("requires a WebRTC transport and complete TURN credentials", () => {
+    expect(() => parseCliOptions(["--webrtc-codec", "vp8"])).toThrow(
+      "WebRTC options require --transport webrtc",
     );
     expect(() =>
       parseCliOptions([
-        '--transport',
-        'webrtc',
-        '--turn-url',
-        'turn:relay.test',
-        '--turn-username',
-        'alice',
-      ])
-    ).toThrow('--turn-username and --turn-credential must be provided together');
+        "--transport",
+        "webrtc",
+        "--turn-url",
+        "turn:relay.test",
+        "--turn-username",
+        "alice",
+      ]),
+    ).toThrow("--turn-username and --turn-credential must be provided together");
     expect(() =>
       parseCliOptions([
-        '--transport',
-        'webrtc',
-        '--turn-username',
-        'alice',
-        '--turn-credential',
-        'secret',
-      ])
-    ).toThrow('--turn-username and --turn-credential require --turn-url');
-    expect(() => parseCliOptions(['--webrtc-ice-policy', 'all'])).toThrow(
-      'WebRTC options require --transport webrtc'
+        "--transport",
+        "webrtc",
+        "--turn-username",
+        "alice",
+        "--turn-credential",
+        "secret",
+      ]),
+    ).toThrow("--turn-username and --turn-credential require --turn-url");
+    expect(() => parseCliOptions(["--webrtc-ice-policy", "all"])).toThrow(
+      "WebRTC options require --transport webrtc",
     );
     expect(() =>
-      parseCliOptions(['--transport', 'webrtc', '--webrtc-ice-policy', 'relay'])
-    ).toThrow('--webrtc-ice-policy relay requires --turn-url');
+      parseCliOptions(["--transport", "webrtc", "--webrtc-ice-policy", "relay"]),
+    ).toThrow("--webrtc-ice-policy relay requires --turn-url");
+    expect(() => parseCliOptions(["--transport", "webrtc", "--webrtc-ice-policy", "host"])).toThrow(
+      "Invalid --webrtc-ice-policy: host",
+    );
     expect(() =>
-      parseCliOptions(['--transport', 'webrtc', '--webrtc-ice-policy', 'host'])
-    ).toThrow('Invalid --webrtc-ice-policy: host');
-    expect(() =>
-      parseCliOptions([
-        '--platform',
-        'ios',
-        '--transport',
-        'webrtc',
-        '--webrtc-ice-policy',
-        'all',
-      ])
-    ).toThrow('--webrtc-ice-policy is supported only for Android');
+      parseCliOptions(["--platform", "ios", "--transport", "webrtc", "--webrtc-ice-policy", "all"]),
+    ).toThrow("--webrtc-ice-policy is supported only for Android");
   });
 
-  test('documents every serve-sim flag', () => {
+  test("documents every serve-sim flag", () => {
     for (const flag of [
-      '--webrtc-codec',
-      '--max-dimension',
-      '--mjpeg-quality',
-      '--video-bitrate',
-      '--video-fps',
-      '--stream-source',
-      '--grpc-image-mode',
-      '--encoder',
-      '--stun-url',
-      '--turn-url',
-      '--turn-username',
-      '--turn-credential',
-      '--webrtc-ice-policy',
-      '--metrics-cors-origin',
-      '--require-token',
-      '--frame-ancestor',
-      '--cors-origin',
+      "--webrtc-codec",
+      "--max-dimension",
+      "--mjpeg-quality",
+      "--video-bitrate",
+      "--video-fps",
+      "--stream-source",
+      "--grpc-image-mode",
+      "--encoder",
+      "--stun-url",
+      "--turn-url",
+      "--turn-username",
+      "--turn-credential",
+      "--webrtc-ice-policy",
+      "--metrics-cors-origin",
+      "--require-token",
+      "--frame-ancestor",
+      "--cors-origin",
     ]) {
       expect(HELP).toContain(flag);
     }
-    expect(HELP).toContain('used when the gRPC source is active');
+    expect(HELP).toContain("used when the gRPC source is active");
   });
 
-  test('documents the default Android gRPC RGB888 stream', () => {
-    expect(HELP).toContain('--stream-source <source>');
-    expect(HELP).toContain('(default: grpc-screenshot)');
-    expect(HELP).toContain('--grpc-image-mode <mode>');
-    expect(HELP).toContain('default: rgb888');
-    expect(HELP).toContain('--encoder <encoder>');
-    expect(HELP).toContain('software, hardware (default: software)');
+  test("documents the default Android gRPC RGB888 stream", () => {
+    expect(HELP).toContain("--stream-source <source>");
+    expect(HELP).toContain("(default: grpc-screenshot)");
+    expect(HELP).toContain("--grpc-image-mode <mode>");
+    expect(HELP).toContain("default: rgb888");
+    expect(HELP).toContain("--encoder <encoder>");
+    expect(HELP).toContain("software, hardware (default: software)");
   });
 
   // The same flag as serve-sim's, so a command that starts one can start the other.
-  test('requires the session token on request', () => {
-    expect(parseCliOptions(['--require-token']).requireToken).toBe(true);
-    expect(parseCliOptions(['--host', '0.0.0.0', '--require-token']).host).toBe('0.0.0.0');
+  test("requires the session token on request", () => {
+    expect(parseCliOptions(["--require-token"]).requireToken).toBe(true);
+    expect(parseCliOptions(["--host", "0.0.0.0", "--require-token"]).host).toBe("0.0.0.0");
   });
 
   // serve-sim's Share button options; the Hub has no Share button, so it accepts and ignores them.
-  test('accepts --share-url and --disable-share, as serve-sim does', () => {
-    expect(parseCliOptions(['--disable-share'])).toEqual(parseCliOptions([]));
-    expect(parseCliOptions(['--share-url', 'https://expo.dev/preview/abc'])).toEqual(parseCliOptions([]));
+  test("accepts --share-url and --disable-share, as serve-sim does", () => {
+    expect(parseCliOptions(["--disable-share"])).toEqual(parseCliOptions([]));
+    expect(parseCliOptions(["--share-url", "https://expo.dev/preview/abc"])).toEqual(
+      parseCliOptions([]),
+    );
   });
 
-  test('collects every --frame-ancestor, as serve-sim does', () => {
+  test("collects every --frame-ancestor, as serve-sim does", () => {
     expect(
       parseCliOptions([
-        '--require-token',
-        '--frame-ancestor',
-        'https://*.expo.dev',
-        '--frame-ancestor=http://localhost:3000',
-      ]).frameAncestors
-    ).toEqual(['https://*.expo.dev', 'http://localhost:3000']);
+        "--require-token",
+        "--frame-ancestor",
+        "https://*.expo.dev",
+        "--frame-ancestor=http://localhost:3000",
+      ]).frameAncestors,
+    ).toEqual(["https://*.expo.dev", "http://localhost:3000"]);
   });
 
-  test('collects every --cors-origin as an exact origin', () => {
+  test("collects every --cors-origin as an exact origin", () => {
     expect(
       parseCliOptions([
-        '--cors-origin',
-        'https://example.com/',
-        '--cors-origin=http://localhost:5173',
-      ]).corsOrigins
-    ).toEqual(['https://example.com', 'http://localhost:5173']);
+        "--cors-origin",
+        "https://example.com/",
+        "--cors-origin=http://localhost:5173",
+      ]).corsOrigins,
+    ).toEqual(["https://example.com", "http://localhost:5173"]);
     expect(
-      parseCliOptions(['--cors-origin', 'HTTPS://Example.COM:443/', '--cors-origin', 'http://[::1]:5173'])
-        .corsOrigins
-    ).toEqual(['https://example.com', 'http://[::1]:5173']);
+      parseCliOptions([
+        "--cors-origin",
+        "HTTPS://Example.COM:443/",
+        "--cors-origin",
+        "http://[::1]:5173",
+      ]).corsOrigins,
+    ).toEqual(["https://example.com", "http://[::1]:5173"]);
   });
 
   // The values serve-sim's --cors-origin matches, so the EAS worker can pass both the same list.
-  test('accepts a subdomain wildcard, as serve-sim does', () => {
+  test("accepts a subdomain wildcard, as serve-sim does", () => {
     expect(
-      parseCliOptions(['--cors-origin', 'https://*.expo.dev', '--cors-origin', 'HTTPS://*.Expo.Test:443/'])
-        .corsOrigins
-    ).toEqual(['https://*.expo.dev', 'https://*.expo.test']);
+      parseCliOptions([
+        "--cors-origin",
+        "https://*.expo.dev",
+        "--cors-origin",
+        "HTTPS://*.Expo.Test:443/",
+      ]).corsOrigins,
+    ).toEqual(["https://*.expo.dev", "https://*.expo.test"]);
   });
 
-  test('rejects a --cors-origin that both backends cannot match', () => {
+  test("rejects a --cors-origin that both backends cannot match", () => {
     for (const value of [
-      '*',
-      'file:///tmp/page.html',
-      'example.com',
+      "*",
+      "file:///tmp/page.html",
+      "example.com",
       // serve-sim ignores these wildcards: one label after the star, a star elsewhere, or no dot.
-      'https://*.com',
-      'https://a.*.expo.dev',
-      'https://*.*.expo.dev',
-      'https://*expo.dev',
+      "https://*.com",
+      "https://a.*.expo.dev",
+      "https://*.*.expo.dev",
+      "https://*expo.dev",
       // URL turns full-width and small stars into `*`, which would make these wildcards.
-      'https://\uFF0A.example.com',
-      'https://\uFE61.example.com',
-      'https://foo\uFF0A.example.com',
+      "https://\uFF0A.example.com",
+      "https://\uFE61.example.com",
+      "https://foo\uFF0A.example.com",
     ]) {
-      expect(() => parseCliOptions(['--cors-origin', value])).toThrow('Invalid --cors-origin');
+      expect(() => parseCliOptions(["--cors-origin", value])).toThrow("Invalid --cors-origin");
     }
   });
 
   // Dropping the rest would allow another site, or a whole site, without saying so.
-  test('rejects a --cors-origin with more than an origin', () => {
+  test("rejects a --cors-origin with more than an origin", () => {
     for (const value of [
-      'https://example.com@evil.example',
-      'https://user:secret@example.com',
-      'https://example.com/private',
-      'https://example.com/?embed=1',
-      'https://example.com/#app',
+      "https://example.com@evil.example",
+      "https://user:secret@example.com",
+      "https://example.com/private",
+      "https://example.com/?embed=1",
+      "https://example.com/#app",
       // The URL parser would reduce each of these to https://example.com.
-      'https://example.com/private/%2e%2e/',
-      'https://example.com/?',
-      'https://example.com/#',
-      'https://@example.com',
-      'https://example.com\\private',
-      'https://example.com/\t',
-      'https://%2A.example.com',
+      "https://example.com/private/%2e%2e/",
+      "https://example.com/?",
+      "https://example.com/#",
+      "https://@example.com",
+      "https://example.com\\private",
+      "https://example.com/\t",
+      "https://%2A.example.com",
     ]) {
-      expect(() => parseCliOptions(['--cors-origin', value])).toThrow('Invalid --cors-origin');
+      expect(() => parseCliOptions(["--cors-origin", value])).toThrow("Invalid --cors-origin");
     }
   });
 
-  test('hides the device list sidebar on request', () => {
-    expect(parseCliOptions(['--hide-sidebar']).hideSidebar).toBe(true);
-    expect(HELP).toContain('--hide-sidebar');
+  test("hides the device list sidebar on request", () => {
+    expect(parseCliOptions(["--hide-sidebar"]).hideSidebar).toBe(true);
+    expect(HELP).toContain("--hide-sidebar");
   });
 
-  test('hides controls for booting or creating devices on request', () => {
-    expect(parseCliOptions(['--hide-boot-device']).hideBootDevice).toBe(true);
-    expect(HELP).toContain('--hide-boot-device');
+  test("hides controls for booting or creating devices on request", () => {
+    expect(parseCliOptions(["--hide-boot-device"]).hideBootDevice).toBe(true);
+    expect(HELP).toContain("--hide-boot-device");
   });
 
-  test('replaces the old stream-mode flag', () => {
-    expect(HELP).toContain('--transport <transport>');
-    expect(HELP).not.toContain('--stream-mode');
-    expect(() => parseCliOptions(['--stream-mode', 'webrtc'])).toThrow(
-      "Unknown option '--stream-mode'"
+  test("replaces the old stream-mode flag", () => {
+    expect(HELP).toContain("--transport <transport>");
+    expect(HELP).not.toContain("--stream-mode");
+    expect(() => parseCliOptions(["--stream-mode", "webrtc"])).toThrow(
+      "Unknown option '--stream-mode'",
     );
   });
 
-  test('parses the existing host, port, and help options', () => {
-    expect(parseCliOptions(['--host', '0.0.0.0', '-p', '4300'])).toEqual({
+  test("parses the existing host, port, and help options", () => {
+    expect(parseCliOptions(["--host", "0.0.0.0", "-p", "4300"])).toEqual({
       port: 4300,
-      host: '0.0.0.0',
+      host: "0.0.0.0",
       platform: undefined,
       transport: undefined,
       webrtcCodec: undefined,
@@ -378,6 +382,6 @@ describe('parseCliOptions', () => {
       corsOrigins: [],
       help: false,
     });
-    expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });
+    expect(parseCliOptions(["--help"])).toEqual({ host: "127.0.0.1", help: true });
   });
 });

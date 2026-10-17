@@ -17,12 +17,7 @@ import { pathToFileURL } from "node:url";
 const DEFAULT_STABLE_READ_ATTEMPTS = 3;
 const DEFAULT_CLEANUP_ATTEMPTS = 5;
 const DEFAULT_CLEANUP_RETRY_MS = 20;
-const TRANSIENT_CLEANUP_CODES = new Set([
-  "EACCES",
-  "EBUSY",
-  "ENOTEMPTY",
-  "EPERM",
-]);
+const TRANSIENT_CLEANUP_CODES = new Set(["EACCES", "EBUSY", "ENOTEMPTY", "EPERM"]);
 
 /** Matches the encoder's defensive raw-frame ceiling. */
 export const MAX_GRPC_MMAP_REGION_BYTES = 512 * 1024 * 1024;
@@ -38,12 +33,7 @@ export type StableMmapRead = {
   readMs: number;
 };
 
-type PositionalRead = (
-  buffer: Buffer,
-  offset: number,
-  length: number,
-  position: number,
-) => number;
+type PositionalRead = (buffer: Buffer, offset: number, length: number, position: number) => number;
 
 function positiveSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -88,12 +78,7 @@ export async function retryMmapCleanupOperation(
     } catch (error) {
       const code = errorCode(error);
       if (code === "ENOENT") return;
-      if (
-        !code ||
-        !TRANSIENT_CLEANUP_CODES.has(code) ||
-        attempt === maxAttempts
-      )
-        throw error;
+      if (!code || !TRANSIENT_CLEANUP_CODES.has(code) || attempt === maxAttempts) throw error;
       await sleep(retryDelayMs * 2 ** (attempt - 1));
     }
   }
@@ -111,11 +96,7 @@ export function rgb888MmapRegionBytes(width: number, height: number): number {
   return bytes;
 }
 
-function readExactly(
-  target: Buffer,
-  byteLength: number,
-  read: PositionalRead,
-): number {
+function readExactly(target: Buffer, byteLength: number, read: PositionalRead): number {
   let offset = 0;
   while (offset < byteLength) {
     const bytesRead = read(target, offset, byteLength - offset, offset);
@@ -146,17 +127,12 @@ export function readStableMmapFrame(options: {
   maxAttempts?: number;
   now?: () => number;
 }): StableMmapRead {
-  const byteLength = positiveSafeInteger(
-    options.byteLength,
-    "frame byteLength",
-  );
+  const byteLength = positiveSafeInteger(options.byteLength, "frame byteLength");
   if (
     !Buffer.isBuffer(options.verificationBuffer) ||
     options.verificationBuffer.length < byteLength
   ) {
-    throw new RangeError(
-      `verification buffer must hold at least ${byteLength} bytes`,
-    );
+    throw new RangeError(`verification buffer must hold at least ${byteLength} bytes`);
   }
   const maxAttempts = positiveSafeInteger(
     options.maxAttempts ?? DEFAULT_STABLE_READ_ATTEMPTS,
@@ -225,11 +201,7 @@ export class GrpcMmapScreenshotRegion {
     const path = join(directory, "frame.rgb");
     let fd: number | null = null;
     try {
-      fd = openSync(
-        path,
-        constants.O_CREAT | constants.O_EXCL | constants.O_RDWR,
-        0o600,
-      );
+      fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
       ftruncateSync(fd, byteLength);
       return new GrpcMmapScreenshotRegion(directory, path, fd, byteLength);
     } catch (error) {

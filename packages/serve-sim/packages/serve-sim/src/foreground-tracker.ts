@@ -26,10 +26,18 @@ export function isUserFacingBundle(bundleId: string): boolean {
 }
 
 /** Parse a SpringBoard visibility line, e.g. `[app<com.apple.mobilesafari>:43117] Setting process visibility to: Foreground`. */
-function parseVisibilityLogMessage(message: string): { app: ForegroundApp; foreground: boolean } | null {
-  const match = /\[app<([^>]+)>:(\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(message);
+function parseVisibilityLogMessage(
+  message: string,
+): { app: ForegroundApp; foreground: boolean } | null {
+  const match =
+    /\[app<([^>]+)>:(\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(
+      message,
+    );
   if (!match) return null;
-  return { app: { bundleId: match[1]!, pid: parseInt(match[2]!, 10) }, foreground: match[3] === "Foreground" };
+  return {
+    app: { bundleId: match[1]!, pid: parseInt(match[2]!, 10) },
+    foreground: match[3] === "Foreground",
+  };
 }
 
 /** The app a SpringBoard line brings to the foreground, or null for any other line. */
@@ -50,7 +58,9 @@ function visibilityAfterLogLine(visible: ForegroundApp | null, line: string): Fo
   if (!change || !isUserFacingBundle(change.app.bundleId)) return visible;
   if (change.foreground) return change.app;
   // SpringBoard may background an old process after its replacement becomes foreground.
-  return visible?.bundleId === change.app.bundleId && visible.pid === change.app.pid ? null : visible;
+  return visible?.bundleId === change.app.bundleId && visible.pid === change.app.pid
+    ? null
+    : visible;
 }
 
 const LINE_BUFFER_LIMIT = 1024 * 1024; // drop a pathological unbroken line rather than grow forever
@@ -61,9 +71,15 @@ function spawnForegroundLogStream(udid: string): ChildProcess {
   return spawn(
     "xcrun",
     [
-      "simctl", "spawn", udid, "log", "stream",
-      "--style", "ndjson",
-      "--level", "info",
+      "simctl",
+      "spawn",
+      udid,
+      "log",
+      "stream",
+      "--style",
+      "ndjson",
+      "--level",
+      "info",
       "--predicate",
       'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
     ],
@@ -277,10 +293,23 @@ export async function frontmostAppFromRecentLogs(udid: string): Promise<Foregrou
   // A long-lived simulator can have more visibility history than a fixed execFile buffer.
   // Keep only the latest parsed state while log show streams its boot-long history.
   return new Promise((resolve) => {
-    const child = spawn("xcrun", [
-      "simctl", "spawn", udid, "log", "show", "--last", "boot", "--style", "ndjson", "--predicate",
-      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
-    ], { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(
+      "xcrun",
+      [
+        "simctl",
+        "spawn",
+        udid,
+        "log",
+        "show",
+        "--last",
+        "boot",
+        "--style",
+        "ndjson",
+        "--predicate",
+        'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
     let visible: ForegroundApp | null = null;
     let buffer = "";
     let settled = false;
@@ -321,5 +350,7 @@ export async function frontmostAppOf(
   if (tracked) return tracked;
   // AX can report a helper such as a ViewService, which the tracker and the history skip too.
   const viaAx = await (deps.viaAx ?? frontmostAppViaAx)(udid);
-  return viaAx && isUserFacingBundle(viaAx.bundleId) ? viaAx : (deps.fromLogs ?? frontmostAppFromRecentLogs)(udid);
+  return viaAx && isUserFacingBundle(viaAx.bundleId)
+    ? viaAx
+    : (deps.fromLogs ?? frontmostAppFromRecentLogs)(udid);
 }

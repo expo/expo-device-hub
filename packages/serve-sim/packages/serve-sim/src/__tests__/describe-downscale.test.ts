@@ -50,33 +50,38 @@ describe("describeDownscale", () => {
   /// libwebrtc reports no limitation for a ceiling we applied ourselves, so whatever it does
   /// report would otherwise take the blame for the level's clamp.
   it("names the codec level ahead of whatever WebRTC happens to report", () => {
-    expect(describeDownscale(1920, sender(651, 1416, "bandwidth", 2622, 1416)))
-      .toBe("1416 of 1920 (codec level)");
-    expect(describeDownscale(1920, sender(651, 1416, "none", 2622, 1416)))
-      .toBe("1416 of 1920 (codec level)");
+    expect(describeDownscale(1920, sender(651, 1416, "bandwidth", 2622, 1416))).toBe(
+      "1416 of 1920 (codec level)",
+    );
+    expect(describeDownscale(1920, sender(651, 1416, "none", 2622, 1416))).toBe(
+      "1416 of 1920 (codec level)",
+    );
   });
 
   it("never blames the level when no level bound was reported", () => {
-    expect(describeDownscale(1920, sender(540, 960, "cpu", 2622, null)))
-      .toBe("960 of 1920 (encoder)");
-    expect(describeDownscale(1920, sender(540, 960, "bandwidth", 2622, 0)))
-      .toBe("960 of 1920 (bitrate)");
-    expect(describeDownscale(1920, sender(540, 960, "none", 2622, null)))
-      .toBe("960 of 1920");
+    expect(describeDownscale(1920, sender(540, 960, "cpu", 2622, null))).toBe(
+      "960 of 1920 (encoder)",
+    );
+    expect(describeDownscale(1920, sender(540, 960, "bandwidth", 2622, 0))).toBe(
+      "960 of 1920 (bitrate)",
+    );
+    expect(describeDownscale(1920, sender(540, 960, "none", 2622, null))).toBe("960 of 1920");
   });
 
   it("still names the level when rounding lands just under the ceiling", () => {
-    expect(describeDownscale(1920, sender(651, 1390, "bandwidth", 2622, 1392)))
-      .toBe("1390 of 1920 (codec level)");
+    expect(describeDownscale(1920, sender(651, 1390, "bandwidth", 2622, 1392))).toBe(
+      "1390 of 1920 (codec level)",
+    );
   });
 
   it("stops blaming the level once the encode falls below the ceiling", () => {
-    expect(describeDownscale(1920, sender(540, 960, "cpu", 2622, 1416)))
-      .toBe("960 of 1920 (encoder)");
-    expect(describeDownscale(1920, sender(540, 960, "bandwidth", 2622, 1416)))
-      .toBe("960 of 1920 (bitrate)");
-    expect(describeDownscale(1920, sender(540, 960, "none", 2622, 1416)))
-      .toBe("960 of 1920");
+    expect(describeDownscale(1920, sender(540, 960, "cpu", 2622, 1416))).toBe(
+      "960 of 1920 (encoder)",
+    );
+    expect(describeDownscale(1920, sender(540, 960, "bandwidth", 2622, 1416))).toBe(
+      "960 of 1920 (bitrate)",
+    );
+    expect(describeDownscale(1920, sender(540, 960, "none", 2622, 1416))).toBe("960 of 1920");
   });
 
   it("says nothing before the first frame reports a size", () => {

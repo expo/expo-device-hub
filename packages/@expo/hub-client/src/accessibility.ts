@@ -1,9 +1,9 @@
-import { type FetchLike, readSseSnapshot } from './sse';
+import { type FetchLike, readSseSnapshot } from "./sse";
 import {
   type AccessibilityFrame,
   type AccessibilityNode,
   type AccessibilitySnapshot,
-} from './types';
+} from "./types";
 
 /**
  * serve-sim replays a cached snapshot on connect and writes the fresh poll ~1.3 s later, but only
@@ -12,22 +12,22 @@ import {
 export const IOS_AX_SETTLE_MS = 2000;
 
 export const IOS_CLICKABLE_ROLES: ReadonlySet<string> = new Set([
-  'button',
-  'link',
-  'cell',
-  'switch',
-  'tab',
-  'toggle',
-  'checkbox',
-  'menu item',
-  'slider',
-  'stepper',
-  'text field',
-  'search field',
-  'search text field',
+  "button",
+  "link",
+  "cell",
+  "switch",
+  "tab",
+  "toggle",
+  "checkbox",
+  "menu item",
+  "slider",
+  "stepper",
+  "text field",
+  "search field",
+  "search text field",
 ]);
 
-const MALFORMED = 'Malformed accessibility response';
+const MALFORMED = "Malformed accessibility response";
 
 export type AccessibilityRead =
   | { ok: true; snapshot: AccessibilitySnapshot }
@@ -36,17 +36,17 @@ export type AccessibilityRead =
 export type AccessibilityLoader = (signal: AbortSignal) => Promise<AccessibilityRead>;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
+  return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
 }
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function str(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+  return typeof value === "string" ? value : "";
 }
 
 function failureText(value: unknown): string {
@@ -129,13 +129,13 @@ export function parseAndroidAccessibility(value: unknown): AccessibilityRead {
     const bounds = raw ? androidBounds(raw.bounds) : null;
     if (!raw || !bounds) continue;
     const label =
-      str(raw.contentDescription) || str(raw.text) || tailAfter(str(raw.resourceId), '/');
+      str(raw.contentDescription) || str(raw.text) || tailAfter(str(raw.resourceId), "/");
     const frame = visibleFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, width, height);
     if (!label || !frame) continue;
     nodes.push({
       id: str(raw.id),
       label,
-      role: tailAfter(str(raw.className), '.'),
+      role: tailAfter(str(raw.className), "."),
       enabled: raw.enabled !== false,
       clickable: raw.clickable === true,
       frame,
@@ -153,8 +153,8 @@ export function parseIosAccessibility(value: unknown, capturedAt: number): Acces
   if (!body) return { ok: false, error: MALFORMED };
 
   if (Array.isArray(body.errors)) {
-    const errors = body.errors.filter((entry): entry is string => typeof entry === 'string');
-    if (errors.length > 0) return { ok: false, error: errors.join(' ') };
+    const errors = body.errors.filter((entry): entry is string => typeof entry === "string");
+    if (errors.length > 0) return { ok: false, error: errors.join(" ") };
   }
 
   const screen = asRecord(body.screen);
@@ -196,7 +196,7 @@ export async function loadAndroidAccessibility(
   signal: AbortSignal,
   fetchImpl: FetchLike = fetch,
 ): Promise<AccessibilityRead> {
-  const response = await fetchImpl(url, { cache: 'no-store', signal });
+  const response = await fetchImpl(url, { cache: "no-store", signal });
   let body: unknown;
   try {
     body = await response.json();
@@ -213,7 +213,7 @@ export async function loadIosAccessibility(
   now: () => number = Date.now,
 ): Promise<AccessibilityRead> {
   const data = await readSseSnapshot(url, { fetchImpl, signal, settleMs: IOS_AX_SETTLE_MS });
-  if (data === null) return { ok: false, error: 'No accessibility snapshot received' };
+  if (data === null) return { ok: false, error: "No accessibility snapshot received" };
 
   let payload: unknown;
   try {

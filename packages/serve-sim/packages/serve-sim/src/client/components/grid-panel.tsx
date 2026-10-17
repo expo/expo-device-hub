@@ -64,9 +64,7 @@ export function GridPanel({
     const q = query.trim().toLowerCase();
     if (!q || !devices) return devices;
     return devices.filter(
-      (d) =>
-        d.name.toLowerCase().includes(q) ||
-        runtimeLabel(d.runtime).toLowerCase().includes(q),
+      (d) => d.name.toLowerCase().includes(q) || runtimeLabel(d.runtime).toLowerCase().includes(q),
     );
   }, [devices, query]);
 

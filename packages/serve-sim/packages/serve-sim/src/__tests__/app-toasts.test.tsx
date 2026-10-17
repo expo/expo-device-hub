@@ -59,7 +59,9 @@ describe("ShareLinkToastContent", () => {
 
   test("confirms the copy of a link with no token", () => {
     const html = renderToStaticMarkup(
-      <ShareLinkToastContent toast={{ url: "http://host:3399/", copied: true, carriesToken: false }} />,
+      <ShareLinkToastContent
+        toast={{ url: "http://host:3399/", copied: true, carriesToken: false }}
+      />,
     );
 
     expect(html).toContain("Share link copied");
@@ -110,7 +112,10 @@ describe("ClipboardToastContent", () => {
     expect(html).toContain(">Copy</button>");
     for (const status of ["success", "error"] as const) {
       const other = renderToStaticMarkup(
-        <ClipboardToastContent toast={{ status, message: "Copied from simulator" }} onCopy={() => {}} />,
+        <ClipboardToastContent
+          toast={{ status, message: "Copied from simulator" }}
+          onCopy={() => {}}
+        />,
       );
       expect(other).toContain("Copied from simulator");
       expect(other).not.toContain(">Copy</button>");

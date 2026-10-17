@@ -120,7 +120,11 @@ export function startPlaybackStallWatchdog({
     pinned = { id: selected.id, framesReceived: selected.framesReceived };
     // Idle samples reset the budget; new undecoded frames retain the frozen-run baseline.
     if (!expectContinuousFrames && selected.framesReceived <= state.received) {
-      state = { decoded: selected.framesDecoded, received: selected.framesReceived, stalledPolls: 0 };
+      state = {
+        decoded: selected.framesDecoded,
+        received: selected.framesReceived,
+        stalledPolls: 0,
+      };
       return;
     }
     const next = nextPlaybackStallState(state, {
@@ -160,7 +164,8 @@ export function startPlaybackStallWatchdog({
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", invalidate);
   return {
     stop() {
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", invalidate);
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", invalidate);
       invalidate();
       stopPolling();
     },

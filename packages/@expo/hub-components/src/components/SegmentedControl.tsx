@@ -1,6 +1,6 @@
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
-import { bg, border, radius, text, textSize } from '../theme/tokens';
+import { bg, border, radius, text, textSize } from "../theme/tokens";
 
 const CONTROL_HEIGHT = 28;
 const OPTION_HEIGHT = 22;
@@ -51,14 +51,14 @@ export function SegmentedControl<Value extends string>({
     setPillLayout((currentLayout) =>
       currentLayout?.left === nextLayout.left && currentLayout.width === nextLayout.width
         ? currentLayout
-        : nextLayout
+        : nextLayout,
     );
   }, [selectedIndex]);
 
   useLayoutEffect(() => {
     measureSelectedOption();
 
-    if (typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === "undefined") return;
 
     const observer = new ResizeObserver(measureSelectedOption);
     optionRefs.current.forEach((option) => {
@@ -74,23 +74,24 @@ export function SegmentedControl<Value extends string>({
       aria-label={ariaLabel}
       aria-describedby={ariaDescribedBy}
       style={{
-        display: 'flex',
-        position: 'relative',
+        display: "flex",
+        position: "relative",
         flexShrink: 0,
-        marginLeft: 'auto',
+        marginLeft: "auto",
         gap: CONTROL_SPACING,
         height: CONTROL_HEIGHT,
         padding: CONTROL_SPACING,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
         border: `1px solid ${border.default}`,
         borderRadius: radius.full,
         backgroundColor: bg.subtle,
-      }}>
+      }}
+    >
       {pillLayout && (
         <span
           aria-hidden="true"
           style={{
-            position: 'absolute',
+            position: "absolute",
             top: CONTROL_SPACING,
             left: pillLayout.left,
             width: pillLayout.width,
@@ -98,7 +99,7 @@ export function SegmentedControl<Value extends string>({
             borderRadius: radius.full,
             backgroundColor: text.default,
             transition:
-              'left 180ms cubic-bezier(.4, 0, .2, 1), width 180ms cubic-bezier(.4, 0, .2, 1)',
+              "left 180ms cubic-bezier(.4, 0, .2, 1), width 180ms cubic-bezier(.4, 0, .2, 1)",
           }}
         />
       )}
@@ -117,24 +118,25 @@ export function SegmentedControl<Value extends string>({
             onClick={() => onChange(option.value)}
             style={{
               ...textSize.xs,
-              position: 'relative',
+              position: "relative",
               zIndex: 1,
-              width: 'auto',
+              width: "auto",
               height: OPTION_HEIGHT,
               flexShrink: 0,
-              boxSizing: 'border-box',
+              boxSizing: "border-box",
               padding: `0 ${OPTION_HORIZONTAL_PADDING}px`,
               border: 0,
               borderRadius: radius.full,
-              backgroundColor: 'transparent',
+              backgroundColor: "transparent",
               color: selected ? bg.default : text.secondary,
-              fontFamily: 'inherit',
+              fontFamily: "inherit",
               fontWeight: 500,
-              whiteSpace: 'nowrap',
-              cursor: option.disabled ? 'default' : 'pointer',
+              whiteSpace: "nowrap",
+              cursor: option.disabled ? "default" : "pointer",
               opacity: option.disabled ? 0.5 : 1,
-              transition: 'color 120ms cubic-bezier(.4, 0, .2, 1)',
-            }}>
+              transition: "color 120ms cubic-bezier(.4, 0, .2, 1)",
+            }}
+          >
             {option.label}
           </button>
         );

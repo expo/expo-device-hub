@@ -1,13 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { inflateSync } from "node:zlib";
 
@@ -59,11 +52,13 @@ function valueAfter(flag) {
 
 function readPlist(path) {
   try {
-    return JSON.parse(execFileSync("plutil", ["-convert", "json", "-o", "-", path], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    }));
+    return JSON.parse(
+      execFileSync("plutil", ["-convert", "json", "-o", "-", path], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 3000,
+      }),
+    );
   } catch {
     return null;
   }
@@ -82,13 +77,15 @@ function coreTypesEntries() {
     if (!iconFile.endsWith(".icns") || !Array.isArray(codes)) return [];
     const sourcePath = join(mobileResourcesRoot, iconFile);
     if (!existsSync(sourcePath)) return [];
-    return [{
-      description: entry.UTTypeDescription ?? "",
-      iconFile,
-      iconName: basename(iconFile, ".icns"),
-      sourcePath,
-      modelCodes: codes.filter((code) => typeof code === "string" && code.length > 0),
-    }];
+    return [
+      {
+        description: entry.UTTypeDescription ?? "",
+        iconFile,
+        iconName: basename(iconFile, ".icns"),
+        sourcePath,
+        modelCodes: codes.filter((code) => typeof code === "string" && code.length > 0),
+      },
+    ];
   });
 }
 
@@ -101,8 +98,8 @@ function simulatorProfiles() {
       const profile = readPlist(profilePath);
       return { name, profilePath, profile };
     })
-    .filter(({ name, profile }) =>
-      profile && /^(iPhone|iPad|Apple Watch|Apple Vision Pro)/.test(name),
+    .filter(
+      ({ name, profile }) => profile && /^(iPhone|iPad|Apple Watch|Apple Vision Pro)/.test(name),
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -187,9 +184,7 @@ function alphaBounds(png) {
     }
     previous = row;
   }
-  return maxX < minX
-    ? null
-    : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+  return maxX < minX ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
 function unfilter(row, previous, bpp, filter) {
@@ -288,7 +283,9 @@ if (json) {
       ? `${row.crop.width}x${row.crop.height}+${row.crop.offsetX},${row.crop.offsetY}`
       : "-";
     const note = row.note ? ` (${row.note})` : "";
-    console.log(`${row.status.padEnd(8)} ${row.device.padEnd(36)} ${row.iconName ?? "-"} ${crop}${note}`);
+    console.log(
+      `${row.status.padEnd(8)} ${row.device.padEnd(36)} ${row.iconName ?? "-"} ${crop}${note}`,
+    );
   }
   if (render) {
     writeFileSync(join(outDir, "audit.json"), `${JSON.stringify(rows, null, 2)}\n`);

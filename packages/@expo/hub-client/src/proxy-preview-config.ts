@@ -12,21 +12,21 @@ export interface ProxyPreviewConfig {
 export function middlewareEndpointForBrowser(
   advertisedPath: string,
   middlewareUrl: URL,
-  basePath: string = '',
+  basePath: string = "",
 ): string {
-  const mountPath = middlewareUrl.pathname.replace(/\/+$/, '');
-  const internalPath = basePath.replace(/\/+$/, '');
+  const mountPath = middlewareUrl.pathname.replace(/\/+$/, "");
+  const internalPath = basePath.replace(/\/+$/, "");
   const publicEndpoint = new URL(middlewareUrl);
   publicEndpoint.pathname = `${mountPath}/`;
-  publicEndpoint.search = '';
-  publicEndpoint.hash = '';
+  publicEndpoint.search = "";
+  publicEndpoint.hash = "";
 
   // Resolve against the server's own mount so relative and absolute paths both carry basePath.
   const endpoint = new URL(advertisedPath, new URL(`${internalPath}/`, publicEndpoint));
   const hasBase =
-    internalPath !== '' &&
+    internalPath !== "" &&
     (endpoint.pathname === internalPath || endpoint.pathname.startsWith(`${internalPath}/`));
-  const route = endpoint.pathname.slice(hasBase ? internalPath.length : 0).replace(/^\/+/, '');
+  const route = endpoint.pathname.slice(hasBase ? internalPath.length : 0).replace(/^\/+/, "");
   publicEndpoint.pathname = `${mountPath}/${route}`;
   publicEndpoint.search = endpoint.search;
   publicEndpoint.hash = endpoint.hash;
@@ -44,10 +44,10 @@ export function proxyPreviewConfigForBrowser<T extends ProxyPreviewConfig>(
 ): T {
   if (!config.device || !config.proxyHelpers) return config;
 
-  const mountPath = middlewareUrl.pathname.replace(/\/+$/, '');
+  const mountPath = middlewareUrl.pathname.replace(/\/+$/, "");
   const devicePath = `${mountPath}/helper/${encodeURIComponent(config.device)}`;
   const httpOrigin = middlewareUrl.origin;
-  const wsProtocol = middlewareUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsProtocol = middlewareUrl.protocol === "https:" ? "wss:" : "ws:";
 
   return {
     ...config,

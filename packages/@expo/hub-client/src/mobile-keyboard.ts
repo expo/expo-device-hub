@@ -10,31 +10,31 @@
  * the simulator.
  */
 
-import { hidUsageForCode } from './keyboard';
-import { textToKeyEventsLenient } from './text-to-keys';
-import { type HidKeyEvent } from './types';
+import { hidUsageForCode } from "./keyboard";
+import { textToKeyEventsLenient } from "./text-to-keys";
+import { type HidKeyEvent } from "./types";
 
-const BACKSPACE = hidUsageForCode('Backspace')!;
-const ENTER = hidUsageForCode('Enter')!;
+const BACKSPACE = hidUsageForCode("Backspace")!;
+const ENTER = hidUsageForCode("Enter")!;
 
 function press(usage: number): HidKeyEvent[] {
   return [
-    { type: 'down', usage },
-    { type: 'up', usage },
+    { type: "down", usage },
+    { type: "up", usage },
   ];
 }
 
 /** Key events for an `InputEvent.inputType` + its `data`. */
 export function keyEventsForInputType(inputType: string, data: string | null): HidKeyEvent[] {
   switch (inputType) {
-    case 'insertText':
-    case 'insertFromPaste':
-      return data != null && data !== '' ? textToKeyEventsLenient(data).events : [];
-    case 'insertLineBreak':
-    case 'insertParagraph':
+    case "insertText":
+    case "insertFromPaste":
+      return data != null && data !== "" ? textToKeyEventsLenient(data).events : [];
+    case "insertLineBreak":
+    case "insertParagraph":
       return press(ENTER);
-    case 'deleteContentBackward':
-    case 'deleteWordBackward':
+    case "deleteContentBackward":
+    case "deleteWordBackward":
       return press(BACKSPACE);
     default:
       return [];
@@ -44,8 +44,8 @@ export function keyEventsForInputType(inputType: string, data: string | null): H
 /** Key events to send from `beforeinput`, before the value changes. */
 export function keyEventsForBeforeInput(inputType: string): HidKeyEvent[] {
   switch (inputType) {
-    case 'insertLineBreak':
-    case 'insertParagraph':
+    case "insertLineBreak":
+    case "insertParagraph":
       // Enter fires `beforeinput` but changes no value, so the value diff misses
       // it. Backspace is left to the keydown path so it is never sent twice.
       return keyEventsForInputType(inputType, null);
@@ -65,8 +65,8 @@ export function keyEventsForTextChange(previous: string, next: string): HidKeyEv
   let common = 0;
   const max = Math.min(prev.length, cur.length);
   while (common < max && prev[common] === cur[common]) common++;
-  const removed = prev.slice(common).join('');
-  const added = cur.slice(common).join('');
+  const removed = prev.slice(common).join("");
+  const added = cur.slice(common).join("");
   const removedKeystrokes = prev.length - common - textToKeyEventsLenient(removed).skipped.length;
   const events: HidKeyEvent[] = [];
   for (let i = 0; i < removedKeystrokes; i++) events.push(...press(BACKSPACE));
@@ -87,7 +87,7 @@ export function keydownForward(
     // input: it fires no `input` for the value diff (e.g. a fresh reopen) and is
     // otherwise dropped when the sim isn't focused. The rest stays with the
     // input path so it is never sent twice.
-    return code === 'Backspace' && state.captureInputEmpty ? hidUsageForCode(code) : null;
+    return code === "Backspace" && state.captureInputEmpty ? hidUsageForCode(code) : null;
   }
   if (!state.simFocused) return null;
   return hidUsageForCode(code);
@@ -95,8 +95,8 @@ export function keydownForward(
 
 /** Attributes for the hidden capture input: keep autocorrect, drop autocapitalize. */
 export const KEYBOARD_CAPTURE_ATTRIBUTES = {
-  autoCapitalize: 'none',
-  autoCorrect: 'on',
-  autoComplete: 'off',
+  autoCapitalize: "none",
+  autoCorrect: "on",
+  autoComplete: "off",
   spellCheck: true,
 } as const;

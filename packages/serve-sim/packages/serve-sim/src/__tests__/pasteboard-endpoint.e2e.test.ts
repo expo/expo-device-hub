@@ -5,7 +5,11 @@ import * as deviceSessions from "../device-session";
 import { simMiddleware } from "../middleware";
 import { servePreview } from "../runtime";
 import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError } from "../sim-pasteboard";
-import { PasteboardCopyTimeoutError, copyFromSim, withCleanupWarning } from "../sim-pasteboard-copy";
+import {
+  PasteboardCopyTimeoutError,
+  copyFromSim,
+  withCleanupWarning,
+} from "../sim-pasteboard-copy";
 import {
   ensureFixtureInstalled,
   FIXTURE_BUNDLE,
@@ -72,7 +76,9 @@ describe("/api/pasteboard", () => {
 
   test("rejects a request with no Origin, even with the token", async () => {
     for (const method of ["POST", "PUT"]) {
-      const res = await middleware(pasteboardRequest("", method, method === "PUT" ? "{}" : undefined, null));
+      const res = await middleware(
+        pasteboardRequest("", method, method === "PUT" ? "{}" : undefined, null),
+      );
       expect(res?.status).toBe(403);
       expect(await res!.json()).toEqual({
         ok: false,
@@ -108,7 +114,10 @@ describe("/api/pasteboard", () => {
   test("rejects an origin that is not the hosted preview's own", async () => {
     const res = await hostedPasteboardRequest(OTHER_ORIGIN);
     expect(res?.status).toBe(403);
-    expect(await res!.json()).toEqual({ ok: false, error: "This origin cannot use the simulator clipboard" });
+    expect(await res!.json()).toEqual({
+      ok: false,
+      error: "This origin cannot use the simulator clipboard",
+    });
   });
 
   test("answers the preflight only for an allowed origin", async () => {
@@ -123,8 +132,9 @@ describe("/api/pasteboard", () => {
           },
         }),
       );
-    expect((await preflight(ALLOWED_CORS_ORIGIN))?.headers.get("access-control-allow-origin"))
-      .toBe(ALLOWED_CORS_ORIGIN);
+    expect((await preflight(ALLOWED_CORS_ORIGIN))?.headers.get("access-control-allow-origin")).toBe(
+      ALLOWED_CORS_ORIGIN,
+    );
     expect((await preflight(OTHER_ORIGIN))?.headers.get("access-control-allow-origin")).toBeNull();
   });
 
@@ -159,7 +169,10 @@ describe("/api/pasteboard", () => {
       expect(res?.status).toBe(503);
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
       const body = (await res!.json()) as { ok: boolean; error: string };
-      expect(body).toEqual({ ok: false, error: "Could not read the simulator clipboard. Open the app you copied from and retry." });
+      expect(body).toEqual({
+        ok: false,
+        error: "Could not read the simulator clipboard. Open the app you copied from and retry.",
+      });
       expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -168,16 +181,22 @@ describe("/api/pasteboard", () => {
   });
 
   test("refuses a copy when the device has no input session", async () => {
-    const res = await middleware(pasteboardRequest("?device=00000000-0000-0000-0000-000000000000&copy=1"));
+    const res = await middleware(
+      pasteboardRequest("?device=00000000-0000-0000-0000-000000000000&copy=1"),
+    );
     expect(res?.status).toBe(409);
-    expect(await res!.json()).toEqual({ ok: false, error: "No simulator input session for this device" });
+    expect(await res!.json()).toEqual({
+      ok: false,
+      error: "No simulator input session for this device",
+    });
   });
 
   test("returns 504 without an error log when Copy sees no pasteboard change", async () => {
     const device = "00000000-0000-0000-0000-000000000000";
     // The change count never moves, as when nothing is selected.
     const shims = installShims({
-      xcrun: "#!/bin/sh\nif [ \"$2\" = get_app_container ]; then exit 1\nelif [ \"$5\" = --change-count ]; then echo 7\nfi\n",
+      xcrun:
+        '#!/bin/sh\nif [ "$2" = get_app_container ]; then exit 1\nelif [ "$5" = --change-count ]; then echo 7\nfi\n',
     });
     const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
       copyPasteboard: () => copyFromSim(device, async () => {}),
@@ -186,7 +205,10 @@ describe("/api/pasteboard", () => {
     try {
       const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
       expect(res?.status).toBe(504);
-      expect(await res!.json()).toEqual({ ok: false, error: new PasteboardCopyTimeoutError().message });
+      expect(await res!.json()).toEqual({
+        ok: false,
+        error: new PasteboardCopyTimeoutError().message,
+      });
       expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -228,7 +250,9 @@ describe("/api/pasteboard", () => {
   test("keeps Copy's key cleanup warning in the 504 body", async () => {
     const device = "00000000-0000-0000-0000-000000000000";
     const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
-      copyPasteboard: async () => { throw withCleanupWarning(new PasteboardCopyTimeoutError(), "A key may still be held"); },
+      copyPasteboard: async () => {
+        throw withCleanupWarning(new PasteboardCopyTimeoutError(), "A key may still be held");
+      },
     } as unknown as deviceSessions.DeviceSession);
     try {
       const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
@@ -246,13 +270,18 @@ describe("/api/pasteboard", () => {
   test("returns a retryable conflict when Copy cannot acquire the pasteboard lock", async () => {
     const device = "00000000-0000-0000-0000-000000000000";
     const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
-      copyPasteboard: async () => { throw new PasteboardBusyError(); },
+      copyPasteboard: async () => {
+        throw new PasteboardBusyError();
+      },
     } as unknown as deviceSessions.DeviceSession);
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
       const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
       expect(res?.status).toBe(409);
-      expect(await res!.json()).toEqual({ ok: false, error: "Simulator clipboard is busy. Try again." });
+      expect(await res!.json()).toEqual({
+        ok: false,
+        error: "Simulator clipboard is busy. Try again.",
+      });
       expect(log).not.toHaveBeenCalled();
     } finally {
       session.mockRestore();
@@ -261,13 +290,18 @@ describe("/api/pasteboard", () => {
   });
 
   test("returns 413 when simulator clipboard text exceeds the read cap", async () => {
-    const shims = installShims({ xcrun: "#!/bin/sh\nprintf 'diagnostic\\n' >&2\nhead -c 4194305 /dev/zero\n" });
+    const shims = installShims({
+      xcrun: "#!/bin/sh\nprintf 'diagnostic\\n' >&2\nhead -c 4194305 /dev/zero\n",
+    });
     try {
       const device = "404F2659-7202-4450-8465-912BD2AB744B";
       const res = await middleware(pasteboardRequest(`?device=${device}`));
       expect(res?.status).toBe(413);
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
-      expect(await res!.json()).toEqual({ ok: false, error: "Simulator clipboard text is too large" });
+      expect(await res!.json()).toEqual({
+        ok: false,
+        error: "Simulator clipboard text is too large",
+      });
     } finally {
       shims.restore();
     }
@@ -281,7 +315,10 @@ describe("/api/pasteboard", () => {
       const res = await middleware(pasteboardRequest(`?device=${device}`));
       expect(res?.status).toBe(503);
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
-      expect(await res!.json()).toEqual({ ok: false, error: "Could not read the simulator clipboard. Open the app you copied from and retry." });
+      expect(await res!.json()).toEqual({
+        ok: false,
+        error: "Could not read the simulator clipboard. Open the app you copied from and retry.",
+      });
       expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -291,16 +328,14 @@ describe("/api/pasteboard", () => {
 
   test("rejects invalid JSON before writing", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
-    const res = await middleware(
-      pasteboardRequest(`?device=${unavailableUdid}`, "PUT", "{"),
-    );
+    const res = await middleware(pasteboardRequest(`?device=${unavailableUdid}`, "PUT", "{"));
     expect(res?.status).toBe(400);
     expect(await res!.json()).toEqual({ ok: false, error: "Invalid JSON" });
   });
 
   test("rejects a body that is not an object with text", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
-    for (const body of ["null", "\"text\"", "{\"text\":1}"]) {
+    for (const body of ["null", '"text"', '{"text":1}']) {
       const res = await middleware(pasteboardRequest(`?device=${unavailableUdid}`, "PUT", body));
       expect(res?.status).toBe(400);
       expect(await res!.json()).toEqual({ ok: false, error: "Clipboard text must be a string" });
@@ -309,7 +344,8 @@ describe("/api/pasteboard", () => {
 
   test("writes and reads text through the simulator pasteboard commands", async () => {
     const shims = installShims({
-      xcrun: '#!/bin/sh\nif [ "$2" = "spawn" ]; then cat > "$TEST_PASTEBOARD_FILE"; else cat "$TEST_PASTEBOARD_FILE"; fi\n',
+      xcrun:
+        '#!/bin/sh\nif [ "$2" = "spawn" ]; then cat > "$TEST_PASTEBOARD_FILE"; else cat "$TEST_PASTEBOARD_FILE"; fi\n',
     });
     const oldFile = process.env.TEST_PASTEBOARD_FILE;
     const oldToolDir = process.env.SERVE_SIM_SIMPB_DIR;
@@ -319,7 +355,9 @@ describe("/api/pasteboard", () => {
     try {
       const device = "404F2659-7202-4450-8465-912BD2AB744B";
       const text = "café 🎉  \n";
-      const write = await middleware(pasteboardRequest(`?device=${device}`, "PUT", JSON.stringify({ text })));
+      const write = await middleware(
+        pasteboardRequest(`?device=${device}`, "PUT", JSON.stringify({ text })),
+      );
       expect(write?.status).toBe(200);
       expect(await write!.json()).toEqual({ ok: true });
       const read = await middleware(pasteboardRequest(`?device=${device}`));
@@ -345,7 +383,9 @@ describe("/api/pasteboard", () => {
       const device = "404F2659-7202-4450-8465-912BD2AB744B";
       // Each newline doubles in JSON, so this body is over 4 MiB.
       const text = "\n".repeat(1024) + "x".repeat(MAX_PASTEBOARD_TEXT_BYTES - 1024);
-      const write = await middleware(pasteboardRequest(`?device=${device}`, "PUT", JSON.stringify({ text })));
+      const write = await middleware(
+        pasteboardRequest(`?device=${device}`, "PUT", JSON.stringify({ text })),
+      );
       expect(write?.status).toBe(200);
       expect(statSync(process.env.TEST_PASTEBOARD_FILE).size).toBe(MAX_PASTEBOARD_TEXT_BYTES);
     } finally {
@@ -370,11 +410,14 @@ describe("/api/pasteboard", () => {
     const server = await servePreview({ port: 0, middleware });
     try {
       const device = "404F2659-7202-4450-8465-912BD2AB744B";
-      const response = await fetch(`http://127.0.0.1:${server.port}/preview/api/pasteboard?device=${device}`, {
-        method: "PUT",
-        headers: { Origin: ALLOWED_CORS_ORIGIN, Authorization: `Bearer ${TEST_TOKEN}` },
-        body: JSON.stringify({ text: "x".repeat(MAX_PASTEBOARD_TEXT_BYTES + 1) }),
-      });
+      const response = await fetch(
+        `http://127.0.0.1:${server.port}/preview/api/pasteboard?device=${device}`,
+        {
+          method: "PUT",
+          headers: { Origin: ALLOWED_CORS_ORIGIN, Authorization: `Bearer ${TEST_TOKEN}` },
+          body: JSON.stringify({ text: "x".repeat(MAX_PASTEBOARD_TEXT_BYTES + 1) }),
+        },
+      );
       expect(response.status).toBe(413);
       expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_CORS_ORIGIN);
       expect(await response.json()).toEqual({ ok: false, error: "Clipboard text is too large" });
@@ -406,9 +449,7 @@ for (const app of PASTEBOARD_TEST_APPS) {
     test("returns JSON text for an explicit device", async () => {
       const probe = `serve-sim-pasteboard-probe-${app.label.replace(/\s+/g, "-")}`;
       writeTestPasteboard(bootedUdid!, probe);
-      const res = await middleware(
-        pasteboardRequest(`?device=${encodeURIComponent(bootedUdid!)}`),
-      );
+      const res = await middleware(pasteboardRequest(`?device=${encodeURIComponent(bootedUdid!)}`));
       expect(res?.status).toBe(200);
       expect(res?.headers.get("content-type")).toBe("application/json");
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);

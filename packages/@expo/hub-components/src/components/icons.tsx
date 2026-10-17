@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { type CSSProperties } from "react";
 
 /**
  * Small line icons used across the dashboard. They draw with `currentColor` by
@@ -12,7 +12,12 @@ type IconProps = {
   style?: CSSProperties;
 };
 
-export function PlusIcon({ size = 18, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+export function PlusIcon({
+  size = 18,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path d="M12 5v14M5 12h14" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
@@ -20,15 +25,30 @@ export function PlusIcon({ size = 18, color = 'currentColor', strokeWidth = 1.5,
   );
 }
 
-export function CloseIcon({ size = 18, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function CloseIcon({
+  size = 18,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
-      <path d="M18 6 6 18M6 6l12 12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+      <path
+        d="M18 6 6 18M6 6l12 12"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
 
-export function PhoneIcon({ size = 28, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+export function PhoneIcon({
+  size = 28,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <rect x="6" y="2" width="12" height="20" rx="3" stroke={color} strokeWidth={strokeWidth} />
@@ -37,7 +57,12 @@ export function PhoneIcon({ size = 28, color = 'currentColor', strokeWidth = 1.5
   );
 }
 
-export function RefreshIcon({ size = 16, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+export function RefreshIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path
@@ -51,7 +76,12 @@ export function RefreshIcon({ size = 16, color = 'currentColor', strokeWidth = 1
   );
 }
 
-export function HomeIcon({ size = 20, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function HomeIcon({
+  size = 20,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path
@@ -65,15 +95,31 @@ export function HomeIcon({ size = 20, color = 'currentColor', strokeWidth = 1.67
   );
 }
 
-export function BackIcon({ size = 18, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function BackIcon({
+  size = 18,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
-      <path d="M19 12H5M12 19l-7-7 7-7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M19 12H5M12 19l-7-7 7-7"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
-export function RecentsIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function RecentsIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <rect x="5" y="5" width="14" height="14" rx="2" stroke={color} strokeWidth={strokeWidth} />
@@ -81,7 +127,12 @@ export function RecentsIcon({ size = 16, color = 'currentColor', strokeWidth = 1
   );
 }
 
-export function ThemeIcon({ size = 16, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+export function ThemeIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <circle cx="12" cy="12" r="9" stroke={color} strokeWidth={strokeWidth} />
@@ -90,7 +141,12 @@ export function ThemeIcon({ size = 16, color = 'currentColor', strokeWidth = 1.5
   );
 }
 
-export function CameraIcon({ size = 16, color = 'currentColor', strokeWidth = 1.33, style }: IconProps) {
+export function CameraIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.33,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path
@@ -105,7 +161,7 @@ export function CameraIcon({ size = 16, color = 'currentColor', strokeWidth = 1.
   );
 }
 
-export function DotsIcon({ size = 16, color = 'currentColor', style }: IconProps) {
+export function DotsIcon({ size = 16, color = "currentColor", style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={style}>
       <circle cx="5" cy="12" r="1.5" />
@@ -115,7 +171,12 @@ export function DotsIcon({ size = 16, color = 'currentColor', style }: IconProps
   );
 }
 
-export function SidebarIcon({ size = 20, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+export function SidebarIcon({
+  size = 20,
+  color = "currentColor",
+  strokeWidth = 1.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <rect x="3" y="3" width="18" height="18" rx="2" stroke={color} strokeWidth={strokeWidth} />
@@ -124,10 +185,23 @@ export function SidebarIcon({ size = 20, color = 'currentColor', strokeWidth = 1
   );
 }
 
-export function RotateIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function RotateIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
-      <rect x="4.1" y="8" width="9" height="11.6" rx="2.3" stroke={color} strokeWidth={strokeWidth} />
+      <rect
+        x="4.1"
+        y="8"
+        width="9"
+        height="11.6"
+        rx="2.3"
+        stroke={color}
+        strokeWidth={strokeWidth}
+      />
       <path
         d="M8.6 4.1A9.7 9.7 0 0 1 18.3 13.8M16.18 11.68 18.3 13.8 20.42 11.68"
         stroke={color}
@@ -139,7 +213,12 @@ export function RotateIcon({ size = 16, color = 'currentColor', strokeWidth = 1.
   );
 }
 
-export function PowerIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function PowerIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path d="M12 2v10" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
@@ -170,7 +249,7 @@ export function PowerIcon({ size = 16, color = 'currentColor', strokeWidth = 1.6
  */
 export function CableDisconnectIcon({
   size = 16,
-  color = 'currentColor',
+  color = "currentColor",
   strokeWidth = 1.67,
   style,
 }: IconProps) {
@@ -222,7 +301,12 @@ export function CableDisconnectIcon({
   );
 }
 
-export function TrashIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+export function TrashIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.67,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path
@@ -237,7 +321,12 @@ export function TrashIcon({ size = 16, color = 'currentColor', strokeWidth = 1.6
 }
 
 /** Lucide `smartphone` — the device glyph in the add-device picker's recent rows. */
-export function SmartphoneIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+export function SmartphoneIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 2,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <rect
@@ -251,13 +340,24 @@ export function SmartphoneIcon({ size = 16, color = 'currentColor', strokeWidth 
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M12 18h.01" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M12 18h.01"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 
 /** Lucide `triangle-alert` — warning marker for unsupported or untested devices. */
-export function WarningIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+export function WarningIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 2,
+  style,
+}: IconProps) {
   return (
     <svg
       width={size}
@@ -266,7 +366,8 @@ export function WarningIcon({ size = 16, color = 'currentColor', strokeWidth = 2
       fill="none"
       aria-hidden="true"
       focusable="false"
-      style={style}>
+      style={style}
+    >
       <path
         d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
         stroke={color}
@@ -286,7 +387,12 @@ export function WarningIcon({ size = 16, color = 'currentColor', strokeWidth = 2
 }
 
 /** Lucide `check` — trailing mark on the selected recent row. */
-export function CheckIcon({ size = 17, color = 'currentColor', strokeWidth = 2.5, style }: IconProps) {
+export function CheckIcon({
+  size = 17,
+  color = "currentColor",
+  strokeWidth = 2.5,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <polyline
@@ -301,7 +407,12 @@ export function CheckIcon({ size = 17, color = 'currentColor', strokeWidth = 2.5
 }
 
 /** Lucide `chevron-down` — trailing affordance on the OS-version select. */
-export function ChevronDownIcon({ size = 14, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+export function ChevronDownIcon({
+  size = 14,
+  color = "currentColor",
+  strokeWidth = 2,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <polyline
@@ -316,7 +427,12 @@ export function ChevronDownIcon({ size = 14, color = 'currentColor', strokeWidth
 }
 
 /** Lucide `chevron-right` — trailing affordance on the screenshot toast. */
-export function ChevronRightIcon({ size = 16, color = 'currentColor', strokeWidth = 2.25, style }: IconProps) {
+export function ChevronRightIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 2.25,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <polyline
@@ -331,7 +447,12 @@ export function ChevronRightIcon({ size = 16, color = 'currentColor', strokeWidt
 }
 
 /** Lucide `chevrons-up-down` — trailing affordance on the Model select. */
-export function ChevronsUpDownIcon({ size = 14, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+export function ChevronsUpDownIcon({
+  size = 14,
+  color = "currentColor",
+  strokeWidth = 2,
+  style,
+}: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <polyline

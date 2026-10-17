@@ -72,11 +72,9 @@ export function isDeviceNotBooted(error: unknown): boolean {
 }
 
 export async function shutdownDevice(udid: string): Promise<void> {
-  await simctl(["shutdown", udid], SHUTDOWN_TIMEOUT_MS).catch(
-    (error: unknown) => {
-      if (!isAlreadyShutDown(error)) throw error;
-    },
-  );
+  await simctl(["shutdown", udid], SHUTDOWN_TIMEOUT_MS).catch((error: unknown) => {
+    if (!isAlreadyShutDown(error)) throw error;
+  });
 }
 
 export async function bootDevice(udid: string): Promise<void> {

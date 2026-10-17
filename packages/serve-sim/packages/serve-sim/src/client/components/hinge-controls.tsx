@@ -13,8 +13,13 @@ export const FOLD_POSE_OPTIONS: Array<{ value: HingePose; label: string }> = [
 ];
 
 const hingeIcons = new Map<HingePose, string>(
-  ([["closed", closedIcon], ["book", bookIcon], ["open", openIcon]] as const)
-    .map(([pose, svg]) => [pose, `url("data:image/svg+xml,${encodeURIComponent(svg)}")`]),
+  (
+    [
+      ["closed", closedIcon],
+      ["book", bookIcon],
+      ["open", openIcon],
+    ] as const
+  ).map(([pose, svg]) => [pose, `url("data:image/svg+xml,${encodeURIComponent(svg)}")`]),
 );
 
 export interface HingeControlsProps {
@@ -36,9 +41,17 @@ export interface HingeControlsProps {
 }
 
 /** The three everyday fold positions; detailed controls live in the sidebar. */
-export function HingeControls({ angle, pose, supported, pending = false, error, onChange }: HingeControlsProps) {
+export function HingeControls({
+  angle,
+  pose,
+  supported,
+  pending = false,
+  error,
+  onChange,
+}: HingeControlsProps) {
   if (!(supported ?? angle !== undefined)) return null;
-  const selectedPose = pose !== undefined ? pose : angle === 0 ? "closed" : angle === 180 ? "open" : null;
+  const selectedPose =
+    pose !== undefined ? pose : angle === 0 ? "closed" : angle === 180 ? "open" : null;
 
   return (
     <div
@@ -46,8 +59,12 @@ export function HingeControls({ angle, pose, supported, pending = false, error, 
       aria-label="Fold position"
       aria-busy={pending}
       style={{
-        position: "relative", display: "inline-flex", flexShrink: 0, gap: 4,
-        padding: "6px 8px", borderRadius: 18,
+        position: "relative",
+        display: "inline-flex",
+        flexShrink: 0,
+        gap: 4,
+        padding: "6px 8px",
+        borderRadius: 18,
         background: "var(--serve-sim-panel-bg, #181818)",
         border: "1px solid rgba(255,255,255,0.1)",
       }}
@@ -62,21 +79,40 @@ export function HingeControls({ angle, pose, supported, pending = false, error, 
             title={`${position.label} (⌥⇧${shortcut})`}
             aria-pressed={selected}
             onClick={() => onChange({ control: "pose", value: position.value })}
-            style={{ background: selected ? "#3b3b3b" : undefined, color: selected ? "#fff" : "#c6c6c6", opacity: 1 }}
+            style={{
+              background: selected ? "#3b3b3b" : undefined,
+              color: selected ? "#fff" : "#c6c6c6",
+              opacity: 1,
+            }}
           >
             <span
               aria-hidden="true"
               style={{
-                display: "block", width: 20, height: 20,
-                backgroundColor: "currentColor", maskImage: hingeIcons.get(position.value),
-                maskSize: "contain", maskRepeat: "no-repeat", maskPosition: "center",
+                display: "block",
+                width: 20,
+                height: 20,
+                backgroundColor: "currentColor",
+                maskImage: hingeIcons.get(position.value),
+                maskSize: "contain",
+                maskRepeat: "no-repeat",
+                maskPosition: "center",
               }}
             />
           </SimulatorToolbar.Button>
         );
       })}
       {error && (
-        <span role="alert" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, width: "min(280px, calc(100vw - 32px))", color: "#fca5a5", fontSize: 12 }}>
+        <span
+          role="alert"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            width: "min(280px, calc(100vw - 32px))",
+            color: "#fca5a5",
+            fontSize: 12,
+          }}
+        >
           {error}
         </span>
       )}

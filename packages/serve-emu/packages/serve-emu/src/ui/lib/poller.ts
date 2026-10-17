@@ -5,8 +5,7 @@ export type PollScheduler = {
 
 const SYSTEM_SCHEDULER: PollScheduler = {
   setInterval: (callback, intervalMs) => setInterval(callback, intervalMs),
-  clearInterval: (handle) =>
-    clearInterval(handle as ReturnType<typeof setInterval>),
+  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
 };
 
 export function startPoller<T>(options: {
@@ -31,11 +30,7 @@ export function startPoller<T>(options: {
         }
       },
       (error) => {
-        if (
-          active &&
-          current === controller &&
-          !controller.signal.aborted
-        ) {
+        if (active && current === controller && !controller.signal.aborted) {
           options.onError(error);
         }
       },

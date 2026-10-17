@@ -19,10 +19,7 @@ type ResultOptions = {
   error?: Error | null;
 };
 
-function result(
-  stdout = "",
-  { status = 0, stderr = "", error = null }: ResultOptions = {},
-) {
+function result(stdout = "", { status = 0, stderr = "", error = null }: ResultOptions = {}) {
   return {
     status,
     signal: null,
@@ -33,11 +30,13 @@ function result(
   };
 }
 
-function fakeProcess(options: {
-  exitCode?: number | null;
-  signalCode?: NodeJS.Signals | null;
-  throwOnKill?: boolean;
-} = {}) {
+function fakeProcess(
+  options: {
+    exitCode?: number | null;
+    signalCode?: NodeJS.Signals | null;
+    throwOnKill?: boolean;
+  } = {},
+) {
   const killSignals: Array<NodeJS.Signals | number | undefined> = [];
   const proc = Object.assign(new EventEmitter(), {
     exitCode: options.exitCode ?? null,
@@ -104,15 +103,12 @@ describe("emulator resolution and listing", () => {
       calls.push([command, args, options]);
       return result(" Pixel_8 \r\n\r\nTablet\n");
     }) as typeof execText;
-    await expect(
-      listAvds("/sdk/emulator", { execText: successful }),
-    ).resolves.toEqual(["Pixel_8", "Tablet"]);
+    await expect(listAvds("/sdk/emulator", { execText: successful })).resolves.toEqual([
+      "Pixel_8",
+      "Tablet",
+    ]);
     expect(calls).toEqual([
-      [
-        "/sdk/emulator",
-        ["-list-avds"],
-        { timeout: 5_000, maxBuffer: 1024 * 1024 },
-      ],
+      ["/sdk/emulator", ["-list-avds"], { timeout: 5_000, maxBuffer: 1024 * 1024 }],
     ]);
 
     const processError = new Error("spawn failed");
@@ -124,17 +120,15 @@ describe("emulator resolution and listing", () => {
     ] as const;
     for (const [failedResult, detail] of failures) {
       const failed = (async () => failedResult) as typeof execText;
-      await expect(
-        listAvds("/sdk/emulator", { execText: failed }),
-      ).rejects.toThrow(`emulator -list-avds failed: ${detail}`);
+      await expect(listAvds("/sdk/emulator", { execText: failed })).rejects.toThrow(
+        `emulator -list-avds failed: ${detail}`,
+      );
     }
   });
 
   test("omits emulators whose console and boot property expose no AVD name", async () => {
     const runExec = (async (_command, args) =>
-      args.includes("emu")
-        ? result("OK\nKO: unavailable\n")
-        : result("   \n")) as typeof execText;
+      args.includes("emu") ? result("OK\nKO: unavailable\n") : result("   \n")) as typeof execText;
     const devices = [
       { serial: "physical-1", state: "device" },
       { serial: "emulator-5554", state: "offline" },
@@ -159,9 +153,7 @@ describe("emulator lifecycle", () => {
     let spawns = 0;
     const dependencies: EmulatorRuntimeDependencies = {
       execText: runExec,
-      listAllDevices: async () => [
-        { serial: "emulator-5554", state: "device" },
-      ],
+      listAllDevices: async () => [{ serial: "emulator-5554", state: "device" }],
       spawn: (() => {
         spawns++;
         throw new Error("should not spawn");
@@ -253,9 +245,7 @@ describe("emulator lifecycle", () => {
         execText: runExec,
         listAllDevices: async () => {
           deviceReads++;
-          return deviceReads === 1
-            ? [{ serial: "emulator-5554", state: "device" }]
-            : [];
+          return deviceReads === 1 ? [{ serial: "emulator-5554", state: "device" }] : [];
         },
         spawn: spawnWith(proc),
       },
@@ -283,9 +273,7 @@ describe("emulator lifecycle", () => {
         },
         {
           execText: runExec,
-          listAllDevices: async () => [
-            { serial: "emulator-5554", state: "device" },
-          ],
+          listAllDevices: async () => [{ serial: "emulator-5554", state: "device" }],
           now: () => now,
           sleep: async (delay) => {
             now += delay;
@@ -304,19 +292,13 @@ describe("emulator lifecycle", () => {
     const listOnly = (async (command) =>
       command === "/sdk/emulator" ? result("Pixel_8\n") : result("")) as typeof execText;
     await expect(
-      startEmulator(
-        { avd: "Missing", emulatorPath: "/sdk/emulator" },
-        { execText: listOnly },
-      ),
+      startEmulator({ avd: "Missing", emulatorPath: "/sdk/emulator" }, { execText: listOnly }),
     ).rejects.toThrow('Unknown AVD "Missing". Available AVDs: Pixel_8');
 
     const emptyList = (async () => result("\n")) as typeof execText;
     await expect(
-      startEmulator(
-        { avd: "Missing", emulatorPath: "/sdk/emulator" },
-        { execText: emptyList },
-      ),
-    ).rejects.toThrow('Available AVDs: (none)');
+      startEmulator({ avd: "Missing", emulatorPath: "/sdk/emulator" }, { execText: emptyList }),
+    ).rejects.toThrow("Available AVDs: (none)");
 
     for (const port of [5553, 5555, 5684, 5554.5]) {
       await expect(
@@ -327,9 +309,7 @@ describe("emulator lifecycle", () => {
             listAllDevices: async () => [],
           },
         ),
-      ).rejects.toThrow(
-        "--emulator-port must be an even integer from 5554 through 5682.",
-      );
+      ).rejects.toThrow("--emulator-port must be an even integer from 5554 through 5682.");
     }
 
     let deviceReads = 0;

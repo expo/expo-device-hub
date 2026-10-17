@@ -21,12 +21,14 @@ interface RawAxeNode {
 }
 
 function chooseScreenFrame(roots: RawAxeNode[]) {
-  return roots[0]?.frame ?? {
-    x: 0,
-    y: 0,
-    width: 1,
-    height: 1,
-  };
+  return (
+    roots[0]?.frame ?? {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    }
+  );
 }
 
 function sameRect(a: AxRect, b: AxRect) {
@@ -114,11 +116,7 @@ function isAxUnavailableSnapshot(snapshot: AxSnapshot | null) {
 }
 
 function isUsableAxSnapshot(snapshot: AxSnapshot) {
-  return (
-    snapshot.elements.length > 0 &&
-    snapshot.screen.width > 1 &&
-    snapshot.screen.height > 1
-  );
+  return snapshot.elements.length > 0 && snapshot.screen.width > 1 && snapshot.screen.height > 1;
 }
 
 async function collectAxSnapshot(udid: string): Promise<AxSnapshot> {

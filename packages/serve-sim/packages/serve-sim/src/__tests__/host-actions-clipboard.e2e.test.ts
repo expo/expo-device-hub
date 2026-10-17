@@ -20,7 +20,13 @@ import {
 
 const stateDir = useTempStateDir();
 const udid = e2eDevice();
-const ready = !!(udid && pasteboardFixture && pasteboardTool && pasteboardDylib && locateNativeAddon());
+const ready = !!(
+  udid &&
+  pasteboardFixture &&
+  pasteboardTool &&
+  pasteboardDylib &&
+  locateNativeAddon()
+);
 requireE2E("clipboard host actions", ready);
 afterAll(() => stateDir.restore());
 

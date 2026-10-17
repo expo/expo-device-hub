@@ -30,8 +30,11 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
   const clipboard = createClipboardSession();
 
   function fixtureLines(): string[] {
-    try { return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean); }
-    catch { return []; }
+    try {
+      return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   async function waitFor<T>(read: () => T, expected: T): Promise<void> {
@@ -44,10 +47,15 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
   }
 
   beforeAll(async () => {
-    try { simctl("uninstall", udid!, APP); } catch {}
+    try {
+      simctl("uninstall", udid!, APP);
+    } catch {}
     simctl("install", udid!, FIXTURE);
     simctl("privacy", udid!, "grant", "pasteboard", APP);
-    fixtureLog = join(simctl("get_app_container", udid!, APP, "data").trim(), "Documents/launches.tsv");
+    fixtureLog = join(
+      simctl("get_app_container", udid!, APP, "data").trim(),
+      "Documents/launches.tsv",
+    );
     previousKeyboard = await getUiOption(udid!, "hardware-keyboard");
     // Launch with OFF and no preparatory shortcut or focused-app toggle. The first
     // Paste must reach the field, not just the simulator pasteboard.
@@ -63,7 +71,9 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
       try {
         await clipboard.dispose();
       } finally {
-        try { simctl("uninstall", udid!, APP); } catch {}
+        try {
+          simctl("uninstall", udid!, APP);
+        } catch {}
         if (previousKeyboard) await setUiOption(udid!, "hardware-keyboard", previousKeyboard);
       }
     }
@@ -81,14 +91,23 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
     const ws = new WebSocket(`ws://127.0.0.1:${address.port}`);
     try {
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("Input socket was not admitted")), 10_000);
+        const timeout = setTimeout(
+          () => reject(new Error("Input socket was not admitted")),
+          10_000,
+        );
         ws.on("message", (frame: Buffer) => {
           if (frame[0] !== WS_MSG_INPUT_ADMITTED) return;
           clearTimeout(timeout);
           resolve();
         });
-        ws.once("error", (error) => { clearTimeout(timeout); reject(error); });
-        ws.once("close", () => { clearTimeout(timeout); reject(new Error("Input socket closed before admission")); });
+        ws.once("error", (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+        ws.once("close", () => {
+          clearTimeout(timeout);
+          reject(new Error("Input socket closed before admission"));
+        });
       });
       const answer = new Promise<{ ok: boolean; error?: string }>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("Paste reply timed out")), 30_000);
@@ -98,10 +117,19 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
           resolve(JSON.parse(frame.subarray(1).toString()));
         });
       });
-      ws.send(Buffer.concat([Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId: 1, text }))]));
+      ws.send(
+        Buffer.concat([Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId: 1, text }))]),
+      );
       expect(await answer).toMatchObject({ ok: true });
       // A dispatch acknowledgement is not proof that UIKit inserted the text.
-      await waitFor(() => fixtureLines().filter((line) => line.startsWith(`text\t${pid}\t`)).at(-1)?.split("\t")[2], text);
+      await waitFor(
+        () =>
+          fixtureLines()
+            .filter((line) => line.startsWith(`text\t${pid}\t`))
+            .at(-1)
+            ?.split("\t")[2],
+        text,
+      );
     } finally {
       ws.close();
       sockets.close();
@@ -119,7 +147,8 @@ describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
         const launch = simctl("launch", udid!, APP, "--keyboard-test", "--clipboard-test");
         const pid = /:\s*(\d+)$/.exec(launch.trim())?.[1];
         expect(pid, launch).toBeDefined();
-        const recorded = (kind: string) => fixtureLines().some((line) => line.startsWith(`${kind}\t${pid}\t`));
+        const recorded = (kind: string) =>
+          fixtureLines().some((line) => line.startsWith(`${kind}\t${pid}\t`));
         await waitFor(() => recorded("keyboard-active"), true);
         if (index === 0) {
           await waitFor(() => recorded("keyboard-visible"), true);

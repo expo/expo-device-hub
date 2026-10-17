@@ -8,10 +8,7 @@ function assertByteLimit(maxBytes: number): void {
   }
 }
 
-function rejectOversizedContentLength(
-  request: Request,
-  maxBytes: number,
-): void {
+function rejectOversizedContentLength(request: Request, maxBytes: number): void {
   const header = request.headers.get("content-length");
   if (header === null) return;
   if (!/^\d+$/.test(header)) {
@@ -27,10 +24,7 @@ function rejectOversizedContentLength(
  * Content-Length is only an early rejection hint and is never trusted as the
  * body's real size.
  */
-export async function readBodyBytes(
-  request: Request,
-  maxBytes: number,
-): Promise<Uint8Array> {
+export async function readBodyBytes(request: Request, maxBytes: number): Promise<Uint8Array> {
   assertByteLimit(maxBytes);
   rejectOversizedContentLength(request, maxBytes);
 
@@ -54,11 +48,7 @@ export async function readBodyBytes(
       byteLength += value.byteLength;
       if (byteLength > maxBytes) {
         void reader.cancel("request body too large").catch(() => {});
-        throw new ApiError(
-          413,
-          "payload_too_large",
-          "Request body is too large",
-        );
+        throw new ApiError(413, "payload_too_large", "Request body is too large");
       }
       chunks.push(value);
     }

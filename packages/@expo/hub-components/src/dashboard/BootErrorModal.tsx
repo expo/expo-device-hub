@@ -10,7 +10,7 @@ import {
   font,
   radius,
   text,
-} from '../primitives';
+} from "../primitives";
 
 /**
  * Error dialog shown when booting a device on the host failed (e.g. the
@@ -33,21 +33,22 @@ export function BootErrorModal({ open, onClose, deviceName, message }: BootError
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
-      }}>
+      }}
+    >
       <DialogContent>
         <DialogTitle title="Failed to boot device" />
         <DialogContentContainer>
           <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: text.secondary }}>
-            <strong style={{ color: text.default, fontWeight: 600 }}>{deviceName}</strong> could
-            not be booted.
+            <strong style={{ color: text.default, fontWeight: 600 }}>{deviceName}</strong> could not
+            be booted.
           </p>
           <pre
             style={{
-              margin: '6px 0 0',
-              padding: '10px 12px',
-              overflowX: 'auto',
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
+              margin: "6px 0 0",
+              padding: "10px 12px",
+              overflowX: "auto",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
               backgroundColor: bg.subtle,
               border: `1px solid ${border.default}`,
               borderRadius: radius.lg,
@@ -55,7 +56,8 @@ export function BootErrorModal({ open, onClose, deviceName, message }: BootError
               fontFamily: font.mono,
               fontSize: 12,
               lineHeight: 1.5,
-            }}>
+            }}
+          >
             {message}
           </pre>
         </DialogContentContainer>

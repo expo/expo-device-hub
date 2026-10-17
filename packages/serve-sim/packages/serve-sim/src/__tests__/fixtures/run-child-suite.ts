@@ -31,7 +31,9 @@ export async function runChildSuite(
     ]);
     return {
       exitCode: timedOut ? null : exitCode,
-      output: timedOut ? `${stderr}${stdout}\n(child killed after ${timeoutMs}ms)` : `${stderr}${stdout}`,
+      output: timedOut
+        ? `${stderr}${stdout}\n(child killed after ${timeoutMs}ms)`
+        : `${stderr}${stdout}`,
     };
   } finally {
     clearTimeout(killer);

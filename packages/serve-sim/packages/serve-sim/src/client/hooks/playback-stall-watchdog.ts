@@ -159,7 +159,10 @@ export function startPlaybackStallWatchdog({
     if (capturePaused) {
       const paused = await capturePaused();
       if (reading !== generation || peer() !== pc || !judgeable()) return;
-      if (paused) { invalidate(); return; }
+      if (paused) {
+        invalidate();
+        return;
+      }
     }
     const disposition = webRtcFailureDisposition("playback-stall", pc.connectionState, {
       mediaArriving: next.mediaArriving,

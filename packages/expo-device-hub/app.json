@@ -3,9 +3,7 @@
     "name": "expo-device-hub",
     "slug": "expo-device-hub",
     "version": "1.0.0",
-    "platforms": [
-      "web"
-    ],
+    "platforms": ["web"],
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "web": {

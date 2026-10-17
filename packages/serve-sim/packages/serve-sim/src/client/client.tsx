@@ -39,18 +39,25 @@ import { useLadderRestart } from "./hooks/use-ladder-restart";
 import type { StreamPanelPeer } from "./components/stream-settings-tool";
 import { duoActiveScreen } from "./simulator/duo-pose";
 import { PresentationControls } from "./components/presentation-controls";
+import { KeyboardCapture, KeyboardToggleButton } from "./components/keyboard-capture";
 import {
-  KeyboardCapture,
-  KeyboardToggleButton,
-} from "./components/keyboard-capture";
-import { DeviceKitChrome, deviceKitChromeForScreen, deviceKitChromeGeometry, deviceKitScreenRadius, type ChromeButtonPress } from "./components/device-chrome-frame";
+  DeviceKitChrome,
+  deviceKitChromeForScreen,
+  deviceKitChromeGeometry,
+  deviceKitScreenRadius,
+  type ChromeButtonPress,
+} from "./components/device-chrome-frame";
 import { createOrderedKeyboardInput } from "./utils/ordered-keyboard-input";
 import { GridPanel } from "./components/grid-panel";
 import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
-import { ServeSimToaster, dismissInputSocketError, showInputSocketError } from "./components/app-toasts";
+import {
+  ServeSimToaster,
+  dismissInputSocketError,
+  showInputSocketError,
+} from "./components/app-toasts";
 import { createInputSocket } from "../socket/client-input";
 import { WS_MSG_CONFIG } from "../socket/input-protocol";
 import { ShareSessionButton } from "./components/share-session-button";
@@ -77,11 +84,7 @@ import { useWebKitDevtools } from "./hooks/use-webkit-devtools";
 import { useGridDevices } from "./hooks/use-grid-devices";
 import { useStreamSettings } from "./hooks/use-stream-settings";
 import type { DeviceKitChromeDescriptor } from "./utils/grid";
-import {
-  avccFallbackReducer,
-  initialAvccFallback,
-  AVCC_FRAME_TIMEOUT_MS,
-} from "./avcc-fallback";
+import { avccFallbackReducer, initialAvccFallback, AVCC_FRAME_TIMEOUT_MS } from "./avcc-fallback";
 import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
@@ -97,7 +100,14 @@ import {
   PANEL_WIDTH,
 } from "./utils/panel-widths";
 import { proxyPreviewConfigForBrowser } from "./utils/preview-config";
-import { mjpegStreamUrlFrom, simEndpoint, streamConfigFrom, webrtcCloseUrlFrom, webrtcOfferUrlFrom, webrtcStatsUrlFrom } from "./utils/sim-endpoint";
+import {
+  mjpegStreamUrlFrom,
+  simEndpoint,
+  streamConfigFrom,
+  webrtcCloseUrlFrom,
+  webrtcOfferUrlFrom,
+  webrtcStatsUrlFrom,
+} from "./utils/sim-endpoint";
 import { startLogsPoll } from "./utils/logs-poll";
 import { shouldStreamSimulatorLogs } from "./utils/simulator-logs";
 import { useBlockPageZoom } from "./hooks/use-block-page-zoom";
@@ -156,7 +166,7 @@ function previewConfigKey(config: PreviewConfig | null): string {
 function App() {
   const [injectedConfig] = useState(() => streamConfigFrom(window.__SIM_PREVIEW__));
   const [config, setConfig] = useState<PreviewConfig | null>(() =>
-    proxyPreviewConfigForBrowser(injectedConfig, window.location)
+    proxyPreviewConfigForBrowser(injectedConfig, window.location),
   );
   const [streaming, setStreaming] = useState(false);
   // The device the user wants to view. Selecting a row in the sidebar updates
@@ -222,7 +232,8 @@ function App() {
   const preview = window.__SIM_PREVIEW__;
   const gridCatalogEndpoint = preview?.gridCatalogEndpoint ?? simEndpoint("grid/api/catalog");
   const gridStatusEndpoint = preview?.gridStatusEndpoint ?? simEndpoint("grid/api/status");
-  const gridStatusEventsEndpoint = preview?.gridStatusEventsEndpoint ?? simEndpoint("grid/api/status/events");
+  const gridStatusEventsEndpoint =
+    preview?.gridStatusEventsEndpoint ?? simEndpoint("grid/api/status/events");
   const gridStartEndpoint = preview?.gridStartEndpoint ?? simEndpoint("grid/api/start");
   const gridShutdownEndpoint = preview?.gridShutdownEndpoint ?? simEndpoint("grid/api/shutdown");
   const [starting, setStarting] = useState<Record<string, boolean>>({});
@@ -235,12 +246,7 @@ function App() {
     loadAll: loadAllGrid,
     resetPage: resetGridPage,
     hasMore: gridHasMore,
-  } = useGridDevices(
-    gridCatalogEndpoint,
-    gridStatusEventsEndpoint,
-    true,
-    selectedUdid,
-  );
+  } = useGridDevices(gridCatalogEndpoint, gridStatusEventsEndpoint, true, selectedUdid);
   // Re-subscribe the stream SSE the instant the selected device gains (or loses)
   // a helper, so its config lands as soon as it boots rather than waiting on the
   // next filesystem-watch tick — the stream appears sooner after boot.
@@ -419,9 +425,21 @@ function App() {
 
     const procColors = new Map<string, string>();
     const palette = [
-      "#8be9fd", "#50fa7b", "#ffb86c", "#ff79c6", "#bd93f9",
-      "#f1fa8c", "#6272a4", "#ff5555", "#69ff94", "#d6acff",
-      "#ffffa5", "#a4ffff", "#ff6e6e", "#caa9fa", "#5af78e",
+      "#8be9fd",
+      "#50fa7b",
+      "#ffb86c",
+      "#ff79c6",
+      "#bd93f9",
+      "#f1fa8c",
+      "#6272a4",
+      "#ff5555",
+      "#69ff94",
+      "#d6acff",
+      "#ffffa5",
+      "#a4ffff",
+      "#ff6e6e",
+      "#caa9fa",
+      "#5af78e",
     ];
     function colorFor(name: string): string {
       let c = procColors.get(name);
@@ -459,12 +477,8 @@ function App() {
             lastProc = proc;
           }
 
-          const tag = subsystem && proc === lastProc
-            ? `%c${category || subsystem}%c `
-            : "";
-          const tagStyles = tag
-            ? ["color:#888;font-style:italic", "color:inherit"]
-            : [];
+          const tag = subsystem && proc === lastProc ? `%c${category || subsystem}%c ` : "";
+          const tagStyles = tag ? ["color:#888;font-style:italic", "color:inherit"] : [];
 
           if (level === "fault" || level === "error") {
             console.log(`${tag}%c${msg}`, ...tagStyles, "color:#ff5555");
@@ -491,9 +505,7 @@ function App() {
   // device would lay out at the bare screen aspect and then reflow into its bezel.
   // Once available, prefer the catalog's complete cover/inner display variants.
   const inlineChrome =
-    injectedConfig?.device === effectiveUdid
-      ? injectedConfig.chrome ?? null
-      : null;
+    injectedConfig?.device === effectiveUdid ? (injectedConfig.chrome ?? null) : null;
   const isStreaming = !!config && config.device === effectiveUdid;
 
   let mainView: ReactNode;
@@ -548,7 +560,10 @@ function App() {
             <h1 className="text-[18px] m-0 text-white/90">No simulators available</h1>
             <p className="text-white/55 text-[14px] max-w-120">
               Create a simulator in Xcode, or start one with{" "}
-              <code className="bg-[#222] px-1.5 py-0.5 rounded text-[13px]">bunx @expo/serve-sim --detach</code>.
+              <code className="bg-[#222] px-1.5 py-0.5 rounded text-[13px]">
+                bunx @expo/serve-sim --detach
+              </code>
+              .
             </p>
           </div>
         ) : null}
@@ -662,53 +677,95 @@ function AppWithConfig({
   // Screen config now arrives over the input WebSocket (pushed by the helper on
   // connect + on every dimension/orientation change) instead of a 1s /config poll.
   const [wsStreamConfig, setWsStreamConfig] = useState<StreamConfig | null>(null);
-  const streamConfig = useMemo(() => wsStreamConfig ? previewScreenConfig(wsStreamConfig) : null, [wsStreamConfig]);
+  const streamConfig = useMemo(
+    () => (wsStreamConfig ? previewScreenConfig(wsStreamConfig) : null),
+    [wsStreamConfig],
+  );
   const hingeAngle = streamConfig?.hingeAngle;
   const supportsHingeAngle = streamConfig?.supportsHingeAngle;
   // Before native capability metadata arrives, recognize Duo's Xcode DeviceKit
   // chrome identifiers: phone15 is the cover profile and phone14 the inner
   // display variant. These are asset identifiers, not iPhone model numbers.
-  const isDuo = supportsHingeAngle === true ||
+  const isDuo =
+    supportsHingeAngle === true ||
     /\biphone\s+duo\b/i.test(deviceName ?? "") ||
-    defaultChrome?.identifier === "phone14" || defaultChrome?.identifier === "phone15";
+    defaultChrome?.identifier === "phone14" ||
+    defaultChrome?.identifier === "phone15";
   const [duoViewMode, setDuoViewModeState] = useState<"2d" | "3d">(() => {
-    try { return localStorage.getItem("serve-sim:duo-view-mode") === "2d" ? "2d" : "3d"; } catch { return "3d"; }
+    try {
+      return localStorage.getItem("serve-sim:duo-view-mode") === "2d" ? "2d" : "3d";
+    } catch {
+      return "3d";
+    }
   });
   const [duoModelUnavailable, setDuoModelUnavailable] = useState(false);
-  const useDuoModel = isDuo && duoViewMode === "3d" && chromeEnabled && !axOverlayEnabled && !duoModelUnavailable;
-  const setDuoViewMode = useCallback((mode: "2d" | "3d") => {
-    setDuoViewModeState(mode);
-    setDuoModelUnavailable(false);
-    if (mode === "3d") {
-      setChromeEnabled(true);
-      setAxOverlayEnabled(false);
-    }
-    try { localStorage.setItem("serve-sim:duo-view-mode", mode); } catch { /* Viewer storage is optional. */ }
-  }, [setChromeEnabled, setAxOverlayEnabled]);
+  const useDuoModel =
+    isDuo && duoViewMode === "3d" && chromeEnabled && !axOverlayEnabled && !duoModelUnavailable;
+  const setDuoViewMode = useCallback(
+    (mode: "2d" | "3d") => {
+      setDuoViewModeState(mode);
+      setDuoModelUnavailable(false);
+      if (mode === "3d") {
+        setChromeEnabled(true);
+        setAxOverlayEnabled(false);
+      }
+      try {
+        localStorage.setItem("serve-sim:duo-view-mode", mode);
+      } catch {
+        /* Viewer storage is optional. */
+      }
+    },
+    [setChromeEnabled, setAxOverlayEnabled],
+  );
   const [cacheScreenOnFold, setCacheScreenOnFoldState] = useState(() => {
-    try { return localStorage.getItem("serve-sim:duo-cache-screen-on-fold") === "true"; } catch { return false; }
+    try {
+      return localStorage.getItem("serve-sim:duo-cache-screen-on-fold") === "true";
+    } catch {
+      return false;
+    }
   });
   const [duoSizeMode, setDuoSizeModeState] = useState<"physical" | "fill">(() => {
-    try { return localStorage.getItem("serve-sim:duo-preview-size") === "physical" ? "physical" : "fill"; } catch { return "fill"; }
+    try {
+      return localStorage.getItem("serve-sim:duo-preview-size") === "physical"
+        ? "physical"
+        : "fill";
+    } catch {
+      return "fill";
+    }
   });
   const setCacheScreenOnFold = useCallback((enabled: boolean) => {
     setCacheScreenOnFoldState(enabled);
-    try { localStorage.setItem("serve-sim:duo-cache-screen-on-fold", String(enabled)); } catch { /* Viewer storage is optional. */ }
+    try {
+      localStorage.setItem("serve-sim:duo-cache-screen-on-fold", String(enabled));
+    } catch {
+      /* Viewer storage is optional. */
+    }
   }, []);
   const setDuoSizeMode = useCallback((mode: "physical" | "fill") => {
     setDuoSizeModeState(mode);
-    try { localStorage.setItem("serve-sim:duo-preview-size", mode); } catch { /* Viewer storage is optional. */ }
+    try {
+      localStorage.setItem("serve-sim:duo-preview-size", mode);
+    } catch {
+      /* Viewer storage is optional. */
+    }
   }, []);
   const [duoPanelPeer, setDuoPanelPeer] = useState<DuoPanelPeer | null>(null);
   const [duoPanelError, setDuoPanelError] = useState<string | null>(null);
   const useDuoPanelFeeds = useDuoModel;
   const onDuoUnavailable = useCallback(() => setDuoModelUnavailable(true), []);
   useEffect(() => setDuoModelUnavailable(false), [config.streamUrl]);
-  const devtools = useWebKitDevtools(config.devtoolsEndpoint ?? simEndpoint("devtools"), devtoolsOpen);
+  const devtools = useWebKitDevtools(
+    config.devtoolsEndpoint ?? simEndpoint("devtools"),
+    devtoolsOpen,
+  );
 
   useEffect(() => {
     if (!devtoolsOpen) return;
-    if (selectedDevtoolsTargetId && devtools.targets.some((target) => target.id === selectedDevtoolsTargetId)) return;
+    if (
+      selectedDevtoolsTargetId &&
+      devtools.targets.some((target) => target.id === selectedDevtoolsTargetId)
+    )
+      return;
     setSelectedDevtoolsTargetId(devtools.targets.length === 1 ? devtools.targets[0]!.id : null);
   }, [devtoolsOpen, devtools.targets, selectedDevtoolsTargetId, setSelectedDevtoolsTargetId]);
 
@@ -775,10 +832,7 @@ function AppWithConfig({
         sessionId: webrtc.sessionId,
         onResetCodec: restartWebRtcStream,
       };
-  const [avccFallback, dispatchAvccFallback] = useReducer(
-    avccFallbackReducer,
-    initialAvccFallback,
-  );
+  const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   // `?codec=mjpeg` forces the JPEG fallback path even where WebCodecs exists —
   // an escape hatch for browsers whose H.264 decode misbehaves, and the way to
   // exercise the MJPEG pipeline in a browser that would otherwise pick AVCC.
@@ -787,12 +841,10 @@ function AppWithConfig({
   );
   const useMjpegHttp = streamSettings.httpCodec === "mjpeg";
   const useAvccVideo =
-    !useWebRtcVideo &&
-    !useMjpegHttp &&
-    avcc.supported &&
-    !avccFallback.fellBack &&
-    !forceMjpeg;
-  const mjpeg = useMjpegStream(useDuoPanelFeeds || useAvccVideo || useWebRtcVideo ? null : mjpegStreamUrlFrom(config));
+    !useWebRtcVideo && !useMjpegHttp && avcc.supported && !avccFallback.fellBack && !forceMjpeg;
+  const mjpeg = useMjpegStream(
+    useDuoPanelFeeds || useAvccVideo || useWebRtcVideo ? null : mjpegStreamUrlFrom(config),
+  );
 
   // Re-arm AVCC whenever the target stream changes (device switch / reconnect).
   useEffect(() => {
@@ -809,31 +861,34 @@ function AppWithConfig({
     streamSettings.httpCodec,
     streamSettings.webRtcCodec,
   ]);
-  const handleWebRtcFailure = useCallback((failure: WebRtcStreamFailure) => {
-    if (!wantsWebRtcVideo || handledWebRtcFailureRef.current === failure.sessionId) return;
-    handledWebRtcFailureRef.current = failure.sessionId;
-    ladderRestart.noteFailure(performance.now());
-    const decision = webRtcFallbackDecision(configuredWebRtcCodec, effectiveWebRtcCodec, failure);
-    if (!decision) return;
-    if (decision.type === "switch-to-http") {
-      if (!streamTransportLocked) {
-        updateStreamPlayback({ transport: "http" });
+  const handleWebRtcFailure = useCallback(
+    (failure: WebRtcStreamFailure) => {
+      if (!wantsWebRtcVideo || handledWebRtcFailureRef.current === failure.sessionId) return;
+      handledWebRtcFailureRef.current = failure.sessionId;
+      ladderRestart.noteFailure(performance.now());
+      const decision = webRtcFallbackDecision(configuredWebRtcCodec, effectiveWebRtcCodec, failure);
+      if (!decision) return;
+      if (decision.type === "switch-to-http") {
+        if (!streamTransportLocked) {
+          updateStreamPlayback({ transport: "http" });
+          return;
+        }
+        // A locked session has nowhere to fall back to, so start over rather than stay dead.
+        // Only codec exhaustion qualifies; a permanent fault never resolves.
+        if (failure.kind === "codec") ladderRestart.schedule();
         return;
       }
-      // A locked session has nowhere to fall back to, so start over rather than stay dead.
-      // Only codec exhaustion qualifies; a permanent fault never resolves.
-      if (failure.kind === "codec") ladderRestart.schedule();
-      return;
-    }
-    setWebRtcCodecOverride(decision.codec);
-  }, [
-    configuredWebRtcCodec,
-    effectiveWebRtcCodec,
-    ladderRestart,
-    streamTransportLocked,
-    updateStreamPlayback,
-    wantsWebRtcVideo,
-  ]);
+      setWebRtcCodecOverride(decision.codec);
+    },
+    [
+      configuredWebRtcCodec,
+      effectiveWebRtcCodec,
+      ladderRestart,
+      streamTransportLocked,
+      updateStreamPlayback,
+      wantsWebRtcVideo,
+    ],
+  );
   useEffect(() => {
     if (webrtc.failure) handleWebRtcFailure(webrtc.failure);
   }, [webrtc.failure, handleWebRtcFailure]);
@@ -850,36 +905,64 @@ function AppWithConfig({
   // decoded H.264 frame proves AVCC is viable and cancels this fallback.
   useEffect(() => {
     if (!useAvccVideo || useDuoPanelFeeds) return;
-    const timer = setTimeout(
-      () => dispatchAvccFallback("timeout"),
-      AVCC_FRAME_TIMEOUT_MS,
-    );
+    const timer = setTimeout(() => dispatchAvccFallback("timeout"), AVCC_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [useAvccVideo, useDuoPanelFeeds, config.streamUrl]);
   const [liveStreamConfig, setLiveStreamConfig] = useState<StreamConfig | null>(null);
   const activeStreamConfig = useMemo<StreamConfig>(() => {
     const config = liveStreamConfig ?? streamConfig ?? fallbackScreenSize(deviceType, deviceName);
     if (!streamConfig) return config;
-    const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable, observedDeviceState } = streamConfig;
-    return { ...config, hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable, observedDeviceState };
+    const {
+      hingeAngle,
+      hingePose,
+      physicalOrientation,
+      tableMode,
+      tableModeAvailable,
+      observedDeviceState,
+    } = streamConfig;
+    return {
+      ...config,
+      hingeAngle,
+      hingePose,
+      physicalOrientation,
+      tableMode,
+      tableModeAvailable,
+      observedDeviceState,
+    };
   }, [liveStreamConfig, streamConfig, deviceType, deviceName]);
   const activeScreenId = liveStreamConfig?.screenId ?? streamConfig?.screenId;
   const chrome = defaultChrome ? deviceKitChromeForScreen(defaultChrome, activeScreenId) : null;
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
   const {
-    pending: hingePending, error: hingeError, preview: hingePreview,
-    angle: previewHingeAngle, pose: previewHingePose, physicalPose,
-    faceDown: previewFaceDown, view: duoView, commands: hingeCommands,
-    control: setHingeControl, rotate: rotateDuoView,
-    receive: receiveHingeReply, disconnect: disconnectHinge, clear: clearHingeQueue,
-  } = useDuoFraming(config.streamUrl, streamConfig, activeStreamConfig,
-    (request) => inputSocketRef.current?.trySend(0x10, request) ?? false);
+    pending: hingePending,
+    error: hingeError,
+    preview: hingePreview,
+    angle: previewHingeAngle,
+    pose: previewHingePose,
+    physicalPose,
+    faceDown: previewFaceDown,
+    view: duoView,
+    commands: hingeCommands,
+    control: setHingeControl,
+    rotate: rotateDuoView,
+    receive: receiveHingeReply,
+    disconnect: disconnectHinge,
+    clear: clearHingeQueue,
+  } = useDuoFraming(
+    config.streamUrl,
+    streamConfig,
+    activeStreamConfig,
+    (request) => inputSocketRef.current?.trySend(0x10, request) ?? false,
+  );
   const showHingeControls = !presentation && (supportsHingeAngle ?? hingeAngle !== undefined);
-  const clipOrientation = activeStreamConfig.orientation ?? (activeStreamConfig.width > activeStreamConfig.height ? "landscape_left" : "portrait");
+  const clipOrientation =
+    activeStreamConfig.orientation ??
+    (activeStreamConfig.width > activeStreamConfig.height ? "landscape_left" : "portrait");
   const hasDisplayRadii = !!chrome?.screenCornerRadii;
-  const imgBorderRadius = chrome && hasDisplayRadii
-    ? deviceKitScreenRadius(chrome, clipOrientation)
-    : screenBorderRadius(deviceType, activeStreamConfig);
+  const imgBorderRadius =
+    chrome && hasDisplayRadii
+      ? deviceKitScreenRadius(chrome, clipOrientation)
+      : screenBorderRadius(deviceType, activeStreamConfig);
   const frameMaxWidth = simulatorMaxWidth(deviceType, activeStreamConfig);
   const frameAspectRatio = simulatorAspectRatio(activeStreamConfig);
   const frameDisplayConfig = displayStreamConfig(activeStreamConfig);
@@ -901,27 +984,35 @@ function AppWithConfig({
   // displays. Resizing it with each native screen configuration would apply a
   // second animation on top of the physical hinge motion and crop the model.
   const containerDefaultWidth = useDuoModel ? DUO_STAGE_DEFAULT_WIDTH : frameMaxWidth * chromeScale;
-  const containerAspectRatioValue = useDuoModel ? 1 : useChrome
-    ? chromeGeometry!.frame.width / chromeGeometry!.frame.height
-    : frameAspectRatioValue;
-  const containerAspectRatio = useDuoModel ? "1 / 1" : useChrome
-    ? `${chromeGeometry!.frame.width} / ${chromeGeometry!.frame.height}`
-    : frameAspectRatio;
+  const containerAspectRatioValue = useDuoModel
+    ? 1
+    : useChrome
+      ? chromeGeometry!.frame.width / chromeGeometry!.frame.height
+      : frameAspectRatioValue;
+  const containerAspectRatio = useDuoModel
+    ? "1 / 1"
+    : useChrome
+      ? `${chromeGeometry!.frame.width} / ${chromeGeometry!.frame.height}`
+      : frameAspectRatio;
 
   // Touch/button relay via direct WebSocket
   const [inputSocketOpen, setInputSocketOpen] = useState(false);
   const selectedDeviceRef = useRef(config.device);
   selectedDeviceRef.current = config.device;
-  const keyboardInput = useMemo(() => createOrderedKeyboardInput({
-    getDevice: () => selectedDeviceRef.current,
-    getConnection: () => inputSocketRef.current?.connection ?? null,
-    getKeyConnection: () => inputSocketRef.current?.transport ?? null,
-    sendKey: (event) => inputSocketRef.current?.send(0x06, event),
-    sendPaste: (connection, message) => {
-      const socket = inputSocketRef.current;
-      return connection === socket?.connection && socket.trySendEncoded(message);
-    },
-  }), []);
+  const keyboardInput = useMemo(
+    () =>
+      createOrderedKeyboardInput({
+        getDevice: () => selectedDeviceRef.current,
+        getConnection: () => inputSocketRef.current?.connection ?? null,
+        getKeyConnection: () => inputSocketRef.current?.transport ?? null,
+        sendKey: (event) => inputSocketRef.current?.send(0x06, event),
+        sendPaste: (connection, message) => {
+          const socket = inputSocketRef.current;
+          return connection === socket?.connection && socket.trySendEncoded(message);
+        },
+      }),
+    [],
+  );
   useEffect(() => () => keyboardInput.dispose(), [keyboardInput]);
   const inputBarriersRef = useRef<ReturnType<typeof createInputBarriers> | null>(null);
   inputBarriersRef.current ??= createInputBarriers((connection, requestId) => {
@@ -935,67 +1026,75 @@ function AppWithConfig({
   const coarsePointerRef = useRef(false);
   useEffect(() => {
     setInputSocketOpen(false);
-    const inputSocket = createInputSocket(config.wsUrl, {
-      onAdmitted() {
-        setInputSocketOpen(true);
-        // A touch client disconnects the sim's hardware keyboard so its
-        // on-screen keyboard shows; desktop leaves it connected.
-        if (coarsePointerRef.current) {
-          inputSocket.send(0x0e, { enabled: false });
-        }
-      },
-      onMessage(data) {
-        // Server -> client screen-config push (tag 0x82): [tag][JSON].
-        if (!(data instanceof ArrayBuffer)) return false;
-        const bytes = new Uint8Array(data);
-        if (bytes.length < 1) return false;
-        if (bytes[0] === 0x90) {
+    const inputSocket = createInputSocket(
+      config.wsUrl,
+      {
+        onAdmitted() {
+          setInputSocketOpen(true);
+          // A touch client disconnects the sim's hardware keyboard so its
+          // on-screen keyboard shows; desktop leaves it connected.
+          if (coarsePointerRef.current) {
+            inputSocket.send(0x0e, { enabled: false });
+          }
+        },
+        onMessage(data) {
+          // Server -> client screen-config push (tag 0x82): [tag][JSON].
+          if (!(data instanceof ArrayBuffer)) return false;
+          const bytes = new Uint8Array(data);
+          if (bytes.length < 1) return false;
+          if (bytes[0] === 0x90) {
+            try {
+              const result = JSON.parse(
+                new TextDecoder().decode(bytes.subarray(1)),
+              ) as AcknowledgedControlReply;
+              if (
+                result &&
+                typeof result.requestId === "number" &&
+                typeof result.ok === "boolean"
+              ) {
+                receiveHingeReply(result);
+              }
+            } catch {}
+            return false;
+          }
+          if (bytes[0] === 0x92) {
+            try {
+              keyboardInput.receive(
+                inputSocket.connection,
+                JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
+              );
+            } catch {}
+            return false;
+          }
+          if (bytes[0] === 0x91) {
+            try {
+              inputBarriersRef.current?.receive(
+                inputSocket.connection,
+                JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
+              );
+            } catch {}
+            return false;
+          }
+          if (bytes[0] !== WS_MSG_CONFIG) return false;
           try {
-            const result = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as AcknowledgedControlReply;
-            if (result && typeof result.requestId === "number" && typeof result.ok === "boolean") {
-              receiveHingeReply(result);
-            }
+            const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
+            if (cfg.width <= 0 || cfg.height <= 0) return false;
+            // A config frame also confirms admission when connected to an older server.
+            setWsStreamConfig((prev) => (screenConfigsEqual(prev, cfg) ? prev : cfg));
+            return true;
           } catch {}
           return false;
-        }
-        if (bytes[0] === 0x92) {
-          try {
-            keyboardInput.receive(
-              inputSocket.connection,
-              JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
-            );
-          } catch {}
-          return false;
-        }
-        if (bytes[0] === 0x91) {
-          try {
-            inputBarriersRef.current?.receive(
-              inputSocket.connection,
-              JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
-            );
-          } catch {}
-          return false;
-        }
-        if (bytes[0] !== WS_MSG_CONFIG) return false;
-        try {
-          const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
-          if (cfg.width <= 0 || cfg.height <= 0) return false;
-          // A config frame also confirms admission when connected to an older server.
-          setWsStreamConfig((prev) =>
-            screenConfigsEqual(prev, cfg) ? prev : cfg,
-          );
-          return true;
-        } catch {}
-        return false;
+        },
+        onDisconnect() {
+          cancelPendingClipboardInput();
+          setInputSocketOpen(false);
+          disconnectHinge();
+        },
+        onRefused: showInputSocketError,
+        onRecovered: dismissInputSocketError,
       },
-      onDisconnect() {
-        cancelPendingClipboardInput();
-        setInputSocketOpen(false);
-        disconnectHinge();
-      },
-      onRefused: showInputSocketError,
-      onRecovered: dismissInputSocketError,
-    }, { requireAdmission: config.inputAdmission === true });
+      { requireAdmission: config.inputAdmission === true },
+    );
     inputSocketRef.current = inputSocket;
     inputSocket.start();
 
@@ -1006,7 +1105,15 @@ function AppWithConfig({
       inputSocket.dispose();
       dismissInputSocketError();
     };
-  }, [config.wsUrl, config.inputAdmission, cancelPendingClipboardInput, keyboardInput, receiveHingeReply, disconnectHinge, clearHingeQueue]);
+  }, [
+    config.wsUrl,
+    config.inputAdmission,
+    cancelPendingClipboardInput,
+    keyboardInput,
+    receiveHingeReply,
+    disconnectHinge,
+    clearHingeQueue,
+  ]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     inputSocketRef.current?.send(tag, payload);
@@ -1037,27 +1144,36 @@ function AppWithConfig({
     [sendWs],
   );
   const onStreamDigitalCrown = useCallback((delta: number) => sendWs(0x0a, { delta }), [sendWs]);
-  const onStreamScroll = useCallback((data: { dx: number; dy: number; x: number; y: number }) => sendWs(0x0b, data), [sendWs]);
+  const onStreamScroll = useCallback(
+    (data: { dx: number; dy: number; x: number; y: number }) => sendWs(0x0b, data),
+    [sendWs],
+  );
   const onScreenConfigChange = useCallback((next: StreamConfig) => {
     const preview = previewScreenConfig(next);
-    setLiveStreamConfig((prev) =>
-      screenConfigsEqual(prev, preview) ? prev : preview,
-    );
+    setLiveStreamConfig((prev) => (screenConfigsEqual(prev, preview) ? prev : preview));
   }, []);
-  const setHingeAngleFromHandle = useCallback((value: number) => {
-    setHingeControl({ control: "angle", value });
-  }, [setHingeControl]);
-  const rotateDevice = useCallback((orientation: SimulatorOrientation, direction?: "left" | "right") => {
-    rotateDuoView(orientation, direction);
-    sendWs(0x07, { orientation });
-  }, [rotateDuoView, sendWs]);
+  const setHingeAngleFromHandle = useCallback(
+    (value: number) => {
+      setHingeControl({ control: "angle", value });
+    },
+    [setHingeControl],
+  );
+  const rotateDevice = useCallback(
+    (orientation: SimulatorOrientation, direction?: "left" | "right") => {
+      rotateDuoView(orientation, direction);
+      sendWs(0x07, { orientation });
+    },
+    [rotateDuoView, sendWs],
+  );
   const currentOrientation =
     (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? "portrait";
   const canRotate = deviceType !== "watch" && deviceType !== "vision";
   const rotateBy = useCallback(
     (direction: "left" | "right") => {
       if (!canRotate) return;
-      const next = (direction === "left" ? ROTATE_LEFT_CYCLE : ROTATE_RIGHT_CYCLE)[currentOrientation];
+      const next = (direction === "left" ? ROTATE_LEFT_CYCLE : ROTATE_RIGHT_CYCLE)[
+        currentOrientation
+      ];
       rotateDevice(next, direction);
     },
     [canRotate, currentOrientation, rotateDevice],
@@ -1071,17 +1187,34 @@ function AppWithConfig({
   useEffect(() => {
     const confirmedConfig = streamConfig;
     if (!confirmedConfig) return;
-    setLiveStreamConfig((prev) =>
-      screenConfigsEqual(prev, confirmedConfig) ? prev : null,
-    );
-  }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable, streamConfig?.inputUnavailable]);
+    setLiveStreamConfig((prev) => (screenConfigsEqual(prev, confirmedConfig) ? prev : null));
+  }, [
+    streamConfig,
+    streamConfig?.width,
+    streamConfig?.height,
+    streamConfig?.orientation,
+    streamConfig?.screenId,
+    streamConfig?.hingeAngle,
+    streamConfig?.supportsHingeAngle,
+    streamConfig?.hingePose,
+    streamConfig?.tableMode,
+    streamConfig?.tableModeAvailable,
+    streamConfig?.inputUnavailable,
+  ]);
 
-  const sendKey = useCallback((type: "down" | "up", usage: number) => {
-    keyboardInput.send({ type, usage });
-  }, [keyboardInput]);
+  const sendKey = useCallback(
+    (type: "down" | "up", usage: number) => {
+      keyboardInput.send({ type, usage });
+    },
+    [keyboardInput],
+  );
 
   // Subscribe to app-state SSE.
-  const [currentApp, setCurrentApp] = useState<{ bundleId: string; isReactNative: boolean; pid?: number } | null>(null);
+  const [currentApp, setCurrentApp] = useState<{
+    bundleId: string;
+    isReactNative: boolean;
+    pid?: number;
+  } | null>(null);
   // Start with the tools panel open when the viewport has room for it beside
   // the simulator (typical device frame ≈ 420px plus page/panel gutters);
   // smaller windows keep it closed so the device isn't squeezed on load.
@@ -1125,11 +1258,11 @@ function AppWithConfig({
     140,
     720,
   );
-  const [viewportWidth, setViewportWidth] = useState(
-    () => (typeof window !== "undefined" ? window.innerWidth : 0),
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 0,
   );
   const [viewportHeight, setViewportHeight] = useState(() =>
-    typeof window === "undefined" ? 0 : window.visualViewport?.height ?? window.innerHeight,
+    typeof window === "undefined" ? 0 : (window.visualViewport?.height ?? window.innerHeight),
   );
   const [windowInnerHeight, setWindowInnerHeight] = useState(() =>
     typeof window === "undefined" ? 0 : window.innerHeight,
@@ -1154,13 +1287,20 @@ function AppWithConfig({
     let timer: ReturnType<typeof setTimeout> | null = null;
     es.onmessage = (e) => {
       try {
-        const next = JSON.parse(e.data) as { bundleId: string; pid?: number; isReactNative: boolean };
+        const next = JSON.parse(e.data) as {
+          bundleId: string;
+          pid?: number;
+          isReactNative: boolean;
+        };
         if (timer) clearTimeout(timer);
         const delay = next?.isReactNative ? 0 : 600;
         timer = setTimeout(() => setCurrentApp(next), delay);
       } catch {}
     };
-    return () => { if (timer) clearTimeout(timer); es.close(); };
+    return () => {
+      if (timer) clearTimeout(timer);
+      es.close();
+    };
   }, [config.appStateEndpoint]);
 
   // R to reload the RN/Expo bundle.
@@ -1174,15 +1314,23 @@ function AppWithConfig({
     sendKey("up", R);
   }, [sendKey]);
 
-  const sendPasteRequest = useCallback((text?: string) => keyboardInput.paste(text), [keyboardInput]);
-  const readClipboardAfterInput = useCallback((isCurrent: () => boolean) => {
-    const connection = inputSocketRef.current?.connection;
-    return keyboardInput.run((inputIsCurrent) => copySimClipboardAfterInput(
-      config.device,
-      () => inputBarriersRef.current!.wait(connection),
-      () => inputIsCurrent() && isCurrent(),
-    ));
-  }, [config.device, keyboardInput]);
+  const sendPasteRequest = useCallback(
+    (text?: string) => keyboardInput.paste(text),
+    [keyboardInput],
+  );
+  const readClipboardAfterInput = useCallback(
+    (isCurrent: () => boolean) => {
+      const connection = inputSocketRef.current?.connection;
+      return keyboardInput.run((inputIsCurrent) =>
+        copySimClipboardAfterInput(
+          config.device,
+          () => inputBarriersRef.current!.wait(connection),
+          () => inputIsCurrent() && isCurrent(),
+        ),
+      );
+    },
+    [config.device, keyboardInput],
+  );
   const clipboard = useClipboardToast(config.device, readClipboardAfterInput, sendPasteRequest);
   // An older helper drops paste requests, so Command+V goes to it as plain keys.
   const pasteSupported = config.inputPaste === true;
@@ -1288,7 +1436,8 @@ function AppWithConfig({
       if (!presentation) setSimFocused(inside);
       // The stream cancels mousedown, so a click there would leave focus, and the keys, on the last control.
       const focused = document.activeElement;
-      if (inside && focused instanceof HTMLElement && focused !== keyboardInputRef.current) focused.blur();
+      if (inside && focused instanceof HTMLElement && focused !== keyboardInputRef.current)
+        focused.blur();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
@@ -1306,8 +1455,13 @@ function AppWithConfig({
   const sendSimulatorPasteKey = useCallback(() => {
     clipboard.cancelPaste();
     void sendPasteRequest().then(
-      ({ cleanupWarning }) => { if (cleanupWarning) showClipboardKeyCleanupWarning(cleanupWarning); },
-      (error) => showInputSocketError(error instanceof Error ? error.message : "Could not paste simulator clipboard"),
+      ({ cleanupWarning }) => {
+        if (cleanupWarning) showClipboardKeyCleanupWarning(cleanupWarning);
+      },
+      (error) =>
+        showInputSocketError(
+          error instanceof Error ? error.message : "Could not paste simulator clipboard",
+        ),
     );
   }, [sendPasteRequest, clipboard]);
 
@@ -1316,16 +1470,32 @@ function AppWithConfig({
       const simFocused = simFocusedRef.current;
       const keyboardOpen = keyboardOpenRef.current;
       // Only new presses: a key held while the simulator had focus still has to be released there.
-      if (type === "down" && (e.defaultPrevented || isActionTarget(e.target) ||
-        (isTypingTarget(e.target) && (!keyboardOpen || e.target !== keyboardInputRef.current)))) return;
-      if (type === "down" && e.code === "KeyV" && keyboardPasteGateRef.current.onVKeyDown(e.repeat)) {
+      if (
+        type === "down" &&
+        (e.defaultPrevented ||
+          isActionTarget(e.target) ||
+          (isTypingTarget(e.target) && (!keyboardOpen || e.target !== keyboardInputRef.current)))
+      )
+        return;
+      if (
+        type === "down" &&
+        e.code === "KeyV" &&
+        keyboardPasteGateRef.current.onVKeyDown(e.repeat)
+      ) {
         e.preventDefault();
         return;
       }
       if (simFocused && !keyboardOpen) {
         // Leave Command+digits to browser tab switching. Use physical codes so
         // Option+Shift's layout-specific characters do not affect pose lookup.
-        if (supportsHingeAngle && e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && /^Digit[1-5]$/.test(e.code)) {
+        if (
+          supportsHingeAngle &&
+          e.altKey &&
+          e.shiftKey &&
+          !e.metaKey &&
+          !e.ctrlKey &&
+          /^Digit[1-5]$/.test(e.code)
+        ) {
           e.preventDefault();
           if (type === "down" && !e.repeat) {
             const pose = HINGE_POSES[Number(e.code.slice(-1)) - 1];
@@ -1338,7 +1508,13 @@ function AppWithConfig({
           if (type === "down" && !e.repeat) sendWs(0x04, { button: "home" });
           return;
         }
-        if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey) {
+        if (
+          (e.code === "ArrowLeft" || e.code === "ArrowRight") &&
+          e.metaKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          !e.ctrlKey
+        ) {
           e.preventDefault();
           if (type === "down" && !e.repeat) {
             rotateBy(e.code === "ArrowLeft" ? "left" : "right");
@@ -1348,10 +1524,12 @@ function AppWithConfig({
         if (e.code === "KeyA" && e.metaKey && e.shiftKey) {
           e.preventDefault();
           if (type === "down" && !e.repeat) {
-            runHostAction("appearance.get", { udid: config.device }).then((r) => {
-              const next = r.stdout.trim() === "dark" ? "light" : "dark";
-              return runHostAction("appearance.set", { udid: config.device, value: next });
-            }).catch(() => {});
+            runHostAction("appearance.get", { udid: config.device })
+              .then((r) => {
+                const next = r.stdout.trim() === "dark" ? "light" : "dark";
+                return runHostAction("appearance.set", { udid: config.device, value: next });
+              })
+              .catch(() => {});
           }
           return;
         }
@@ -1372,7 +1550,11 @@ function AppWithConfig({
       ) {
         const held = hidUsageForCode(e.code);
         if (type === "down" && !e.repeat) keyboardPasteGateRef.current.start();
-        if (type === "up" && keyboardPasteGateRef.current.release(held != null && pressedKeysRef.current.has(held)) === "fallback") {
+        if (
+          type === "up" &&
+          keyboardPasteGateRef.current.release(held != null && pressedKeysRef.current.has(held)) ===
+            "fallback"
+        ) {
           sendSimulatorPasteKey();
         }
         if (type === "up" && held != null && pressedKeysRef.current.has(held)) {
@@ -1383,7 +1565,9 @@ function AppWithConfig({
       }
       if (type === "up" && e.code === "KeyV" && keyboardPasteGateRef.current.isWaiting) {
         const usage = hidUsageForCode("KeyV");
-        const release = keyboardPasteGateRef.current.release(usage != null && pressedKeysRef.current.has(usage));
+        const release = keyboardPasteGateRef.current.release(
+          usage != null && pressedKeysRef.current.has(usage),
+        );
         if (release === "release" && usage != null && pressedKeysRef.current.delete(usage)) {
           // A new plain V was pressed after a lost shortcut keyup. Release it, not paste.
           keyboardInput.send({ type: "up", usage });
@@ -1432,7 +1616,16 @@ function AppWithConfig({
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [sendWs, config.device, rotateBy, supportsHingeAngle, setHingeControl, sendSimulatorPasteKey, keyboardInput, pasteSupported]);
+  }, [
+    sendWs,
+    config.device,
+    rotateBy,
+    supportsHingeAngle,
+    setHingeControl,
+    sendSimulatorPasteKey,
+    keyboardInput,
+    pasteSupported,
+  ]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -1486,9 +1679,10 @@ function AppWithConfig({
   const PANEL_GAP = 24;
   const RAIL_PANEL_GAP = 8;
   const SM_BREAKPOINT = 640;
-  const deviceWidth = deviceRenderedWidth > 0
-    ? Math.min(deviceRenderedWidth, simulatorResize.width)
-    : simulatorResize.width;
+  const deviceWidth =
+    deviceRenderedWidth > 0
+      ? Math.min(deviceRenderedWidth, simulatorResize.width)
+      : simulatorResize.width;
   // Shift needed to clear a docked panel of `panelWidthPx` on the given side
   // without ever pushing the device under the opposite edge.
   const shiftToClear = (panelWidthPx: number): number => {
@@ -1500,11 +1694,7 @@ function AppWithConfig({
     const shiftNeeded = 2 * overlap;
     return shiftNeeded <= panelWidthPx + PANEL_GAP ? shiftNeeded : 0;
   };
-  const rightPanelWidthPx = devtoolsOpen
-    ? devtoolsPanelWidth
-    : panelOpen
-    ? toolsPanelWidth
-    : 0;
+  const rightPanelWidthPx = devtoolsOpen ? devtoolsPanelWidth : panelOpen ? toolsPanelWidth : 0;
   const [exitScaling, setExitScaling] = useState(false);
   useEffect(() => {
     if (presentation) {
@@ -1521,9 +1711,7 @@ function AppWithConfig({
   const presentationInset = SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION;
   const layoutWidth = simulatorResize.width;
   const layoutHeight =
-    containerAspectRatioValue > 0
-      ? roundToDevicePixel(layoutWidth / containerAspectRatioValue)
-      : 0;
+    containerAspectRatioValue > 0 ? roundToDevicePixel(layoutWidth / containerAspectRatioValue) : 0;
   const frameWidth = presentation
     ? getPresentationFrameWidth(
         viewportWidth,
@@ -1532,8 +1720,7 @@ function AppWithConfig({
         presentationInset,
       )
     : layoutWidth;
-  const layoutScale =
-    layoutWidth > 0 && frameWidth > 0 ? frameWidth / layoutWidth : 1;
+  const layoutScale = layoutWidth > 0 && frameWidth > 0 ? frameWidth / layoutWidth : 1;
   const resizing = simulatorResize.isResizing || simulatorResize.isInertia;
   useFlipLayout(
     flipRef,
@@ -1547,505 +1734,555 @@ function AppWithConfig({
 
   return (
     <AxStateProvider endpoint={axOverlayEnabled ? config?.axEndpoint : undefined}>
-    <div
-      ref={scrollContainerRef}
-      data-input-socket-open={inputSocketOpen}
-      className={`flex flex-col items-center h-dvh bg-page font-system box-border ${
-        phoneKeyboardRaised ? "justify-start overflow-y-hidden" : "justify-center"
-      } ${presentation ? "gap-0" : "pt-16 pb-6 sm:py-6 gap-3"}`}
-      style={{
-        height: containerHeight > 0 ? containerHeight : undefined,
-        paddingTop: presentation ? presentationInset : undefined,
-        paddingBottom: presentation ? presentationInset : logsOpen ? logsDrawerHeight : undefined,
-        paddingLeft: presentation ? presentationInset : 24 + shiftForLeftPanel,
-        paddingRight: presentation ? presentationInset : 24 + shiftForRightPanel,
-        transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
-      }}
-    >
-      {phoneKeyboardRaised && (
-        <div
-          aria-hidden
-          style={{
-            height: presentation
-              ? "max(env(safe-area-inset-top, 0px), 68px)"
-              : "env(safe-area-inset-top, 0px)",
-            flexShrink: 0,
-            width: "100%",
-          }}
-        />
-      )}
       <div
-        className={`flex flex-col items-center min-w-0 ${phoneKeyboardRaised ? "shrink-0" : ""} ${presentation ? "gap-0" : "gap-3"}`}
+        ref={scrollContainerRef}
+        data-input-socket-open={inputSocketOpen}
+        className={`flex flex-col items-center h-dvh bg-page font-system box-border ${
+          phoneKeyboardRaised ? "justify-start overflow-y-hidden" : "justify-center"
+        } ${presentation ? "gap-0" : "pt-16 pb-6 sm:py-6 gap-3"}`}
         style={{
-          width: layoutWidth,
-          transition: resizing ? SIMULATOR_RESIZE_DRAG_TRANSITION : undefined,
+          height: containerHeight > 0 ? containerHeight : undefined,
+          paddingTop: presentation ? presentationInset : undefined,
+          paddingBottom: presentation ? presentationInset : logsOpen ? logsDrawerHeight : undefined,
+          paddingLeft: presentation ? presentationInset : 24 + shiftForLeftPanel,
+          paddingRight: presentation ? presentationInset : 24 + shiftForRightPanel,
+          transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
         }}
       >
-        {!presentation && (
-        <div className={`fixed sm:static top-[18px] sm:top-auto left-1/2 -translate-x-1/2 sm:translate-x-0 z-30 sm:z-auto self-center ${panelOpen || devtoolsOpen ? "max-sm:hidden" : ""}`}>
-          <SimulatorToolbar
-            onRotate={rotateDevice}
-            orientation={(activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null}
-            deviceUdid={config.device}
-            deviceName={deviceName}
-            deviceRuntime={deviceRuntime}
-            streaming={streaming}
-            aria-label="Simulator status"
+        {phoneKeyboardRaised && (
+          <div
+            aria-hidden
             style={{
-              width: "auto",
-              minWidth: 0,
-              maxWidth: "100%",
-              flexWrap: "nowrap",
-              justifyContent: "center",
-              gap: 10,
-              padding: "6px 10px",
-              borderRadius: 18,
+              height: presentation
+                ? "max(env(safe-area-inset-top, 0px), 68px)"
+                : "env(safe-area-inset-top, 0px)",
+              flexShrink: 0,
+              width: "100%",
             }}
-          >
-            <span className="hidden sm:contents">
-              <SimulatorToolbar.Title
-                onClick={() => setGridOpen((o) => !o)}
-                aria-label="Toggle simulators sidebar"
-                aria-pressed={gridOpen}
-                title="Simulators"
-                hideSubtitle
-                hideChevron
-                style={{
-                  maxWidth: "min(230px, calc(100vw - 170px))",
-                }}
-              />
-            </span>
-            <StreamStatusPill streaming={streaming} inputUnavailable={streamConfig?.inputUnavailable} keyboardUnavailable={streamConfig?.keyboardUnavailable} />
-          </SimulatorToolbar>
-        </div>
+          />
         )}
-        {presentation && !embedLocked && (
-          <PresentationControls onExit={onExitPresentation}>
-            {coarsePointer && (
-              <KeyboardToggleButton
-                open={keyboardOpen}
-                onClick={toggleKeyboard}
-              />
-            )}
-          </PresentationControls>
-        )}
-        <KeyboardCapture
-          open={keyboardOpen}
-          onKeys={(events) => keyboardInput.enqueue(events)}
-          inputRef={keyboardInputRef}
-        />
         <div
-          ref={flipRef}
+          className={`flex flex-col items-center min-w-0 ${phoneKeyboardRaised ? "shrink-0" : ""} ${presentation ? "gap-0" : "gap-3"}`}
           style={{
             width: layoutWidth,
-            height: layoutHeight > 0 ? layoutHeight : undefined,
             transition: resizing ? SIMULATOR_RESIZE_DRAG_TRANSITION : undefined,
           }}
         >
-        <div
-          ref={simContainerRef}
-          className="relative w-full h-full"
-          style={{
-            aspectRatio: containerAspectRatio,
-            transform: scaling ? `scale(${layoutScale})` : undefined,
-            transformOrigin: "center center",
-            transition: resizing
-              ? undefined
-              : scaling
-                ? SIMULATOR_RESIZE_PRESENTATION_TRANSITION
-                : undefined,
-            willChange: resizing ? "width" : scaling ? "transform" : undefined,
-          }}
-          {...mediaDrop.dropZoneProps}
-        >
-          {(() => {
-            const streamView = (
-              <SimulatorView
-                url={config.url}
-                wsUrl={config.wsUrl}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  border: "none",
-                  pointerEvents:
-                    simulatorResize.isResizing || simulatorResize.isInertia ? "none" : undefined,
-                }}
-                imageStyle={{
-                  // With chrome the screen slot clips (rounded) and the bezel
-                  // provides the edge, so the stream itself is square + flush.
-                  // Without chrome, round the screen and add a subtle bezel as an
-                  // INSET shadow (not a border): a 1px border sits outside the
-                  // content and, on the <canvas> path, composites its
-                  // semi-transparent white against the black page as a visible
-                  // outline. An inset shadow paints over the (opaque) video edge.
-                  borderRadius: useChrome || useDuoModel ? 0 : imgBorderRadius,
-                  cornerShape: useChrome || useDuoModel || hasDisplayRadii ? undefined : "superellipse(1.3)",
-                  ...(useChrome || useDuoModel
-                    ? {}
-                    : { boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.2)" }),
-                } as CSSProperties}
-                hideControls
-                onStreamingChange={setStreaming}
-                onStreamTouch={onStreamTouch}
-                onStreamMultiTouch={onStreamMultiTouch}
-                onStreamButton={onStreamButton}
-                onStreamDigitalCrown={onStreamDigitalCrown}
-                onStreamScroll={onStreamScroll}
-                streamMode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
-                webRtcStream={webrtc.stream}
-                onWebRtcFrame={markWebRtcFrameDecoded}
-                streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : null}
-                onAvccError={() => dispatchAvccFallback("error")}
-                onAvccDecodedFrame={() => dispatchAvccFallback("decoded-frame")}
-                subscribeFrame={useAvccVideo ? undefined : mjpeg.subscribeFrame}
-                streamFrame={useAvccVideo ? undefined : mjpeg.frame}
-                streamConfig={activeStreamConfig}
-                enableDigitalCrown={deviceType === "watch"}
-                onScreenConfigChange={onScreenConfigChange}
-              />
-            );
-            const screenContent = (
-              <>
-                {streamView}
-                {axOverlayEnabled && !presentation && <AxDomOverlay />}
-              </>
-            );
-            if (useDuoModel) return (
-              <DuoModelView
-                key={config.device}
-                angle={previewHingeAngle}
-                pose={previewHingePose}
-                physicalPose={physicalPose}
-                faceDown={previewFaceDown}
-                view={duoView}
-                streamConfig={activeStreamConfig}
-                hingeCommands={hingeCommands}
-                onUnavailable={onDuoUnavailable}
-                streamError={useDuoPanelFeeds ? duoPanelError : null}
-                cacheScreenOnFold={cacheScreenOnFold}
-                sizeMode={duoSizeMode}
-                onHingeAngleChange={showHingeControls && !resizing ? setHingeAngleFromHandle : undefined}
-                onTouch={resizing ? undefined : onStreamTouch}
-                onMultiTouch={resizing ? undefined : onStreamMultiTouch}
-                onScroll={resizing ? undefined : onStreamScroll}
-              >
-                {useDuoPanelFeeds ? <DuoPanelStreams
-                  streamUrl={config.streamUrl}
-                  mode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
-                  activeScreenId={duoActiveScreen(previewHingeAngle, previewHingePose, activeScreenId, previewFaceDown, hingePending)}
-                  codec={effectiveWebRtcCodec}
-                  iceServers={streamSettings.iceServers}
-                  onStreamingChange={setStreaming}
-                  onAvccError={onPanelAvccError}
-                  onWebRtcFailure={handleWebRtcFailure}
-                  transportLocked={streamTransportLocked}
-                  onWebRtcPeerChange={setDuoPanelPeer}
-                  onStreamError={setDuoPanelError}
-                /> : streamView}
-              </DuoModelView>
-            );
-            if (!useChrome) return screenContent;
-            // The screen slot is the bezel's true opening; the stream letterboxes
-            // (contains) inside it, filling the constraining axis and leaving a
-            // thin black margin on the other — the device's own black screen
-            // border. Containing (not covering) keeps the stream from ever
-            // overflowing past the bezel.
-            return (
-              <DeviceKitChrome
-                chrome={chrome!}
-                orientation={clipOrientation}
-                interactive
-                containerSize={
-                  // Measured, not computed: pixel rects can't self-correct the
-                  // way the percentage layout did.
-                  deviceRenderedWidth > 0 && deviceRenderedHeight > 0
-                    ? { width: deviceRenderedWidth, height: deviceRenderedHeight }
-                    : undefined
-                }
-                onButton={handleChromeButton}
-                onCrownWheel={(deltaY, deltaMode) => {
-                  const delta = digitalCrownDeltaFromWheel(
-                    deltaY,
-                    deltaMode,
-                    deviceRenderedHeight || 1,
-                  );
-                  if (delta != null) onStreamDigitalCrown(delta);
-                }}
-                screen={screenContent}
-              />
-            );
-          })()}
-          {mediaDrop.isDragOver && (
+          {!presentation && (
             <div
-              // No backdrop-blur here: the canvas underneath repaints every
-              // stream frame, and backdrop-filter forces a full re-blur per
-              // frame for the whole drag — the tint alone stays cheap.
-              className="absolute inset-0 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-accent bg-[rgba(99,102,241,0.18)] text-accent pointer-events-none z-20"
-              style={{ borderRadius: useChrome ? undefined : imgBorderRadius }}
+              className={`fixed sm:static top-[18px] sm:top-auto left-1/2 -translate-x-1/2 sm:translate-x-0 z-30 sm:z-auto self-center ${panelOpen || devtoolsOpen ? "max-sm:hidden" : ""}`}
             >
-              <Upload size={32} strokeWidth={1.5} />
-              <span className="text-[13px] font-medium">Drop media or .ipa</span>
+              <SimulatorToolbar
+                onRotate={rotateDevice}
+                orientation={
+                  (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null
+                }
+                deviceUdid={config.device}
+                deviceName={deviceName}
+                deviceRuntime={deviceRuntime}
+                streaming={streaming}
+                aria-label="Simulator status"
+                style={{
+                  width: "auto",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  flexWrap: "nowrap",
+                  justifyContent: "center",
+                  gap: 10,
+                  padding: "6px 10px",
+                  borderRadius: 18,
+                }}
+              >
+                <span className="hidden sm:contents">
+                  <SimulatorToolbar.Title
+                    onClick={() => setGridOpen((o) => !o)}
+                    aria-label="Toggle simulators sidebar"
+                    aria-pressed={gridOpen}
+                    title="Simulators"
+                    hideSubtitle
+                    hideChevron
+                    style={{
+                      maxWidth: "min(230px, calc(100vw - 170px))",
+                    }}
+                  />
+                </span>
+                <StreamStatusPill
+                  streaming={streaming}
+                  inputUnavailable={streamConfig?.inputUnavailable}
+                  keyboardUnavailable={streamConfig?.keyboardUnavailable}
+                />
+              </SimulatorToolbar>
             </div>
           )}
-          {!presentation && viewportWidth >= SM_BREAKPOINT && (
-            <SimulatorResizeCornerHandle
-              simulatorResize={simulatorResize}
-              deviceType={deviceType}
-              streamConfig={activeStreamConfig}
-              containerWidth={deviceRenderedWidth || simulatorResize.width}
-              containerHeight={
-                deviceRenderedHeight ||
-                (containerAspectRatioValue > 0 ? simulatorResize.width / containerAspectRatioValue : 0)
+          {presentation && !embedLocked && (
+            <PresentationControls onExit={onExitPresentation}>
+              {coarsePointer && (
+                <KeyboardToggleButton open={keyboardOpen} onClick={toggleKeyboard} />
+              )}
+            </PresentationControls>
+          )}
+          <KeyboardCapture
+            open={keyboardOpen}
+            onKeys={(events) => keyboardInput.enqueue(events)}
+            inputRef={keyboardInputRef}
+          />
+          <div
+            ref={flipRef}
+            style={{
+              width: layoutWidth,
+              height: layoutHeight > 0 ? layoutHeight : undefined,
+              transition: resizing ? SIMULATOR_RESIZE_DRAG_TRANSITION : undefined,
+            }}
+          >
+            <div
+              ref={simContainerRef}
+              className="relative w-full h-full"
+              style={{
+                aspectRatio: containerAspectRatio,
+                transform: scaling ? `scale(${layoutScale})` : undefined,
+                transformOrigin: "center center",
+                transition: resizing
+                  ? undefined
+                  : scaling
+                    ? SIMULATOR_RESIZE_PRESENTATION_TRANSITION
+                    : undefined,
+                willChange: resizing ? "width" : scaling ? "transform" : undefined,
+              }}
+              {...mediaDrop.dropZoneProps}
+            >
+              {(() => {
+                const streamView = (
+                  <SimulatorView
+                    url={config.url}
+                    wsUrl={config.wsUrl}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      border: "none",
+                      pointerEvents:
+                        simulatorResize.isResizing || simulatorResize.isInertia
+                          ? "none"
+                          : undefined,
+                    }}
+                    imageStyle={
+                      {
+                        // With chrome the screen slot clips (rounded) and the bezel
+                        // provides the edge, so the stream itself is square + flush.
+                        // Without chrome, round the screen and add a subtle bezel as an
+                        // INSET shadow (not a border): a 1px border sits outside the
+                        // content and, on the <canvas> path, composites its
+                        // semi-transparent white against the black page as a visible
+                        // outline. An inset shadow paints over the (opaque) video edge.
+                        borderRadius: useChrome || useDuoModel ? 0 : imgBorderRadius,
+                        cornerShape:
+                          useChrome || useDuoModel || hasDisplayRadii
+                            ? undefined
+                            : "superellipse(1.3)",
+                        ...(useChrome || useDuoModel
+                          ? {}
+                          : { boxShadow: "inset 0 0 0 1px rgba(255, 255, 255, 0.2)" }),
+                      } as CSSProperties
+                    }
+                    hideControls
+                    onStreamingChange={setStreaming}
+                    onStreamTouch={onStreamTouch}
+                    onStreamMultiTouch={onStreamMultiTouch}
+                    onStreamButton={onStreamButton}
+                    onStreamDigitalCrown={onStreamDigitalCrown}
+                    onStreamScroll={onStreamScroll}
+                    streamMode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
+                    webRtcStream={webrtc.stream}
+                    onWebRtcFrame={markWebRtcFrameDecoded}
+                    streamError={useWebRtcVideo ? (webrtc.error ?? lockedWebRtcError) : null}
+                    onAvccError={() => dispatchAvccFallback("error")}
+                    onAvccDecodedFrame={() => dispatchAvccFallback("decoded-frame")}
+                    subscribeFrame={useAvccVideo ? undefined : mjpeg.subscribeFrame}
+                    streamFrame={useAvccVideo ? undefined : mjpeg.frame}
+                    streamConfig={activeStreamConfig}
+                    enableDigitalCrown={deviceType === "watch"}
+                    onScreenConfigChange={onScreenConfigChange}
+                  />
+                );
+                const screenContent = (
+                  <>
+                    {streamView}
+                    {axOverlayEnabled && !presentation && <AxDomOverlay />}
+                  </>
+                );
+                if (useDuoModel)
+                  return (
+                    <DuoModelView
+                      key={config.device}
+                      angle={previewHingeAngle}
+                      pose={previewHingePose}
+                      physicalPose={physicalPose}
+                      faceDown={previewFaceDown}
+                      view={duoView}
+                      streamConfig={activeStreamConfig}
+                      hingeCommands={hingeCommands}
+                      onUnavailable={onDuoUnavailable}
+                      streamError={useDuoPanelFeeds ? duoPanelError : null}
+                      cacheScreenOnFold={cacheScreenOnFold}
+                      sizeMode={duoSizeMode}
+                      onHingeAngleChange={
+                        showHingeControls && !resizing ? setHingeAngleFromHandle : undefined
+                      }
+                      onTouch={resizing ? undefined : onStreamTouch}
+                      onMultiTouch={resizing ? undefined : onStreamMultiTouch}
+                      onScroll={resizing ? undefined : onStreamScroll}
+                    >
+                      {useDuoPanelFeeds ? (
+                        <DuoPanelStreams
+                          streamUrl={config.streamUrl}
+                          mode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
+                          activeScreenId={duoActiveScreen(
+                            previewHingeAngle,
+                            previewHingePose,
+                            activeScreenId,
+                            previewFaceDown,
+                            hingePending,
+                          )}
+                          codec={effectiveWebRtcCodec}
+                          iceServers={streamSettings.iceServers}
+                          onStreamingChange={setStreaming}
+                          onAvccError={onPanelAvccError}
+                          onWebRtcFailure={handleWebRtcFailure}
+                          transportLocked={streamTransportLocked}
+                          onWebRtcPeerChange={setDuoPanelPeer}
+                          onStreamError={setDuoPanelError}
+                        />
+                      ) : (
+                        streamView
+                      )}
+                    </DuoModelView>
+                  );
+                if (!useChrome) return screenContent;
+                // The screen slot is the bezel's true opening; the stream letterboxes
+                // (contains) inside it, filling the constraining axis and leaving a
+                // thin black margin on the other — the device's own black screen
+                // border. Containing (not covering) keeps the stream from ever
+                // overflowing past the bezel.
+                return (
+                  <DeviceKitChrome
+                    chrome={chrome!}
+                    orientation={clipOrientation}
+                    interactive
+                    containerSize={
+                      // Measured, not computed: pixel rects can't self-correct the
+                      // way the percentage layout did.
+                      deviceRenderedWidth > 0 && deviceRenderedHeight > 0
+                        ? { width: deviceRenderedWidth, height: deviceRenderedHeight }
+                        : undefined
+                    }
+                    onButton={handleChromeButton}
+                    onCrownWheel={(deltaY, deltaMode) => {
+                      const delta = digitalCrownDeltaFromWheel(
+                        deltaY,
+                        deltaMode,
+                        deviceRenderedHeight || 1,
+                      );
+                      if (delta != null) onStreamDigitalCrown(delta);
+                    }}
+                    screen={screenContent}
+                  />
+                );
+              })()}
+              {mediaDrop.isDragOver && (
+                <div
+                  // No backdrop-blur here: the canvas underneath repaints every
+                  // stream frame, and backdrop-filter forces a full re-blur per
+                  // frame for the whole drag — the tint alone stays cheap.
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-accent bg-[rgba(99,102,241,0.18)] text-accent pointer-events-none z-20"
+                  style={{ borderRadius: useChrome ? undefined : imgBorderRadius }}
+                >
+                  <Upload size={32} strokeWidth={1.5} />
+                  <span className="text-[13px] font-medium">Drop media or .ipa</span>
+                </div>
+              )}
+              {!presentation && viewportWidth >= SM_BREAKPOINT && (
+                <SimulatorResizeCornerHandle
+                  simulatorResize={simulatorResize}
+                  deviceType={deviceType}
+                  streamConfig={activeStreamConfig}
+                  containerWidth={deviceRenderedWidth || simulatorResize.width}
+                  containerHeight={
+                    deviceRenderedHeight ||
+                    (containerAspectRatioValue > 0
+                      ? simulatorResize.width / containerAspectRatioValue
+                      : 0)
+                  }
+                />
+              )}
+              <SimulatorResizeSizeBadge
+                width={deviceRenderedWidth || simulatorResize.width}
+                height={
+                  deviceRenderedHeight ||
+                  (containerAspectRatioValue > 0
+                    ? simulatorResize.width / containerAspectRatioValue
+                    : 0)
+                }
+                visible={!presentation && (simulatorResize.isResizing || simulatorResize.isInertia)}
+              />
+            </div>
+          </div>
+          {!presentation && (
+            <div className="inline-flex flex-wrap items-center justify-center gap-2 max-w-full pb-1 sm:pb-0">
+              {showHingeControls && (
+                <HingeControls
+                  key={config.device}
+                  angle={previewHingeAngle}
+                  pose={previewHingePose}
+                  supported={supportsHingeAngle}
+                  pending={hingePending}
+                  error={panelOpen ? null : hingeError}
+                  onChange={setHingeControl}
+                />
+              )}
+              <SimulatorToolbar
+                onRotate={rotateDevice}
+                orientation={
+                  (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null
+                }
+                deviceUdid={config.device}
+                deviceName={deviceName}
+                deviceRuntime={deviceRuntime}
+                streaming={streaming}
+                aria-label="Simulator actions"
+                style={{
+                  alignSelf: "center",
+                  width: "auto",
+                  minWidth: 0,
+                  maxWidth: "100%",
+                  justifyContent: "center",
+                  padding: "6px 8px",
+                  borderRadius: 18,
+                }}
+              >
+                <SimulatorToolbar.Actions>
+                  {currentApp?.isReactNative && (
+                    <SimulatorToolbar.Button
+                      aria-label="Reload React Native bundle"
+                      title="Reload (R)"
+                      onClick={() => void sendReactNativeReload()}
+                    >
+                      <ReloadIcon />
+                    </SimulatorToolbar.Button>
+                  )}
+                  <SimulatorToolbar.HomeButton title="Home" />
+                  <SimulatorToolbar.ScreenshotButton
+                    title="Screenshot"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void screenshot.capture();
+                    }}
+                  />
+                  {pasteSupported && (
+                    <ActionMenu
+                      items={[
+                        ...(copySupported
+                          ? [
+                              {
+                                label: "Copy from Simulator",
+                                description: "Selected simulator text to this device",
+                                onSelect: () => void clipboard.copyFromSim(),
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "Paste from Device",
+                          description: "This device's clipboard to the simulator",
+                          onSelect: () => void clipboard.pasteFromDevice(),
+                        },
+                      ]}
+                    >
+                      {(trigger) => (
+                        <SimulatorToolbar.ClipboardButton title="Clipboard" {...trigger} />
+                      )}
+                    </ActionMenu>
+                  )}
+                  <SimulatorToolbar.RotateButton
+                    title="Rotate device"
+                    direction={isDuo ? "right" : "left"}
+                  />
+                </SimulatorToolbar.Actions>
+              </SimulatorToolbar>
+              <SimulatorToolbar
+                onRotate={rotateDevice}
+                orientation={
+                  (activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null
+                }
+                deviceUdid={config.device}
+                deviceName={deviceName}
+                deviceRuntime={deviceRuntime}
+                streaming={streaming}
+                aria-label="Accessibility overlay"
+                style={{
+                  width: "auto",
+                  minWidth: 0,
+                  justifyContent: "center",
+                  padding: 6,
+                  borderRadius: 22,
+                }}
+              >
+                <AxToolbarButton
+                  overlayEnabled={axOverlayEnabled}
+                  streaming={streaming}
+                  onToggleOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
+                />
+              </SimulatorToolbar>
+            </div>
+          )}
+        </div>
+
+        {!presentation && (
+          <>
+            <div
+              className="fixed top-3 flex flex-row sm:flex-col gap-1 p-1 bg-panel-bg border border-white/8 rounded-[10px] backdrop-blur-[12px] [-webkit-backdrop-filter:blur(12px)] [transition:right_0.24s_cubic-bezier(0.22,1,0.36,1)] z-30"
+              style={{
+                right:
+                  PANEL_EDGE_OFFSET +
+                  ((panelOpen || devtoolsOpen) && viewportWidth >= SM_BREAKPOINT
+                    ? rightPanelWidthPx + RAIL_PANEL_GAP
+                    : 0),
+              }}
+            >
+              {coarsePointer && (
+                <KeyboardToggleButton open={keyboardOpen} onClick={toggleKeyboard} />
+              )}
+              <ShareSessionButton config={config} />
+              <IconButton
+                onClick={onEnterPresentation}
+                aria-label="Full screen"
+                title="Full screen"
+              >
+                <Maximize2 size={18} strokeWidth={1.75} />
+              </IconButton>
+              <IconButton
+                onClick={() => {
+                  setDevtoolsOpen(false);
+                  setPanelOpen((o) => !o);
+                }}
+                aria-label="Open tools panel"
+                aria-pressed={panelOpen}
+                title="Tools"
+              >
+                <PanelRight size={18} strokeWidth={1.75} />
+              </IconButton>
+              <IconButton
+                onClick={() => {
+                  setPanelOpen(false);
+                  setDevtoolsOpen((o) => !o);
+                }}
+                className="max-sm:hidden"
+                aria-label="Open WebKit DevTools"
+                aria-pressed={devtoolsOpen}
+                title="WebKit DevTools"
+              >
+                <Globe size={18} strokeWidth={1.75} />
+              </IconButton>
+              <IconButton
+                onClick={() => setLogsOpen((o) => !o)}
+                aria-label="Open device logs"
+                aria-pressed={logsOpen}
+                title="Logs"
+              >
+                <ScrollText size={18} strokeWidth={1.75} />
+              </IconButton>
+            </div>
+
+            <ToolsPanel
+              open={panelOpen}
+              onClose={() => setPanelOpen(false)}
+              udid={config.device}
+              deviceRuntime={deviceRuntime}
+              currentApp={currentApp}
+              eventLogEventsEndpoint={config.eventLogEventsEndpoint}
+              metricsEndpoint={config.metricsEndpoint}
+              crashesEndpoint={config.crashesEndpoint}
+              captureEndpoint={config.captureEndpoint}
+              axOverlayEnabled={axOverlayEnabled}
+              onToggleAxOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
+              streamSettings={streamSettings}
+              onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
+              onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
+              activeCodec={
+                useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useAvccVideo ? "h264" : "mjpeg"
+              }
+              peer={streamPanelPeer}
+              avccSupported={avcc.supported}
+              streamSettingsPending={
+                streamSettingsState.pending || !streamSettingsState.encoderSettingsAvailable
+              }
+              streamTransportLocked={streamTransportLocked}
+              streamConfiguredMaxDimension={streamConfiguredMaxDimension}
+              width={toolsPanelWidth}
+              chromeEnabled={chromeEnabled}
+              onChromeEnabledChange={setChromeEnabled}
+              hasChrome={!!chrome || isDuo}
+              hingeControls={
+                showHingeControls
+                  ? {
+                      angle: previewHingeAngle,
+                      pose: previewHingePose,
+                      tableMode: hingePreview?.tableMode ?? wsStreamConfig?.tableMode,
+                      tableModeAvailable: streamConfig?.tableModeAvailable,
+                      supported: supportsHingeAngle,
+                      pending: hingePending,
+                      error: hingeError,
+                      onChange: setHingeControl,
+                      viewMode: useDuoModel ? "3d" : "2d",
+                      onViewModeChange: setDuoViewMode,
+                      viewError: duoModelUnavailable
+                        ? "3D preview unavailable. Select 3D to retry."
+                        : null,
+                      cacheScreenOnFold,
+                      onCacheScreenOnFoldChange: setCacheScreenOnFold,
+                      sizeMode: duoSizeMode,
+                      onSizeModeChange: setDuoSizeMode,
+                    }
+                  : undefined
               }
             />
-          )}
-          <SimulatorResizeSizeBadge
-            width={deviceRenderedWidth || simulatorResize.width}
-            height={
-              deviceRenderedHeight ||
-              (containerAspectRatioValue > 0 ? simulatorResize.width / containerAspectRatioValue : 0)
-            }
-            visible={!presentation && (simulatorResize.isResizing || simulatorResize.isInertia)}
-          />
-        </div>
-        </div>
-        {!presentation && (
-        <div className="inline-flex flex-wrap items-center justify-center gap-2 max-w-full pb-1 sm:pb-0">
-          {showHingeControls && (
-            <HingeControls
-              key={config.device}
-              angle={previewHingeAngle}
-              pose={previewHingePose}
-              supported={supportsHingeAngle}
-              pending={hingePending}
-              error={panelOpen ? null : hingeError}
-              onChange={setHingeControl}
+            <ResizeHandle
+              panelWidth={toolsPanelWidth}
+              visible={panelOpen}
+              onPointerDown={onToolsResize}
+              ariaLabel="Resize tools panel"
             />
-          )}
-          <SimulatorToolbar
-            onRotate={rotateDevice}
-            orientation={(activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null}
-            deviceUdid={config.device}
-            deviceName={deviceName}
-            deviceRuntime={deviceRuntime}
-            streaming={streaming}
-            aria-label="Simulator actions"
-            style={{
-              alignSelf: "center",
-              width: "auto",
-              minWidth: 0,
-              maxWidth: "100%",
-              justifyContent: "center",
-              padding: "6px 8px",
-              borderRadius: 18,
-            }}
-          >
-            <SimulatorToolbar.Actions>
-              {currentApp?.isReactNative && (
-                <SimulatorToolbar.Button
-                  aria-label="Reload React Native bundle"
-                  title="Reload (R)"
-                  onClick={() => void sendReactNativeReload()}
-                >
-                  <ReloadIcon />
-                </SimulatorToolbar.Button>
-              )}
-              <SimulatorToolbar.HomeButton title="Home" />
-              <SimulatorToolbar.ScreenshotButton
-                title="Screenshot"
-                onClick={(e) => { e.preventDefault(); void screenshot.capture(); }}
-              />
-              {pasteSupported && (
-                <ActionMenu
-                  items={[
-                    ...(copySupported ? [{
-                      label: "Copy from Simulator",
-                      description: "Selected simulator text to this device",
-                      onSelect: () => void clipboard.copyFromSim(),
-                    }] : []),
-                    {
-                      label: "Paste from Device",
-                      description: "This device's clipboard to the simulator",
-                      onSelect: () => void clipboard.pasteFromDevice(),
-                    },
-                  ]}
-                >
-                  {(trigger) => <SimulatorToolbar.ClipboardButton title="Clipboard" {...trigger} />}
-                </ActionMenu>
-              )}
-              <SimulatorToolbar.RotateButton title="Rotate device" direction={isDuo ? "right" : "left"} />
-            </SimulatorToolbar.Actions>
-          </SimulatorToolbar>
-          <SimulatorToolbar
-            onRotate={rotateDevice}
-            orientation={(activeStreamConfig as { orientation?: SimulatorOrientation }).orientation ?? null}
-            deviceUdid={config.device}
-            deviceName={deviceName}
-            deviceRuntime={deviceRuntime}
-            streaming={streaming}
-            aria-label="Accessibility overlay"
-            style={{
-              width: "auto",
-              minWidth: 0,
-              justifyContent: "center",
-              padding: 6,
-              borderRadius: 22,
-            }}
-          >
-            <AxToolbarButton
-              overlayEnabled={axOverlayEnabled}
-              streaming={streaming}
-              onToggleOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
+
+            <WebKitDevtoolsPanel
+              open={devtoolsOpen}
+              onClose={() => setDevtoolsOpen(false)}
+              udid={config.device}
+              targets={devtools.targets}
+              selectedTargetId={selectedDevtoolsTargetId}
+              onSelectTarget={setSelectedDevtoolsTargetId}
+              loading={devtools.loading}
+              error={devtools.error}
+              onRefresh={() => void devtools.refresh()}
+              width={devtoolsPanelWidth}
             />
-          </SimulatorToolbar>
-        </div>
+            <ResizeHandle
+              panelWidth={devtoolsPanelWidth}
+              visible={devtoolsOpen}
+              onPointerDown={onDevtoolsResize}
+              ariaLabel="Resize WebKit DevTools panel"
+            />
+          </>
         )}
+        <LogsDrawer
+          open={logsOpen}
+          hidden={presentation}
+          onClose={() => setLogsOpen(false)}
+          udid={config.device}
+          logsEndpoint={config.logsEndpoint}
+          currentAppPid={currentApp?.pid ?? null}
+          height={logsDrawerHeight}
+          leftInset={gridOpen ? gridPanelWidth : 0}
+          rightInset={rightPanelWidthPx > 0 ? 12 + rightPanelWidthPx : 0}
+          onResizePointerDown={onLogsResize}
+        />
       </div>
-
-      {!presentation && (
-      <>
-      <div
-        className="fixed top-3 flex flex-row sm:flex-col gap-1 p-1 bg-panel-bg border border-white/8 rounded-[10px] backdrop-blur-[12px] [-webkit-backdrop-filter:blur(12px)] [transition:right_0.24s_cubic-bezier(0.22,1,0.36,1)] z-30"
-        style={{
-          right:
-            PANEL_EDGE_OFFSET +
-            ((panelOpen || devtoolsOpen) && viewportWidth >= SM_BREAKPOINT
-              ? rightPanelWidthPx + RAIL_PANEL_GAP
-              : 0),
-        }}
-      >
-        {coarsePointer && (
-          <KeyboardToggleButton
-            open={keyboardOpen}
-            onClick={toggleKeyboard}
-          />
-        )}
-        <ShareSessionButton config={config} />
-        <IconButton
-          onClick={onEnterPresentation}
-          aria-label="Full screen"
-          title="Full screen"
-        >
-          <Maximize2 size={18} strokeWidth={1.75} />
-        </IconButton>
-        <IconButton
-          onClick={() => {
-            setDevtoolsOpen(false);
-            setPanelOpen((o) => !o);
-          }}
-          aria-label="Open tools panel"
-          aria-pressed={panelOpen}
-          title="Tools"
-        >
-          <PanelRight size={18} strokeWidth={1.75} />
-        </IconButton>
-        <IconButton
-          onClick={() => {
-            setPanelOpen(false);
-            setDevtoolsOpen((o) => !o);
-          }}
-          className="max-sm:hidden"
-          aria-label="Open WebKit DevTools"
-          aria-pressed={devtoolsOpen}
-          title="WebKit DevTools"
-        >
-          <Globe size={18} strokeWidth={1.75} />
-        </IconButton>
-        <IconButton
-          onClick={() => setLogsOpen((o) => !o)}
-          aria-label="Open device logs"
-          aria-pressed={logsOpen}
-          title="Logs"
-        >
-          <ScrollText size={18} strokeWidth={1.75} />
-        </IconButton>
-      </div>
-
-      <ToolsPanel
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-        udid={config.device}
-        deviceRuntime={deviceRuntime}
-        currentApp={currentApp}
-        eventLogEventsEndpoint={config.eventLogEventsEndpoint}
-        metricsEndpoint={config.metricsEndpoint}
-        crashesEndpoint={config.crashesEndpoint}
-        captureEndpoint={config.captureEndpoint}
-        axOverlayEnabled={axOverlayEnabled}
-        onToggleAxOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
-        streamSettings={streamSettings}
-        onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
-        onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
-        activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useAvccVideo ? "h264" : "mjpeg"}
-        peer={streamPanelPeer}
-        avccSupported={avcc.supported}
-        streamSettingsPending={
-          streamSettingsState.pending || !streamSettingsState.encoderSettingsAvailable
-        }
-        streamTransportLocked={streamTransportLocked}
-        streamConfiguredMaxDimension={streamConfiguredMaxDimension}
-        width={toolsPanelWidth}
-        chromeEnabled={chromeEnabled}
-        onChromeEnabledChange={setChromeEnabled}
-        hasChrome={!!chrome || isDuo}
-        hingeControls={showHingeControls ? {
-          angle: previewHingeAngle,
-          pose: previewHingePose,
-          tableMode: hingePreview?.tableMode ?? wsStreamConfig?.tableMode,
-          tableModeAvailable: streamConfig?.tableModeAvailable,
-          supported: supportsHingeAngle,
-          pending: hingePending,
-          error: hingeError,
-          onChange: setHingeControl,
-          viewMode: useDuoModel ? "3d" : "2d",
-          onViewModeChange: setDuoViewMode,
-          viewError: duoModelUnavailable ? "3D preview unavailable. Select 3D to retry." : null,
-          cacheScreenOnFold,
-          onCacheScreenOnFoldChange: setCacheScreenOnFold,
-          sizeMode: duoSizeMode,
-          onSizeModeChange: setDuoSizeMode,
-        } : undefined}
-      />
-      <ResizeHandle
-        panelWidth={toolsPanelWidth}
-        visible={panelOpen}
-        onPointerDown={onToolsResize}
-        ariaLabel="Resize tools panel"
-      />
-
-      <WebKitDevtoolsPanel
-        open={devtoolsOpen}
-        onClose={() => setDevtoolsOpen(false)}
-        udid={config.device}
-        targets={devtools.targets}
-        selectedTargetId={selectedDevtoolsTargetId}
-        onSelectTarget={setSelectedDevtoolsTargetId}
-        loading={devtools.loading}
-        error={devtools.error}
-        onRefresh={() => void devtools.refresh()}
-        width={devtoolsPanelWidth}
-      />
-      <ResizeHandle
-        panelWidth={devtoolsPanelWidth}
-        visible={devtoolsOpen}
-        onPointerDown={onDevtoolsResize}
-        ariaLabel="Resize WebKit DevTools panel"
-      />
-      </>
-      )}
-      <LogsDrawer
-        open={logsOpen}
-        hidden={presentation}
-        onClose={() => setLogsOpen(false)}
-        udid={config.device}
-        logsEndpoint={config.logsEndpoint}
-        currentAppPid={currentApp?.pid ?? null}
-        height={logsDrawerHeight}
-        leftInset={gridOpen ? gridPanelWidth : 0}
-        rightInset={rightPanelWidthPx > 0 ? 12 + rightPanelWidthPx : 0}
-        onResizePointerDown={onLogsResize}
-      />
-    </div>
     </AxStateProvider>
   );
 }

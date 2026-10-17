@@ -3,25 +3,15 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import {
-  createApp,
-  type AppClock,
-} from "../src/middleware.ts";
+import { createApp, type AppClock } from "../src/middleware.ts";
 import { ScreenRecording } from "../src/screen-recording.ts";
-import {
-  type ScrcpySession,
-  type VideoFrame,
-  type VideoPacket,
-} from "../src/scrcpy.ts";
+import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/scrcpy.ts";
 import {
   adaptScrcpySession,
   type EmuSession,
   type GrpcCaptureDiagnostics,
 } from "../src/stream-session.ts";
-import type {
-  WebRtcPublisher,
-  WebRtcPublisherSessionStats,
-} from "../src/webrtc-publisher.ts";
+import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -208,8 +198,7 @@ function fakeWebRtcPublisher(): WebRtcPublisher {
     activePeerCount: 1,
     handleOffer: async () => ({ type: "answer", sdp: "v=0\r\n" }),
     closeSession: () => {},
-    statsForSession: (sessionId: string) =>
-      sessionId === SESSION_ID ? stats : null,
+    statsForSession: (sessionId: string) => (sessionId === SESSION_ID ? stats : null),
     sendFrame: () => ({ accepted: true, awaitingKeyFrame: false }),
     snapshot: () => ({
       peers: 1,
@@ -258,9 +247,7 @@ test("advertises viewer transports and lazily creates WebRTC for a websocket def
 
   try {
     expect(createCalls).toBe(0);
-    const response = await app.handleRequest(
-      new Request("http://middleware.test/api"),
-    );
+    const response = await app.handleRequest(new Request("http://middleware.test/api"));
     expect(await response.json()).toMatchObject({
       screenRecording: null,
       stream: { transport: "websocket" },
@@ -378,9 +365,7 @@ test("normalizes middleware source FPS by the actual elapsed time", async () => 
     clock.sampleAfter(0);
     clock.sampleAfter(2_500);
 
-    const healthResponse = await app.handleRequest(
-      new Request("http://middleware.test/health"),
-    );
+    const healthResponse = await app.handleRequest(new Request("http://middleware.test/health"));
     expect(healthResponse.status).toBe(200);
     expect(await healthResponse.json()).toMatchObject({
       frames: 50,
@@ -418,9 +403,7 @@ test("serves viewer-scoped WebRTC statistics from createApp.handleRequest", asyn
     await openWebRtcViewer(app);
     await drained;
     const response = await app.handleRequest(
-      new Request(
-        `http://middleware.test/webrtc/stats?sessionId=${SESSION_ID}`,
-      ),
+      new Request(`http://middleware.test/webrtc/stats?sessionId=${SESSION_ID}`),
     );
 
     expect(response.status).toBe(200);
@@ -495,48 +478,51 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
   }
 });
 
-test.each(["mmap", "rgb888"] as const)("includes %s session capture diagnostics in WebRTC stats", async (imageMode) => {
-  const diagnostics = { ...GRPC_CAPTURE_DIAGNOSTICS, imageMode };
-  const { session, drained } = fakeScrcpySession(1);
-  const adapted = adaptScrcpySession(session);
-  const grpcSession: EmuSession = {
-    ...adapted,
-    mode: "grpc-screenshot",
-    diagnostics: () => ({ grpcCapture: diagnostics }),
-  };
-  const app = await createApp(
-    {
-      serial: session.serial,
-      streamMode: "grpc-screenshot",
-      grpcImageMode: imageMode,
-      streamSettings: {
-        transport: "webrtc",
-        codec: "h264",
-        iceServers: [],
-        iceTransportPolicy: "all",
+test.each(["mmap", "rgb888"] as const)(
+  "includes %s session capture diagnostics in WebRTC stats",
+  async (imageMode) => {
+    const diagnostics = { ...GRPC_CAPTURE_DIAGNOSTICS, imageMode };
+    const { session, drained } = fakeScrcpySession(1);
+    const adapted = adaptScrcpySession(session);
+    const grpcSession: EmuSession = {
+      ...adapted,
+      mode: "grpc-screenshot",
+      diagnostics: () => ({ grpcCapture: diagnostics }),
+    };
+    const app = await createApp(
+      {
+        serial: session.serial,
+        streamMode: "grpc-screenshot",
+        grpcImageMode: imageMode,
+        streamSettings: {
+          transport: "webrtc",
+          codec: "h264",
+          iceServers: [],
+          iceTransportPolicy: "all",
+        },
       },
-    },
-    {
-      startSession: async () => grpcSession,
-      createWebRtcPublisher: async () => fakeWebRtcPublisher(),
-    },
-  );
+      {
+        startSession: async () => grpcSession,
+        createWebRtcPublisher: async () => fakeWebRtcPublisher(),
+      },
+    );
 
-  try {
-    await openWebRtcViewer(app);
-    await drained;
-    expect(app.health()).toMatchObject({
-      streamMode: "grpc-screenshot",
-      grpcImageMode: imageMode,
-      grpcCapture: diagnostics,
-    });
-    expect(app.webRtcStats(SESSION_ID)).toMatchObject({
-      capture: { grpc: diagnostics },
-    });
-  } finally {
-    await app.stop();
-  }
-});
+    try {
+      await openWebRtcViewer(app);
+      await drained;
+      expect(app.health()).toMatchObject({
+        streamMode: "grpc-screenshot",
+        grpcImageMode: imageMode,
+        grpcCapture: diagnostics,
+      });
+      expect(app.webRtcStats(SESSION_ID)).toMatchObject({
+        capture: { grpc: diagnostics },
+      });
+    } finally {
+      await app.stop();
+    }
+  },
+);
 
 test("keeps the screen recording active when the capture ends and the app stops", async () => {
   const root = await mkdtemp(join(tmpdir(), "create-app-screen-recording-"));
@@ -583,7 +569,13 @@ test("keeps the screen recording active when the capture ends and the app stops"
     readFrame: (): Promise<VideoFrame | null> => {
       if (sent) return end;
       sent = true;
-      return Promise.resolve({ type: "frame", data: keyframe, pts: 0n, isConfig: false, isKey: true });
+      return Promise.resolve({
+        type: "frame",
+        data: keyframe,
+        pts: 0n,
+        isConfig: false,
+        isKey: true,
+      });
     },
     close: () => endStream(),
   } as unknown as ScrcpySession;
@@ -666,10 +658,7 @@ function pushableScrcpySession(): {
 
 test("only announces video-session when the scrcpy session size changes", async () => {
   const { session, push } = pushableScrcpySession();
-  const app = await createApp(
-    { serial: session.serial },
-    { startScrcpy: async () => session },
-  );
+  const app = await createApp({ serial: session.serial }, { startScrcpy: async () => session });
   const sent: (string | Uint8Array)[] = [];
   app.attachWebSocket(
     {

@@ -185,19 +185,29 @@ function finiteNumber(value: unknown): number | undefined {
   return undefined;
 }
 
-function pointFromValues(latitudeValue: unknown, longitudeValue: unknown, altitudeValue?: unknown): RoutePoint {
+function pointFromValues(
+  latitudeValue: unknown,
+  longitudeValue: unknown,
+  altitudeValue?: unknown,
+): RoutePoint {
   const latitude = finiteNumber(latitudeValue);
   const longitude = finiteNumber(longitudeValue);
-  const altitude = altitudeValue === undefined || altitudeValue === null || altitudeValue === ""
-    ? undefined
-    : finiteNumber(altitudeValue);
+  const altitude =
+    altitudeValue === undefined || altitudeValue === null || altitudeValue === ""
+      ? undefined
+      : finiteNumber(altitudeValue);
   if (latitude === undefined || latitude < -90 || latitude > 90) {
     throw new RouteParseError("invalid-route", "waypoint latitude must be between -90 and 90");
   }
   if (longitude === undefined || longitude < -180 || longitude > 180) {
     throw new RouteParseError("invalid-route", "waypoint longitude must be between -180 and 180");
   }
-  if (altitudeValue !== undefined && altitudeValue !== null && altitudeValue !== "" && altitude === undefined) {
+  if (
+    altitudeValue !== undefined &&
+    altitudeValue !== null &&
+    altitudeValue !== "" &&
+    altitude === undefined
+  ) {
     throw new RouteParseError("invalid-route", "waypoint altitude must be finite");
   }
   if (altitude !== undefined && (altitude < -1_000 || altitude > 100_000)) {
@@ -231,7 +241,11 @@ async function parseWaypointArray(
 
 type JsonTask = { kind: "geo" | "coordinates"; value: unknown; depth: number };
 
-async function parseGeoJson(value: unknown, budget: ParseBudget, points: RoutePoint[]): Promise<void> {
+async function parseGeoJson(
+  value: unknown,
+  budget: ParseBudget,
+  points: RoutePoint[],
+): Promise<void> {
   const stack: JsonTask[] = [{ kind: "geo", value, depth: 1 }];
   while (stack.length > 0) {
     const task = stack.pop()!;
@@ -281,7 +295,10 @@ async function parseGeoJson(value: unknown, budget: ParseBudget, points: RoutePo
         break;
       case "GeometryCollection": {
         if (!Array.isArray(task.value.geometries)) {
-          throw new RouteParseError("invalid-route", "GeoJSON GeometryCollection requires geometries");
+          throw new RouteParseError(
+            "invalid-route",
+            "GeoJSON GeometryCollection requires geometries",
+          );
         }
         budget.ensurePending(stack.length, task.value.geometries.length);
         for (let index = task.value.geometries.length - 1; index >= 0; index -= 1) {
@@ -325,7 +342,13 @@ async function parseJson(text: string, budget: ParseBudget): Promise<RoutePoint[
 }
 
 type XmlToken =
-  | { type: "open"; name: string; localName: string; attributes: Map<string, string>; selfClosing: boolean }
+  | {
+      type: "open";
+      name: string;
+      localName: string;
+      attributes: Map<string, string>;
+      selfClosing: boolean;
+    }
   | { type: "close"; name: string; localName: string }
   | { type: "text"; text: string };
 
@@ -376,7 +399,8 @@ function parseOpenTag(source: string): XmlToken & { type: "open" } {
       selfClosing = true;
       index += 1;
       while (/\s/.test(source[index] ?? "")) index += 1;
-      if (index !== source.length) throw new RouteParseError("invalid-xml", "XML self-closing tag is invalid");
+      if (index !== source.length)
+        throw new RouteParseError("invalid-xml", "XML self-closing tag is invalid");
       break;
     }
     const attributeStart = index;
@@ -387,7 +411,8 @@ function parseOpenTag(source: string): XmlToken & { type: "open" } {
     while (xmlNameCharacter(source[index] ?? "")) index += 1;
     const attributeName = localXmlName(source.slice(attributeStart, index));
     while (/\s/.test(source[index] ?? "")) index += 1;
-    if (source[index] !== "=") throw new RouteParseError("invalid-xml", "XML attributes require quoted values");
+    if (source[index] !== "=")
+      throw new RouteParseError("invalid-xml", "XML attributes require quoted values");
     index += 1;
     while (/\s/.test(source[index] ?? "")) index += 1;
     const quote = source[index];
@@ -397,7 +422,8 @@ function parseOpenTag(source: string): XmlToken & { type: "open" } {
     index += 1;
     const valueStart = index;
     while (index < source.length && source[index] !== quote) index += 1;
-    if (index >= source.length) throw new RouteParseError("invalid-xml", "XML attribute quote is not closed");
+    if (index >= source.length)
+      throw new RouteParseError("invalid-xml", "XML attribute quote is not closed");
     if (attributes.has(attributeName)) {
       throw new RouteParseError("invalid-xml", `duplicate XML attribute: ${attributeName}`);
     }
@@ -434,7 +460,8 @@ async function* tokenizeXml(text: string, budget: ParseBudget): AsyncGenerator<X
     }
     if (text.startsWith("<?", open)) {
       const end = text.indexOf("?>", open + 2);
-      if (end < 0) throw new RouteParseError("invalid-xml", "XML processing instruction is not closed");
+      if (end < 0)
+        throw new RouteParseError("invalid-xml", "XML processing instruction is not closed");
       await budget.visit();
       index = end + 2;
       continue;
@@ -448,7 +475,11 @@ async function* tokenizeXml(text: string, budget: ParseBudget): AsyncGenerator<X
     await budget.visit();
     if (source.startsWith("/")) {
       const name = source.slice(1).trim();
-      if (!name || !xmlNameStart(name[0]) || [...name].some((character) => !xmlNameCharacter(character))) {
+      if (
+        !name ||
+        !xmlNameStart(name[0]) ||
+        [...name].some((character) => !xmlNameCharacter(character))
+      ) {
         throw new RouteParseError("invalid-xml", "XML closing tag is invalid");
       }
       yield { type: "close", name, localName: localXmlName(name) };
@@ -461,7 +492,10 @@ async function* tokenizeXml(text: string, budget: ParseBudget): AsyncGenerator<X
 
 function rejectDangerousXml(text: string): void {
   if (/<\s*!\s*DOCTYPE\b/i.test(text) || /<\s*!\s*ENTITY\b/i.test(text)) {
-    throw new RouteParseError("dangerous-xml", "DOCTYPE and entity declarations are not allowed in route XML");
+    throw new RouteParseError(
+      "dangerous-xml",
+      "DOCTYPE and entity declarations are not allowed in route XML",
+    );
   }
 }
 
@@ -470,12 +504,17 @@ function parseKmlCoordinateTuple(tuple: string): RoutePoint {
   const secondComma = firstComma < 0 ? -1 : tuple.indexOf(",", firstComma + 1);
   if (firstComma < 1) throw new RouteParseError("invalid-route", "KML coordinate tuple is invalid");
   const longitude = tuple.slice(0, firstComma);
-  const latitude = secondComma < 0 ? tuple.slice(firstComma + 1) : tuple.slice(firstComma + 1, secondComma);
+  const latitude =
+    secondComma < 0 ? tuple.slice(firstComma + 1) : tuple.slice(firstComma + 1, secondComma);
   const altitude = secondComma < 0 ? undefined : tuple.slice(secondComma + 1);
   return pointFromValues(latitude, longitude, altitude);
 }
 
-async function addKmlCoordinates(source: string, budget: ParseBudget, points: RoutePoint[]): Promise<void> {
+async function addKmlCoordinates(
+  source: string,
+  budget: ParseBudget,
+  points: RoutePoint[],
+): Promise<void> {
   let index = 0;
   while (index < source.length) {
     while (/\s/.test(source[index] ?? "")) index += 1;
@@ -487,7 +526,11 @@ async function addKmlCoordinates(source: string, budget: ParseBudget, points: Ro
   }
 }
 
-async function addGxCoordinate(source: string, budget: ParseBudget, points: RoutePoint[]): Promise<void> {
+async function addGxCoordinate(
+  source: string,
+  budget: ParseBudget,
+  points: RoutePoint[],
+): Promise<void> {
   const values = source.trim().split(/\s+/);
   await budget.visit();
   if (values.length < 2 || values.length > 3) {
@@ -496,7 +539,11 @@ async function addGxCoordinate(source: string, budget: ParseBudget, points: Rout
   budget.addPoint(points, pointFromValues(values[1], values[0], values[2]));
 }
 
-async function parseXml(text: string, format: "gpx" | "kml", budget: ParseBudget): Promise<RoutePoint[]> {
+async function parseXml(
+  text: string,
+  format: "gpx" | "kml",
+  budget: ParseBudget,
+): Promise<RoutePoint[]> {
   rejectDangerousXml(text);
   const points: RoutePoint[] = [];
   const stack: string[] = [];
@@ -522,7 +569,8 @@ async function parseXml(text: string, format: "gpx" | "kml", budget: ParseBudget
       if (!token.selfClosing) stack.push(token.name);
 
       if (format === "gpx" && ["trkpt", "rtept", "wpt"].includes(token.localName)) {
-        if (activeGpxPoint) throw new RouteParseError("invalid-xml", "GPX waypoint elements cannot be nested");
+        if (activeGpxPoint)
+          throw new RouteParseError("invalid-xml", "GPX waypoint elements cannot be nested");
         activeGpxPoint = {
           tag: token.name,
           point: pointFromValues(token.attributes.get("lat"), token.attributes.get("lon")),
@@ -533,25 +581,36 @@ async function parseXml(text: string, format: "gpx" | "kml", budget: ParseBudget
           activeGpxPoint = undefined;
         }
       } else if (format === "gpx" && token.localName === "ele" && activeGpxPoint) {
-        if (capture) throw new RouteParseError("invalid-xml", "GPX elevation elements cannot be nested");
+        if (capture)
+          throw new RouteParseError("invalid-xml", "GPX elevation elements cannot be nested");
         capture = { tag: "ele", text: [] };
-      } else if (format === "kml" && (token.localName === "coordinates" || token.localName === "coord")) {
-        if (capture) throw new RouteParseError("invalid-xml", "KML coordinate elements cannot be nested");
+      } else if (
+        format === "kml" &&
+        (token.localName === "coordinates" || token.localName === "coord")
+      ) {
+        if (capture)
+          throw new RouteParseError("invalid-xml", "KML coordinate elements cannot be nested");
         capture = { tag: token.localName, text: [] };
       }
 
       if (token.selfClosing && capture) {
         if (capture.tag === "coordinates") await addKmlCoordinates("", budget, points);
-        else if (capture.tag === "coord") throw new RouteParseError("invalid-route", "KML gx:coord is empty");
+        else if (capture.tag === "coord")
+          throw new RouteParseError("invalid-route", "KML gx:coord is empty");
         capture = undefined;
       }
       continue;
     }
 
     const expected = stack.pop();
-    if (expected !== token.name) throw new RouteParseError("invalid-xml", `XML closing tag does not match ${expected ?? "root"}`);
+    if (expected !== token.name)
+      throw new RouteParseError(
+        "invalid-xml",
+        `XML closing tag does not match ${expected ?? "root"}`,
+      );
     if (format === "gpx" && capture?.tag === "ele" && token.localName === "ele") {
-      if (!activeGpxPoint) throw new RouteParseError("invalid-xml", "GPX elevation has no waypoint");
+      if (!activeGpxPoint)
+        throw new RouteParseError("invalid-xml", "GPX elevation has no waypoint");
       activeGpxPoint.elevation.push(capture.text.join(""));
       capture = undefined;
     } else if (
@@ -568,11 +627,12 @@ async function parseXml(text: string, format: "gpx" | "kml", budget: ParseBudget
 
     if (format === "gpx" && activeGpxPoint?.tag === token.name) {
       const elevation = activeGpxPoint.elevation.join("").trim();
-      if (elevation) activeGpxPoint.point = pointFromValues(
-        activeGpxPoint.point.latitude,
-        activeGpxPoint.point.longitude,
-        elevation,
-      );
+      if (elevation)
+        activeGpxPoint.point = pointFromValues(
+          activeGpxPoint.point.latitude,
+          activeGpxPoint.point.longitude,
+          elevation,
+        );
       budget.addPoint(points, activeGpxPoint.point);
       activeGpxPoint = undefined;
     }
@@ -614,11 +674,11 @@ export async function parseRouteText(
   const budget = new ParseBudget(format, options);
   budget.throwIfCancelled();
   budget.report();
-  const points = format === "json"
-    ? await parseJson(text, budget)
-    : await parseXml(text, format, budget);
+  const points =
+    format === "json" ? await parseJson(text, budget) : await parseXml(text, format, budget);
   budget.throwIfCancelled();
-  if (points.length === 0) throw new RouteParseError("invalid-route", "route file has no waypoints");
+  if (points.length === 0)
+    throw new RouteParseError("invalid-route", "route file has no waypoints");
   budget.report();
   return { format, points, complexity: budget.complexity };
 }

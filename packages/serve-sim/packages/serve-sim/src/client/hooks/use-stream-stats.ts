@@ -8,8 +8,9 @@ import {
 } from "../utils/webrtc-stats";
 
 /// One `getStats` read per tick, owned by the stream hook. Returns an unsubscribe.
-export type StatsSubscriber =
-  (listener: (report: RTCStatsReport, at: number) => void) => () => void;
+export type StatsSubscriber = (
+  listener: (report: RTCStatsReport, at: number) => void,
+) => () => void;
 
 // Well past a couple of missed polls, so a slow tick is not mistaken for a dead stream.
 const STALE_AFTER_MS = 4_000;

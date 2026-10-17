@@ -6,15 +6,20 @@ export async function checkMitmproxy(timeoutMs = 60_000): Promise<void> {
   const binary = locateMitmdump();
   if (!binary) throw new Error(mitmdumpMissingMessage(process.env.SERVE_SIM_MITMDUMP));
   const child = spawn(binary, ["--version"], {
-    detached: true, stdio: ["ignore", "inherit", "inherit"], timeout: timeoutMs, killSignal: "SIGKILL",
+    detached: true,
+    stdio: ["ignore", "inherit", "inherit"],
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
   });
   const stop = () => {
     if (!child.pid) return;
-    try { process.kill(-child.pid, "SIGKILL"); } catch (error) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
   };
-  const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map(signal => {
+  const handlers = (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((signal) => {
     const handler = () => {
       stop();
       process.removeListener(signal, handler);
@@ -37,7 +42,9 @@ if (import.meta.main) {
   try {
     await checkMitmproxy();
   } catch (error) {
-    console.error(`Capture test prerequisite failed: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Capture test prerequisite failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exitCode = 1;
   }
 }

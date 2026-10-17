@@ -24,14 +24,20 @@ describeOrSkip("/metrics endpoint (real simulator)", () => {
   let baseUrl: string;
 
   beforeAll(() => {
-    try { execFileSync("bun", ["run", CLI_PATH, "--kill", bootedUdid!], { stdio: "pipe" }); } catch {}
+    try {
+      execFileSync("bun", ["run", CLI_PATH, "--kill", bootedUdid!], { stdio: "pipe" });
+    } catch {}
 
     const startPort = 40_000 + Math.floor(Math.random() * 20_000);
-    const detach = spawnSync("bun", ["run", CLI_PATH, "--detach", "-p", String(startPort), bootedUdid!], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "inherit"],
-      timeout: 45_000,
-    });
+    const detach = spawnSync(
+      "bun",
+      ["run", CLI_PATH, "--detach", "-p", String(startPort), bootedUdid!],
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "inherit"],
+        timeout: 45_000,
+      },
+    );
     if (detach.status !== 0 || !detach.stdout) {
       throw new Error(
         `serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\nstdout: ${detach.stdout ?? "<none>"}`,
@@ -42,14 +48,18 @@ describeOrSkip("/metrics endpoint (real simulator)", () => {
   }, 60_000);
 
   afterAll(() => {
-    try { execFileSync("bun", ["run", CLI_PATH, "--kill", bootedUdid!], { stdio: "pipe" }); } catch {}
+    try {
+      execFileSync("bun", ["run", CLI_PATH, "--kill", bootedUdid!], { stdio: "pipe" });
+    } catch {}
   }, 30_000);
 
   test("emits the meta frame before any sample", async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8_000);
     try {
-      const res = await fetch(`${baseUrl}/metrics?device=${bootedUdid}`, { signal: controller.signal });
+      const res = await fetch(`${baseUrl}/metrics?device=${bootedUdid}`, {
+        signal: controller.signal,
+      });
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toContain("text/event-stream");
 

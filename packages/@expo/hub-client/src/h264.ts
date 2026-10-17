@@ -6,9 +6,9 @@
 
 /** Build the WebCodecs `avc1.PPCCLL` codec string from an SPS NAL's first bytes. */
 export function buildCodecString(spsHeaderAndPayload: Uint8Array): string {
-  const profile = spsHeaderAndPayload[1].toString(16).padStart(2, '0');
-  const constraints = spsHeaderAndPayload[2].toString(16).padStart(2, '0');
-  const level = spsHeaderAndPayload[3].toString(16).padStart(2, '0');
+  const profile = spsHeaderAndPayload[1].toString(16).padStart(2, "0");
+  const constraints = spsHeaderAndPayload[2].toString(16).padStart(2, "0");
+  const level = spsHeaderAndPayload[3].toString(16).padStart(2, "0");
   return `avc1.${profile}${constraints}${level}`;
 }
 
@@ -73,5 +73,9 @@ export function parseFramePacket(raw: ArrayBuffer | Uint8Array): FramePacket {
 }
 
 export function isWebCodecsSupported(): boolean {
-  return typeof globalThis !== 'undefined' && 'VideoDecoder' in globalThis && 'EncodedVideoChunk' in globalThis;
+  return (
+    typeof globalThis !== "undefined" &&
+    "VideoDecoder" in globalThis &&
+    "EncodedVideoChunk" in globalThis
+  );
 }

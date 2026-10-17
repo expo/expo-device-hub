@@ -18,16 +18,29 @@ beforeEach(() => {
 describe("eventLogEventForAction", () => {
   test("records app control outcomes without arguments or deep-link secrets", () => {
     for (const action of ["app.launch", "app.stop", "app.openUrl"]) {
-      const event = eventLogEventForAction(action, { udid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", launchArgs: ["secret"], url: "app://secret" }, { exitCode: 1 });
-      expect(event).toMatchObject({ device: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", kind: "app", action: action.slice(4), status: "error" });
+      const event = eventLogEventForAction(
+        action,
+        {
+          udid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          launchArgs: ["secret"],
+          url: "app://secret",
+        },
+        { exitCode: 1 },
+      );
+      expect(event).toMatchObject({
+        device: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        kind: "app",
+        action: action.slice(4),
+        status: "error",
+      });
       expect(JSON.stringify(event)).not.toContain("secret");
     }
   });
 
   test("records an install", () => {
-    expect(eventLogEventForAction("app.install", { udid: "DEVICE-A" }, { exitCode: 0 })).toMatchObject(
-      { device: "DEVICE-A", kind: "app", action: "install", summary: "Install app" },
-    );
+    expect(
+      eventLogEventForAction("app.install", { udid: "DEVICE-A" }, { exitCode: 0 }),
+    ).toMatchObject({ device: "DEVICE-A", kind: "app", action: "install", summary: "Install app" });
   });
 
   test("records the actions the preview drives", () => {
@@ -43,7 +56,11 @@ describe("eventLogEventForAction", () => {
       ["app.approveUrlScheme", "app"],
     ];
     for (const [action, kind] of cases) {
-      const event = eventLogEventForAction(action, { udid: "DEVICE-A", value: "home" }, { exitCode: 0 });
+      const event = eventLogEventForAction(
+        action,
+        { udid: "DEVICE-A", value: "home" },
+        { exitCode: 0 },
+      );
       expect(event).not.toBeNull();
       expect(event?.kind).toBe(kind);
     }
@@ -52,7 +69,11 @@ describe("eventLogEventForAction", () => {
   // The log stream filters by the uppercase UDID, so a lowercase one would hide the entry.
   test("records UDID-only actions under the canonical device", () => {
     for (const action of ["springboard.restart", "app.approveUrlScheme"]) {
-      const event = eventLogEventForAction(action, { udid: "404f2659-7202-4450-8465-912bd2ab744b", scheme: "myapp" }, { exitCode: 0 });
+      const event = eventLogEventForAction(
+        action,
+        { udid: "404f2659-7202-4450-8465-912bd2ab744b", scheme: "myapp" },
+        { exitCode: 0 },
+      );
       expect(event?.device).toBe("404F2659-7202-4450-8465-912BD2AB744B");
     }
   });
@@ -63,7 +84,9 @@ describe("eventLogEventForAction", () => {
   });
 
   test("records nothing for an action the log does not describe", () => {
-    expect(eventLogEventForAction("file.readBase64", { udid: "DEVICE-A" }, { exitCode: 0 })).toBeNull();
+    expect(
+      eventLogEventForAction("file.readBase64", { udid: "DEVICE-A" }, { exitCode: 0 }),
+    ).toBeNull();
   });
 
   // Params can carry a host path or a token; only the exit status belongs in the log.
@@ -88,8 +111,16 @@ describe("eventLogEventForScreenshot", () => {
       summary: "Screenshot",
     });
     expect(
-      eventLogEventForScreenshot("DEVICE-A", { status: "saved", file: "/artifacts/screenshot-1.png" }),
-    ).toEqual({ ...base, status: "ok", summary: "Screenshot", details: { file: "screenshot-1.png" } });
+      eventLogEventForScreenshot("DEVICE-A", {
+        status: "saved",
+        file: "/artifacts/screenshot-1.png",
+      }),
+    ).toEqual({
+      ...base,
+      status: "ok",
+      summary: "Screenshot",
+      details: { file: "screenshot-1.png" },
+    });
   });
 
   test("reports a failed artifact save as an error with its reason", () => {
@@ -109,8 +140,16 @@ describe("eventLogEventForScreenshot", () => {
 
   test("reports a failed capture as an error", () => {
     expect(
-      eventLogEventForScreenshot("DEVICE-A", { status: "capture-failed", error: "simctl timed out" }),
-    ).toEqual({ ...base, status: "error", summary: "Screenshot failed", details: { error: "simctl timed out" } });
+      eventLogEventForScreenshot("DEVICE-A", {
+        status: "capture-failed",
+        error: "simctl timed out",
+      }),
+    ).toEqual({
+      ...base,
+      status: "error",
+      summary: "Screenshot failed",
+      details: { error: "simctl timed out" },
+    });
   });
 });
 
@@ -254,7 +293,11 @@ describe("event log store", () => {
 
 describe("eventLogEventForHidMessage", () => {
   test("describes hinge positions", () => {
-    for (const [angle, summary] of [[0, "Fold"], [90, "Half Fold"], [180, "Unfold"]] as const) {
+    for (const [angle, summary] of [
+      [0, "Fold"],
+      [90, "Half Fold"],
+      [180, "Unfold"],
+    ] as const) {
       expect(eventLogEventForHidMessage("UDID", 0x0f, { angle })).toMatchObject({
         kind: "hinge",
         action: "set-angle",
@@ -275,12 +318,21 @@ describe("eventLogEventForHidMessage", () => {
       ["physical", "faceup", "Physical orientation face up"],
       ["physical", "facedown", "Physical orientation face down"],
     ] as const) {
-      expect(eventLogEventForHidMessage("UDID", 0x10, { control, value, extra: "not logged" })).toMatchObject({
-        kind: "hinge", action: `set-${control}`, summary, details: { control, value },
+      expect(
+        eventLogEventForHidMessage("UDID", 0x10, { control, value, extra: "not logged" }),
+      ).toMatchObject({
+        kind: "hinge",
+        action: `set-${control}`,
+        summary,
+        details: { control, value },
       });
-      expect(eventLogEventForHidMessage("UDID", 0x10, { control, value, extra: "not logged" })?.details).not.toHaveProperty("extra");
+      expect(
+        eventLogEventForHidMessage("UDID", 0x10, { control, value, extra: "not logged" })?.details,
+      ).not.toHaveProperty("extra");
     }
-    expect(eventLogEventForHidMessage("UDID", 0x10, { control: "pose", value: "invalid" })).toBeNull();
+    expect(
+      eventLogEventForHidMessage("UDID", 0x10, { control: "pose", value: "invalid" }),
+    ).toBeNull();
   });
 
   test("maps button HID payloads", () => {
@@ -302,10 +354,15 @@ describe("eventLogEventForHidMessage", () => {
 
   test("maps touch payloads with screen details", () => {
     expect(
-      eventLogEventForHidMessage("UDID", 0x03, { type: "begin", x: 0.5, y: 0.9 }, {
-        width: 390,
-        height: 844,
-      }),
+      eventLogEventForHidMessage(
+        "UDID",
+        0x03,
+        { type: "begin", x: 0.5, y: 0.9 },
+        {
+          width: 390,
+          height: 844,
+        },
+      ),
     ).toMatchObject({
       device: "UDID",
       source: "hid",
@@ -318,7 +375,12 @@ describe("eventLogEventForHidMessage", () => {
 
   test("redacts printable key HID usages", () => {
     for (const usage of [23, 0x1e, 0x2d]) {
-      const event = eventLogEventForHidMessage("UDID", 0x06, { type: "up", usage, key: "secret", shifted: true });
+      const event = eventLogEventForHidMessage("UDID", 0x06, {
+        type: "up",
+        usage,
+        key: "secret",
+        shifted: true,
+      });
       expect(event).toMatchObject({
         device: "UDID",
         source: "hid",
@@ -333,9 +395,7 @@ describe("eventLogEventForHidMessage", () => {
   });
 
   test("maps non-printable key HID usages to readable labels", () => {
-    expect(
-      eventLogEventForHidMessage("UDID", 0x06, { type: "down", usage: 0x28 }),
-    ).toMatchObject({
+    expect(eventLogEventForHidMessage("UDID", 0x06, { type: "down", usage: 0x28 })).toMatchObject({
       summary: "Key down Enter",
       details: { usage: 0x28, key: "Enter" },
     });

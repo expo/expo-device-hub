@@ -25,8 +25,10 @@ describe("WebSocket contracts", () => {
 
   test("validates JSON and option types", () => {
     expect(parseWsClientJson('{"type":"home"}')).toEqual({ type: "home" });
-    expect(() => parseWsClientJson("{" )).toThrow("valid JSON");
-    expect(() => parseWsClientMessage({ type: "home", ack: "no" })).toThrow("ack must be a boolean");
+    expect(() => parseWsClientJson("{")).toThrow("valid JSON");
+    expect(() => parseWsClientMessage({ type: "home", ack: "no" })).toThrow(
+      "ack must be a boolean",
+    );
     expect(isWsClientMessage({ type: "tap", x: 2, y: 0 })).toBe(false);
   });
 

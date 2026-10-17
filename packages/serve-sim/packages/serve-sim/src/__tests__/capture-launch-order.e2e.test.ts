@@ -19,11 +19,11 @@ const PATH_MARKER = "/capture-launch-order";
 
 const udid = e2eDevice();
 const ready =
-  udid !== null
-  && existsSync(CLI)
-  && existsSync(FIXTURE)
-  && existsSync(DYLIB)
-  && locateMitmdump() !== null;
+  udid !== null &&
+  existsSync(CLI) &&
+  existsSync(FIXTURE) &&
+  existsSync(DYLIB) &&
+  locateMitmdump() !== null;
 requireE2E("capture arms before launch", ready);
 
 function simctl(args: string[]): string {

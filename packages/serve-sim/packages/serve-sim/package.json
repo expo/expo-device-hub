@@ -1,35 +1,24 @@
 {
   "name": "@expo/serve-sim",
   "version": "0.10.1",
-  "type": "module",
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim/packages/serve-sim",
+  "bugs": {
+    "url": "https://github.com/expo/expo-device-hub/issues"
+  },
+  "license": "Apache-2.0",
   "author": {
     "name": "Evan Bacon",
     "email": "baconbrix@gmail.com",
     "url": "https://evanbacon.dev"
   },
-  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/expo/expo-device-hub.git",
     "directory": "packages/serve-sim/packages/serve-sim"
   },
-  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim/packages/serve-sim",
-  "bugs": {
-    "url": "https://github.com/expo/expo-device-hub/issues"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "bin": {
     "serve-sim": "dist/serve-sim.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
-  "cpu": [
-    "arm64"
-  ],
   "files": [
     "LICENSE",
     "NOTICE",
@@ -77,6 +66,10 @@
     "dist/native/serve-sim-native.node",
     "dist/bin/LiveKitWebRTC.framework"
   ],
+  "cpu": [
+    "arm64"
+  ],
+  "type": "module",
   "exports": {
     "./middleware": {
       "require": "./dist/middleware.cjs",
@@ -88,6 +81,10 @@
       "types": "./src/state.ts"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "bun run build.ts",
     "dev": "bun run dev.ts",
@@ -98,6 +95,11 @@
     "tart": "bun scripts/tart/cli.ts",
     "tart-test": "bun scripts/tart/cli.ts test",
     "tart-dev": "bun scripts/tart/cli.ts dev"
+  },
+  "dependencies": {
+    "inspect-webkit": "^0.0.5",
+    "sonner": "^2.0.7",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -123,9 +125,7 @@
     "werift": "^0.24.4",
     "zod": "^4.5.4"
   },
-  "dependencies": {
-    "inspect-webkit": "^0.0.5",
-    "sonner": "^2.0.7",
-    "ws": "^8.21.0"
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -201,19 +201,22 @@ describe("what a preview link may spend on the host", () => {
 
   it.each(["stdout", "stderr"])("explains a child that exceeds the %s limit", async (stream) => {
     const redirect = stream === "stderr" ? " >&2" : "";
-    await withShimsAsync({ xcrun: `#!/bin/sh\nexec head -c 17000000 /dev/zero${redirect}\n` }, async () => {
-      const result = await runHostActionAsync(
-        { action: "appearance.get", params: { udid: UDID } },
-        BIN,
-      );
-      expect(result).toEqual({
-        stdout: "",
-        stderr:
-          "The xcrun command printed more than 16 MiB to stdout or stderr. " +
-          "Ask for less output, or use a smaller file, and try again.",
-        exitCode: 1,
-      });
-    });
+    await withShimsAsync(
+      { xcrun: `#!/bin/sh\nexec head -c 17000000 /dev/zero${redirect}\n` },
+      async () => {
+        const result = await runHostActionAsync(
+          { action: "appearance.get", params: { udid: UDID } },
+          BIN,
+        );
+        expect(result).toEqual({
+          stdout: "",
+          stderr:
+            "The xcrun command printed more than 16 MiB to stdout or stderr. " +
+            "Ask for less output, or use a smaller file, and try again.",
+          exitCode: 1,
+        });
+      },
+    );
   });
 
   // exec, so the deadline's SIGKILL reaps the sleep itself; a plain `sleep` would leave it running

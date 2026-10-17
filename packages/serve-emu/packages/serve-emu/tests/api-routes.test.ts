@@ -17,10 +17,7 @@ import {
   MAX_MEDIA_MULTIPART_BYTES,
   readMultipartFormData,
 } from "../src/api/multipart.ts";
-import type {
-  ApiErrorCode,
-  ApiFailure,
-} from "../src/shared/api-contracts.ts";
+import type { ApiErrorCode, ApiFailure } from "../src/shared/api-contracts.ts";
 import { API_SUCCESS_PARSERS } from "../src/shared/api-contracts.ts";
 
 const BASE_URL = "http://127.0.0.1:3011";
@@ -201,9 +198,7 @@ const cameraStatus = {
   ],
 };
 
-function fakeDependencies(
-  overrides: Partial<ApiDependencies> = {},
-): ApiDependencies {
+function fakeDependencies(overrides: Partial<ApiDependencies> = {}): ApiDependencies {
   const dependencies: ApiDependencies = {
     getInfo: () => ({
       generation: 0,
@@ -227,9 +222,7 @@ function fakeDependencies(
       ok: true,
       serial: "emulator-5554",
       mode: request.mode,
-      grpcImageMode: request.mode === "grpc-screenshot"
-        ? request.grpcImageMode ?? "png"
-        : "png",
+      grpcImageMode: request.mode === "grpc-screenshot" ? (request.grpcImageMode ?? "png") : "png",
       availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 1,
     }),
@@ -330,8 +323,7 @@ function fakeDependencies(
       new Response("event: ready\ndata: {}\n\n", {
         headers: { "Content-Type": "text/event-stream" },
       }),
-    openMetrics: () =>
-      new Response(":\n\n", { headers: { "Content-Type": "text/event-stream" } }),
+    openMetrics: () => new Response(":\n\n", { headers: { "Content-Type": "text/event-stream" } }),
     takeScreenshot: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
     getForegroundApp: async () => ({
       packageName: "com.example.app",
@@ -400,9 +392,7 @@ function fakeDependencies(
     listPermissions: async (packageName) => ({
       ok: true,
       packageName,
-      permissions: [
-        { name: "android.permission.CAMERA", granted: false, flags: ["USER_SET"] },
-      ],
+      permissions: [{ name: "android.permission.CAMERA", granted: false, flags: ["USER_SET"] }],
     }),
     revokePermission: async (packageName, permission) => ({
       ok: true,
@@ -440,8 +430,10 @@ function multipartRequest(method: ApiMethod, path: string, field: string) {
   const form = new FormData();
   form.set(
     field,
-    new File([field === "apk" ? "fake apk" : "fake file"],
-      field === "apk" ? "example.apk" : "example.txt"),
+    new File(
+      [field === "apk" ? "fake apk" : "fake file"],
+      field === "apk" ? "example.apk" : "example.txt",
+    ),
   );
   return new Request(`${BASE_URL}${path}`, { method, body: form });
 }
@@ -464,11 +456,12 @@ function validRequest(method: ApiMethod, path: string): Request {
   }
 
   const body = VALID_JSON_BODIES[key];
-  const requestPath = key === "POST /api/screenshot"
-    ? `${path}?format=base64`
-    : key === "GET /api/apps/permissions" || key === "GET /api/apps/icon"
-      ? `${path}?packageName=com.example.app`
-      : path;
+  const requestPath =
+    key === "POST /api/screenshot"
+      ? `${path}?format=base64`
+      : key === "GET /api/apps/permissions" || key === "GET /api/apps/icon"
+        ? `${path}?packageName=com.example.app`
+        : path;
   return new Request(`${BASE_URL}${requestPath}`, {
     method,
     ...(body === undefined
@@ -482,9 +475,7 @@ function validRequest(method: ApiMethod, path: string): Request {
 
 function expectedAllow(path: string): string {
   const methods = new Set<ApiMethod>(
-    EXPECTED_ROUTES
-      .filter((route) => route[1] === path)
-      .map((route) => route[0]),
+    EXPECTED_ROUTES.filter((route) => route[1] === path).map((route) => route[0]),
   );
   return METHOD_ORDER.filter((method) => methods.has(method)).join(", ");
 }
@@ -497,9 +488,7 @@ async function expectFailure(
 ): Promise<ApiFailure> {
   expect(response).toBeInstanceOf(Response);
   expect(response!.status).toBe(status);
-  expect(response!.headers.get("content-type")).toBe(
-    "application/json; charset=utf-8",
-  );
+  expect(response!.headers.get("content-type")).toBe("application/json; charset=utf-8");
   const body = (await response!.json()) as ApiFailure;
   expect(body.ok).toBe(false);
   expect(body.error.code).toBe(code);
@@ -520,8 +509,8 @@ describe("domain API route table", () => {
     );
     expect(routes).toHaveLength(64);
     expect(new Set(routes.map((route) => route.path)).size).toBe(46);
-    const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
-      ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),
+    const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(([path, methods]) =>
+      Object.keys(methods).map((method) => `${method} ${path}`),
     );
     expect(contractPairs.sort()).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => `${method} ${path}`).sort(),
@@ -544,9 +533,7 @@ describe("domain API route table", () => {
       invoked.push(key);
     }
 
-    expect(invoked).toEqual(
-      EXPECTED_ROUTES.map(([method, path]) => `${method} ${path}`),
-    );
+    expect(invoked).toEqual(EXPECTED_ROUTES.map(([method, path]) => `${method} ${path}`));
   });
 
   test("returns structured OPTIONS 405 with exact Allow for all 46 paths", async () => {
@@ -589,12 +576,7 @@ describe("domain API failures", () => {
       }),
     );
 
-    await expectFailure(
-      response,
-      400,
-      "invalid_request",
-      "stream mode request.mode is invalid",
-    );
+    await expectFailure(response, 400, "invalid_request", "stream mode request.mode is invalid");
     expect(invoked).toBe(false);
   });
 
@@ -621,7 +603,9 @@ describe("domain API failures", () => {
         body: JSON.stringify({ posture: "sideways" }),
       }),
       fakeDependencies({
-        setFold: async () => { throw new Error("must not run"); },
+        setFold: async () => {
+          throw new Error("must not run");
+        },
       }),
     );
     await expectFailure(fold, 400, "invalid_request", "posture must be closed or opened");
@@ -680,12 +664,7 @@ describe("domain API failures", () => {
       }),
     );
 
-    await expectFailure(
-      response,
-      409,
-      "conflict",
-      "Device switch in progress",
-    );
+    await expectFailure(response, 409, "conflict", "Device switch in progress");
   });
 
   test("rejects oversized JSON as 413 before invoking the dependency", async () => {
@@ -703,12 +682,7 @@ describe("domain API failures", () => {
       }),
     );
 
-    await expectFailure(
-      response,
-      413,
-      "payload_too_large",
-      "Request body is too large",
-    );
+    await expectFailure(response, 413, "payload_too_large", "Request body is too large");
     expect(invoked).toBe(false);
   });
 
@@ -720,11 +694,7 @@ describe("domain API failures", () => {
     ] as const;
 
     for (const [path, maxBytes] of cases) {
-      const valid = multipartRequest(
-        "POST",
-        path,
-        path.endsWith("install") ? "apk" : "file",
-      );
+      const valid = multipartRequest("POST", path, path.endsWith("install") ? "apk" : "file");
       const headers = new Headers(valid.headers);
       headers.set("Content-Length", String(maxBytes + 1));
       const response = await router.handle(
@@ -735,12 +705,7 @@ describe("domain API failures", () => {
         }),
         fakeDependencies(),
       );
-      await expectFailure(
-        response,
-        413,
-        "payload_too_large",
-        "Request body is too large",
-      );
+      await expectFailure(response, 413, "payload_too_large", "Request body is too large");
     }
 
     const actual = multipartRequest("POST", "/api/files/import", "file");
@@ -768,12 +733,7 @@ describe("domain API failures", () => {
       }),
     );
 
-    await expectFailure(
-      response,
-      400,
-      "invalid_request",
-      "APK file must end with .apk",
-    );
+    await expectFailure(response, 400, "invalid_request", "APK file must end with .apk");
     expect(invoked).toBe(false);
   });
 
@@ -797,30 +757,17 @@ describe("domain API failures", () => {
       fakeDependencies({
         stopAvd: async ({ serial }) => {
           expect(serial).toBe("emulator-9998");
-          throw new ApiError(
-            404,
-            "not_found",
-            'Unknown emulator "emulator-9998".',
-          );
+          throw new ApiError(404, "not_found", 'Unknown emulator "emulator-9998".');
         },
       }),
     );
-    await expectFailure(
-      missingSerial,
-      404,
-      "not_found",
-      'Unknown emulator "emulator-9998".',
-    );
+    await expectFailure(missingSerial, 404, "not_found", 'Unknown emulator "emulator-9998".');
 
     const physicalLocation = await router.handle(
       validRequest("POST", "/api/location"),
       fakeDependencies({
         setLocation: async () => {
-          throw new ApiError(
-            409,
-            "conflict",
-            "location control requires an Android Emulator",
-          );
+          throw new ApiError(409, "conflict", "location control requires an Android Emulator");
         },
       }),
     );
@@ -845,12 +792,7 @@ describe("domain API failures", () => {
         },
       }),
     );
-    const body = await expectFailure(
-      response,
-      502,
-      "downstream_failure",
-      "list devices failed",
-    );
+    const body = await expectFailure(response, 502, "downstream_failure", "list devices failed");
 
     expect(JSON.stringify(body)).not.toContain(secret);
   });
@@ -872,12 +814,7 @@ describe("domain API failures", () => {
         },
       }),
     );
-    const body = await expectFailure(
-      response,
-      500,
-      "internal_error",
-      "Internal server error",
-    );
+    const body = await expectFailure(response, 500, "internal_error", "Internal server error");
 
     expect(JSON.stringify(body)).not.toContain(internalDetail);
     expect(logs).toHaveLength(1);
@@ -952,7 +889,9 @@ describe("screenshot artifact outcome", () => {
           expect(response!.status).toBe(200);
           expect(response!.headers.get("content-type")).toBe("image/png");
           expect(response!.headers.get("x-expo-screenshot-artifact")).toBe("failed");
-          expect(response!.headers.get("x-expo-screenshot-artifact-error")).toMatch(/EEXIST|ENOTDIR/);
+          expect(response!.headers.get("x-expo-screenshot-artifact-error")).toMatch(
+            /EEXIST|ENOTDIR/,
+          );
           expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
 
           const json = await screenshotRequest("?format=base64");

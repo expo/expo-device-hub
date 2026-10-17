@@ -8,7 +8,7 @@
  * newline, tab, and the standard ASCII punctuation reachable on a US layout.
  */
 
-import { type HidKeyEvent } from './types';
+import { type HidKeyEvent } from "./types";
 
 const LEFT_SHIFT = 0xe1;
 
@@ -25,8 +25,8 @@ function buildMap(): Record<string, KeySpec> {
   }
 
   // Digits row: 1..9 then 0
-  const digits = '1234567890';
-  const digitShifted = '!@#$%^&*()';
+  const digits = "1234567890";
+  const digitShifted = "!@#$%^&*()";
   for (let i = 0; i < 10; i++) {
     const usage = 0x1e + i;
     map[digits[i]!] = { usage, shift: false };
@@ -35,26 +35,26 @@ function buildMap(): Record<string, KeySpec> {
 
   const rest: Array<[string, string, number]> = [
     // [plain, shifted, usage]
-    ['-', '_', 0x2d],
-    ['=', '+', 0x2e],
-    ['[', '{', 0x2f],
-    [']', '}', 0x30],
-    ['\\', '|', 0x31],
-    [';', ':', 0x33],
+    ["-", "_", 0x2d],
+    ["=", "+", 0x2e],
+    ["[", "{", 0x2f],
+    ["]", "}", 0x30],
+    ["\\", "|", 0x31],
+    [";", ":", 0x33],
     ["'", '"', 0x34],
-    ['`', '~', 0x35],
-    [',', '<', 0x36],
-    ['.', '>', 0x37],
-    ['/', '?', 0x38],
+    ["`", "~", 0x35],
+    [",", "<", 0x36],
+    [".", ">", 0x37],
+    ["/", "?", 0x38],
   ];
   for (const [plain, shifted, usage] of rest) {
     map[plain] = { usage, shift: false };
     map[shifted] = { usage, shift: true };
   }
 
-  map[' '] = { usage: 0x2c, shift: false };
-  map['\n'] = { usage: 0x28, shift: false }; // Enter
-  map['\t'] = { usage: 0x2b, shift: false }; // Tab
+  map[" "] = { usage: 0x2c, shift: false };
+  map["\n"] = { usage: 0x28, shift: false }; // Enter
+  map["\t"] = { usage: 0x2b, shift: false }; // Tab
 
   return map;
 }
@@ -71,16 +71,16 @@ export function textToKeyEventsLenient(text: string): { events: HidKeyEvent[]; s
   const skipped: string[] = [];
   for (const ch of text) {
     // Normalize CRLF / lone CR to a single Enter press.
-    if (ch === '\r') continue;
+    if (ch === "\r") continue;
     const spec = US_KEYBOARD_MAP[ch];
     if (!spec) {
       skipped.push(ch);
       continue;
     }
-    if (spec.shift) events.push({ type: 'down', usage: LEFT_SHIFT });
-    events.push({ type: 'down', usage: spec.usage });
-    events.push({ type: 'up', usage: spec.usage });
-    if (spec.shift) events.push({ type: 'up', usage: LEFT_SHIFT });
+    if (spec.shift) events.push({ type: "down", usage: LEFT_SHIFT });
+    events.push({ type: "down", usage: spec.usage });
+    events.push({ type: "up", usage: spec.usage });
+    if (spec.shift) events.push({ type: "up", usage: LEFT_SHIFT });
   }
   return { events, skipped };
 }

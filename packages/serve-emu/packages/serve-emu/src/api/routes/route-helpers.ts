@@ -28,20 +28,12 @@ export function parseInput<T>(parse: () => T): T {
   }
 }
 
-export async function downstream<T>(
-  operation: string,
-  action: () => T | Promise<T>,
-): Promise<T> {
+export async function downstream<T>(operation: string, action: () => T | Promise<T>): Promise<T> {
   try {
     return await action();
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError(
-      502,
-      "downstream_failure",
-      `${operation} failed`,
-      { cause: error },
-    );
+    throw new ApiError(502, "downstream_failure", `${operation} failed`, { cause: error });
   }
 }
 
@@ -49,11 +41,7 @@ export function shouldRecord(value: unknown): boolean {
   return !isRecord(value) || value.record !== false;
 }
 
-export function requiredString(
-  value: unknown,
-  name: string,
-  maxLength = 512,
-): string {
+export function requiredString(value: unknown, name: string, maxLength = 512): string {
   if (typeof value !== "string" || !value.trim()) invalid(`${name} is required`);
   const normalized = value.trim();
   if (normalized.length > maxLength) invalid(`${name} is too long`);

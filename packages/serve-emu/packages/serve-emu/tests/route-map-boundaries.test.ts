@@ -26,9 +26,7 @@ describe("route map numeric boundaries", () => {
     expect(wrapLongitude(540)).toBe(-180);
     expect(wrapLongitude(-181)).toBe(179);
     expect(wrapLongitude(12.5)).toBe(12.5);
-    expect(() => wrapLongitude(Number.POSITIVE_INFINITY)).toThrow(
-      "longitude must be finite",
-    );
+    expect(() => wrapLongitude(Number.POSITIVE_INFINITY)).toThrow("longitude must be finite");
   });
 
   test("projects, clamps, and unprojects finite coordinates", () => {
@@ -40,8 +38,7 @@ describe("route map numeric boundaries", () => {
     expect(roundTrip.latitude).toBeCloseTo(location.latitude, 8);
     expect(roundTrip.longitude).toBeCloseTo(location.longitude, 8);
     expect(
-      unprojectLocation(projectLocation({ latitude: 90, longitude: 0 }, zoom), zoom)
-        .latitude,
+      unprojectLocation(projectLocation({ latitude: 90, longitude: 0 }, zoom), zoom).latitude,
     ).toBeCloseTo(WEB_MERCATOR_MAX_LATITUDE, 8);
     expect(() => projectLocation({ latitude: Number.NaN, longitude: 0 }, zoom)).toThrow(
       "latitude must be finite",
@@ -80,10 +77,7 @@ describe("route display boundary behavior", () => {
       maxErrorPx: 0,
     });
 
-    const singleton = simplifyRouteForDisplay(
-      [{ latitude: 0, longitude: 0 }],
-      3,
-    );
+    const singleton = simplifyRouteForDisplay([{ latitude: 0, longitude: 0 }], 3);
     expect(singleton.points).toHaveLength(1);
     expect(singleton.points[0]!.sourceIndex).toBe(0);
 
@@ -101,14 +95,12 @@ describe("route display boundary behavior", () => {
 
   test("rejects invalid simplification options and projections", () => {
     for (const pixelTolerance of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(() =>
-        simplifyRouteForDisplay([], 0, { pixelTolerance }),
-      ).toThrow("pixelTolerance");
+      expect(() => simplifyRouteForDisplay([], 0, { pixelTolerance })).toThrow("pixelTolerance");
     }
     for (const maxDisplayPoints of [0, 1, 2.5, Number.MAX_VALUE]) {
-      expect(() =>
-        simplifyRouteForDisplay([], 0, { maxDisplayPoints }),
-      ).toThrow("maxDisplayPoints");
+      expect(() => simplifyRouteForDisplay([], 0, { maxDisplayPoints })).toThrow(
+        "maxDisplayPoints",
+      );
     }
     expect(() =>
       simplifyRouteForDisplay([{ latitude: 0, longitude: 0 }], 0, {
@@ -132,9 +124,9 @@ describe("route display boundary behavior", () => {
     expect(() =>
       routeViewportTransform(route, { x: Number.NaN, y: 0 }, { width: 1, height: 1 }),
     ).toThrow("centerWorld coordinates must be finite");
-    expect(() =>
-      routeViewportTransform(route, { x: 0, y: 0 }, { width: 0, height: 1 }),
-    ).toThrow("viewport width must be a finite positive number");
+    expect(() => routeViewportTransform(route, { x: 0, y: 0 }, { width: 0, height: 1 })).toThrow(
+      "viewport width must be a finite positive number",
+    );
     expect(() =>
       routeViewportTransform(route, { x: 0, y: 0 }, { width: 1, height: Number.NaN }),
     ).toThrow("viewport height must be a finite positive number");

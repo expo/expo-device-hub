@@ -32,12 +32,12 @@ To convert pixel coords to normalized, discover `streamUrl` with `serve-sim --li
 }
 ```
 
-| Field | Type | Required | Values |
-|---|---|---|---|
-| `type` | string | yes | `"begin"`, `"move"`, `"end"` |
-| `x` | number | yes | `0.0`–`1.0` |
-| `y` | number | yes | `0.0`–`1.0` |
-| `edge` | integer | no | `0`–`4` (see below) |
+| Field  | Type    | Required | Values                       |
+| ------ | ------- | -------- | ---------------------------- |
+| `type` | string  | yes      | `"begin"`, `"move"`, `"end"` |
+| `x`    | number  | yes      | `0.0`–`1.0`                  |
+| `y`    | number  | yes      | `0.0`–`1.0`                  |
+| `edge` | integer | no       | `0`–`4` (see below)          |
 
 A complete touch is a sequence of `begin` → 0 or more `move` → `end` on the **same** WebSocket. Pass an array of 2–256 events to one `gesture` call; separate calls disconnect and release their touches.
 
@@ -55,11 +55,11 @@ Array events may include an integer `delayMs` from 0 to 1000, applied before tha
 }
 ```
 
-| Field | Type | Required | Values |
-|---|---|---|---|
-| `type` | string | yes | `"begin"`, `"move"`, `"end"` |
-| `x1`, `y1` | number | yes | first finger, `0.0`–`1.0` |
-| `x2`, `y2` | number | yes | second finger, `0.0`–`1.0` |
+| Field      | Type   | Required | Values                       |
+| ---------- | ------ | -------- | ---------------------------- |
+| `type`     | string | yes      | `"begin"`, `"move"`, `"end"` |
+| `x1`, `y1` | number | yes      | first finger, `0.0`–`1.0`    |
+| `x2`, `y2` | number | yes      | second finger, `0.0`–`1.0`   |
 
 Multi-touch uses WebSocket opcode `0x05` and does not support `edge`. The CLI event array supports single-touch coordinates only.
 
@@ -67,13 +67,13 @@ Multi-touch uses WebSocket opcode `0x05` and does not support `edge`. The CLI ev
 
 The `edge` field flags a touch as a system edge gesture. iOS interprets edge touches specially (e.g., bottom edge swipe = swipe-to-home on Face ID devices). Values:
 
-| Value | Edge | Effect |
-|---|---|---|
-| `0` | none | Regular touch (default; omit `edge` entirely) |
-| `1` | left | Left-edge swipe (back gesture in many apps) |
-| `2` | top | Top-edge pull (Notification Center / Control Center) |
-| `3` | bottom | Bottom-edge swipe (swipe-to-home on Face ID devices) |
-| `4` | right | Right-edge swipe |
+| Value | Edge   | Effect                                               |
+| ----- | ------ | ---------------------------------------------------- |
+| `0`   | none   | Regular touch (default; omit `edge` entirely)        |
+| `1`   | left   | Left-edge swipe (back gesture in many apps)          |
+| `2`   | top    | Top-edge pull (Notification Center / Control Center) |
+| `3`   | bottom | Bottom-edge swipe (swipe-to-home on Face ID devices) |
+| `4`   | right  | Right-edge swipe                                     |
 
 For a swipe-to-home on a Face ID device, you can use `npx @expo/serve-sim button swipe_home` — it issues the correct edge-3 touch sequence for you.
 

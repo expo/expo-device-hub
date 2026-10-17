@@ -41,8 +41,14 @@ export function createInputBarriers(
       clearTimeout(barrier.timeout);
       pending.delete(reply.requestId);
       if (reply.ok) barrier.resolve();
-      else barrier.reject(new Error(typeof reply.error === "string"
-        ? reply.error : "Simulator input failed. Reload the preview and retry."));
+      else
+        barrier.reject(
+          new Error(
+            typeof reply.error === "string"
+              ? reply.error
+              : "Simulator input failed. Reload the preview and retry.",
+          ),
+        );
       return true;
     },
     cancel(): void {

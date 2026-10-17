@@ -27,12 +27,12 @@ producing matching UI here.
 
 ## Source of truth & how Hub differs
 
-| | Website (`universe/server/website`) | Expo Hub (this package) |
-|---|---|---|
-| Design system | `@expo/styleguide` | Same tokens, ported into `@expo/hub-components` |
-| Styling | Tailwind classes (`bg-default`, `heading-2xl`, …) via `@expo/styleguide/tailwind` preset | Inline styles via `@expo/hub-components` tokens |
-| Components | `ui/components/*` (e.g. `ui/components/Button`) | Ported, dependency-free copies in `@expo/hub-components` |
-| Tokens CSS | `@expo/styleguide/dist/expo-theme.css` + `@radix-ui/colors` | **Imported from `@expo/styleguide`** by `@expo/hub-components/theme.css` (only fonts/radii/reset are local) |
+|               | Website (`universe/server/website`)                                                      | Expo Hub (this package)                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Design system | `@expo/styleguide`                                                                       | Same tokens, ported into `@expo/hub-components`                                                             |
+| Styling       | Tailwind classes (`bg-default`, `heading-2xl`, …) via `@expo/styleguide/tailwind` preset | Inline styles via `@expo/hub-components` tokens                                                             |
+| Components    | `ui/components/*` (e.g. `ui/components/Button`)                                          | Ported, dependency-free copies in `@expo/hub-components`                                                    |
+| Tokens CSS    | `@expo/styleguide/dist/expo-theme.css` + `@radix-ui/colors`                              | **Imported from `@expo/styleguide`** by `@expo/hub-components/theme.css` (only fonts/radii/reset are local) |
 
 Hub renders its UI as **Expo DOM components** (`'use dom'`) with **inline styles**, not
 Tailwind. So we can't use the website's Tailwind classes directly — instead every Tailwind
@@ -57,14 +57,19 @@ Both live in the [`@expo/hub-components`](../@expo/hub-components/src/theme) pac
 
 ## Colors — always semantic
 
-Use the *role* token, never a raw hex or a raw Radix step. The semantic tokens flip
+Use the _role_ token, never a raw hex or a raw Radix step. The semantic tokens flip
 automatically between light and dark.
 
 ```tsx
-import { bg, text, border } from '@expo/hub-components';
+import { bg, text, border } from "@expo/hub-components";
 
-<div style={{ backgroundColor: bg.subtle, color: text.secondary,
-              border: `1px solid ${border.default}` }} />
+<div
+  style={{
+    backgroundColor: bg.subtle,
+    color: text.secondary,
+    border: `1px solid ${border.default}`,
+  }}
+/>;
 ```
 
 - **Backgrounds** (`bg.*`): `default`, `screen`, `subtle`, `element`, `hover`, `selected`,
@@ -100,8 +105,8 @@ object so the type stays on the design grid.
 ## Radii & shadows
 
 ```tsx
-import { radius, shadow } from '@expo/hub-components';
-<div style={{ borderRadius: radius.xl, boxShadow: shadow.sm }} />
+import { radius, shadow } from "@expo/hub-components";
+<div style={{ borderRadius: radius.xl, boxShadow: shadow.sm }} />;
 ```
 
 - `radius`: `xs` 2 · `sm` 4 · `md` 6 · `lg` 8 · `xl` 16 · `2xl` 20 · `3xl` 24 · `full`.
@@ -134,7 +139,9 @@ import { Button } from '@expo/hub-components';
 Tokens are theme-aware. To render a subtree in dark mode, add `dark-theme` to a wrapper:
 
 ```tsx
-<div className="dark-theme" style={{ backgroundColor: bg.default }}>…</div>
+<div className="dark-theme" style={{ backgroundColor: bg.default }}>
+  …
+</div>
 ```
 
 ## Do / don't
@@ -154,7 +161,7 @@ to update them (no hand-regeneration). Only the local base block (`--expo-font-*
 `--expo-radius-*`, the body/code reset) is hand-maintained here, since the styleguide's CSS
 doesn't define those.
 
-> The styleguide's **React components** (`Button`, `Link`, …) and its JS token objects are *not*
+> The styleguide's **React components** (`Button`, `Link`, …) and its JS token objects are _not_
 > importable in Hub: the package's component index pulls in `next/link` (`LinkBase`), which
 > Metro can't bundle. That's why the primitives in `@expo/hub-components/src/components/*` stay
 > dependency-free ports rather than re-exports of `@expo/styleguide`, and `theme/tokens.ts`

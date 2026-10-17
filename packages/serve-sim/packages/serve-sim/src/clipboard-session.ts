@@ -22,9 +22,10 @@ let releasesOnExit = false;
 
 function ownedByThisProcess(udid: string): boolean {
   const state = readLaunchState(udid);
-  return !!state && (
-    Object.values(state.capabilities).some(({ ownerPid }) => ownerPid === process.pid)
-    || (state.sessionPids ?? []).includes(process.pid)
+  return (
+    !!state &&
+    (Object.values(state.capabilities).some(({ ownerPid }) => ownerPid === process.pid) ||
+      (state.sessionPids ?? []).includes(process.pid))
   );
 }
 
@@ -53,14 +54,18 @@ function releaseOnExit(udid: string): void {
 
 // The lock errors tell a running command to retry later, which a process that is exiting cannot do.
 function exitReleaseFailure(error: unknown): string {
-  if (!(error instanceof LaunchStateLockedError)) return error instanceof Error ? error.message : String(error);
+  if (!(error instanceof LaunchStateLockedError))
+    return error instanceof Error ? error.message : String(error);
   const holder = error.heldByThisProcess
     ? "an update in this process still holds the device lock"
     : `another process held the device lock for ${EXIT_LOCK_TIMEOUT_MS / 1000} s`;
   return `${holder}. The loader can stay until the simulator reboots or serve-sim sets it up again.`;
 }
 
-export function createClipboardSession(enabled = true, { now = Date.now }: { now?: () => number } = {}) {
+export function createClipboardSession(
+  enabled = true,
+  { now = Date.now }: { now?: () => number } = {},
+) {
   // Pages, /api polls, and config requests all call initialize(). After a setup succeeds, the launchd
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
   // a reboot the middleware did not see.
@@ -76,19 +81,24 @@ export function createClipboardSession(enabled = true, { now = Date.now }: { now
       if (disposed) return Promise.resolve();
       if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
       const previous = devices.get(udid);
-      if (previous && !rebooted && (
-        !previous.done
-        || (!enabled && !isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY))
-        || (enabled && now() - previous.checkedAt < RECHECK_MS && isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY))
-      )) {
+      if (
+        previous &&
+        !rebooted &&
+        (!previous.done ||
+          (!enabled && !isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)) ||
+          (enabled &&
+            now() - previous.checkedAt < RECHECK_MS &&
+            isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)))
+      ) {
         return previous.work;
       }
       // A reboot clears launchd, so configure the new boot after any setup that started before it.
-      const earlier = rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
+      const earlier =
+        rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
       const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
       entry.work = (async () => {
         await earlier;
-        if (enabled && !rebooted && await isCapabilityArmed(udid, CLIPBOARD_CAPABILITY)) return;
+        if (enabled && !rebooted && (await isCapabilityArmed(udid, CLIPBOARD_CAPABILITY))) return;
         await configureCapability(udid, clipboardCapability, { enabled, relaunch: false });
         if (enabled) {
           initializedHere.add(udid);
@@ -99,36 +109,49 @@ export function createClipboardSession(enabled = true, { now = Date.now }: { now
           initializedHere.add(udid);
           releaseOnExit(udid);
         }
-      })().then(() => {
-        entry.done = true;
-        entry.checkedAt = now();
-        failures.delete(udid);
-      }, (error) => {
-        if (devices.get(udid) === entry) devices.delete(udid);
-        const previousDelayMs = failures.get(udid)?.delayMs;
-        const delayMs = previousDelayMs ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs) : RETRY_MIN_MS;
-        failures.set(udid, { retryAt: now() + delayMs, delayMs });
-        throw error;
-      });
+      })().then(
+        () => {
+          entry.done = true;
+          entry.checkedAt = now();
+          failures.delete(udid);
+        },
+        (error) => {
+          if (devices.get(udid) === entry) devices.delete(udid);
+          const previousDelayMs = failures.get(udid)?.delayMs;
+          const delayMs = previousDelayMs
+            ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs)
+            : RETRY_MIN_MS;
+          failures.set(udid, { retryAt: now() + delayMs, delayMs });
+          throw error;
+        },
+      );
       devices.set(udid, entry);
       return entry.work;
     },
     async dispose(): Promise<void> {
       disposed = true;
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
-      const results = await Promise.allSettled([...initializedHere].map(async (udid) => {
-        const clipboard = readLaunchState(udid)?.capabilities[CLIPBOARD_CAPABILITY];
-        if (clipboard?.ownerPid === process.pid) {
-          await configureCapability(udid, clipboardCapability, { enabled: false, relaunch: false });
-        }
-        const remaining = Object.values(readLaunchState(udid)?.capabilities ?? {});
-        if (!remaining.some(({ ownerPid }) => ownerPid === process.pid)) {
-          await releaseSession(udid, process.pid, () => {});
-        }
-        initializedHere.delete(udid);
-      }));
-      const errors = results.filter((result) => result.status === "rejected").map((result) => result.reason);
-      if (errors.length > 0) throw new AggregateError(errors, "Could not release the clipboard session");
+      const results = await Promise.allSettled(
+        [...initializedHere].map(async (udid) => {
+          const clipboard = readLaunchState(udid)?.capabilities[CLIPBOARD_CAPABILITY];
+          if (clipboard?.ownerPid === process.pid) {
+            await configureCapability(udid, clipboardCapability, {
+              enabled: false,
+              relaunch: false,
+            });
+          }
+          const remaining = Object.values(readLaunchState(udid)?.capabilities ?? {});
+          if (!remaining.some(({ ownerPid }) => ownerPid === process.pid)) {
+            await releaseSession(udid, process.pid, () => {});
+          }
+          initializedHere.delete(udid);
+        }),
+      );
+      const errors = results
+        .filter((result) => result.status === "rejected")
+        .map((result) => result.reason);
+      if (errors.length > 0)
+        throw new AggregateError(errors, "Could not release the clipboard session");
     },
   };
 }

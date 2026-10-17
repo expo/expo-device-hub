@@ -104,7 +104,9 @@ describeWithSim(`serve-sim idle frame floor (booted sim ${bootedUdid ?? "<skippe
 
   beforeAll(async () => {
     // Scoped: an unscoped --kill SIGTERMs every serve-sim on the machine.
-    try { execSync(`bun run ${CLI_PATH} --kill ${bootedUdid}`, { stdio: "pipe" }); } catch {}
+    try {
+      execSync(`bun run ${CLI_PATH} --kill ${bootedUdid}`, { stdio: "pipe" });
+    } catch {}
     killHelpersForDevice(bootedUdid!);
 
     // Its own port, so the run never has to reclaim the default 3100 from a neighbour.
@@ -114,17 +116,21 @@ describeWithSim(`serve-sim idle frame floor (booted sim ${bootedUdid ?? "<skippe
     // lands directly in the test output — critical when the subprocess hangs
     // under CI and we need to know *where*. stdout stays captured so we can
     // still parse the JSON state blob.
-    const detach = spawnSync("bun", ["run", CLI_PATH, "--detach", bootedUdid!, "--port", String(port)], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "inherit"],
-      timeout: 45_000,
-    });
+    const detach = spawnSync(
+      "bun",
+      ["run", CLI_PATH, "--detach", bootedUdid!, "--port", String(port)],
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "inherit"],
+        timeout: 45_000,
+      },
+    );
     if (detach.status !== 0 || !detach.stdout) {
       const helperLogs = dumpHelperLogs();
       throw new Error(
         `serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\n` +
-        `stdout: ${detach.stdout ?? "<none>"}\n` +
-        `helper logs:\n${helperLogs || "<none>"}`,
+          `stdout: ${detach.stdout ?? "<none>"}\n` +
+          `helper logs:\n${helperLogs || "<none>"}`,
       );
     }
     try {
@@ -133,98 +139,108 @@ describeWithSim(`serve-sim idle frame floor (booted sim ${bootedUdid ?? "<skippe
     } catch {
       throw new Error(
         `serve-sim --detach returned unparseable stdout: ${detach.stdout}\n` +
-        `helper logs:\n${dumpHelperLogs()}`,
+          `helper logs:\n${dumpHelperLogs()}`,
       );
     }
   }, 60_000);
 
   afterAll(() => {
-    try { execSync(`bun run ${CLI_PATH} --kill ${bootedUdid}`, { stdio: "pipe" }); } catch {}
+    try {
+      execSync(`bun run ${CLI_PATH} --kill ${bootedUdid}`, { stdio: "pipe" });
+    } catch {}
     killHelpersForDevice(bootedUdid!);
   }, 30_000);
 
-  test("first frame arrives quickly even on an idle simulator", async () => {
-    const t0 = Date.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FIRST_FRAME_BUDGET_MS + 500);
+  test(
+    "first frame arrives quickly even on an idle simulator",
+    async () => {
+      const t0 = Date.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), FIRST_FRAME_BUDGET_MS + 500);
 
-    const res = await fetch(streamUrl, { signal: controller.signal });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type") ?? "").toContain("multipart/x-mixed-replace");
+      const res = await fetch(streamUrl, { signal: controller.signal });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type") ?? "").toContain("multipart/x-mixed-replace");
 
-    const reader = res.body!.getReader();
-    let buf = Buffer.alloc(0);
-    let firstFrameAt: number | null = null;
+      const reader = res.body!.getReader();
+      let buf = Buffer.alloc(0);
+      let firstFrameAt: number | null = null;
 
-    try {
-      while (Date.now() - t0 < FIRST_FRAME_BUDGET_MS) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf = Buffer.concat([buf, Buffer.from(value)]);
-        const parsed = parseMjpegStream(buf);
-        buf = parsed.rest as Buffer<ArrayBuffer>;
-        if (parsed.frames.length > 0) {
-          firstFrameAt = Date.now() - t0;
-          // Sanity: every frame must start with JPEG SOI.
+      try {
+        while (Date.now() - t0 < FIRST_FRAME_BUDGET_MS) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf = Buffer.concat([buf, Buffer.from(value)]);
+          const parsed = parseMjpegStream(buf);
+          buf = parsed.rest as Buffer<ArrayBuffer>;
+          if (parsed.frames.length > 0) {
+            firstFrameAt = Date.now() - t0;
+            // Sanity: every frame must start with JPEG SOI.
+            for (const f of parsed.frames) {
+              expect(f.jpeg[0]).toBe(0xff);
+              expect(f.jpeg[1]).toBe(0xd8);
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        // AbortError from the budget timer is expected when the stream stalls;
+        // fall through so the assertion below reports the real diagnosis
+        // (firstFrameAt === null) instead of a confusing unhandled rejection.
+        if ((err as { name?: string }).name !== "AbortError") throw err;
+      }
+
+      clearTimeout(timer);
+      await reader.cancel().catch(() => {});
+
+      expect(firstFrameAt).not.toBeNull();
+      expect(firstFrameAt).toBeLessThanOrEqual(FIRST_FRAME_BUDGET_MS);
+    },
+    FIRST_FRAME_BUDGET_MS + 5000,
+  );
+
+  test(
+    `idle floor emits >= ${MIN_FRAMES_IN_IDLE_WINDOW} frames in ${IDLE_WINDOW_MS}ms`,
+    async () => {
+      const t0 = Date.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), IDLE_WINDOW_MS + 500);
+
+      const res = await fetch(streamUrl, { signal: controller.signal });
+      const reader = res.body!.getReader();
+
+      let buf = Buffer.alloc(0);
+      let frameCount = 0;
+      const sizes: number[] = [];
+
+      try {
+        while (Date.now() - t0 < IDLE_WINDOW_MS) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf = Buffer.concat([buf, Buffer.from(value)]);
+          const parsed = parseMjpegStream(buf);
+          buf = parsed.rest as Buffer<ArrayBuffer>;
           for (const f of parsed.frames) {
+            frameCount++;
+            sizes.push(f.jpeg.length);
             expect(f.jpeg[0]).toBe(0xff);
             expect(f.jpeg[1]).toBe(0xd8);
           }
-          break;
         }
+      } catch (err) {
+        // The abort-controller deadline is supposed to fire at the end of the
+        // window — let the frame-count assertion be the actual signal.
+        if ((err as { name?: string }).name !== "AbortError") throw err;
       }
-    } catch (err) {
-      // AbortError from the budget timer is expected when the stream stalls;
-      // fall through so the assertion below reports the real diagnosis
-      // (firstFrameAt === null) instead of a confusing unhandled rejection.
-      if ((err as { name?: string }).name !== "AbortError") throw err;
-    }
 
-    clearTimeout(timer);
-    await reader.cancel().catch(() => {});
+      clearTimeout(timer);
+      await reader.cancel().catch(() => {});
 
-    expect(firstFrameAt).not.toBeNull();
-    expect(firstFrameAt).toBeLessThanOrEqual(FIRST_FRAME_BUDGET_MS);
-  }, FIRST_FRAME_BUDGET_MS + 5000);
-
-  test(`idle floor emits >= ${MIN_FRAMES_IN_IDLE_WINDOW} frames in ${IDLE_WINDOW_MS}ms`, async () => {
-    const t0 = Date.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), IDLE_WINDOW_MS + 500);
-
-    const res = await fetch(streamUrl, { signal: controller.signal });
-    const reader = res.body!.getReader();
-
-    let buf = Buffer.alloc(0);
-    let frameCount = 0;
-    const sizes: number[] = [];
-
-    try {
-      while (Date.now() - t0 < IDLE_WINDOW_MS) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf = Buffer.concat([buf, Buffer.from(value)]);
-        const parsed = parseMjpegStream(buf);
-        buf = parsed.rest as Buffer<ArrayBuffer>;
-        for (const f of parsed.frames) {
-          frameCount++;
-          sizes.push(f.jpeg.length);
-          expect(f.jpeg[0]).toBe(0xff);
-          expect(f.jpeg[1]).toBe(0xd8);
-        }
-      }
-    } catch (err) {
-      // The abort-controller deadline is supposed to fire at the end of the
-      // window — let the frame-count assertion be the actual signal.
-      if ((err as { name?: string }).name !== "AbortError") throw err;
-    }
-
-    clearTimeout(timer);
-    await reader.cancel().catch(() => {});
-
-    expect(frameCount).toBeGreaterThanOrEqual(MIN_FRAMES_IN_IDLE_WINDOW);
-    // Every frame should have a reasonable size — serve-sim emits a real
-    // JPEG, not an empty buffer.
-    for (const s of sizes) expect(s).toBeGreaterThan(1000);
-  }, IDLE_WINDOW_MS + 5000);
+      expect(frameCount).toBeGreaterThanOrEqual(MIN_FRAMES_IN_IDLE_WINDOW);
+      // Every frame should have a reasonable size — serve-sim emits a real
+      // JPEG, not an empty buffer.
+      for (const s of sizes) expect(s).toBeGreaterThan(1000);
+    },
+    IDLE_WINDOW_MS + 5000,
+  );
 });

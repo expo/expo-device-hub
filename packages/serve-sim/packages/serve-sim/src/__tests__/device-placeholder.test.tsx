@@ -62,8 +62,22 @@ describe("DevicePlaceholder", () => {
     } satisfies DeviceKitChromeDescriptor;
 
     const cases = [
-      ["Apple Watch Series 11 (42mm)", "watchOS-27-0", "com.apple.apple-watch-series-11-4", 492, 792, 250],
-      ["Apple Watch Ultra 3 (49mm)", "watchOS-27-0", "com.apple.apple-watch-ultra-3-8", 499, 795, 255],
+      [
+        "Apple Watch Series 11 (42mm)",
+        "watchOS-27-0",
+        "com.apple.apple-watch-series-11-4",
+        492,
+        792,
+        250,
+      ],
+      [
+        "Apple Watch Ultra 3 (49mm)",
+        "watchOS-27-0",
+        "com.apple.apple-watch-ultra-3-8",
+        499,
+        795,
+        255,
+      ],
       ["Apple Watch SE 3 (40mm)", "watchOS-27-0", "com.apple.apple-watch-se-3-1", 468, 792, 238],
       ["iPhone 17 Pro", "iOS-26-5", "com.apple.iphone-17-pro-2", 950, 1024, 280],
       ["iPad Pro 11-inch (M5)", "iOS-26-5", "com.apple.ipad-pro-11-inch-m5-1", 895, 986, 340],

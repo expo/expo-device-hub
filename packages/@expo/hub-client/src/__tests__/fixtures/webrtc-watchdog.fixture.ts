@@ -1,9 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { sessionTokenFetch } from '../../session-token';
-import {
-  PLAYBACK_STALL_POLLS,
-  PLAYBACK_STALL_POLL_MS,
-} from "../../webrtc-playback-stall";
+import { sessionTokenFetch } from "../../session-token";
+import { PLAYBACK_STALL_POLLS, PLAYBACK_STALL_POLL_MS } from "../../webrtc-playback-stall";
 
 let effects: (() => void | (() => void))[] = [];
 let updates: unknown[] = [];
@@ -12,7 +9,7 @@ let peers: FakePeer[] = [];
 let closed = 0;
 let visibility: "visible" | "hidden" = "visible";
 const visibilityListeners = new Set<() => void>();
-const visibilityListener = () => visibilityListeners.forEach(listener => listener());
+const visibilityListener = () => visibilityListeners.forEach((listener) => listener());
 let nextTimer = 0;
 const timers = new Map<number, { callback: () => void; delay: number }>();
 let nextInterval = 0;
@@ -35,15 +32,23 @@ class FakePeer {
   localDescription = { type: "offer", sdp: "v=0" };
   onconnectionstatechange?: () => void;
   ontrack?: (event: { track: object; streams: object[] }) => void;
-  constructor() { peers.push(this); }
-  addTransceiver() { return {}; }
-  async createOffer() { return this.localDescription; }
+  constructor() {
+    peers.push(this);
+  }
+  addTransceiver() {
+    return {};
+  }
+  async createOffer() {
+    return this.localDescription;
+  }
   async setLocalDescription() {}
   async setRemoteDescription() {}
   getStats() {
     return new Promise<Map<string, unknown>>((resolve) => pendingStats.push({ resolve }));
   }
-  close() { closed += 1; }
+  close() {
+    closed += 1;
+  }
 }
 
 mock.module("react", () => ({
@@ -77,8 +82,12 @@ Object.assign(globalThis, {
   setTimeout: fakeSetTimeout,
   clearTimeout: fakeClearTimeout,
   document: {
-    get hidden() { return visibility === "hidden"; },
-    get visibilityState() { return visibility; },
+    get hidden() {
+      return visibility === "hidden";
+    },
+    get visibilityState() {
+      return visibility;
+    },
     addEventListener(name: string, listener: () => void) {
       if (name === "visibilitychange") visibilityListeners.add(listener);
     },
@@ -108,7 +117,17 @@ Object.assign(globalThis, {
       statsAuthorization = new Headers(init?.headers).get("authorization");
       statsSignal = init?.signal ?? null;
       if (senderReply) return senderReply();
-      return new Response(JSON.stringify({ capture: { rebooting: captureRebooting }, sessions: [{ sessionId: new URL(input).searchParams.get("sessionId"), framesEncoded: senderFrames }] }));
+      return new Response(
+        JSON.stringify({
+          capture: { rebooting: captureRebooting },
+          sessions: [
+            {
+              sessionId: new URL(input).searchParams.get("sessionId"),
+              framesEncoded: senderFrames,
+            },
+          ],
+        }),
+      );
     }
     if (input.includes("/offer")) offersPosted += 1;
     if (input.includes("/offer") && offerStatus !== 200) {
@@ -129,7 +148,11 @@ afterEach(() => {
 });
 
 /// Options a test passes to the hook on top of the defaults. Reset by every `start`.
-let hookOptions: { allowCodecFallback?: boolean; expectContinuousFrames?: boolean; fetchImpl?: Parameters<typeof useWebRtcStream>[0]["fetchImpl"] } = {};
+let hookOptions: {
+  allowCodecFallback?: boolean;
+  expectContinuousFrames?: boolean;
+  fetchImpl?: Parameters<typeof useWebRtcStream>[0]["fetchImpl"];
+} = {};
 
 async function start(
   visible: "visible" | "hidden" = "visible",
@@ -185,19 +208,32 @@ async function reconnect() {
 function fireTimer(delay: number) {
   const entry = [...timers.entries()].find(([, timer]) => timer.delay === delay);
   if (!entry) throw new Error(`Expected a ${delay}ms timer`);
-  timers.delete(entry[0]); entry[1].callback();
+  timers.delete(entry[0]);
+  entry[1].callback();
 }
 
-function resolveStats(framesReceived: number, framesDecoded = framesReceived, id = "video", mediaTypeOnly = false) {
+function resolveStats(
+  framesReceived: number,
+  framesDecoded = framesReceived,
+  id = "video",
+  mediaTypeOnly = false,
+) {
   const read = pendingStats.shift();
   if (!read) throw new Error("Expected an inbound stats read");
-  read.resolve(new Map([[id, {
-    id,
-    type: "inbound-rtp",
-    [mediaTypeOnly ? "mediaType" : "kind"]: "video",
-    framesReceived,
-    framesDecoded,
-  }]]));
+  read.resolve(
+    new Map([
+      [
+        id,
+        {
+          id,
+          type: "inbound-rtp",
+          [mediaTypeOnly ? "mediaType" : "kind"]: "video",
+          framesReceived,
+          framesDecoded,
+        },
+      ],
+    ]),
+  );
 }
 
 /// Drive the stall watchdog with one sample per poll, advancing the clock like a real timer.
@@ -210,7 +246,8 @@ async function pollStall(
     clock += gapMs;
     for (const tick of intervals.values()) tick();
     await flush();
-    if (pendingStats.length > 0) resolveStats(sample.received, sample.decoded, sample.id, sample.mediaTypeOnly);
+    if (pendingStats.length > 0)
+      resolveStats(sample.received, sample.decoded, sample.id, sample.mediaTypeOnly);
     await flush();
   }
 }
@@ -231,8 +268,10 @@ function deadRun(at: number) {
 const STALLED = "WebRTC playback stalled. Retrying...";
 
 function failures() {
-  return updates.filter((value): value is { kind: string } =>
-    typeof value === "object" && value !== null && "kind" in value);
+  return updates.filter(
+    (value): value is { kind: string } =>
+      typeof value === "object" && value !== null && "kind" in value,
+  );
 }
 
 test("the first stall reconnects on the same codec", async () => {
@@ -246,7 +285,7 @@ test("the first stall reconnects on the same codec", async () => {
 test("mediaType-only receiver reports still recover a frozen decoder", async () => {
   const hook = await start();
   hook.markFrameDecoded();
-  await pollStall(frozenRun(100).map(sample => ({ ...sample, mediaTypeOnly: true })));
+  await pollStall(frozenRun(100).map((sample) => ({ ...sample, mediaTypeOnly: true })));
   expect(failures()).toEqual([]);
   expect(updates).toContain(STALLED);
 });
@@ -270,7 +309,6 @@ test("a hung stats read does not reconnect video that keeps presenting frames", 
   expect(closed).toBe(0);
   expect(updates).not.toContain(STALLED);
 });
-
 
 test("a stall with no media arriving is charged to the transport", async () => {
   const hook = await start();
@@ -298,7 +336,10 @@ test("idle time does not spend a newly arriving Android frame's decode deadline"
   const hook = await start();
   hook.markFrameDecoded();
   await pollStall(Array.from({ length: 8 }, () => ({ received: 100, decoded: 100 })));
-  await pollStall([{ received: 101, decoded: 100 }, { received: 101, decoded: 101 }]);
+  await pollStall([
+    { received: 101, decoded: 100 },
+    { received: 101, decoded: 101 },
+  ]);
   expect(closed).toBe(0);
   expect(updates).not.toContain(STALLED);
 });
@@ -308,7 +349,9 @@ test("one newly arriving Android frame gets a full deadline before decoder recov
   const hook = await start();
   hook.markFrameDecoded();
   await pollStall(Array.from({ length: 8 }, () => ({ received: 100, decoded: 100 })));
-  await pollStall(Array.from({ length: PLAYBACK_STALL_POLLS - 1 }, () => ({ received: 101, decoded: 100 })));
+  await pollStall(
+    Array.from({ length: PLAYBACK_STALL_POLLS - 1 }, () => ({ received: 101, decoded: 100 })),
+  );
   expect(closed).toBe(0);
   await pollStall([{ received: 101, decoded: 100 }]);
   expect(closed).toBe(1);
@@ -366,32 +409,39 @@ test("a hidden tab never trips the stall watchdog", async () => {
   expect(failures()).toEqual([]);
 });
 
-
 test("a repeated decoder stall demotes only after a same-codec reconnect", async () => {
-  const hook = await start(); hook.markFrameDecoded();
+  const hook = await start();
+  hook.markFrameDecoded();
   await pollStall(frozenRun(100));
   expect(failures()).toEqual([]);
-  await reconnect(); hook.markFrameDecoded();
+  await reconnect();
+  hook.markFrameDecoded();
   await pollStall(frozenRun(100));
   expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
 });
 
 test("Android retries its transport instead of walking the iOS codec ladder", async () => {
   hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
-  const hook = await start(); hook.markFrameDecoded();
-  await pollStall(frozenRun(100)); await reconnect(); hook.markFrameDecoded();
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(frozenRun(100));
+  await reconnect();
+  hook.markFrameDecoded();
   await pollStall(frozenRun(100));
   expect(failures()).toEqual([]);
   expect(updates).toContain(STALLED);
 });
 
 test("stats subscribers share the watchdog's single read", async () => {
-  const hook = await start(); hook.markFrameDecoded();
+  const hook = await start();
+  hook.markFrameDecoded();
   const reports: number[] = [];
   const unsubscribe = hook.subscribeStats((report) => reports.push(report.size));
-  await pollStall([{received: 100, decoded: 100}]);
-  expect(reports).toEqual([1]); expect(pendingStats).toHaveLength(0);
-  unsubscribe(); await pollStall([{received: 200, decoded: 200}]);
+  await pollStall([{ received: 100, decoded: 100 }]);
+  expect(reports).toEqual([1]);
+  expect(pendingStats).toHaveLength(0);
+  unsubscribe();
+  await pollStall([{ received: 200, decoded: 200 }]);
   expect(reports).toEqual([1]);
 });
 
@@ -409,11 +459,21 @@ test("brief hide/show between polls invalidates the decoder-stall run", async ()
 });
 
 test("first-frame watchdog pauses while hidden and restarts on resume", async () => {
-  const hook = await start("hidden"); expect(timers.size).toBe(0);
-  visibility = "visible"; visibilityListener?.(); fireTimer(4_000); await flush();
-  resolveStats(10); await flush(); visibility = "hidden"; visibilityListener?.();
-  expect(timers.size).toBe(0); expect(failures()).toEqual([]);
-  visibility = "visible"; visibilityListener?.(); hook.markFrameDecoded();
+  const hook = await start("hidden");
+  expect(timers.size).toBe(0);
+  visibility = "visible";
+  visibilityListener?.();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(10);
+  await flush();
+  visibility = "hidden";
+  visibilityListener?.();
+  expect(timers.size).toBe(0);
+  expect(failures()).toEqual([]);
+  visibility = "visible";
+  visibilityListener?.();
+  hook.markFrameDecoded();
   expect(timers.size).toBe(0);
 });
 
@@ -435,36 +495,60 @@ test("foreground resume keeps a used first-frame grace", async () => {
 });
 
 test("teardown cancels a pending sender diagnosis", async () => {
-  await start(); fireTimer(4_000); await flush(); resolveStats(0); await flush();
+  await start();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(0);
+  await flush();
   expect(statsSignal?.aborted).toBe(false);
   cleanup.splice(0).forEach((stop) => stop?.());
   expect(statsSignal?.aborted).toBe(true);
 });
 
 test("first-frame decision uses connection state when stats arrive", async () => {
-  await start(); fireTimer(4_000); await flush();
-  peers[0]!.connectionState = "disconnected"; resolveStats(0); await flush();
+  await start();
+  fireTimer(4_000);
+  await flush();
+  peers[0]!.connectionState = "disconnected";
+  resolveStats(0);
+  await flush();
   expect(failures()).toEqual([]);
   expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
 });
 
 test("a hidden and resumed first-frame read cannot judge the new generation", async () => {
-  await start(); fireTimer(4_000); await flush();
-  visibility = "hidden"; visibilityListener?.(); visibility = "visible"; visibilityListener?.();
-  resolveStats(0); await flush(); expect(failures()).toEqual([]);
-  expect([...timers.values()].some(timer => timer.delay === 4_000)).toBe(true);
+  await start();
+  fireTimer(4_000);
+  await flush();
+  visibility = "hidden";
+  visibilityListener?.();
+  visibility = "visible";
+  visibilityListener?.();
+  resolveStats(0);
+  await flush();
+  expect(failures()).toEqual([]);
+  expect([...timers.values()].some((timer) => timer.delay === 4_000)).toBe(true);
 });
 
 test("an encoding sender with no received frames retries transport", async () => {
-  await start(); senderFrames = 50; fireTimer(4_000); await flush(); resolveStats(0); await flush();
-  expect(failures()).toEqual([]); expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
+  await start();
+  senderFrames = 50;
+  fireTimer(4_000);
+  await flush();
+  resolveStats(0);
+  await flush();
+  expect(failures()).toEqual([]);
+  expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
 });
 
 test("hung first-frame stats reach a finite decision", async () => {
-  await start(); fireTimer(4_000); await flush(); fireTimer(2_000); await flush();
-  expect(failures()).toMatchObject([{kind: "codec"}]);
+  await start();
+  fireTimer(4_000);
+  await flush();
+  fireTimer(2_000);
+  await flush();
+  expect(failures()).toMatchObject([{ kind: "codec" }]);
 });
-
 
 test("first-frame sender diagnosis retains the session bearer", async () => {
   hookOptions = { fetchImpl: sessionTokenFetch("token-A") };
@@ -483,23 +567,33 @@ for (const received of [0, 10]) {
     await start();
     captureRebooting = true;
     for (let window = 0; window < 3; window++) {
-      fireTimer(4_000); await flush(); resolveStats(received); await flush();
+      fireTimer(4_000);
+      await flush();
+      resolveStats(received);
+      await flush();
       expect(closed).toBe(0);
       expect(failures()).toEqual([]);
     }
     captureRebooting = false;
-    fireTimer(4_000); await flush(); resolveStats(received); await flush();
+    fireTimer(4_000);
+    await flush();
+    resolveStats(received);
+    await flush();
     if (received > 0) {
       // Reboot does not consume the ordinary first-paint grace.
       expect(closed).toBe(0);
-      fireTimer(4_000); await flush(); resolveStats(received); await flush();
+      fireTimer(4_000);
+      await flush();
+      resolveStats(received);
+      await flush();
     }
     expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
   });
 }
 
 test("capture reboot pauses established recovery without spending the codec retry", async () => {
-  const hook = await start(); hook.markFrameDecoded();
+  const hook = await start();
+  hook.markFrameDecoded();
   captureRebooting = true;
   await pollStall(frozenRun(100));
   await pollStall(frozenRun(100, 1000));
@@ -510,17 +604,24 @@ test("capture reboot pauses established recovery without spending the codec retr
   expect(closed).toBe(1);
   expect(failures()).toEqual([]);
   expect(updates).toContain(STALLED);
-  await reconnect(); hook.markFrameDecoded();
+  await reconnect();
+  hook.markFrameDecoded();
   await pollStall(frozenRun(100));
   expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
 });
 
 for (const rebooting of [false, undefined, "true"]) {
   test(`non-reboot metadata ${String(rebooting)} retains first-frame and established recovery`, async () => {
-    await start(); captureRebooting = rebooting;
-    fireTimer(4_000); await flush(); resolveStats(0); await flush();
+    await start();
+    captureRebooting = rebooting;
+    fireTimer(4_000);
+    await flush();
+    resolveStats(0);
+    await flush();
     expect(failures()).toMatchObject([{ kind: "codec" }]);
-    const hook = await start(); hook.markFrameDecoded(); captureRebooting = rebooting;
+    const hook = await start();
+    hook.markFrameDecoded();
+    captureRebooting = rebooting;
     await pollStall(deadRun(100));
     expect(closed).toBe(1);
     expect(updates).toContain(STALLED);
@@ -530,13 +631,21 @@ for (const rebooting of [false, undefined, "true"]) {
 for (const reply of [
   async () => new Response("unavailable", { status: 503 }),
   async () => new Response("{invalid json"),
-  async () => { throw new Error("network unavailable"); },
+  async () => {
+    throw new Error("network unavailable");
+  },
 ]) {
   test("unavailable sender diagnostics do not disable first-frame or stall recovery", async () => {
-    await start(); senderReply = reply;
-    fireTimer(4_000); await flush(); resolveStats(0); await flush();
+    await start();
+    senderReply = reply;
+    fireTimer(4_000);
+    await flush();
+    resolveStats(0);
+    await flush();
     expect(failures()).toMatchObject([{ kind: "codec" }]);
-    const hook = await start(); hook.markFrameDecoded(); senderReply = reply;
+    const hook = await start();
+    hook.markFrameDecoded();
+    senderReply = reply;
     await pollStall(deadRun(100));
     expect(closed).toBe(1);
     expect(updates).toContain(STALLED);
@@ -545,7 +654,10 @@ for (const reply of [
 
 function deferSender() {
   let resolve!: (response: Response) => void;
-  senderReply = () => new Promise<Response>(done => { resolve = done; });
+  senderReply = () =>
+    new Promise<Response>((done) => {
+      resolve = done;
+    });
   return (rebooting: boolean) => resolve(new Response(JSON.stringify({ capture: { rebooting } })));
 }
 
@@ -555,21 +667,28 @@ for (const phase of ["first-frame", "established"]) {
       const hook = await start();
       const finish = deferSender();
       if (phase === "established") {
-        hook.markFrameDecoded(); await pollStall(frozenRun(100));
+        hook.markFrameDecoded();
+        await pollStall(frozenRun(100));
       } else {
-        fireTimer(4_000); await flush(); resolveStats(0); await flush();
+        fireTimer(4_000);
+        await flush();
+        resolveStats(0);
+        await flush();
       }
       const signal = statsSignal;
       expect(signal).not.toBeNull();
       expect(signal?.aborted).toBe(false);
-      if (interruption === "unmount") cleanup.splice(0).forEach(stop => stop?.());
+      if (interruption === "unmount") cleanup.splice(0).forEach((stop) => stop?.());
       if (interruption === "replacement") await reconnect();
       if (interruption === "visibility") {
-        visibility = "hidden"; visibilityListener();
-        visibility = "visible"; visibilityListener();
+        visibility = "hidden";
+        visibilityListener();
+        visibility = "visible";
+        visibilityListener();
       }
       const closedBeforeReply = closed;
-      finish(false); await flush();
+      finish(false);
+      await flush();
       expect(closed).toBe(closedBeforeReply);
       expect(failures()).toEqual([]);
       expect(updates).not.toContain(STALLED);
@@ -579,36 +698,58 @@ for (const phase of ["first-frame", "established"]) {
 }
 
 test("a first paint while sender diagnostics are pending cancels first-frame recovery", async () => {
-  const hook = await start(); const finish = deferSender();
-  fireTimer(4_000); await flush(); resolveStats(0); await flush();
-  hook.markFrameDecoded(); finish(false); await flush();
+  const hook = await start();
+  const finish = deferSender();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(0);
+  await flush();
+  hook.markFrameDecoded();
+  finish(false);
+  await flush();
   expect(closed).toBe(0);
   expect(failures()).toEqual([]);
-  expect([...timers.values()].some(timer => timer.delay === 4_000)).toBe(false);
+  expect([...timers.values()].some((timer) => timer.delay === 4_000)).toBe(false);
 });
 
 test("reboot restores a first-frame grace already used before capture paused", async () => {
   await start();
-  fireTimer(4_000); await flush(); resolveStats(10); await flush();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(10);
+  await flush();
   captureRebooting = true;
-  fireTimer(4_000); await flush(); resolveStats(20); await flush();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(20);
+  await flush();
   captureRebooting = false;
-  fireTimer(4_000); await flush(); resolveStats(30); await flush();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(30);
+  await flush();
   expect(closed).toBe(0);
-  fireTimer(4_000); await flush(); resolveStats(40); await flush();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(40);
+  await flush();
   expect(failures()).toMatchObject([{ kind: "codec" }]);
 });
 
 test("a pending established sender check shares one poll and retains the session bearer", async () => {
   hookOptions = { fetchImpl: sessionTokenFetch("token-A") };
-  const hook = await start(); hook.markFrameDecoded();
-  const finish = deferSender(); await pollStall(frozenRun(100));
+  const hook = await start();
+  hook.markFrameDecoded();
+  const finish = deferSender();
+  await pollStall(frozenRun(100));
   expect(statsAuthorization).toBe("Bearer token-A");
   await pollStall(frozenRun(100, 1000));
   expect(pendingStats).toHaveLength(0);
   expect(closed).toBe(0);
-  finish(true); await flush();
-  captureRebooting = false; senderReply = undefined;
+  finish(true);
+  await flush();
+  captureRebooting = false;
+  senderReply = undefined;
   await pollStall(frozenRun(100, 2000));
   expect(closed).toBe(1);
 });
@@ -617,22 +758,28 @@ for (const phase of ["first-frame", "established"]) {
   test(`a hung ${phase} sender request reaches its abort deadline and recovers`, async () => {
     const hook = await start();
     const deadline = new AbortController();
-    const timeout = spyOn(AbortSignal, "timeout").mockImplementation(delay => {
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((delay) => {
       expect(delay).toBe(2_000);
       fakeSetTimeout(() => deadline.abort(new DOMException("Timed out", "TimeoutError")), delay);
       return deadline.signal;
     });
     try {
-      senderReply = () => new Promise((_resolve, reject) => {
-        statsSignal!.addEventListener("abort", () => reject(statsSignal!.reason), { once: true });
-      });
+      senderReply = () =>
+        new Promise((_resolve, reject) => {
+          statsSignal!.addEventListener("abort", () => reject(statsSignal!.reason), { once: true });
+        });
       if (phase === "established") {
-        hook.markFrameDecoded(); await pollStall(frozenRun(100));
+        hook.markFrameDecoded();
+        await pollStall(frozenRun(100));
       } else {
-        fireTimer(4_000); await flush(); resolveStats(0); await flush();
+        fireTimer(4_000);
+        await flush();
+        resolveStats(0);
+        await flush();
       }
       expect(closed).toBe(0);
-      fireTimer(2_000); await flush();
+      fireTimer(2_000);
+      await flush();
       expect(statsSignal?.aborted).toBe(true);
       expect(closed).toBe(1);
       if (phase === "established") expect(updates).toContain(STALLED);

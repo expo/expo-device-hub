@@ -31,14 +31,28 @@ afterEach(() => {
   state.restore();
 });
 
-function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAck" | "slowAck" | "paced" = "success") {
+function helper(
+  mode:
+    | "success"
+    | "refuse"
+    | "interrupt"
+    | "errorAck"
+    | "earlyAck"
+    | "slowAck"
+    | "paced" = "success",
+) {
   const frames: Frame[] = [];
   const authorization: Array<string | null> = [];
-  const touchTimes: number[] = [], nativePhases: string[] = [];
-  let pendingPhase = "", nativeTimer: ReturnType<typeof setTimeout> | undefined;
-  let admitted = false, sentBeforeAdmission = false, acknowledged = false;
+  const touchTimes: number[] = [],
+    nativePhases: string[] = [];
+  let pendingPhase = "",
+    nativeTimer: ReturnType<typeof setTimeout> | undefined;
+  let admitted = false,
+    sentBeforeAdmission = false,
+    acknowledged = false;
   server = Bun.serve({
-    hostname: "127.0.0.1", port: 0,
+    hostname: "127.0.0.1",
+    port: 0,
     fetch(request, current) {
       authorization.push(request.headers.get("authorization"));
       if (current.upgrade(request, { data: undefined })) return;
@@ -47,17 +61,27 @@ function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAc
     websocket: {
       open(socket) {
         if (mode === "earlyAck") socket.send(Buffer.from([0x91, 1]));
-        timers.push(setTimeout(() => {
-          if (mode === "refuse") {
-            socket.close(1013, "Simulator input unavailable");
-            return;
-          }
-          admitted = true;
-          socket.send(Buffer.from([0x83]));
-          socket.send(Buffer.concat([Buffer.from([0x82]), Buffer.from(JSON.stringify({
-            supportsHingeAngle: true, hingeAngle: 90,
-          }))]));
-        }, 50));
+        timers.push(
+          setTimeout(() => {
+            if (mode === "refuse") {
+              socket.close(1013, "Simulator input unavailable");
+              return;
+            }
+            admitted = true;
+            socket.send(Buffer.from([0x83]));
+            socket.send(
+              Buffer.concat([
+                Buffer.from([0x82]),
+                Buffer.from(
+                  JSON.stringify({
+                    supportsHingeAngle: true,
+                    hingeAngle: 90,
+                  }),
+                ),
+              ]),
+            );
+          }, 50),
+        );
       },
       message(socket, data) {
         if (mode === "refuse") return;
@@ -72,25 +96,41 @@ function helper(mode: "success" | "refuse" | "interrupt" | "errorAck" | "earlyAc
           if (mode === "paced") {
             pendingPhase = payload.type;
             if (!nativeTimer) {
-              nativeTimer = setTimeout(() => { nativePhases.push(pendingPhase); nativeTimer = undefined; }, 16);
+              nativeTimer = setTimeout(() => {
+                nativePhases.push(pendingPhase);
+                nativeTimer = undefined;
+              }, 16);
               timers.push(nativeTimer);
             }
           }
         }
         if (mode === "interrupt" && tag === 0x03) socket.close(1000, "Gesture interrupted");
-        if (tag === 0x11) timers.push(setTimeout(() => {
-          if (mode === "earlyAck") {
-            socket.close(1000, "No final acknowledgement");
-            return;
-          }
-          acknowledged = true;
-          socket.send(Buffer.from([0x91, mode === "errorAck" ? 0 : 1]));
-        }, mode === "slowAck" ? 250 : 40));
+        if (tag === 0x11)
+          timers.push(
+            setTimeout(
+              () => {
+                if (mode === "earlyAck") {
+                  socket.close(1000, "No final acknowledgement");
+                  return;
+                }
+                acknowledged = true;
+                socket.send(Buffer.from([0x91, mode === "errorAck" ? 0 : 1]));
+              },
+              mode === "slowAck" ? 250 : 40,
+            ),
+          );
       },
     },
   });
   writeServeSimState({ ...inProcessServeSimState(UDID, server.port!), token: TOKEN });
-  return { frames, authorization, touchTimes, nativePhases, beforeAdmission: () => sentBeforeAdmission, acknowledged: () => acknowledged };
+  return {
+    frames,
+    authorization,
+    touchTimes,
+    nativePhases,
+    beforeAdmission: () => sentBeforeAdmission,
+    acknowledged: () => acknowledged,
+  };
 }
 
 function run(action: string, params: Record<string, unknown> = {}) {
@@ -104,7 +144,7 @@ test("tap uses the authenticated, admitted input channel for begin and end", asy
   expect(observed.authorization).toEqual([`Bearer ${TOKEN}`]);
   expect(observed.beforeAdmission()).toBe(false);
   expect(observed.frames).toEqual([
-    ...["begin", "end"].map(type => ({ tag: 0x03, payload: { type, x: 0.25, y: 0.75 } })),
+    ...["begin", "end"].map((type) => ({ tag: 0x03, payload: { type, x: 0.25, y: 0.75 } })),
     { tag: 0x11 },
   ]);
 });
@@ -146,7 +186,7 @@ test("type preserves leading dashes and whitespace and waits for keyboard comple
   expect(result.exitCode).toBe(0);
   expect(observed.authorization).toEqual([`Bearer ${TOKEN}`]);
   expect(observed.frames).toEqual([
-    ...[0x2d, 0x2d, 0x0b, 0x08, 0x0f, 0x13, 0x2b, 0x28, 0x28].flatMap(usage => [
+    ...[0x2d, 0x2d, 0x0b, 0x08, 0x0f, 0x13, 0x2b, 0x28, 0x28].flatMap((usage) => [
       { tag: 0x06, payload: { type: "down", usage } },
       { tag: 0x06, payload: { type: "up", usage } },
     ]),
@@ -159,7 +199,7 @@ test("type converts CRLF and lone CR to exactly one Enter each", async () => {
   const observed = helper();
   expect((await run("type", { text: "a\r\nb\rc" })).exitCode).toBe(0);
   expect(observed.frames).toEqual([
-    ...[0x04, 0x28, 0x05, 0x28, 0x06].flatMap(usage => [
+    ...[0x04, 0x28, 0x05, 0x28, 0x06].flatMap((usage) => [
       { tag: 0x06, payload: { type: "down", usage } },
       { tag: 0x06, payload: { type: "up", usage } },
     ]),
@@ -192,11 +232,29 @@ test("invalid input parameters are refused before connecting", async () => {
     ["gesture", { events: [events[1], events[2]] }],
     ["gesture", { events: [events[0], events[1]] }],
     ["gesture", { events: [events[0], events[0], events[2]] }],
-    ["gesture", { events: [events[0], ...Array.from({ length: 31 }, () => ({ ...events[1], delayMs: 1000 })), events[2]] }],
+    [
+      "gesture",
+      {
+        events: [
+          events[0],
+          ...Array.from({ length: 31 }, () => ({ ...events[1], delayMs: 1000 })),
+          events[2],
+        ],
+      },
+    ],
     ["hinge.get", { udid: "" }],
   ];
   for (const x of [-0.1, 1.1, NaN, Infinity, "0.5"]) invalid.push(["tap", { x, y: 0.5 }]);
-  for (const change of [{ x: -1 }, { y: Infinity }, { type: "tap" }, { edge: 5 }, { edge: 0.5 }, { delayMs: -1 }, { delayMs: 1001 }, { delayMs: 0.5 }]) {
+  for (const change of [
+    { x: -1 },
+    { y: Infinity },
+    { type: "tap" },
+    { edge: 5 },
+    { edge: 0.5 },
+    { delayMs: -1 },
+    { delayMs: 1001 },
+    { delayMs: 0.5 },
+  ]) {
     invalid.push(["gesture", { events: [{ ...events[0], ...change }, events[2]] }]);
   }
   for (const text of ["\0", "🦆", "a".repeat(4097)]) invalid.push(["type", { text }]);
@@ -209,7 +267,11 @@ test("invalid input parameters are refused before connecting", async () => {
   expect(observed.frames).toEqual([]);
 });
 
-for (const [action, params] of [["tap", { x: 0.5, y: 0.5 }], ["gesture", { events }], ["type", { text: "a" }]] as const) {
+for (const [action, params] of [
+  ["tap", { x: 0.5, y: 0.5 }],
+  ["gesture", { events }],
+  ["type", { text: "a" }],
+] as const) {
   test(`${action} reports input-pool refusal`, async () => {
     helper("refuse");
     expect((await run(action, params)).exitCode).not.toBe(0);
@@ -225,15 +287,16 @@ for (const mode of ["interrupt", "errorAck"] as const) {
   test(`gesture reports ${mode} instead of success`, async () => {
     const observed = helper(mode);
     expect((await run("gesture", { events })).exitCode).not.toBe(0);
-    if (mode === "interrupt") expect(observed.frames).toEqual([
-      { tag: 0x03, payload: { type: "begin", x: 0.2, y: 0.4, edge: 1 } },
-    ]);
+    if (mode === "interrupt")
+      expect(observed.frames).toEqual([
+        { tag: 0x03, payload: { type: "begin", x: 0.2, y: 0.4, edge: 1 } },
+      ]);
   });
 }
 
 test("gesture ignores an early ACK and fails when the helper closes without a final ACK", async () => {
   const observed = helper("earlyAck");
   expect((await run("gesture", { events })).exitCode).not.toBe(0);
-  expect(observed.frames.map(frame => frame.tag)).toEqual([0x03, 0x03, 0x03, 0x11]);
+  expect(observed.frames.map((frame) => frame.tag)).toEqual([0x03, 0x03, 0x03, 0x11]);
   expect(observed.acknowledged()).toBe(false);
 });

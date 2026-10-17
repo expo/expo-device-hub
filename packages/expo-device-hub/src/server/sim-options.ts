@@ -5,18 +5,18 @@ import {
   type AndroidSystemImage,
   listDeviceProfiles,
   listSystemImages,
-} from '@expo/hub-android-utils';
-import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils';
-import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
+} from "@expo/hub-android-utils";
+import { type AppleSimulatorRuntime, listRuntimes } from "@expo/hub-apple-utils";
+import { type NewDeviceOptions, type Platform } from "@expo/hub-components";
 
-import { type PlatformFilter } from '../platform-filter';
+import { type PlatformFilter } from "../platform-filter";
 import {
   androidDeviceProfileFrame,
   appleDeviceTypeFrame,
   isSupportedAndroidDeviceProfile,
   isSupportedAppleDeviceType,
-} from './device-support';
-import { type SerializableError, toSerializableError } from './utility-errors';
+} from "./device-support";
+import { type SerializableError, toSerializableError } from "./utility-errors";
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
 export type NewDeviceOptionsResponse = NewDeviceOptionsByPlatform & { errors: SerializableError[] };
@@ -25,20 +25,20 @@ const EMPTY_OPTIONS: NewDeviceOptions = { runtimes: [] };
 
 /** Discover installed runtimes and profiles for the requested platform(s). */
 export async function listNewDeviceOptions(
-  platform?: PlatformFilter
+  platform?: PlatformFilter,
 ): Promise<NewDeviceOptionsResponse> {
-  if (platform === 'ios') {
+  if (platform === "ios") {
     const appleRuntimes = await listRuntimes();
     return {
       ios: appleRuntimesToOptions(appleRuntimes.value),
       android: EMPTY_OPTIONS,
       errors: [toSerializableError(appleRuntimes.error)].filter(
-        (error): error is SerializableError => error !== null
+        (error): error is SerializableError => error !== null,
       ),
     };
   }
 
-  if (platform === 'android') {
+  if (platform === "android") {
     const [androidImages, androidProfiles] = await Promise.all([
       listSystemImages(),
       listDeviceProfiles(),
@@ -74,7 +74,7 @@ export async function listNewDeviceOptions(
 export function appleRuntimesToOptions(runtimes: AppleSimulatorRuntime[]): NewDeviceOptions {
   return {
     runtimes: runtimes
-      .filter((runtime) => runtime.isAvailable && runtime.platform === 'iOS')
+      .filter((runtime) => runtime.isAvailable && runtime.platform === "iOS")
       .map((runtime) => ({
         value: runtime.identifier,
         label: runtime.name || `iOS ${runtime.version}`,
@@ -93,7 +93,7 @@ export function appleRuntimesToOptions(runtimes: AppleSimulatorRuntime[]): NewDe
 /** Pair every installed Android system image with the SDK's device profiles. */
 export function androidImagesToOptions(
   images: AndroidSystemImage[],
-  profiles: AndroidDeviceProfile[]
+  profiles: AndroidDeviceProfile[],
 ): NewDeviceOptions {
   const models = profiles
     .map((profile) => ({
@@ -119,11 +119,11 @@ export function androidImagesToOptions(
   };
 }
 
-const MOBILE_SYSTEM_IMAGE_TAG_PREFIXES = ['default', 'google_apis'];
+const MOBILE_SYSTEM_IMAGE_TAG_PREFIXES = ["default", "google_apis"];
 
 function isAndroidProfileCompatibleWithImage(
   profile: AndroidDeviceProfile,
-  image: AndroidSystemImage
+  image: AndroidSystemImage,
 ): boolean {
   if (profile.tag === null) {
     if (image.tag === null) return true;
@@ -135,18 +135,18 @@ function isAndroidProfileCompatibleWithImage(
 }
 
 function androidImageLabel(image: AndroidSystemImage): string {
-  const api = image.apiLevel?.replace(/^android-/i, 'Android ') ?? image.description;
+  const api = image.apiLevel?.replace(/^android-/i, "Android ") ?? image.description;
   const tag =
-    image.tag === 'google_apis'
-      ? 'Google APIs'
-      : image.tag === 'google_apis_playstore'
-        ? 'Google Play'
-        : image.tag === 'default'
-          ? 'AOSP'
-          : image.tag?.replaceAll('_', ' ');
-  return [api, tag, image.abi].filter(Boolean).join(' · ');
+    image.tag === "google_apis"
+      ? "Google APIs"
+      : image.tag === "google_apis_playstore"
+        ? "Google Play"
+        : image.tag === "default"
+          ? "AOSP"
+          : image.tag?.replaceAll("_", " ");
+  return [api, tag, image.abi].filter(Boolean).join(" · ");
 }
 
 function compareVersionsDescending(a: string, b: string): number {
-  return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+  return b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" });
 }

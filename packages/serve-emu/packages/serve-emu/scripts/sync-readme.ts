@@ -22,9 +22,7 @@ const PACKAGE_LINK_LABEL_REWRITES = [
   ["packages/serve-emu/CHANGELOG.md", "CHANGELOG.md"],
 ] as const;
 
-const PACKAGE_TEXT_REWRITES = [
-  ["`packages/serve-emu/vendor/`", "`vendor/`"],
-] as const;
+const PACKAGE_TEXT_REWRITES = [["`packages/serve-emu/vendor/`", "`vendor/`"]] as const;
 
 /** Render the package README from the canonical repository-root README. */
 export function renderPackageReadme(rootReadme: string): string {
@@ -52,10 +50,7 @@ export function checkPackageReadme(
 
 async function main(): Promise<void> {
   const args = Bun.argv.slice(2);
-  if (
-    args.length !== 1 ||
-    (args[0] !== "--write" && args[0] !== "--check")
-  ) {
+  if (args.length !== 1 || (args[0] !== "--write" && args[0] !== "--check")) {
     console.error("Usage: bun run scripts/sync-readme.ts <--write|--check>");
     process.exitCode = 2;
     return;

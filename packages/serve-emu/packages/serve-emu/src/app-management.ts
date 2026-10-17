@@ -1,9 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { execText } from "./exec.ts";
-import type {
-  AppActionResponse,
-  FileImportResponse,
-} from "./shared/api-contracts.ts";
+import type { AppActionResponse, FileImportResponse } from "./shared/api-contracts.ts";
 
 export type AppActionResult = AppActionResponse;
 export type FileImportResult = FileImportResponse;
@@ -15,10 +12,7 @@ export type LocalUploadFile = {
   size: number;
 };
 
-export type AppManagementErrorCode =
-  | "adb-failed"
-  | "adb-timeout"
-  | "adb-cleanup-failed";
+export type AppManagementErrorCode = "adb-failed" | "adb-timeout" | "adb-cleanup-failed";
 
 export type AppManagementDependencies = {
   execText?: typeof execText;
@@ -38,7 +32,8 @@ export class AppManagementError extends Error {
 
 const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const PERMISSION_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$/;
-const ACTIVITY_RE = /^([A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+|\.?[A-Za-z][A-Za-z0-9_.$]*)(\/[A-Za-z0-9_.$]+)?$/;
+const ACTIVITY_RE =
+  /^([A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+|\.?[A-Za-z][A-Za-z0-9_.$]*)(\/[A-Za-z0-9_.$]+)?$/;
 
 function output(stdout: string, stderr: string): string {
   return `${stdout}${stderr}`.trim();
@@ -68,11 +63,9 @@ export async function adb(
   }
   const text = output(result.stdout, result.stderr);
   if (result.timedOut) {
-    throw new AppManagementError(
-      "adb-timeout",
-      text || `adb ${args.join(" ")} timed out`,
-      { cause: result.error },
-    );
+    throw new AppManagementError("adb-timeout", text || `adb ${args.join(" ")} timed out`, {
+      cause: result.error,
+    });
   }
   if (result.error) {
     throw new AppManagementError(
@@ -82,10 +75,7 @@ export async function adb(
     );
   }
   if (result.status !== 0) {
-    throw new AppManagementError(
-      "adb-failed",
-      text || `adb ${args.join(" ")} failed`,
-    );
+    throw new AppManagementError("adb-failed", text || `adb ${args.join(" ")} failed`);
   }
   return { ok: true, output: text };
 }
@@ -128,13 +118,7 @@ export async function installApk(
   if (!file.filename.toLowerCase().endsWith(".apk")) {
     throw new Error("APK file must end with .apk");
   }
-  return adb(
-    serial,
-    ["install", "-r", file.path],
-    120_000,
-    signal,
-    dependencies.execText,
-  );
+  return adb(serial, ["install", "-r", file.path], 120_000, signal, dependencies.execText);
 }
 
 function safeFileName(name: string, fallback: string): string {
@@ -157,49 +141,40 @@ export async function importMediaFile(
   signal?: AbortSignal,
   dependencies: AppManagementDependencies = {},
 ): Promise<FileImportResult> {
-  const uploadId =
-    dependencies.uploadId?.() ?? randomBytes(6).toString("hex");
+  const uploadId = dependencies.uploadId?.() ?? randomBytes(6).toString("hex");
   const filename = safeFileName(file.filename, `upload-${uploadId}`);
   const kind = mediaKind(file);
   const remoteDir =
-    kind === "image" ? "/sdcard/Pictures" : kind === "video" ? "/sdcard/Movies" : "/sdcard/Download";
+    kind === "image"
+      ? "/sdcard/Pictures"
+      : kind === "video"
+        ? "/sdcard/Movies"
+        : "/sdcard/Download";
   const remotePath = `${remoteDir}/${filename}`;
   const partialPath = `${remoteDir}/.serve-emu-${uploadId}-${filename}.part`;
   const runExec = dependencies.execText;
   let committed = false;
   let operationFailure: unknown;
   try {
-    await adb(
-      serial,
-      ["shell", "mkdir", "-p", remoteDir],
-      30_000,
-      signal,
-      runExec,
-    );
-    await adbHost(
-      serial,
-      ["push", file.path, partialPath],
-      120_000,
-      signal,
-      runExec,
-    );
-    await adb(
-      serial,
-      ["shell", "mv", "-f", partialPath, remotePath],
-      30_000,
-      signal,
-      runExec,
-    );
+    await adb(serial, ["shell", "mkdir", "-p", remoteDir], 30_000, signal, runExec);
+    await adbHost(serial, ["push", file.path, partialPath], 120_000, signal, runExec);
+    await adb(serial, ["shell", "mv", "-f", partialPath, remotePath], 30_000, signal, runExec);
     committed = true;
-    await adb(serial, [
-      "shell",
-      "am",
-      "broadcast",
-      "-a",
-      "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-      "-d",
-      `file://${remotePath}`,
-    ], 30_000, signal, runExec);
+    await adb(
+      serial,
+      [
+        "shell",
+        "am",
+        "broadcast",
+        "-a",
+        "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d",
+        `file://${remotePath}`,
+      ],
+      30_000,
+      signal,
+      runExec,
+    );
     return {
       ok: true,
       output: `Imported ${file.filename} to ${remotePath}`,
@@ -212,22 +187,14 @@ export async function importMediaFile(
   } finally {
     if (!committed) {
       try {
-        await adb(
-          serial,
-          ["shell", "rm", "-f", partialPath],
-          5_000,
-          undefined,
-          runExec,
-        );
+        await adb(serial, ["shell", "rm", "-f", partialPath], 5_000, undefined, runExec);
       } catch (cleanupError) {
         throw new AppManagementError(
           "adb-cleanup-failed",
           `failed to remove partial upload ${partialPath}`,
           {
             cause: new AggregateError(
-              [operationFailure, cleanupError].filter(
-                (error) => error !== undefined,
-              ),
+              [operationFailure, cleanupError].filter((error) => error !== undefined),
             ),
           },
         );
@@ -256,15 +223,7 @@ export function launchApp(
   }
   return adb(
     serial,
-    [
-      "shell",
-      "monkey",
-      "-p",
-      pkg,
-      "-c",
-      "android.intent.category.LAUNCHER",
-      "1",
-    ],
+    ["shell", "monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"],
     30_000,
     undefined,
     dependencies.execText,
@@ -307,13 +266,7 @@ export function grantPermission(
 ): Promise<AppActionResult> {
   return adb(
     serial,
-    [
-      "shell",
-      "pm",
-      "grant",
-      packageName(packageNameValue),
-      permissionName(permissionValue),
-    ],
+    ["shell", "pm", "grant", packageName(packageNameValue), permissionName(permissionValue)],
     30_000,
     undefined,
     dependencies.execText,
@@ -328,13 +281,7 @@ export function revokePermission(
 ): Promise<AppActionResult> {
   return adb(
     serial,
-    [
-      "shell",
-      "pm",
-      "revoke",
-      packageName(packageNameValue),
-      permissionName(permissionValue),
-    ],
+    ["shell", "pm", "revoke", packageName(packageNameValue), permissionName(permissionValue)],
     30_000,
     undefined,
     dependencies.execText,

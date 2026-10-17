@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 async function runCli(...args: string[]) {
   const proc = Bun.spawn(
-    [
-      process.execPath,
-      new URL("../src/cli.ts", import.meta.url).pathname,
-      ...args,
-    ],
+    [process.execPath, new URL("../src/cli.ts", import.meta.url).pathname, ...args],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [stdout, stderr, code] = await Promise.all([

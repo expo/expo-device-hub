@@ -47,26 +47,13 @@ describe("ControlInputQueue semantic dispatcher", () => {
     const queue = new ControlInputQueue({ dispatcher });
     const screen = { width: 576, height: 1280 };
 
-    const down = queue.enqueue(
-      { type: "touch", action: "down", x: 0.1, y: 0.1 },
-      screen,
-    );
+    const down = queue.enqueue({ type: "touch", action: "down", x: 0.1, y: 0.1 }, screen);
     await Promise.resolve();
-    const first = queue.enqueue(
-      { type: "touch", action: "move", x: 0.2, y: 0.2 },
-      screen,
-    );
-    const second = queue.enqueue(
-      { type: "touch", action: "move", x: 0.8, y: 0.8 },
-      screen,
-    );
+    const first = queue.enqueue({ type: "touch", action: "move", x: 0.2, y: 0.2 }, screen);
+    const second = queue.enqueue({ type: "touch", action: "move", x: 0.8, y: 0.8 }, screen);
     release();
 
-    const completions = await Promise.all([
-      down.completion,
-      first.completion,
-      second.completion,
-    ]);
+    const completions = await Promise.all([down.completion, first.completion, second.completion]);
     expect(completions.map((value) => value.status)).toEqual([
       "completed",
       "coalesced",
@@ -94,10 +81,7 @@ describe("ControlInputQueue semantic dispatcher", () => {
         },
       },
     });
-    const active = queue.enqueue(
-      { type: "tap", x: 0.5, y: 0.5 },
-      { width: 100, height: 100 },
-    );
+    const active = queue.enqueue({ type: "tap", x: 0.5, y: 0.5 }, { width: 100, height: 100 });
     await Promise.resolve();
     const first = queue.enqueueVideoReset();
     const second = queue.enqueueVideoReset();
@@ -128,10 +112,7 @@ describe("ControlInputQueue semantic dispatcher", () => {
     });
     const screen = { width: 576, height: 1280 };
 
-    const unsupported = queue.enqueue(
-      { type: "key", keycode: 82 },
-      screen,
-    );
+    const unsupported = queue.enqueue({ type: "key", keycode: 82 }, screen);
     const tap = queue.enqueue({ type: "tap", x: 0.5, y: 0.5 }, screen);
 
     const rejection = await unsupported.completion.catch((error) => error);

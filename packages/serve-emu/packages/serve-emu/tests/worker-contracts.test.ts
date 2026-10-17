@@ -39,7 +39,9 @@ describe("worker contracts", () => {
   test("parses all commands without a DOM canvas type", () => {
     const canvas = { kind: "canvas" };
     const isCanvas = (value: unknown): value is typeof canvas =>
-      typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "canvas";
+      typeof value === "object" &&
+      value !== null &&
+      (value as { kind?: unknown }).kind === "canvas";
     const commands = [
       parseWorkerCommand({ type: "init", canvas, url: "ws://localhost/ws" }, isCanvas),
       parseWorkerCommand({ type: "connect" }),
@@ -47,9 +49,9 @@ describe("worker contracts", () => {
       parseWorkerCommand({ type: "stop" }),
     ];
     expect(commands.map(commandName)).toEqual(["init", "connect", "send", "stop"]);
-    expect(() => parseWorkerCommand({ type: "init", canvas: null, url: "ws://localhost/ws" })).toThrow(
-      "canvas",
-    );
+    expect(() =>
+      parseWorkerCommand({ type: "init", canvas: null, url: "ws://localhost/ws" }),
+    ).toThrow("canvas");
   });
 
   test("parses every event and validates stats", () => {

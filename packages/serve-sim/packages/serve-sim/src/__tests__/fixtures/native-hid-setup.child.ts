@@ -6,14 +6,26 @@ const addon = {
   SimHID: class {
     async setScreen() {
       calls.push("setScreen");
-      if (setupResult === "service-failure") throw new Error("CoreDevice keyboard service could not be opened");
+      if (setupResult === "service-failure")
+        throw new Error("CoreDevice keyboard service could not be opened");
       return setupResult !== "missing-encoder";
     }
-    async touch() { calls.push("touch"); }
-    async key() { calls.push("key"); }
-    async button() { calls.push("button"); }
-    async orientation() { calls.push("orientation"); return true; }
-    async memoryWarning() { calls.push("memoryWarning"); }
+    async touch() {
+      calls.push("touch");
+    }
+    async key() {
+      calls.push("key");
+    }
+    async button() {
+      calls.push("button");
+    }
+    async orientation() {
+      calls.push("orientation");
+      return true;
+    }
+    async memoryWarning() {
+      calls.push("memoryWarning");
+    }
   },
 };
 const moduleExports = await import("module");
@@ -22,7 +34,10 @@ mock.module("module", () => ({
   ...moduleExports,
   createRequire: (url: string | URL) => {
     const require = originalCreateRequire(url);
-    return Object.assign((path: string) => path.endsWith("serve-sim-native.node") ? addon : require(path), require);
+    return Object.assign(
+      (path: string) => (path.endsWith("serve-sim-native.node") ? addon : require(path)),
+      require,
+    );
   },
 }));
 const fsExports = await import("fs");
@@ -34,7 +49,9 @@ beforeEach(() => {
   setupResult = "ready";
   errors = spyOn(console, "error").mockImplementation(() => {});
 });
-afterEach(() => { errors.mockRestore(); });
+afterEach(() => {
+  errors.mockRestore();
+});
 
 test("service failure latches the shared gate and short-circuits later controls", async () => {
   setupResult = "service-failure";
@@ -72,6 +89,8 @@ test("missing key encoder rejects keys while retaining touch and other controls"
   expect(await hid.orientation(1)).toBe(true);
   await hid.memoryWarning();
   await expect(hid.key("down", 4)).rejects.toThrow("Simulator keyboard input is unavailable");
-  await expect(hid.keyChecked("down", 4)).rejects.toThrow("Simulator keyboard input is unavailable");
+  await expect(hid.keyChecked("down", 4)).rejects.toThrow(
+    "Simulator keyboard input is unavailable",
+  );
   expect(calls).toEqual(["setScreen", "touch", "button", "orientation", "memoryWarning"]);
 });

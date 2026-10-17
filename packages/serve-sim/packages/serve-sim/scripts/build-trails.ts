@@ -55,7 +55,9 @@ function resample(points: LL[], n: number): LL[] {
     cum.push(cum[cum.length - 1]! + haversine(points[i - 1]!, points[i]!));
   }
   const total = cum[cum.length - 1]!;
-  const closed = points[0]![0] === points[points.length - 1]![0] && points[0]![1] === points[points.length - 1]![1];
+  const closed =
+    points[0]![0] === points[points.length - 1]![0] &&
+    points[0]![1] === points[points.length - 1]![1];
   const out: LL[] = [];
   for (let i = 0; i < n; i++) {
     const t = closed ? (i * total) / n : (i * total) / (n - 1);
@@ -77,7 +79,10 @@ function resample(points: LL[], n: number): LL[] {
 
 function fmt(points: LL[], alts: number[], indent = "  "): string {
   return points
-    .map(([lat, lon], i) => `${indent}{ lat: ${lat.toFixed(5)}, lng: ${lon.toFixed(5)}, alt: ${Math.round(alts[i]!)} },`)
+    .map(
+      ([lat, lon], i) =>
+        `${indent}{ lat: ${lat.toFixed(5)}, lng: ${lon.toFixed(5)}, alt: ${Math.round(alts[i]!)} },`,
+    )
     .join("\n");
 }
 
@@ -139,8 +144,8 @@ const ns = ways[595194543]!;
 const gg = [...sn, ...ns.slice(1)];
 const gg_rs = resample(gg, 18);
 function bridgeAlt(lat: number): number {
-  const s = 37.80690;
-  const n = 37.82620;
+  const s = 37.8069;
+  const n = 37.8262;
   const t = (lat - s) / (n - s);
   return 30 + 37 * Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
 }
@@ -163,7 +168,9 @@ const sr = stitch(groups["Steep Ravine Trail"]!);
 log(`  MD pts=${md.length} ${JSON.stringify(md[0])}->${JSON.stringify(md[md.length - 1])}`);
 log(`  SR pts=${sr.length} ${JSON.stringify(sr[0])}->${JSON.stringify(sr[sr.length - 1])}`);
 const tam_chain = stitch([md, sr], 1000);
-log(`  Tam loop pts=${tam_chain.length}, closed=${near(tam_chain[0]!, tam_chain[tam_chain.length - 1]!, 1500)}`);
+log(
+  `  Tam loop pts=${tam_chain.length}, closed=${near(tam_chain[0]!, tam_chain[tam_chain.length - 1]!, 1500)}`,
+);
 const tam_rs = resample(tam_chain, 22);
 const tam_alt = await elevations(tam_rs);
 

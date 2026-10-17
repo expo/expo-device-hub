@@ -2,19 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  getUpdateNotice,
-  isNewerVersion,
-  UPDATE_CHECK_INTERVAL_MS,
-} from "../src/update-check.ts";
+import { getUpdateNotice, isNewerVersion, UPDATE_CHECK_INTERVAL_MS } from "../src/update-check.ts";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 

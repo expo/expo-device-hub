@@ -1,10 +1,5 @@
 import { useEffect, useRef } from "react";
-import {
-  AvccDemuxer,
-  avcCodecString,
-  isAvccSupported,
-  type AvccChunkType,
-} from "../avcc-codec.js";
+import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from "../avcc-codec.js";
 
 export interface UseAvccStreamOptions {
   /** Base server URL, e.g. "http://localhost:3100". */
@@ -110,7 +105,8 @@ export function useAvccStream({
       const next = new VideoDecoder({
         output: (frame) => {
           try {
-            if (isLive() && decoder === next) paint(frame, frame.displayWidth, frame.displayHeight, true);
+            if (isLive() && decoder === next)
+              paint(frame, frame.displayWidth, frame.displayHeight, true);
           } finally {
             frame.close();
           }
@@ -126,11 +122,10 @@ export function useAvccStream({
       // JPEG seed — paint immediately for an instant first frame.
       // Bitmap decoding can finish after a newer H.264 frame has arrived.
       const revision = frameRevision;
-      const bitmap = await createImageBitmap(
-        new Blob([jpeg as BlobPart], { type: "image/jpeg" }),
-      );
+      const bitmap = await createImageBitmap(new Blob([jpeg as BlobPart], { type: "image/jpeg" }));
       try {
-        if (isLive() && revision === frameRevision) paint(bitmap, bitmap.width, bitmap.height, false);
+        if (isLive() && revision === frameRevision)
+          paint(bitmap, bitmap.width, bitmap.height, false);
       } finally {
         bitmap.close();
       }

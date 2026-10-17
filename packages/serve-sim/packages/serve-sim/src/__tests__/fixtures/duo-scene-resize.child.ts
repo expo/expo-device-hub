@@ -11,22 +11,39 @@ class TestCanvas extends EventTarget {
   height = 150;
   style = { cssText: "", width: "", height: "" };
   remove() {}
-  getBoundingClientRect() { return { left: (480 - this.width) / 2, top: (540 - this.height) / 2, width: this.width, height: this.height }; }
-  getContext() { return { fillStyle: "", fillRect() {} }; }
+  getBoundingClientRect() {
+    return {
+      left: (480 - this.width) / 2,
+      top: (540 - this.height) / 2,
+      width: this.width,
+      height: this.height,
+    };
+  }
+  getContext() {
+    return { fillStyle: "", fillRect() {} };
+  }
 }
 class TestHandle extends EventTarget {
   style: Record<string, string> = {};
   captured = new Set<number>();
-  setPointerCapture(id: number) { this.captured.add(id); }
-  hasPointerCapture(id: number) { return this.captured.has(id); }
+  setPointerCapture(id: number) {
+    this.captured.add(id);
+  }
+  hasPointerCapture(id: number) {
+    return this.captured.has(id);
+  }
   releasePointerCapture(id: number) {
     this.captured.delete(id);
     this.dispatchEvent(Object.assign(new Event("lostpointercapture"), { pointerId: id }));
   }
   focus() {}
-  point() { return { x: parseFloat(this.style.left!), y: parseFloat(this.style.top!) }; }
+  point() {
+    return { x: parseFloat(this.style.left!), y: parseFloat(this.style.top!) };
+  }
   pointer(type: string, x: number, y: number) {
-    this.dispatchEvent(Object.assign(new Event(type), { button: 0, pointerId: 1, clientX: x, clientY: y }));
+    this.dispatchEvent(
+      Object.assign(new Event(type), { button: 0, pointerId: 1, clientX: x, clientY: y }),
+    );
   }
 }
 class TestHost extends EventTarget {
@@ -34,13 +51,23 @@ class TestHost extends EventTarget {
   height = 540;
   dataset: Record<string, string> = {};
   appendChild() {}
-  getBoundingClientRect() { return { left: 0, top: 0, width: this.width, height: this.height }; }
-  querySelector() { return null; }
-  querySelectorAll() { return []; }
+  getBoundingClientRect() {
+    return { left: 0, top: 0, width: this.width, height: this.height };
+  }
+  querySelector() {
+    return null;
+  }
+  querySelectorAll() {
+    return [];
+  }
 }
 const observers: TestResizeObserver[] = [];
 class TestResizeObserver {
-  constructor(readonly callback: (entries: { contentRect: { width: number; height: number } }[]) => void) { observers.push(this); }
+  constructor(
+    readonly callback: (entries: { contentRect: { width: number; height: number } }[]) => void,
+  ) {
+    observers.push(this);
+  }
   observe() {}
   disconnect() {}
 }
@@ -69,7 +96,9 @@ class TestRenderer {
   renderCount = 0;
   resizeCount = 0;
   projectedHeight = 0;
-  constructor() { renderers.push(this); }
+  constructor() {
+    renderers.push(this);
+  }
   setPixelRatio() {}
   setSize(width: number, height: number) {
     this.domElement.width = width;
@@ -77,7 +106,9 @@ class TestRenderer {
     this.framePresent = false;
     this.resizeCount++;
   }
-  setAnimationLoop(loop: typeof this.loop) { this.loop = loop; }
+  setAnimationLoop(loop: typeof this.loop) {
+    this.loop = loop;
+  }
   render(_scene: unknown, camera: Camera) {
     this.framePresent = true;
     this.renderCount++;
@@ -90,7 +121,9 @@ mock.module("three", () => ({
   ...three,
   WebGLRenderer: TestRenderer,
   PMREMGenerator: class {
-    fromScene() { return { texture: new three.Texture(), dispose() {} }; }
+    fromScene() {
+      return { texture: new three.Texture(), dispose() {} };
+    }
     dispose() {}
   },
 }));
@@ -116,7 +149,12 @@ test("the resize handle changes projected model size inside a fixed, continuousl
     host as unknown as HTMLElement,
     new TestHost() as unknown as HTMLElement,
     () => ({ angle: 180, pose: "open", sizeMode: "physical" }),
-    { ready() {}, error: () => { throw new Error("Scene failed"); } },
+    {
+      ready() {},
+      error: () => {
+        throw new Error("Scene failed");
+      },
+    },
   );
   const renderer = renderers.at(-1)!;
   const resize = observers.at(-1)!;
@@ -180,19 +218,37 @@ async function hingeRig() {
   const right = new TestHandle();
   const changes: number[] = [];
   const state: DuoSceneState = {
-    angle: 180, pose: "open", sizeMode: "fill",
-    onHingeAngleChange: (angle) => { changes.push(angle); state.angle = angle; },
+    angle: 180,
+    pose: "open",
+    sizeMode: "fill",
+    onHingeAngleChange: (angle) => {
+      changes.push(angle);
+      state.angle = angle;
+    },
   };
   let ready!: () => void;
-  const loaded = new Promise<void>((resolve) => { ready = resolve; });
-  const scene = createDuoScene(host as unknown as HTMLElement, new TestHost() as unknown as HTMLElement,
-    () => state, { ready, error: () => { throw new Error("Scene failed"); } },
-    { left: left as unknown as HTMLElement, right: right as unknown as HTMLElement });
+  const loaded = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const scene = createDuoScene(
+    host as unknown as HTMLElement,
+    new TestHost() as unknown as HTMLElement,
+    () => state,
+    {
+      ready,
+      error: () => {
+        throw new Error("Scene failed");
+      },
+    },
+    { left: left as unknown as HTMLElement, right: right as unknown as HTMLElement },
+  );
   await loaded;
   const renderer = renderers.at(-1)!;
   observers.at(-1)!.callback([{ contentRect: host.getBoundingClientRect() }]);
   let now = 0;
-  const settle = () => { for (let frame = 0; frame < 180; frame++) renderer.loop!(now += 16); };
+  const settle = () => {
+    for (let frame = 0; frame < 180; frame++) renderer.loop!((now += 16));
+  };
   settle();
   return { left, right, state, changes, settle, dispose: () => scene.dispose() };
 }
@@ -215,7 +271,9 @@ test("hinge handles follow both outer edges and only the original remains near c
     rig.settle();
     expect(rig.left.style.display).toBe("none");
     expect(rig.right.style.display).toBe("none");
-  } finally { rig.dispose(); }
+  } finally {
+    rig.dispose();
+  }
 });
 
 test("either hinge handle folds and unfolds, and a hidden handle retains its active drag", async () => {
@@ -244,7 +302,9 @@ test("either hinge handle folds and unfolds, and a hidden handle retains its act
       expect(handle.hasPointerCapture(1)).toBe(false);
       handle.pointer("pointerdown", open.x, open.y);
       expect(handle.hasPointerCapture(1)).toBe(true);
-    } finally { rig.dispose(); }
+    } finally {
+      rig.dispose();
+    }
     expect(handle.hasPointerCapture(1)).toBe(false);
     const count = rig.changes.length;
     handle.pointer("pointermove", 1000, 500);
@@ -266,7 +326,11 @@ test("fold handles reach both endpoints using the saved view, including rotated 
         const open = rig.left.point();
         rig.left.pointer("pointerdown", open.x, open.y);
         expect(rig.left.hasPointerCapture(1)).toBe(true);
-        rig.left.pointer("pointermove", open.x + (closed.x - open.x) * 10, open.y + (closed.y - open.y) * 10);
+        rig.left.pointer(
+          "pointermove",
+          open.x + (closed.x - open.x) * 10,
+          open.y + (closed.y - open.y) * 10,
+        );
         rig.settle();
         expect(rig.state.angle).toBe(0);
         rig.left.pointer("pointermove", open.x, open.y);
@@ -280,7 +344,11 @@ test("fold handles reach both endpoints using the saved view, including rotated 
         rig.settle();
         const start = rig.left.point();
         rig.left.pointer("pointerdown", start.x, start.y);
-        rig.left.pointer("pointermove", start.x + (open.x - start.x) * 10, start.y + (open.y - start.y) * 10);
+        rig.left.pointer(
+          "pointermove",
+          start.x + (open.x - start.x) * 10,
+          start.y + (open.y - start.y) * 10,
+        );
         rig.settle();
         expect(rig.state.angle).toBe(180);
         rig.left.pointer("pointermove", start.x, start.y);
@@ -288,7 +356,9 @@ test("fold handles reach both endpoints using the saved view, including rotated 
         expect(rig.state.angle).toBe(0);
         rig.left.pointer("pointerup", start.x, start.y);
         expect(rig.left.hasPointerCapture(1)).toBe(false);
-      } finally { rig.dispose(); }
+      } finally {
+        rig.dispose();
+      }
     }
   }
 });

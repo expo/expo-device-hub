@@ -61,9 +61,5 @@ export function headerOnlyPng(width: number, height: number, fillerBytes: number
   header.writeUInt32BE(width, 0);
   header.writeUInt32BE(height, 4);
   header.set([8, 2, 0, 0, 0], 8);
-  return Buffer.concat([
-    SIGNATURE,
-    chunk("IHDR", header),
-    Buffer.alloc(fillerBytes, 0x5a),
-  ]);
+  return Buffer.concat([SIGNATURE, chunk("IHDR", header), Buffer.alloc(fillerBytes, 0x5a)]);
 }

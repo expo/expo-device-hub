@@ -11,7 +11,7 @@ export const AVCC_TAG_KEYFRAME = 0x02;
 export const AVCC_TAG_DELTA = 0x03;
 export const AVCC_TAG_SEED = 0x04;
 
-export type AvccChunkType = 'description' | 'keyframe' | 'delta' | 'seed';
+export type AvccChunkType = "description" | "keyframe" | "delta" | "seed";
 
 export interface AvccChunk {
   type: AvccChunkType;
@@ -19,10 +19,10 @@ export interface AvccChunk {
 }
 
 const TAG_TO_TYPE: Record<number, AvccChunkType | undefined> = {
-  [AVCC_TAG_DESCRIPTION]: 'description',
-  [AVCC_TAG_KEYFRAME]: 'keyframe',
-  [AVCC_TAG_DELTA]: 'delta',
-  [AVCC_TAG_SEED]: 'seed',
+  [AVCC_TAG_DESCRIPTION]: "description",
+  [AVCC_TAG_KEYFRAME]: "keyframe",
+  [AVCC_TAG_DELTA]: "delta",
+  [AVCC_TAG_SEED]: "seed",
 };
 
 /** Incrementally turns a fragmented byte stream into complete AVCC envelopes. */
@@ -92,11 +92,11 @@ export class AvccDemuxer {
 
 /** Build an `avc1.PPCCLL` WebCodecs string from an avcC description. */
 export function avcCodecString(description: Uint8Array): string {
-  if (description.length < 4) return 'avc1.42E01E';
-  const hex = (byte: number) => byte.toString(16).padStart(2, '0');
+  if (description.length < 4) return "avc1.42E01E";
+  const hex = (byte: number) => byte.toString(16).padStart(2, "0");
   return `avc1.${hex(description[1]!)}${hex(description[2]!)}${hex(description[3]!)}`;
 }
 
 export function isAvccSupported(): boolean {
-  return typeof globalThis !== 'undefined' && typeof globalThis.VideoDecoder !== 'undefined';
+  return typeof globalThis !== "undefined" && typeof globalThis.VideoDecoder !== "undefined";
 }

@@ -15,9 +15,12 @@ for (const leave of ["cancels the response", "aborts the request"] as const) {
     const state = useTempStateDir();
     const logDir = mkdtempSync(join(tmpdir(), "serve-sim-events-calls-"));
     const log = join(logDir, "calls");
-    const calls = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).length : 0);
+    const calls = () =>
+      existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).length : 0;
     // A slow simctl that never yields a cacheable answer, so every recompute shells out.
-    const shims = installShims({ xcrun: `#!/usr/bin/env bash\necho call >> ${JSON.stringify(log)}\nsleep 1\necho not-json\n` });
+    const shims = installShims({
+      xcrun: `#!/usr/bin/env bash\necho call >> ${JSON.stringify(log)}\nsleep 1\necho not-json\n`,
+    });
     try {
       const controller = new AbortController();
       const response = await simMiddleware({ basePath: "/" })(

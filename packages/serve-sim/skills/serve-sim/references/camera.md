@@ -74,11 +74,11 @@ npx @expo/serve-sim camera com.acme.MyApp --mirror off
 npx @expo/serve-sim camera com.acme.MyApp --no-mirror      # shortcut for --mirror off
 ```
 
-| Mode | Behavior |
-|---|---|
+| Mode   | Behavior                                                                            |
+| ------ | ----------------------------------------------------------------------------------- |
 | `auto` | Front-facing source is mirrored, back-facing is not. Matches AVFoundation defaults. |
-| `on` | Force mirror. Use when a front camera feed renders backwards. |
-| `off` | Force no mirror. Use for QR codes or any text in the frame. |
+| `on`   | Force mirror. Use when a front camera feed renders backwards.                       |
+| `off`  | Force no mirror. Use for QR codes or any text in the frame.                         |
 
 Mirroring applies to the preview layer only. Data-output buffers handed to the app are **never** auto-mirrored — apps that process frames see them in their natural orientation.
 

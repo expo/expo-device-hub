@@ -59,21 +59,19 @@ describe("API contracts", () => {
       grpcImageMode: "mmap",
       inputSource: "scrcpy",
     });
-    expect(() => parseStreamModeRequest(null)).toThrow(
-      "stream mode request must be an object",
-    );
+    expect(() => parseStreamModeRequest(null)).toThrow("stream mode request must be an object");
     expect(() => parseStreamModeRequest({ mode: "screen-copy" })).toThrow(
       "stream mode request.mode is invalid",
     );
     expect(() =>
-      parseStreamModeRequest({ mode: "grpc-screenshot", grpcImageMode: "auto" })
+      parseStreamModeRequest({ mode: "grpc-screenshot", grpcImageMode: "auto" }),
     ).toThrow("stream mode request.grpcImageMode is invalid");
-    expect(() =>
-      parseStreamModeRequest({ mode: "scrcpy", grpcImageMode: "png" })
-    ).toThrow("available only with mode grpc-screenshot");
-    expect(() =>
-      parseStreamModeRequest({ mode: "scrcpy", inputSource: "grpc" })
-    ).toThrow("available only with mode grpc-screenshot");
+    expect(() => parseStreamModeRequest({ mode: "scrcpy", grpcImageMode: "png" })).toThrow(
+      "available only with mode grpc-screenshot",
+    );
+    expect(() => parseStreamModeRequest({ mode: "scrcpy", inputSource: "grpc" })).toThrow(
+      "available only with mode grpc-screenshot",
+    );
   });
 
   test("validates strict gRPC encoder selection without changing omitted requests", () => {
@@ -82,10 +80,15 @@ describe("API contracts", () => {
     expect(isGrpcEncoder("auto")).toBe(false);
     expect(isGrpcEncoder(null)).toBe(false);
     expect(parseStreamModeRequest({ mode: "grpc-screenshot", encoder: "hardware" })).toEqual({
-      mode: "grpc-screenshot", encoder: "hardware",
+      mode: "grpc-screenshot",
+      encoder: "hardware",
     });
-    expect(() => parseStreamModeRequest({ mode: "grpc-screenshot", encoder: "auto" })).toThrow("encoder is invalid");
-    expect(() => parseStreamModeRequest({ mode: "scrcpy", encoder: "software" })).toThrow("available only with mode grpc-screenshot");
+    expect(() => parseStreamModeRequest({ mode: "grpc-screenshot", encoder: "auto" })).toThrow(
+      "encoder is invalid",
+    );
+    expect(() => parseStreamModeRequest({ mode: "scrcpy", encoder: "software" })).toThrow(
+      "available only with mode grpc-screenshot",
+    );
   });
 
   test("parses hardware status and validates encoder availability and errors", () => {
@@ -103,7 +106,12 @@ describe("API contracts", () => {
       availableEncoders: ["software", "hardware"],
     };
     expect(parseStreamModeResponse(status)).toEqual(status);
-    const failed = { ...status, encoderName: null, availableEncoders: ["software"], hardwareEncoderError: "GPU unavailable" };
+    const failed = {
+      ...status,
+      encoderName: null,
+      availableEncoders: ["software"],
+      hardwareEncoderError: "GPU unavailable",
+    };
     expect(parseStreamModeResponse(failed)).toEqual(failed);
     for (const patch of [
       { encoder: "auto" },
@@ -124,7 +132,8 @@ describe("API contracts", () => {
     expect(isGrpcImageMode("mmap")).toBe(true);
     expect(isGrpcImageMode("rgb888")).toBe(true);
     expect(parseStreamModeRequest({ mode: "grpc-screenshot", grpcImageMode: "rgb888" })).toEqual({
-      mode: "grpc-screenshot", grpcImageMode: "rgb888",
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
     });
     expect(isGrpcImageMode("auto")).toBe(false);
     expect(isGrpcImageMode(null)).toBe(false);
@@ -313,8 +322,6 @@ describe("API contracts", () => {
         JSON.stringify({ line: "Activity started", at: health.startedAt }),
       ),
     ).toEqual({ line: "Activity started", at: health.startedAt });
-    expect(() => parseLogcatEventJson("ready", '{"pids":[1]}')).toThrow(
-      "serial",
-    );
+    expect(() => parseLogcatEventJson("ready", '{"pids":[1]}')).toThrow("serial");
   });
 });

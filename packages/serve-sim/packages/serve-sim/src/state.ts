@@ -91,7 +91,9 @@ export function inProcessServeSimState(
 }
 
 /** The URL a device's routes live under: the origin, plus the mount prefix of an embedded server. */
-export function serverBaseUrl(state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">): string {
+export function serverBaseUrl(
+  state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">,
+): string {
   const stream = new URL(state.streamUrl);
   const helperPath = `/helper/${state.device}/stream.mjpeg`;
   if (!stream.pathname.endsWith(helperPath)) return state.url;
@@ -119,7 +121,9 @@ export function clearServeSimState(udid: string, ownerPid: number): void {
     return;
   }
   if (state.pid !== ownerPid) return;
-  try { unlinkSync(file); } catch {}
+  try {
+    unlinkSync(file);
+  } catch {}
 }
 
 /** List all per-device state files in the state directory. */

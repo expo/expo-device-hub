@@ -1,9 +1,9 @@
-import { randomBytes } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { networkInterfaces } from 'node:os';
-import { WebSocketServer } from 'ws';
-import { URL } from 'node:url';
+import { randomBytes } from "node:crypto";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { networkInterfaces } from "node:os";
+import { WebSocketServer } from "ws";
+import { URL } from "node:url";
 
 import {
   discardUnreadBody,
@@ -11,22 +11,16 @@ import {
   toFetchRequest,
   toUpgradeRequest,
   writeFetchResponse,
-} from './cli/node-fetch-server';
-import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
-import { startupMessage } from './cli/startup';
-import { localHubUrl, publishHubState } from './cli/state-file';
-import { staticFileHandler } from './cli/static-files';
-import {
-  encodeStandaloneServeEmuOptions,
-  SERVE_EMU_OPTIONS_ENV,
-} from './serve-emu-options';
-import {
-  encodeStandaloneServeSimOptions,
-  SERVE_SIM_OPTIONS_ENV,
-} from './serve-sim-options';
-import { FRAME_ANCESTORS_ENV, SESSION_TOKEN_ENV } from './session-token';
+} from "./cli/node-fetch-server";
+import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from "./cli/options";
+import { startupMessage } from "./cli/startup";
+import { localHubUrl, publishHubState } from "./cli/state-file";
+import { staticFileHandler } from "./cli/static-files";
+import { encodeStandaloneServeEmuOptions, SERVE_EMU_OPTIONS_ENV } from "./serve-emu-options";
+import { encodeStandaloneServeSimOptions, SERVE_SIM_OPTIONS_ENV } from "./serve-sim-options";
+import { FRAME_ANCESTORS_ENV, SESSION_TOKEN_ENV } from "./session-token";
 
-type HubServerModule = typeof import('./index');
+type HubServerModule = typeof import("./index");
 type WebSocketRouteHandler = (socket: unknown, request: Request, server: WebSocketServer) => void;
 
 function fail(message: string): never {
@@ -38,7 +32,7 @@ function fail(message: string): never {
 function lanAddress(): string | undefined {
   for (const addresses of Object.values(networkInterfaces())) {
     for (const address of addresses ?? []) {
-      if (!address.internal && address.family === 'IPv4') {
+      if (!address.internal && address.family === "IPv4") {
         return address.address;
       }
     }
@@ -50,19 +44,19 @@ function lanAddress(): string | undefined {
 function tryListen(server: Server, port: number, host: string): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const onError = (error: NodeJS.ErrnoException) => {
-      server.removeListener('listening', onListening);
-      if (error.code === 'EADDRINUSE') {
+      server.removeListener("listening", onListening);
+      if (error.code === "EADDRINUSE") {
         resolve(false);
       } else {
         reject(error);
       }
     };
     const onListening = () => {
-      server.removeListener('error', onError);
+      server.removeListener("error", onError);
       resolve(true);
     };
-    server.once('error', onError);
-    server.once('listening', onListening);
+    server.once("error", onError);
+    server.once("listening", onListening);
     server.listen(port, host);
   });
 }
@@ -79,7 +73,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
+  process.env.EXPO_DEVICE_HUB_BASE_PATH = "";
   if (options.platform) {
     process.env.EXPO_DEVICE_HUB_PLATFORM = options.platform;
   } else {
@@ -91,19 +85,19 @@ async function main(): Promise<void> {
     delete process.env.EXPO_DEVICE_HUB_TRANSPORT;
   }
   if (options.hideSidebar) {
-    process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR = 'true';
+    process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR = "true";
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR;
   }
   if (options.hideBootDevice) {
-    process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE = 'true';
+    process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE = "true";
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
   }
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
   // Minted here, not in the server, because the operator has to be told what it is.
-  const sessionToken = options.requireToken ? randomBytes(32).toString('base64url') : undefined;
+  const sessionToken = options.requireToken ? randomBytes(32).toString("base64url") : undefined;
   if (sessionToken) {
     process.env[SESSION_TOKEN_ENV] = sessionToken;
     process.env[FRAME_ANCESTORS_ENV] = JSON.stringify(options.frameAncestors ?? []);
@@ -112,12 +106,12 @@ async function main(): Promise<void> {
     delete process.env[FRAME_ANCESTORS_ENV];
   }
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
-  const hubServer = (await import('./index.mjs')) as HubServerModule;
+  const hubServer = (await import("./index.mjs")) as HubServerModule;
   const handler = hubServer.default;
   // The server read it at import. The processes it starts later have no use for it.
   delete process.env[SESSION_TOKEN_ENV];
 
-  const serveStaticFile = staticFileHandler(new URL('../client/', import.meta.url));
+  const serveStaticFile = staticFileHandler(new URL("../client/", import.meta.url));
 
   const server = createServer(async (req, res) => {
     let request: Request | undefined;
@@ -128,17 +122,18 @@ async function main(): Promise<void> {
         writeFetchResponse(response, res);
         return;
       }
-      if (req.method === 'GET') {
-        for (const [name, value] of Object.entries(hubServer.staticFileHeaders)) res.setHeader(name, value);
+      if (req.method === "GET") {
+        for (const [name, value] of Object.entries(hubServer.staticFileHeaders))
+          res.setHeader(name, value);
         if (await serveStaticFile(req, res)) return;
       }
-      writeFetchResponse(new Response('Not Found', { status: 404 }), res);
+      writeFetchResponse(new Response("Not Found", { status: 404 }), res);
     } catch (error) {
       console.error(error);
       if (res.headersSent) {
         res.destroy();
       } else {
-        writeFetchResponse(new Response('Internal Server Error', { status: 500 }), res);
+        writeFetchResponse(new Response("Internal Server Error", { status: 500 }), res);
       }
     } finally {
       // An answer or a failure that left the upload unread would pause the connection.
@@ -148,7 +143,7 @@ async function main(): Promise<void> {
 
   // Pre-listen errors are handled by tryListen (EADDRINUSE retry) — only fail
   // hard on errors that surface after we are actually serving.
-  server.on('error', (error) => {
+  server.on("error", (error) => {
     if (server.listening) fail(String(error));
   });
 
@@ -156,27 +151,27 @@ async function main(): Promise<void> {
   for (const [route, wsHandler] of Object.entries(
     hubServer.webSocketHandlers as Record<string, WebSocketRouteHandler>,
   )) {
-    const normalizedRoute = route.startsWith('/') ? route : `/${route}`;
+    const normalizedRoute = route.startsWith("/") ? route : `/${route}`;
     const wss = new WebSocketServer({ noServer: true });
-    wss.on('connection', (socket, request) =>
+    wss.on("connection", (socket, request) =>
       wsHandler(socket, toUpgradeRequest(request, normalizedRoute), wss),
     );
     webSocketRoutes.set(normalizedRoute, wss);
   }
 
-  server.on('upgrade', (request, socket, head) => {
-    const pathname = new URL(request.url ?? '/', requestOrigin(request)).pathname;
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = new URL(request.url ?? "/", requestOrigin(request)).pathname;
     const wss = webSocketRoutes.get(pathname);
     if (!wss) {
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request));
+    wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
   });
 
   let shutdownTask: Promise<void> | null = null;
   let withdrawHubState: (() => void) | null = null;
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       if (shutdownTask) return;
       // Before the listener closes, so nothing finds a Hub that no longer accepts connections while
@@ -184,12 +179,19 @@ async function main(): Promise<void> {
       withdrawHubState?.();
       server.close();
       for (const wss of webSocketRoutes.values()) {
-        for (const client of wss.clients) client.close(1001, 'Server stopping');
+        for (const client of wss.clients) client.close(1001, "Server stopping");
       }
       const deadline = setTimeout(() => process.exit(1), 60_000);
       shutdownTask = hubServer.shutdownAndroid().then(
-        () => { clearTimeout(deadline); process.exit(0); },
-        (error) => { console.error('Android recording shutdown failed:', error); clearTimeout(deadline); process.exit(1); },
+        () => {
+          clearTimeout(deadline);
+          process.exit(0);
+        },
+        (error) => {
+          console.error("Android recording shutdown failed:", error);
+          clearTimeout(deadline);
+          process.exit(1);
+        },
       );
     });
   }
@@ -226,7 +228,7 @@ async function main(): Promise<void> {
     url: localHubUrl(options.host, port),
     ...(sessionToken ? { token: sessionToken } : {}),
   });
-  process.once('exit', () => withdrawHubState?.());
+  process.once("exit", () => withdrawHubState?.());
 
   console.log(
     startupMessage({
@@ -235,7 +237,7 @@ async function main(): Promise<void> {
       lanAddress: lanAddress(),
       sessionToken,
       ignoredFrameAncestors: sessionToken ? [] : options.frameAncestors,
-    })
+    }),
   );
 }
 

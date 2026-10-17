@@ -95,53 +95,100 @@ async function argv(action: string, params?: Record<string, unknown>): Promise<s
 describe("simctl-backed actions", () => {
   it("builds appearance get and set", async () => {
     expect(await argv("appearance.get", { udid: UDID })).toEqual([
-      "xcrun", "simctl", "ui", UDID, "appearance",
+      "xcrun",
+      "simctl",
+      "ui",
+      UDID,
+      "appearance",
     ]);
     expect(await argv("appearance.set", { udid: UDID, value: "dark" })).toEqual([
-      "xcrun", "simctl", "ui", UDID, "appearance", "dark",
+      "xcrun",
+      "simctl",
+      "ui",
+      UDID,
+      "appearance",
+      "dark",
     ]);
   });
 
   it("builds location set and clear", async () => {
     expect(await argv("location.set", { udid: UDID, lat: 37.3349, lng: -122.009 })).toEqual([
-      "xcrun", "simctl", "location", UDID, "set", "37.3349000,-122.0090000",
+      "xcrun",
+      "simctl",
+      "location",
+      UDID,
+      "set",
+      "37.3349000,-122.0090000",
     ]);
     expect(await argv("location.clear", { udid: UDID })).toEqual([
-      "xcrun", "simctl", "location", UDID, "clear",
+      "xcrun",
+      "simctl",
+      "location",
+      UDID,
+      "clear",
     ]);
   });
 
   it("builds home springboard", async () => {
     expect(await argv("home.springboard", { udid: UDID })).toEqual([
-      "xcrun", "simctl", "launch", UDID, "com.apple.springboard",
+      "xcrun",
+      "simctl",
+      "launch",
+      UDID,
+      "com.apple.springboard",
     ]);
   });
 
   it("builds springboard restart for the canonical device", async () => {
     expect(await argv("springboard.restart", { udid: UDID.toLowerCase() })).toEqual([
-      "xcrun", "simctl", "spawn", UDID, "launchctl", "kickstart", "-k", "system/com.apple.SpringBoard",
+      "xcrun",
+      "simctl",
+      "spawn",
+      UDID,
+      "launchctl",
+      "kickstart",
+      "-k",
+      "system/com.apple.SpringBoard",
     ]);
   });
 
   // The trailing "app" selects the bundle container rather than the data container.
   it("builds app container", async () => {
     expect(await argv("app.container", { udid: UDID, bundleId: BUNDLE })).toEqual([
-      "xcrun", "simctl", "get_app_container", UDID, BUNDLE, "app",
+      "xcrun",
+      "simctl",
+      "get_app_container",
+      UDID,
+      BUNDLE,
+      "app",
     ]);
   });
 
   it("selects the app data container explicitly", async () => {
     expect(await argv("app.container", { udid: UDID, bundleId: BUNDLE, type: "data" })).toEqual([
-      "xcrun", "simctl", "get_app_container", UDID, BUNDLE, "data",
+      "xcrun",
+      "simctl",
+      "get_app_container",
+      UDID,
+      BUNDLE,
+      "data",
     ]);
   });
 
   it("builds app install and media add from a path", async () => {
     expect(await argv("app.install", { udid: UDID, path: CONFINED })).toEqual([
-      "xcrun", "simctl", "install", UDID, CONFINED,
+      "xcrun",
+      "simctl",
+      "install",
+      UDID,
+      CONFINED,
     ]);
     expect(await argv("media.add", { udid: UDID, path: CONFINED })).toEqual([
-      "xcrun", "simctl", "addmedia", UDID, CONFINED,
+      "xcrun",
+      "simctl",
+      "addmedia",
+      UDID,
+      CONFINED,
     ]);
   });
 
@@ -156,14 +203,21 @@ describe("other host tools", () => {
   // -o - keeps plutil on stdout so it never rewrites the app's own Info.plist in place.
   it("builds the info plist read", async () => {
     expect(await argv("app.infoPlist", { path: CONFINED })).toEqual([
-      "plutil", "-convert", "json", "-o", "-", CONFINED,
+      "plutil",
+      "-convert",
+      "json",
+      "-o",
+      "-",
+      CONFINED,
     ]);
   });
 
   it("builds reveal", async () => {
     expect(await argv("reveal", { path: CONFINED })).toEqual(["open", "-R", CONFINED]);
     expect(await argv("reveal", { screenshot: SHOT })).toEqual([
-      "open", "-R", join(homedir(), "Desktop", SHOT),
+      "open",
+      "-R",
+      join(homedir(), "Desktop", SHOT),
     ]);
   });
 
@@ -186,10 +240,17 @@ describe("procedures that shell out", () => {
     expect(result.stdout.trim()).toBe(STAGED);
     const runs = loggedArgv();
     expect(runs.filter((r) => r[0] === "xcrun").at(-1)).toEqual([
-      "xcrun", "simctl", "io", UDID, "screenshot", STAGED,
+      "xcrun",
+      "simctl",
+      "io",
+      UDID,
+      "screenshot",
+      STAGED,
     ]);
     expect(runs.filter((r) => r[0] === "cp").at(-1)).toEqual([
-      "cp", STAGED, join(homedir(), "Desktop", SHOT),
+      "cp",
+      STAGED,
+      join(homedir(), "Desktop", SHOT),
     ]);
   });
 
@@ -205,9 +266,11 @@ describe("procedures that shell out", () => {
     expect(staged).toMatch(
       /\/serve-sim-screenshot-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}-[0-9a-f]{8}\.png$/,
     );
-    expect(loggedArgv().filter((r) => r[0] === "xcrun").at(-1)).toEqual([
-      "xcrun", "simctl", "io", UDID, "screenshot", staged,
-    ]);
+    expect(
+      loggedArgv()
+        .filter((r) => r[0] === "xcrun")
+        .at(-1),
+    ).toEqual(["xcrun", "simctl", "io", UDID, "screenshot", staged]);
   });
 
   // A copy that never returns is what a consent prompt looks like from the child's side. The client
@@ -243,17 +306,20 @@ describe("procedures that shell out", () => {
     const fileName = "serve-sim-screenshot-refused-copy.png";
     const staged = join(dirname(STAGED), fileName);
     try {
-      await withShimsAsync({ cp: "#!/bin/sh\necho 'cp: Operation not permitted' >&2\nexit 1\n" }, async () => {
-        const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName } },
-          serveSimBin,
-        );
-        expect(result.exitCode).toBe(0);
-        expect(result.stdout.trim()).toBe(staged);
-        expect(result.stderr).toContain(staged);
-        expect(result.stderr).toContain("refused the Desktop copy (cp: Operation not permitted)");
-        expect(result.stderr).not.toContain("did not finish within");
-      });
+      await withShimsAsync(
+        { cp: "#!/bin/sh\necho 'cp: Operation not permitted' >&2\nexit 1\n" },
+        async () => {
+          const result = await runHostActionAsync(
+            { action: "screenshot.capture", params: { udid: UDID, fileName } },
+            serveSimBin,
+          );
+          expect(result.exitCode).toBe(0);
+          expect(result.stdout.trim()).toBe(staged);
+          expect(result.stderr).toContain(staged);
+          expect(result.stderr).toContain("refused the Desktop copy (cp: Operation not permitted)");
+          expect(result.stderr).not.toContain("did not finish within");
+        },
+      );
     } finally {
       rmSync(staged, { force: true });
     }
@@ -271,7 +337,11 @@ describe("procedures that shell out", () => {
         );
         expect(result.exitCode).not.toBe(0);
       });
-      expect(loggedArgv().slice(before).some((r) => r[0] === "cp")).toBe(false);
+      expect(
+        loggedArgv()
+          .slice(before)
+          .some((r) => r[0] === "cp"),
+      ).toBe(false);
       expect(existsSync(staged)).toBe(false);
     } finally {
       rmSync(staged, { force: true });
@@ -307,7 +377,10 @@ describe("procedures that shell out", () => {
   });
 
   it("sizes a thumbnail of the staged capture and reads it back as base64", async () => {
-    await runHostActionAsync({ action: "screenshot.thumbnail", params: { fileName: SHOT } }, serveSimBin);
+    await runHostActionAsync(
+      { action: "screenshot.thumbnail", params: { fileName: SHOT } },
+      serveSimBin,
+    );
     const runs = loggedArgv();
     const sips = runs.filter((r) => r[0] === "sips").at(-1)!;
     expect(sips.slice(0, 5)).toEqual(["sips", "-Z", "320", STAGED, "--out"]);
@@ -342,10 +415,18 @@ describe("procedures that shell out", () => {
 describe("serve-sim-backed actions", () => {
   it("builds rotate and button", async () => {
     expect(await argv("rotate", { udid: UDID, value: "landscape" })).toEqual([
-      "serve-sim", "rotate", "landscape", "-d", UDID,
+      "serve-sim",
+      "rotate",
+      "landscape",
+      "-d",
+      UDID,
     ]);
     expect(await argv("button", { value: "home", udid: UDID })).toEqual([
-      "serve-sim", "button", "home", "-d", UDID,
+      "serve-sim",
+      "button",
+      "home",
+      "-d",
+      UDID,
     ]);
     expect(await argv("button", { value: "home" })).toEqual(["serve-sim", "button", "home"]);
   });
@@ -364,100 +445,195 @@ describe("serve-sim-backed actions", () => {
     ] as const;
     for (const [name, option, value] of settings) {
       expect(await argv(`${name}.get`, { udid: UDID })).toEqual([
-        "serve-sim", "ui", option, "-d", UDID,
+        "serve-sim",
+        "ui",
+        option,
+        "-d",
+        UDID,
       ]);
       expect(await argv(`${name}.set`, { udid: UDID, value })).toEqual([
-        "serve-sim", "ui", option, value, "-d", UDID,
+        "serve-sim",
+        "ui",
+        option,
+        value,
+        "-d",
+        UDID,
       ]);
     }
     expect(await argv("textSize.set", { udid: UDID, value: "increment" })).toEqual([
-      "serve-sim", "ui", "text-size", "increment", "-d", UDID,
+      "serve-sim",
+      "ui",
+      "text-size",
+      "increment",
+      "-d",
+      UDID,
     ]);
     expect(await argv("settings.status", { udid: UDID })).toEqual([
-      "serve-sim", "ui", "status", "--json", "-d", UDID,
+      "serve-sim",
+      "ui",
+      "status",
+      "--json",
+      "-d",
+      UDID,
     ]);
   });
 
   it("builds the device and debug actions", async () => {
     expect(await argv("softwareKeyboard.toggle", { udid: UDID })).toEqual([
-      "serve-sim", "software-keyboard", "-d", UDID,
+      "serve-sim",
+      "software-keyboard",
+      "-d",
+      UDID,
     ]);
     expect(await argv("memoryWarning", { udid: UDID })).toEqual([
-      "serve-sim", "memory-warning", "-d", UDID,
+      "serve-sim",
+      "memory-warning",
+      "-d",
+      UDID,
     ]);
-    expect(await argv("caDebug.set", { udid: UDID, option: "slow-animations", value: "on" })).toEqual([
-      "serve-sim", "ca-debug", "slow-animations", "on", "-d", UDID,
-    ]);
+    expect(
+      await argv("caDebug.set", { udid: UDID, option: "slow-animations", value: "on" }),
+    ).toEqual(["serve-sim", "ca-debug", "slow-animations", "on", "-d", UDID]);
     expect(await argv("hinge.set", { udid: UDID, value: "half" })).toEqual([
-      "serve-sim", "hinge", "half", "-d", UDID,
+      "serve-sim",
+      "hinge",
+      "half",
+      "-d",
+      UDID,
     ]);
     expect(await argv("hinge.set", { udid: UDID, value: 135 })).toEqual([
-      "serve-sim", "hinge", "135", "-d", UDID,
+      "serve-sim",
+      "hinge",
+      "135",
+      "-d",
+      UDID,
     ]);
   });
 
   it("builds the permission listing", async () => {
     expect(await argv("permissions.list", { udid: UDID })).toEqual([
-      "serve-sim", "permissions", "list", "-d", UDID,
+      "serve-sim",
+      "permissions",
+      "list",
+      "-d",
+      UDID,
     ]);
     expect(await argv("permissions.list", { udid: UDID, bundleId: BUNDLE })).toEqual([
-      "serve-sim", "permissions", "list", BUNDLE, "-d", UDID,
+      "serve-sim",
+      "permissions",
+      "list",
+      BUNDLE,
+      "-d",
+      UDID,
     ]);
   });
 
   it("builds server detach and kill", async () => {
     expect(await argv("server.detach", { udid: UDID, port: "3100" })).toEqual([
-      "serve-sim", "--detach", UDID, "--port", "3100",
+      "serve-sim",
+      "--detach",
+      UDID,
+      "--port",
+      "3100",
     ]);
     expect(await argv("server.detach", {})).toEqual(["serve-sim", "--detach"]);
     expect(await argv("server.kill", {})).toEqual(["serve-sim", "--kill"]);
   });
 
   it("builds the camera listing, mirror and stop", async () => {
-    expect(await argv("camera.listWebcams", {})).toEqual([
-      "serve-sim", "camera", "--list-webcams",
-    ]);
+    expect(await argv("camera.listWebcams", {})).toEqual(["serve-sim", "camera", "--list-webcams"]);
     expect(await argv("camera.mirror", { udid: UDID, value: "on" })).toEqual([
-      "serve-sim", "camera", "mirror", "on", "-d", UDID, "--quiet",
+      "serve-sim",
+      "camera",
+      "mirror",
+      "on",
+      "-d",
+      UDID,
+      "--quiet",
     ]);
     expect(await argv("camera.stopWebcam", { udid: UDID })).toEqual([
-      "serve-sim", "camera", "--stop-webcam", "-d", UDID,
+      "serve-sim",
+      "camera",
+      "--stop-webcam",
+      "-d",
+      UDID,
     ]);
   });
 
   it("builds camera switch for each source", async () => {
     expect(await argv("camera.switch", { udid: UDID, source: "placeholder" })).toEqual([
-      "serve-sim", "camera", "switch", "placeholder", "-d", UDID, "--quiet",
+      "serve-sim",
+      "camera",
+      "switch",
+      "placeholder",
+      "-d",
+      UDID,
+      "--quiet",
     ]);
     expect(await argv("camera.switch", { udid: UDID, source: "file", target: CONFINED })).toEqual([
-      "serve-sim", "camera", "switch", "file", CONFINED, "-d", UDID, "--quiet",
+      "serve-sim",
+      "camera",
+      "switch",
+      "file",
+      CONFINED,
+      "-d",
+      UDID,
+      "--quiet",
     ]);
     expect(
-      await argv("camera.switch", { udid: UDID, source: "webcam", target: "Studio Display Camera" }),
+      await argv("camera.switch", {
+        udid: UDID,
+        source: "webcam",
+        target: "Studio Display Camera",
+      }),
     ).toEqual([
-      "serve-sim", "camera", "switch", "webcam", "Studio Display Camera", "-d", UDID, "--quiet",
+      "serve-sim",
+      "camera",
+      "switch",
+      "webcam",
+      "Studio Display Camera",
+      "-d",
+      UDID,
+      "--quiet",
     ]);
   });
 
   it("builds camera inject for each source", async () => {
     expect(
       await argv("camera.inject", {
-        udid: UDID, bundleId: BUNDLE, mirror: "off", source: "file", target: CONFINED,
+        udid: UDID,
+        bundleId: BUNDLE,
+        mirror: "off",
+        source: "file",
+        target: CONFINED,
       }),
     ).toEqual([
-      "serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--file", CONFINED, "--mirror", "off",
+      "serve-sim",
+      "camera",
+      BUNDLE,
+      "-d",
+      UDID,
+      "--quiet",
+      "--file",
+      CONFINED,
+      "--mirror",
+      "off",
     ]);
     // A webcam with no name leaves --webcam bare, and the CLI reads the next "-" token as "no name".
     expect(
       await argv("camera.inject", {
-        udid: UDID, bundleId: BUNDLE, mirror: "on", source: "webcam",
+        udid: UDID,
+        bundleId: BUNDLE,
+        mirror: "on",
+        source: "webcam",
       }),
-    ).toEqual([
-      "serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--webcam", "--mirror", "on",
-    ]);
+    ).toEqual(["serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--webcam", "--mirror", "on"]);
     expect(
       await argv("camera.inject", {
-        udid: UDID, bundleId: BUNDLE, mirror: "on", source: "placeholder",
+        udid: UDID,
+        bundleId: BUNDLE,
+        mirror: "on",
+        source: "placeholder",
       }),
     ).toEqual(["serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--mirror", "on"]);
   });
@@ -465,11 +641,20 @@ describe("serve-sim-backed actions", () => {
   it("builds the permission actions", async () => {
     expect(
       await argv("permissions.set", {
-        udid: UDID, bundleId: BUNDLE, action: "grant", service: "camera",
+        udid: UDID,
+        bundleId: BUNDLE,
+        action: "grant",
+        service: "camera",
       }),
     ).toEqual(["serve-sim", "permissions", "grant", "camera", BUNDLE, "-d", UDID]);
     expect(await argv("permissions.resetAll", { udid: UDID, bundleId: BUNDLE })).toEqual([
-      "serve-sim", "permissions", "reset", "all", BUNDLE, "-d", UDID,
+      "serve-sim",
+      "permissions",
+      "reset",
+      "all",
+      BUNDLE,
+      "-d",
+      UDID,
     ]);
   });
 });

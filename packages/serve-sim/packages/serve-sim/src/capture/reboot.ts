@@ -99,8 +99,12 @@ export async function rebootWithCapture(
 
   // Loaded when a reboot runs: the CLI imports this module at startup, and the device session
   // loads the native capture and HID code.
-  const closeSession = deps.closeSession ?? (async (id: string) => (await import("../device-session")).suspendDeviceSessionForReboot(id));
-  const resumeSession = deps.resumeSession ?? (async (id: string) => (await import("../device-session")).resumeDeviceSessionAfterReboot(id));
+  const closeSession =
+    deps.closeSession ??
+    (async (id: string) => (await import("../device-session")).suspendDeviceSessionForReboot(id));
+  const resumeSession =
+    deps.resumeSession ??
+    (async (id: string) => (await import("../device-session")).resumeDeviceSessionAfterReboot(id));
   const shutdown = deps.shutdown ?? shutdownDevice;
   const boot = deps.boot ?? bootDevice;
   const rearm = deps.rearm ?? rearmCapabilities;

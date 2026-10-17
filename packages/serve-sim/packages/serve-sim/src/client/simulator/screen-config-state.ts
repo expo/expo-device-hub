@@ -9,18 +9,26 @@ export interface ScreenConfigUpdate {
 }
 
 export function screenConfigsEqual(a: StreamConfig | null, b: StreamConfig): boolean {
-  return !!a && a.width === b.width && a.height === b.height &&
-    a.orientation === b.orientation && a.screenId === b.screenId && a.hingeAngle === b.hingeAngle &&
+  return (
+    !!a &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.orientation === b.orientation &&
+    a.screenId === b.screenId &&
+    a.hingeAngle === b.hingeAngle &&
     a.supportsHingeAngle === b.supportsHingeAngle &&
-    a.supportsPhysicalOrientation === b.supportsPhysicalOrientation && a.hingePose === b.hingePose &&
+    a.supportsPhysicalOrientation === b.supportsPhysicalOrientation &&
+    a.hingePose === b.hingePose &&
     a.physicalOrientation === b.physicalOrientation &&
-    a.tableMode === b.tableMode && a.tableModeAvailable === b.tableModeAvailable &&
+    a.tableMode === b.tableMode &&
+    a.tableModeAvailable === b.tableModeAvailable &&
     a.inputUnavailable === b.inputUnavailable &&
     a.keyboardUnavailable === b.keyboardUnavailable &&
     (a.observedDeviceState === undefined) === (b.observedDeviceState === undefined) &&
     a.observedDeviceState?.hingeAngle === b.observedDeviceState?.hingeAngle &&
     a.observedDeviceState?.physicalOrientation === b.observedDeviceState?.physicalOrientation &&
-    a.observedDeviceState?.tableMode === b.observedDeviceState?.tableMode;
+    a.observedDeviceState?.tableMode === b.observedDeviceState?.tableMode
+  );
 }
 
 export function resolveScreenConfigUpdate(

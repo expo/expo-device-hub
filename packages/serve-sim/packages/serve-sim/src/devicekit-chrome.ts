@@ -38,8 +38,12 @@ const FALLBACK_PLACEHOLDER_ASSETS = {
     ],
   },
   "iphone-17e": { paths: [join(MOBILE_DEVICE_RESOURCES_ROOT, "com.apple.iphone-16-e-1.icns")] },
-  "ipad-air-11-inch-m4": { paths: [join(MOBILE_DEVICE_RESOURCES_ROOT, "com.apple.ipad-air-m3-1.icns")] },
-  "ipad-air-13-inch-m4": { paths: [join(MOBILE_DEVICE_RESOURCES_ROOT, "com.apple.ipad-air-m3-1.icns")] },
+  "ipad-air-11-inch-m4": {
+    paths: [join(MOBILE_DEVICE_RESOURCES_ROOT, "com.apple.ipad-air-m3-1.icns")],
+  },
+  "ipad-air-13-inch-m4": {
+    paths: [join(MOBILE_DEVICE_RESOURCES_ROOT, "com.apple.ipad-air-m3-1.icns")],
+  },
 } as const satisfies Record<string, PlaceholderAssetDefinition>;
 
 type FallbackPlaceholderAssetName = keyof typeof FALLBACK_PLACEHOLDER_ASSETS;
@@ -107,7 +111,12 @@ type Size = { width: number; height: number };
 type Point = { x: number; y: number };
 type Rect = Point & Size;
 type Insets = { top: number; left: number; bottom: number; right: number };
-type ScreenCornerRadii = { topLeft: number; topRight: number; bottomRight: number; bottomLeft: number };
+type ScreenCornerRadii = {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+};
 
 type DeviceProfileMetadata = {
   chromeIdentifier: string | null;
@@ -161,16 +170,18 @@ let coreTypesIconEntriesCache: CoreTypesIconEntry[] | null = null;
 const placeholderAssetInfoCache = new Map<string, PlaceholderAssetInfo | null>();
 
 export function bareChromeIdentifier(identifier: string): string {
-  return identifier.startsWith(CHROME_PREFIX)
-    ? identifier.slice(CHROME_PREFIX.length)
-    : identifier;
+  return identifier.startsWith(CHROME_PREFIX) ? identifier.slice(CHROME_PREFIX.length) : identifier;
 }
 
 export function parsePdfPageSize(pdf: Buffer | string): Size | null {
   const text = typeof pdf === "string" ? pdf : pdf.toString("latin1");
   const box =
-    /\/CropBox\s*\[\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\]/.exec(text) ??
-    /\/MediaBox\s*\[\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\]/.exec(text);
+    /\/CropBox\s*\[\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\]/.exec(
+      text,
+    ) ??
+    /\/MediaBox\s*\[\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\]/.exec(
+      text,
+    );
   if (!box) return null;
   const x0 = Number(box[1]);
   const y0 = Number(box[2]);
@@ -247,9 +258,7 @@ function resolveDevicePlaceholderAssetUncached(device: {
 }): DevicePlaceholderAssetDescriptor | null {
   const profilePath = profilePathForDevice(device);
   const profile = profilePath ? readProfileMetadata(profilePath) : null;
-  const iconName =
-    iconNameForProfile(profile) ??
-    fallbackIconNameForDeviceName(device.name);
+  const iconName = iconNameForProfile(profile) ?? fallbackIconNameForDeviceName(device.name);
   if (!iconName) return null;
 
   const info = placeholderAssetInfo(iconName);
@@ -359,8 +368,9 @@ function resolveDeviceKitChromeUncached(profileName: string): DeviceKitChromeDes
     });
     if (descriptor) variants[display.screenId] = descriptor;
   }
-  const primary = Object.values(variants).find((variant) => variant.identifier === profile.chromeIdentifier)
-    ?? buildChromeDescriptor(profile);
+  const primary =
+    Object.values(variants).find((variant) => variant.identifier === profile.chromeIdentifier) ??
+    buildChromeDescriptor(profile);
   if (!primary) return null;
   // The variants themselves stay non-recursive, so the descriptor is plain JSON.
   return Object.keys(variants).length > 0 ? { ...primary, displayVariants: variants } : primary;
@@ -372,18 +382,45 @@ export function parseDisplayProfiles(value: unknown): DisplayProfile[] {
   return value.flatMap((entry): DisplayProfile[] => {
     const display = record(entry);
     const chromeIdentifier = stringValue(display.chromeIdentifier);
-    const { screenID, width, height, scale, cornerRadiusUL, cornerRadiusUR, cornerRadiusLR, cornerRadiusLL } = display;
-    if (display.displayType !== "integrated" || !chromeIdentifier ||
-      typeof screenID !== "number" || !Number.isInteger(screenID) || screenID < 0 ||
+    const {
+      screenID,
+      width,
+      height,
+      scale,
+      cornerRadiusUL,
+      cornerRadiusUR,
+      cornerRadiusLR,
+      cornerRadiusLL,
+    } = display;
+    if (
+      display.displayType !== "integrated" ||
+      !chromeIdentifier ||
+      typeof screenID !== "number" ||
+      !Number.isInteger(screenID) ||
+      screenID < 0 ||
       ![width, height, scale].every((n) => typeof n === "number" && Number.isFinite(n) && n > 0) ||
-      ![cornerRadiusUL, cornerRadiusUR, cornerRadiusLR, cornerRadiusLL].every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0)) return [];
-    return [{
-      screenId: screenID,
-      chromeIdentifier: bareChromeIdentifier(chromeIdentifier),
-      screenSize: { width: Number(width) / Number(scale), height: Number(height) / Number(scale) },
-      cornerRadii: { topLeft: Number(cornerRadiusUL), topRight: Number(cornerRadiusUR), bottomRight: Number(cornerRadiusLR), bottomLeft: Number(cornerRadiusLL) },
-      framebufferMask: stringValue(display.framebufferMaskIdentifier),
-    }];
+      ![cornerRadiusUL, cornerRadiusUR, cornerRadiusLR, cornerRadiusLL].every(
+        (n) => typeof n === "number" && Number.isFinite(n) && n >= 0,
+      )
+    )
+      return [];
+    return [
+      {
+        screenId: screenID,
+        chromeIdentifier: bareChromeIdentifier(chromeIdentifier),
+        screenSize: {
+          width: Number(width) / Number(scale),
+          height: Number(height) / Number(scale),
+        },
+        cornerRadii: {
+          topLeft: Number(cornerRadiusUL),
+          topRight: Number(cornerRadiusUR),
+          bottomRight: Number(cornerRadiusLR),
+          bottomLeft: Number(cornerRadiusLL),
+        },
+        framebufferMask: stringValue(display.framebufferMaskIdentifier),
+      },
+    ];
   });
 }
 
@@ -440,8 +477,16 @@ function buildChromeDescriptor(profile: DeviceProfileMetadata): DeviceKitChromeD
   // bezel; the composite's own black screen border (between
   // the metal edge and this rect) frames it like a real device's display border.
   const screen: Rect = {
-    x: body.x + (opening ? opening.x + (opening.width - screenSize.width) / 2 : (resolvedBodySize.width - screenSize.width) / 2),
-    y: body.y + (opening ? opening.y + (opening.height - screenSize.height) / 2 : (resolvedBodySize.height - screenSize.height) / 2),
+    x:
+      body.x +
+      (opening
+        ? opening.x + (opening.width - screenSize.width) / 2
+        : (resolvedBodySize.width - screenSize.width) / 2),
+    y:
+      body.y +
+      (opening
+        ? opening.y + (opening.height - screenSize.height) / 2
+        : (resolvedBodySize.height - screenSize.height) / 2),
     width: screenSize.width,
     height: screenSize.height,
   };
@@ -486,19 +531,27 @@ function buildChromeDescriptor(profile: DeviceProfileMetadata): DeviceKitChromeD
     // Hover/press travel: the cap slides from rest toward the rollover offset.
     // Expressed as a fraction of the button image so the client can translate it.
     const hover = {
-      x: imageSize.width > 0 ? (button.rolloverOffset.x - button.normalOffset.x) / imageSize.width : 0,
-      y: imageSize.height > 0 ? (button.rolloverOffset.y - button.normalOffset.y) / imageSize.height : 0,
+      x:
+        imageSize.width > 0
+          ? (button.rolloverOffset.x - button.normalOffset.x) / imageSize.width
+          : 0,
+      y:
+        imageSize.height > 0
+          ? (button.rolloverOffset.y - button.normalOffset.y) / imageSize.height
+          : 0,
     };
-    return [{
-      name: button.name,
-      image: button.image,
-      imageDown: button.imageDown,
-      onTop: button.onTop || capsOnTop,
-      frame: { ...topLeft, ...imageSize },
-      hover,
-      usagePage: button.usagePage,
-      usage: button.usage,
-    }];
+    return [
+      {
+        name: button.name,
+        image: button.image,
+        imageDown: button.imageDown,
+        onTop: button.onTop || capsOnTop,
+        frame: { ...topLeft, ...imageSize },
+        hover,
+        usagePage: button.usagePage,
+        usage: button.usage,
+      },
+    ];
   });
 
   return {
@@ -547,10 +600,7 @@ function framebufferMaskSize(profile: JsonRecord): Size | null {
   return parsePdfPageSize(readFileSync(maskPath));
 }
 
-function profileNameForDevice(device: {
-  name: string;
-  deviceTypeIdentifier?: string;
-}): string {
+function profileNameForDevice(device: { name: string; deviceTypeIdentifier?: string }): string {
   return deviceTypeNameForIdentifier(device.deviceTypeIdentifier) ?? device.name;
 }
 
@@ -636,7 +686,13 @@ function readChrome(identifier: string): ParsedChrome | null {
   if (!/^[A-Za-z0-9_-]+$/.test(bare)) return null;
   if (chromeCache.has(bare)) return chromeCache.get(bare) ?? null;
 
-  const jsonPath = join(CHROME_ROOT, `${bare}.devicechrome`, "Contents", "Resources", "chrome.json");
+  const jsonPath = join(
+    CHROME_ROOT,
+    `${bare}.devicechrome`,
+    "Contents",
+    "Resources",
+    "chrome.json",
+  );
   let parsed: ParsedChrome | null = null;
   try {
     const json = JSON.parse(readFileSync(jsonPath, "utf-8")) as JsonRecord;
@@ -758,9 +814,8 @@ function buttonTopLeft(
   // The rest position mirrors the rollover offset back across the normal offset.
   const restX = 2 * button.normalOffset.x - button.rolloverOffset.x;
   const restY = 2 * button.normalOffset.y - button.rolloverOffset.y;
-  const alignedX = button.align === "trailing"
-    ? bodyX + bodySize.width + restX - imageSize.width
-    : bodyX + restX;
+  const alignedX =
+    button.align === "trailing" ? bodyX + bodySize.width + restX - imageSize.width : bodyX + restX;
   switch (button.anchor) {
     case "left": {
       const centerX = bodyX + button.rolloverOffset.x;
@@ -790,10 +845,12 @@ function buildDeviceTypeNameMap(): Map<string, string> {
       if (!entry.endsWith(".simdevicetype")) continue;
       const bundlePath = join(DEVICE_TYPES_ROOT, entry);
       const info = readPlist(join(bundlePath, "Contents", "Info.plist"));
-      const identifier = typeof info?.CFBundleIdentifier === "string" ? info.CFBundleIdentifier : null;
-      const name = typeof info?.CFBundleName === "string"
-        ? info.CFBundleName
-        : basename(entry, ".simdevicetype");
+      const identifier =
+        typeof info?.CFBundleIdentifier === "string" ? info.CFBundleIdentifier : null;
+      const name =
+        typeof info?.CFBundleName === "string"
+          ? info.CFBundleName
+          : basename(entry, ".simdevicetype");
       if (identifier) out.set(identifier, name);
     }
   } catch {}
@@ -835,7 +892,13 @@ function pdfAssetSize(identifier: string, imageName: string): Size | null {
 }
 
 function chromeAssetPath(identifier: string, imageName: string): string {
-  return join(CHROME_ROOT, `${identifier}.devicechrome`, "Contents", "Resources", `${imageName}.pdf`);
+  return join(
+    CHROME_ROOT,
+    `${identifier}.devicechrome`,
+    "Contents",
+    "Resources",
+    `${imageName}.pdf`,
+  );
 }
 
 function cachedPngPath(identifier: string, imageName: string, pdfPath: string): string {
@@ -869,10 +932,7 @@ function cachedPngPath(identifier: string, imageName: string, pdfPath: string): 
   return outPath;
 }
 
-function cachedPlaceholderAssetPngPath(
-  name: string,
-  sourcePath: string,
-): PlaceholderAssetInfo {
+function cachedPlaceholderAssetPngPath(name: string, sourcePath: string): PlaceholderAssetInfo {
   mkdirSync(PLACEHOLDER_ASSET_CACHE_ROOT, { recursive: true });
   const stat = statSync(sourcePath);
   const key = createHash("sha1")
@@ -933,11 +993,7 @@ function cachedPlaceholderAssetPngPath(
 }
 
 function pngSize(png: Buffer): Size {
-  if (
-    png.byteLength < 24 ||
-    png[0] !== 0x89 ||
-    png.toString("ascii", 1, 4) !== "PNG"
-  ) {
+  if (png.byteLength < 24 || png[0] !== 0x89 || png.toString("ascii", 1, 4) !== "PNG") {
     throw new Error("Invalid PNG placeholder asset");
   }
   return {
@@ -993,8 +1049,8 @@ function decodeMask(png: Buffer, predicate: PixelPredicate): PixelMask | null {
     for (let x = 0; x < width; x++) {
       const base = x * bytesPerPixel;
       const r = row[base] ?? 0;
-      const g = rgba ? row[base + 1] ?? 0 : r;
-      const b = rgba ? row[base + 2] ?? 0 : r;
+      const g = rgba ? (row[base + 1] ?? 0) : r;
+      const b = rgba ? (row[base + 2] ?? 0) : r;
       const a = row[base + bytesPerPixel - 1] ?? 0;
       if (predicate(r, g, b, a)) mask[y * width + x] = 1;
     }
@@ -1007,7 +1063,10 @@ function alphaBounds(png: Buffer): Rect | null {
   const { width, height } = pngSize(png);
   const decoded = decodeMask(png, (_r, _g, _b, a) => a > 0);
   if (!decoded) return { x: 0, y: 0, width, height };
-  let minX = width, minY = height, maxX = -1, maxY = -1;
+  let minX = width,
+    minY = height,
+    maxX = -1,
+    maxY = -1;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (!decoded.mask[y * width + x]) continue;
@@ -1038,7 +1097,10 @@ function scaleMaskToPoints(mask: Size, opening: Rect): Size | null {
  * center along the center row + column, so dark metal / button slots elsewhere
  * don't inflate the rect. In the composite's own pixel/point coordinates.
  */
-function compositeScreenBounds(identifier: string, imageName: string): (Rect & { cornerRadii: ScreenCornerRadii }) | null {
+function compositeScreenBounds(
+  identifier: string,
+  imageName: string,
+): (Rect & { cornerRadii: ScreenCornerRadii }) | null {
   const png = readCompositePng(identifier, imageName);
   if (!png) return null;
   const decoded = decodeMask(png, (r, g, b, a) => a > 200 && r < 30 && g < 30 && b < 30);
@@ -1047,7 +1109,9 @@ function compositeScreenBounds(identifier: string, imageName: string): (Rect & {
 }
 
 /** Preserve each corner: foldable displays can have tighter corners at the hinge. */
-export function measureScreenOpening(decoded: PixelMask): (Rect & { cornerRadii: ScreenCornerRadii }) | null {
+export function measureScreenOpening(
+  decoded: PixelMask,
+): (Rect & { cornerRadii: ScreenCornerRadii }) | null {
   const { width, height, mask } = decoded;
   const cx = Math.floor(width / 2);
   const cy = Math.floor(height / 2);
@@ -1154,9 +1218,7 @@ function stringValue(value: unknown): string | null {
 }
 
 function record(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
 }
 
 function pointValue(value: JsonRecord): Point | null {

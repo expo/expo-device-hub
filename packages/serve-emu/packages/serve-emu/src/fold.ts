@@ -25,28 +25,36 @@ export async function getFoldStatus(
     lane: "interactive",
   });
   if (sensor.status !== 0 || sensor.timedOut || sensor.error) {
-    const detail = sensor.stderr.trim() || sensor.error?.message || sensor.stdout.trim() || "unknown error";
+    const detail =
+      sensor.stderr.trim() || sensor.error?.message || sensor.stdout.trim() || "unknown error";
     throw new Error(`Emulator hinge sensor read failed: ${detail}`);
   }
   // Older emulators do not know the sensor; newer ones disable it on profiles without a hinge.
-  if (/KO:\s*(?:unknown sensor name:\s*hinge-angle0|'hinge-angle0' sensor is disabled)/.test(sensor.stdout)) {
+  if (
+    /KO:\s*(?:unknown sensor name:\s*hinge-angle0|'hinge-angle0' sensor is disabled)/.test(
+      sensor.stdout,
+    )
+  ) {
     return UNSUPPORTED;
   }
   const angle = Number(sensor.stdout.match(/hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)/)?.[1]);
   if (!Number.isFinite(angle)) {
-    throw new Error(`Emulator hinge sensor returned an unexpected response: ${sensor.stdout.trim()}`);
+    throw new Error(
+      `Emulator hinge sensor returned an unexpected response: ${sensor.stdout.trim()}`,
+    );
   }
 
-  const state = await runExec(
-    "adb",
-    ["-s", serial, "shell", "cmd", "device_state", "base-state"],
-    { timeout: 5_000, lane: "interactive" },
-  );
+  const state = await runExec("adb", ["-s", serial, "shell", "cmd", "device_state", "base-state"], {
+    timeout: 5_000,
+    lane: "interactive",
+  });
   // While an app holds an override state (rear display, dual screen), the
   // committed override comes first and the physical posture is on "Base state:".
-  const name = state.status === 0
-    ? (state.stdout.match(/Base state:.*?name='([A-Z_]+)'/) ?? state.stdout.match(/name='([A-Z_]+)'/))?.[1]
-    : undefined;
+  const name =
+    state.status === 0
+      ? (state.stdout.match(/Base state:.*?name='([A-Z_]+)'/) ??
+          state.stdout.match(/name='([A-Z_]+)'/))?.[1]
+      : undefined;
   const posture = name ? POSTURES[name] : undefined;
   return {
     supported: true,
@@ -69,7 +77,8 @@ export async function setFoldPosture(
     lane: "interactive",
   });
   if (result.status !== 0 || result.timedOut || result.error || /\bKO:/.test(result.stdout)) {
-    const detail = result.stderr.trim() || result.stdout.trim() || result.error?.message || "unknown error";
+    const detail =
+      result.stderr.trim() || result.stdout.trim() || result.error?.message || "unknown error";
     throw new Error(`Emulator ${command} failed: ${detail}`);
   }
 

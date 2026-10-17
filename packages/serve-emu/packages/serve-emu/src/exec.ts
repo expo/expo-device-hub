@@ -1,7 +1,4 @@
-import {
-  spawn,
-  type ChildProcessByStdio,
-} from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 
 // Bun serves HTTP and pumps video on one JS thread. All short-lived adb and
@@ -17,11 +14,7 @@ export const MAX_EXEC_TIMEOUT_MS = 2_147_483_647;
 
 export type ExecLane = "interactive" | "default" | "background";
 
-export type ExecErrorCode =
-  | "queue-full"
-  | "deadline-exceeded"
-  | "aborted"
-  | "output-limit";
+export type ExecErrorCode = "queue-full" | "deadline-exceeded" | "aborted" | "output-limit";
 
 export class ExecError extends Error {
   constructor(
@@ -85,11 +78,7 @@ export type ExecClock = {
   clearTimeout(timer: unknown): void;
 };
 
-export type ExecSpawner = (
-  cmd: string,
-  args: string[],
-  options: { stdin: boolean },
-) => ExecChild;
+export type ExecSpawner = (cmd: string, args: string[], options: { stdin: boolean }) => ExecChild;
 
 export type ProcessExecutorOptions = {
   maxActive?: number;
@@ -104,8 +93,7 @@ export type ProcessExecutorOptions = {
 const SYSTEM_CLOCK: ExecClock = {
   now: Date.now,
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (timer) =>
-    clearTimeout(timer as ReturnType<typeof setTimeout>),
+  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
 };
 
 const LANE_PRIORITY: Record<ExecLane, number> = {
@@ -153,39 +141,17 @@ function integer(
   minimum: number,
   maximum = Number.MAX_SAFE_INTEGER,
 ): number {
-  if (
-    !Number.isSafeInteger(value) ||
-    value < minimum ||
-    value > maximum
-  ) {
-    throw new TypeError(
-      `${name} must be an integer from ${minimum} through ${maximum}`,
-    );
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new TypeError(`${name} must be an integer from ${minimum} through ${maximum}`);
   }
   return value;
 }
 
-function normalizedOptions(
-  options: ExecOpts,
-  defaultMaxBuffer: number,
-): NormalizedExecOpts {
-  const timeout = integer(
-    options.timeout ?? 0,
-    "timeout",
-    0,
-    MAX_EXEC_TIMEOUT_MS,
-  );
-  const maxBuffer = integer(
-    options.maxBuffer ?? defaultMaxBuffer,
-    "maxBuffer",
-    0,
-  );
+function normalizedOptions(options: ExecOpts, defaultMaxBuffer: number): NormalizedExecOpts {
+  const timeout = integer(options.timeout ?? 0, "timeout", 0, MAX_EXEC_TIMEOUT_MS);
+  const maxBuffer = integer(options.maxBuffer ?? defaultMaxBuffer, "maxBuffer", 0);
   const lane = options.lane ?? "default";
-  if (
-    lane !== "interactive" &&
-    lane !== "default" &&
-    lane !== "background"
-  ) {
+  if (lane !== "interactive" && lane !== "default" && lane !== "background") {
     throw new TypeError("lane must be interactive, default, or background");
   }
   if (options.stdin !== undefined && !Buffer.isBuffer(options.stdin)) {
@@ -254,16 +220,8 @@ export class ProcessExecutor {
   #nextId = 1;
 
   constructor(options: ProcessExecutorOptions = {}) {
-    this.#maxActive = integer(
-      options.maxActive ?? DEFAULT_EXEC_MAX_ACTIVE,
-      "maxActive",
-      1,
-    );
-    this.#maxQueued = integer(
-      options.maxQueued ?? DEFAULT_EXEC_MAX_QUEUED,
-      "maxQueued",
-      0,
-    );
+    this.#maxActive = integer(options.maxActive ?? DEFAULT_EXEC_MAX_ACTIVE, "maxActive", 1);
+    this.#maxQueued = integer(options.maxQueued ?? DEFAULT_EXEC_MAX_QUEUED, "maxQueued", 0);
     this.#defaultMaxBuffer = integer(
       options.defaultMaxBuffer ?? DEFAULT_EXEC_MAX_OUTPUT_BYTES,
       "defaultMaxBuffer",
@@ -271,50 +229,33 @@ export class ProcessExecutor {
     );
     this.#interactiveActiveReserve = integer(
       options.interactiveActiveReserve ??
-        Math.min(
-          DEFAULT_EXEC_INTERACTIVE_ACTIVE_RESERVE,
-          this.#maxActive - 1,
-        ),
+        Math.min(DEFAULT_EXEC_INTERACTIVE_ACTIVE_RESERVE, this.#maxActive - 1),
       "interactiveActiveReserve",
       0,
       this.#maxActive - 1,
     );
     this.#interactiveQueueReserve = integer(
       options.interactiveQueueReserve ??
-        Math.min(
-          DEFAULT_EXEC_INTERACTIVE_QUEUE_RESERVE,
-          Math.floor(this.#maxQueued / 4),
-        ),
+        Math.min(DEFAULT_EXEC_INTERACTIVE_QUEUE_RESERVE, Math.floor(this.#maxQueued / 4)),
       "interactiveQueueReserve",
       0,
       this.#maxQueued,
     );
     this.#spawn =
       options.spawn ??
-      ((cmd, args, { stdin }) => stdin
-        ? spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] })
-        : spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] }));
+      ((cmd, args, { stdin }) =>
+        stdin
+          ? spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] })
+          : spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] }));
     this.#clock = options.clock ?? SYSTEM_CLOCK;
   }
 
-  execText(
-    cmd: string,
-    args: string[],
-    options: ExecOpts = {},
-  ): Promise<ExecResult<string>> {
-    return this.#submit(cmd, args, options, "utf8") as Promise<
-      ExecResult<string>
-    >;
+  execText(cmd: string, args: string[], options: ExecOpts = {}): Promise<ExecResult<string>> {
+    return this.#submit(cmd, args, options, "utf8") as Promise<ExecResult<string>>;
   }
 
-  execBuffer(
-    cmd: string,
-    args: string[],
-    options: ExecOpts = {},
-  ): Promise<ExecResult<Buffer>> {
-    return this.#submit(cmd, args, options, "buffer") as Promise<
-      ExecResult<Buffer>
-    >;
+  execBuffer(cmd: string, args: string[], options: ExecOpts = {}): Promise<ExecResult<Buffer>> {
+    return this.#submit(cmd, args, options, "buffer") as Promise<ExecResult<Buffer>>;
   }
 
   snapshot(): ExecSnapshot {
@@ -332,11 +273,7 @@ export class ProcessExecutor {
       oldestQueuedAgeMs:
         this.#queue.length === 0
           ? null
-          : Math.max(
-              0,
-              now -
-                Math.min(...this.#queue.map((job) => job.submittedAt)),
-            ),
+          : Math.max(0, now - Math.min(...this.#queue.map((job) => job.submittedAt))),
       limits: {
         active: this.#maxActive,
         queued: this.#maxQueued,
@@ -365,10 +302,7 @@ export class ProcessExecutor {
       this.#totals.aborted++;
       return Promise.resolve(emptyResult(encoding, abortError(opts.signal)));
     }
-    if (
-      !this.#canStartLane(opts.lane) &&
-      !this.#queueHasCapacity(opts.lane)
-    ) {
+    if (!this.#canStartLane(opts.lane) && !this.#queueHasCapacity(opts.lane)) {
       const error = new ExecError(
         "queue-full",
         `command queue has no capacity for ${opts.lane} work`,
@@ -412,10 +346,7 @@ export class ProcessExecutor {
     if (isSettled(job)) return promise;
 
     if (opts.timeout > 0) {
-      const timer = this.#clock.setTimeout(
-        () => this.#expire(job),
-        opts.timeout,
-      );
+      const timer = this.#clock.setTimeout(() => this.#expire(job), opts.timeout);
       if (isSettled(job)) this.#clock.clearTimeout(timer);
       else job.deadlineTimer = timer;
     }
@@ -436,8 +367,7 @@ export class ProcessExecutor {
     try {
       child = this.#spawn(job.cmd, job.args, { stdin: job.opts.stdin !== undefined });
     } catch (error) {
-      job.terminalError =
-        error instanceof Error ? error : new Error(String(error));
+      job.terminalError = error instanceof Error ? error : new Error(String(error));
       this.#finishActive(job, null, null);
       return;
     }
@@ -470,11 +400,7 @@ export class ProcessExecutor {
     }
   }
 
-  #collect(
-    job: ExecJob,
-    target: "stdout" | "stderr",
-    value: Buffer | string,
-  ): void {
+  #collect(job: ExecJob, target: "stdout" | "stderr", value: Buffer | string): void {
     if (job.state !== "active" || job.terminalError) return;
     const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
     if (chunk.byteLength > job.opts.maxBuffer - job.outputBytes) {
@@ -536,8 +462,7 @@ export class ProcessExecutor {
     try {
       job.child.kill("SIGKILL");
     } catch (error) {
-      job.terminalError ??=
-        error instanceof Error ? error : new Error(String(error));
+      job.terminalError ??= error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -553,11 +478,7 @@ export class ProcessExecutor {
     this.#drain();
   }
 
-  #finishActive(
-    job: ExecJob,
-    status: number | null,
-    signal: NodeJS.Signals | null,
-  ): void {
+  #finishActive(job: ExecJob, status: number | null, signal: NodeJS.Signals | null): void {
     if (job.state !== "active") return;
     job.state = "settled";
     this.#active.delete(job.id);
@@ -567,10 +488,7 @@ export class ProcessExecutor {
     const result: ExecResult<ExecOutput> = {
       status,
       signal,
-      stdout:
-        job.encoding === "buffer"
-          ? stdoutBuffer
-          : stdoutBuffer.toString("utf8"),
+      stdout: job.encoding === "buffer" ? stdoutBuffer : stdoutBuffer.toString("utf8"),
       stderr: Buffer.concat(job.stderrChunks).toString("utf8"),
       timedOut: job.timedOut,
       error: job.terminalError,
@@ -601,10 +519,7 @@ export class ProcessExecutor {
         (count, job) => count + (job.opts.lane === "interactive" ? 1 : 0),
         0,
       );
-      const reserveNeeded = Math.max(
-        0,
-        this.#interactiveActiveReserve - activeInteractive,
-      );
+      const reserveNeeded = Math.max(0, this.#interactiveActiveReserve - activeInteractive);
       if (this.#active.size >= this.#maxActive - reserveNeeded) return false;
     }
     return true;
@@ -617,10 +532,7 @@ export class ProcessExecutor {
       (count, job) => count + (job.opts.lane === "interactive" ? 0 : 1),
       0,
     );
-    return (
-      nonInteractiveQueued <
-      this.#maxQueued - this.#interactiveQueueReserve
-    );
+    return nonInteractiveQueued < this.#maxQueued - this.#interactiveQueueReserve;
   }
 
   #drain(): void {
@@ -631,8 +543,7 @@ export class ProcessExecutor {
         if (!this.#canStartLane(candidate.opts.lane)) continue;
         if (
           nextIndex === -1 ||
-          LANE_PRIORITY[candidate.opts.lane] <
-            LANE_PRIORITY[this.#queue[nextIndex]!.opts.lane]
+          LANE_PRIORITY[candidate.opts.lane] < LANE_PRIORITY[this.#queue[nextIndex]!.opts.lane]
         ) {
           nextIndex = index;
         }

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from "bun:test";
 
-import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from '../session-token';
+import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "../session-token";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -16,47 +16,49 @@ function recordFetch() {
   return calls;
 }
 
-describe('sessionTokenFetch', () => {
-  test('sends the token as a bearer header and keeps the rest of the request', async () => {
+describe("sessionTokenFetch", () => {
+  test("sends the token as a bearer header and keeps the rest of the request", async () => {
     const calls = recordFetch();
 
-    await sessionTokenFetch('tok-1')('https://hub.test/api', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
+    await sessionTokenFetch("tok-1")("https://hub.test/api", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
     });
 
-    expect(calls[0]!.url).toBe('https://hub.test/api');
-    expect(calls[0]!.headers.get('authorization')).toBe('Bearer tok-1');
-    expect(calls[0]!.headers.get('content-type')).toBe('application/json');
-    expect(calls[0]!.init?.method).toBe('POST');
-    expect(calls[0]!.init?.body).toBe('{}');
+    expect(calls[0]!.url).toBe("https://hub.test/api");
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer tok-1");
+    expect(calls[0]!.headers.get("content-type")).toBe("application/json");
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(calls[0]!.init?.body).toBe("{}");
   });
 
-  test('adds nothing without a token', async () => {
+  test("adds nothing without a token", async () => {
     const calls = recordFetch();
 
-    await sessionTokenFetch(null)('https://hub.test/api');
+    await sessionTokenFetch(null)("https://hub.test/api");
 
-    expect(calls[0]!.headers.has('authorization')).toBe(false);
+    expect(calls[0]!.headers.has("authorization")).toBe(false);
   });
 });
 
-describe('withSessionTokenQuery', () => {
-  test('appends the token to a URL with or without a query', () => {
-    expect(withSessionTokenQuery('https://hub.test/logs', 'tok')).toBe('https://hub.test/logs?token=tok');
-    expect(withSessionTokenQuery('https://hub.test/logs?device=A', 'a+b')).toBe(
-      'https://hub.test/logs?device=A&token=a%2Bb'
+describe("withSessionTokenQuery", () => {
+  test("appends the token to a URL with or without a query", () => {
+    expect(withSessionTokenQuery("https://hub.test/logs", "tok")).toBe(
+      "https://hub.test/logs?token=tok",
     );
-    expect(withSessionTokenQuery('https://hub.test/logs', undefined)).toBe('https://hub.test/logs');
+    expect(withSessionTokenQuery("https://hub.test/logs?device=A", "a+b")).toBe(
+      "https://hub.test/logs?device=A&token=a%2Bb",
+    );
+    expect(withSessionTokenQuery("https://hub.test/logs", undefined)).toBe("https://hub.test/logs");
   });
 });
 
-describe('sessionTokenProtocols', () => {
+describe("sessionTokenProtocols", () => {
   // Each backend reads only its own prefix; the Hub accepts both.
-  test('names the prefix of the backend the socket reaches', () => {
-    expect(sessionTokenProtocols('ios', 'tok')).toEqual(['serve-sim.token.tok']);
-    expect(sessionTokenProtocols('android', 'tok')).toEqual(['serve-emu.token.tok']);
-    expect(sessionTokenProtocols('ios', '')).toBeUndefined();
+  test("names the prefix of the backend the socket reaches", () => {
+    expect(sessionTokenProtocols("ios", "tok")).toEqual(["serve-sim.token.tok"]);
+    expect(sessionTokenProtocols("android", "tok")).toEqual(["serve-emu.token.tok"]);
+    expect(sessionTokenProtocols("ios", "")).toBeUndefined();
   });
 });

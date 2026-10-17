@@ -21,11 +21,7 @@ function localMarkdownLinks(markdown: string): string[] {
     if (target.startsWith("<") && target.endsWith(">")) {
       target = target.slice(1, -1);
     }
-    if (
-      target === "" ||
-      target.startsWith("#") ||
-      /^[a-z][a-z\d+.-]*:/i.test(target)
-    ) {
+    if (target === "" || target.startsWith("#") || /^[a-z][a-z\d+.-]*:/i.test(target)) {
       continue;
     }
     const path = target.split("#", 1)[0];
@@ -69,9 +65,7 @@ describe("package README generation", () => {
       current: true,
       expected: generated,
     });
-    expect(checkPackageReadme(root, `${generated}\nstale\n`).current).toBe(
-      false,
-    );
+    expect(checkPackageReadme(root, `${generated}\nstale\n`).current).toBe(false);
   });
 
   test("checked-in package README exactly matches the canonical root README", async () => {
@@ -81,9 +75,7 @@ describe("package README generation", () => {
     ]);
 
     expect(checkPackageReadme(rootReadme, packageReadme).current).toBe(true);
-    expect(packageReadme.startsWith(`${GENERATED_README_NOTICE}\n\n`)).toBe(
-      true,
-    );
+    expect(packageReadme.startsWith(`${GENERATED_README_NOTICE}\n\n`)).toBe(true);
     expect(packageReadme).toContain(
       "[protocol reference](https://github.com/expo/expo-device-hub/blob/main/llp/0008-serve-emu-protocol.spec.md)",
     );

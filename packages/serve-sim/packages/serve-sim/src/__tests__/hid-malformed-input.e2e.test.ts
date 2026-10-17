@@ -28,7 +28,6 @@ const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
 
 const WS_TAG_TOUCH = 0x03;
 
-
 /** Open `/ws`, send one `[tag][JSON]` frame, then close. Resolves on close. */
 function sendHidFrame(wsUrl: string, tag: number, payload: unknown): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -40,7 +39,10 @@ function sendHidFrame(wsUrl: string, tag: number, payload: unknown): Promise<voi
       msg[0] = tag;
       msg.set(json, 1);
       ws.send(msg);
-      setTimeout(() => { ws.close(); resolve(); }, 50);
+      setTimeout(() => {
+        ws.close();
+        resolve();
+      }, 50);
     };
     ws.onerror = () => reject(new Error(`failed to connect ${wsUrl}`));
   });
@@ -56,7 +58,9 @@ describeIfSim(`serve-sim malformed HID input (booted sim ${bootedUdid ?? "<skipp
   let configUrl: string;
 
   beforeAll(async () => {
-    try { execFileSync("node", [CLI, "--kill", bootedUdid!], { stdio: "pipe" }); } catch {}
+    try {
+      execFileSync("node", [CLI, "--kill", bootedUdid!], { stdio: "pipe" });
+    } catch {}
 
     const startPort = 40_000 + Math.floor(Math.random() * 20_000);
     const detach = spawnSync("node", [CLI, "--detach", "-p", String(startPort), bootedUdid!], {
@@ -67,7 +71,7 @@ describeIfSim(`serve-sim malformed HID input (booted sim ${bootedUdid ?? "<skipp
     if (detach.status !== 0 || !detach.stdout) {
       throw new Error(
         `serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\n` +
-        `stdout: ${detach.stdout ?? "<none>"}`,
+          `stdout: ${detach.stdout ?? "<none>"}`,
       );
     }
     const state = parseDetachState<{ wsUrl: string; streamUrl: string }>(detach.stdout);
@@ -87,7 +91,9 @@ describeIfSim(`serve-sim malformed HID input (booted sim ${bootedUdid ?? "<skipp
   }, 60_000);
 
   afterAll(() => {
-    try { execFileSync("node", [CLI, "--kill", bootedUdid!], { stdio: "pipe" }); } catch {}
+    try {
+      execFileSync("node", [CLI, "--kill", bootedUdid!], { stdio: "pipe" });
+    } catch {}
   }, 30_000);
 
   async function serverAlive(): Promise<boolean> {

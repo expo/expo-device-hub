@@ -4,16 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts";
 import { parseFramePacket } from "../src/shared/frame-meta.ts";
-import {
-  ScrcpyStreamError,
-  type ScrcpySession,
-  type VideoPacket,
-} from "../src/scrcpy.ts";
-import {
-  startServer,
-  type ServerDependencies,
-  type ServerOpts,
-} from "../src/server.ts";
+import { ScrcpyStreamError, type ScrcpySession, type VideoPacket } from "../src/scrcpy.ts";
+import { startServer, type ServerDependencies, type ServerOpts } from "../src/server.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -42,9 +34,7 @@ class FrameFeed {
   read(): Promise<VideoPacket | null> {
     const entry = this.#entries.shift();
     if (entry) {
-      return entry.type === "value"
-        ? Promise.resolve(entry.value)
-        : Promise.reject(entry.error);
+      return entry.type === "value" ? Promise.resolve(entry.value) : Promise.reject(entry.error);
     }
     this.#waiting = deferred<VideoPacket | null>();
     return this.#waiting.promise;
@@ -76,10 +66,7 @@ class FakeControlSocket extends EventEmitter {
   readonly writable = true;
   readonly writes: Buffer[] = [];
 
-  write(
-    packet: Buffer,
-    callback?: (error?: Error | null) => void,
-  ): boolean {
+  write(packet: Buffer, callback?: (error?: Error | null) => void): boolean {
     this.writes.push(Buffer.from(packet));
     callback?.();
     return true;
@@ -154,10 +141,7 @@ type UpgradeData = {
 };
 
 type CapturedHandlers = {
-  fetch(
-    request: Request,
-    server: CapturedServer,
-  ): Promise<Response | undefined>;
+  fetch(request: Request, server: CapturedServer): Promise<Response | undefined>;
   websocket: {
     maxPayloadLength: number;
     open(socket: FakeWebSocket): void;
@@ -297,17 +281,13 @@ async function createHarness(
   };
 }
 
-async function response(
-  value: Promise<Response | undefined>,
-): Promise<Response> {
+async function response(value: Promise<Response | undefined>): Promise<Response> {
   const result = await value;
   if (!result) throw new Error("expected an HTTP response");
   return result;
 }
 
-async function waitFor(
-  predicate: () => boolean | Promise<boolean>,
-): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (Date.now() < deadline) {
     if (await predicate()) return;
@@ -458,12 +438,8 @@ describe("server request gates", () => {
     );
 
     expect(allowed.status).toBe(204);
-    expect(allowed.headers.get("access-control-allow-origin")).toBe(
-      "http://localhost:5173",
-    );
-    expect(allowed.headers.get("access-control-allow-methods")).toBe(
-      "GET, OPTIONS",
-    );
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
   });
 
   test("routes WebRTC stats preflights through the shared origin policy before authentication", async () => {
@@ -480,14 +456,9 @@ describe("server request gates", () => {
     );
 
     expect(allowed.status).toBe(204);
-    expect(allowed.headers.get("access-control-allow-origin")).toBe(
-      "http://localhost:5173",
-    );
-    expect(allowed.headers.get("access-control-allow-methods")).toBe(
-      "GET, OPTIONS",
-    );
-    expect(allowed.headers.get("access-control-allow-headers"))
-      .toContain("Authorization");
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+    expect(allowed.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
+    expect(allowed.headers.get("access-control-allow-headers")).toContain("Authorization");
 
     const forbidden = await response(
       harness.request("/webrtc/stats", {
@@ -527,9 +498,7 @@ describe("server request gates", () => {
       }),
     );
     expect(authenticated.status).toBe(400);
-    expect(authenticated.headers.get("access-control-allow-origin")).toBe(
-      "http://localhost:5173",
-    );
+    expect(authenticated.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
     expect(await authenticated.json()).toMatchObject({
       ok: false,
       error: "missing_session_id",
@@ -584,9 +553,7 @@ describe("server HTTP and WebSocket boundaries", () => {
     for (const [method, path] of mismatches) {
       const result = await response(harness.request(path, { method }));
       expect(result.status, `${method} ${path}`).toBe(405);
-      expect(await result.text(), `${method} ${path}`).toBe(
-        "method not allowed",
-      );
+      expect(await result.text(), `${method} ${path}`).toBe("method not allowed");
     }
   });
 
@@ -610,9 +577,7 @@ describe("server HTTP and WebSocket boundaries", () => {
       session: { eventCount: 0 },
     });
 
-    const sessionExport = await response(
-      harness.request("/api/session/export"),
-    );
+    const sessionExport = await response(harness.request("/api/session/export"));
     expect(await sessionExport.json()).toMatchObject({ events: [] });
 
     const unknownApi = await response(harness.request("/api/not-registered"));
@@ -621,20 +586,23 @@ describe("server HTTP and WebSocket boundaries", () => {
   });
 
   test("merges physical devices, running emulators, and stopped AVDs", async () => {
-    const harness = await createHarness({}, {
-      listDevices: async () => [
-        { serial: "emulator-5554", state: "device" },
-        { serial: "usb-device", state: "unauthorized" },
-      ],
-      listRunningAvds: async () => [
-        {
-          serial: "emulator-5554",
-          avd: "Pixel_Running",
-          state: "device",
-        },
-      ],
-      listAvds: async () => ["Pixel_Running", "Pixel_Stopped"],
-    });
+    const harness = await createHarness(
+      {},
+      {
+        listDevices: async () => [
+          { serial: "emulator-5554", state: "device" },
+          { serial: "usb-device", state: "unauthorized" },
+        ],
+        listRunningAvds: async () => [
+          {
+            serial: "emulator-5554",
+            avd: "Pixel_Running",
+            state: "device",
+          },
+        ],
+        listAvds: async () => ["Pixel_Running", "Pixel_Stopped"],
+      },
+    );
 
     const devices = await response(harness.request("/api/devices"));
     expect(await devices.json()).toMatchObject({
@@ -733,15 +701,11 @@ describe("server HTTP and WebSocket boundaries", () => {
       expect(existing.status).toBe(200);
       expect(await existing.text()).toBe("static fixture\n");
 
-      const missing = await response(
-        harness.request("/__server-request-gates-missing__.txt"),
-      );
+      const missing = await response(harness.request("/__server-request-gates-missing__.txt"));
       expect(missing.status).toBe(404);
       expect(await missing.text()).toBe("not found");
 
-      const encodedTraversal = await response(
-        harness.request("/%2e%2e%2fpackage.json"),
-      );
+      const encodedTraversal = await response(harness.request("/%2e%2e%2fpackage.json"));
       expect(encodedTraversal.status).toBe(404);
     } finally {
       await rm(fixturePath, { force: true });
@@ -777,21 +741,19 @@ describe("server HTTP and WebSocket boundaries", () => {
 
     const socket = fakeWebSocket(harness.server.upgrades[1]!);
     harness.handlers.websocket.open(socket);
-    expect(
-      await response(harness.request("/api")).then((result) => result.json()),
-    ).toMatchObject({ clients: 1 });
+    expect(await response(harness.request("/api")).then((result) => result.json())).toMatchObject({
+      clients: 1,
+    });
 
     harness.handlers.websocket.message(socket, Buffer.from([1, 2, 3]));
     expect(socket.closes).toEqual([]);
     harness.handlers.websocket.message(socket, "x".repeat(16 * 1024 + 1));
-    expect(socket.closes).toEqual([
-      { code: 1009, reason: "message too large" },
-    ]);
+    expect(socket.closes).toEqual([{ code: 1009, reason: "message too large" }]);
 
     harness.handlers.websocket.close(socket);
-    expect(
-      await response(harness.request("/api")).then((result) => result.json()),
-    ).toMatchObject({ clients: 0 });
+    expect(await response(harness.request("/api")).then((result) => result.json())).toMatchObject({
+      clients: 0,
+    });
   });
 
   test("broadcasts session changes, cached config, and framed keyframes", async () => {
@@ -834,13 +796,9 @@ describe("server HTTP and WebSocket boundaries", () => {
     });
     await waitFor(() => rawSocket.sent.some((value) => Buffer.isBuffer(value)));
 
-    const rawPacket = rawSocket.sent.find((value) =>
-      Buffer.isBuffer(value)
-    ) as Buffer;
+    const rawPacket = rawSocket.sent.find((value) => Buffer.isBuffer(value)) as Buffer;
     expect(rawPacket).toEqual(Buffer.concat([config, keyFrame]));
-    const framedPacket = framedSocket.sent.find((value) =>
-      Buffer.isBuffer(value)
-    ) as Buffer;
+    const framedPacket = framedSocket.sent.find((value) => Buffer.isBuffer(value)) as Buffer;
     const parsed = parseFramePacket(framedPacket);
     expect(parsed).toMatchObject({ isKey: true, timestamp: 9_001 });
     expect(Buffer.from(parsed.data)).toEqual(Buffer.concat([config, keyFrame]));
@@ -866,10 +824,7 @@ describe("server HTTP and WebSocket boundaries", () => {
     const sockets: FakeWebSocket[] = [];
     for (const options of socketOptions) {
       await harness.request("/ws");
-      const socket = fakeWebSocket(
-        harness.server.upgrades.at(-1)!,
-        options,
-      );
+      const socket = fakeWebSocket(harness.server.upgrades.at(-1)!, options);
       sockets.push(socket);
       harness.handlers.websocket.open(socket);
     }
@@ -890,12 +845,8 @@ describe("server HTTP and WebSocket boundaries", () => {
     });
     await waitFor(() => sockets[0]!.closes.length === 1);
 
-    expect(sockets[0]!.closes).toEqual([
-      { code: 1013, reason: "client too slow" },
-    ]);
-    expect(sockets[2]!.closes).toEqual([
-      { code: 1011, reason: "frame send failed" },
-    ]);
+    expect(sockets[0]!.closes).toEqual([{ code: 1013, reason: "client too slow" }]);
+    expect(sockets[2]!.closes).toEqual([{ code: 1011, reason: "frame send failed" }]);
     expect(sockets[5]!.sent).toHaveLength(1);
 
     const health = await response(harness.request("/health"));
@@ -911,9 +862,7 @@ describe("server HTTP and WebSocket boundaries", () => {
   test("returns terminal health instead of upgrading a stopped stream", async () => {
     const harness = await createHarness();
     harness.session.endFrames();
-    await waitFor(async () =>
-      (await response(harness.request("/health"))).status === 503
-    );
+    await waitFor(async () => (await response(harness.request("/health"))).status === 503);
 
     const unavailable = await response(
       harness.request("/ws", {
@@ -970,15 +919,12 @@ describe("server shutdown and errors", () => {
   test("surfaces structured scrcpy stream failures through health", async () => {
     const harness = await createHarness();
     harness.session.failFrames(
-      new ScrcpyStreamError(
-        "truncated-payload",
-        "video payload ended early",
-        { expected: 128, received: 64 },
-      ),
+      new ScrcpyStreamError("truncated-payload", "video payload ended early", {
+        expected: 128,
+        received: 64,
+      }),
     );
-    await waitFor(async () =>
-      (await response(harness.request("/health"))).status === 503
-    );
+    await waitFor(async () => (await response(harness.request("/health"))).status === 503);
 
     const health = await response(harness.request("/health"));
     expect(await health.json()).toMatchObject({

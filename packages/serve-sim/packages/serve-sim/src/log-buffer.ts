@@ -11,11 +11,13 @@ function isUserAppLog(raw: string): boolean {
   // simctl already scopes this source to one device; paths may be device-relative.
   try {
     const entry: unknown = JSON.parse(raw);
-    return !!entry &&
+    return (
+      !!entry &&
       typeof entry === "object" &&
       "processImagePath" in entry &&
       typeof entry.processImagePath === "string" &&
-      /\/containers\/bundle\/application\/[^/]+\/[^/]+\.app\//i.test(entry.processImagePath);
+      /\/containers\/bundle\/application\/[^/]+\/[^/]+\.app\//i.test(entry.processImagePath)
+    );
   } catch {
     return false;
   }
@@ -36,7 +38,8 @@ function emittedBy(raw: string, processName: string, processId: number | null): 
   try {
     const entry = JSON.parse(raw) as { processImagePath?: unknown; processID?: unknown };
     const path = entry.processImagePath;
-    if (typeof path !== "string" || path.slice(path.lastIndexOf("/") + 1) !== processName) return false;
+    if (typeof path !== "string" || path.slice(path.lastIndexOf("/") + 1) !== processName)
+      return false;
     return processId === null || entry.processID === processId;
   } catch {
     return false;
@@ -47,7 +50,7 @@ function spawnDeviceLogStream(udid: string): ChildProcess {
   return spawn(
     "xcrun",
     ["simctl", "spawn", udid, "log", "stream", "--style", "ndjson", "--level", "info"],
-    { stdio: ["ignore", "pipe", "pipe"] }
+    { stdio: ["ignore", "pipe", "pipe"] },
   );
 }
 
@@ -79,7 +82,7 @@ export class DeviceLogBuffer {
   constructor(
     private readonly udid: string,
     private readonly deps: Required<LogBufferDeps>,
-    private readonly scope: LogScope = "all"
+    private readonly scope: LogScope = "all",
   ) {}
 
   get byteLength(): number {
@@ -263,7 +266,7 @@ export class DeviceLogBuffer {
     if (this.stopped || this.restartTimer) return;
     const delay = Math.min(
       MAX_RESTART_DELAY_MS,
-      this.deps.restartDelayMs * 2 ** Math.max(0, this.consecutiveFailures - 1)
+      this.deps.restartDelayMs * 2 ** Math.max(0, this.consecutiveFailures - 1),
     );
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
@@ -392,7 +395,7 @@ export function createLogBufferCache(deps: LogBufferDeps = {}) {
 export function pruneByUdid<T>(
   byUdid: Map<string, T>,
   liveUdids: readonly string[],
-  dispose: (entry: T) => void
+  dispose: (entry: T) => void,
 ): void {
   if (liveUdids.length === 0) return;
   const live = new Set(liveUdids);

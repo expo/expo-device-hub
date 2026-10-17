@@ -30,14 +30,16 @@ export async function fetchAppDetails(
   const plist = await runHostAction("app.infoPlist", { path: `${appPath}/Info.plist` });
   let info: any = {};
   if (plist.exitCode === 0) {
-    try { info = JSON.parse(plist.stdout); } catch {}
+    try {
+      info = JSON.parse(plist.stdout);
+    } catch {}
   }
 
   // Try to find app icon. CFBundleIcons → primary → CFBundleIconFiles last entry,
   // fall back to CFBundleIconFiles / CFBundleIconFile.
   let iconName: string | undefined;
-  const primary = info?.CFBundleIcons?.CFBundlePrimaryIcon
-    ?? info?.["CFBundleIcons~ipad"]?.CFBundlePrimaryIcon;
+  const primary =
+    info?.CFBundleIcons?.CFBundlePrimaryIcon ?? info?.["CFBundleIcons~ipad"]?.CFBundlePrimaryIcon;
   const iconFiles: string[] | undefined = primary?.CFBundleIconFiles ?? info?.CFBundleIconFiles;
   if (iconFiles && iconFiles.length > 0) iconName = iconFiles[iconFiles.length - 1];
   else if (typeof info?.CFBundleIconFile === "string") iconName = info.CFBundleIconFile;
@@ -79,23 +81,22 @@ export async function fetchAppDetails(
 // data URLs (or null when no icon could be located).
 export const appIconCache = new Map<string, Promise<string | null> | string | null>();
 
-export function fetchAppIcon(
-  udid: string,
-  bundleId: string,
-): Promise<string | null> {
+export function fetchAppIcon(udid: string, bundleId: string): Promise<string | null> {
   const key = `${udid}:${bundleId}`;
   const existing = appIconCache.get(key);
   if (existing !== undefined) {
     return Promise.resolve(existing as string | null | Promise<string | null>);
   }
-  const pending = fetchAppDetails(udid, bundleId).then((d) => {
-    const url = d.iconDataUrl ?? null;
-    appIconCache.set(key, url);
-    return url;
-  }).catch(() => {
-    appIconCache.set(key, null);
-    return null;
-  });
+  const pending = fetchAppDetails(udid, bundleId)
+    .then((d) => {
+      const url = d.iconDataUrl ?? null;
+      appIconCache.set(key, url);
+      return url;
+    })
+    .catch(() => {
+      appIconCache.set(key, null);
+      return null;
+    });
   appIconCache.set(key, pending);
   return pending;
 }

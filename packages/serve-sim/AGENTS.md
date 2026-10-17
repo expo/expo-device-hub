@@ -59,7 +59,7 @@ workflow runs on a PR that is ready for review; a draft runs it only with the
   kills any server it started and removes its state directory. Export
   `SERVE_SIM_STATE_DIR` yourself to point a run at a server you started, and
   it is left alone. Example: `SERVE_SIM_TEST_UDID=<udid> bun run test:e2e --
-  packages/serve-sim/src/__tests__/permissions.e2e.test.ts`.
+packages/serve-sim/src/__tests__/permissions.e2e.test.ts`.
 - The full `test:e2e` run checks mitmdump before building fixtures. CI checks
   it before each unit or Simulator test job. The shared probe uses capture's
   binary selection

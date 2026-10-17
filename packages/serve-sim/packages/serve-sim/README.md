@@ -1,8 +1,8 @@
 # serve-sim
 
-The `npx serve` of Apple Simulators. 
+The `npx serve` of Apple Simulators.
 
-Host your simulator for use with Agent tools like Codex, Cursor, or Claude Desktop — locally, over your LAN, or host on a remote mac and tunnel anywhere. 
+Host your simulator for use with Agent tools like Codex, Cursor, or Claude Desktop — locally, over your LAN, or host on a remote mac and tunnel anywhere.
 
 ```sh
 npx @expo/serve-sim
@@ -13,7 +13,7 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 
 `serve-sim` captures the simulator's IOSurface through an in-process Swift addon, exposes it over HTTP or WebRTC, and serves a React preview UI with simulator input. It works with any booted iOS Simulator — no Xcode plugin and no instrumentation in your app.
 
-## Features 
+## Features
 
 - Low-latency SimulatorKit capture with a 60 Hz IOSurface seed poll and configurable WebRTC cadence.
 - Swipe from the bottom to go home.
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
   Forwarding this high-volume stream to the browser console is opt in: append
   `?logs=1` to the preview URL.
 - Recent simulator actions are available in the browser tools panel and `serve-sim event-log`.
-- Drag and drop videos and images to add them to the simulator device. 
+- Drag and drop videos and images to add them to the simulator device.
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.
 - Apple Watch, iPad, and iOS support.
 - Network capture: decrypt and inspect a simulator's HTTPS traffic (see [Network capture](#network-capture)).
@@ -329,11 +329,11 @@ serve-sim --network-capture --network-capture-field header,request-body,response
 serve-sim capture har -o ./capture.har
 ```
 
-| Flag / command | What it does |
-| --- | --- |
-| `--network-capture` | Start capture on selected devices, including already booted ones |
-| `--network-capture-proxy <url>` | Forward captured traffic through one HTTP proxy, optionally with Basic credentials; `none` selects direct |
-| `--network-capture-field <field>` | Keep `header`, `query`, `request-body`, and/or `response-body` beyond metadata (repeatable or comma-separated). Default: none |
+| Flag / command                    | What it does                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `--network-capture`               | Start capture on selected devices, including already booted ones                                                                     |
+| `--network-capture-proxy <url>`   | Forward captured traffic through one HTTP proxy, optionally with Basic credentials; `none` selects direct                            |
+| `--network-capture-field <field>` | Keep `header`, `query`, `request-body`, and/or `response-body` beyond metadata (repeatable or comma-separated). Default: none        |
 | `serve-sim capture har -o <path>` | Copy the session's recorded requests, then follow the live stream into a HAR (and JSON next to it). Keeps the newest 10,000 requests |
 
 Use **Enable capture** in the tools panel to start without rebooting. Turning capture off restarts the simulator, so running apps cannot keep using a stopped proxy.

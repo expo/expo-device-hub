@@ -27,7 +27,14 @@ type Props = {
 type AccessibilitySelector = Partial<
   Pick<
     AccessibilityNode,
-    "id" | "text" | "contentDescription" | "resourceId" | "className" | "packageName" | "clickable" | "enabled"
+    | "id"
+    | "text"
+    | "contentDescription"
+    | "resourceId"
+    | "className"
+    | "packageName"
+    | "clickable"
+    | "enabled"
   >
 > & { index?: number };
 
@@ -54,11 +61,14 @@ function nodesMatchingSelector(
     Object.entries(selector).every(([key, value]) => {
       if (key === "index" || value === undefined) return true;
       return candidate[key as keyof AccessibilityNode] === value;
-    })
+    }),
   );
 }
 
-function selectorForNode(node: AccessibilityNode, nodes: AccessibilityNode[]): AccessibilitySelector {
+function selectorForNode(
+  node: AccessibilityNode,
+  nodes: AccessibilityNode[],
+): AccessibilitySelector {
   const selector = preferredSelectorForNode(node);
   const matches = nodesMatchingSelector(nodes, selector);
   if (matches.length > 1) selector.index = matches.indexOf(node);
@@ -81,7 +91,7 @@ export function AccessibilityPanel({
     poll: async ({ signal }) => {
       setStatus("Reading...");
       const res = await fetch("/api/accessibility", { cache: "no-store", signal });
-      return await res.json() as { ok?: boolean; nodes?: AccessibilityNode[]; error?: string };
+      return (await res.json()) as { ok?: boolean; nodes?: AccessibilityNode[]; error?: string };
     },
     onResult: (json) => {
       if (!json.ok || !json.nodes) {
@@ -103,25 +113,28 @@ export function AccessibilityPanel({
     setStatus(enabled ? "Switching device..." : "AX off");
   }, [deviceSession.transitioning, enabled, onHighlight, onNodesChange]);
 
-  const tapNode = useCallback(async (node: AccessibilityNode) => {
-    setStatus("Tapping...");
-    try {
-      const res = await fetch("/api/accessibility/tap", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selector: selectorForNode(node, nodes) }),
-      });
-      const json = await res.json() as { ok?: boolean; error?: string };
-      if (!res.ok || !json.ok) {
-        setStatus(json.error || "Tap failed");
-        return;
+  const tapNode = useCallback(
+    async (node: AccessibilityNode) => {
+      setStatus("Tapping...");
+      try {
+        const res = await fetch("/api/accessibility/tap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selector: selectorForNode(node, nodes) }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          setStatus(json.error || "Tap failed");
+          return;
+        }
+        setStatus("Tapped");
+        refresh();
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err));
       }
-      setStatus("Tapped");
-      refresh();
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : String(err));
-    }
-  }, [nodes, refresh]);
+    },
+    [nodes, refresh],
+  );
 
   return (
     <section className="tool-panel accessibility-panel">

@@ -22,10 +22,7 @@ function clock(start = 0, step = 10): () => number {
 
 function recordTaps(recorder: SessionRecorder, count: number): void {
   for (let index = 0; index < count; index++) {
-    recorder.recordGesture(
-      { type: "tap", x: index / Math.max(1, count), y: 0.5 },
-      "test",
-    );
+    recorder.recordGesture({ type: "tap", x: index / Math.max(1, count), y: 0.5 }, "test");
   }
 }
 
@@ -162,21 +159,13 @@ describe("SessionRecorder retention", () => {
     if (event.kind !== "gesture" || event.gesture.type !== "text") {
       throw new Error("expected a text gesture");
     }
-    expect(Buffer.byteLength(event.gesture.text, "utf8")).toBeLessThanOrEqual(
-      MAX_TEXT_BYTES,
-    );
+    expect(Buffer.byteLength(event.gesture.text, "utf8")).toBeLessThanOrEqual(MAX_TEXT_BYTES);
     expect(event.gesture.text).toBe("😀".repeat(75));
 
     const surrogateRecorder = new SessionRecorder({ now: () => 0 });
-    surrogateRecorder.recordGesture(
-      { type: "text", text: "before\ud800after" },
-      "test",
-    );
+    surrogateRecorder.recordGesture({ type: "text", text: "before\ud800after" }, "test");
     const surrogateEvent = surrogateRecorder.export().events[0]!;
-    if (
-      surrogateEvent.kind !== "gesture" ||
-      surrogateEvent.gesture.type !== "text"
-    ) {
+    if (surrogateEvent.kind !== "gesture" || surrogateEvent.gesture.type !== "text") {
       throw new Error("expected a text gesture");
     }
     expect(surrogateEvent.gesture.text).toBe("before�after");
@@ -197,9 +186,7 @@ describe("SessionRecorder retention", () => {
     );
     expect(exported.session.newestEventId).toBe(DEFAULT_MAX_SESSION_EVENTS);
     expect(exported.session.retainedBytes).toBe(arrayBytes(exported.events));
-    expect(exported.session.retainedBytes).toBeLessThanOrEqual(
-      DEFAULT_MAX_SESSION_BYTES,
-    );
+    expect(exported.session.retainedBytes).toBeLessThanOrEqual(DEFAULT_MAX_SESSION_BYTES);
     for (const event of exported.events) {
       if (event.kind !== "gesture" || event.gesture.type !== "text") {
         throw new Error("expected only text gestures");
@@ -256,8 +243,7 @@ describe("SessionRecorder paging", () => {
 
     expect(recorder.page({ limit: 10, before: 4 }).events).toEqual([]);
     expect(recorder.page({ limit: 2, before: 100 }).events.map((event) => event.id)).toEqual([
-      7,
-      8,
+      7, 8,
     ]);
     expect(recorder.export().events.map((event) => event.id)).toEqual([4, 5, 6, 7, 8]);
   });

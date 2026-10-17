@@ -1,10 +1,28 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, closeSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { appendFileNoFollow, appendFileNoFollowSync, replaceFilesNoFollow, writeAllAsync, writeAllSync, writeFileNoFollow } from "../no-follow";
+import {
+  appendFileNoFollow,
+  appendFileNoFollowSync,
+  replaceFilesNoFollow,
+  writeAllAsync,
+  writeAllSync,
+  writeFileNoFollow,
+} from "../no-follow";
 
 const mode = (path: string) => statSync(path).mode & 0o777;
 
@@ -49,7 +67,9 @@ describe("capture file writes", () => {
       const sync = join(dir, "sync.ndjson");
       const fd = openSync(sync, "w");
       try {
-        writeAllSync(fd, line, (f, buffer, offset, length) => writeSync(f, buffer, offset, Math.min(3, length)));
+        writeAllSync(fd, line, (f, buffer, offset, length) =>
+          writeSync(f, buffer, offset, Math.min(3, length)),
+        );
       } finally {
         closeSync(fd);
       }
@@ -58,8 +78,12 @@ describe("capture file writes", () => {
       const async = join(dir, "async.ndjson");
       const handle = await open(async, "w");
       try {
-        await writeAllAsync(handle, line, async (h, buffer, offset, length) =>
-          (await h.write(buffer, offset, Math.min(3, length))).bytesWritten);
+        await writeAllAsync(
+          handle,
+          line,
+          async (h, buffer, offset, length) =>
+            (await h.write(buffer, offset, Math.min(3, length))).bytesWritten,
+        );
       } finally {
         await handle.close();
       }
@@ -79,15 +103,22 @@ describe("capture file writes", () => {
 
   it("leaves every file as it was when writing one of their replacements fails", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-replace-"));
-    const files = ["a.har", "a.entries.ndjson", "a.network-capture.json"].map((name) => join(dir, name));
+    const files = ["a.har", "a.entries.ndjson", "a.network-capture.json"].map((name) =>
+      join(dir, name),
+    );
     try {
       for (const path of files) writeFileSync(path, `kept ${path}\n`);
       let writes = 0;
-      expect(() => replaceFilesNoFollow(files.map((path) => ({ path, data: "new\n" })), (fd, data) => {
-        // The second file hits a full disk.
-        if (++writes === 2) throw new Error("ENOSPC");
-        writeSync(fd, data);
-      })).toThrow("ENOSPC");
+      expect(() =>
+        replaceFilesNoFollow(
+          files.map((path) => ({ path, data: "new\n" })),
+          (fd, data) => {
+            // The second file hits a full disk.
+            if (++writes === 2) throw new Error("ENOSPC");
+            writeSync(fd, data);
+          },
+        ),
+      ).toThrow("ENOSPC");
       for (const path of files) expect(readFileSync(path, "utf8")).toBe(`kept ${path}\n`);
       expect(readdirSync(dir).filter((name) => name.endsWith(".tmp"))).toEqual([]);
 

@@ -19,10 +19,13 @@ describe("restarting the codec ladder", () => {
   });
 
   test("the last codec still reports the ladder as exhausted", () => {
-    expect(webRtcFallbackDecision("h264", "vp9", { kind: "codec", codec: "vp9" }))
-      .toEqual({ type: "switch-to-http" });
-    expect(webRtcFallbackDecision("h264", "h264", { kind: "codec", codec: "h264" }))
-      .toEqual({ type: "retry-codec", codec: "vp8" });
+    expect(webRtcFallbackDecision("h264", "vp9", { kind: "codec", codec: "vp9" })).toEqual({
+      type: "switch-to-http",
+    });
+    expect(webRtcFallbackDecision("h264", "h264", { kind: "codec", codec: "h264" })).toEqual({
+      type: "retry-codec",
+      codec: "vp8",
+    });
   });
 
   /// A dead sender, walked repeatedly: the wait between walks must not read as recovery.

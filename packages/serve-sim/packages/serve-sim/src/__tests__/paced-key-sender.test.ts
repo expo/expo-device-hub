@@ -12,7 +12,14 @@ function fakeScheduler() {
   const drain = () => {
     for (let i = 0; i < pending.length; i++) pending[i]!();
   };
-  return { schedule, cancel: () => {}, drain, get pendingCount() { return pending.length; } };
+  return {
+    schedule,
+    cancel: () => {},
+    drain,
+    get pendingCount() {
+      return pending.length;
+    },
+  };
 }
 
 describe("createPacedKeySender", () => {
@@ -67,7 +74,9 @@ describe("createPacedKeySender", () => {
     await sender.idle(); // nothing queued yet
     sender.enqueue(events);
     let idle = false;
-    const waiting = sender.idle().then(() => { idle = true; });
+    const waiting = sender.idle().then(() => {
+      idle = true;
+    });
     await Promise.resolve();
     expect(idle).toBe(false);
     expect(sent.length).toBeLessThan(events.length);

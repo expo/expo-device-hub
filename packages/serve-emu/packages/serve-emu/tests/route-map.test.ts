@@ -17,10 +17,7 @@ function pointToSegmentDistance(point: WorldPoint, start: WorldPoint, end: World
   if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
   const projection = Math.min(
     1,
-    Math.max(
-      0,
-      ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy),
-    ),
+    Math.max(0, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)),
   );
   return Math.hypot(point.x - (start.x + projection * dx), point.y - (start.y + projection * dy));
 }
@@ -134,9 +131,7 @@ describe("screen-space route simplification", () => {
 
     expect(display.points.length).toBeLessThanOrEqual(1_024);
     expect(
-      display.points.every(
-        (point) => Number.isFinite(point.x) && Number.isFinite(point.y),
-      ),
+      display.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)),
     ).toBe(true);
     expect(Number.isFinite(transform.translateX)).toBe(true);
     expect(Number.isFinite(transform.translateY)).toBe(true);
@@ -176,11 +171,7 @@ describe("antimeridian-safe route projection", () => {
     const worldSize = worldSizeAtZoom(zoom);
     const eastCenter = projectLocation({ latitude: 0, longitude: 179.8 }, zoom);
     const westMarker = projectLocation({ latitude: 0, longitude: -179.8 }, zoom);
-    const markerX = nearestWrappedWorldX(
-      westMarker.x,
-      eastCenter.x,
-      worldSize,
-    );
+    const markerX = nearestWrappedWorldX(westMarker.x, eastCenter.x, worldSize);
 
     expect(Math.abs(markerX - eastCenter.x)).toBeLessThan(3);
     expect(() => nearestWrappedWorldX(0, 0, 0)).toThrow("worldSize");

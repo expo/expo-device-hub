@@ -10,7 +10,17 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Check, Copy, Download, ListFilter, Pause, Play, Trash2, TriangleAlert, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  ListFilter,
+  Pause,
+  Play,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useCopy } from "../hooks/use-copy";
 import {
   DEVICE_LOG_LEVELS,
@@ -76,7 +86,7 @@ export function LogsDrawer({
   const [copied, copy] = useCopy();
   const path = useMemo(
     () => logsEndpoint ?? `${simEndpoint("logs")}?device=${encodeURIComponent(udid)}`,
-    [logsEndpoint, udid]
+    [logsEndpoint, udid],
   );
 
   const listRef = useRef<HTMLDivElement>(null);
@@ -89,7 +99,6 @@ export function LogsDrawer({
     setExpandedId(null);
     stickRef.current = true;
   }, [open, path]);
-
 
   useEffect(() => {
     if (!shown) return;
@@ -214,14 +223,22 @@ export function LogsDrawer({
                   onClick={() => setLevels((prev) => ({ ...prev, [level]: !prev[level] }))}
                 >
                   <span className="flex items-center gap-2">
-                    <Check size={12} strokeWidth={2.5} className={levels[level] ? "" : "invisible"} />
+                    <Check
+                      size={12}
+                      strokeWidth={2.5}
+                      className={levels[level] ? "" : "invisible"}
+                    />
                     {level.charAt(0).toUpperCase() + level.slice(1)}
                   </span>
                 </DropdownOption>
               ))}
             </Dropdown>
           </Tooltip>
-          <IconButton label="Download logs" onClick={downloadVisible} disabled={visible.length === 0}>
+          <IconButton
+            label="Download logs"
+            onClick={downloadVisible}
+            disabled={visible.length === 0}
+          >
             <Download size={15} strokeWidth={1.75} />
           </IconButton>
           <IconButton
@@ -241,7 +258,11 @@ export function LogsDrawer({
             <Trash2 size={15} strokeWidth={1.75} />
           </IconButton>
           <IconButton label={paused ? "Resume" : "Pause"} onClick={togglePause}>
-            {paused ? <Play size={15} strokeWidth={1.75} /> : <Pause size={15} strokeWidth={1.75} />}
+            {paused ? (
+              <Play size={15} strokeWidth={1.75} />
+            ) : (
+              <Pause size={15} strokeWidth={1.75} />
+            )}
           </IconButton>
           <IconButton label="Close logs" onClick={onClose} align="right">
             <X size={15} strokeWidth={1.75} />
@@ -321,14 +342,15 @@ function LogList({
     setScrollTop(el.scrollTop);
   }, [lines.length, listRef, stickRef]);
 
-  const expandedIndex = expandedId === null ? null : lines.findIndex((line) => line.id === expandedId);
+  const expandedIndex =
+    expandedId === null ? null : lines.findIndex((line) => line.id === expandedId);
   const win = logWindow(
     lines.length,
     scrollTop,
     viewportHeight,
     expandedIndex === -1 ? null : expandedIndex,
     LOG_ROW_HEIGHT,
-    expandedExtra
+    expandedExtra,
   );
   const slice = lines.slice(win.start, win.end);
 
@@ -437,8 +459,7 @@ const LogRow = memo(function LogRow({
 }) {
   const time = formatLogClock(line.timestamp);
   const meta = [line.subsystem, line.category].filter(Boolean).join(":");
-  const tone =
-    line.level === "fault" || line.level === "error" ? "text-white/90" : "text-white/70";
+  const tone = line.level === "fault" || line.level === "error" ? "text-white/90" : "text-white/70";
   return (
     <button
       ref={measureRef}
@@ -458,7 +479,9 @@ const LogRow = memo(function LogRow({
         {line.process || "unknown"}
       </span>
       <span className="min-w-0 flex-1 font-mono text-[11px] leading-5">
-        <span className={`block ${expanded ? "whitespace-pre-wrap break-all" : "truncate"} ${tone}`}>
+        <span
+          className={`block ${expanded ? "whitespace-pre-wrap break-all" : "truncate"} ${tone}`}
+        >
           {line.message}
         </span>
         {expanded ? (

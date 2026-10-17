@@ -17,7 +17,8 @@ export function formatEventLogLine(
 
 export function humanEventLogSummary(entry: EventLogEntry): string {
   if (entry.kind === "tap") {
-    const point = pointFromDetails(entry.details, "current") ?? pointFromDetails(entry.details, "start");
+    const point =
+      pointFromDetails(entry.details, "current") ?? pointFromDetails(entry.details, "start");
     return point ? `Tap at ${formatNormalizedPoint(point)}` : "Tap";
   }
   if (entry.kind === "drag") {

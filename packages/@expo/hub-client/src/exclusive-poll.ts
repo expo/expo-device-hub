@@ -1,9 +1,6 @@
 // Skip the tick rather than queue behind a stalled sample. Under load that queue
 // would outlive the stall it was meant to observe.
-export function startExclusivePoll(
-  sample: () => Promise<void>,
-  intervalMs: number,
-): () => void {
+export function startExclusivePoll(sample: () => Promise<void>, intervalMs: number): () => void {
   let inFlight = false;
   let stopped = false;
 

@@ -73,8 +73,11 @@ describe("appIconCandidates", () => {
   });
 
   test("falls back to the iPad and legacy keys", () => {
-    expect(appIconCandidates({ "CFBundleIcons~ipad": { CFBundlePrimaryIcon: { CFBundleIconFiles: ["Pad"] } } })[0])
-      .toBe("Pad@3x.png");
+    expect(
+      appIconCandidates({
+        "CFBundleIcons~ipad": { CFBundlePrimaryIcon: { CFBundleIconFiles: ["Pad"] } },
+      })[0],
+    ).toBe("Pad@3x.png");
     expect(appIconCandidates({ CFBundleIconFiles: ["Old"] })[0]).toBe("Old@3x.png");
     expect(appIconCandidates({ CFBundleIconFile: "Legacy" })[0]).toBe("Legacy@3x.png");
   });
@@ -88,7 +91,9 @@ describe("appIconCandidates", () => {
 
 describe("appContainerFromResult", () => {
   test("reads the app path from simctl's output", () => {
-    expect(appContainerFromResult({ stdout: `${APP_PATH}\n`, stderr: "", exitCode: 0 })).toBe(APP_PATH);
+    expect(appContainerFromResult({ stdout: `${APP_PATH}\n`, stderr: "", exitCode: 0 })).toBe(
+      APP_PATH,
+    );
   });
 
   test("treats simctl's no-such-file error as not installed", () => {
@@ -100,10 +105,12 @@ describe("appContainerFromResult", () => {
   });
 
   test("throws on a timeout or any other failure, so it is not reported as not installed", () => {
-    expect(() => appContainerFromResult({ stdout: "", stderr: "did not finish", exitCode: 1, timedOut: true }))
-      .toThrow("did not finish");
-    expect(() => appContainerFromResult({ stdout: "", stderr: "Invalid device: X", exitCode: 148 }))
-      .toThrow("Invalid device");
+    expect(() =>
+      appContainerFromResult({ stdout: "", stderr: "did not finish", exitCode: 1, timedOut: true }),
+    ).toThrow("did not finish");
+    expect(() =>
+      appContainerFromResult({ stdout: "", stderr: "Invalid device: X", exitCode: 148 }),
+    ).toThrow("Invalid device");
     expect(() => appContainerFromResult({ stdout: "\n", stderr: "", exitCode: 0 })).toThrow();
   });
 });
@@ -180,7 +187,13 @@ describe("handleAppIconRequest", () => {
     const resolveUdid = async () => ((touched = true), UDID);
     for (const query of ["", "?bundleId=", "?bundleId=-rf", "?bundleId=a%2Fb"]) {
       const out = createFakeRes();
-      await handleAppIconRequest(req(), out.res, `/api/apps/icon${query}`, resolveUdid, fakeDeps().deps);
+      await handleAppIconRequest(
+        req(),
+        out.res,
+        `/api/apps/icon${query}`,
+        resolveUdid,
+        fakeDeps().deps,
+      );
       expect(out.status()).toBe(400);
       expect(out.json().ok).toBe(false);
     }
@@ -193,9 +206,18 @@ describe("handleAppIconRequest", () => {
     expect(noDevice.status()).toBe(404);
 
     const missing = createFakeRes();
-    await handleAppIconRequest(req(), missing.res, ICON_URL, device, fakeDeps({ appContainer: async () => null }).deps);
+    await handleAppIconRequest(
+      req(),
+      missing.res,
+      ICON_URL,
+      device,
+      fakeDeps({ appContainer: async () => null }).deps,
+    );
     expect(missing.status()).toBe(404);
-    expect(missing.json()).toEqual({ ok: false, error: "App com.example.foo is not installed on the simulator" });
+    expect(missing.json()).toEqual({
+      ok: false,
+      error: "App com.example.foo is not installed on the simulator",
+    });
   });
 
   test("answers 503 when the lookup fails, so a client can retry", async () => {
@@ -207,7 +229,10 @@ describe("handleAppIconRequest", () => {
     });
     await handleAppIconRequest(req(), out.res, ICON_URL, device, failing.deps);
     expect(out.status()).toBe(503);
-    expect(out.json()).toEqual({ ok: false, error: "The xcrun command did not finish within 120s and was stopped." });
+    expect(out.json()).toEqual({
+      ok: false,
+      error: "The xcrun command did not finish within 120s and was stopped.",
+    });
   });
 
   test("answers 405 to anything but GET", async () => {

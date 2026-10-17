@@ -163,7 +163,13 @@ describe("CrashStore", () => {
     const source = report();
     const returned = store.record(source, "/tmp/a.ips");
 
-    source.frames.push({ image: "late", symbol: "late", imageOffset: 0, imageUuid: null, appOwned: false });
+    source.frames.push({
+      image: "late",
+      symbol: "late",
+      imageOffset: 0,
+      imageUuid: null,
+      appOwned: false,
+    });
     returned.count = 999;
 
     const stored = store.get(returned.id);
@@ -191,14 +197,32 @@ describe("CrashStore", () => {
   });
 
   test("keeps each repeat as its own occurrence, newest last", () => {
-    const firstFrames = [{ image: "Demo", symbol: "old()", imageOffset: 1, imageUuid: null, appOwned: true }];
-    const secondFrames = [
-      { image: "libsystem_kernel.dylib", symbol: "__pthread_kill", imageOffset: 2, imageUuid: null, appOwned: false },
+    const firstFrames = [
       { image: "Demo", symbol: "old()", imageOffset: 1, imageUuid: null, appOwned: true },
     ];
-    store.record(report({ pid: 1, frames: firstFrames }), "/tmp/a.ips", ["first tail"], "app-windowed");
+    const secondFrames = [
+      {
+        image: "libsystem_kernel.dylib",
+        symbol: "__pthread_kill",
+        imageOffset: 2,
+        imageUuid: null,
+        appOwned: false,
+      },
+      { image: "Demo", symbol: "old()", imageOffset: 1, imageUuid: null, appOwned: true },
+    ];
+    store.record(
+      report({ pid: 1, frames: firstFrames }),
+      "/tmp/a.ips",
+      ["first tail"],
+      "app-windowed",
+    );
     clock = 2_000;
-    store.record(report({ pid: 2, frames: secondFrames }), "/tmp/b.ips", ["second tail"], "app-windowed");
+    store.record(
+      report({ pid: 2, frames: secondFrames }),
+      "/tmp/b.ips",
+      ["second tail"],
+      "app-windowed",
+    );
 
     const [record] = store.list();
     expect(record?.count).toBe(2);
@@ -212,7 +236,10 @@ describe("CrashStore", () => {
 
   test("orders occurrences by crash time, not arrival, and keeps the newest as the summary", () => {
     const later = "2026-08-03 22:55:00.0000 -0700";
-    store.record(report({ incidentId: "INC-2", pid: 2, capturedAt: later, capturedAtMs: Date.parse(later) }), "/b.ips");
+    store.record(
+      report({ incidentId: "INC-2", pid: 2, capturedAt: later, capturedAtMs: Date.parse(later) }),
+      "/b.ips",
+    );
     store.record(report({ incidentId: "INC-1", pid: 1 }), "/a.ips");
 
     const record = store.get("INC-2")!;
@@ -221,7 +248,10 @@ describe("CrashStore", () => {
   });
 
   test("places an undated occurrence by when it arrived, so a later dated one is still newest", () => {
-    store.record(report({ incidentId: "INC-1", pid: 1, capturedAt: null, capturedAtMs: null }), "/a.ips");
+    store.record(
+      report({ incidentId: "INC-1", pid: 1, capturedAt: null, capturedAtMs: null }),
+      "/a.ips",
+    );
     store.record(report({ incidentId: "INC-2", pid: 2 }), "/b.ips");
 
     const record = store.get("INC-1")!;
@@ -230,7 +260,13 @@ describe("CrashStore", () => {
   });
 
   test("keeps each repeat's own stack", () => {
-    const frame = (symbol: string) => ({ image: "Demo", symbol, imageOffset: 1, imageUuid: null, appOwned: true });
+    const frame = (symbol: string) => ({
+      image: "Demo",
+      symbol,
+      imageOffset: 1,
+      imageUuid: null,
+      appOwned: true,
+    });
     store.record(report({ incidentId: "INC-1", frames: [frame("a()")] }), "/a.ips");
     store.record(report({ incidentId: "INC-2", frames: [frame("b()")] }), "/b.ips");
 
@@ -255,13 +291,26 @@ describe("CrashStore", () => {
   test("keeps each repeat's own version, build, and queue", () => {
     store.record(report({ incidentId: "INC-1" }), "/a.ips");
     store.record(
-      report({ incidentId: "INC-2", appVersion: "1.1.0", buildVersion: "2", faultingQueue: "worker" }),
-      "/b.ips"
+      report({
+        incidentId: "INC-2",
+        appVersion: "1.1.0",
+        buildVersion: "2",
+        faultingQueue: "worker",
+      }),
+      "/b.ips",
     );
 
     const [first, second] = store.get("INC-1")!.occurrences;
-    expect(first).toMatchObject({ appVersion: "1.0.0", buildVersion: "1", faultingQueue: "com.apple.main-thread" });
-    expect(second).toMatchObject({ appVersion: "1.1.0", buildVersion: "2", faultingQueue: "worker" });
+    expect(first).toMatchObject({
+      appVersion: "1.0.0",
+      buildVersion: "1",
+      faultingQueue: "com.apple.main-thread",
+    });
+    expect(second).toMatchObject({
+      appVersion: "1.1.0",
+      buildVersion: "2",
+      faultingQueue: "worker",
+    });
   });
 
   test("gives occurrences that share a report path their own keys", () => {
@@ -286,10 +335,14 @@ describe("CrashStore", () => {
 
   test("returns copies of occurrences, not the stored arrays", () => {
     const returned = store.record(
-      report({ frames: [{ image: "Demo", symbol: "boot()", imageOffset: 0, imageUuid: null, appOwned: true }] }),
+      report({
+        frames: [
+          { image: "Demo", symbol: "boot()", imageOffset: 0, imageUuid: null, appOwned: true },
+        ],
+      }),
       "/tmp/a.ips",
       ["line"],
-      "app-windowed"
+      "app-windowed",
     );
     returned.occurrences[0]!.logTail.push("injected");
     returned.occurrences[0]!.frames.push({

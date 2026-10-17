@@ -29,9 +29,18 @@ async function withReader(
   writeLaunchState(UDID, {
     ...(options.launched ? { bundleId: options.launched } : {}),
     launchArgs: [],
-    capabilities: options.enabled === false ? {} : {
-      clipboard: { name: "clipboard", scope: "allApps", dylib: "/reader.dylib", bundleId: null, ownerPid: process.pid },
-    },
+    capabilities:
+      options.enabled === false
+        ? {}
+        : {
+            clipboard: {
+              name: "clipboard",
+              scope: "allApps",
+              dylib: "/reader.dylib",
+              bundleId: null,
+              ownerPid: process.pid,
+            },
+          },
   });
   const initialState = readLaunchState(UDID);
   const shim = `#!/usr/bin/env bun
@@ -68,7 +77,10 @@ async function answer(container: string): Promise<void> {
   const done = join(container, "tmp", "serve-sim-pasteboard.txt.done");
   for (let attempt = 0; attempt < 400; attempt++) {
     const nonce = await fs.readFile(request, "utf8").catch(() => null);
-    if (nonce === null) { await Bun.sleep(5); continue; }
+    if (nonce === null) {
+      await Bun.sleep(5);
+      continue;
+    }
     await fs.rm(request);
     await fs.writeFile(`${done}.pending`, `${nonce}\nclipboard text`);
     await fs.rename(`${done}.pending`, done);
@@ -83,22 +95,27 @@ test("pbpaste succeeds without an enabled reader or an app", async () => {
   });
 });
 
-test.each([BUNDLE, null, "com.apple.springboard"])("asks an initialized reader with foreground %p", async (foreground) => {
-  await withReader({ foreground, launched: BUNDLE }, async (container) => {
-    const answered = answer(container);
-    void answered.catch(() => {});
-    try {
-      expect(await readSimPasteboardResult(UDID)).toEqual({ text: "clipboard text" });
-      await answered;
-    } finally {
-      await answered.catch(() => {});
-    }
-  });
-});
+test.each([BUNDLE, null, "com.apple.springboard"])(
+  "asks an initialized reader with foreground %p",
+  async (foreground) => {
+    await withReader({ foreground, launched: BUNDLE }, async (container) => {
+      const answered = answer(container);
+      void answered.catch(() => {});
+      try {
+        expect(await readSimPasteboardResult(UDID)).toEqual({ text: "clipboard text" });
+        await answered;
+      } finally {
+        await answered.catch(() => {});
+      }
+    });
+  },
+);
 
 test("does not reactivate a disabled reader", async () => {
   await withReader({ enabled: false }, async () => {
-    await expect(readSimPasteboardResult(UDID)).rejects.toThrow("Start a session with clipboard enabled and retry");
+    await expect(readSimPasteboardResult(UDID)).rejects.toThrow(
+      "Start a session with clipboard enabled and retry",
+    );
   });
 });
 
@@ -112,23 +129,35 @@ test("a missing reader asks for an explicit app restart", async () => {
 
 test("Home without an eligible app asks to open an app", async () => {
   await withReader({ foreground: "com.apple.springboard" }, async () => {
-    await expect(readSimPasteboardResult(UDID)).rejects.toThrow("Open the app you copied from and retry");
+    await expect(readSimPasteboardResult(UDID)).rejects.toThrow(
+      "Open the app you copied from and retry",
+    );
   });
 });
 
 test("Home with an unresponsive remembered app asks to open that app", async () => {
   await withReader({ foreground: "com.apple.springboard", launched: BUNDLE }, async () => {
-    await expect(readSimPasteboardResult(UDID)).rejects.toThrow("Open the app you copied from and retry");
+    await expect(readSimPasteboardResult(UDID)).rejects.toThrow(
+      "Open the app you copied from and retry",
+    );
   });
 });
 
 test("Home with a reader I/O failure logs it and asks to open an app without exposing paths", async () => {
-  await withReader({ foreground: "com.apple.springboard", launched: BUNDLE, container: "/dev/null/clipboard", loggedErrors: 1 }, async () => {
-    const error = await readSimPasteboardResult(UDID).catch((error: unknown) => error);
-    expect(error).toBeInstanceOf(PasteboardUnavailableError);
-    expect((error as Error).message).toContain("Open the app you copied from and retry");
-    expect((error as Error).message).not.toContain("/dev/null");
-  });
+  await withReader(
+    {
+      foreground: "com.apple.springboard",
+      launched: BUNDLE,
+      container: "/dev/null/clipboard",
+      loggedErrors: 1,
+    },
+    async () => {
+      const error = await readSimPasteboardResult(UDID).catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(PasteboardUnavailableError);
+      expect((error as Error).message).toContain("Open the app you copied from and retry");
+      expect((error as Error).message).not.toContain("/dev/null");
+    },
+  );
 });
 
 test("a system app without a data container asks to open another app", async () => {

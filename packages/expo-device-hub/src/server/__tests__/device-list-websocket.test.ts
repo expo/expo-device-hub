@@ -1,34 +1,34 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
-import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../../device-list-protocol';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from "../../device-list-protocol";
 import {
   DeviceListBroadcaster,
   type DeviceListSocket,
   deviceListFingerprint,
-} from '../device-list-websocket';
-import { type HubDeviceList } from '../devices';
+} from "../device-list-websocket";
+import { type HubDeviceList } from "../devices";
 
 const IOS = {
-  id: 'ios-1',
-  name: 'iPhone',
-  version: 'iOS 27.0',
-  platform: 'ios' as const,
+  id: "ios-1",
+  name: "iPhone",
+  version: "iOS 27.0",
+  platform: "ios" as const,
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: 'ios:iphone-17-pro' as const,
+  deviceFrame: "ios:iphone-17-pro" as const,
   lastUsedAt: 123,
 };
 
 const ANDROID = {
-  id: 'android-1',
-  name: 'Pixel',
-  version: 'Android 17.0',
-  platform: 'android' as const,
+  id: "android-1",
+  name: "Pixel",
+  version: "Android 17.0",
+  platform: "android" as const,
   booted: false,
   physical: false,
   supported: true,
-  deviceFrame: 'android:pixel-10-pro' as const,
+  deviceFrame: "android:pixel-10-pro" as const,
   lastUsedAt: 456,
 };
 
@@ -43,14 +43,14 @@ class FakeSocket implements DeviceListSocket {
   }
 
   close(): void {
-    this.emit('close');
+    this.emit("close");
   }
 
-  on(event: 'close' | 'error', listener: () => void): void {
+  on(event: "close" | "error", listener: () => void): void {
     this.listeners[event].push(listener);
   }
 
-  emit(event: 'close' | 'error'): void {
+  emit(event: "close" | "error"): void {
     for (const listener of this.listeners[event]) listener();
   }
 }
@@ -70,7 +70,7 @@ function manualScheduler({ repeating = false } = {}) {
     run() {
       const next = callback;
       if (!repeating) callback = null;
-      if (!next) throw new Error('No callback scheduled');
+      if (!next) throw new Error("No callback scheduled");
       next();
     },
     get cancelled() {
@@ -88,8 +88,8 @@ function decoded(socket: FakeSocket): Array<{ type: string; devices?: HubDeviceL
   return socket.sent.map((message) => JSON.parse(message));
 }
 
-describe('DeviceListBroadcaster', () => {
-  test('shares one poller and broadcasts only semantic changes', async () => {
+describe("DeviceListBroadcaster", () => {
+  test("shares one poller and broadcasts only semantic changes", async () => {
     const scheduler = manualScheduler();
     const heartbeat = manualScheduler({ repeating: true });
     let current = LIST;
@@ -138,20 +138,20 @@ describe('DeviceListBroadcaster', () => {
     expect(first.sent).toHaveLength(4);
     expect(second.sent).toHaveLength(4);
 
-    first.emit('close');
-    second.emit('close');
+    first.emit("close");
+    second.emit("close");
     expect(scheduler.cancelled).toBe(1);
     expect(heartbeat.cancelled).toBe(1);
   });
 
-  test('keeps the last known snapshot when discovery throws', async () => {
+  test("keeps the last known snapshot when discovery throws", async () => {
     const scheduler = manualScheduler();
     const heartbeat = manualScheduler({ repeating: true });
     const errors: unknown[] = [];
     let fail = false;
     const broadcaster = new DeviceListBroadcaster({
       load: async () => {
-        if (fail) throw new Error('temporary failure');
+        if (fail) throw new Error("temporary failure");
         return LIST;
       },
       schedule: scheduler.schedule,
@@ -172,7 +172,7 @@ describe('DeviceListBroadcaster', () => {
     expect(errors).toHaveLength(1);
   });
 
-  test('coalesces a refresh requested during an in-flight poll', async () => {
+  test("coalesces a refresh requested during an in-flight poll", async () => {
     const scheduler = manualScheduler();
     const heartbeat = manualScheduler({ repeating: true });
     let resolveFirst!: (list: HubDeviceList) => void;
@@ -199,29 +199,29 @@ describe('DeviceListBroadcaster', () => {
   });
 });
 
-test('deviceListFingerprint ignores discovery order', () => {
-  const secondIos = { ...IOS, id: 'ios-2' };
+test("deviceListFingerprint ignores discovery order", () => {
+  const secondIos = { ...IOS, id: "ios-2" };
   const a = { ...LIST, simulators: [IOS, secondIos] };
   const b = { ...LIST, simulators: [secondIos, IOS] };
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
 });
 
-test('deviceListFingerprint includes device-frame capability changes', () => {
+test("deviceListFingerprint includes device-frame capability changes", () => {
   const changed = { ...LIST, simulators: [{ ...IOS, deviceFrame: null }] };
 
   expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
 });
 
-test('deviceListFingerprint compares stable error ids instead of volatile details', () => {
+test("deviceListFingerprint compares stable error ids instead of volatile details", () => {
   const error = {
-    id: 'Error:spawn devicectl ENOENT',
-    message: '[apple-utils] Failed to run `devicectl list devices`:',
-    error: 'first temporary path',
+    id: "Error:spawn devicectl ENOENT",
+    message: "[apple-utils] Failed to run `devicectl list devices`:",
+    error: "first temporary path",
   };
   const a = { ...LIST, errors: [error] };
-  const b = { ...LIST, errors: [{ ...error, error: 'second temporary path' }] };
+  const b = { ...LIST, errors: [{ ...error, error: "second temporary path" }] };
   const duplicated = { ...LIST, errors: [error, error] };
-  const changed = { ...LIST, errors: [{ ...error, id: 'Error:spawn devicectl EACCES' }] };
+  const changed = { ...LIST, errors: [{ ...error, id: "Error:spawn devicectl EACCES" }] };
 
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(duplicated));

@@ -24,7 +24,9 @@ export function heartbeatHidSocket(
     try {
       if (websocket.terminate) websocket.terminate();
       else websocket.close();
-    } catch { /* The socket is already detached from the session. */ }
+    } catch {
+      /* The socket is already detached from the session. */
+    }
   };
   const monitor = createSocketHeartbeat(() => websocket.ping!(), shutdown, heartbeat);
   stopHeartbeat = monitor.stop;
@@ -34,10 +36,18 @@ export function heartbeatHidSocket(
   monitor.start();
   return {
     OPEN: websocket.OPEN,
-    get readyState() { return websocket.readyState; },
+    get readyState() {
+      return websocket.readyState;
+    },
     send: (data) => websocket.send(data),
-    close: (code?: number, reason?: string) => { fireClose(); websocket.close(code, reason); },
-    on(event: "message" | "close" | "error" | "pong", listener: ((data: Buffer<ArrayBufferLike>) => void) | (() => void)) {
+    close: (code?: number, reason?: string) => {
+      fireClose();
+      websocket.close(code, reason);
+    },
+    on(
+      event: "message" | "close" | "error" | "pong",
+      listener: ((data: Buffer<ArrayBufferLike>) => void) | (() => void),
+    ) {
       if (event === "close" || event === "error") {
         if (closed) (listener as () => void)();
         else closeListeners.push(listener as () => void);
@@ -53,7 +63,11 @@ export function isHidWebSocketPath(upstreamPath: string): boolean {
 export function claimHelperHidSocket(
   request: Request,
   websocket: UpgradeHandlerWebSocket,
-  { helperProxyTarget, fallbackDevice, resolveSession }: {
+  {
+    helperProxyTarget,
+    fallbackDevice,
+    resolveSession,
+  }: {
     helperProxyTarget(rawUrl: string): { device: string | null; upstreamPath: string } | null;
     fallbackDevice: string | null;
     resolveSession: {
@@ -86,11 +100,7 @@ export function claimHelperHidSocket(
 }
 
 /** Adapt a raw upgraded socket for DeviceSession when `ws` cannot flush the server handshake under Bun. */
-export function rawHidSocket(
-  socket: Socket,
-  head: Buffer,
-  heartbeat = HID_HEARTBEAT,
-): HidSocket {
+export function rawHidSocket(socket: Socket, head: Buffer, heartbeat = HID_HEARTBEAT): HidSocket {
   const messageCbs: Array<(d: Buffer) => void> = [];
   const closeCbs: Array<() => void> = [];
   let buffered = Buffer.from(head);
@@ -112,14 +122,17 @@ export function rawHidSocket(
     // @ref LLP 0003#raw-hid-close-contract — flush close frames without retaining input capacity.
     forceClose = setTimeout(() => socket.destroy(), 1_000);
     forceClose.unref?.();
-    const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
+    const payload =
+      code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
     if (code !== undefined) {
       payload.writeUInt16BE(code);
       payload.write(reason, 2);
     }
     try {
       socket.end(websocketFrame(0x8, payload));
-    } catch { socket.destroy(); }
+    } catch {
+      socket.destroy();
+    }
   };
 
   const drain = () => {
@@ -135,8 +148,14 @@ export function rawHidSocket(
       if (!frame) return;
       buffered = buffered.subarray(frame.consumed);
       if (frame.opcode === 0x8) return shutdown();
-      if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; }
-      if (frame.opcode === 0xa) { receivedPong(); continue; }
+      if (frame.opcode === 0x9) {
+        sendBrowserFrame(socket, 0xa, frame.payload);
+        continue;
+      }
+      if (frame.opcode === 0xa) {
+        receivedPong();
+        continue;
+      }
       if (frame.opcode === 0x1 || frame.opcode === 0x2) {
         for (const cb of messageCbs) cb(frame.payload);
       }
@@ -163,7 +182,9 @@ export function rawHidSocket(
   }
 
   return {
-    send(data: Buffer) { sendBrowserFrame(socket, 0x2, data); },
+    send(data: Buffer) {
+      sendBrowserFrame(socket, 0x2, data);
+    },
     on(event: "message" | "close" | "error", cb: (data: Buffer) => void) {
       if (event === "message") messageCbs.push(cb);
       else if (closed) (cb as () => void)();

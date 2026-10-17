@@ -20,7 +20,13 @@ function clampToViewport(x: number, y: number, w: number, h: number) {
   };
 }
 
-export function PresentationControls({ onExit, children }: { onExit: () => void; children?: ReactNode }) {
+export function PresentationControls({
+  onExit,
+  children,
+}: {
+  onExit: () => void;
+  children?: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -67,10 +73,13 @@ export function PresentationControls({ onExit, children }: { onExit: () => void;
     dragRef.current = null;
   }, []);
 
-  const onPointerUp = useCallback((e: React.PointerEvent) => {
-    e.stopPropagation();
-    finishDrag();
-  }, [finishDrag]);
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      e.stopPropagation();
+      finishDrag();
+    },
+    [finishDrag],
+  );
 
   const onLostCapture = useCallback(() => {
     finishDrag();
@@ -101,11 +110,7 @@ export function PresentationControls({ onExit, children }: { onExit: () => void;
         <GripVertical size={14} strokeWidth={1.5} />
       </div>
       {children}
-      <IconButton
-        onClick={onExit}
-        aria-label="Exit full screen"
-        title="Exit full screen (Esc)"
-      >
+      <IconButton onClick={onExit} aria-label="Exit full screen" title="Exit full screen (Esc)">
         <Minimize2 size={18} strokeWidth={1.75} />
       </IconButton>
     </div>

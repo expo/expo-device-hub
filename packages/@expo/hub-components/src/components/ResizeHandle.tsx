@@ -1,6 +1,6 @@
-import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
+import { type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
 
-import { icon } from '../theme/tokens';
+import { icon } from "../theme/tokens";
 
 /**
  * A thin, full-height divider that resizes an adjacent sidebar by dragging.
@@ -23,7 +23,7 @@ export function ResizeHandle({
   onResizeStart,
   onResizeEnd,
 }: {
-  side: 'left' | 'right';
+  side: "left" | "right";
   /** Distance in px of the boundary from the matching container edge — the current sidebar width. */
   offset: number;
   /** Pointer delta in px since drag start, signed so positive widens the sidebar. */
@@ -53,7 +53,7 @@ export function ResizeHandle({
     const raw = event.clientX - startX.current;
     // Dragging the left handle right grows the sidebar; the right handle is
     // mirrored, so dragging left (a negative raw delta) grows it instead.
-    onResize(side === 'left' ? raw : -raw);
+    onResize(side === "left" ? raw : -raw);
   }
 
   function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -80,23 +80,24 @@ export function ResizeHandle({
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
       style={{
-        position: 'absolute',
+        position: "absolute",
         top: 0,
         bottom: 0,
         // Center the hit area on the boundary line so the grip straddles the seam.
         [side]: offset,
-        transform: side === 'left' ? 'translateX(-50%)' : 'translateX(50%)',
+        transform: side === "left" ? "translateX(-50%)" : "translateX(50%)",
         width: 12,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxSizing: 'border-box',
-        cursor: 'col-resize',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxSizing: "border-box",
+        cursor: "col-resize",
         // Keep the drag reliable on trackpads/touch by suppressing scroll gestures.
-        touchAction: 'none',
+        touchAction: "none",
         // Above the stream card, below the collapsed-sidebar overlays (z-index 10+).
         zIndex: 5,
-      }}>
+      }}
+    >
       {/* The small grey grip — the affordance shown on the seam. */}
       <div
         style={{
@@ -105,7 +106,7 @@ export function ResizeHandle({
           borderRadius: 999,
           backgroundColor: dragging ? icon.secondary : icon.tertiary,
           opacity: visible ? 1 : 0,
-          transition: 'opacity 120ms ease, background-color 120ms ease',
+          transition: "opacity 120ms ease, background-color 120ms ease",
         }}
       />
     </div>

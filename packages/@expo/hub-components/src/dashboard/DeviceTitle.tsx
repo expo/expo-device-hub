@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { type ConnectionStatus, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { type ConnectionStatus, type DeviceScreenRecordingStatus } from "@expo/hub-client";
 import {
   bg,
   border,
@@ -12,22 +12,22 @@ import {
   radius,
   text,
   textSize,
-} from '../primitives';
-import { type Device } from './data';
+} from "../primitives";
+import { type Device } from "./data";
 
 export type DeviceTitleProps = {
-  device: Pick<Device, 'id' | 'name'>;
+  device: Pick<Device, "id" | "name">;
   status: ConnectionStatus;
   recording?: DeviceScreenRecordingStatus | null;
 };
 
 const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
-  unknown: 'Checking recording status',
-  waiting: 'Starting recording',
-  recording: 'Recording',
-  finalizing: 'Finishing recording',
-  complete: 'Recording complete',
-  failed: 'Recording failed',
+  unknown: "Checking recording status",
+  waiting: "Starting recording",
+  recording: "Recording",
+  finalizing: "Finishing recording",
+  complete: "Recording complete",
+  failed: "Recording failed",
 };
 
 const STATUS_APPEARANCE: Record<
@@ -35,38 +35,38 @@ const STATUS_APPEARANCE: Record<
   { label: string; dotColor: string; ringColor: string; labelColor: string }
 > = {
   idle: {
-    label: 'Offline',
+    label: "Offline",
     dotColor: icon.danger,
     ringColor: border.danger,
     labelColor: text.secondary,
   },
   connecting: {
-    label: 'Starting',
+    label: "Starting",
     dotColor: icon.warning,
     ringColor: border.warning,
     labelColor: text.secondary,
   },
   reconnecting: {
-    label: 'Reconnecting',
+    label: "Reconnecting",
     dotColor: icon.warning,
     ringColor: border.warning,
     labelColor: text.secondary,
   },
   streaming: {
-    label: 'Live',
+    label: "Live",
     dotColor: text.success,
     ringColor: border.success,
     labelColor: text.success,
   },
   error: {
-    label: 'Error',
+    label: "Error",
     dotColor: icon.danger,
     ringColor: border.danger,
     labelColor: text.secondary,
   },
 };
 
-const DEVICE_TITLE_SIZE: ButtonSize = 'xs';
+const DEVICE_TITLE_SIZE: ButtonSize = "xs";
 /** Rendered height of the title pill, for layouts that reserve room above the frame. */
 export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
 
@@ -86,14 +86,15 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
         <span
           title={label}
           style={{
-            display: 'block',
-            flex: '1 1 auto',
+            display: "block",
+            flex: "1 1 auto",
             minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
             fontFamily: showingId ? font.mono : font.sans,
-          }}>
+          }}
+        >
           {label}
         </span>
       }
@@ -105,7 +106,7 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
               width: 6,
               height: 6,
               flexShrink: 0,
-              boxSizing: 'content-box',
+              boxSizing: "content-box",
               border: `2px solid ${appearance.ringColor}`,
               borderRadius: radius.full,
               backgroundColor: appearance.dotColor,
@@ -120,20 +121,21 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
               style={{
                 flexShrink: 0,
                 color:
-                  recording === 'recording' || recording === 'failed'
+                  recording === "recording" || recording === "failed"
                     ? text.danger
                     : text.secondary,
-              }}>
+              }}
+            >
               {RECORDING_LABELS[recording]}
             </span>
           )}
         </>
       }
       style={{
-        maxWidth: 'min(100%, 320px)',
+        maxWidth: "min(100%, 320px)",
         minWidth: 0,
         flexShrink: 0,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
         gap: 6,
         paddingInline: 12,
         borderWidth: 0.5,

@@ -42,9 +42,7 @@ describe("assertPreviewAccess", () => {
 
   test("does not gate a loopback server, where the port already implies machine access", () => {
     const { sent, res: r } = res();
-    expect(
-      assertPreviewAccess(req(), r, TOKEN, { required: false, basePath: "/" }),
-    ).toBe(true);
+    expect(assertPreviewAccess(req(), r, TOKEN, { required: false, basePath: "/" })).toBe(true);
     expect(sent.status).toBeUndefined();
   });
 
@@ -61,15 +59,22 @@ describe("assertPreviewAccess", () => {
   test("trades a page navigation's query token for a cookie and redirects it out of the address bar", () => {
     const { sent, res: r } = res();
     expect(
-      assertPreviewAccess(req({ "sec-fetch-dest": "document" }, `/?token=${TOKEN}&device=abc`), r, TOKEN, {
-        required: true,
-        basePath: "/",
-      }),
+      assertPreviewAccess(
+        req({ "sec-fetch-dest": "document" }, `/?token=${TOKEN}&device=abc`),
+        r,
+        TOKEN,
+        {
+          required: true,
+          basePath: "/",
+        },
+      ),
     ).toBe(false);
 
     expect(sent.status).toBe(302);
     expect(sent.headers?.Location).toBe("/?device=abc");
-    expect(sent.headers?.["Set-Cookie"]).toContain(`${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`);
+    expect(sent.headers?.["Set-Cookie"]).toContain(
+      `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`,
+    );
     expect(sent.headers?.["Set-Cookie"]).toContain("HttpOnly");
     // Strict would be withheld on the redirect that follows the token swap.
     expect(sent.headers?.["Set-Cookie"]).toContain("SameSite=Lax");
@@ -180,10 +185,15 @@ describe("assertPreviewAccess", () => {
   test("accepts the cookie it set, so the page's own requests work", () => {
     const { res: r } = res();
     expect(
-      assertPreviewAccess(req({ cookie: `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}` }), r, TOKEN, {
-        required: true,
-        basePath: "/",
-      }),
+      assertPreviewAccess(
+        req({ cookie: `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}` }),
+        r,
+        TOKEN,
+        {
+          required: true,
+          basePath: "/",
+        },
+      ),
     ).toBe(true);
   });
 
@@ -226,10 +236,15 @@ describe("assertPreviewAccess", () => {
 
   test("does not redirect to another origin when the path normalizes to //", () => {
     const { sent, res: r } = res();
-    assertPreviewAccess(req({ "sec-fetch-dest": "document" }, `/..//evil.example?token=${TOKEN}`), r, TOKEN, {
-      required: true,
-      basePath: "/",
-    });
+    assertPreviewAccess(
+      req({ "sec-fetch-dest": "document" }, `/..//evil.example?token=${TOKEN}`),
+      r,
+      TOKEN,
+      {
+        required: true,
+        basePath: "/",
+      },
+    );
 
     expect(sent.status).toBe(302);
     expect(sent.headers?.Location).not.toMatch(/^\/\//);
@@ -282,17 +297,25 @@ describe("assertPreviewAccess", () => {
 
   test("reports a rejected token differently from a missing one", () => {
     const { sent, res: r } = res();
-    assertPreviewAccess(req({ "sec-fetch-dest": "document" }, `/?token=${NOT_THE_TOKEN}`), r, TOKEN, {
-      required: true,
-      basePath: "/",
-    });
+    assertPreviewAccess(
+      req({ "sec-fetch-dest": "document" }, `/?token=${NOT_THE_TOKEN}`),
+      r,
+      TOKEN,
+      {
+        required: true,
+        basePath: "/",
+      },
+    );
     expect(sent.status).toBe(401);
     expect(sent.body).toContain("only opens with a token");
     expect(sent.body).toContain("This token isn't valid.");
     expect(sent.body).not.toContain(NOT_THE_TOKEN);
 
     const { sent: missing, res: r2 } = res();
-    assertPreviewAccess(req({ "sec-fetch-dest": "document" }), r2, TOKEN, { required: true, basePath: "/" });
+    assertPreviewAccess(req({ "sec-fetch-dest": "document" }), r2, TOKEN, {
+      required: true,
+      basePath: "/",
+    });
     expect(missing.body).toContain("only opens with a token");
     expect(missing.body).not.toContain("isn't valid");
   });
@@ -304,7 +327,9 @@ describe("assertPreviewAccess", () => {
       basePath: "/",
       htmlHeaders: { "Content-Security-Policy": "frame-ancestors 'self' https://expo.dev" },
     });
-    expect(sent.headers?.["Content-Security-Policy"]).toBe("frame-ancestors 'self' https://expo.dev");
+    expect(sent.headers?.["Content-Security-Policy"]).toBe(
+      "frame-ancestors 'self' https://expo.dev",
+    );
 
     const { sent: plain, res: r2 } = res();
     assertPreviewAccess(req(), r2, TOKEN, {
@@ -358,7 +383,10 @@ describe("assertPreviewAccess", () => {
     }
     const { sent, res: r } = res();
     expect(
-      assertPreviewAccess(req({}, `/?token=${NOT_THE_TOKEN}`), r, TOKEN, { required: true, basePath: "/" }),
+      assertPreviewAccess(req({}, `/?token=${NOT_THE_TOKEN}`), r, TOKEN, {
+        required: true,
+        basePath: "/",
+      }),
     ).toBe(false);
     expect(sent.status).toBe(401);
   });
@@ -389,21 +417,17 @@ describe("assertUpgradeAccess", () => {
 
   test("accepts the subprotocol a browser can offer, since it cannot set a header", () => {
     expect(
-      assertUpgradeAccess(
-        { "sec-websocket-protocol": `serve-sim.token.${TOKEN}` },
-        TOKEN,
-        { required: true },
-      ),
+      assertUpgradeAccess({ "sec-websocket-protocol": `serve-sim.token.${TOKEN}` }, TOKEN, {
+        required: true,
+      }),
     ).toBe(true);
   });
 
   test("accepts it alongside the subprotocols the client actually wants", () => {
     expect(
-      assertUpgradeAccess(
-        { "sec-websocket-protocol": `hid, serve-sim.token.${TOKEN}` },
-        TOKEN,
-        { required: true },
-      ),
+      assertUpgradeAccess({ "sec-websocket-protocol": `hid, serve-sim.token.${TOKEN}` }, TOKEN, {
+        required: true,
+      }),
     ).toBe(true);
   });
 
@@ -437,11 +461,9 @@ describe("assertUpgradeAccess", () => {
 
   test("refuses a subprotocol carrying the wrong token", () => {
     expect(
-      assertUpgradeAccess(
-        { "sec-websocket-protocol": "serve-sim.token.not-the-token" },
-        TOKEN,
-        { required: true },
-      ),
+      assertUpgradeAccess({ "sec-websocket-protocol": "serve-sim.token.not-the-token" }, TOKEN, {
+        required: true,
+      }),
     ).toBe(false);
   });
 
@@ -504,16 +526,22 @@ describe("assertUpgradeAccess", () => {
   });
 
   test("refuses, without throwing, a malformed cookie on the synchronous upgrade path", () => {
-    expect(() => assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=%` }, TOKEN, { required: true })).not.toThrow();
-    expect(assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=%` }, TOKEN, { required: true })).toBe(false);
+    expect(() =>
+      assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=%` }, TOKEN, { required: true }),
+    ).not.toThrow();
+    expect(
+      assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=%` }, TOKEN, { required: true }),
+    ).toBe(false);
   });
 
   test("refuses a wrong token in either position", () => {
+    expect(assertUpgradeAccess({ authorization: "Bearer wrong" }, TOKEN, { required: true })).toBe(
+      false,
+    );
     expect(
-      assertUpgradeAccess({ authorization: "Bearer wrong" }, TOKEN, { required: true }),
-    ).toBe(false);
-    expect(
-      assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=wrong` }, TOKEN, { required: true }),
+      assertUpgradeAccess({ cookie: `${accessCookieName(TOKEN)}=wrong` }, TOKEN, {
+        required: true,
+      }),
     ).toBe(false);
   });
 });

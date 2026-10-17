@@ -39,9 +39,11 @@ The core LLP skills are installed once, in `.agents/skills/`, which Codex and ot
 The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When `/llp-adopt update` runs, write only to `.agents/skills/` and keep the symlink.
 
 <!-- BEGIN LLP SKILLS MANAGED BLOCK -->
+
 Before editing a subsystem with documented design, orient first: read its
 governing LLP, and for non-trivial work invoke `llp-orient` to assemble a
 context pack of the constraints the change must respect.
 
 Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
+
 <!-- END LLP SKILLS MANAGED BLOCK -->

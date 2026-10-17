@@ -64,7 +64,10 @@ export const CAPTURE_CA_DIR_ENV = "SERVE_SIM_CAPTURE_CA_DIR";
  * would mean one more trusted root on every simulator. Remove it to make a new CA.
  */
 export function captureCaDir(): string {
-  return process.env[CAPTURE_CA_DIR_ENV] || join(homedir(), "Library", "Application Support", "serve-sim", "capture-ca");
+  return (
+    process.env[CAPTURE_CA_DIR_ENV] ||
+    join(homedir(), "Library", "Application Support", "serve-sim", "capture-ca")
+  );
 }
 
 // Seeding and keeping run under one cross-process lock, so two first starts cannot leave one
@@ -75,7 +78,10 @@ function withCaLock<T>(operation: () => T): T {
   return withStateLockSync(
     join(dir, ".lock"),
     10_000,
-    () => new Error(`${dir}/.lock is still held by another serve-sim; retry once its capture has started.`),
+    () =>
+      new Error(
+        `${dir}/.lock is still held by another serve-sim; retry once its capture has started.`,
+      ),
     () => new Error("The capture CA lock is already held by this process."),
     operation,
   );
@@ -100,7 +106,10 @@ function keepCaFrom(confdir: string): boolean {
       const dir = captureCaDir();
       if (!CA_FILES.every((name) => existsSync(join(confdir, name)))) return true;
       if (CA_FILES.every((name) => existsSync(join(dir, name)))) {
-        return readFileSync(join(dir, CA_CERT_FILE), "utf8") === readFileSync(join(confdir, CA_CERT_FILE), "utf8");
+        return (
+          readFileSync(join(dir, CA_CERT_FILE), "utf8") ===
+          readFileSync(join(confdir, CA_CERT_FILE), "utf8")
+        );
       }
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       for (const name of CA_FILES) {
@@ -113,7 +122,10 @@ function keepCaFrom(confdir: string): boolean {
     });
   } catch (error) {
     // This session keeps its own CA; the next start tries again.
-    console.warn("Network capture: could not keep the capture CA for later sessions:", error instanceof Error ? error.message : error);
+    console.warn(
+      "Network capture: could not keep the capture CA for later sessions:",
+      error instanceof Error ? error.message : error,
+    );
     return true;
   }
 }
@@ -281,7 +293,9 @@ async function freePort(): Promise<number> {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (address == null || typeof address === "string") {
-        server.close(() => reject(new Error("Could not reserve a local port for the capture proxy.")));
+        server.close(() =>
+          reject(new Error("Could not reserve a local port for the capture proxy.")),
+        );
         return;
       }
       const { port } = address;
@@ -516,15 +530,18 @@ async function startMitmProxyAttempt(
       await close();
       throw new Error(
         `The capture proxy exited before it started listening.\n${
-          credentialPipeFailed ? "Could not deliver the capture proxy's startup credentials." :
-          spawnError || output.trim() || "No output from mitmproxy."
+          credentialPipeFailed
+            ? "Could not deliver the capture proxy's startup credentials."
+            : spawnError || output.trim() || "No output from mitmproxy."
         }`,
       );
     }
     if (existsSync(caFile) && announced) {
       if (!keepCaFrom(confdir)) {
         await close();
-        throw new CaRaceLostError("Another capture saved the shared CA first; starting again with it.");
+        throw new CaRaceLostError(
+          "Another capture saved the shared CA first; starting again with it.",
+        );
       }
       running = true;
       return {
@@ -556,7 +573,10 @@ export const CAPTURE_FIELDS_FILE_ENV = "SERVE_SIM_CAPTURE_FIELDS_FILE";
  * The session's fields file in its private confdir. The addon re-reads it when it changes, so the
  * session's fields can change without a restart; each write renames a new owner-only file into place.
  */
-export function captureFieldsFile(confdir: string): { path: string; write: (fields: readonly CaptureField[]) => void } {
+export function captureFieldsFile(confdir: string): {
+  path: string;
+  write: (fields: readonly CaptureField[]) => void;
+} {
   const path = join(confdir, "capture-fields");
   return {
     path,
@@ -590,7 +610,12 @@ export async function startMitmProxy(
       return await startMitmProxyAttempt(store, deps, mitmdump, addon, fields, upstream);
     } catch (error) {
       lastError = error;
-      if (!addressAlreadyInUse(error) && !(error instanceof CaRaceLostError) && !(error instanceof OwnProxyPortError)) throw error;
+      if (
+        !addressAlreadyInUse(error) &&
+        !(error instanceof CaRaceLostError) &&
+        !(error instanceof OwnProxyPortError)
+      )
+        throw error;
     }
   }
   throw lastError;

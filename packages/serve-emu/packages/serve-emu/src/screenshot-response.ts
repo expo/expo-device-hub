@@ -17,7 +17,9 @@ export async function screenshotResponse(png: Uint8Array, url: URL): Promise<Res
   };
   if (url.searchParams.get("format") === "base64") {
     const artifact: ScreenshotArtifactReport =
-      result.status === "failed" ? { status: "failed", error: result.error } : { status: result.status };
+      result.status === "failed"
+        ? { status: "failed", error: result.error }
+        : { status: result.status };
     const body: ScreenshotBase64Response = {
       ok: true,
       mimeType: "image/png",
@@ -26,5 +28,7 @@ export async function screenshotResponse(png: Uint8Array, url: URL): Promise<Res
     };
     return Response.json(body, { headers });
   }
-  return new Response(new Uint8Array(png), { headers: { ...headers, "Content-Type": "image/png" } });
+  return new Response(new Uint8Array(png), {
+    headers: { ...headers, "Content-Type": "image/png" },
+  });
 }

@@ -8,7 +8,8 @@ export const MAX_VIDEO_STREAM_FPS = 140;
 export type StreamSettings = (
   | { transport: "http"; codec?: HttpStreamCodec }
   | { transport: "webrtc"; codec: WebRtcStreamCodec; iceServers?: WebRtcIceServer[] }
-) & Partial<StreamEncoderSettings>;
+) &
+  Partial<StreamEncoderSettings>;
 
 export interface StreamPlaybackSettings {
   transport: "http" | "webrtc";
@@ -65,13 +66,12 @@ function normalizedIceServers(value: unknown): WebRtcIceServer[] | null {
     if (!entry || typeof entry !== "object") return null;
     const urls = (entry as { urls?: unknown }).urls;
     if (
-      !Array.isArray(urls)
-      || urls.length === 0
-      || urls.length > 16
-      || !urls.every((url) =>
-        typeof url === "string"
-        && url.length <= 2_048
-        && /^(stun|stuns|turn|turns):/i.test(url)
+      !Array.isArray(urls) ||
+      urls.length === 0 ||
+      urls.length > 16 ||
+      !urls.every(
+        (url) =>
+          typeof url === "string" && url.length <= 2_048 && /^(stun|stuns|turn|turns):/i.test(url),
       )
     ) {
       return null;
@@ -111,16 +111,21 @@ export function parseStreamEncoderSettingsPatch(
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const patch = input as Record<string, unknown>;
   const keys = Object.keys(patch);
-  const allowedKeys = transport === "webrtc"
-    ? WEBRTC_ENCODER_SETTING_KEYS
-    : STREAM_ENCODER_SETTING_KEYS;
+  const allowedKeys =
+    transport === "webrtc" ? WEBRTC_ENCODER_SETTING_KEYS : STREAM_ENCODER_SETTING_KEYS;
   if (
-    keys.length === 0
-    || keys.some((key) => !allowedKeys.has(key as keyof StreamEncoderSettings))
+    keys.length === 0 ||
+    keys.some((key) => !allowedKeys.has(key as keyof StreamEncoderSettings))
   ) {
     return null;
   }
-  for (const key of ["mjpegFps", "mjpegQuality", "maxDimension", "h264Bitrate", "h264Fps"] as const) {
+  for (const key of [
+    "mjpegFps",
+    "mjpegQuality",
+    "maxDimension",
+    "h264Bitrate",
+    "h264Fps",
+  ] as const) {
     if (key in patch && finiteNumber(patch[key]) == null) return null;
   }
   return patch as Partial<StreamEncoderSettings>;
@@ -132,19 +137,25 @@ export function normalizeStreamControlSettings(
 ): StreamControlSettings {
   const hasIceServers = Object.prototype.hasOwnProperty.call(input, "iceServers");
   const normalized = hasIceServers ? normalizedIceServers(input.iceServers) : fallback.iceServers;
-  const iceServers = normalized === null
-    ? fallback.iceServers
-    : normalized && normalized.length > 0 ? normalized : undefined;
+  const iceServers =
+    normalized === null
+      ? fallback.iceServers
+      : normalized && normalized.length > 0
+        ? normalized
+        : undefined;
   return {
-    transport: input.transport === "http" || input.transport === "webrtc"
-      ? input.transport
-      : fallback.transport,
-    httpCodec: input.httpCodec === "auto" || input.httpCodec === "mjpeg" || input.httpCodec === "h264"
-      ? input.httpCodec
-      : fallback.httpCodec,
-    webRtcCodec: input.webRtcCodec === "vp8" || input.webRtcCodec === "vp9" || input.webRtcCodec === "h264"
-      ? input.webRtcCodec
-      : fallback.webRtcCodec,
+    transport:
+      input.transport === "http" || input.transport === "webrtc"
+        ? input.transport
+        : fallback.transport,
+    httpCodec:
+      input.httpCodec === "auto" || input.httpCodec === "mjpeg" || input.httpCodec === "h264"
+        ? input.httpCodec
+        : fallback.httpCodec,
+    webRtcCodec:
+      input.webRtcCodec === "vp8" || input.webRtcCodec === "vp9" || input.webRtcCodec === "h264"
+        ? input.webRtcCodec
+        : fallback.webRtcCodec,
     ...(iceServers ? { iceServers } : {}),
     ...normalizeStreamEncoderSettings(input, fallback),
   };
@@ -163,9 +174,7 @@ export function normalizeStreamEncoderSettings(
   };
 }
 
-export function streamEncoderSettingsFrom(
-  settings: StreamControlSettings,
-): StreamEncoderSettings {
+export function streamEncoderSettingsFrom(settings: StreamControlSettings): StreamEncoderSettings {
   return {
     mjpegFps: settings.mjpegFps,
     mjpegQuality: settings.mjpegQuality,
@@ -259,11 +268,11 @@ export function mergeStreamEncoderSettings(
   const previous = streamEncoderSettingsFrom(current);
   const next = normalizeStreamEncoderSettings({ ...previous, ...patch }, previous);
   if (
-    next.mjpegFps === previous.mjpegFps
-    && next.mjpegQuality === previous.mjpegQuality
-    && next.maxDimension === previous.maxDimension
-    && next.h264Bitrate === previous.h264Bitrate
-    && next.h264Fps === previous.h264Fps
+    next.mjpegFps === previous.mjpegFps &&
+    next.mjpegQuality === previous.mjpegQuality &&
+    next.maxDimension === previous.maxDimension &&
+    next.h264Bitrate === previous.h264Bitrate &&
+    next.h264Fps === previous.h264Fps
   ) {
     return current;
   }

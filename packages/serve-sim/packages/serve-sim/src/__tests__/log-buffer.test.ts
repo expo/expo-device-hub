@@ -71,9 +71,11 @@ describe("DeviceLogBuffer", () => {
     ];
     const ps = paths.map((path, pid) => `${pid + 1} 0:01.00 1000 ${path}`).join("\n");
     const buffer = cache.ensure("UDID-1", "user-apps");
-    child.emitLines(paths.map((processImagePath, pid) =>
-      JSON.stringify({ processImagePath, processID: pid + 1 })
-    ).join("\n") + "\n");
+    child.emitLines(
+      paths
+        .map((processImagePath, pid) => JSON.stringify({ processImagePath, processID: pid + 1 }))
+        .join("\n") + "\n",
+    );
     const retainedPids = buffer.read().map((line) => JSON.parse(line.raw).processID);
     expect(retainedPids).toEqual([1, 2, 3]);
     expect(retainedPids).toEqual(findUserAppProcesses(ps, "UDID-1")?.pids ?? []);
@@ -94,12 +96,16 @@ describe("DeviceLogBuffer", () => {
     ];
     const accepted = paths.map((processImagePath) => JSON.stringify({ processImagePath }));
     child.emitLines(accepted.join("\n") + "\n");
-    child.emitLines([
-      "not json", "null", "{}",
-      JSON.stringify({ processImagePath: 123 }),
-      JSON.stringify({ processImagePath: "/Applications/MobileSafari.app/MobileSafari" }),
-      JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: paths[0] }),
-    ].join("\n") + "\n");
+    child.emitLines(
+      [
+        "not json",
+        "null",
+        "{}",
+        JSON.stringify({ processImagePath: 123 }),
+        JSON.stringify({ processImagePath: "/Applications/MobileSafari.app/MobileSafari" }),
+        JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: paths[0] }),
+      ].join("\n") + "\n",
+    );
     expect(buffer.read().map((line) => line.raw)).toEqual(accepted);
     cache.prune(["another-device"]);
     expect(child.killed).toBe(true);
@@ -119,8 +125,15 @@ describe("DeviceLogBuffer", () => {
     });
     const all = cache.ensure("UDID-1");
     const apps = cache.ensure("UDID-1", "user-apps");
-    const app = JSON.stringify({ processImagePath: "/private/var/containers/Bundle/Application/UUID/My App.app/My App", processID: 1, eventMessage: "APP_MARKER" });
-    const system = JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: app });
+    const app = JSON.stringify({
+      processImagePath: "/private/var/containers/Bundle/Application/UUID/My App.app/My App",
+      processID: 1,
+      eventMessage: "APP_MARKER",
+    });
+    const system = JSON.stringify({
+      processImagePath: "/usr/libexec/runningboardd",
+      eventMessage: app,
+    });
     const observed: LogLine[] = [];
     apps.subscribeBatch((lines) => observed.push(...lines));
     for (const child of children) child.emitLines(app + "\n" + (system + "\n").repeat(20));
@@ -141,7 +154,7 @@ describe("DeviceLogBuffer", () => {
     const child = spawned[0]!;
 
     child.emitLines('{"a":1}\n{"b":');
-    child.emitLines('2}\n');
+    child.emitLines("2}\n");
 
     expect(buffer.read().map((l) => l.raw)).toEqual(['{"a":1}', '{"b":2}']);
     buffer.stop();
@@ -300,7 +313,7 @@ describe("DeviceLogBuffer", () => {
     expect(buffer.tailBefore({ at: 3_000, count: 1, processName: "Demo" }).lines).toHaveLength(1);
     expect(buffer.tailBefore({ ...named, at: 500 }).reason).toBe("buffer-rolled-past");
     expect(buffer.tailBefore({ at: 3_000, count: 10, processName: "Other" }).reason).toBe(
-      "no-app-lines"
+      "no-app-lines",
     );
     buffer.stop();
   });
@@ -364,10 +377,18 @@ describe("DeviceLogBuffer", () => {
     buffer.start();
     clock = 1_000;
     spawned[0]!.emitLines(
-      JSON.stringify({ processImagePath: "/a/Demo.app/Demo", processID: 11, eventMessage: "other app" }) +
+      JSON.stringify({
+        processImagePath: "/a/Demo.app/Demo",
+        processID: 11,
+        eventMessage: "other app",
+      }) +
         "\n" +
-        JSON.stringify({ processImagePath: "/b/Demo.app/Demo", processID: 22, eventMessage: "crashed app" }) +
-        "\n"
+        JSON.stringify({
+          processImagePath: "/b/Demo.app/Demo",
+          processID: 22,
+          eventMessage: "crashed app",
+        }) +
+        "\n",
     );
 
     const tail = buffer.tailBefore({ at: 1_000, count: 10, processName: "Demo", processId: 22 });
@@ -395,7 +416,8 @@ describe("DeviceLogBuffer", () => {
     buffer.start();
     clock = 1_000;
     spawned[0]!.emitLines(
-      JSON.stringify({ processImagePath: "/x/Demo", eventMessage: "\u00e9\n\"".repeat(2_000) }) + "\n"
+      JSON.stringify({ processImagePath: "/x/Demo", eventMessage: '\u00e9\n"'.repeat(2_000) }) +
+        "\n",
     );
 
     const tail = buffer.tailBefore({ at: 1_000, count: 10, processName: "Demo", maxBytes: 250 });
@@ -415,10 +437,14 @@ describe("DeviceLogBuffer", () => {
     buffer.start();
     clock = 1_000;
     spawned[0]!.emitLines(
-      JSON.stringify({ processImagePath: "/x/Demo", subsystem: "s".repeat(400), eventMessage: "hi" }) +
+      JSON.stringify({
+        processImagePath: "/x/Demo",
+        subsystem: "s".repeat(400),
+        eventMessage: "hi",
+      }) +
         "\n" +
         JSON.stringify({ processImagePath: "/x/Demo", eventMessage: { text: "x".repeat(400) } }) +
-        "\n"
+        "\n",
     );
 
     const tail = buffer.tailBefore({ at: 1_000, count: 1, processName: "Demo", maxBytes: 250 });
@@ -435,8 +461,12 @@ describe("DeviceLogBuffer", () => {
     spawned[0]!.emitLines(
       JSON.stringify({ processImagePath: "/x/Demo", eventMessage: "older" }) +
         "\n" +
-        JSON.stringify({ processImagePath: "/x/Demo", subsystem: "s".repeat(400), eventMessage: "hi" }) +
-        "\n"
+        JSON.stringify({
+          processImagePath: "/x/Demo",
+          subsystem: "s".repeat(400),
+          eventMessage: "hi",
+        }) +
+        "\n",
     );
 
     const tail = buffer.tailBefore({ at: 1_000, count: 1, processName: "Demo", maxBytes: 250 });

@@ -1,14 +1,10 @@
-import { type DeviceClient } from '@expo/hub-client';
-import { bg, icon, radius, text, textSize } from '../primitives';
-import {
-  MetricChart,
-  type MetricChartSeries,
-  maxChartValue,
-} from './MetricChart';
+import { type DeviceClient } from "@expo/hub-client";
+import { bg, icon, radius, text, textSize } from "../primitives";
+import { MetricChart, type MetricChartSeries, maxChartValue } from "./MetricChart";
 
 const MAX_STATS_SAMPLES = 60;
-const UNAVAILABLE_VALUE = '—';
-const COMPACT_STATS_COLUMNS = 'repeat(auto-fit, minmax(150px, 1fr))';
+const UNAVAILABLE_VALUE = "—";
+const COMPACT_STATS_COLUMNS = "repeat(auto-fit, minmax(150px, 1fr))";
 
 function formatFps(value: number | null) {
   if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
@@ -76,34 +72,34 @@ function formatFreezes(count: number | null, durationMs: number | null) {
   return `${countValue} · ${duration}`;
 }
 
-function formatIcePath(value: 'direct' | 'relay' | 'unknown' | null | undefined) {
-  if (value === 'direct') return 'Direct';
-  if (value === 'relay') return 'Via relay';
+function formatIcePath(value: "direct" | "relay" | "unknown" | null | undefined) {
+  if (value === "direct") return "Direct";
+  if (value === "relay") return "Via relay";
   return UNAVAILABLE_VALUE;
 }
 
 function formatCodec(value: string | null) {
   if (value === null || value.length === 0) return UNAVAILABLE_VALUE;
-  const codec = value.replace(/^video\//i, '');
-  if (/^h\.?264$/i.test(codec)) return 'H.264';
-  if (/^vp8$/i.test(codec)) return 'VP8';
-  if (/^vp9$/i.test(codec)) return 'VP9';
-  if (/^av1$/i.test(codec)) return 'AV1';
+  const codec = value.replace(/^video\//i, "");
+  if (/^h\.?264$/i.test(codec)) return "H.264";
+  if (/^vp8$/i.test(codec)) return "VP8";
+  if (/^vp9$/i.test(codec)) return "VP9";
+  if (/^av1$/i.test(codec)) return "AV1";
   return codec;
 }
 
 function formatEncoderLimitation(value: string | null) {
   switch (value) {
-    case 'none':
-      return 'None';
-    case 'cpu':
-      return 'CPU';
-    case 'bandwidth':
-      return 'Network';
+    case "none":
+      return "None";
+    case "cpu":
+      return "CPU";
+    case "bandwidth":
+      return "Network";
     case null:
       return UNAVAILABLE_VALUE;
     default:
-      return 'Unknown';
+      return "Unknown";
   }
 }
 
@@ -116,19 +112,19 @@ function StreamStatisticGroupHeading({
   first?: boolean;
 }) {
   return (
-    <div role="row" style={{ gridColumn: '1 / -1' }}>
+    <div role="row" style={{ gridColumn: "1 / -1" }}>
       <span
         role="columnheader"
         aria-colspan={2}
         style={{
-          ...textSize['2xs'],
-          display: 'block',
-          padding: first ? '7px 8px 5px' : '14px 8px 5px',
+          ...textSize["2xs"],
+          display: "block",
+          padding: first ? "7px 8px 5px" : "14px 8px 5px",
           color: text.secondary,
           fontWeight: 500,
-          letterSpacing: '0.04em',
-          textAlign: 'left',
-          textTransform: 'uppercase',
+          letterSpacing: "0.04em",
+          textAlign: "left",
+          textTransform: "uppercase",
         }}
       >
         {label}
@@ -151,19 +147,19 @@ function StreamStatisticRow({
       role="row"
       data-stream-statistic={label}
       style={{
-        display: 'flex',
+        display: "flex",
         minWidth: 0,
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
+        alignItems: "baseline",
+        justifyContent: "space-between",
         gap: 4,
-        padding: '5px 8px',
+        padding: "5px 8px",
         opacity: stale ? 0.55 : 1,
       }}
     >
       <span
         role="rowheader"
         style={{
-          ...textSize['2xs'],
+          ...textSize["2xs"],
           minWidth: 0,
           color: text.secondary,
           fontWeight: 400,
@@ -174,12 +170,12 @@ function StreamStatisticRow({
       <span
         role="cell"
         style={{
-          ...textSize['2xs'],
+          ...textSize["2xs"],
           flexShrink: 0,
           color: text.default,
           fontWeight: 500,
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
+          fontVariantNumeric: "tabular-nums",
+          whiteSpace: "nowrap",
         }}
       >
         {value}
@@ -192,8 +188,8 @@ export function StreamStatistics({
   stats,
   platform,
 }: {
-  stats: DeviceClient['streamStats'];
-  platform: DeviceClient['platform'];
+  stats: DeviceClient["streamStats"];
+  platform: DeviceClient["platform"];
 }) {
   const samples = stats?.samples.slice(-MAX_STATS_SAMPLES) ?? [];
   const latest = samples.at(-1) ?? null;
@@ -205,16 +201,14 @@ export function StreamStatistics({
   );
   const clientFpsSeries: MetricChartSeries[] = [
     {
-      label: 'Client FPS',
+      label: "Client FPS",
       color: icon.info,
-      values: samples.flatMap((sample) =>
-        sample.clientFps === null ? [] : [sample.clientFps],
-      ),
+      values: samples.flatMap((sample) => (sample.clientFps === null ? [] : [sample.clientFps])),
     },
   ];
   const clientBitrateSeries: MetricChartSeries[] = [
     {
-      label: 'Client bitrate',
+      label: "Client bitrate",
       color: icon.preview,
       values: samples.flatMap((sample) =>
         sample.clientBitrateBps === null ? [] : [sample.clientBitrateBps],
@@ -224,156 +218,156 @@ export function StreamStatistics({
 
   const pausedMessage =
     stats?.stale && stats.serverStale
-      ? 'Client and server stream statistics are paused. Showing the most recent samples.'
+      ? "Client and server stream statistics are paused. Showing the most recent samples."
       : stats?.stale
-        ? 'Client stream statistics are paused. Showing the most recent samples.'
+        ? "Client stream statistics are paused. Showing the most recent samples."
         : stats?.serverStale
-          ? 'Server stream statistics are paused. Showing the most recent values.'
+          ? "Server stream statistics are paused. Showing the most recent values."
           : null;
   const measuring = !hasClientMeasurement && !stats?.stale;
   const encoderRows =
     encoder === null
       ? []
-      : platform === 'android'
+      : platform === "android"
         ? [
-            { label: 'Codec', value: formatCodec(encoder.codec) },
+            { label: "Codec", value: formatCodec(encoder.codec) },
             {
-              label: 'Configured bitrate',
+              label: "Configured bitrate",
               value: formatBitrate(encoder.targetBitrateBps),
             },
             {
-              label: 'Output frames',
+              label: "Output frames",
               value: formatCount(encoder.framesEncoded),
             },
             {
-              label: 'Publisher FPS',
+              label: "Publisher FPS",
               value: formatFps(encoder.publisherFps),
             },
             {
-              label: 'Payload bitrate',
+              label: "Payload bitrate",
               value: formatBitrate(encoder.payloadBitrateBps),
             },
             {
-              label: 'Publisher submissions',
+              label: "Publisher submissions",
               value: formatCount(encoder.publisherSubmittedFrames),
             },
             {
-              label: 'Publisher drops',
+              label: "Publisher drops",
               value: formatCount(encoder.publisherDroppedFrames),
             },
           ]
         : [
-            { label: 'Codec', value: formatCodec(encoder.codec) },
-            { label: 'Encode FPS', value: formatFps(encoder.encodeFps) },
-            { label: 'Target bitrate', value: formatBitrate(encoder.targetBitrateBps) },
+            { label: "Codec", value: formatCodec(encoder.codec) },
+            { label: "Encode FPS", value: formatFps(encoder.encodeFps) },
+            { label: "Target bitrate", value: formatBitrate(encoder.targetBitrateBps) },
             {
-              label: 'Encode time / frame',
+              label: "Encode time / frame",
               value: formatMilliseconds(encoder.encodeMsPerFrame, 1),
             },
-            { label: 'Frames encoded', value: formatCount(encoder.framesEncoded) },
-            { label: 'Frames sent', value: formatCount(encoder.framesSent) },
-            { label: 'Frames dropped', value: formatCount(encoder.framesDropped) },
-            { label: 'Packet loss', value: formatPercentage(encoder.packetLossRatio) },
+            { label: "Frames encoded", value: formatCount(encoder.framesEncoded) },
+            { label: "Frames sent", value: formatCount(encoder.framesSent) },
+            { label: "Frames dropped", value: formatCount(encoder.framesDropped) },
+            { label: "Packet loss", value: formatPercentage(encoder.packetLossRatio) },
             {
-              label: 'Limitation',
+              label: "Limitation",
               value: formatEncoderLimitation(encoder.qualityLimitationReason),
             },
           ];
   const captureRows =
     capture === null
       ? []
-      : platform === 'android'
+      : platform === "android"
         ? [
             {
-              label: 'Publisher offers',
+              label: "Publisher offers",
               value: formatCount(capture.offeredFrames),
             },
             {
-              label: 'Publisher forwards',
+              label: "Publisher forwards",
               value: formatCount(capture.forwardedFrames),
             },
             ...(grpc
               ? [
                   {
-                    label: 'gRPC image mode',
+                    label: "gRPC image mode",
                     value: grpc.imageMode?.toUpperCase() ?? UNAVAILABLE_VALUE,
                   },
                   {
-                    label: 'Emulator producer FPS',
+                    label: "Emulator producer FPS",
                     value: formatFps(grpc.producerFps),
                   },
                   {
-                    label: 'Host receive FPS',
+                    label: "Host receive FPS",
                     value: formatFps(grpc.receiveFps),
                   },
                   {
-                    label: 'Usable image FPS',
+                    label: "Usable image FPS",
                     value: formatFps(grpc.usableImageFps),
                   },
                   {
-                    label: 'Encoder input FPS',
+                    label: "Encoder input FPS",
                     value: formatFps(grpc.encoderInputFps),
                   },
                   {
-                    label: 'gRPC notifications',
+                    label: "gRPC notifications",
                     value: formatCount(grpc.messagesReceived),
                   },
                   {
-                    label: grpc.imageMode === 'rgb888'
-                      ? 'Decoded responses'
-                      : 'Selected notifications',
+                    label:
+                      grpc.imageMode === "rgb888" ? "Decoded responses" : "Selected notifications",
                     value: formatCount(grpc.messagesEmitted),
                   },
                   {
-                    label: grpc.imageMode === 'rgb888'
-                      ? 'Predecode coalescing'
-                      : 'Coalesced notifications',
+                    label:
+                      grpc.imageMode === "rgb888"
+                        ? "Predecode coalescing"
+                        : "Coalesced notifications",
                     value: formatCount(grpc.messagesCoalesced),
                   },
                   {
-                    label: 'Sequence gaps',
+                    label: "Sequence gaps",
                     value: formatCount(grpc.sequenceGaps),
                   },
                   {
-                    label: 'Latest image payload',
+                    label: "Latest image payload",
                     value: formatBytes(grpc.imagePayloadBytes),
                   },
                   {
-                    label: 'Logical transport bytes',
+                    label: "Logical transport bytes",
                     value: formatBytes(grpc.transportBytes),
                   },
                   {
-                    label: 'gRPC message bytes',
+                    label: "gRPC message bytes",
                     value: formatBytes(grpc.messageBytesReceived),
                   },
                   {
-                    label: 'Produce→receive p50 / p95',
+                    label: "Produce→receive p50 / p95",
                     value: formatTimingPair(grpc.productionToReceiveLatencyMs),
                   },
                   {
-                    label: 'Produce→usable p50 / p95',
+                    label: "Produce→usable p50 / p95",
                     value: formatTimingPair(grpc.productionToUsableLatencyMs),
                   },
                   {
-                    label: 'Protobuf decode p50 / p95',
+                    label: "Protobuf decode p50 / p95",
                     value: formatTimingPair(grpc.protobufDecodeTimeMs),
                   },
-                  ...(grpc.imageMode === 'mmap'
+                  ...(grpc.imageMode === "mmap"
                     ? [
                         {
-                          label: 'MMAP bytes read',
+                          label: "MMAP bytes read",
                           value: formatBytes(grpc.mmapFileBytesRead),
                         },
                         {
-                          label: 'MMAP read p50 / p95',
+                          label: "MMAP read p50 / p95",
                           value: formatTimingPair(grpc.mmapReadCopyTimeMs),
                         },
                         {
-                          label: 'MMAP read retries',
+                          label: "MMAP read retries",
                           value: formatCount(grpc.mmapReadRetries),
                         },
                         {
-                          label: 'Torn frames dropped',
+                          label: "Torn frames dropped",
                           value: formatCount(grpc.mmapTornFramesDropped),
                         },
                       ]
@@ -382,19 +376,19 @@ export function StreamStatistics({
               : []),
           ]
         : [
-            { label: 'Screen frames', value: formatCount(capture.screenFrames) },
-            { label: 'Idle frames', value: formatCount(capture.idleFrames) },
-            { label: 'Capture deliveries', value: formatCount(capture.offeredFrames) },
-            { label: 'Pacer submissions', value: formatCount(capture.forwardedFrames) },
-            { label: 'Pump restarts', value: formatCount(capture.pumpRestarts) },
+            { label: "Screen frames", value: formatCount(capture.screenFrames) },
+            { label: "Idle frames", value: formatCount(capture.idleFrames) },
+            { label: "Capture deliveries", value: formatCount(capture.offeredFrames) },
+            { label: "Pacer submissions", value: formatCount(capture.forwardedFrames) },
+            { label: "Pump restarts", value: formatCount(capture.pumpRestarts) },
           ];
 
   return (
     <div
       style={{
-        display: 'flex',
+        display: "flex",
         minWidth: 0,
-        flexDirection: 'column',
+        flexDirection: "column",
         gap: 8,
         paddingTop: 8,
       }}
@@ -414,8 +408,8 @@ export function StreamStatistics({
         aria-label="WebRTC stream statistics"
         aria-colcount={2}
         style={{
-          width: '100%',
-          overflow: 'visible',
+          width: "100%",
+          overflow: "visible",
           borderRadius: radius.lg,
           backgroundColor: bg.subtle,
         }}
@@ -425,7 +419,7 @@ export function StreamStatistics({
           aria-label="Stream statistics"
           data-receiver-stale={stats?.stale || undefined}
           data-server-stale={stats?.serverStale || undefined}
-          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+          style={{ display: "grid", gridTemplateColumns: COMPACT_STATS_COLUMNS }}
         >
           <StreamStatisticGroupHeading label="Stream" first />
           <StreamStatisticRow
@@ -448,7 +442,7 @@ export function StreamStatistics({
           role="rowgroup"
           aria-label="Client statistics"
           data-stale={stats?.stale || undefined}
-          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+          style={{ display: "grid", gridTemplateColumns: COMPACT_STATS_COLUMNS }}
         >
           <StreamStatisticGroupHeading label="Client" />
           <StreamStatisticRow
@@ -495,7 +489,7 @@ export function StreamStatistics({
             role="rowgroup"
             aria-label="Encoder statistics"
             data-stale={stats?.serverStale || undefined}
-            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+            style={{ display: "grid", gridTemplateColumns: COMPACT_STATS_COLUMNS }}
           >
             <StreamStatisticGroupHeading label="Encoder" />
             {encoderRows.map((row) => (
@@ -513,7 +507,7 @@ export function StreamStatistics({
             role="rowgroup"
             aria-label="Capture statistics"
             data-stale={stats?.serverStale || undefined}
-            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+            style={{ display: "grid", gridTemplateColumns: COMPACT_STATS_COLUMNS }}
           >
             <StreamStatisticGroupHeading label="Capture" />
             {captureRows.map((row) => (
@@ -531,7 +525,7 @@ export function StreamStatistics({
         <div
           data-stale={stats?.stale || undefined}
           style={{
-            display: 'grid',
+            display: "grid",
             minWidth: 0,
             gridTemplateColumns: COMPACT_STATS_COLUMNS,
             gap: 8,

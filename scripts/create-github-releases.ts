@@ -18,7 +18,10 @@ function changelogSection(changelog: string, version: string): string {
       break;
     }
   }
-  return lines.slice(start + 1, end).join("\n").trim();
+  return lines
+    .slice(start + 1, end)
+    .join("\n")
+    .trim();
 }
 
 for (const pkg of await getPublicPackages()) {
@@ -32,8 +35,7 @@ for (const pkg of await getPublicPackages()) {
     continue;
   }
 
-  const alreadyReleased =
-    (await $`gh release view ${tag}`.nothrow().quiet()).exitCode === 0;
+  const alreadyReleased = (await $`gh release view ${tag}`.nothrow().quiet()).exitCode === 0;
   if (alreadyReleased) {
     console.log(`- ${tag}: GitHub release already exists — skipping`);
     continue;
@@ -46,7 +48,9 @@ for (const pkg of await getPublicPackages()) {
     if (section) notes = section;
   }
 
-  const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`.cwd(pkg.dir).text();
+  const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`
+    .cwd(pkg.dir)
+    .text();
   const tarball = `${artifactsDir}/${JSON.parse(packOutput)[0].filename}`;
 
   console.log(`- ${tag}: creating GitHub release with ${JSON.parse(packOutput)[0].filename}`);

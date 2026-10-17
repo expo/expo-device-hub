@@ -3,11 +3,7 @@ import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import type { ChildProcess } from "node:child_process";
 import { startServer } from "../src/server.ts";
-import {
-  FramedReader,
-  type ScrcpySession,
-  type StartOpts,
-} from "../src/scrcpy.ts";
+import { FramedReader, type ScrcpySession, type StartOpts } from "../src/scrcpy.ts";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -19,10 +15,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fakeSession(
-  serial: string,
-  onClose: () => void = () => {},
-): ScrcpySession {
+function fakeSession(serial: string, onClose: () => void = () => {}): ScrcpySession {
   const videoSocket = new Socket();
   const controlSocket = new Socket();
   const frame = deferred<null>();

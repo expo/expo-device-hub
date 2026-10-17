@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +19,9 @@ type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 /** A server with no session recording yet: the follower's seed request finds nothing. */
 function withoutSession(fetchImpl: FetchStub): FetchStub {
   return async (input, init) =>
-    String(input).includes("/network-capture.ndjson") ? new Response("", { status: 404 }) : fetchImpl(input, init);
+    String(input).includes("/network-capture.ndjson")
+      ? new Response("", { status: 404 })
+      : fetchImpl(input, init);
 }
 
 const metaFrame = (attachment: string) =>
@@ -41,18 +51,28 @@ describe("harHasEntries", () => {
   };
 
   it("reads log.entries, not another entries key or text inside a string", () => {
-    expect(check('{"metadata":{"entries":[]},"log":{"entries":[{"request":{"url":"https://kept.test/"}}]}}')).toBe(true);
+    expect(
+      check(
+        '{"metadata":{"entries":[]},"log":{"entries":[{"request":{"url":"https://kept.test/"}}]}}',
+      ),
+    ).toBe(true);
     expect(check('{"log":{"comment":"\\"entries\\":[]","entries":[{}]}}')).toBe(true);
     expect(check('{"log":{"pages":[{"entries":[]}],"entries":[]}}')).toBe(false);
   });
 
   it("reaches log.entries past more than one read of other data", () => {
-    expect(check(`{"log":{"creator":{"comment":"${"x".repeat(200_000)}"},"entries":[ ]}}`)).toBe(false);
-    expect(check(`{"log":{"creator":{"comment":"${"x".repeat(200_000)}"},"entries":[{}]}}`)).toBe(true);
+    expect(check(`{"log":{"creator":{"comment":"${"x".repeat(200_000)}"},"entries":[ ]}}`)).toBe(
+      false,
+    );
+    expect(check(`{"log":{"creator":{"comment":"${"x".repeat(200_000)}"},"entries":[{}]}}`)).toBe(
+      true,
+    );
   });
 
   it("stops at the first entry, however large the rest", () => {
-    expect(check(`{\n  "log": {\n    "entries": [\n      {"text": "${"y".repeat(300_000)}`)).toBe(true);
+    expect(check(`{\n  "log": {\n    "entries": [\n      {"text": "${"y".repeat(300_000)}`)).toBe(
+      true,
+    );
   });
 
   it("cannot tell for a file that ends first or is not a JSON object", () => {
@@ -70,15 +90,22 @@ describe("followCaptureHar", () => {
       for (const attachment of ["not-enabled", "failed"]) {
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode(
-              `data: ${JSON.stringify({ type: "meta", meta: { attachment, attachError: "Capture is unavailable" } })}\n\n`,
-            ));
+            controller.enqueue(
+              new TextEncoder().encode(
+                `data: ${JSON.stringify({ type: "meta", meta: { attachment, attachError: "Capture is unavailable" } })}\n\n`,
+              ),
+            );
           },
         });
-        await expect(followCaptureHar({
-          baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, `${attachment}.har`), token: "test",
-          fetchImpl: withoutSession(async () => new Response(stream)),
-        })).rejects.toThrow("Capture is unavailable");
+        await expect(
+          followCaptureHar({
+            baseUrl: "http://127.0.0.1:3999",
+            device: "D",
+            outPath: join(dir, `${attachment}.har`),
+            token: "test",
+            fetchImpl: withoutSession(async () => new Response(stream)),
+          }),
+        ).rejects.toThrow("Capture is unavailable");
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -91,22 +118,31 @@ describe("followCaptureHar", () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(CAPTURING));
-        controller.enqueue(new TextEncoder().encode('data: {"type":"finished","request":{"id":"r1","method":"GET","url":"https://a.test/","status":200,"mimeType":"text/plain","requestBytes":0,"responseBytes":2,"startedAt":1,"ttfbMs":1,"durationMs":2,"failure":null}}\n\n'));
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"type":"finished","request":{"id":"r1","method":"GET","url":"https://a.test/","status":200,"mimeType":"text/plain","requestBytes":0,"responseBytes":2,"startedAt":1,"ttfbMs":1,"durationMs":2,"failure":null}}\n\n',
+          ),
+        );
         abortStream = () => controller.error(new DOMException("Stopped", "AbortError"));
       },
     });
     try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "session.har"), token: "test",
-        fetchImpl: withoutSession(async (input) => {
-          if (String(input).includes("/network-capture/r1")) {
-            rmSync(dir, { recursive: true, force: true });
-            abortStream();
-            return new Response("null");
-          }
-          return new Response(stream);
+      await expect(
+        followCaptureHar({
+          baseUrl: "http://127.0.0.1:3999",
+          device: "D",
+          outPath: join(dir, "session.har"),
+          token: "test",
+          fetchImpl: withoutSession(async (input) => {
+            if (String(input).includes("/network-capture/r1")) {
+              rmSync(dir, { recursive: true, force: true });
+              abortStream();
+              return new Response("null");
+            }
+            return new Response(stream);
+          }),
         }),
-      })).rejects.toThrow(/ENOENT/);
+      ).rejects.toThrow(/ENOENT/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -114,11 +150,26 @@ describe("followCaptureHar", () => {
 
   it("releases the writer after the initial fetch fails", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-fetch-"));
-    const options = { baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "session.har"), token: "test" };
+    const options = {
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath: join(dir, "session.har"),
+      token: "test",
+    };
     const abort = new DOMException("Stopped", "AbortError");
     try {
-      await expect(followCaptureHar({ ...options, fetchImpl: async () => { throw abort; } })).rejects.toBe(abort);
-      const result = await followCaptureHar({ ...options, fetchImpl: withoutSession(async () => new Response(capturingStream())) });
+      await expect(
+        followCaptureHar({
+          ...options,
+          fetchImpl: async () => {
+            throw abort;
+          },
+        }),
+      ).rejects.toBe(abort);
+      const result = await followCaptureHar({
+        ...options,
+        fetchImpl: withoutSession(async () => new Response(capturingStream())),
+      });
       expect(result.size).toBe(0);
       expect(existsSync(result.harPath)).toBe(true);
     } finally {
@@ -133,8 +184,14 @@ describe("followCaptureHar", () => {
     writeFileSync(outPath, har);
     let fetched = 0;
     const options = {
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test",
-      fetchImpl: withoutSession(async () => { fetched++; return new Response(capturingStream()); }),
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath,
+      token: "test",
+      fetchImpl: withoutSession(async () => {
+        fetched++;
+        return new Response(capturingStream());
+      }),
     };
     try {
       await expect(followCaptureHar(options)).rejects.toThrow("already holds a recording");
@@ -158,20 +215,32 @@ describe("followCaptureHar", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-head-"));
     const outPath = join(dir, "session.har");
     const options = {
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test",
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath,
+      token: "test",
       fetchImpl: withoutSession(async () => new Response(capturingStream())),
     };
     try {
       // Pretty-printed, and with an entry far larger than the part that is read.
-      writeFileSync(outPath, `{\n  "log": {\n    "entries": [\n      {"response": {"content": {"text": "${"x".repeat(200_000)}"}}}\n    ]\n  }\n}\n`);
+      writeFileSync(
+        outPath,
+        `{\n  "log": {\n    "entries": [\n      {"response": {"content": {"text": "${"x".repeat(200_000)}"}}}\n    ]\n  }\n}\n`,
+      );
       await expect(followCaptureHar(options)).rejects.toThrow("already holds a recording");
       writeFileSync(outPath, '{\n  "log": {\n    "entries": [ ]\n  }\n}\n');
       expect((await followCaptureHar(options)).size).toBe(0);
       // An empty `entries` array outside `log` does not make a full recording look empty.
-      writeFileSync(outPath, '{"metadata":{"entries":[]},"log":{"entries":[{"request":{"url":"https://kept.test/"}}]}}');
+      writeFileSync(
+        outPath,
+        '{"metadata":{"entries":[]},"log":{"entries":[{"request":{"url":"https://kept.test/"}}]}}',
+      );
       await expect(followCaptureHar(options)).rejects.toThrow("already holds a recording");
       // More than 64 KiB before an empty `log.entries` is still read as empty.
-      writeFileSync(outPath, `{"log":{"creator":{"comment":"${"x".repeat(70 * 1024)}"},"entries":[]}}`);
+      writeFileSync(
+        outPath,
+        `{"log":{"creator":{"comment":"${"x".repeat(70 * 1024)}"},"entries":[]}}`,
+      );
       expect((await followCaptureHar(options)).size).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -183,10 +252,19 @@ describe("followCaptureHar", () => {
     const outPath = join(dir, "a.har");
     let fetched = 0;
     try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, eventsPath: join(dir, ".", "a.har"), token: "test",
-        fetchImpl: async () => { fetched++; return new Response(capturingStream()); },
-      })).rejects.toThrow("name the same file");
+      await expect(
+        followCaptureHar({
+          baseUrl: "http://127.0.0.1:3999",
+          device: "D",
+          outPath,
+          eventsPath: join(dir, ".", "a.har"),
+          token: "test",
+          fetchImpl: async () => {
+            fetched++;
+            return new Response(capturingStream());
+          },
+        }),
+      ).rejects.toThrow("name the same file");
       expect(fetched).toBe(0);
       expect(existsSync(outPath)).toBe(false);
     } finally {
@@ -199,18 +277,27 @@ describe("followCaptureHar", () => {
     const other = join(dir, "old.har");
     const kept = '{"log":{"entries":[{"request":{"url":"https://kept.test/"}}]}}\n';
     writeFileSync(other, kept);
-    const follow = (eventsPath: string, outPath: string) => followCaptureHar({
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, eventsPath, token: "test",
-      fetchImpl: withoutSession(async () => new Response(capturingStream())),
-    });
+    const follow = (eventsPath: string, outPath: string) =>
+      followCaptureHar({
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        eventsPath,
+        token: "test",
+        fetchImpl: withoutSession(async () => new Response(capturingStream())),
+      });
     try {
-      await expect(follow(other, join(dir, "new.har"))).rejects.toThrow("is not a capture event log");
+      await expect(follow(other, join(dir, "new.har"))).rejects.toThrow(
+        "is not a capture event log",
+      );
       expect(readFileSync(other, "utf8")).toBe(kept);
       // A rerun with the same --events replaces the event log it wrote before.
       const events = join(dir, "events.ndjson");
       await follow(events, join(dir, "a.har"));
       // A real event log from that run, not an empty file, is what the rerun accepts.
-      expect(JSON.parse(readFileSync(events, "utf8").split("\n")[0]!)).toMatchObject({ type: "meta" });
+      expect(JSON.parse(readFileSync(events, "utf8").split("\n")[0]!)).toMatchObject({
+        type: "meta",
+      });
       writeFileSync(join(dir, "a.har"), JSON.stringify({ log: { entries: [] } }));
       await follow(events, join(dir, "a.har"));
     } finally {
@@ -218,30 +305,56 @@ describe("followCaptureHar", () => {
     }
   });
 
-  it.skipIf(process.platform !== "darwin")("treats paths that differ only in case as one file on macOS", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-case-"));
-    try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "A.har"), eventsPath: join(dir, "a.har"), token: "test",
-        fetchImpl: withoutSession(async () => new Response(capturingStream())),
-      })).rejects.toThrow("name the same file");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  it.skipIf(process.platform !== "darwin")(
+    "treats paths that differ only in case as one file on macOS",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-case-"));
+      try {
+        await expect(
+          followCaptureHar({
+            baseUrl: "http://127.0.0.1:3999",
+            device: "D",
+            outPath: join(dir, "A.har"),
+            eventsPath: join(dir, "a.har"),
+            token: "test",
+            fetchImpl: withoutSession(async () => new Response(capturingStream())),
+          }),
+        ).rejects.toThrow("name the same file");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("reports that the recording began only once a frame shows capture is on", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-begin-"));
-    const options = { baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "session.har"), token: "test" };
+    const options = {
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath: join(dir, "session.har"),
+      token: "test",
+    };
     try {
       let began = 0;
       const abort = new DOMException("Stopped", "AbortError");
       // Stopped while the stream was still connecting: nothing began, and no HAR exists.
-      await expect(followCaptureHar({ ...options, onBegin: () => void began++, fetchImpl: async () => { throw abort; } })).rejects.toBe(abort);
+      await expect(
+        followCaptureHar({
+          ...options,
+          onBegin: () => void began++,
+          fetchImpl: async () => {
+            throw abort;
+          },
+        }),
+      ).rejects.toBe(abort);
       expect(began).toBe(0);
       expect(existsSync(options.outPath)).toBe(false);
 
-      await followCaptureHar({ ...options, onBegin: () => void began++, fetchImpl: withoutSession(async () => new Response(capturingStream())) });
+      await followCaptureHar({
+        ...options,
+        onBegin: () => void began++,
+        fetchImpl: withoutSession(async () => new Response(capturingStream())),
+      });
       expect(began).toBe(1);
       expect(existsSync(options.outPath)).toBe(true);
     } finally {
@@ -253,12 +366,22 @@ describe("followCaptureHar", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-keep-"));
     const outPath = join(dir, "session.har");
     const paths = captureHarPaths(outPath);
-    const kept = { har: '{"log":{"entries":["kept"]}}\n', events: "kept-event\n", entries: "kept-entry\n" };
+    const kept = {
+      har: '{"log":{"entries":["kept"]}}\n',
+      events: "kept-event\n",
+      entries: "kept-entry\n",
+    };
     writeFileSync(outPath, kept.har);
     writeFileSync(paths.eventsPath, kept.events);
     writeFileSync(paths.entriesPath, kept.entries);
     // With --force; without it the follower refuses before it connects (next test).
-    const options = { baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", replace: true };
+    const options = {
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath,
+      token: "test",
+      replace: true,
+    };
     const unchanged = () => {
       expect(readFileSync(outPath, "utf8")).toBe(kept.har);
       expect(readFileSync(paths.eventsPath, "utf8")).toBe(kept.events);
@@ -266,26 +389,46 @@ describe("followCaptureHar", () => {
     };
     try {
       // A refused connection, a rejected request, and a device with capture off: nothing is replaced.
-      await expect(followCaptureHar({ ...options, fetchImpl: async () => { throw new Error("ECONNREFUSED"); } }))
-        .rejects.toThrow("ECONNREFUSED");
-      unchanged();
-      await expect(followCaptureHar({ ...options, fetchImpl: async () => new Response("", { status: 503 }) }))
-        .rejects.toThrow("capture stream HTTP 503");
-      unchanged();
-      const off = JSON.stringify({ type: "meta", meta: { attachment: "not-enabled", attachError: null } });
-      await expect(followCaptureHar({
-        ...options,
-        fetchImpl: withoutSession(async () => new Response(new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(`data: ${off}\n\n`));
-            controller.close();
+      await expect(
+        followCaptureHar({
+          ...options,
+          fetchImpl: async () => {
+            throw new Error("ECONNREFUSED");
           },
-        }))),
-      })).rejects.toThrow("not enabled");
+        }),
+      ).rejects.toThrow("ECONNREFUSED");
+      unchanged();
+      await expect(
+        followCaptureHar({ ...options, fetchImpl: async () => new Response("", { status: 503 }) }),
+      ).rejects.toThrow("capture stream HTTP 503");
+      unchanged();
+      const off = JSON.stringify({
+        type: "meta",
+        meta: { attachment: "not-enabled", attachError: null },
+      });
+      await expect(
+        followCaptureHar({
+          ...options,
+          fetchImpl: withoutSession(
+            async () =>
+              new Response(
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.enqueue(new TextEncoder().encode(`data: ${off}\n\n`));
+                    controller.close();
+                  },
+                }),
+              ),
+          ),
+        }),
+      ).rejects.toThrow("not enabled");
       unchanged();
 
       // Once a frame shows capture is on, the recording at --out is replaced as before.
-      const result = await followCaptureHar({ ...options, fetchImpl: withoutSession(async () => new Response(capturingStream())) });
+      const result = await followCaptureHar({
+        ...options,
+        fetchImpl: withoutSession(async () => new Response(capturingStream())),
+      });
       expect(result.size).toBe(0);
       expect(readFileSync(outPath, "utf8")).not.toBe(kept.har);
       expect(readFileSync(paths.entriesPath, "utf8")).toBe("");
@@ -298,23 +441,39 @@ describe("followCaptureHar", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-starting-"));
     const outPath = join(dir, "session.har");
     const paths = captureHarPaths(outPath);
-    const kept = { har: '{"log":{"entries":["kept"]}}\n', events: "kept-event\n", entries: "kept-entry\n" };
+    const kept = {
+      har: '{"log":{"entries":["kept"]}}\n',
+      events: "kept-event\n",
+      entries: "kept-entry\n",
+    };
     writeFileSync(outPath, kept.har);
     writeFileSync(paths.eventsPath, kept.events);
     writeFileSync(paths.entriesPath, kept.entries);
     const failed = `data: ${JSON.stringify({ type: "meta", meta: { attachment: "failed", attachError: "proxy did not start" } })}\n\n`;
     let began = 0;
     try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", replace: true, onBegin: () => void began++,
-        fetchImpl: withoutSession(async () => new Response(new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode(metaFrame("starting")));
-            controller.enqueue(new TextEncoder().encode(failed));
-            controller.close();
-          },
-        }))),
-      })).rejects.toThrow("proxy did not start");
+      await expect(
+        followCaptureHar({
+          baseUrl: "http://127.0.0.1:3999",
+          device: "D",
+          outPath,
+          token: "test",
+          replace: true,
+          onBegin: () => void began++,
+          fetchImpl: withoutSession(
+            async () =>
+              new Response(
+                new ReadableStream<Uint8Array>({
+                  start(controller) {
+                    controller.enqueue(new TextEncoder().encode(metaFrame("starting")));
+                    controller.enqueue(new TextEncoder().encode(failed));
+                    controller.close();
+                  },
+                }),
+              ),
+          ),
+        }),
+      ).rejects.toThrow("proxy did not start");
       expect(began).toBe(0);
       expect(readFileSync(outPath, "utf8")).toBe(kept.har);
       expect(readFileSync(paths.eventsPath, "utf8")).toBe(kept.events);
@@ -330,13 +489,19 @@ describe("followCaptureHar", () => {
     const kept = '{"log":{"entries":["kept"]}}\n';
     writeFileSync(outPath, kept);
     try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", replace: true,
-        fetchImpl: async (input) =>
-          String(input).includes("/network-capture.ndjson")
-            ? new Response("disk error", { status: 500 })
-            : new Response(capturingStream()),
-      })).rejects.toThrow("HTTP 500");
+      await expect(
+        followCaptureHar({
+          baseUrl: "http://127.0.0.1:3999",
+          device: "D",
+          outPath,
+          token: "test",
+          replace: true,
+          fetchImpl: async (input) =>
+            String(input).includes("/network-capture.ndjson")
+              ? new Response("disk error", { status: 500 })
+              : new Response(capturingStream()),
+        }),
+      ).rejects.toThrow("HTTP 500");
       expect(readFileSync(outPath, "utf8")).toBe(kept);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -347,30 +512,55 @@ describe("followCaptureHar", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-seed-cut-"));
     const outPath = join(dir, "session.har");
     const paths = captureHarPaths(outPath);
-    const kept = { har: '{"log":{"entries":["kept"]}}\n', events: "kept-event\n", entries: "kept-entry\n" };
+    const kept = {
+      har: '{"log":{"entries":["kept"]}}\n',
+      events: "kept-event\n",
+      entries: "kept-entry\n",
+    };
     writeFileSync(outPath, kept.har);
     writeFileSync(paths.eventsPath, kept.events);
     writeFileSync(paths.entriesPath, kept.entries);
-    const good = `${JSON.stringify(toHarEntry({
-      id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: "text/plain",
-      requestBytes: 0, responseBytes: 2, startedAt: 1, ttfbMs: 1, durationMs: 2, failure: null,
-    }))}\n`;
-    const follow = (seed: (controller: ReadableStreamDefaultController<Uint8Array>) => void) => followCaptureHar({
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", replace: true,
-      fetchImpl: async (input) => String(input).includes("/network-capture.ndjson")
-        ? new Response(new ReadableStream<Uint8Array>({ start: seed }))
-        : new Response(capturingStream()),
-    });
+    const good = `${JSON.stringify(
+      toHarEntry({
+        id: "r1",
+        method: "GET",
+        url: "https://a.test/",
+        status: 200,
+        mimeType: "text/plain",
+        requestBytes: 0,
+        responseBytes: 2,
+        startedAt: 1,
+        ttfbMs: 1,
+        durationMs: 2,
+        failure: null,
+      }),
+    )}\n`;
+    const follow = (seed: (controller: ReadableStreamDefaultController<Uint8Array>) => void) =>
+      followCaptureHar({
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        token: "test",
+        replace: true,
+        fetchImpl: async (input) =>
+          String(input).includes("/network-capture.ndjson")
+            ? new Response(new ReadableStream<Uint8Array>({ start: seed }))
+            : new Response(capturingStream()),
+      });
     try {
       // HTTP 200, one good entry, then the connection resets.
-      await expect(follow((controller) => {
-        controller.enqueue(new TextEncoder().encode(`${good}{"_captureId":"r2"`));
-        controller.error(new Error("connection reset"));
-      })).rejects.toThrow("connection reset");
-      await expect(follow((controller) => {
-        controller.enqueue(new TextEncoder().encode(`${good}{not json}\n${good}`));
-        controller.close();
-      })).rejects.toThrow("unreadable entry");
+      await expect(
+        follow((controller) => {
+          controller.enqueue(new TextEncoder().encode(`${good}{"_captureId":"r2"`));
+          controller.error(new Error("connection reset"));
+        }),
+      ).rejects.toThrow("connection reset");
+      await expect(
+        follow((controller) => {
+          controller.enqueue(new TextEncoder().encode(`${good}{not json}\n${good}`));
+          controller.close();
+        }),
+      ).rejects.toThrow("unreadable entry");
       expect(readFileSync(outPath, "utf8")).toBe(kept.har);
       expect(readFileSync(paths.eventsPath, "utf8")).toBe(kept.events);
       expect(readFileSync(paths.entriesPath, "utf8")).toBe(kept.entries);
@@ -383,7 +573,10 @@ describe("followCaptureHar", () => {
   it("lets a run that recorded no requests be run again without --force", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-empty-rerun-"));
     const options = {
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "session.har"), token: "test",
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath: join(dir, "session.har"),
+      token: "test",
       fetchImpl: withoutSession(async () => new Response(capturingStream())),
     };
     try {
@@ -406,10 +599,16 @@ describe("followCaptureHar", () => {
     // The entry log cannot be opened for writing.
     mkdirSync(paths.entriesPath);
     try {
-      await expect(followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", replace: true,
-        fetchImpl: withoutSession(async () => new Response(capturingStream())),
-      })).rejects.toThrow();
+      await expect(
+        followCaptureHar({
+          baseUrl: "http://127.0.0.1:3999",
+          device: "D",
+          outPath,
+          token: "test",
+          replace: true,
+          fetchImpl: withoutSession(async () => new Response(capturingStream())),
+        }),
+      ).rejects.toThrow();
       expect(readFileSync(paths.eventsPath, "utf8")).toBe(kept.events);
       expect(readFileSync(outPath, "utf8")).toBe(kept.har);
     } finally {
@@ -432,16 +631,32 @@ describe("followCaptureHar", () => {
     ];
     const others = [`other.har.${uuid}.har.tmp`, "session.har.notes.tmp"];
     for (const name of [...leftovers, ...others]) writeFileSync(join(dir, name), "x");
-    const seed = `${JSON.stringify(toHarEntry({
-      id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: "text/plain",
-      requestBytes: 0, responseBytes: 2, startedAt: 1, ttfbMs: 1, durationMs: 2, failure: null,
-    }))}\n`;
+    const seed = `${JSON.stringify(
+      toHarEntry({
+        id: "r1",
+        method: "GET",
+        url: "https://a.test/",
+        status: 200,
+        mimeType: "text/plain",
+        requestBytes: 0,
+        responseBytes: 2,
+        startedAt: 1,
+        ttfbMs: 1,
+        durationMs: 2,
+        failure: null,
+      }),
+    )}\n`;
     try {
       // Seeded, so the run's own staged seed sits among the leftovers while they are removed.
       const result = await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test",
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        token: "test",
         fetchImpl: async (input) =>
-          String(input).includes("/network-capture.ndjson") ? new Response(seed) : new Response(capturingStream()),
+          String(input).includes("/network-capture.ndjson")
+            ? new Response(seed)
+            : new Response(capturingStream()),
       });
       expect(result.size).toBe(1);
       for (const name of leftovers) expect(existsSync(join(dir, name))).toBe(false);
@@ -547,7 +762,10 @@ describe("followCaptureHar", () => {
         rmSync(dir, { recursive: true, force: true });
         return new Response("null", { status: 200 });
       }
-      return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+      return new Response(stream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
     });
 
     try {
@@ -571,46 +789,76 @@ describe("followCaptureHar", () => {
 
 describe("followCaptureHar started late", () => {
   const request = (id: string, startedAt: number) => ({
-    id, method: "GET", url: `https://a.test/${id}`, status: 200, mimeType: "text/plain",
-    requestBytes: 0, responseBytes: 2, startedAt, ttfbMs: 1, durationMs: 2, failure: null,
+    id,
+    method: "GET",
+    url: `https://a.test/${id}`,
+    status: 200,
+    mimeType: "text/plain",
+    requestBytes: 0,
+    responseBytes: 2,
+    startedAt,
+    ttfbMs: 1,
+    durationMs: 2,
+    failure: null,
   });
 
   it("keeps requests the session recorded before it started, once each", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-late-"));
     const outPath = join(dir, "session.har");
     // The session holds r1-r3; the live store has already evicted r1 and replays r2-r3.
-    const sessionEntries = [1, 2, 3].map((n) => JSON.stringify(toHarEntry(request(`r${n}`, n)))).join("\n") + "\n";
+    const sessionEntries =
+      [1, 2, 3].map((n) => JSON.stringify(toHarEntry(request(`r${n}`, n)))).join("\n") + "\n";
     // Chunks that end mid-line, the way a large body arrives.
-    const seedChunks = [sessionEntries.slice(0, 50), sessionEntries.slice(50, 400), sessionEntries.slice(400)];
-    const frames = [CAPTURING, ...[2, 3, 4].map((n) => `data: ${JSON.stringify({ type: "finished", request: request(`r${n}`, n) })}\n\n`)];
+    const seedChunks = [
+      sessionEntries.slice(0, 50),
+      sessionEntries.slice(50, 400),
+      sessionEntries.slice(400),
+    ];
+    const frames = [
+      CAPTURING,
+      ...[2, 3, 4].map(
+        (n) => `data: ${JSON.stringify({ type: "finished", request: request(`r${n}`, n) })}\n\n`,
+      ),
+    ];
     const bodyFetches: string[] = [];
     try {
       const result = await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        token: "test",
+        flushIntervalMs: 50,
         fetchImpl: async (input) => {
           const url = String(input);
           if (url.includes("/network-capture.ndjson")) {
-            return new Response(new ReadableStream<Uint8Array>({
-              start(controller) {
-                for (const chunk of seedChunks) controller.enqueue(new TextEncoder().encode(chunk));
-                controller.close();
-              },
-            }));
+            return new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  for (const chunk of seedChunks)
+                    controller.enqueue(new TextEncoder().encode(chunk));
+                  controller.close();
+                },
+              }),
+            );
           }
           if (url.includes("/network-capture/")) {
             bodyFetches.push(new URL(url).pathname.split("/").pop()!);
             return new Response("null");
           }
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
-              controller.close();
-            },
-          }));
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+                controller.close();
+              },
+            }),
+          );
         },
       });
       expect(result.size).toBe(4);
-      const har = JSON.parse(readFileSync(outPath, "utf8")) as { log: { entries: { _captureId: string }[] } };
+      const har = JSON.parse(readFileSync(outPath, "utf8")) as {
+        log: { entries: { _captureId: string }[] };
+      };
       expect(har.log.entries.map((entry) => entry._captureId)).toEqual(["r1", "r2", "r3", "r4"]);
       expect(bodyFetches).toEqual(["r4"]);
     } finally {
@@ -624,8 +872,17 @@ describe("followCaptureHar across a capture restart", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-restart-"));
     const outPath = join(dir, "session.har");
     const request = (id: string, startedAt: number, url: string) => ({
-      id, method: "GET", url, status: 200, mimeType: "text/plain",
-      requestBytes: 0, responseBytes: 2, startedAt, ttfbMs: 1, durationMs: 2, failure: null,
+      id,
+      method: "GET",
+      url,
+      status: 200,
+      mimeType: "text/plain",
+      requestBytes: 0,
+      responseBytes: 2,
+      startedAt,
+      ttfbMs: 1,
+      durationMs: 2,
+      failure: null,
     });
     const seed = `${JSON.stringify(toHarEntry(request("r1", 1, "https://a.test/old")))}\n`;
     // The old session's r1 replays, then a new session starts ("cleared", `starting`, `capturing`,
@@ -640,21 +897,32 @@ describe("followCaptureHar across a capture restart", () => {
     ];
     try {
       await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        token: "test",
+        flushIntervalMs: 50,
         fetchImpl: async (input) => {
           const url = String(input);
           if (url.includes("/network-capture.ndjson")) return new Response(seed);
           if (url.includes("/network-capture/")) return new Response("null");
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
-              controller.close();
-            },
-          }));
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+                controller.close();
+              },
+            }),
+          );
         },
       });
-      const har = JSON.parse(readFileSync(outPath, "utf8")) as { log: { entries: { request: { url: string } }[] } };
-      expect(har.log.entries.map((entry) => entry.request.url)).toEqual(["https://a.test/old", "https://a.test/new"]);
+      const har = JSON.parse(readFileSync(outPath, "utf8")) as {
+        log: { entries: { request: { url: string } }[] };
+      };
+      expect(har.log.entries.map((entry) => entry.request.url)).toEqual([
+        "https://a.test/old",
+        "https://a.test/new",
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -663,30 +931,51 @@ describe("followCaptureHar across a capture restart", () => {
 
 describe("followCaptureHar when capture restarts", () => {
   const request = (id: string, startedAt: number, url: string) => ({
-    id, method: "GET", url, status: 200, mimeType: "text/plain",
-    requestBytes: 0, responseBytes: 2, startedAt, ttfbMs: 1, durationMs: 2, failure: null,
+    id,
+    method: "GET",
+    url,
+    status: 200,
+    mimeType: "text/plain",
+    requestBytes: 0,
+    responseBytes: 2,
+    startedAt,
+    ttfbMs: 1,
+    durationMs: 2,
+    failure: null,
   });
   const finishedFrame = (id: string, startedAt: number, url: string) =>
     `data: ${JSON.stringify({ type: "finished", request: request(id, startedAt, url) })}\n\n`;
   // Capture turned off and on, as the runtime sends it: `not-enabled`, then the new session's
   // "cleared", `starting`, and `capturing`.
-  const restart = [metaFrame("not-enabled"), `data: ${JSON.stringify({ type: "cleared" })}\n\n`, metaFrame("starting"), CAPTURING];
+  const restart = [
+    metaFrame("not-enabled"),
+    `data: ${JSON.stringify({ type: "cleared" })}\n\n`,
+    metaFrame("starting"),
+    CAPTURING,
+  ];
 
   function follow(outPath: string, frames: string[], seed: string | null, events: string[] = []) {
     return followCaptureHar({
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath,
+      token: "test",
+      flushIntervalMs: 50,
       onPause: () => void events.push("pause"),
       onResume: () => void events.push("resume"),
       fetchImpl: async (input) => {
         const url = String(input);
-        if (url.includes("/network-capture.ndjson")) return seed === null ? new Response("", { status: 404 }) : new Response(seed);
+        if (url.includes("/network-capture.ndjson"))
+          return seed === null ? new Response("", { status: 404 }) : new Response(seed);
         if (url.includes("/network-capture/")) return new Response("null");
-        return new Response(new ReadableStream<Uint8Array>({
-          start(controller) {
-            for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
-            controller.close();
-          },
-        }));
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+              controller.close();
+            },
+          }),
+        );
       },
     });
   }
@@ -696,16 +985,26 @@ describe("followCaptureHar when capture restarts", () => {
     const outPath = join(dir, "session.har");
     const events: string[] = [];
     try {
-      const result = await follow(outPath, [
-        CAPTURING,
-        finishedFrame("r1", 1, "https://a.test/before"),
-        ...restart,
-        finishedFrame("r1", 5, "https://a.test/after"),
-      ], null, events);
+      const result = await follow(
+        outPath,
+        [
+          CAPTURING,
+          finishedFrame("r1", 1, "https://a.test/before"),
+          ...restart,
+          finishedFrame("r1", 5, "https://a.test/after"),
+        ],
+        null,
+        events,
+      );
       expect(result.size).toBe(2);
       expect(events).toEqual(["pause", "resume"]);
-      const har = JSON.parse(readFileSync(outPath, "utf8")) as { log: { entries: { request: { url: string } }[] } };
-      expect(har.log.entries.map((entry) => entry.request.url)).toEqual(["https://a.test/before", "https://a.test/after"]);
+      const har = JSON.parse(readFileSync(outPath, "utf8")) as {
+        log: { entries: { request: { url: string } }[] };
+      };
+      expect(har.log.entries.map((entry) => entry.request.url)).toEqual([
+        "https://a.test/before",
+        "https://a.test/after",
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -718,14 +1017,23 @@ describe("followCaptureHar when capture restarts", () => {
     // new session's r1, while the stream still holds the old session's r1, which shares its id.
     const seed = `${JSON.stringify(toHarEntry(request("r1", 5, "https://a.test/new")))}\n`;
     try {
-      await follow(outPath, [
-        CAPTURING,
-        finishedFrame("r1", 1, "https://a.test/old"),
-        ...restart,
-        finishedFrame("r1", 5, "https://a.test/new"),
-      ], seed);
-      const har = JSON.parse(readFileSync(outPath, "utf8")) as { log: { entries: { request: { url: string } }[] } };
-      expect(har.log.entries.map((entry) => entry.request.url)).toEqual(["https://a.test/old", "https://a.test/new"]);
+      await follow(
+        outPath,
+        [
+          CAPTURING,
+          finishedFrame("r1", 1, "https://a.test/old"),
+          ...restart,
+          finishedFrame("r1", 5, "https://a.test/new"),
+        ],
+        seed,
+      );
+      const har = JSON.parse(readFileSync(outPath, "utf8")) as {
+        log: { entries: { request: { url: string } }[] };
+      };
+      expect(har.log.entries.map((entry) => entry.request.url)).toEqual([
+        "https://a.test/old",
+        "https://a.test/new",
+      ]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -735,7 +1043,9 @@ describe("followCaptureHar when capture restarts", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-early-close-"));
     const outPath = join(dir, "session.har");
     try {
-      await expect(follow(outPath, [metaFrame("starting")], null)).rejects.toThrow("closed before capture was on");
+      await expect(follow(outPath, [metaFrame("starting")], null)).rejects.toThrow(
+        "closed before capture was on",
+      );
       expect(existsSync(outPath)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -758,16 +1068,33 @@ describe("followCaptureHar with a start time that is not a number", () => {
   it("records a seeded request once, and never looks its body up by id alone", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-nan-"));
     const request = {
-      id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: "text/plain",
-      requestBytes: 0, responseBytes: 2, startedAt: Number.NaN, ttfbMs: 1, durationMs: 2, failure: null,
+      id: "r1",
+      method: "GET",
+      url: "https://a.test/",
+      status: 200,
+      mimeType: "text/plain",
+      requestBytes: 0,
+      responseBytes: 2,
+      startedAt: Number.NaN,
+      ttfbMs: 1,
+      durationMs: 2,
+      failure: null,
     };
     // JSON carries NaN as null, both in the seed and on the stream.
     const seed = `${JSON.stringify(toHarEntry(request))}\n`;
-    const frames = [CAPTURING, `data: ${JSON.stringify({ type: "finished", request })}\n\n`, `data: ${JSON.stringify({ type: "finished", request: { ...request, id: "r2" } })}\n\n`];
+    const frames = [
+      CAPTURING,
+      `data: ${JSON.stringify({ type: "finished", request })}\n\n`,
+      `data: ${JSON.stringify({ type: "finished", request: { ...request, id: "r2" } })}\n\n`,
+    ];
     const bodyUrls: string[] = [];
     try {
       const result = await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "a.har"), token: "test", flushIntervalMs: 50,
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath: join(dir, "a.har"),
+        token: "test",
+        flushIntervalMs: 50,
         fetchImpl: async (input) => {
           const url = String(input);
           if (url.includes("/network-capture.ndjson")) return new Response(seed);
@@ -775,12 +1102,14 @@ describe("followCaptureHar with a start time that is not a number", () => {
             bodyUrls.push(url);
             return new Response("null");
           }
-          return new Response(new ReadableStream<Uint8Array>({
-            start(controller) {
-              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
-              controller.close();
-            },
-          }));
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+                controller.close();
+              },
+            }),
+          );
         },
       });
       expect(result.size).toBe(2);
@@ -795,27 +1124,47 @@ describe("followCaptureHar with a start time that is not a number", () => {
 describe("followCaptureHar with a body whose lock cannot be released", () => {
   it("still records, as a finished fetch body under Bun can throw from releaseLock", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-release-"));
-    const seed = `${JSON.stringify(toHarEntry({
-      id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: "text/plain",
-      requestBytes: 0, responseBytes: 2, startedAt: 1, ttfbMs: 1, durationMs: 2, failure: null,
-    }))}\n`;
+    const seed = `${JSON.stringify(
+      toHarEntry({
+        id: "r1",
+        method: "GET",
+        url: "https://a.test/",
+        status: 200,
+        mimeType: "text/plain",
+        requestBytes: 0,
+        responseBytes: 2,
+        startedAt: 1,
+        ttfbMs: 1,
+        durationMs: 2,
+        failure: null,
+      }),
+    )}\n`;
     // Reads like a stream, then throws where Bun's finished fetch body does.
     const throwingBody = (text: string) => {
       let sent = false;
       return {
         getReader: () => ({
-          read: async () => (sent ? { done: true, value: undefined } : ((sent = true), { done: false, value: new TextEncoder().encode(text) })),
-          releaseLock: () => { throw new TypeError("undefined is not a function"); },
+          read: async () =>
+            sent
+              ? { done: true, value: undefined }
+              : ((sent = true), { done: false, value: new TextEncoder().encode(text) }),
+          releaseLock: () => {
+            throw new TypeError("undefined is not a function");
+          },
           cancel: async () => {},
         }),
       };
     };
     try {
       const result = await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "a.har"), token: "test",
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath: join(dir, "a.har"),
+        token: "test",
         fetchImpl: async (input) => {
           const url = String(input);
-          if (url.includes("/network-capture.ndjson")) return { ok: true, status: 200, body: throwingBody(seed) } as unknown as Response;
+          if (url.includes("/network-capture.ndjson"))
+            return { ok: true, status: 200, body: throwingBody(seed) } as unknown as Response;
           return { ok: true, status: 200, body: throwingBody(CAPTURING) } as unknown as Response;
         },
       });
@@ -833,17 +1182,27 @@ describe("followCaptureHar under an embedded mount", () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(CAPTURING));
-        controller.enqueue(new TextEncoder().encode('data: {"type":"finished","request":{"id":"r1","method":"GET","url":"https://a.test/","status":200,"mimeType":"text/plain","requestBytes":0,"responseBytes":2,"startedAt":1,"ttfbMs":1,"durationMs":2,"failure":null}}\n\n'));
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"type":"finished","request":{"id":"r1","method":"GET","url":"https://a.test/","status":200,"mimeType":"text/plain","requestBytes":0,"responseBytes":2,"startedAt":1,"ttfbMs":1,"durationMs":2,"failure":null}}\n\n',
+          ),
+        );
         controller.close();
       },
     });
     try {
       await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3200/.sim", device: "D", outPath: join(dir, "session.har"), token: "test",
+        baseUrl: "http://127.0.0.1:3200/.sim",
+        device: "D",
+        outPath: join(dir, "session.har"),
+        token: "test",
         fetchImpl: async (input) => {
           requested.push(String(input));
-          if (String(input).includes("/network-capture.ndjson")) return new Response("", { status: 404 });
-          return String(input).includes("/network-capture/") ? new Response("null") : new Response(stream);
+          if (String(input).includes("/network-capture.ndjson"))
+            return new Response("", { status: 404 });
+          return String(input).includes("/network-capture/")
+            ? new Response("null")
+            : new Response(stream);
         },
       });
       expect(requested).toEqual([
@@ -863,17 +1222,23 @@ describe("capture har working files", () => {
 
   function follow(outPath: string, release: Promise<void>) {
     return followCaptureHar({
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
+      baseUrl: "http://127.0.0.1:3999",
+      device: "D",
+      outPath,
+      token: "test",
+      flushIntervalMs: 50,
       fetchImpl: withoutSession(async (input) => {
         if (String(input).includes("/network-capture/")) return new Response("null");
-        return new Response(new ReadableStream<Uint8Array>({
-          async start(controller) {
-            controller.enqueue(new TextEncoder().encode(CAPTURING));
-            controller.enqueue(new TextEncoder().encode(finished("r1")));
-            await release;
-            controller.close();
-          },
-        }));
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(controller) {
+              controller.enqueue(new TextEncoder().encode(CAPTURING));
+              controller.enqueue(new TextEncoder().encode(finished("r1")));
+              await release;
+              controller.close();
+            },
+          }),
+        );
       }),
     });
   }
@@ -881,26 +1246,36 @@ describe("capture har working files", () => {
   it("refuses a second live recording on the same --events, and allows it once the first stops", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-shared-events-"));
     const events = join(dir, "shared.json");
-    const followWith = (outPath: string, gate: Promise<void>) => followCaptureHar({
-      baseUrl: "http://127.0.0.1:3999", device: "D", outPath, eventsPath: events, token: "test", flushIntervalMs: 50,
-      fetchImpl: withoutSession(async (input) => {
-        if (String(input).includes("/network-capture/")) return new Response("null");
-        return new Response(new ReadableStream<Uint8Array>({
-          async start(controller) {
-            controller.enqueue(new TextEncoder().encode(CAPTURING));
-            controller.enqueue(new TextEncoder().encode(finished("r1")));
-            await gate;
-            controller.close();
-          },
-        }));
-      }),
-    });
+    const followWith = (outPath: string, gate: Promise<void>) =>
+      followCaptureHar({
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath,
+        eventsPath: events,
+        token: "test",
+        flushIntervalMs: 50,
+        fetchImpl: withoutSession(async (input) => {
+          if (String(input).includes("/network-capture/")) return new Response("null");
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              async start(controller) {
+                controller.enqueue(new TextEncoder().encode(CAPTURING));
+                controller.enqueue(new TextEncoder().encode(finished("r1")));
+                await gate;
+                controller.close();
+              },
+            }),
+          );
+        }),
+      });
     let release = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     try {
       const first = followWith(join(dir, "a.har"), gate);
       await Bun.sleep(100);
-      await expect(followWith(join(dir, "b.har"), Promise.resolve())).rejects.toThrow("Another recording holds");
+      await expect(followWith(join(dir, "b.har"), Promise.resolve())).rejects.toThrow(
+        "Another recording holds",
+      );
       expect(readFileSync(events, "utf8")).toContain("r1");
       release();
       expect((await first).size).toBe(1);
@@ -917,7 +1292,11 @@ describe("capture har working files", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-events-stem-"));
     try {
       const result = await followCaptureHar({
-        baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "morning.har"), eventsPath: join(dir, "morning"), token: "test",
+        baseUrl: "http://127.0.0.1:3999",
+        device: "D",
+        outPath: join(dir, "morning.har"),
+        eventsPath: join(dir, "morning"),
+        token: "test",
         fetchImpl: withoutSession(async () => new Response(capturingStream())),
       });
       expect(result.size).toBe(0);
@@ -942,7 +1321,10 @@ describe("capture har working files", () => {
     let release = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     try {
-      const both = Promise.all([follow(join(dir, "a.har"), gate), follow(join(dir, "b.har"), gate)]);
+      const both = Promise.all([
+        follow(join(dir, "a.har"), gate),
+        follow(join(dir, "b.har"), gate),
+      ]);
       await Bun.sleep(100);
       release();
       const [a, b] = await both;

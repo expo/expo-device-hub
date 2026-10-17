@@ -3,16 +3,8 @@ import { locateProxyDylib, trustCaInSimulator, isDeviceInjected } from "./device
 import { configureCapability } from "../launch-manager";
 import type { CapabilityDefinition, PreparedCapability } from "../capabilities";
 import { CaptureDiskAccumulator, captureArtifactPaths, sweepAbandonedCaptureDirs } from "./disk";
-import {
-  DEFAULT_CAPTURE_FIELDS,
-  type CaptureField,
-} from "./fields";
-import {
-  CAPTURE_SCHEMA_VERSION,
-  CaptureStore,
-  type CaptureEvent,
-  type CaptureMeta,
-} from "./store";
+import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
+import { CAPTURE_SCHEMA_VERSION, CaptureStore, type CaptureEvent, type CaptureMeta } from "./store";
 import { startMitmProxy, type CaptureProxy, type MitmProxyDeps } from "./mitm-engine";
 import { serveSimVersion } from "./version";
 import type { CaptureUpstream } from "./upstream";
@@ -112,8 +104,13 @@ function cancelledMeta(udid: string, fields: readonly CaptureField[]): CaptureMe
   };
 }
 
-function assertRequested(udid: string, request: EnableRequest, defaultFields: readonly CaptureField[]): void {
-  if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid, request.fields ?? defaultFields));
+function assertRequested(
+  udid: string,
+  request: EnableRequest,
+  defaultFields: readonly CaptureField[],
+): void {
+  if (request.cancelled)
+    throw new CaptureEnableError(cancelledMeta(udid, request.fields ?? defaultFields));
 }
 
 function sameFields(left: readonly string[], right: readonly string[]): boolean {
@@ -140,12 +137,17 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   let policy: readonly CaptureField[] = options.fields ?? DEFAULT_CAPTURE_FIELDS;
   let upstream = options.upstream;
   const startProxy =
-    options.startProxy ?? ((store: CaptureStore, deps: MitmProxyDeps) => startMitmProxy(store, deps));
+    options.startProxy ??
+    ((store: CaptureStore, deps: MitmProxyDeps) => startMitmProxy(store, deps));
   const trustCa = options.trustCa ?? trustCaInSimulator;
   const configure = options.configure ?? configureCapability;
   const locateDylib = options.dylib ?? locateProxyDylib;
-  const isInjected = options.isInjected ?? ((udid: string, portFile: string, proxyAddress: string) =>
-    isDeviceInjected(udid, portFile, { expectedPort: Number(new URL(`http://${proxyAddress}`).port) }));
+  const isInjected =
+    options.isInjected ??
+    ((udid: string, portFile: string, proxyAddress: string) =>
+      isDeviceInjected(udid, portFile, {
+        expectedPort: Number(new URL(`http://${proxyAddress}`).port),
+      }));
   const checkIntervalMs = options.checkIntervalMs ?? CHECK_INTERVAL_MS;
   const writeDiskArtifacts = options.writeDiskArtifacts !== false;
   const creatorVersion = options.creatorVersion ?? "0.0.0";
@@ -179,7 +181,10 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   const metaOf = (udid: string): CaptureMeta =>
     byUdid.get(udid)?.meta ?? failedStarts.get(udid) ?? notEnabledMeta(udid, policy);
 
-  const attachDisk = (udid: string, store: CaptureStore): Pick<CaptureSession, "disk" | "stopDisk"> => {
+  const attachDisk = (
+    udid: string,
+    store: CaptureStore,
+  ): Pick<CaptureSession, "disk" | "stopDisk"> => {
     if (!writeDiskArtifacts) return { disk: null, stopDisk: null };
     // Sweep abandoned recordings while preserving live owners.
     if (!options.captureDirFor) sweepAbandonedCaptureDirs([...byUdid.keys(), udid]);
@@ -221,7 +226,10 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     if (byUdid.get(udid) === session) byUdid.delete(udid);
   };
 
-  const prepareSession = async (udid: string, request?: EnableRequest): Promise<PreparedCapability> => {
+  const prepareSession = async (
+    udid: string,
+    request?: EnableRequest,
+  ): Promise<PreparedCapability> => {
     // Every way in ends here: enableForDevice, the panel, and the capability registry that
     // `--enable networkCapture` and default capabilities go through. A refused host refuses them all.
     if (refusal) throw new Error(refusal);
@@ -229,7 +237,9 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     const existing = byUdid.get(udid);
     if (existing?.proxy) {
       if (existing.meta.attachment === "failed") {
-        throw new Error("The previous capture session failed. Disable capture before retrying so its launch configuration can be removed safely.");
+        throw new Error(
+          "The previous capture session failed. Disable capture before retrying so its launch configuration can be removed safely.",
+        );
       }
       if (request) request.session = existing;
       return { dylib: requireDylib(), env: { SIMNET_PROXY_PORT_FILE: existing.proxy.portFile } };
@@ -238,8 +248,13 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     const sessionFields = [...(request?.fields ?? policy)];
     const store = new CaptureStore();
     const meta: CaptureMeta = {
-      schemaVersion: CAPTURE_SCHEMA_VERSION, udid, proxyAddress: null,
-      attachment: "starting", attachError: null, droppedOversizedBodies: 0, fields: sessionFields,
+      schemaVersion: CAPTURE_SCHEMA_VERSION,
+      udid,
+      proxyAddress: null,
+      attachment: "starting",
+      attachError: null,
+      droppedOversizedBodies: 0,
+      fields: sessionFields,
     };
     const session: CaptureSession = { store, meta, proxy: null, ...attachDisk(udid, store) };
     if (request) request.session = session;
@@ -278,12 +293,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       if (request) assertRequested(udid, request, policy);
       await trustCa(udid, await proxy.caPem());
       if (request) assertRequested(udid, request, policy);
-      if (meta.attachment === "failed") throw new Error(meta.attachError ?? "The capture proxy stopped during startup.");
+      if (meta.attachment === "failed")
+        throw new Error(meta.attachError ?? "The capture proxy stopped during startup.");
       return {
         dylib,
         env: { SIMNET_PROXY_PORT_FILE: proxy.portFile },
         committed() {
-          if (meta.attachment === "failed") throw new Error(meta.attachError ?? "The capture proxy stopped during startup.");
+          if (meta.attachment === "failed")
+            throw new Error(meta.attachError ?? "The capture proxy stopped during startup.");
           meta.attachment = "capturing";
           store.publishMeta(meta);
         },
@@ -311,12 +328,19 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
   function requireDylib(): string {
     const dylib = locateDylib();
-    if (!dylib) throw new Error("Network capture library is missing. Rebuild serve-sim's native artifacts before enabling capture.");
+    if (!dylib)
+      throw new Error(
+        "Network capture library is missing. Rebuild serve-sim's native artifacts before enabling capture.",
+      );
     return dylib;
   }
 
   const capability: CapabilityDefinition = {
-    name: "networkCapture", exclusive: true, scope: "userApps", loadPhase: "startupAndDeferred", defaultEnabled: false,
+    name: "networkCapture",
+    exclusive: true,
+    scope: "userApps",
+    loadPhase: "startupAndDeferred",
+    defaultEnabled: false,
     async setEnabled({ udid, enabled }) {
       if (enabled) return prepareSession(udid);
       const session = byUdid.get(udid);
@@ -327,7 +351,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     },
   };
 
-  const disable = (udid: string) => configure(udid, capability, { enabled: false, relaunch: false });
+  const disable = (udid: string) =>
+    configure(udid, capability, { enabled: false, relaunch: false });
   const disableDevice = (udid: string): Promise<void> => {
     const pending = enables.get(udid);
     if (pending) pending.cancelled = true;
@@ -340,7 +365,11 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
    * are pointed at it. A failed write throws, so the caller hears about it and the start keeps its
    * old fields.
    */
-  const takeStartingFields = (udid: string, request: EnableRequest, fields: readonly CaptureField[]): void => {
+  const takeStartingFields = (
+    udid: string,
+    request: EnableRequest,
+    fields: readonly CaptureField[],
+  ): void => {
     const session = byUdid.get(udid);
     if (session?.proxy && session.meta.attachment === "starting" && request.session === session) {
       session.proxy.setFields(fields);
@@ -397,7 +426,11 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     /** `fields`, when given, is what this session keeps instead of the server's default. */
     enableForDevice(udid: string, fields?: readonly CaptureField[]): Promise<CaptureMeta> {
       const pending = enables.get(udid);
-      if (pending && !pending.failed && (fields === undefined || sameFields(pending.fields ?? policy, fields))) {
+      if (
+        pending &&
+        !pending.failed &&
+        (fields === undefined || sameFields(pending.fields ?? policy, fields))
+      ) {
         if (fields !== undefined) pending.fields = [...fields];
         return pending.promise;
       }
@@ -429,18 +462,26 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
             await disable(udid);
             assertRequested(udid, request, policy);
           }
-          await configure(udid, {
-            ...capability,
-            setEnabled: ({ enabled }) => enabled
-              ? prepareSession(udid, request)
-              : capability.setEnabled({ udid, enabled: false, bundleId: null, options: {} }),
-          }, { enabled: true, relaunch: false });
+          await configure(
+            udid,
+            {
+              ...capability,
+              setEnabled: ({ enabled }) =>
+                enabled
+                  ? prepareSession(udid, request)
+                  : capability.setEnabled({ udid, enabled: false, bundleId: null, options: {} }),
+            },
+            { enabled: true, relaunch: false },
+          );
           if (request.cancelled) {
             await disable(udid);
             assertRequested(udid, request, policy);
           }
           const session = byUdid.get(udid);
-          if (!session) throw new Error("The capture session disappeared during startup. Enable capture again.");
+          if (!session)
+            throw new Error(
+              "The capture session disappeared during startup. Enable capture again.",
+            );
           meta = session.meta;
         } catch (error) {
           request.failed = true;
@@ -483,16 +524,24 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       // failed meta, so viewers do not keep reading a failure after capture is turned off.
       const devices = new Set([...byUdid.keys(), ...failedStarts.keys(), ...operations.devices()]);
       const results = await Promise.allSettled([...devices].map(disableDevice));
-      const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+      const failures = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
       if (failures.length > 0) {
-        throw new AggregateError(failures, `Could not disable network capture on ${failures.length} device(s).`);
+        throw new AggregateError(
+          failures,
+          `Could not disable network capture on ${failures.length} device(s).`,
+        );
       }
     },
 
     /** Remove every session's capture files at once. Only for process exit, where teardown cannot await. */
     discardArtifactsSync: discardArtifacts,
 
-    subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {
+    subscribe(
+      udid: string,
+      listener: (event: CaptureEvent) => void,
+    ): { meta: CaptureMeta; unsubscribe: () => void } {
       let set = viewers.get(udid);
       if (!set) viewers.set(udid, (set = new Set()));
       set.add(listener);
@@ -518,7 +567,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
       const now = Date.now();
       if (session.checking) return session.checking;
-      if (session.checkedAt !== undefined && now - session.checkedAt < checkIntervalMs) return session.meta;
+      if (session.checkedAt !== undefined && now - session.checkedAt < checkIntervalMs)
+        return session.meta;
 
       const portFile = session.proxy.portFile;
       const proxyAddress = session.proxy.address;
@@ -544,7 +594,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
           }
           // The proxy can exit, or the session be replaced, while the probe waits; its reason is the
           // one to keep, not a restart diagnosis this probe would write over it.
-          if (byUdid.get(udid) !== session || session.meta.attachment !== "capturing") return session.meta;
+          if (byUdid.get(udid) !== session || session.meta.attachment !== "capturing")
+            return session.meta;
 
           session.injectMisses = (session.injectMisses ?? 0) + 1;
           if (session.injectMisses < INJECT_MISS_THRESHOLD) return session.meta;

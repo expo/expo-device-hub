@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-import { type DeviceClient, type DeviceLog } from '@expo/hub-client';
-import { CollapsibleSection } from './CollapsibleSection';
-import { LogControls } from './LogControls';
-import { LogList } from './LogList';
+import { type DeviceClient, type DeviceLog } from "@expo/hub-client";
+import { CollapsibleSection } from "./CollapsibleSection";
+import { LogControls } from "./LogControls";
+import { LogList } from "./LogList";
 
 /** Touch, UI, and command events reported by the selected device backend. */
 export function EventsSection({ client }: { client?: DeviceClient }) {
@@ -44,8 +44,8 @@ export function EventsSection({ client }: { client?: DeviceClient }) {
         enabled={enabled}
         emptyMessage={
           enabled
-            ? 'No events yet. Touch or interact with the device to see them here.'
-            : 'Events are paused. Press Start to observe device events.'
+            ? "No events yet. Touch or interact with the device to see them here."
+            : "Events are paused. Press Start to observe device events."
         }
       />
     </CollapsibleSection>

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
-import { type SidebarPreference, useDashboardStore } from './dashboardStore';
+import { type SidebarPreference, useDashboardStore } from "./dashboardStore";
 
 type SidebarLayoutOptions = {
   leftPreference: SidebarPreference;
@@ -30,11 +30,10 @@ export function resolveSidebarLayout({
   minStreamWidth,
 }: SidebarLayoutOptions): SidebarLayout {
   const rightFits = containerWidth >= rightWidth + minStreamWidth;
-  const rightOpen = rightPreference === 'open' || (rightPreference === 'auto' && rightFits);
+  const rightOpen = rightPreference === "open" || (rightPreference === "auto" && rightFits);
   const rightDocked = rightOpen && rightFits;
-  const leftFits =
-    containerWidth >= leftWidth + minStreamWidth + (rightDocked ? rightWidth : 0);
-  const leftOpen = leftPreference === 'open' || (leftPreference === 'auto' && leftFits);
+  const leftFits = containerWidth >= leftWidth + minStreamWidth + (rightDocked ? rightWidth : 0);
+  const leftOpen = leftPreference === "open" || (leftPreference === "auto" && leftFits);
   const leftDocked = leftOpen && leftFits;
 
   return {
@@ -52,10 +51,10 @@ export function useSidebarLayout({
   leftWidth,
   rightWidth,
   minStreamWidth,
-}: Pick<SidebarLayoutOptions, 'leftWidth' | 'rightWidth' | 'minStreamWidth'>) {
+}: Pick<SidebarLayoutOptions, "leftWidth" | "rightWidth" | "minStreamWidth">) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(() =>
-    typeof window === 'undefined' ? 0 : window.innerWidth
+    typeof window === "undefined" ? 0 : window.innerWidth,
   );
   const leftPreference = useDashboardStore((state) => state.sidebarPreferences.left);
   const rightPreference = useDashboardStore((state) => state.sidebarPreferences.right);
@@ -86,16 +85,15 @@ export function useSidebarLayout({
 
   const openLeft = () => {
     const leftFits =
-      containerWidth >=
-      leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
-    openSidebar('left', leftFits);
+      containerWidth >= leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
+    openSidebar("left", leftFits);
   };
-  const closeLeft = () => closeSidebar('left');
+  const closeLeft = () => closeSidebar("left");
   const openRight = () => {
     const rightFits = containerWidth >= rightWidth + minStreamWidth;
-    openSidebar('right', rightFits);
+    openSidebar("right", rightFits);
   };
-  const closeRight = () => closeSidebar('right');
+  const closeRight = () => closeSidebar("right");
 
   return {
     ...layout,

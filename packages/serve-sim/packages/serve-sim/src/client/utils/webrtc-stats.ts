@@ -140,9 +140,10 @@ export function readStreamStats(report: RTCStatsReport, now: number): StreamStat
     }
   });
 
-  const selectedPair = (selectedPairId === null ? undefined : pairsById.get(selectedPairId))
-    ?? nominatedPair
-    ?? succeededPair;
+  const selectedPair =
+    (selectedPairId === null ? undefined : pairsById.get(selectedPairId)) ??
+    nominatedPair ??
+    succeededPair;
   if (selectedPair) {
     const rtt = maybeNumber(selectedPair.currentRoundTripTime);
     sample.roundTripMs = rtt === null ? null : rtt * 1000;
@@ -222,8 +223,8 @@ function windowFrameGap(
     return null;
   }
   if (
-    previous.interFrameDelaySquaredSeconds === null
-    || current.interFrameDelaySquaredSeconds === null
+    previous.interFrameDelaySquaredSeconds === null ||
+    current.interFrameDelaySquaredSeconds === null
   ) {
     return null;
   }

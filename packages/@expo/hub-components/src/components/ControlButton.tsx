@@ -1,7 +1,7 @@
-import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from 'react';
+import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from "react";
 
-import { bg, border, icon as iconColor, radius, text, textSize } from '../theme/tokens';
-import { isFocusVisible } from './focusVisible';
+import { bg, border, icon as iconColor, radius, text, textSize } from "../theme/tokens";
+import { isFocusVisible } from "./focusVisible";
 
 export const CONTROL_BUTTON_SIZE = 44;
 
@@ -21,8 +21,20 @@ export type ControlButtonProps = {
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
   function ControlButton(
-    { icon, label, tooltip, style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, onFocus, onBlur, ...rest },
-    ref
+    {
+      icon,
+      label,
+      tooltip,
+      style,
+      onMouseEnter,
+      onMouseLeave,
+      onMouseDown,
+      onMouseUp,
+      onFocus,
+      onBlur,
+      ...rest
+    },
+    ref,
   ) {
     const [hovered, setHovered] = useState(false);
     const [pressed, setPressed] = useState(false);
@@ -30,7 +42,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
     const tooltipVisible = hovered || focused;
 
     return (
-      <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+      <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
         <button
           ref={ref}
           type="button"
@@ -62,26 +74,27 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
             onBlur?.(event);
           }}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             width: CONTROL_BUTTON_SIZE,
             height: CONTROL_BUTTON_SIZE,
             padding: 0,
-            border: 'none',
+            border: "none",
             // Concentric with the surrounding group (radius.xl minus its padding).
             borderRadius: `calc(${radius.xl} - 4px)`,
-            outline: 'none',
-            backgroundColor: hovered ? bg.hover : 'transparent',
-            boxShadow: focused ? `0 0 0 2px ${border.secondary}` : 'none',
+            outline: "none",
+            backgroundColor: hovered ? bg.hover : "transparent",
+            boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
             color: iconColor.default,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-            transition: 'background-color 150ms ease, transform 100ms ease',
-            transform: pressed ? 'scale(0.96)' : undefined,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            transition: "background-color 150ms ease, transform 100ms ease",
+            transform: pressed ? "scale(0.96)" : undefined,
             ...style,
           }}
-          {...rest}>
+          {...rest}
+        >
           {icon}
         </button>
         <span
@@ -89,23 +102,24 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
           aria-hidden="true"
           style={{
             ...textSize.xs,
-            position: 'absolute',
-            bottom: 'calc(100% + 8px)',
-            left: '50%',
+            position: "absolute",
+            bottom: "calc(100% + 8px)",
+            left: "50%",
             zIndex: 1,
-            padding: '3px 8px',
+            padding: "3px 8px",
             borderRadius: radius.md,
             backgroundColor: text.default,
             color: bg.default,
-            whiteSpace: 'nowrap',
-            pointerEvents: 'none',
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
             opacity: tooltipVisible ? 1 : 0,
-            transform: 'translateX(-50%)',
-            transition: 'opacity 120ms ease',
-          }}>
+            transform: "translateX(-50%)",
+            transition: "opacity 120ms ease",
+          }}
+        >
           {tooltip ?? label}
         </span>
       </span>
     );
-  }
+  },
 );

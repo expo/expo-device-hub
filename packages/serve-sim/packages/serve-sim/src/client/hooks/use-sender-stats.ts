@@ -7,7 +7,11 @@ import {
   type SenderStats,
   type SenderStreamStats,
 } from "../../webrtc-sender-stats";
-import { describeCaptureCounts, type CaptureSample, type CaptureWindow } from "../utils/capture-window";
+import {
+  describeCaptureCounts,
+  type CaptureSample,
+  type CaptureWindow,
+} from "../utils/capture-window";
 import { startExclusivePoll } from "../utils/exclusive-poll";
 import { webrtcSessionStatsUrl } from "../utils/sim-endpoint";
 
@@ -80,9 +84,8 @@ export function useSenderStats(
       setStats({
         session: senderSessionForViewer(sessions, sessionId),
         capture: counts,
-        captureWindow: sample === null
-          ? null
-          : describeCaptureCounts(previousCapture.current, sample),
+        captureWindow:
+          sample === null ? null : describeCaptureCounts(previousCapture.current, sample),
         encoder: body.encoder ?? null,
         stale: false,
       });

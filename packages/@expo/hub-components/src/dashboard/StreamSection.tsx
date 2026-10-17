@@ -1,16 +1,16 @@
-import { type DeviceStreamMode } from '@expo/hub-client';
-import { useId } from 'react';
+import { type DeviceStreamMode } from "@expo/hub-client";
+import { useId } from "react";
 
-import { Select } from '../components/Select';
-import { text, textSize } from '../primitives';
-import { SidebarRow } from './SidebarRow';
+import { Select } from "../components/Select";
+import { text, textSize } from "../primitives";
+import { SidebarRow } from "./SidebarRow";
 
 export type StreamModeAvailability = Record<DeviceStreamMode, boolean>;
 
 const STREAM_OPTIONS: Array<{ value: DeviceStreamMode; label: string }> = [
-  { value: 'mjpeg', label: 'MJPEG' },
-  { value: 'h264', label: 'H.264' },
-  { value: 'webrtc', label: 'WebRTC' },
+  { value: "mjpeg", label: "MJPEG" },
+  { value: "h264", label: "H.264" },
+  { value: "webrtc", label: "WebRTC" },
 ];
 
 /** Viewer-local stream transport control for the right dashboard sidebar. */
@@ -44,7 +44,8 @@ export function StreamSection({
       {restricted && (
         <span
           id={helpId}
-          style={{ ...textSize.xs, display: 'block', padding: '0 0 11px', color: text.tertiary }}>
+          style={{ ...textSize.xs, display: "block", padding: "0 0 11px", color: text.tertiary }}
+        >
           H.264 and WebRTC require localhost or HTTPS. MJPEG is used on insecure HTTP.
         </span>
       )}

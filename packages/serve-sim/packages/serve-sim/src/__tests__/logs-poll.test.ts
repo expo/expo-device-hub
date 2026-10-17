@@ -38,11 +38,7 @@ describe("parseLogSnapshot", () => {
   test("keeps parseable lines and the server cursor", () => {
     const parsed = parseLogSnapshot({
       latestSeq: 4,
-      lines: [
-        { seq: 3, raw },
-        { seq: 4, raw: "not-json" },
-        { seq: 5 },
-      ],
+      lines: [{ seq: 3, raw }, { seq: 4, raw: "not-json" }, { seq: 5 }],
     })!;
     expect(parsed.latestSeq).toBe(4);
     expect(parsed.lines).toHaveLength(1);
@@ -86,7 +82,7 @@ describe("startLogsPoll", () => {
       Promise.resolve(
         new Response(JSON.stringify({ lines: [{ seq: 7, raw }], latestSeq: 7 }), {
           headers: { "Content-Type": "application/json" },
-        })
+        }),
       )) as unknown as typeof fetch;
 
     const batches: LogSnapshotLine[][] = [];
@@ -111,12 +107,15 @@ describe("startLogsPoll", () => {
     expect(batches.flat().map((line) => line.seq)).toEqual([7]);
   });
 
-  async function pollOnce(since: number, reply: { lines: { seq: number; raw: string }[]; latestSeq: number }) {
+  async function pollOnce(
+    since: number,
+    reply: { lines: { seq: number; raw: string }[]; latestSeq: number },
+  ) {
     const restoreWindow = withPreviewWindow();
     const original = globalThis.fetch;
     globalThis.fetch = (() =>
       Promise.resolve(
-        new Response(JSON.stringify(reply), { headers: { "Content-Type": "application/json" } })
+        new Response(JSON.stringify(reply), { headers: { "Content-Type": "application/json" } }),
       )) as unknown as typeof fetch;
 
     const batches: LogSnapshotLine[][] = [];
@@ -137,7 +136,10 @@ describe("startLogsPoll", () => {
 
   test("marks the lines a capped reply skipped instead of dropping them silently", async () => {
     const { lines, cursor } = await pollOnce(3, {
-      lines: [{ seq: 10, raw }, { seq: 11, raw }],
+      lines: [
+        { seq: 10, raw },
+        { seq: 11, raw },
+      ],
       latestSeq: 11,
     });
 
@@ -149,7 +151,10 @@ describe("startLogsPoll", () => {
   test("adds no marker when the reply's first row is one it could not parse", async () => {
     const empty = JSON.stringify({ processImagePath: "/x/Demo", eventMessage: "" });
     const { lines } = await pollOnce(10, {
-      lines: [{ seq: 11, raw: empty }, { seq: 12, raw }],
+      lines: [
+        { seq: 11, raw: empty },
+        { seq: 12, raw },
+      ],
       latestSeq: 12,
     });
 
@@ -199,7 +204,7 @@ describe("startLogsPoll", () => {
     const original = globalThis.fetch;
     globalThis.fetch = (() =>
       Promise.resolve(
-        new Response("{}", { headers: { "Content-Type": "application/json" } })
+        new Response("{}", { headers: { "Content-Type": "application/json" } }),
       )) as unknown as typeof fetch;
 
     const errors: boolean[] = [];
@@ -229,7 +234,7 @@ describe("startLogsPoll", () => {
       Promise.resolve(
         new Response(JSON.stringify({ lines: [{ seq: 1, raw }], latestSeq: 1 }), {
           headers: { "Content-Type": "application/json" },
-        })
+        }),
       )) as unknown as typeof fetch;
 
     const batches: LogSnapshotLine[][] = [];
@@ -276,7 +281,7 @@ describe("startLogsPoll", () => {
     replied.resolve(
       new Response(JSON.stringify({ lines: [{ seq: 7, raw }], latestSeq: 7 }), {
         headers: { "Content-Type": "application/json" },
-      })
+      }),
     );
     await new Promise((resolve) => setTimeout(resolve, 10));
     globalThis.fetch = original;

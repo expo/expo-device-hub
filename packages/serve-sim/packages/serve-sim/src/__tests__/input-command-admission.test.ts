@@ -29,7 +29,10 @@ async function runInput(args: string[], admit: boolean, legacy = false, target?:
   const shim = join(dir, "bin");
   mkdirSync(shim);
   // The fake server has no simulator. Never inspect or drive a host device.
-  writeFileSync(join(shim, "xcrun"), target ? `#!/bin/sh
+  writeFileSync(
+    join(shim, "xcrun"),
+    target
+      ? `#!/bin/sh
 case "$*" in
   "simctl list devices -j"|"simctl list devices booted -j")
     cat <<'DEVICES'
@@ -38,14 +41,18 @@ DEVICES
     ;;
   *) exit 1 ;;
 esac
-` : "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+`
+      : "#!/bin/sh\nexit 1\n",
+    { mode: 0o755 },
+  );
   const messages: number[] = [];
   const connections: string[] = [];
   let admitted = false;
   let sentBeforeAdmission = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
   const server = Bun.serve({
-    port: 0, hostname: "127.0.0.1",
+    port: 0,
+    hostname: "127.0.0.1",
     fetch(req, server) {
       connections.push(new URL(req.url).pathname);
       if (server.upgrade(req)) return;
@@ -55,12 +62,18 @@ esac
       open(socket) {
         // Older helpers never send the admission frame.
         if (legacy) return;
-        timers.push(setTimeout(() => {
-          if (admit) {
-            admitted = true;
-            socket.send(Buffer.from([0x83]));
-          } else socket.close(1013, "Simulator input unavailable; retry after other clients disconnect");
-        }, 200));
+        timers.push(
+          setTimeout(() => {
+            if (admit) {
+              admitted = true;
+              socket.send(Buffer.from([0x83]));
+            } else
+              socket.close(
+                1013,
+                "Simulator input unavailable; retry after other clients disconnect",
+              );
+          }, 200),
+        );
       },
       message(socket, data) {
         if (!admitted) sentBeforeAdmission = true;
@@ -70,18 +83,28 @@ esac
     },
   });
   for (const device of target?.liveDevices ?? ["probe"]) {
-    writeFileSync(join(dir, `server-${device}.json`), JSON.stringify({
-      pid: process.pid, device, port: server.port,
-      wsUrl: `ws://127.0.0.1:${server.port}/legacy/${device}/ws`,
-      ...(legacy ? {} : { inputAdmission: true }),
-    }));
+    writeFileSync(
+      join(dir, `server-${device}.json`),
+      JSON.stringify({
+        pid: process.pid,
+        device,
+        port: server.port,
+        wsUrl: `ws://127.0.0.1:${server.port}/legacy/${device}/ws`,
+        ...(legacy ? {} : { inputAdmission: true }),
+      }),
+    );
   }
   try {
     const child = Bun.spawn([process.execPath, CLI, ...args, "-d", target?.argument ?? "probe"], {
       env: { ...process.env, SERVE_SIM_STATE_DIR: dir, PATH: `${shim}:${process.env.PATH}` },
-      stdout: "pipe", stderr: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
-    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()]);
+    const [exitCode, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+      new Response(child.stdout).text(),
+    ]);
     return { exitCode, stderr, messages, sentBeforeAdmission, connections };
   } finally {
     for (const timer of timers) clearTimeout(timer);
@@ -104,7 +127,9 @@ const sameNameDevices = {
 for (const legacy of [false, true]) {
   test(`CLI name lookup finds the only live stream across runtimes (${legacy ? "legacy" : "admitted"})`, async () => {
     const result = await runInput(["software-keyboard"], true, legacy, {
-      argument: "iPhOnE 17", devices: sameNameDevices, liveDevices: [secondDevice],
+      argument: "iPhOnE 17",
+      devices: sameNameDevices,
+      liveDevices: [secondDevice],
     });
     expect(result.exitCode).toBe(0);
     expect(result.connections).toEqual([`/legacy/${secondDevice}/ws`]);
@@ -115,7 +140,9 @@ for (const legacy of [false, true]) {
 
 test("CLI name lookup rejects two live streams with the same name before connecting", async () => {
   const result = await runInput(["software-keyboard"], true, false, {
-    argument: "iPhone 17", devices: sameNameDevices, liveDevices: [firstDevice, secondDevice],
+    argument: "iPhone 17",
+    devices: sameNameDevices,
+    liveDevices: [firstDevice, secondDevice],
   });
   expect(result.exitCode).toBe(1);
   expect(result.stderr).toContain("Ambiguous streaming device");
@@ -128,7 +155,9 @@ test("CLI name lookup rejects two live streams with the same name before connect
 
 test("CLI UDID lookup still selects an explicit device when live names are ambiguous", async () => {
   const result = await runInput(["software-keyboard"], true, false, {
-    argument: secondDevice, devices: sameNameDevices, liveDevices: [firstDevice, secondDevice],
+    argument: secondDevice,
+    devices: sameNameDevices,
+    liveDevices: [firstDevice, secondDevice],
   });
   expect(result.exitCode).toBe(0);
   expect(result.connections).toEqual([`/legacy/${secondDevice}/ws`]);
@@ -150,7 +179,9 @@ for (const { args, messages } of commands) {
   if (args[0] !== "software-keyboard") {
     test(`CLI ${args[0]} routes a simulator name to the only live stream across runtimes`, async () => {
       const result = await runInput(args, /* admit */ true, /* legacy */ false, {
-        argument: "iPhOnE 17", devices: sameNameDevices, liveDevices: [secondDevice],
+        argument: "iPhOnE 17",
+        devices: sameNameDevices,
+        liveDevices: [secondDevice],
       });
       expect(result.exitCode).toBe(0);
       expect(result.connections).toEqual([`/legacy/${secondDevice}/ws`]);
@@ -163,7 +194,9 @@ for (const { args, messages } of commands) {
     const result = await runInput(args, /* admit */ false);
     expect(result.exitCode).not.toBe(0);
     // Bun prints source excerpts too; only the actual error line proves the refusal.
-    expect(result.stderr).toMatch(/^error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect\. Try again shortly\.$/m);
+    expect(result.stderr).toMatch(
+      /^error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect\. Try again shortly\.$/m,
+    );
     expect(result.messages).toEqual([]);
   });
 
@@ -185,9 +218,21 @@ for (const { args, messages } of commands) {
 test("an open transport without admission fails by the deadline and terminates", async () => {
   let terminated = false;
   let sent = false;
-  const socket = Object.assign(new EventEmitter(), { terminate: () => { terminated = true; } });
-  const error = await new Promise<Error>(resolve => {
-    onCliInputReady(socket as unknown as WebSocket, /* requireAdmission */ true, () => { sent = true; }, resolve, 10);
+  const socket = Object.assign(new EventEmitter(), {
+    terminate: () => {
+      terminated = true;
+    },
+  });
+  const error = await new Promise<Error>((resolve) => {
+    onCliInputReady(
+      socket as unknown as WebSocket,
+      /* requireAdmission */ true,
+      () => {
+        sent = true;
+      },
+      resolve,
+      10,
+    );
     socket.emit("open");
   });
   expect(error.message).toContain("Simulator input was not admitted within");
@@ -199,10 +244,20 @@ test("a normal close before admission fails immediately and cancels the deadline
   const errors: Error[] = [];
   let sent = false;
   const socket = Object.assign(new EventEmitter(), { terminate: () => {} });
-  onCliInputReady(socket as unknown as WebSocket, /* requireAdmission */ true, () => { sent = true; }, error => errors.push(error), 10);
+  onCliInputReady(
+    socket as unknown as WebSocket,
+    /* requireAdmission */ true,
+    () => {
+      sent = true;
+    },
+    (error) => errors.push(error),
+    10,
+  );
   socket.emit("open");
   socket.emit("close", 1000, Buffer.from(""));
-  expect(errors.map(error => error.message)).toEqual(["Simulator input closed before admission (1000). Try again shortly."]);
+  expect(errors.map((error) => error.message)).toEqual([
+    "Simulator input closed before admission (1000). Try again shortly.",
+  ]);
   await Bun.sleep(25);
   expect(errors).toHaveLength(1);
   expect(sent).toBe(false);

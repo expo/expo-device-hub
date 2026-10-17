@@ -1,6 +1,6 @@
-import { type AgentInteraction } from '@expo/hub-client';
+import { type AgentInteraction } from "@expo/hub-client";
 
-export const ARGENT_INTERACTION_MESSAGE_TYPE = 'argent-interaction' as const;
+export const ARGENT_INTERACTION_MESSAGE_TYPE = "argent-interaction" as const;
 
 export type ArgentInteractionMessage = {
   type: typeof ARGENT_INTERACTION_MESSAGE_TYPE;

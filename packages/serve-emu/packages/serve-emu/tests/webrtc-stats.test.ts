@@ -32,8 +32,7 @@ describe("serve-emu WebRTC stats report", () => {
     collector.recordDelivery({ accepted: true, awaitingKeyFrame: false });
     collector.recordDelivery({ accepted: false, awaitingKeyFrame: true });
     const publisher = {
-      statsForSession: (sessionId: string) =>
-        sessionId === SESSION_ID ? publisherSession : null,
+      statsForSession: (sessionId: string) => (sessionId === SESSION_ID ? publisherSession : null),
     };
     const source = {
       streamMode: "grpc-screenshot" as const,
@@ -59,13 +58,7 @@ describe("serve-emu WebRTC stats report", () => {
       sessions: [publisherSession],
       capture: { offeredFrames: 2, forwardedFrames: 1, grpc: null },
     });
-    expect(
-      collector.report(
-        source,
-        publisher,
-        "11111111-1111-4111-8111-111111111111",
-      ),
-    ).toBeNull();
+    expect(collector.report(source, publisher, "11111111-1111-4111-8111-111111111111")).toBeNull();
   });
 });
 
@@ -90,16 +83,10 @@ describe("GET /webrtc/stats", () => {
   function request(
     path = `/webrtc/stats?sessionId=${SESSION_ID}`,
     init?: RequestInit,
-    readStats: (
-      sessionId: string,
-      device: string | null,
-    ) => WebRtcStatsReport | null = () => report,
+    readStats: (sessionId: string, device: string | null) => WebRtcStatsReport | null = () =>
+      report,
   ) {
-    return handleWebRtcStatsRequest(
-      new Request(`http://localhost${path}`, init),
-      {},
-      readStats,
-    );
+    return handleWebRtcStatsRequest(new Request(`http://localhost${path}`, init), {}, readStats);
   }
 
   test("returns a no-store report scoped to the requested viewer", async () => {
@@ -199,9 +186,7 @@ describe("GET /webrtc/stats", () => {
     );
 
     expect(response.status).toBe(204);
-    expect(response.headers.get("access-control-allow-origin")).toBe(
-      "http://127.0.0.1:3400",
-    );
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://127.0.0.1:3400");
     expect(response.headers.get("access-control-allow-methods")).toBe("GET, OPTIONS");
     expect(reads).toBe(0);
   });

@@ -1,4 +1,12 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -88,7 +96,9 @@ describe("locateMitmdump", () => {
   test("rejects an override pointing at a path that does not exist", () => {
     withOverride("/nope/mitmdump", () => {
       // Honouring it blindly would produce a spawn error instead of a message the developer can act on.
-      expect(locateMitmdump({ which: () => "/opt/homebrew/bin/mitmdump", candidates: [] })).toBeNull();
+      expect(
+        locateMitmdump({ which: () => "/opt/homebrew/bin/mitmdump", candidates: [] }),
+      ).toBeNull();
     });
   });
 
@@ -108,7 +118,9 @@ describe("mitmdumpMissingMessage", () => {
   });
 
   test("names a SERVE_SIM_MITMDUMP override that cannot run", () => {
-    expect(mitmdumpMissingMessage("/nope/mitmdump")).toContain("SERVE_SIM_MITMDUMP points at /nope/mitmdump");
+    expect(mitmdumpMissingMessage("/nope/mitmdump")).toContain(
+      "SERVE_SIM_MITMDUMP points at /nope/mitmdump",
+    );
   });
 });
 
@@ -170,8 +182,12 @@ describe("describeFailure", () => {
   });
 
   test("names an upstream proxy that refused the tunnel, rather than an absent listener", () => {
-    const out = describeFailure("Upstream proxy 127.0.0.1:8899 refused HTTP CONNECT request: 407 Proxy Authentication Required");
-    expect(out).toStartWith("The upstream proxy refused the connection: 407 Proxy Authentication Required.");
+    const out = describeFailure(
+      "Upstream proxy 127.0.0.1:8899 refused HTTP CONNECT request: 407 Proxy Authentication Required",
+    );
+    expect(out).toStartWith(
+      "The upstream proxy refused the connection: 407 Proxy Authentication Required.",
+    );
     expect(out).not.toContain("Nothing was listening");
   });
 
@@ -182,7 +198,9 @@ describe("describeFailure", () => {
   });
 
   test("names certificate pinning, which is the one a developer will hit and misread", () => {
-    expect(describeFailure("Client TLS handshake failed: certificate verify failed")).toContain("pin");
+    expect(describeFailure("Client TLS handshake failed: certificate verify failed")).toContain(
+      "pin",
+    );
   });
 
   test("passes an unrecognised reason through rather than inventing one", () => {
@@ -261,7 +279,9 @@ test("proxy startup chooses another listener port when an upstream uses the sele
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-mitm-own-port-"));
   const executable = join(dir, "mitmdump");
   const launched = join(dir, "launched");
-  writeFileSync(executable, `#!/usr/bin/env bun
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env bun
 import { appendFileSync, writeFileSync } from "node:fs";
 appendFileSync(${JSON.stringify(launched)}, process.argv[process.argv.indexOf("--listen-port") + 1] + "\\n");
 const confdir = process.argv.find((arg) => arg.startsWith("confdir="))?.slice("confdir=".length);
@@ -272,9 +292,13 @@ await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready", {
   body: "{}",
 });
 setInterval(() => {}, 1000);
-`);
+`,
+  );
   chmodSync(executable, 0o755);
-  const previous = { executable: process.env.SERVE_SIM_MITMDUMP, caDir: process.env.SERVE_SIM_CAPTURE_CA_DIR };
+  const previous = {
+    executable: process.env.SERVE_SIM_MITMDUMP,
+    caDir: process.env.SERVE_SIM_CAPTURE_CA_DIR,
+  };
   process.env.SERVE_SIM_MITMDUMP = executable;
   process.env.SERVE_SIM_CAPTURE_CA_DIR = join(dir, "ca");
   try {
@@ -283,7 +307,7 @@ setInterval(() => {}, 1000);
       let allocations = 0;
       const proxy = await startMitmProxy(new CaptureStore(), {
         upstream: { url: `http://${host}:54321/` },
-        allocatePort: async () => ++allocations === 1 ? 54321 : 54322,
+        allocatePort: async () => (++allocations === 1 ? 54321 : 54322),
       });
       try {
         expect(allocations).toBe(2);
@@ -294,10 +318,15 @@ setInterval(() => {}, 1000);
     }
     expect(readFileSync(launched, "utf8").trim().split("\n")).toEqual(Array(4).fill("54322"));
     let allocations = 0;
-    await expect(startMitmProxy(new CaptureStore(), {
-      upstream: { url: "http://127.0.0.1:54321/" },
-      allocatePort: async () => { allocations++; return 54321; },
-    })).rejects.toThrow("own port");
+    await expect(
+      startMitmProxy(new CaptureStore(), {
+        upstream: { url: "http://127.0.0.1:54321/" },
+        allocatePort: async () => {
+          allocations++;
+          return 54321;
+        },
+      }),
+    ).rejects.toThrow("own port");
     expect(allocations).toBe(3);
     // Colliding candidates never start a child process.
     expect(readFileSync(launched, "utf8").trim().split("\n")).toHaveLength(4);
@@ -419,7 +448,11 @@ setInterval(() => {}, 1000);
     await proxy.close();
     expect(readFileSync(runs, "utf8")).toBe("2");
   } finally {
-    for (const [key, value] of [["SERVE_SIM_MITMDUMP", previous.mitmdump], ["SERVE_SIM_CAPTURE_CA_DIR", previous.ca], ["SERVE_SIM_TEST_RUNS", previous.runs]] as const) {
+    for (const [key, value] of [
+      ["SERVE_SIM_MITMDUMP", previous.mitmdump],
+      ["SERVE_SIM_CAPTURE_CA_DIR", previous.ca],
+      ["SERVE_SIM_TEST_RUNS", previous.runs],
+    ] as const) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
@@ -428,7 +461,11 @@ setInterval(() => {}, 1000);
 });
 
 describe("sweepStaleConfdirs", () => {
-  const dirs = ["/tmp/serve-sim-capture-live", "/tmp/serve-sim-capture-dead", "/tmp/serve-sim-capture-new"];
+  const dirs = [
+    "/tmp/serve-sim-capture-live",
+    "/tmp/serve-sim-capture-dead",
+    "/tmp/serve-sim-capture-new",
+  ];
   const ages: Record<string, number> = {
     "/tmp/serve-sim-capture-live": 600_000,
     "/tmp/serve-sim-capture-dead": 600_000,
@@ -447,7 +484,9 @@ describe("sweepStaleConfdirs", () => {
   }
 
   test("removes only old confdirs that no running mitmdump names", () => {
-    const { swept, removed } = sweep(() => "123 mitmdump --set confdir=/tmp/serve-sim-capture-live\n");
+    const { swept, removed } = sweep(
+      () => "123 mitmdump --set confdir=/tmp/serve-sim-capture-live\n",
+    );
     expect(removed).toEqual(["/tmp/serve-sim-capture-dead"]);
     expect(swept).toBe(1);
   });
@@ -467,7 +506,10 @@ describe("captureFieldsFile", () => {
       expect(statSync(file.path).mode & 0o777).toBe(0o600);
       file.write([]);
       expect(readFileSync(file.path, "utf8")).toBe("");
-      const addon = readFileSync(join(import.meta.dir, "..", "mitm-addon", "servesim_capture.py"), "utf8");
+      const addon = readFileSync(
+        join(import.meta.dir, "..", "mitm-addon", "servesim_capture.py"),
+        "utf8",
+      );
       expect(addon).toContain(`os.environ.get("${CAPTURE_FIELDS_FILE_ENV}")`);
     } finally {
       rmSync(dir, { recursive: true, force: true });

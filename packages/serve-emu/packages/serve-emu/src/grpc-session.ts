@@ -37,11 +37,7 @@ import {
   rgb888MmapRegionBytes,
   type StableMmapRead,
 } from "./grpc-mmap.ts";
-import {
-  compileGesture,
-  normalizeTextForControl,
-  type Gesture,
-} from "./input.ts";
+import { compileGesture, normalizeTextForControl, type Gesture } from "./input.ts";
 import {
   SCRCPY_DEFAULTS,
   startScrcpyControl,
@@ -101,17 +97,14 @@ class RollingTimingWindow {
 
   constructor(capacity: number) {
     if (!Number.isSafeInteger(capacity) || capacity <= 0) {
-      throw new RangeError(
-        "diagnostic window capacity must be a positive integer",
-      );
+      throw new RangeError("diagnostic window capacity must be a positive integer");
     }
     this.#values = new Float64Array(capacity);
     this.#weights = new Float64Array(capacity);
   }
 
   record(value: number, weight = 1): void {
-    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0)
-      return;
+    if (!Number.isFinite(value) || !Number.isFinite(weight) || weight <= 0) return;
     this.#values[this.#index] = value;
     this.#weights[this.#index] = weight;
     this.#index = (this.#index + 1) % this.#values.length;
@@ -129,10 +122,7 @@ class RollingTimingWindow {
       value: this.#values[index]!,
       weight: this.#weights[index]!,
     })).sort((left, right) => left.value - right.value);
-    const totalWeight = entries.reduce(
-      (total, entry) => total + entry.weight,
-      0,
-    );
+    const totalWeight = entries.reduce((total, entry) => total + entry.weight, 0);
     // Use the same upper-median convention as the previous unweighted window,
     // while treating a source interval weighted by N sequence steps as N
     // produced-frame observations without allocating an expanded sample list.
@@ -146,8 +136,7 @@ class RollingTimingWindow {
       return entries[entries.length - 1]!.value;
     };
     const round1 = (value: number) => Math.round(value * 10) / 10;
-    const latestIndex =
-      (this.#index - 1 + this.#values.length) % this.#values.length;
+    const latestIndex = (this.#index - 1 + this.#values.length) % this.#values.length;
     return {
       windowSamples: this.#count,
       latest: round1(this.#values[latestIndex]!),
@@ -166,12 +155,7 @@ class RollingTimingWindow {
       weightedTotal += this.#values[index]! * weight;
       totalWeight += weight;
     }
-    if (
-      !Number.isFinite(weightedTotal) ||
-      weightedTotal <= 0 ||
-      totalWeight <= 0
-    )
-      return null;
+    if (!Number.isFinite(weightedTotal) || weightedTotal <= 0 || totalWeight <= 0) return null;
     return Math.round((1_000 / (weightedTotal / totalWeight)) * 10) / 10;
   }
 }
@@ -246,10 +230,7 @@ export class GrpcCaptureDiagnosticsTracker {
       case "received":
         this.#rawGrpcMessagesReceived++;
         this.#grpcMessageBytesReceived += detail?.messageBytes ?? 0;
-        if (
-          this.#lastRawMessageAtMs !== null &&
-          observedAtMs > this.#lastRawMessageAtMs
-        ) {
+        if (this.#lastRawMessageAtMs !== null && observedAtMs > this.#lastRawMessageAtMs) {
           this.#recordCadenceInterval(
             this.#rawMessageReceiveIntervals,
             observedAtMs - this.#lastRawMessageAtMs,
@@ -273,10 +254,7 @@ export class GrpcCaptureDiagnosticsTracker {
   ): void {
     this.#usableImages++;
     this.#transportBytes += image.image.length;
-    if (
-      this.#lastUsableImageAtMs !== null &&
-      usableAtMs > this.#lastUsableImageAtMs
-    ) {
+    if (this.#lastUsableImageAtMs !== null && usableAtMs > this.#lastUsableImageAtMs) {
       this.#recordCadenceInterval(
         this.#usableImageIntervals,
         usableAtMs - this.#lastUsableImageAtMs,
@@ -294,27 +272,15 @@ export class GrpcCaptureDiagnosticsTracker {
       this.#lastSequence = image.seq;
     }
     if (image.timestampUs <= 0n) return;
-    if (
-      this.#lastSourceTimestampUs !== null &&
-      image.timestampUs > this.#lastSourceTimestampUs
-    ) {
-      const elapsedMs =
-        Number(image.timestampUs - this.#lastSourceTimestampUs) / 1_000;
-      this.#recordCadenceInterval(
-        this.#sourceTimestampIntervals,
-        elapsedMs,
-        sequenceDelta,
-      );
+    if (this.#lastSourceTimestampUs !== null && image.timestampUs > this.#lastSourceTimestampUs) {
+      const elapsedMs = Number(image.timestampUs - this.#lastSourceTimestampUs) / 1_000;
+      this.#recordCadenceInterval(this.#sourceTimestampIntervals, elapsedMs, sequenceDelta);
     }
     this.#lastSourceTimestampUs = image.timestampUs;
     const receivedAtUs = BigInt(Math.round(receivedAtMs * 1_000));
-    this.#productionToReceiveLatency.record(
-      Number(receivedAtUs - image.timestampUs) / 1_000,
-    );
+    this.#productionToReceiveLatency.record(Number(receivedAtUs - image.timestampUs) / 1_000);
     const usableAtUs = BigInt(Math.round(usableAtMs * 1_000));
-    this.#productionToUsableLatency.record(
-      Number(usableAtUs - image.timestampUs) / 1_000,
-    );
+    this.#productionToUsableLatency.record(Number(usableAtUs - image.timestampUs) / 1_000);
   }
 
   recordImageDecode(event: GrpcImageDecodeEvent): void {
@@ -353,11 +319,7 @@ export class GrpcCaptureDiagnosticsTracker {
     }
   }
 
-  #recordCadenceInterval(
-    window: RollingTimingWindow,
-    elapsedMs: number,
-    weight = 1,
-  ): void {
+  #recordCadenceInterval(window: RollingTimingWindow, elapsedMs: number, weight = 1): void {
     const intervalPerFrameMs = elapsedMs / weight;
     if (intervalPerFrameMs > this.#cadenceIdleResetMs) {
       window.reset();
@@ -489,41 +451,15 @@ function modifierKeyRequests(metaState: number): KeyboardEventRequest[] {
     }
   };
 
-  addGroup(
-    ANDROID_META.shift,
-    ANDROID_META.shiftLeft,
-    ANDROID_META.shiftRight,
-    42,
-    54,
-  );
-  addGroup(
-    ANDROID_META.ctrl,
-    ANDROID_META.ctrlLeft,
-    ANDROID_META.ctrlRight,
-    29,
-    97,
-  );
-  addGroup(
-    ANDROID_META.alt,
-    ANDROID_META.altLeft,
-    ANDROID_META.altRight,
-    56,
-    100,
-  );
-  addGroup(
-    ANDROID_META.meta,
-    ANDROID_META.metaLeft,
-    ANDROID_META.metaRight,
-    125,
-    126,
-  );
+  addGroup(ANDROID_META.shift, ANDROID_META.shiftLeft, ANDROID_META.shiftRight, 42, 54);
+  addGroup(ANDROID_META.ctrl, ANDROID_META.ctrlLeft, ANDROID_META.ctrlRight, 29, 97);
+  addGroup(ANDROID_META.alt, ANDROID_META.altLeft, ANDROID_META.altRight, 56, 100);
+  addGroup(ANDROID_META.meta, ANDROID_META.metaLeft, ANDROID_META.metaRight, 125, 126);
   return modifiers;
 }
 
 function abortReason(signal: AbortSignal, fallback: string): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException(fallback, "AbortError");
+  return signal.reason instanceof Error ? signal.reason : new DOMException(fallback, "AbortError");
 }
 
 function throwIfAborted(signal: AbortSignal, fallback: string): void {
@@ -534,10 +470,7 @@ async function sleep(ms: number, signal: AbortSignal): Promise<void> {
   await delay(Math.max(0, ms), undefined, { signal });
 }
 
-function commandFailure(
-  description: string,
-  result: ExecResult<string>,
-): Error {
+function commandFailure(description: string, result: ExecResult<string>): Error {
   const detail =
     result.stderr.trim() ||
     result.stdout.trim() ||
@@ -551,25 +484,22 @@ async function runPowerCommand(
   action: "sleep" | "wakeup",
   signal: AbortSignal,
 ): Promise<void> {
-  const result = await execText(
-    "adb",
-    ["-s", serial, "shell", "cmd", "power", action],
-    { timeout: 5_000, signal, lane: "interactive" },
-  );
+  const result = await execText("adb", ["-s", serial, "shell", "cmd", "power", action], {
+    timeout: 5_000,
+    signal,
+    lane: "interactive",
+  });
   if (result.status !== 0) {
     throw commandFailure(`could not ${action} ${serial}`, result);
   }
 }
 
-async function isDeviceAwake(
-  serial: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const result = await execText(
-    "adb",
-    ["-s", serial, "shell", "dumpsys", "power"],
-    { timeout: 5_000, signal, lane: "interactive" },
-  );
+async function isDeviceAwake(serial: string, signal: AbortSignal): Promise<boolean> {
+  const result = await execText("adb", ["-s", serial, "shell", "dumpsys", "power"], {
+    timeout: 5_000,
+    signal,
+    lane: "interactive",
+  });
   if (result.status !== 0) {
     throw commandFailure(`could not read power state for ${serial}`, result);
   }
@@ -590,8 +520,7 @@ export function androidKeycodeToW3c(keycode: number): string | null {
 export function androidKeyGestureToKeyboardEvents(
   gesture: AndroidKeyGesture,
 ): KeyboardEventRequest[] {
-  const eventType: NonNullable<KeyboardEventRequest["eventType"]> =
-    gesture.action ?? "press";
+  const eventType: NonNullable<KeyboardEventRequest["eventType"]> = gesture.action ?? "press";
   const special = ANDROID_SPECIAL_KEYCODE_TO_W3C[gesture.keycode];
   const evdev = ANDROID_KEYCODE_TO_EVDEV[gesture.keycode];
   const printable = androidKeycodeToW3c(gesture.keycode);
@@ -637,11 +566,7 @@ export function readMmapImageNotification(
 ): { image: EmuImage | null; read: StableMmapRead | null } {
   // AEMU uses a single metadata-only 0x0 image to signal that a display has
   // become inactive. It is an idle marker, not a malformed MMAP frame.
-  if (
-    notification.width === 0 &&
-    notification.height === 0 &&
-    notification.image.length === 0
-  ) {
+  if (notification.width === 0 && notification.height === 0 && notification.image.length === 0) {
     return { image: null, read: null };
   }
   if (
@@ -656,22 +581,16 @@ export function readMmapImageNotification(
       "emulator MMAP screenshot notification must contain RGB888 metadata and no in-band image bytes",
     );
   }
-  const read = readFrame(
-    rgb888MmapRegionBytes(notification.width, notification.height),
-  );
+  const read = readFrame(rgb888MmapRegionBytes(notification.width, notification.height));
   if (!read.image) return { image: null, read };
   const image = { ...notification, image: read.image };
   if (!isUsableRgbFrame(image)) {
-    throw new Error(
-      "emulator MMAP screenshot produced an invalid RGB888 frame",
-    );
+    throw new Error("emulator MMAP screenshot produced an invalid RGB888 frame");
   }
   return { image, read };
 }
 
-const PNG_SIGNATURE = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-]);
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export function isUsablePngFrame(image: EmuImage): boolean {
   return (
@@ -700,8 +619,7 @@ export function grpcImageModeBehavior(
     return {
       encoderInputFormat: "png",
       predecodeMaxFps: maxFps,
-      needsEncoderFollowUp: (repeat, encoderHasOutput) =>
-        !repeat || !encoderHasOutput,
+      needsEncoderFollowUp: (repeat, encoderHasOutput) => !repeat || !encoderHasOutput,
     };
   }
   return {
@@ -711,8 +629,7 @@ export function grpcImageModeBehavior(
     predecodeMaxFps: undefined,
     // A static source may send only one image. Keep warming the encoder until
     // it emits output; the regular idle timer starts after that startup gate.
-    needsEncoderFollowUp: (repeat, encoderHasOutput) =>
-      !repeat || !encoderHasOutput,
+    needsEncoderFollowUp: (repeat, encoderHasOutput) => !repeat || !encoderHasOutput,
   };
 }
 
@@ -760,9 +677,7 @@ export class GrpcMmapNotificationScheduler {
   constructor(options: {
     maxFps: number;
     consume: (image: EmuImage, receivedAtMs: number) => void;
-    onPacingEvent?: (
-      event: Extract<GrpcMessagePacingEvent, "emitted" | "coalesced">,
-    ) => void;
+    onPacingEvent?: (event: Extract<GrpcMessagePacingEvent, "emitted" | "coalesced">) => void;
     onError?: (error: unknown) => void;
     signal?: AbortSignal;
     clock?: GrpcMmapNotificationSchedulerClock;
@@ -842,15 +757,8 @@ export class GrpcMmapNotificationScheduler {
 
 type GrpcImageCaptureTransport = GrpcImageModeBehavior & {
   streamFormat: ImageFormatRequest;
-  push(
-    notification: EmuImage,
-    source: GrpcScreenshotImageSource,
-    receivedAtMs: number,
-  ): void;
-  recordRawPacingEvent(
-    event: GrpcMessagePacingEvent,
-    detail: GrpcMessagePacingDetail,
-  ): void;
+  push(notification: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number): void;
+  recordRawPacingEvent(event: GrpcMessagePacingEvent, detail: GrpcMessagePacingDetail): void;
   stop(): void;
   close(): Promise<void>;
 };
@@ -862,11 +770,7 @@ function createGrpcImageCaptureTransport(options: {
   probe: Pick<EmuImage, "width" | "height">;
   signal: AbortSignal;
   diagnostics: GrpcCaptureDiagnosticsTracker;
-  consume(
-    image: EmuImage,
-    source: GrpcScreenshotImageSource,
-    receivedAtMs: number,
-  ): void;
+  consume(image: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number): void;
   onError(error: unknown): void;
 }): GrpcImageCaptureTransport {
   const behavior = grpcImageModeBehavior(options.imageMode, options.maxFps);
@@ -888,7 +792,8 @@ function createGrpcImageCaptureTransport(options: {
             notification.width === 0 &&
             notification.height === 0 &&
             notification.image.length === 0
-          ) return;
+          )
+            return;
           if (!isUsableRgbFrame(notification)) {
             throw new Error(
               `emulator RGB888 screenshot must contain ${notification.width}x${notification.height} RGB888 pixels (received ${notification.image.length} bytes)`,
@@ -914,9 +819,7 @@ function createGrpcImageCaptureTransport(options: {
   }
 
   const captureExtent =
-    options.maxSize > 0
-      ? options.maxSize
-      : Math.max(options.probe.width, options.probe.height);
+    options.maxSize > 0 ? options.maxSize : Math.max(options.probe.width, options.probe.height);
   // A reusable MMAP file must be sized before streamScreenshot starts, so
   // native-size mode resolves zero once from the startup probe. The square
   // extent handles rotation, but a later display growth beyond this native
@@ -1065,8 +968,7 @@ export class GrpcAccessUnitBoundaryCadence {
     }
     return Math.min(
       ACCESS_UNIT_BOUNDARY_MAX_DELAY_MS,
-      Math.max(this.#minimumIntervalMs, observedInterval) *
-        ACCESS_UNIT_BOUNDARY_IDLE_INTERVALS,
+      Math.max(this.#minimumIntervalMs, observedInterval) * ACCESS_UNIT_BOUNDARY_IDLE_INTERVALS,
     );
   }
 
@@ -1081,9 +983,7 @@ export class GrpcAccessUnitBoundaryCadence {
     if (this.#freshImageIntervals.length === 0) return null;
     const sorted = [...this.#freshImageIntervals].sort((a, b) => a - b);
     const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0
-      ? (sorted[middle - 1]! + sorted[middle]!) / 2
-      : sorted[middle]!;
+    return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
   }
 }
 
@@ -1112,8 +1012,7 @@ export class GrpcInputState {
   sendTouch(points: TouchPoint[], signal: AbortSignal): Promise<void> {
     return this.#enqueue(async () => {
       for (const point of points) {
-        if (point.pressure > 0)
-          this.#activeTouches.set(point.identifier, point);
+        if (point.pressure > 0) this.#activeTouches.set(point.identifier, point);
       }
       await this.#client.sendTouch(points, signal);
       for (const point of points) {
@@ -1155,10 +1054,7 @@ export class GrpcInputState {
 
       for (const [identity, event] of [...this.#activeKeys]) {
         try {
-          await this.#client.sendKey(
-            { ...event, eventType: "up", text: undefined },
-            signal,
-          );
+          await this.#client.sendKey({ ...event, eventType: "up", text: undefined }, signal);
           this.#activeKeys.delete(identity);
         } catch (error) {
           firstFailure ??= error;
@@ -1189,30 +1085,22 @@ export class GrpcInputState {
 export function normalizeGrpcText(text: string): string {
   for (let index = 0; index < text.length; index++) {
     if (text.charCodeAt(index) > 0x7f) {
-      throw new ControlInputRejectedError(
-        "grpc-screenshot supports ASCII text only",
-      );
+      throw new ControlInputRejectedError("grpc-screenshot supports ASCII text only");
     }
   }
   return normalizeTextForControl(text);
 }
 
-export function normalizeGrpcGestureText(
-  gesture: Extract<Gesture, { type: "text" }>,
-): string {
+export function normalizeGrpcGestureText(gesture: Extract<Gesture, { type: "text" }>): string {
   return normalizeGrpcText(gesture.text);
 }
 
 export function parseDisplaySizeSignal(output: string): string {
   if (Buffer.byteLength(output) > MAX_DISPLAY_SIZE_OUTPUT_BYTES) {
-    throw new Error(
-      `display size response exceeds ${MAX_DISPLAY_SIZE_OUTPUT_BYTES} byte limit`,
-    );
+    throw new Error(`display size response exceeds ${MAX_DISPLAY_SIZE_OUTPUT_BYTES} byte limit`);
   }
   const sizes = new Map<string, string>();
-  for (const match of output.matchAll(
-    /\b(Physical|Override) size:\s*(\d{1,5})x(\d{1,5})\b/g,
-  )) {
+  for (const match of output.matchAll(/\b(Physical|Override) size:\s*(\d{1,5})x(\d{1,5})\b/g)) {
     const width = Number(match[2]);
     const height = Number(match[3]);
     if (width <= 0 || height <= 0) continue;
@@ -1282,11 +1170,7 @@ export class GrpcNativeTouchGeometryMonitor {
     }
   }
 
-  async #pollOnce(
-    signal: AbortSignal,
-    force: boolean,
-    generation: number,
-  ): Promise<void> {
+  async #pollOnce(signal: AbortSignal, force: boolean, generation: number): Promise<void> {
     throwIfAborted(signal, "display size refresh aborted");
     const nextSignal = await this.#readDisplaySizeSignal(signal);
     if (!force && nextSignal === this.#displaySizeSignal) return;
@@ -1309,33 +1193,20 @@ export class GrpcNativeTouchGeometryMonitor {
 export type GrpcSessionDependencies = {
   /** Override the stall deadline for deterministic runtime tests. */
   encoderDrainTimeoutMs?: number;
-  readDisplaySizeSignal?: (
-    serial: string,
-    signal: AbortSignal,
-  ) => Promise<string>;
+  readDisplaySizeSignal?: (serial: string, signal: AbortSignal) => Promise<string>;
   startScrcpyControl?: typeof startScrcpyControl;
   runtime?: Partial<GrpcSessionRuntime>;
 };
 
 export type GrpcSessionClient = {
-  getScreenshot(
-    format: ImageFormatRequest,
-    signal?: AbortSignal,
-  ): Promise<EmuImage>;
+  getScreenshot(format: ImageFormatRequest, signal?: AbortSignal): Promise<EmuImage>;
   streamScreenshot(
     format: ImageFormatRequest,
-    onImage: (
-      image: EmuImage,
-      source: GrpcScreenshotImageSource,
-      receivedAtMs: number,
-    ) => void,
+    onImage: (image: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number) => void,
     signal: AbortSignal,
     options?: {
       maxFps?: number;
-      onPacingEvent?: (
-        event: GrpcMessagePacingEvent,
-        detail: GrpcMessagePacingDetail,
-      ) => void;
+      onPacingEvent?: (event: GrpcMessagePacingEvent, detail: GrpcMessagePacingDetail) => void;
       onDecode?: (event: GrpcImageDecodeEvent) => void;
     },
   ): Promise<void>;
@@ -1454,9 +1325,7 @@ export class GrpcVideoPacketQueue {
     const keyIndex = lastKeyFrameIndex(this.#packets);
     const keyFrame = this.#packets[keyIndex];
     const keyFrameConfig =
-      keyFrame?.type === "frame"
-        ? this.#configByKeyFrame.get(keyFrame)
-        : undefined;
+      keyFrame?.type === "frame" ? this.#configByKeyFrame.get(keyFrame) : undefined;
     if (keyIndex < 0 || !keyFrameConfig) {
       return this.#dropUntilKeyFrame();
     }
@@ -1464,14 +1333,9 @@ export class GrpcVideoPacketQueue {
     const session = lastSessionPacket(this.#packets, keyIndex);
     const suffix = this.#packets.slice(keyIndex);
     const retained = [...(session ? [session] : []), keyFrameConfig, ...suffix];
-    const retainedBytes = retained.reduce(
-      (total, queued) => total + queuedPacketBytes(queued),
-      0,
-    );
+    const retainedBytes = retained.reduce((total, queued) => total + queuedPacketBytes(queued), 0);
     if (retainedBytes > this.#maxBytes) {
-      throw new Error(
-        `decodable gRPC H.264 queue exceeds ${this.#maxBytes} byte limit`,
-      );
+      throw new Error(`decodable gRPC H.264 queue exceeds ${this.#maxBytes} byte limit`);
     }
     this.#packets = retained;
     this.#byteLength = retainedBytes;
@@ -1508,14 +1372,9 @@ export class GrpcVideoPacketQueue {
       this.#latestConfig,
       keyFrame,
     ];
-    const resumedBytes = resumed.reduce(
-      (total, queued) => total + queuedPacketBytes(queued),
-      0,
-    );
+    const resumedBytes = resumed.reduce((total, queued) => total + queuedPacketBytes(queued), 0);
     if (resumedBytes > this.#maxBytes) {
-      throw new Error(
-        `decodable gRPC H.264 queue exceeds ${this.#maxBytes} byte limit`,
-      );
+      throw new Error(`decodable gRPC H.264 queue exceeds ${this.#maxBytes} byte limit`);
     }
     this.#packets = resumed;
     this.#byteLength = resumedBytes;
@@ -1531,18 +1390,14 @@ type ClosableEncoder = {
 
 /** Serializes encoder replacement and folds a burst into one fresh process. */
 export class GrpcEncoderLifecycle<T extends ClosableEncoder> {
-  readonly #create: (
-    restart: GrpcEncoderRestart,
-  ) => T | null | Promise<T | null>;
+  readonly #create: (restart: GrpcEncoderRestart) => T | null | Promise<T | null>;
   #current: T | null = null;
   #pending: GrpcEncoderRestart | null = null;
   #drainTask: Promise<T | null> | null = null;
   #closeTask: Promise<void> | null = null;
   #closed = false;
 
-  constructor(
-    create: (restart: GrpcEncoderRestart) => T | null | Promise<T | null>,
-  ) {
+  constructor(create: (restart: GrpcEncoderRestart) => T | null | Promise<T | null>) {
     this.#create = create;
   }
 
@@ -1643,22 +1498,14 @@ function positiveNumber(value: number, name: string, maximum: number): number {
   return value;
 }
 
-function nonNegativeNumber(
-  value: number,
-  name: string,
-  maximum = Number.MAX_SAFE_INTEGER,
-): number {
+function nonNegativeNumber(value: number, name: string, maximum = Number.MAX_SAFE_INTEGER): number {
   if (!Number.isFinite(value) || value < 0 || value > maximum) {
     throw new Error(`${name} must be a non-negative number`);
   }
   return value;
 }
 
-function nonNegativeInteger(
-  value: number,
-  name: string,
-  maximum: number,
-): number {
+function nonNegativeInteger(value: number, name: string, maximum: number): number {
   nonNegativeNumber(value, name, maximum);
   if (!Number.isSafeInteger(value)) {
     throw new Error(`${name} must be a non-negative safe integer`);
@@ -1677,30 +1524,20 @@ export async function startGrpcSession(
   const serial = options.serial;
   const imageMode = options.grpcImageMode;
   const inputSource: InputSource = options.inputSource;
-  const openScrcpyControl =
-    dependencies.startScrcpyControl ?? startScrcpyControl;
+  const openScrcpyControl = dependencies.startScrcpyControl ?? startScrcpyControl;
   const runtime: GrpcSessionRuntime = {
     ...DEFAULT_GRPC_SESSION_RUNTIME,
     ...dependencies.runtime,
   };
-  const readDisplaySizeSignal =
-    dependencies.readDisplaySizeSignal ?? defaultReadDisplaySizeSignal;
-  const maxFps = positiveNumber(
-    options.maxFps ?? SCRCPY_DEFAULTS.maxFps,
-    "maxFps",
-    1_000,
-  );
+  const readDisplaySizeSignal = dependencies.readDisplaySizeSignal ?? defaultReadDisplaySizeSignal;
+  const maxFps = positiveNumber(options.maxFps ?? SCRCPY_DEFAULTS.maxFps, "maxFps", 1_000);
   const bitRate = nonNegativeInteger(
     options.bitRate ?? SCRCPY_DEFAULTS.bitRate,
     "bitRate",
     0x7fff_ffff,
   );
   if (bitRate === 0) throw new Error("bitRate must be a positive number");
-  const maxSize = nonNegativeInteger(
-    options.maxSize ?? SCRCPY_DEFAULTS.maxSize,
-    "maxSize",
-    16_384,
-  );
+  const maxSize = nonNegativeInteger(options.maxSize ?? SCRCPY_DEFAULTS.maxSize, "maxSize", 16_384);
   const keyFrameInterval = nonNegativeNumber(
     options.keyFrameInterval ?? SCRCPY_DEFAULTS.keyFrameInterval,
     "keyFrameInterval",
@@ -1711,29 +1548,21 @@ export async function startGrpcSession(
     60_000,
   );
   const repeatFrameMs =
-    configuredRepeatFrameMs > 0
-      ? configuredRepeatFrameMs
-      : DEFAULT_IDLE_REPEAT_MS;
+    configuredRepeatFrameMs > 0 ? configuredRepeatFrameMs : DEFAULT_IDLE_REPEAT_MS;
   const encoderDrainTimeoutMs = positiveNumber(
     dependencies.encoderDrainTimeoutMs ?? ENCODER_DRAIN_TIMEOUT_MS,
     "encoderDrainTimeoutMs",
     60_000,
   );
   const frameIntervalMs = 1_000 / maxFps;
-  const accessUnitBoundaryCadence = new GrpcAccessUnitBoundaryCadence(
-    frameIntervalMs,
-  );
+  const accessUnitBoundaryCadence = new GrpcAccessUnitBoundaryCadence(frameIntervalMs);
 
   if (!isEmulatorSerial(serial)) {
-    throw new Error(
-      `grpc-screenshot requires an Android Emulator serial; received ${serial}`,
-    );
+    throw new Error(`grpc-screenshot requires an Android Emulator serial; received ${serial}`);
   }
   const lifetime = new AbortController();
   const abortFromParent = () =>
-    lifetime.abort(
-      abortReason(options.signal!, "gRPC screenshot session aborted"),
-    );
+    lifetime.abort(abortReason(options.signal!, "gRPC screenshot session aborted"));
   options.signal?.addEventListener("abort", abortFromParent, { once: true });
   if (options.signal?.aborted) abortFromParent();
 
@@ -1783,9 +1612,7 @@ export async function startGrpcSession(
   let removeScrcpyControlListeners: (() => void) | null = null;
   let controls: ControlInputQueue | null = null;
   const scrcpyControlStartup =
-    inputSource === "scrcpy"
-      ? openScrcpyControl({ serial, signal: lifetime.signal })
-      : null;
+    inputSource === "scrcpy" ? openScrcpyControl({ serial, signal: lifetime.signal }) : null;
   // A later gRPC startup step may fail before this promise is awaited. Keep
   // the speculative startup rejection handled while preserving it for await.
   void scrcpyControlStartup?.catch(() => {});
@@ -1829,10 +1656,8 @@ export async function startGrpcSession(
     encoderDrainTimer = null;
   };
   const encoderWritable = (encoder: GrpcSessionEncoder) => {
-    if (
-      closed || lifetime.signal.aborted || fatalFailure ||
-      encoderLifecycle?.current !== encoder
-    ) return;
+    if (closed || lifetime.signal.aborted || fatalFailure || encoderLifecycle?.current !== encoder)
+      return;
     clearEncoderDrainTimer();
     waitingForEncoder = false;
     if (latest !== lastSubmittedImage) {
@@ -1848,9 +1673,13 @@ export async function startGrpcSession(
     encoderDrainTimer = setTimeout(() => {
       encoderDrainTimer = null;
       if (
-        closed || lifetime.signal.aborted || fatalFailure ||
-        encoderLifecycle?.current !== encoder || !waitingForEncoder
-      ) return;
+        closed ||
+        lifetime.signal.aborted ||
+        fatalFailure ||
+        encoderLifecycle?.current !== encoder ||
+        !waitingForEncoder
+      )
+        return;
       if (encoder.writable) {
         // Recover a missed notification only when the encoder confirms it can
         // accept input. A timer must never force more bytes into a blocked pipe.
@@ -1889,12 +1718,7 @@ export async function startGrpcSession(
     if (accepted) lastSubmittedImage = latest;
     if (waitingForEncoder) watchEncoderDrain(encoder);
     else clearEncoderDrainTimer();
-    captureDiagnostics.recordEncoderWrite(
-      repeat,
-      accepted,
-      latest.image.length,
-      now,
-    );
+    captureDiagnostics.recordEncoderWrite(repeat, accepted, latest.image.length, now);
     if (accepted) lastWriteAt = Date.now();
     // Keep receiving while ffmpeg is blocked so drain submits the newest
     // complete image, without building a FIFO of stale frames upstream.
@@ -1972,7 +1796,9 @@ export async function startGrpcSession(
       });
     }
     managed = {
-      get writable() { return next.writable; },
+      get writable() {
+        return next.writable;
+      },
       width: next.width,
       height: next.height,
       quarterTurn: next.quarterTurn,
@@ -1985,18 +1811,13 @@ export async function startGrpcSession(
     };
     return managed;
   });
-  const restartEncoder = (
-    announceSize: boolean,
-    clearPending: boolean,
-  ): Promise<void> => {
+  const restartEncoder = (announceSize: boolean, clearPending: boolean): Promise<void> => {
     if (closed || lifetime.signal.aborted || !latest) return Promise.resolve();
     clearBoundaryTimer();
     clearEncoderDrainTimer();
-    return encoderLifecycle!
-      .restart({ announceSize, clearPending })
-      .then((started) => {
-        if (started && encoderLifecycle?.current === started) writeFrame(false);
-      });
+    return encoderLifecycle!.restart({ announceSize, clearPending }).then((started) => {
+      if (started && encoderLifecycle?.current === started) writeFrame(false);
+    });
   };
   requestQueuedKeyFrame = () => {
     void restartEncoder(false, false).catch((error) =>
@@ -2011,24 +1832,17 @@ export async function startGrpcSession(
     if (!nativeTouchGeometryMonitor || closed || lifetime.signal.aborted) {
       return Promise.resolve();
     }
-    return nativeTouchGeometryMonitor
-      .poll(lifetime.signal, force)
-      .catch((error) => {
-        if (!closed && !lifetime.signal.aborted) {
-          console.warn(
-            `serve-emu could not refresh native touch geometry: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      });
+    return nativeTouchGeometryMonitor.poll(lifetime.signal, force).catch((error) => {
+      if (!closed && !lifetime.signal.aborted) {
+        console.warn(
+          `serve-emu could not refresh native touch geometry: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    });
   };
 
   const scheduleDisplaySizePoll = () => {
-    if (
-      closed ||
-      lifetime.signal.aborted ||
-      displaySizePollTimer ||
-      !nativeTouchGeometryMonitor
-    ) {
+    if (closed || lifetime.signal.aborted || displaySizePollTimer || !nativeTouchGeometryMonitor) {
       return;
     }
     displaySizePollTimer = setTimeout(() => {
@@ -2132,22 +1946,13 @@ export async function startGrpcSession(
     for (let index = 1; index < steps; index++) {
       const progress = index / steps;
       await runtime.sleep(duration / steps, signal);
-      await touch(
-        x1 + (x2 - x1) * progress,
-        y1 + (y2 - y1) * progress,
-        TOUCH_PRESSURE,
-        0,
-        signal,
-      );
+      await touch(x1 + (x2 - x1) * progress, y1 + (y2 - y1) * progress, TOUCH_PRESSURE, 0, signal);
     }
     await runtime.sleep(duration / steps, signal);
     await touch(x2, y2, 0, 0, signal);
   };
 
-  const dispatchGesture = async (
-    gesture: Gesture,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  const dispatchGesture = async (gesture: Gesture, signal: AbortSignal): Promise<void> => {
     throwIfAborted(signal, "gRPC input aborted");
     switch (gesture.type) {
       case "tap":
@@ -2176,10 +1981,7 @@ export async function startGrpcSession(
         return;
       }
       case "text":
-        return inputState.sendKey(
-          { text: normalizeGrpcGestureText(gesture) },
-          signal,
-        );
+        return inputState.sendKey({ text: normalizeGrpcGestureText(gesture) }, signal);
       case "back":
         return inputState.sendKey({ key: "GoBack" }, signal);
       case "home":
@@ -2227,8 +2029,7 @@ export async function startGrpcSession(
   const createGrpcControls = () =>
     new ControlInputQueue({
       dispatcher: {
-        dispatchGesture: (gesture, _screen, signal) =>
-          dispatchGesture(gesture, signal),
+        dispatchGesture: (gesture, _screen, signal) => dispatchGesture(gesture, signal),
         resetVideo: resetGrpcVideo,
         close() {
           void releaseInput();
@@ -2277,8 +2078,7 @@ export async function startGrpcSession(
     if (displaySizePollTimer) clearTimeout(displaySizePollTimer);
     displaySizePollTimer = null;
     controls?.close(new Error("gRPC screenshot session closed"));
-    const inputRelease =
-      inputSource === "grpc" ? releaseInput() : Promise.resolve();
+    const inputRelease = inputSource === "grpc" ? releaseInput() : Promise.resolve();
     const encoderClose = encoderLifecycle?.close() ?? Promise.resolve();
     removeScrcpyControlListeners?.();
     removeScrcpyControlListeners = null;
@@ -2293,11 +2093,7 @@ export async function startGrpcSession(
     listeners.clear();
     packetQueue.clear();
     wakeReaders();
-    void Promise.allSettled([
-      inputRelease,
-      encoderClose,
-      scrcpyControlClose,
-    ]).then(async () => {
+    void Promise.allSettled([inputRelease, encoderClose, scrcpyControlClose]).then(async () => {
       client.close();
       try {
         await transportToClose?.close();
@@ -2342,27 +2138,15 @@ export async function startGrpcSession(
     const probeFormat = {
       format: imageMode === "rgb888" ? IMG_FORMAT_RGB888 : IMG_FORMAT_PNG,
     };
-    let probe = await client.getScreenshot(
-      probeFormat,
-      lifetime.signal,
-    );
+    let probe = await client.getScreenshot(probeFormat, lifetime.signal);
     if (probe.width <= 0 || probe.height <= 0) {
       await runtime.wakeDevice(serial, lifetime.signal);
-      for (
-        let attempt = 0;
-        attempt < 20 && (probe.width <= 0 || probe.height <= 0);
-        attempt++
-      ) {
+      for (let attempt = 0; attempt < 20 && (probe.width <= 0 || probe.height <= 0); attempt++) {
         await runtime.sleep(100, lifetime.signal);
-        probe = await client.getScreenshot(
-          probeFormat,
-          lifetime.signal,
-        );
+        probe = await client.getScreenshot(probeFormat, lifetime.signal);
       }
       if (probe.width <= 0 || probe.height <= 0) {
-        throw new Error(
-          "emulator display stayed inactive after requesting wakeup",
-        );
+        throw new Error("emulator display stayed inactive after requesting wakeup");
       }
     }
     nativeTouchSize = {
@@ -2372,8 +2156,7 @@ export async function startGrpcSession(
     nativeTouchGeometryMonitor = new GrpcNativeTouchGeometryMonitor({
       initialDisplaySizeSignal,
       readDisplaySizeSignal: (signal) => readDisplaySizeSignal(serial, signal),
-      readNativeImage: (signal) =>
-        client.getScreenshot(probeFormat, signal),
+      readNativeImage: (signal) => client.getScreenshot(probeFormat, signal),
       onNativeSize: (size) => {
         nativeTouchSize = size;
       },
@@ -2390,16 +2173,9 @@ export async function startGrpcSession(
           message: `scrcpy control socket error: ${error.message}`,
           code: "control-socket-error",
         });
-      const onProcessExit = (
-        code: number | null,
-        signal: NodeJS.Signals | null,
-      ) => {
+      const onProcessExit = (code: number | null, signal: NodeJS.Signals | null) => {
         if (!isAbnormalExit(code, signal)) return;
-        const detail = procExitDetail(
-          code,
-          signal,
-          controlSession.stderrTail?.(),
-        );
+        const detail = procExitDetail(code, signal, controlSession.stderrTail?.());
         emitFatal({
           message: detail.reason,
           code: detail.code,
@@ -2450,19 +2226,12 @@ export async function startGrpcSession(
       resolveFirstImage = (image) => finish(image);
       rejectFirstImage = (error) => finish(undefined, error);
       firstFrameAbort = () =>
-        finish(
-          undefined,
-          abortReason(lifetime.signal, "first emulator frame aborted"),
-        );
+        finish(undefined, abortReason(lifetime.signal, "first emulator frame aborted"));
       lifetime.signal.addEventListener("abort", firstFrameAbort, {
         once: true,
       });
       firstFrameTimer = setTimeout(
-        () =>
-          finish(
-            undefined,
-            new Error("timed out waiting for the first emulator frame"),
-          ),
+        () => finish(undefined, new Error("timed out waiting for the first emulator frame")),
         FIRST_FRAME_TIMEOUT_MS,
       );
       firstFrameTimer.unref?.();
@@ -2476,8 +2245,7 @@ export async function startGrpcSession(
         lifetime.signal,
         {
           maxFps: transport.predecodeMaxFps,
-          onPacingEvent: (event, detail) =>
-            transport.recordRawPacingEvent(event, detail),
+          onPacingEvent: (event, detail) => transport.recordRawPacingEvent(event, detail),
           onDecode: (event) => captureDiagnostics.recordImageDecode(event),
         },
       )
@@ -2505,11 +2273,7 @@ export async function startGrpcSession(
     await startupGate.wait(lifetime.signal, FIRST_FRAME_TIMEOUT_MS);
     idleTimer = setInterval(
       () => {
-        if (
-          !closed &&
-          encoderLifecycle?.current &&
-          Date.now() - lastWriteAt >= repeatFrameMs
-        ) {
+        if (!closed && encoderLifecycle?.current && Date.now() - lastWriteAt >= repeatFrameMs) {
           writeFrame(true);
         }
       },

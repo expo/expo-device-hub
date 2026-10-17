@@ -3,7 +3,7 @@ import {
   type AgentInteractionFrame,
   type AgentInteractionPoint,
   type AgentInteractionSegment,
-} from '@expo/hub-client';
+} from "@expo/hub-client";
 
 const DEFAULT_GESTURE_DURATION_MS = 300;
 const DEFAULT_CUSTOM_EVENT_DELAY_MS = 16;
@@ -18,8 +18,8 @@ export function parseArgentInteractionLogLine(line: string): AgentInteraction | 
   } catch {
     return null;
   }
-  if (!isObject(record) || record.event !== 'tool_called') return null;
-  if (typeof record.name !== 'string' || typeof record.ts !== 'string' || !isObject(record.args)) {
+  if (!isObject(record) || record.event !== "tool_called") return null;
+  if (typeof record.name !== "string" || typeof record.ts !== "string" || !isObject(record.args)) {
     return null;
   }
 
@@ -38,17 +38,17 @@ export function parseArgentInteractionLogLine(line: string): AgentInteraction | 
 
 function segmentsForTool(name: string, args: JsonObject): AgentInteractionSegment[] {
   switch (name) {
-    case 'gesture-tap':
+    case "gesture-tap":
       return tapSegment(args);
-    case 'gesture-swipe':
+    case "gesture-swipe":
       return swipeSegment(args);
-    case 'gesture-custom':
+    case "gesture-custom":
       return customSegment(args);
-    case 'gesture-pinch':
+    case "gesture-pinch":
       return pinchSegment(args);
-    case 'gesture-rotate':
+    case "gesture-rotate":
       return rotateSegment(args);
-    case 'run-sequence':
+    case "run-sequence":
       return sequenceSegments(args);
     default:
       return [];
@@ -56,13 +56,13 @@ function segmentsForTool(name: string, args: JsonObject): AgentInteractionSegmen
 }
 
 function tapSegment(args: JsonObject): AgentInteractionSegment[] {
-  const point = pointFrom(args, 'x', 'y');
+  const point = pointFrom(args, "x", "y");
   return point ? [{ startMs: 0, frames: [{ atMs: 0, points: [point] }] }] : [];
 }
 
 function swipeSegment(args: JsonObject): AgentInteractionSegment[] {
-  const from = pointFrom(args, 'fromX', 'fromY');
-  const to = pointFrom(args, 'toX', 'toY');
+  const from = pointFrom(args, "fromX", "fromY");
+  const to = pointFrom(args, "toX", "toY");
   if (!from || !to) return [];
   const duration = durationValue(args.durationMs, DEFAULT_GESTURE_DURATION_MS);
   return [
@@ -72,7 +72,7 @@ function swipeSegment(args: JsonObject): AgentInteractionSegment[] {
         { atMs: 0, points: [from] },
         { atMs: duration, points: [to] },
       ],
-      easing: args.settle === true ? 'ease-out' : 'linear',
+      easing: args.settle === true ? "ease-out" : "linear",
     },
   ];
 }
@@ -83,9 +83,9 @@ function customSegment(args: JsonObject): AgentInteractionSegment[] {
   let atMs = 0;
   for (const [index, event] of args.events.entries()) {
     if (!isObject(event)) return [];
-    const primary = pointFrom(event, 'x', 'y');
+    const primary = pointFrom(event, "x", "y");
     if (!primary) return [];
-    const secondary = pointFrom(event, 'x2', 'y2', true);
+    const secondary = pointFrom(event, "x2", "y2", true);
     if ((event.x2 === undefined) !== (event.y2 === undefined)) return [];
     if (index > 0) atMs += durationValue(event.delayMs, DEFAULT_CUSTOM_EVENT_DELAY_MS);
     frames.push({ atMs, points: secondary ? [primary, secondary] : [primary] });
@@ -94,7 +94,7 @@ function customSegment(args: JsonObject): AgentInteractionSegment[] {
 }
 
 function pinchSegment(args: JsonObject): AgentInteractionSegment[] {
-  const center = pointFrom(args, 'centerX', 'centerY');
+  const center = pointFrom(args, "centerX", "centerY");
   const startDistance = finiteNumber(args.startDistance);
   const endDistance = finiteNumber(args.endDistance);
   if (!center || startDistance === null || endDistance === null) return [];
@@ -112,7 +112,7 @@ function pinchSegment(args: JsonObject): AgentInteractionSegment[] {
 }
 
 function rotateSegment(args: JsonObject): AgentInteractionSegment[] {
-  const center = pointFrom(args, 'centerX', 'centerY');
+  const center = pointFrom(args, "centerX", "centerY");
   const radius = finiteNumber(args.radius);
   const startAngle = finiteNumber(args.startAngle);
   const endAngle = finiteNumber(args.endAngle);
@@ -136,7 +136,7 @@ function sequenceSegments(args: JsonObject): AgentInteractionSegment[] {
   let cursorMs = 0;
 
   for (const step of args.steps) {
-    if (!isObject(step) || typeof step.tool !== 'string' || !isObject(step.args)) continue;
+    if (!isObject(step) || typeof step.tool !== "string" || !isObject(step.args)) continue;
     const nested = segmentsForTool(step.tool, { ...step.args, udid: args.udid });
     for (const segment of nested) {
       segments.push({ ...segment, startMs: cursorMs + segment.startMs });
@@ -172,7 +172,7 @@ function pointFrom(
   object: JsonObject,
   xKey: string,
   yKey: string,
-  optional = false
+  optional = false,
 ): AgentInteractionPoint | null {
   if (optional && object[xKey] === undefined && object[yKey] === undefined) return null;
   const x = finiteNumber(object[xKey]);
@@ -194,13 +194,13 @@ function durationValue(value: unknown, fallback: number): number {
 }
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function stringValue(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function isObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

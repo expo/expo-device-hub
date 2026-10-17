@@ -44,7 +44,12 @@ export async function isDeviceInjected(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
   }
-  if (!Number.isInteger(port) || port < 1 || port > 65535 ||
-      (deps.expectedPort !== undefined && port !== deps.expectedPort)) return false;
+  if (
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65535 ||
+    (deps.expectedPort !== undefined && port !== deps.expectedPort)
+  )
+    return false;
   return isCapabilityArmed(udid, "networkCapture", { SIMNET_PROXY_PORT_FILE: portFile }, deps.read);
 }

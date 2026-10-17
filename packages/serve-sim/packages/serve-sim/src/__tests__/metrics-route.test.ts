@@ -52,7 +52,12 @@ function createFakeRes(): {
       return ended;
     },
   };
-  return { res: res as unknown as ServerResponse, writes, status: () => statusCode, ended: () => ended };
+  return {
+    res: res as unknown as ServerResponse,
+    writes,
+    status: () => statusCode,
+    ended: () => ended,
+  };
 }
 
 // A cache whose samplers never fire on their own timer (huge interval); the

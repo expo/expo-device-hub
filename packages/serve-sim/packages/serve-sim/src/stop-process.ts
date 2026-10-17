@@ -12,14 +12,23 @@ function result(child: ChildProcess | undefined, forced: boolean): StopResult {
 
 function hasExited(pid: number, child?: ChildProcess): boolean {
   if (child) return child.exitCode !== null || child.signalCode !== null;
-  try { process.kill(pid, 0); return false; } catch { return true; }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch {
+    return true;
+  }
 }
 
-async function waitForExit(pid: number, child: ChildProcess | undefined, timeoutMs: number): Promise<boolean> {
+async function waitForExit(
+  pid: number,
+  child: ChildProcess | undefined,
+  timeoutMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (hasExited(pid, child)) return true;
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return hasExited(pid, child);
 }
@@ -32,7 +41,7 @@ export async function recordingShutdownGraceMs(url: string, token?: string): Pro
       signal: AbortSignal.timeout(1_000),
     });
     if (!response.ok) return SHUTDOWN_GRACE_MS;
-    const status = await response.json() as { active?: unknown };
+    const status = (await response.json()) as { active?: unknown };
     return status.active === true ? RECORDING_SHUTDOWN_GRACE_MS : SHUTDOWN_GRACE_MS;
   } catch {
     return SHUTDOWN_GRACE_MS;
@@ -45,9 +54,12 @@ export async function stopForStreamReplacement(state: ServeSimDeviceState): Prom
   recordingError?: string;
 }> {
   const failureFile = recordingShutdownFailureFile(state.pid);
-  try { unlinkSync(failureFile); } catch {}
+  try {
+    unlinkSync(failureFile);
+  } catch {}
   const graceMs = await recordingShutdownGraceMs(
-    state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"), state.token,
+    state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"),
+    state.token,
   );
   const result = await stopProcess(state.pid, undefined, graceMs);
   if (!hasExited(state.pid)) {
@@ -65,12 +77,17 @@ export async function stopForStreamReplacement(state: ServeSimDeviceState): Prom
     }
   }
   if (reportedFailure) {
-    try { unlinkSync(failureFile); } catch {}
+    try {
+      unlinkSync(failureFile);
+    } catch {}
   }
   return {
     forced: result.forced,
-    recordingError: reportedFailure ?? (graceMs === RECORDING_SHUTDOWN_GRACE_MS && result.forced
-      ? "Active recording was interrupted when the helper required SIGKILL" : undefined),
+    recordingError:
+      reportedFailure ??
+      (graceMs === RECORDING_SHUTDOWN_GRACE_MS && result.forced
+        ? "Active recording was interrupted when the helper required SIGKILL"
+        : undefined),
   };
 }
 
@@ -81,11 +98,17 @@ export async function stopProcess(
   graceMs = SHUTDOWN_GRACE_MS,
 ): Promise<StopResult> {
   if (hasExited(pid, child)) return result(child, false);
-  try { process.kill(pid, "SIGTERM"); } catch { return result(child, false); }
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return result(child, false);
+  }
   if (await waitForExit(pid, child, graceMs)) {
     return result(child, false);
   }
-  try { process.kill(pid, "SIGKILL"); } catch {}
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {}
   await waitForExit(pid, child, 1_000);
   return result(child, true);
 }

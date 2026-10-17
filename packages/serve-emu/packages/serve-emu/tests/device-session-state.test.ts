@@ -59,13 +59,10 @@ describe("DeviceSessionState source ownership", () => {
           new Promise<void>((resolve, reject) => {
             const onAbort = () => reject(signal.reason);
             signal.addEventListener("abort", onAbort, { once: true });
-            replayDelay.promise.then(
-              () => {
-                signal.removeEventListener("abort", onAbort);
-                resolve();
-              },
-              reject,
-            );
+            replayDelay.promise.then(() => {
+              signal.removeEventListener("abort", onAbort);
+              resolve();
+            }, reject);
           }),
       },
     });
@@ -89,10 +86,7 @@ describe("DeviceSessionState source ownership", () => {
         replayTargets.push(`scrcpy:${gesture.type}`);
       },
     });
-    state.recorder.recordGesture(
-      { type: "tap", x: 0.25, y: 0.75 },
-      "test",
-    );
+    state.recorder.recordGesture({ type: "tap", x: 0.25, y: 0.75 }, "test");
     const logResponse = state.logcat.subscribe({});
     expect(logResponse.status).toBe(200);
     await state.route.start({

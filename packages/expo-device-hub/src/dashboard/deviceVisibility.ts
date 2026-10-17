@@ -1,12 +1,12 @@
-import { type Device, type NewDeviceOptions } from '@expo/hub-components';
-import { useEffect } from 'react';
+import { type Device, type NewDeviceOptions } from "@expo/hub-components";
+import { useEffect } from "react";
 
 import {
   HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY,
   persistHideUnsupportedDevicesDefault,
   readHideUnsupportedDevices,
   useDashboardStore,
-} from './dashboardStore';
+} from "./dashboardStore";
 
 export {
   HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY,
@@ -30,8 +30,8 @@ export function useHideUnsupportedDevices(): boolean {
     };
     syncFromStorage();
 
-    window.addEventListener('storage', syncFromStorage);
-    return () => window.removeEventListener('storage', syncFromStorage);
+    window.addEventListener("storage", syncFromStorage);
+    return () => window.removeEventListener("storage", syncFromStorage);
   }, [setHideUnsupported]);
 
   return hideUnsupported;
@@ -45,7 +45,7 @@ export function visibleDevices(devices: Device[], hideUnsupported: boolean): Dev
 /** Remove untested models and any runtime left without a creatable model. */
 export function visibleNewDeviceOptions(
   options: NewDeviceOptions,
-  hideUnsupported: boolean
+  hideUnsupported: boolean,
 ): NewDeviceOptions {
   if (!hideUnsupported) return options;
 

@@ -68,7 +68,12 @@ export function parseFramePacket(raw: ArrayBuffer | Uint8Array): ParsedFramePack
         };
       }
       if (version === 1) {
-        return { data: bytes.subarray(FRAME_META_V1_HEADER_BYTES), isKey, timestamp, serverTsMs: null };
+        return {
+          data: bytes.subarray(FRAME_META_V1_HEADER_BYTES),
+          isKey,
+          timestamp,
+          serverTsMs: null,
+        };
       }
     }
   }

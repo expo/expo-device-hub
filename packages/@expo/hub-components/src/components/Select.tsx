@@ -9,14 +9,14 @@ import {
   Trigger,
   Value,
   Viewport,
-} from '@radix-ui/react-select';
-import { useEffect, useRef, useState } from 'react';
+} from "@radix-ui/react-select";
+import { useEffect, useRef, useState } from "react";
 
-import { bg, border, icon, radius, shadow, text, textSize } from '../theme/tokens';
-import { CheckIcon, ChevronDownIcon } from './icons';
-import { isFocusVisible } from './focusVisible';
-import { pillControlStyle } from './pill';
-import { DisabledControlHint } from './DisabledControlHint';
+import { bg, border, icon, radius, shadow, text, textSize } from "../theme/tokens";
+import { CheckIcon, ChevronDownIcon } from "./icons";
+import { isFocusVisible } from "./focusVisible";
+import { pillControlStyle } from "./pill";
+import { DisabledControlHint } from "./DisabledControlHint";
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
@@ -115,30 +115,31 @@ export function Select<Value extends string>({
     >
       <DisabledControlHint
         reason={disabled ? disabledReason : undefined}
-        label={`${ariaLabel}: ${selectedLabel}`}>
+        label={`${ariaLabel}: ${selectedLabel}`}
+      >
         <Trigger
           ref={triggerRef}
           aria-label={ariaLabel}
           aria-describedby={ariaDescribedBy}
-          data-test-options={options.map((option) => option.label).join('\n')}
+          data-test-options={options.map((option) => option.label).join("\n")}
           onFocus={(event) => setFocused(isFocusVisible(event))}
           onBlur={() => setFocused(false)}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
             ...pillControlStyle({ hovered, focused, disabled }),
-            width: 'max-content',
-            maxWidth: '100%',
-            justifyContent: 'space-between',
-            padding: '0 8px 0 10px',
+            width: "max-content",
+            maxWidth: "100%",
+            justifyContent: "space-between",
+            padding: "0 8px 0 10px",
           }}
         >
           <span
             style={{
               minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
             <Value>{selectedLabel}</Value>
@@ -146,11 +147,11 @@ export function Select<Value extends string>({
           <SelectIcon
             aria-hidden="true"
             style={{
-              display: 'flex',
+              display: "flex",
               flexShrink: 0,
               color: icon.default,
-              transform: open ? 'rotate(180deg)' : undefined,
-              transition: 'transform 120ms ease',
+              transform: open ? "rotate(180deg)" : undefined,
+              transition: "transform 120ms ease",
             }}
           >
             <ChevronDownIcon size={16} strokeWidth={1.5} />
@@ -179,20 +180,20 @@ export function Select<Value extends string>({
             ...textSize.sm,
             fontWeight: 500,
             zIndex: 605,
-            width: 'max-content',
-            minWidth: 'var(--radix-select-trigger-width)',
-            maxWidth: 'var(--radix-select-content-available-width)',
-            maxHeight: 'var(--radix-select-content-available-height)',
-            boxSizing: 'border-box',
-            overflow: 'hidden',
+            width: "max-content",
+            minWidth: "var(--radix-select-trigger-width)",
+            maxWidth: "var(--radix-select-content-available-width)",
+            maxHeight: "var(--radix-select-content-available-height)",
+            boxSizing: "border-box",
+            overflow: "hidden",
             padding: 4,
             border: `1px solid ${border.default}`,
             borderRadius: radius.lg,
-            outline: 'none',
+            outline: "none",
             backgroundColor: bg.default,
             boxShadow: shadow.md,
             color: text.default,
-            fontFamily: 'inherit',
+            fontFamily: "inherit",
           }}
         >
           <Viewport>
@@ -204,32 +205,32 @@ export function Select<Value extends string>({
                 disabled={option.disabled}
                 className="data-[highlighted]:bg-hover data-[state=checked]:bg-element"
                 style={{
-                  display: 'flex',
-                  width: '100%',
+                  display: "flex",
+                  width: "100%",
                   height: ITEM_HEIGHT,
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  alignItems: "center",
+                  justifyContent: "space-between",
                   gap: 8,
-                  boxSizing: 'border-box',
-                  padding: '0 6px',
+                  boxSizing: "border-box",
+                  padding: "0 6px",
                   borderRadius: radius.md,
-                  outline: 'none',
+                  outline: "none",
                   color: text.default,
-                  cursor: option.disabled ? 'default' : 'pointer',
+                  cursor: option.disabled ? "default" : "pointer",
                   opacity: option.disabled ? 0.5 : 1,
-                  userSelect: 'none',
-                  whiteSpace: 'nowrap',
+                  userSelect: "none",
+                  whiteSpace: "nowrap",
                 }}
               >
                 <ItemText>{option.label}</ItemText>
                 <span
                   aria-hidden="true"
                   style={{
-                    display: 'flex',
+                    display: "flex",
                     width: 14,
                     flexShrink: 0,
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    alignItems: "center",
+                    justifyContent: "center",
                     color: icon.default,
                   }}
                 >

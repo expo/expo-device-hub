@@ -73,11 +73,7 @@ describe("readBodyLimited", () => {
       onCancel: (reason) => cancellations.push(reason),
     });
 
-    const error = await expectBodyError(
-      readBodyLimited(request, 4),
-      "payload-too-large",
-      413,
-    );
+    const error = await expectBodyError(readBodyLimited(request, 4), "payload-too-large", 413);
     expect(error.limit).toBe(4);
     expect(error.received).toBe(5);
     expect(cancellations).toHaveLength(1);
@@ -89,9 +85,7 @@ describe("readBodyLimited", () => {
       headers: { "transfer-encoding": "chunked" },
     });
 
-    expect(new TextDecoder().decode(await readBodyLimited(request, 4))).toBe(
-      "abcd",
-    );
+    expect(new TextDecoder().decode(await readBodyLimited(request, 4))).toBe("abcd");
   });
 
   test("accepts 200,000 one-byte chunks while letting timers advance", async () => {
@@ -116,17 +110,11 @@ describe("readBodyLimited", () => {
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error("fragmented body read timed out")),
-        2_000,
-      );
+      timer = setTimeout(() => reject(new Error("fragmented body read timed out")), 2_000);
     });
 
     try {
-      const body = await Promise.race([
-        readBodyLimited(request, byteLength),
-        timeout,
-      ]);
+      const body = await Promise.race([readBodyLimited(request, byteLength), timeout]);
       readCompleted = true;
       expect(body.byteLength).toBe(byteLength);
       expect(body[0]).toBe(0);
@@ -174,11 +162,7 @@ describe("readBodyLimited", () => {
       onCancel: (reason) => cancellations.push(reason),
     });
 
-    await expectBodyError(
-      readBodyLimited(request, 4),
-      "payload-too-large",
-      413,
-    );
+    await expectBodyError(readBodyLimited(request, 4), "payload-too-large", 413);
     expect(cancellations).toHaveLength(1);
   });
 
@@ -187,11 +171,7 @@ describe("readBodyLimited", () => {
       headers: { "content-length": "1" },
     });
 
-    await expectBodyError(
-      readBodyLimited(request, 4),
-      "payload-too-large",
-      413,
-    );
+    await expectBodyError(readBodyLimited(request, 4), "payload-too-large", 413);
   });
 
   test.each(["abc", "-1", "+1", "1.5", "1, 1"])(
@@ -201,11 +181,7 @@ describe("readBodyLimited", () => {
         headers: { "content-length": contentLength },
       });
 
-      await expectBodyError(
-        readBodyLimited(request, 4),
-        "invalid-content-length",
-        400,
-      );
+      await expectBodyError(readBodyLimited(request, 4), "invalid-content-length", 400);
     },
   );
 
@@ -246,11 +222,7 @@ describe("readBodyLimited", () => {
     await Promise.resolve();
     controller.abort(reason);
 
-    const error = await expectBodyError(
-      reading,
-      "request-aborted",
-      499,
-    );
+    const error = await expectBodyError(reading, "request-aborted", 499);
     expect(error.cause).toBe(reason);
     expect(cancellations).toHaveLength(1);
   });
@@ -266,11 +238,7 @@ describe("readBodyLimited", () => {
       }),
     });
 
-    const error = await expectBodyError(
-      readBodyLimited(request, 10),
-      "body-read-failed",
-      400,
-    );
+    const error = await expectBodyError(readBodyLimited(request, 10), "body-read-failed", 400);
     expect(error.cause).toBe(sourceError);
   });
 });
@@ -285,20 +253,12 @@ describe("readJsonLimited", () => {
   test("reports malformed JSON as a typed 400 error", async () => {
     const request = requestWithChunks(['{"ok":']);
 
-    await expectBodyError(
-      readJsonLimited(request, 32),
-      "invalid-json",
-      400,
-    );
+    await expectBodyError(readJsonLimited(request, 32), "invalid-json", 400);
   });
 
   test("preserves body limit errors instead of reclassifying them", async () => {
     const request = requestWithChunks(['{"tooLong":true}']);
 
-    await expectBodyError(
-      readJsonLimited(request, 4),
-      "payload-too-large",
-      413,
-    );
+    await expectBodyError(readJsonLimited(request, 4), "payload-too-large", 413);
   });
 });

@@ -1,7 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { homedir, tmpdir } from "os";
 
@@ -44,7 +53,9 @@ function launchFixture(udid: string): number {
   );
   const pid = Number(output.trim().match(/:\s*(\d+)$/)?.[1]);
   if (!Number.isSafeInteger(pid)) {
-    throw new Error(`simctl launched ${BUNDLE_ID} but did not report a process id: ${output.trim()}`);
+    throw new Error(
+      `simctl launched ${BUNDLE_ID} but did not report a process id: ${output.trim()}`,
+    );
   }
   return pid;
 }
@@ -93,13 +104,17 @@ describe.skipIf(!ready)("crash ingestion (real app, OS report, and seeded recurr
       env: { ...process.env, SERVE_SIM_STATE_DIR: join(tempDir, "state") },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    await waitFor(async () => {
-      try {
-        return (await fetch(`${baseUrl}/healthz`)).ok ? true : null;
-      } catch {
-        return null;
-      }
-    }, 60_000, "the built serve-sim preview to become healthy");
+    await waitFor(
+      async () => {
+        try {
+          return (await fetch(`${baseUrl}/healthz`)).ok ? true : null;
+        } catch {
+          return null;
+        }
+      },
+      60_000,
+      "the built serve-sim preview to become healthy",
+    );
   }, 120_000);
 
   afterAll(() => {
@@ -108,7 +123,9 @@ describe.skipIf(!ready)("crash ingestion (real app, OS report, and seeded recurr
     for (const path of seededReports) rmSync(path, { force: true });
     for (const dir of [REPORTS_DIR, join(REPORTS_DIR, "Retired")]) {
       let names: string[] = [];
-      try { names = readdirSync(dir); } catch {}
+      try {
+        names = readdirSync(dir);
+      } catch {}
       for (const name of names) {
         if (!name.startsWith(`${APP_NAME}-`)) continue;
         const path = join(dir, name);
@@ -130,15 +147,21 @@ describe.skipIf(!ready)("crash ingestion (real app, OS report, and seeded recurr
     const firstPid = launchFixture(udid!);
     launchedPids.push(firstPid);
 
-    const crash = await waitFor<CrashSummary>(async () => {
-      const response = await fetch(`${baseUrl}/crashes?device=${encodeURIComponent(udid!)}`);
-      if (!response.ok) return null;
-      const payload = (await response.json()) as { meta: CrashMeta; crashes: CrashSummary[] };
-      expect(payload.meta.status).toBe("watching");
-      return payload.crashes.find(
-        (record) => record.bundleId === BUNDLE_ID && record.pid === firstPid,
-      ) ?? null;
-    }, 60_000, "ReportCrash to publish the fixture's .ips file");
+    const crash = await waitFor<CrashSummary>(
+      async () => {
+        const response = await fetch(`${baseUrl}/crashes?device=${encodeURIComponent(udid!)}`);
+        if (!response.ok) return null;
+        const payload = (await response.json()) as { meta: CrashMeta; crashes: CrashSummary[] };
+        expect(payload.meta.status).toBe("watching");
+        return (
+          payload.crashes.find(
+            (record) => record.bundleId === BUNDLE_ID && record.pid === firstPid,
+          ) ?? null
+        );
+      },
+      60_000,
+      "ReportCrash to publish the fixture's .ips file",
+    );
 
     expect(crash).toMatchObject({
       appName: APP_NAME,
@@ -163,16 +186,28 @@ describe.skipIf(!ready)("crash ingestion (real app, OS report, and seeded recurr
     if (!detail.report) throw new Error("OS crash report detail was empty");
 
     const secondPid = firstPid + 1;
-    seededReports.push(seedReport(detail.report, secondPid, new Date((crash.capturedAtMs ?? Date.now()) + 1000).toISOString()));
+    seededReports.push(
+      seedReport(
+        detail.report,
+        secondPid,
+        new Date((crash.capturedAtMs ?? Date.now()) + 1000).toISOString(),
+      ),
+    );
 
-    const recurred = await waitFor<CrashSummary>(async () => {
-      const response = await fetch(`${baseUrl}/crashes?device=${encodeURIComponent(udid!)}`);
-      if (!response.ok) return null;
-      const payload = (await response.json()) as { crashes: CrashSummary[] };
-      return payload.crashes.find(
-        (record) => record.id === crash.id && record.pid === secondPid && record.count === 2,
-      ) ?? null;
-    }, 60_000, "the watcher to ingest and group the fixture's second .ips file");
+    const recurred = await waitFor<CrashSummary>(
+      async () => {
+        const response = await fetch(`${baseUrl}/crashes?device=${encodeURIComponent(udid!)}`);
+        if (!response.ok) return null;
+        const payload = (await response.json()) as { crashes: CrashSummary[] };
+        return (
+          payload.crashes.find(
+            (record) => record.id === crash.id && record.pid === secondPid && record.count === 2,
+          ) ?? null
+        );
+      },
+      60_000,
+      "the watcher to ingest and group the fixture's second .ips file",
+    );
 
     expect(recurred.occurrenceCount).toBe(2);
     const newestResponse = await fetch(

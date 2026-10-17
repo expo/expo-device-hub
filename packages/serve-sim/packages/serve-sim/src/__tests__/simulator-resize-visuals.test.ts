@@ -112,7 +112,9 @@ describe("simulator resize visual tuning", () => {
         SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME,
       ),
     );
-    expect(withFullChrome).toBe((viewportHeight - SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME) * aspect);
+    expect(withFullChrome).toBe(
+      (viewportHeight - SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME) * aspect,
+    );
     expect(withKeyboardChrome).toBe(
       (viewportHeight - SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_KEYBOARD) * aspect,
     );

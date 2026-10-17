@@ -57,30 +57,48 @@ const Device = z
 // simctl reads "all" and "booted" as every device, and capture reboots what it is given.
 const DeviceUdid = z
   .string()
-  .regex(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i, "must be a simulator udid");
-const CaptureRequestId = z.string().max(64).regex(/^r[1-9]\d*$/, "must be a capture request id");
+  .regex(
+    /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
+    "must be a simulator udid",
+  );
+const CaptureRequestId = z
+  .string()
+  .max(64)
+  .regex(/^r[1-9]\d*$/, "must be a capture request id");
 
-const BundleId = z.string().max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
+const BundleId = z
+  .string()
+  .max(256)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
 
 const UrlScheme = z
   .string()
   .max(64)
   .regex(/^[A-Za-z][A-Za-z0-9+.-]*$/, "must be a URL scheme such as myapp")
-  .refine((scheme) => !["http", "https"].includes(scheme.toLowerCase()), "http and https links open without asking")
+  .refine(
+    (scheme) => !["http", "https"].includes(scheme.toLowerCase()),
+    "http and https links open without asking",
+  )
   // URL parsing lowercases the scheme, and the simulator only honors an approval whose key matches.
   .transform((scheme) => scheme.toLowerCase());
 
 /** An orientation or button name. Bounded rather than allowlisted, so a new button still works. */
-const Token = z.string().max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
+const Token = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must be a plain identifier");
 
 const FileName = z.string().regex(/^(?!\.)[^/\\\n]{1,255}$/, "must be a plain file name");
 
 const Coordinate = z.number().finite();
 const ClipboardDevice = DeviceUdid.toUpperCase();
-const ClipboardText = z.string().max(MAX_PASTEBOARD_TEXT_BYTES).refine(
-  (text) => Buffer.byteLength(text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES,
-  "must be at most 4 MiB of UTF-8 text",
-);
+const ClipboardText = z
+  .string()
+  .max(MAX_PASTEBOARD_TEXT_BYTES)
+  .refine(
+    (text) => Buffer.byteLength(text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES,
+    "must be at most 4 MiB of UTF-8 text",
+  );
 
 function UiSetting(option: string) {
   const spec = UI_OPTIONS[option];
@@ -88,22 +106,28 @@ function UiSetting(option: string) {
   return z.object({ udid: Device, value: z.enum([...spec.values, ...(spec.extraValues ?? [])]) });
 }
 
-const FileSource = z.union([
-  z.object({ uploadId: UploadId }),
-  z.object({ path: ConfinedPath }),
-]);
+const FileSource = z.union([z.object({ uploadId: UploadId }), z.object({ path: ConfinedPath })]);
 
 /** Each capture field once; the four the capture proxy knows. */
-const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.length).refine(
-  (fields) => new Set(fields).size === fields.length,
-  "list each capture field once",
-);
+const CaptureFieldList = z
+  .array(z.enum(CAPTURE_FIELDS))
+  .max(CAPTURE_FIELDS.length)
+  .refine((fields) => new Set(fields).size === fields.length, "list each capture field once");
 
 const ACTION_SCHEMAS = {
-  "clipboard.read": z.object({ udid: ClipboardDevice }).meta({ description: "Read simulator clipboard text." }),
-  "clipboard.write": z.object({ udid: ClipboardDevice, text: ClipboardText }).meta({ description: "Write simulator clipboard text without pasting." }),
-  "clipboard.copy": z.object({ udid: ClipboardDevice }).meta({ description: "Copy the current selection and read its text." }),
-  "clipboard.paste": z.object({ udid: ClipboardDevice, text: ClipboardText.optional() }).meta({ description: "Paste text into the focused field, or paste the current simulator clipboard if omitted." }),
+  "clipboard.read": z
+    .object({ udid: ClipboardDevice })
+    .meta({ description: "Read simulator clipboard text." }),
+  "clipboard.write": z
+    .object({ udid: ClipboardDevice, text: ClipboardText })
+    .meta({ description: "Write simulator clipboard text without pasting." }),
+  "clipboard.copy": z
+    .object({ udid: ClipboardDevice })
+    .meta({ description: "Copy the current selection and read its text." }),
+  "clipboard.paste": z.object({ udid: ClipboardDevice, text: ClipboardText.optional() }).meta({
+    description:
+      "Paste text into the focused field, or paste the current simulator clipboard if omitted.",
+  }),
   "appearance.get": z.object({ udid: Device }).meta({ description: "Read light or dark mode." }),
   "appearance.set": z
     .object({ udid: Device, value: z.enum(APPEARANCES) })
@@ -115,38 +139,63 @@ const ACTION_SCHEMAS = {
     description: "Connect or disconnect the hardware keyboard.",
   }),
   "reduceMotion.get": z.object({ udid: Device }).meta({ description: "Read Reduce Motion." }),
-  "reduceMotion.set": UiSetting("reduce-motion").meta({ description: "Turn Reduce Motion on or off." }),
-  "increaseContrast.get": z.object({ udid: Device }).meta({ description: "Read Increase Contrast." }),
+  "reduceMotion.set": UiSetting("reduce-motion").meta({
+    description: "Turn Reduce Motion on or off.",
+  }),
+  "increaseContrast.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read Increase Contrast." }),
   "increaseContrast.set": UiSetting("increase-contrast").meta({
     description: "Turn Increase Contrast on or off.",
   }),
-  "reduceTransparency.get": z.object({ udid: Device }).meta({ description: "Read Reduce Transparency." }),
+  "reduceTransparency.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read Reduce Transparency." }),
   "reduceTransparency.set": UiSetting("reduce-transparency").meta({
     description: "Turn Reduce Transparency on or off.",
   }),
-  "voiceover.get": z.object({ udid: Device }).meta({ description: "Read whether VoiceOver is on." }),
+  "voiceover.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read whether VoiceOver is on." }),
   "voiceover.set": UiSetting("voiceover").meta({ description: "Turn VoiceOver on or off." }),
-  "liquidGlass.get": z.object({ udid: Device }).meta({ description: "Read the Liquid Glass style." }),
+  "liquidGlass.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read the Liquid Glass style." }),
   "liquidGlass.set": UiSetting("liquid-glass").meta({ description: "Set the Liquid Glass style." }),
   "colorFilter.get": z.object({ udid: Device }).meta({ description: "Read the color filter." }),
   "colorFilter.set": UiSetting("color-filter").meta({ description: "Set the color filter." }),
   "textSize.get": z.object({ udid: Device }).meta({ description: "Read the text size." }),
   "textSize.set": UiSetting("text-size").meta({ description: "Set the text size." }),
-  "showBorders.get": z.object({ udid: Device }).meta({ description: "Read whether button borders show." }),
-  "showBorders.set": UiSetting("show-borders").meta({ description: "Show or hide button borders." }),
-  "settings.status": z.object({ udid: Device }).meta({ description: "Read every simulator setting." }),
+  "showBorders.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read whether button borders show." }),
+  "showBorders.set": UiSetting("show-borders").meta({
+    description: "Show or hide button borders.",
+  }),
+  "settings.status": z
+    .object({ udid: Device })
+    .meta({ description: "Read every simulator setting." }),
   "softwareKeyboard.toggle": z
     .object({ udid: Device })
     .meta({ description: "Show or hide the on-screen keyboard." }),
-  tap: z.object({ udid: Device, x: TouchCoordinate, y: TouchCoordinate })
+  tap: z
+    .object({ udid: Device, x: TouchCoordinate, y: TouchCoordinate })
     .meta({ description: "Tap at normalized screen coordinates." }),
-  gesture: z.object({ udid: Device, events: TouchGesture })
+  gesture: z
+    .object({ udid: Device, events: TouchGesture })
     .meta({ description: "Send a complete touch gesture and wait for input completion." }),
-  type: z.object({
-    udid: Device,
-    text: z.string().max(4096).regex(/^[\t\n\r\x20-\x7e]*$/, "must use US-keyboard ASCII characters, newline or tab"),
-  }).meta({ description: "Type US-keyboard ASCII text into the focused field." }),
-  memoryWarning: z.object({ udid: Device }).meta({ description: "Send a memory warning to the device." }),
+  type: z
+    .object({
+      udid: Device,
+      text: z
+        .string()
+        .max(4096)
+        .regex(/^[\t\n\r\x20-\x7e]*$/, "must use US-keyboard ASCII characters, newline or tab"),
+    })
+    .meta({ description: "Type US-keyboard ASCII text into the focused field." }),
+  memoryWarning: z
+    .object({ udid: Device })
+    .meta({ description: "Send a memory warning to the device." }),
   "caDebug.set": z
     .object({
       udid: Device,
@@ -183,7 +232,10 @@ const ACTION_SCHEMAS = {
   "server.detach": z
     .object({
       udid: Device.optional(),
-      port: z.string().regex(/^[0-9]{1,5}$/).optional(),
+      port: z
+        .string()
+        .regex(/^[0-9]{1,5}$/)
+        .optional(),
     })
     .meta({ hidden: true }),
   "server.kill": z.object({}).meta({ hidden: true }),
@@ -250,16 +302,38 @@ const ACTION_SCHEMAS = {
     .object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") })
     .meta({ description: "Print the path of an app's bundle or data container." }),
   "app.file.upload": z
-    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) })
-    .meta({ description: "Copy a file into an app's data container.", upload: "uploadId", uploadAs: "id" }),
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      relativePath: AppRelativePath,
+      uploadId: UploadId,
+      overwrite: z.boolean().default(false),
+    })
+    .meta({
+      description: "Copy a file into an app's data container.",
+      upload: "uploadId",
+      uploadAs: "id",
+    }),
   "app.file.read": z
-    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath })
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      relativePath: AppRelativePath,
+    })
     .meta({ description: "Download a file from an app's data container.", output: "base64" }),
   "app.file.list": z
-    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() })
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      relativePath: AppRelativePath.optional(),
+    })
     .meta({ description: "List the files in a folder of an app's data container." }),
   "app.file.remove": z
-    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath })
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      relativePath: AppRelativePath,
+    })
     .meta({ description: "Delete a file from an app's data container." }),
   "app.stop": z
     .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId })
@@ -268,11 +342,19 @@ const ACTION_SCHEMAS = {
     .object({
       udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
       bundleId: BundleId,
-      url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
+      url: z
+        .string()
+        .max(8192)
+        .url()
+        .refine((value) => !value.includes("\0"), "must not contain NUL"),
     })
     .meta({ description: "Open a URL in an app." }),
   "app.approveUrlScheme": z
-    .object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, scheme: UrlScheme })
+    .object({
+      udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+      bundleId: BundleId,
+      scheme: UrlScheme,
+    })
     .meta({ description: "Let links with a URL scheme open an app without asking first." }),
   "app.infoPlist": z
     .object({ path: ConfinedPath })
@@ -295,7 +377,8 @@ const ACTION_SCHEMAS = {
         )
         .max(256)
         .refine(
-          (args) => args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
+          (args) =>
+            args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
           "must total at most 128 KiB",
         )
         .default([]),
@@ -313,7 +396,11 @@ const ACTION_SCHEMAS = {
   "media.add": z
     .object({ udid: Device })
     .and(FileSource)
-    .meta({ description: "Add a photo or video to the Photos library.", args: ["path"], upload: "path" }),
+    .meta({
+      description: "Add a photo or video to the Photos library.",
+      args: ["path"],
+      upload: "path",
+    }),
   reveal: z
     .union([z.object({ path: ConfinedPath }), z.object({ screenshot: ScreenshotName })])
     .meta({ hidden: true }),
@@ -532,7 +619,14 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "springboard.restart": {
       const p = parseParams(action, raw);
-      return simctl(["spawn", p.udid, "launchctl", "kickstart", "-k", "system/com.apple.SpringBoard"]);
+      return simctl([
+        "spawn",
+        p.udid,
+        "launchctl",
+        "kickstart",
+        "-k",
+        "system/com.apple.SpringBoard",
+      ]);
     }
     case "home.watch":
       parseParams(action, raw);
@@ -642,7 +736,11 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
   return "uploadId" in p ? stagedUploadPath(p.uploadId) : p.path;
 }
 
-async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSettings?: StreamSettings): Promise<HostActionResult> {
+async function runProcedureAsync(
+  action: ProcedureAction,
+  raw: unknown,
+  streamSettings?: StreamSettings,
+): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
     case "clipboard.write":
@@ -667,13 +765,21 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const { cleanupWarning } = cleanupWarningOf(error);
-        return { stdout: "", stderr: redactHostPaths([message, cleanupWarning].filter(Boolean).join("\n")), exitCode: 1 };
+        return {
+          stdout: "",
+          stderr: redactHostPaths([message, cleanupWarning].filter(Boolean).join("\n")),
+          exitCode: 1,
+        };
       }
     }
-    case "app.file.upload": return runAppFileAction("upload", parseParams(action, raw));
-    case "app.file.read": return runAppFileAction("read", parseParams(action, raw));
-    case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
-    case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));
+    case "app.file.upload":
+      return runAppFileAction("upload", parseParams(action, raw));
+    case "app.file.read":
+      return runAppFileAction("read", parseParams(action, raw));
+    case "app.file.list":
+      return runAppFileAction("list", parseParams(action, raw));
+    case "app.file.remove":
+      return runAppFileAction("remove", parseParams(action, raw));
     case "app.stop":
     case "app.openUrl":
     case "app.approveUrlScheme": {
@@ -684,7 +790,11 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
         else await stopApp(p.udid, p.bundleId);
         return ok();
       } catch (error) {
-        return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
       }
     }
     case "app.launch": {
@@ -712,7 +822,9 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
       const p = parseParams(action, raw);
       const { rebootWithCapture } = await import("./capture");
       try {
-        const meta = p.fields ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields) : await rebootWithCapture(p.udid, p.enabled);
+        const meta = p.fields
+          ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields)
+          : await rebootWithCapture(p.udid, p.enabled);
         // The device rebooted, but capture did not start: report a failed action, not a toggle.
         if (p.enabled && meta.attachment === "failed") {
           return {
@@ -790,7 +902,10 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSe
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
-      return await captureScreenshotAsync({ udid: p.udid, fileName: p.fileName ?? newScreenshotName() });
+      return await captureScreenshotAsync({
+        udid: p.udid,
+        fileName: p.fileName ?? newScreenshotName(),
+      });
     }
     case "actions.describe":
       parseParams(action, raw);

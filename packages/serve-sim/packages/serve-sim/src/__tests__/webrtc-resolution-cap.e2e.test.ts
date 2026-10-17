@@ -21,8 +21,10 @@ const PKG_DIR = join(import.meta.dir, "../..");
 const CLI = join(PKG_DIR, "dist/serve-sim.js");
 const MAX_DIMENSION = 1280;
 
-
-async function waitFor(check: () => boolean | Promise<boolean>, budgetMs: number): Promise<boolean> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  budgetMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
     if (await check()) return true;
@@ -49,7 +51,9 @@ function readKeyframeDimensions(payload: Buffer): { width: number; height: numbe
 async function negotiateAndMeasure(offerUrl: string): Promise<{ width: number; height: number }> {
   const pc = new RTCPeerConnection({
     codecs: {
-      video: [new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, payloadType: 96 })],
+      video: [
+        new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, payloadType: 96 }),
+      ],
     },
   });
   try {
@@ -84,7 +88,9 @@ async function negotiateAndMeasure(offerUrl: string): Promise<{ width: number; h
       }),
     });
     if (!response.ok) {
-      throw new Error(`offer rejected: ${response.status} ${(await response.text()).slice(0, 200)}`);
+      throw new Error(
+        `offer rejected: ${response.status} ${(await response.text()).slice(0, 200)}`,
+      );
     }
     const answer = (await response.json()) as { sdp: string };
     await pc.setRemoteDescription({ type: "answer", sdp: answer.sdp });
@@ -111,18 +117,28 @@ describeIfSim("WebRTC resolution cap", () => {
       [
         CLI,
         "--no-preview",
-        "--port", String(port),
-        "--transport", "webrtc",
-        "--webrtc-codec", "vp8",
-        "--max-dimension", String(MAX_DIMENSION),
-        "--video-bitrate", "3000000",
-        "--video-fps", "60",
+        "--port",
+        String(port),
+        "--transport",
+        "webrtc",
+        "--webrtc-codec",
+        "vp8",
+        "--max-dimension",
+        String(MAX_DIMENSION),
+        "--video-bitrate",
+        "3000000",
+        "--video-fps",
+        "60",
         udid!,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
-    server.stdout?.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
-    server.stderr?.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
+    server.stdout?.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
+    server.stderr?.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
 
     const ready = await waitFor(async () => {
       try {

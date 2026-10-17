@@ -84,27 +84,30 @@ function settingsServer() {
   const socketStarts: string[] = [];
   const controlClients = new Set<WebSocket>();
   const receivedEnds = new Set<number>();
-  stubGlobal("WebSocket", class extends WebSocket {
-    constructor(...args: ConstructorParameters<typeof WebSocket>) {
-      super(...args);
-      socketStarts.push(new URL(this.url).pathname);
-      this.addEventListener("message", (event) => {
-        try {
-          const message = JSON.parse(String(event.data));
-          if (message.end && typeof message.sub === "number") receivedEnds.add(message.sub);
-        } catch {}
-      });
-      this.addEventListener("close", () => controlClients.delete(this));
-    }
+  stubGlobal(
+    "WebSocket",
+    class extends WebSocket {
+      constructor(...args: ConstructorParameters<typeof WebSocket>) {
+        super(...args);
+        socketStarts.push(new URL(this.url).pathname);
+        this.addEventListener("message", (event) => {
+          try {
+            const message = JSON.parse(String(event.data));
+            if (message.end && typeof message.sub === "number") receivedEnds.add(message.sub);
+          } catch {}
+        });
+        this.addEventListener("close", () => controlClients.delete(this));
+      }
 
-    override send(data: Parameters<WebSocket["send"]>[0]) {
-      try {
-        const message = JSON.parse(String(data));
-        if (typeof message.sub === "number") controlClients.add(this);
-      } catch {}
-      return super.send(data);
-    }
-  });
+      override send(data: Parameters<WebSocket["send"]>[0]) {
+        try {
+          const message = JSON.parse(String(data));
+          if (typeof message.sub === "number") controlClients.add(this);
+        } catch {}
+        return super.send(data);
+      }
+    },
+  );
   const realFetch = globalThis.fetch;
   // Observe completion of real JSON reads so unchanged polls can settle before time advances.
   stubGlobal("fetch", async (...args: Parameters<typeof fetch>) => {
@@ -150,22 +153,30 @@ function settingsServer() {
         const socketToken = protocol?.startsWith("serve-sim.token.")
           ? protocol.slice("serve-sim.token.".length)
           : null;
-        if (server.upgrade(request, { data: { path: url.pathname, token: socketToken, streams: new Map() } })) return;
+        if (
+          server.upgrade(request, {
+            data: { path: url.pathname, token: socketToken, streams: new Map() },
+          })
+        )
+          return;
         return new Response(null, { status: 400 });
       }
       if (url.pathname === "/ios/api") {
-        const response = () => Response.json({
-          url: `${url.origin}/ios/helper/${device}`,
-          device,
-          basePath: "/ios",
-          proxyHelpers: true,
-          execToken: "exec-token",
-          ...(state.streams ? {
-            metricsEndpoint: "/ios/metrics",
-            logsEndpoint: "/ios/logs",
-            eventLogEventsEndpoint: "/ios/events",
-          } : {}),
-        });
+        const response = () =>
+          Response.json({
+            url: `${url.origin}/ios/helper/${device}`,
+            device,
+            basePath: "/ios",
+            proxyHelpers: true,
+            execToken: "exec-token",
+            ...(state.streams
+              ? {
+                  metricsEndpoint: "/ios/metrics",
+                  logsEndpoint: "/ios/logs",
+                  eventLogEventsEndpoint: "/ios/events",
+                }
+              : {}),
+          });
         if (state.discovery === "error") return new Response(null, { status: 503 });
         if (state.discovery === "hold") {
           return new Promise<Response>((resolve) => {
@@ -246,7 +257,9 @@ function settingsServer() {
           if (state.endedSubscriptions.has(kind)) {
             socket.send(JSON.stringify({ sub: message.sub, end: true }));
           } else if (kind === 3) {
-            socket.send(JSON.stringify({ sub: message.sub, data: 'event: meta\ndata: {"hostCores":4}\n\n' }));
+            socket.send(
+              JSON.stringify({ sub: message.sub, data: 'event: meta\ndata: {"hostCores":4}\n\n' }),
+            );
           }
         } else if (message.ui && message.id != null) {
           if (message.ui.option) {
@@ -273,10 +286,13 @@ function settingsServer() {
                       ? { id: message.id, ok: true }
                       : {
                           id: message.id,
-                          status: mode === "empty" ? {} : {
-                            appearance: state.night === "yes" ? "dark" : "light",
-                            ...state.iosSettings,
-                          },
+                          status:
+                            mode === "empty"
+                              ? {}
+                              : {
+                                  appearance: state.night === "yes" ? "dark" : "light",
+                                  ...state.iosSettings,
+                                },
                         },
                 ),
               );
@@ -320,7 +336,9 @@ function settingsServer() {
     execConnections: () => socketStarts.filter((path) => path === "/ios/exec-ws").length,
     async settleReads() {
       await waitFor(() => activeHttpReads === 0 && activeSocketReads.size === 0);
-      await act(async () => { await yieldIO(); });
+      await act(async () => {
+        await yieldIO();
+      });
     },
     setHidden(hidden: boolean) {
       pageDocument.hidden = hidden;
@@ -333,9 +351,9 @@ function settingsServer() {
     },
     baseUrl: (platform: DevicePlatform) => `${page.origin}/${platform}`,
     hasAllReads(platform: DevicePlatform, device = "DEVICE-1", token?: string, since = 0) {
-      const matching = reads.slice(since).filter(
-        (read) => read.device === device && (token == null || read.token === token),
-      );
+      const matching = reads
+        .slice(since)
+        .filter((read) => read.device === device && (token == null || read.token === token));
       return (
         new Set(matching.map((read) => read.path)).size >=
         (platform === "android" ? Object.keys(ANDROID_RESPONSES).length : 1)
@@ -372,7 +390,7 @@ for (const sub of [1, 2, 3, 4]) {
     const cached = mounted.client().deviceSettings;
     const authRequests = server.state.authRequests;
     const subscriptions = server.subscriptions.length;
-    const endedStreamIds = [...server.controls].map(socket => socket.data.streams.get(sub));
+    const endedStreamIds = [...server.controls].map((socket) => socket.data.streams.get(sub));
     server.state.endedSubscriptions.add(sub);
     await act(async () => {
       for (const socket of server.controls) {
@@ -381,7 +399,9 @@ for (const sub of [1, 2, 3, 4]) {
       await yieldIO();
     });
     // Real message delivery installs the retry timer before fake time advances.
-    await waitFor(() => endedStreamIds.every(id => id !== undefined && server.receivedEnds.has(id)));
+    await waitFor(() =>
+      endedStreamIds.every((id) => id !== undefined && server.receivedEnds.has(id)),
+    );
     expect(mounted.client().deviceSettingsStatus).toBe("ready");
     expect(mounted.client().deviceSettings).toBe(cached);
     expect(mounted.client().activityStatus).toBe(sub === 3 ? "error" : "ready");
@@ -629,8 +649,8 @@ test("Android: unchanged polls preserve settings references for tracked and sele
     const start = server.reads.length;
     const paths = Object.keys(ANDROID_RESPONSES);
     await advanceTime(5000);
-    await waitFor(
-      () => paths.every((path) => server.reads.slice(start).some((read) => read.path === path)),
+    await waitFor(() =>
+      paths.every((path) => server.reads.slice(start).some((read) => read.path === path)),
     );
     await act(async () => {
       server.reply("DEVICE-1", mode);
@@ -779,8 +799,13 @@ test("iOS: control reconnects retain settings references and render availability
   }
   await act(async () => {
     renderer = create(
-      <DeviceClientProvider platform="ios" options={{ baseUrl: server.baseUrl("ios"), streamMode: "mjpeg" }}>
-        <Status /><Values /><Selected />
+      <DeviceClientProvider
+        platform="ios"
+        options={{ baseUrl: server.baseUrl("ios"), streamMode: "mjpeg" }}
+      >
+        <Status />
+        <Values />
+        <Selected />
       </DeviceClientProvider>,
     );
   });
@@ -788,7 +813,9 @@ test("iOS: control reconnects retain settings references and render availability
   const cached = currentSettings();
   const before = { ...renders };
   server.state.mode = "error";
-  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await act(async () => {
+    for (const socket of server.controls) socket.close();
+  });
   await waitFor(() => status === "error");
   await advanceTime(1500);
   await waitFor(() => server.reads.length > 1);
@@ -804,13 +831,19 @@ test("iOS: control reconnects retain settings references and render availability
   expect(renders).toEqual({ ...before, status: before.status + 2 });
 });
 
-for (const replyTiming of ["before reconnect", "after reconnect", "after repeated reconnects"] as const) {
+for (const replyTiming of [
+  "before reconnect",
+  "after reconnect",
+  "after repeated reconnects",
+] as const) {
   test(`iOS: an interrupted active read is discarded ${replyTiming} and followed by a fresh read`, async () => {
     const server = settingsServer();
     const mounted = await mountClient("ios", server.baseUrl("ios"));
     await waitFor(() => server.reads.length === 1 && server.controls.size > 0);
     const interrupted = server.reads[0]!;
-    await act(async () => { for (const socket of server.controls) socket.close(); });
+    await act(async () => {
+      for (const socket of server.controls) socket.close();
+    });
     await waitFor(() => mounted.client().deviceSettingsStatus === "error");
     if (replyTiming !== "before reconnect") {
       await advanceUntil(() => server.controls.size > 0, 1500);
@@ -819,7 +852,9 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
       // A subscription can arrive before the replacement settings read does.
       // Interrupt that read only after it reaches the real loopback server.
       await waitFor(() => server.reads.length === 2);
-      await act(async () => { for (const socket of server.controls) socket.close(); });
+      await act(async () => {
+        for (const socket of server.controls) socket.close();
+      });
       // The server can close before the client handles close and schedules its retry.
       await waitFor(() => server.controls.size === 0 && server.controlClients.size === 0);
       await advanceUntil(() => server.controls.size > 0, 1500);
@@ -843,103 +878,134 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
   });
 }
 
-test.each(["ios", "android"] as const)("%s: external settings changes update subscribers, while unchanged polls stay quiet", async (platform) => {
-  const server = settingsServer();
-  server.state.mode = "ready";
-  server.state.iosSettings = { "reduce-motion": "off" };
-  let status!: DeviceSettingsStatus;
-  let settings: DeviceSettings | null = null;
-  let selected: DeviceSettings | null = null;
-  const currentSettings = () => settings;
-  const selectedSettings = () => selected;
-  const renders = { status: 0, values: 0, selected: 0 };
-  function Status() {
-    status = useDeviceClient().deviceSettingsStatus;
-    renders.status++;
-    return null;
-  }
-  function Values() {
-    settings = useDeviceClient().deviceSettings;
-    renders.values++;
-    return null;
-  }
-  function Selected() {
-    selected = useDeviceClientSelector((client) => client.deviceSettings);
-    renders.selected++;
-    return null;
-  }
-  await act(async () => {
-    renderer = create(
-      <DeviceClientProvider platform={platform} options={{ baseUrl: server.baseUrl(platform), streamMode: "mjpeg" }}>
-        <Status /><Values /><Selected />
-      </DeviceClientProvider>,
+test.each(["ios", "android"] as const)(
+  "%s: external settings changes update subscribers, while unchanged polls stay quiet",
+  async (platform) => {
+    const server = settingsServer();
+    server.state.mode = "ready";
+    server.state.iosSettings = { "reduce-motion": "off" };
+    let status!: DeviceSettingsStatus;
+    let settings: DeviceSettings | null = null;
+    let selected: DeviceSettings | null = null;
+    const currentSettings = () => settings;
+    const selectedSettings = () => selected;
+    const renders = { status: 0, values: 0, selected: 0 };
+    function Status() {
+      status = useDeviceClient().deviceSettingsStatus;
+      renders.status++;
+      return null;
+    }
+    function Values() {
+      settings = useDeviceClient().deviceSettings;
+      renders.values++;
+      return null;
+    }
+    function Selected() {
+      selected = useDeviceClientSelector((client) => client.deviceSettings);
+      renders.selected++;
+      return null;
+    }
+    await act(async () => {
+      renderer = create(
+        <DeviceClientProvider
+          platform={platform}
+          options={{ baseUrl: server.baseUrl(platform), streamMode: "mjpeg" }}
+        >
+          <Status />
+          <Values />
+          <Selected />
+        </DeviceClientProvider>,
+      );
+    });
+    await waitFor(() => status === "ready");
+    const before = { ...renders };
+    server.state.night = "no";
+    server.state.iosSettings["reduce-motion"] = "on";
+    server.state.fontScale = 1.3;
+    await advanceTime(5000);
+    await waitFor(() => currentSettings()?.appearance === "light");
+    expect(currentSettings()?.[platform === "ios" ? "reduce-motion" : "text-size"]).toBe(
+      platform === "ios" ? "on" : "extra-large",
     );
-  });
-  await waitFor(() => status === "ready");
-  const before = { ...renders };
-  server.state.night = "no";
-  server.state.iosSettings["reduce-motion"] = "on";
-  server.state.fontScale = 1.3;
-  await advanceTime(5000);
-  await waitFor(() => currentSettings()?.appearance === "light");
-  expect(currentSettings()?.[platform === "ios" ? "reduce-motion" : "text-size"]).toBe(platform === "ios" ? "on" : "extra-large");
-  expect(selectedSettings()).toBe(currentSettings());
-  expect(renders).toEqual({ status: before.status, values: before.values + 1, selected: before.selected + 1 });
-  const cached = currentSettings();
-  const afterChange = { ...renders };
-  const reads = server.reads.length;
-  await advanceTime(5000);
-  await waitFor(() => server.reads.length > reads);
-  await server.settleReads();
-  expect(currentSettings()).toBe(cached);
-  expect(selectedSettings()).toBe(cached);
-  expect(renders).toEqual(afterChange);
-});
+    expect(selectedSettings()).toBe(currentSettings());
+    expect(renders).toEqual({
+      status: before.status,
+      values: before.values + 1,
+      selected: before.selected + 1,
+    });
+    const cached = currentSettings();
+    const afterChange = { ...renders };
+    const reads = server.reads.length;
+    await advanceTime(5000);
+    await waitFor(() => server.reads.length > reads);
+    await server.settleReads();
+    expect(currentSettings()).toBe(cached);
+    expect(selectedSettings()).toBe(cached);
+    expect(renders).toEqual(afterChange);
+  },
+);
 
-test.each(["ios", "android"] as const)("%s: hidden tabs pause settings polls, resume immediately, and remove polling on disable", async (platform) => {
-  const server = settingsServer();
-  const readCount = () => server.reads.filter((read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode")).length;
-  server.state.mode = "ready";
-  server.setHidden(true);
-  const mounted = await mountClient(platform, server.baseUrl(platform));
-  await waitFor(() => mounted.client().capabilities.deviceSettings);
-  await act(async () => { await yieldIO(); });
-  expect(readCount()).toBe(0);
-  await act(async () => server.setHidden(false));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
-  const reads = readCount();
-  await act(async () => server.setHidden(true));
-  server.state.night = "no";
-  await advanceTime(5500);
-  expect(readCount()).toBe(reads);
-  await act(async () => server.setHidden(false));
-  await waitFor(() => mounted.client().deviceSettings?.appearance === "light");
-  await mounted.update({ enabled: false });
-  const disabledReads = readCount();
-  await act(async () => { server.setHidden(true); server.setHidden(false); });
-  await advanceTime(5500);
-  expect(mounted.client().deviceSettingsStatus).toBe("idle");
-  expect(readCount()).toBe(disabledReads);
-});
+test.each(["ios", "android"] as const)(
+  "%s: hidden tabs pause settings polls, resume immediately, and remove polling on disable",
+  async (platform) => {
+    const server = settingsServer();
+    const readCount = () =>
+      server.reads.filter(
+        (read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode"),
+      ).length;
+    server.state.mode = "ready";
+    server.setHidden(true);
+    const mounted = await mountClient(platform, server.baseUrl(platform));
+    await waitFor(() => mounted.client().capabilities.deviceSettings);
+    await act(async () => {
+      await yieldIO();
+    });
+    expect(readCount()).toBe(0);
+    await act(async () => server.setHidden(false));
+    await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+    const reads = readCount();
+    await act(async () => server.setHidden(true));
+    server.state.night = "no";
+    await advanceTime(5500);
+    expect(readCount()).toBe(reads);
+    await act(async () => server.setHidden(false));
+    await waitFor(() => mounted.client().deviceSettings?.appearance === "light");
+    await mounted.update({ enabled: false });
+    const disabledReads = readCount();
+    await act(async () => {
+      server.setHidden(true);
+      server.setHidden(false);
+    });
+    await advanceTime(5500);
+    expect(mounted.client().deviceSettingsStatus).toBe("idle");
+    expect(readCount()).toBe(disabledReads);
+  },
+);
 
-test.each(["ios", "android"] as const)("%s: settings polls wait five seconds after an active read settles", async (platform) => {
-  const server = settingsServer();
-  const readCount = () => server.reads.filter((read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode")).length;
-  const mounted = await mountClient(platform, server.baseUrl(platform));
-  await waitFor(() => readCount() === 1);
-  await advanceTime(3000);
-  expect(readCount()).toBe(1);
-  server.state.mode = "ready";
-  await act(async () => server.reply("DEVICE-1", "ready"));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
-  const connections = server.execConnections();
-  await advanceTime(4999);
-  expect(readCount()).toBe(1);
-  // Catch an early iOS request before its real socket handshake reaches the server.
-  if (platform === "ios") expect(server.execConnections()).toBe(connections);
-  await advanceTime(1);
-  await waitFor(() => readCount() === 2);
-});
+test.each(["ios", "android"] as const)(
+  "%s: settings polls wait five seconds after an active read settles",
+  async (platform) => {
+    const server = settingsServer();
+    const readCount = () =>
+      server.reads.filter(
+        (read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode"),
+      ).length;
+    const mounted = await mountClient(platform, server.baseUrl(platform));
+    await waitFor(() => readCount() === 1);
+    await advanceTime(3000);
+    expect(readCount()).toBe(1);
+    server.state.mode = "ready";
+    await act(async () => server.reply("DEVICE-1", "ready"));
+    await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+    const connections = server.execConnections();
+    await advanceTime(4999);
+    expect(readCount()).toBe(1);
+    // Catch an early iOS request before its real socket handshake reaches the server.
+    if (platform === "ios") expect(server.execConnections()).toBe(connections);
+    await advanceTime(1);
+    await waitFor(() => readCount() === 2);
+  },
+);
 
 test("Android: visibility resumes coalesce behind an active read and discard its stale reply", async () => {
   const server = settingsServer();
@@ -947,7 +1013,10 @@ test("Android: visibility resumes coalesce behind an active read and discard its
   await waitFor(() => server.hasAllReads("android"));
   const readCount = () => server.reads.filter((read) => read.path === "/api/uimode").length;
   await act(async () => {
-    for (let i = 0; i < 2; i++) { server.setHidden(true); server.setHidden(false); }
+    for (let i = 0; i < 2; i++) {
+      server.setHidden(true);
+      server.setHidden(false);
+    }
   });
   expect(readCount()).toBe(1);
   const initialReads = server.reads.length;
@@ -1009,7 +1078,10 @@ test("iOS: repeated settings failures back off and visibility restores a prompt 
   await advanceTime(2999);
   expect(server.reads).toHaveLength(2);
   server.state.mode = "ready";
-  await act(async () => { server.setHidden(true); server.setHidden(false); });
+  await act(async () => {
+    server.setHidden(true);
+    server.setHidden(false);
+  });
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
   expect(server.reads).toHaveLength(3);
 });
@@ -1018,9 +1090,13 @@ test("iOS: settings polls and visibility refreshes pause until the control socke
   const server = settingsServer();
   server.state.mode = "ready";
   const mounted = await mountClient("ios", server.baseUrl("ios"));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  await waitFor(
+    () => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0,
+  );
   server.state.authReady = false;
-  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await act(async () => {
+    for (const socket of server.controls) socket.close();
+  });
   await waitFor(() => mounted.client().deviceSettingsStatus === "error");
   const initialAuth = server.state.authRequests;
   await advanceTime(1500);
@@ -1030,7 +1106,10 @@ test("iOS: settings polls and visibility refreshes pause until the control socke
   await act(async () => mounted.client().attachLogs());
   expect(server.state.authRequests).toBe(reconnectAuth);
   expect(server.execConnections()).toBe(2);
-  await act(async () => { server.setHidden(true); server.setHidden(false); });
+  await act(async () => {
+    server.setHidden(true);
+    server.setHidden(false);
+  });
   await advanceTime(4500);
   expect(server.reads).toHaveLength(1);
   expect(mounted.client().deviceSettingsStatus).toBe("error");
@@ -1044,7 +1123,9 @@ test("iOS: log subscription changes keep the authenticated control socket and it
   const server = settingsServer();
   server.state.mode = "ready";
   const mounted = await mountClient("ios", server.baseUrl("ios"));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  await waitFor(
+    () => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0,
+  );
   const cached = mounted.client().deviceSettings;
   const connections = server.execConnections();
   for (const changeLogs of [mounted.client().attachLogs, mounted.client().detachLogs]) {
@@ -1065,7 +1146,9 @@ test("iOS: replacement authentication refreshes immediately during settings retr
   const server = settingsServer();
   server.state.mode = "error";
   const mounted = await mountClient("ios", server.baseUrl("ios"));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "error" && server.controls.size > 0);
+  await waitFor(
+    () => mounted.client().deviceSettingsStatus === "error" && server.controls.size > 0,
+  );
   await advanceTime(1500);
   await waitFor(() => server.reads.length === 2);
   await server.settleReads();
@@ -1074,7 +1157,9 @@ test("iOS: replacement authentication refreshes immediately during settings retr
   await server.settleReads();
   server.state.authReady = false;
   const initialAuth = server.state.authRequests;
-  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await act(async () => {
+    for (const socket of server.controls) socket.close();
+  });
   await advanceUntil(() => server.state.authRequests > initialAuth, 1500);
   server.state.mode = "ready";
   await act(async () => server.authenticate());
@@ -1102,10 +1187,14 @@ test("iOS: a reconnect read cannot overwrite a newer completed setting write", a
   const server = settingsServer();
   server.state.mode = "ready";
   const mounted = await mountClient("ios", server.baseUrl("ios"));
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  await waitFor(
+    () => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0,
+  );
   const initialReads = server.reads.length;
   server.state.mode = "hold";
-  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await act(async () => {
+    for (const socket of server.controls) socket.close();
+  });
   await waitFor(() => mounted.client().deviceSettingsStatus === "error");
   await advanceTime(1500);
   await waitFor(() => server.reads.length > initialReads);

@@ -6,12 +6,17 @@ export function createLatestClipboardWriter(write: (text: string) => Promise<voi
     begin: () => ++generation,
     isCurrent: (value: number) => value === generation,
     write(value: number, text: string, stillSelected: () => boolean): Promise<boolean> {
-      const result = pending.catch(() => {}).then(async () => {
-        if (value !== generation || !stillSelected()) return false;
-        await write(text);
-        return true;
-      });
-      pending = result.then(() => {}, () => {});
+      const result = pending
+        .catch(() => {})
+        .then(async () => {
+          if (value !== generation || !stillSelected()) return false;
+          await write(text);
+          return true;
+        });
+      pending = result.then(
+        () => {},
+        () => {},
+      );
       return result;
     },
   };

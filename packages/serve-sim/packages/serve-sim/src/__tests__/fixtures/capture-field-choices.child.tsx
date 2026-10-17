@@ -20,7 +20,12 @@ const failingWrites = new Set<string>();
 const calls: Array<{ action: string; params: Record<string, unknown> }> = [];
 
 function meta(attachment: CaptureMeta["attachment"], fields: string[]): CaptureMeta {
-  return { attachment, fields, attachError: null, droppedOversizedBodies: 0 } as unknown as CaptureMeta;
+  return {
+    attachment,
+    fields,
+    attachError: null,
+    droppedOversizedBodies: 0,
+  } as unknown as CaptureMeta;
 }
 
 mock.module("../../client/hooks/use-capture-stream", () => ({
@@ -42,8 +47,14 @@ mock.module("../../socket/client-control", () => ({
     calls.push({ action, params });
     const udid = params.udid as string;
     if (action === "capture.fields") {
-      if (failingWrites.has(udid)) return { exitCode: 1, stdout: "", stderr: "ENOSPC: no space left on device" };
-      if (serverStarting.has(udid)) return { exitCode: 0, stderr: "", stdout: JSON.stringify(meta("starting", SERVER_DEFAULT)) };
+      if (failingWrites.has(udid))
+        return { exitCode: 1, stdout: "", stderr: "ENOSPC: no space left on device" };
+      if (serverStarting.has(udid))
+        return {
+          exitCode: 0,
+          stderr: "",
+          stdout: JSON.stringify(meta("starting", SERVER_DEFAULT)),
+        };
       if (!serverCapturing.has(udid)) {
         return {
           exitCode: 1,
@@ -58,8 +69,10 @@ mock.module("../../socket/client-control", () => ({
   },
 }));
 
-const { CaptureFieldsMenu, NetworkCaptureTool } = await import("../../client/components/network-capture-tool");
-const { chooseCaptureFields, chosenCaptureFields } = await import("../../client/hooks/use-capture-field-choices");
+const { CaptureFieldsMenu, NetworkCaptureTool } =
+  await import("../../client/components/network-capture-tool");
+const { chooseCaptureFields, chosenCaptureFields } =
+  await import("../../client/hooks/use-capture-field-choices");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -102,7 +115,9 @@ function sent(action: string) {
 }
 
 async function press(label: string) {
-  const button = renderer!.root.find((node) => node.type === "button" && node.props.children === label);
+  const button = renderer!.root.find(
+    (node) => node.type === "button" && node.props.children === label,
+  );
   await act(async () => button.props.onClick());
 }
 
@@ -149,7 +164,9 @@ test("enables with the server's default the menu shows when no pick was made", a
   await mount("SIM-D");
   expect(shownFields()).toEqual(SERVER_DEFAULT);
   await press("Enable capture");
-  expect(calls).toEqual([{ action: "capture.enable", params: { udid: "SIM-D", fields: SERVER_DEFAULT } }]);
+  expect(calls).toEqual([
+    { action: "capture.enable", params: { udid: "SIM-D", fields: SERVER_DEFAULT } },
+  ]);
 });
 
 test("restarts a failed capture with the metadata-only pick", async () => {
@@ -167,7 +184,9 @@ test("remembers a live change, so a later restart keeps what the menu shows", as
   await mount("SIM-E");
   await pick(["query"]);
 
-  expect(calls).toEqual([{ action: "capture.fields", params: { udid: "SIM-E", fields: ["query"] } }]);
+  expect(calls).toEqual([
+    { action: "capture.fields", params: { udid: "SIM-E", fields: ["query"] } },
+  ]);
   expect(chosenCaptureFields("SIM-E")).toEqual(["query"]);
 });
 
@@ -228,6 +247,8 @@ test("reports a failed field write instead of keeping the pick as if capture wer
 
   expect(chosenCaptureFields("SIM-K")).toBeNull();
   expect(shownFields()).toEqual(SERVER_DEFAULT);
-  const error = renderer!.root.find((node) => node.type === "span" && node.props.children === "ENOSPC: no space left on device");
+  const error = renderer!.root.find(
+    (node) => node.type === "span" && node.props.children === "ENOSPC: no space left on device",
+  );
   expect(error).toBeDefined();
 });

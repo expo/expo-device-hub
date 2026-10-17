@@ -9,10 +9,7 @@ import {
   readFrame,
 } from "../src/scrcpy.ts";
 import { SCRCPY_VERSION } from "../scripts/fetch-scrcpy.ts";
-import {
-  PROTOCOL_GOLDEN_HEX,
-  goldenBytes,
-} from "./fixtures/protocol-golden.ts";
+import { PROTOCOL_GOLDEN_HEX, goldenBytes } from "./fixtures/protocol-golden.ts";
 
 function frameHeader(
   protocol: 3 | 4,
@@ -96,23 +93,23 @@ describe("scrcpy protocol goldens", () => {
       ).toMatchObject({ protocol, width: 1080, height: 1920 });
     }
 
-    expect(
-      parseFrameHeader(Buffer.from(goldenBytes("v3-key-header")), 3),
-    ).toMatchObject({ kind: "frame", pts: 42n, isKey: true });
-    expect(
-      parseFrameHeader(Buffer.from(goldenBytes("v4-key-header")), 4),
-    ).toMatchObject({ kind: "frame", pts: 42n, isKey: true });
-    expect(
-      parseFrameHeader(Buffer.from(goldenBytes("v4-resize")), 4),
-    ).toEqual({
+    expect(parseFrameHeader(Buffer.from(goldenBytes("v3-key-header")), 3)).toMatchObject({
+      kind: "frame",
+      pts: 42n,
+      isKey: true,
+    });
+    expect(parseFrameHeader(Buffer.from(goldenBytes("v4-key-header")), 4)).toMatchObject({
+      kind: "frame",
+      pts: 42n,
+      isKey: true,
+    });
+    expect(parseFrameHeader(Buffer.from(goldenBytes("v4-resize")), 4)).toEqual({
       kind: "session",
       clientResized: true,
       width: 1080,
       height: 1920,
     });
-    expect(PROTOCOL_GOLDEN_HEX["v4-resize"]).toBe(
-      "800000010000043800000780",
-    );
+    expect(PROTOCOL_GOLDEN_HEX["v4-resize"]).toBe("800000010000043800000780");
   });
 
   test.each([
@@ -133,18 +130,14 @@ describe("scrcpy protocol goldens", () => {
   });
 
   test("v3 config and key headers match emitted flag layouts", () => {
-    expect(
-      parseFrameHeader(Buffer.from("800000000000000000000004", "hex"), 3),
-    ).toEqual({
+    expect(parseFrameHeader(Buffer.from("800000000000000000000004", "hex"), 3)).toEqual({
       kind: "frame",
       size: 4,
       pts: 0n,
       isConfig: true,
       isKey: false,
     });
-    expect(
-      parseFrameHeader(Buffer.from("400000000000007b00000004", "hex"), 3),
-    ).toEqual({
+    expect(parseFrameHeader(Buffer.from("400000000000007b00000004", "hex"), 3)).toEqual({
       kind: "frame",
       size: 4,
       pts: 123n,
@@ -154,18 +147,14 @@ describe("scrcpy protocol goldens", () => {
   });
 
   test("v4 config and key headers match emitted flag layouts", () => {
-    expect(
-      parseFrameHeader(Buffer.from("400000000000000000000004", "hex"), 4),
-    ).toEqual({
+    expect(parseFrameHeader(Buffer.from("400000000000000000000004", "hex"), 4)).toEqual({
       kind: "frame",
       size: 4,
       pts: 0n,
       isConfig: true,
       isKey: false,
     });
-    expect(
-      parseFrameHeader(Buffer.from("200000000000007b00000004", "hex"), 4),
-    ).toEqual({
+    expect(parseFrameHeader(Buffer.from("200000000000007b00000004", "hex"), 4)).toEqual({
       kind: "frame",
       size: 4,
       pts: 123n,
@@ -194,9 +183,7 @@ describe("scrcpy protocol goldens", () => {
 
   test("fragmented dummy v4 preamble is reassembled exactly", async () => {
     const { s, r } = makeReader();
-    const promise = r
-      .read(81, "header")
-      .then((buffer) => parseVideoPreamble(buffer));
+    const promise = r.read(81, "header").then((buffer) => parseVideoPreamble(buffer));
     const preamble = videoPreamble(4, { dummy: true });
     for (const chunk of [
       preamble.subarray(0, 1),

@@ -22,9 +22,7 @@ test("getNetworkStatus reads Wi-Fi and mobile settings concurrently", async () =
   const runExec = (async (_cmd, args) => {
     const setting = args.at(-1)!;
     calls.push(setting);
-    const stdout = await (setting === "wifi_on"
-      ? wifi.promise
-      : mobile.promise);
+    const stdout = await (setting === "wifi_on" ? wifi.promise : mobile.promise);
     return {
       status: 0,
       signal: null,

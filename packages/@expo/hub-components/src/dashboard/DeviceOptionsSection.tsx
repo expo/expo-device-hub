@@ -1,93 +1,97 @@
-import { useId, useState } from 'react';
+import { useId, useState } from "react";
 
-import { areRecordingControlsLocked, type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
-import { Select, type SelectOption } from '../primitives';
-import { CollapsibleSection } from './CollapsibleSection';
-import { KeyboardSection } from './KeyboardSection';
-import { SidebarActionButton } from './SidebarActionButton';
-import { SidebarRow, SidebarSwitch } from './SidebarRow';
+import {
+  areRecordingControlsLocked,
+  type DeviceClient,
+  type DeviceSettingKey,
+} from "@expo/hub-client";
+import { Select, type SelectOption } from "../primitives";
+import { CollapsibleSection } from "./CollapsibleSection";
+import { KeyboardSection } from "./KeyboardSection";
+import { SidebarActionButton } from "./SidebarActionButton";
+import { SidebarRow, SidebarSwitch } from "./SidebarRow";
 
 const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
-  appearance: 'light',
-  network: 'on',
-  'liquid-glass': 'clear',
-  'color-filter': 'none',
-  'text-size': 'large',
-  'display-size': 'medium',
-  'reduce-motion': 'off',
-  'bold-text': 'off',
-  'increase-contrast': 'off',
-  'onscreen-keyboard': 'off',
-  'show-borders': 'off',
-  'reduce-transparency': 'off',
-  voiceover: 'off',
+  appearance: "light",
+  network: "on",
+  "liquid-glass": "clear",
+  "color-filter": "none",
+  "text-size": "large",
+  "display-size": "medium",
+  "reduce-motion": "off",
+  "bold-text": "off",
+  "increase-contrast": "off",
+  "onscreen-keyboard": "off",
+  "show-borders": "off",
+  "reduce-transparency": "off",
+  voiceover: "off",
 };
 
 const APPEARANCE_OPTIONS: SelectOption[] = [
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
 ];
 
 const NETWORK_OPTIONS: SelectOption[] = [
-  { value: 'on', label: 'On' },
-  { value: 'off', label: 'Off' },
+  { value: "on", label: "On" },
+  { value: "off", label: "Off" },
 ];
 
 const LIQUID_GLASS_OPTIONS: SelectOption[] = [
-  { value: 'clear', label: 'Clear' },
-  { value: 'tinted', label: 'Tinted' },
+  { value: "clear", label: "Clear" },
+  { value: "tinted", label: "Tinted" },
 ];
 
 const COLOR_FILTER_OPTIONS: SelectOption[] = [
-  { value: 'none', label: 'None' },
-  { value: 'grayscale', label: 'Grayscale' },
-  { value: 'red-green', label: 'Red-green' },
-  { value: 'green-red', label: 'Green-red' },
-  { value: 'blue-yellow', label: 'Blue-yellow' },
+  { value: "none", label: "None" },
+  { value: "grayscale", label: "Grayscale" },
+  { value: "red-green", label: "Red-green" },
+  { value: "green-red", label: "Green-red" },
+  { value: "blue-yellow", label: "Blue-yellow" },
 ];
 
 const TEXT_SIZE_OPTIONS: SelectOption[] = [
-  { value: 'extra-small', label: 'XS' },
-  { value: 'small', label: 'S' },
-  { value: 'medium', label: 'M' },
-  { value: 'large', label: 'L' },
-  { value: 'extra-large', label: 'XL' },
-  { value: 'extra-extra-large', label: '2XL' },
-  { value: 'extra-extra-extra-large', label: '3XL' },
+  { value: "extra-small", label: "XS" },
+  { value: "small", label: "S" },
+  { value: "medium", label: "M" },
+  { value: "large", label: "L" },
+  { value: "extra-large", label: "XL" },
+  { value: "extra-extra-large", label: "2XL" },
+  { value: "extra-extra-extra-large", label: "3XL" },
 ];
 
 const ANDROID_TEXT_SIZE_OPTIONS: SelectOption[] = [
-  { value: 'small', label: 'S' },
-  { value: 'medium', label: 'M' },
-  { value: 'large', label: 'L' },
-  { value: 'extra-large', label: 'XL' },
+  { value: "small", label: "S" },
+  { value: "medium", label: "M" },
+  { value: "large", label: "L" },
+  { value: "extra-large", label: "XL" },
 ];
 
 const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
-  { value: 'small', label: 'S' },
-  { value: 'medium', label: 'M' },
-  { value: 'large', label: 'L' },
-  { value: 'extra-large', label: 'XL' },
+  { value: "small", label: "S" },
+  { value: "medium", label: "M" },
+  { value: "large", label: "L" },
+  { value: "extra-large", label: "XL" },
 ];
 
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
-  { key: 'reduce-motion', label: 'Reduce motion' },
-  { key: 'bold-text', label: 'Bold text' },
-  { key: 'increase-contrast', label: 'Increase contrast' },
-  { key: 'show-borders', label: 'Show borders' },
-  { key: 'reduce-transparency', label: 'Reduce transparency' },
-  { key: 'voiceover', label: 'VoiceOver' },
+  { key: "reduce-motion", label: "Reduce motion" },
+  { key: "bold-text", label: "Bold text" },
+  { key: "increase-contrast", label: "Increase contrast" },
+  { key: "show-borders", label: "Show borders" },
+  { key: "reduce-transparency", label: "Reduce transparency" },
+  { key: "voiceover", label: "VoiceOver" },
 ];
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
-export const NO_DEVICE_FRAME_DESCRIPTION = 'No device frame for selected device.';
+export const NO_DEVICE_FRAME_DESCRIPTION = "No device frame for selected device.";
 
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
-  'This device has no hardware keyboard, so the on-screen keyboard always shows.';
+  "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
-  'Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.';
+  "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
 export type DeviceFrameOption = {
   available: boolean;
@@ -120,22 +124,22 @@ export function DeviceOptionsSection({
   const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : client?.screenRecording === 'unknown'
-      ? 'Unavailable until recording status is known.'
-      : 'Unavailable because this would interrupt the recording.';
+    : client?.screenRecording === "unknown"
+      ? "Unavailable until recording status is known."
+      : "Unavailable because this would interrupt the recording.";
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
-  const settingsAvailable = client?.deviceSettingsStatus === 'ready';
+  const settingsAvailable = client?.deviceSettingsStatus === "ready";
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
   const displayWidthDp = client?.displayWidthDp ?? null;
 
   function visible(key: DeviceSettingKey) {
-    if (settings === null) return key === 'appearance' || platform === 'ios';
-    return settings[key] !== undefined && settings[key] !== 'unsupported';
+    if (settings === null) return key === "appearance" || platform === "ios";
+    return settings[key] !== undefined && settings[key] !== "unsupported";
   }
 
   function value(key: DeviceSettingKey) {
@@ -164,50 +168,51 @@ export function DeviceOptionsSection({
     );
   }
 
-  const keyboardVisible = showDeviceSettings && client?.platform === 'ios';
+  const keyboardVisible = showDeviceSettings && client?.platform === "ios";
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
       {showDeviceSettings &&
-        visible('appearance') &&
-        settingSelect('appearance', 'Appearance', APPEARANCE_OPTIONS)}
+        visible("appearance") &&
+        settingSelect("appearance", "Appearance", APPEARANCE_OPTIONS)}
 
       {showDeviceSettings &&
-        platform === 'ios' &&
-        visible('liquid-glass') &&
-        settingSelect('liquid-glass', 'Liquid glass', LIQUID_GLASS_OPTIONS)}
+        platform === "ios" &&
+        visible("liquid-glass") &&
+        settingSelect("liquid-glass", "Liquid glass", LIQUID_GLASS_OPTIONS)}
 
       {showDeviceSettings &&
-        platform === 'ios' &&
-        visible('color-filter') &&
-        settingSelect('color-filter', 'Color filter', COLOR_FILTER_OPTIONS)}
+        platform === "ios" &&
+        visible("color-filter") &&
+        settingSelect("color-filter", "Color filter", COLOR_FILTER_OPTIONS)}
 
       {showDeviceSettings &&
-        platform === 'android' &&
-        visible('network') &&
-        settingSelect('network', 'Network', NETWORK_OPTIONS)}
+        platform === "android" &&
+        visible("network") &&
+        settingSelect("network", "Network", NETWORK_OPTIONS)}
 
       {showDeviceSettings &&
-        (platform === 'ios' || platform === 'android') &&
-        visible('text-size') &&
+        (platform === "ios" || platform === "android") &&
+        visible("text-size") &&
         settingSelect(
-          'text-size',
-          'Text size',
-          platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
+          "text-size",
+          "Text size",
+          platform === "android" ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
         )}
 
-      {showDeviceSettings && platform === 'android' && visible('display-size') && (
+      {showDeviceSettings && platform === "android" && visible("display-size") && (
         <SidebarRow
           label="Display size"
           description={displayWidthDp === null ? undefined : `sw${displayWidthDp}dp`}
-          descriptionId={displayWidthDp === null ? undefined : displaySizeDescriptionId}>
+          descriptionId={displayWidthDp === null ? undefined : displaySizeDescriptionId}
+        >
           <Select
             ariaLabel="Display size"
             ariaDescribedBy={displayWidthDp === null ? undefined : displaySizeDescriptionId}
             options={ANDROID_DISPLAY_SIZE_OPTIONS}
-            value={value('display-size')}
-            disabled={disabled('display-size')}
-            onChange={(nextValue) => setValue('display-size', nextValue)}
+            value={value("display-size")}
+            disabled={disabled("display-size")}
+            onChange={(nextValue) => setValue("display-size", nextValue)}
           />
         </SidebarRow>
       )}
@@ -217,28 +222,29 @@ export function DeviceOptionsSection({
           visible(key) ? (
             <SidebarRow key={key} label={label}>
               <SidebarSwitch
-                checked={value(key) === 'on'}
+                checked={value(key) === "on"}
                 disabled={disabled(key)}
                 label={label}
-                onChange={(checked) => setValue(key, checked ? 'on' : 'off')}
+                onChange={(checked) => setValue(key, checked ? "on" : "off")}
               />
             </SidebarRow>
           ) : null,
         )}
 
-      {showDeviceSettings && platform === 'android' && visible('onscreen-keyboard') && (
+      {showDeviceSettings && platform === "android" && visible("onscreen-keyboard") && (
         <SidebarRow
           label="Force on-screen keyboard"
           description={
             noHardwareKeyboard ? NO_HARDWARE_KEYBOARD_DESCRIPTION : ONSCREEN_KEYBOARD_DESCRIPTION
           }
-          descriptionId={onscreenKeyboardDescriptionId}>
+          descriptionId={onscreenKeyboardDescriptionId}
+        >
           <SidebarSwitch
-            checked={value('onscreen-keyboard') === 'on'}
-            disabled={noHardwareKeyboard || disabled('onscreen-keyboard')}
+            checked={value("onscreen-keyboard") === "on"}
+            disabled={noHardwareKeyboard || disabled("onscreen-keyboard")}
             label="Force on-screen keyboard"
             descriptionId={onscreenKeyboardDescriptionId}
-            onChange={(checked) => setValue('onscreen-keyboard', checked ? 'on' : 'off')}
+            onChange={(checked) => setValue("onscreen-keyboard", checked ? "on" : "off")}
           />
         </SidebarRow>
       )}
@@ -247,7 +253,8 @@ export function DeviceOptionsSection({
         <SidebarRow
           label="Show device frame"
           description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
-          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}>
+          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+        >
           <SidebarSwitch
             checked={deviceFrame.available && deviceFrame.visible}
             disabled={!deviceFrame.available}
@@ -260,18 +267,20 @@ export function DeviceOptionsSection({
 
       {keyboardVisible && client && <KeyboardSection client={client} />}
 
-      {client && platform === 'android' && (
+      {client && platform === "android" && (
         <>
           <SidebarRow label="Back button">
-            <SidebarActionButton onClick={() => client.pressButton('back')}>Press</SidebarActionButton>
+            <SidebarActionButton onClick={() => client.pressButton("back")}>
+              Press
+            </SidebarActionButton>
           </SidebarRow>
           <SidebarRow label="Recents button">
-            <SidebarActionButton onClick={() => client.pressButton('recents')}>
+            <SidebarActionButton onClick={() => client.pressButton("recents")}>
               Press
             </SidebarActionButton>
           </SidebarRow>
           <SidebarRow label="Dismiss on-screen keyboard">
-            <SidebarActionButton onClick={() => client.pressButton('hideKeyboard')}>
+            <SidebarActionButton onClick={() => client.pressButton("hideKeyboard")}>
               Press
             </SidebarActionButton>
           </SidebarRow>
@@ -283,7 +292,8 @@ export function DeviceOptionsSection({
           <SidebarActionButton
             disabled={recordingControlsLocked}
             disabledReason={recordingDisabledReason}
-            onClick={onShutdown}>
+            onClick={onShutdown}
+          >
             Shut down
           </SidebarActionButton>
         </SidebarRow>
@@ -295,7 +305,8 @@ export function DeviceOptionsSection({
             destructive
             disabled={recordingControlsLocked}
             disabledReason={recordingDisabledReason}
-            onClick={onRemove}>
+            onClick={onRemove}
+          >
             Remove
           </SidebarActionButton>
         </SidebarRow>

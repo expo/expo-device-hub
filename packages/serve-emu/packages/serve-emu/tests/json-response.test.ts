@@ -13,12 +13,8 @@ describe("JsonResponseTracker", () => {
     const firstBody = JSON.stringify(firstValue);
     const first = tracker.response("page", firstValue, { status: 201 });
     expect(first.status).toBe(201);
-    expect(first.headers.get("content-type")).toBe(
-      "application/json; charset=utf-8",
-    );
-    expect(first.headers.get("content-length")).toBe(
-      String(Buffer.byteLength(firstBody, "utf8")),
-    );
+    expect(first.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(first.headers.get("content-length")).toBe(String(Buffer.byteLength(firstBody, "utf8")));
     expect(await first.text()).toBe(firstBody);
 
     const secondValue = { values: [1, 2, 3, 4, 5] };

@@ -61,18 +61,9 @@ async function packagePid(
   }
 }
 
-async function packageDetails(
-  serial: string,
-  packageName: string,
-  runExec: typeof execText,
-) {
+async function packageDetails(serial: string, packageName: string, runExec: typeof execText) {
   try {
-    const dump = await adbShell(
-      serial,
-      ["dumpsys", "package", packageName],
-      5_000,
-      runExec,
-    );
+    const dump = await adbShell(serial, ["dumpsys", "package", packageName], 5_000, runExec);
     const versionName = dump.match(/versionName=([^\s]+)/)?.[1] ?? null;
     const versionCode = dump.match(/versionCode=(\d+)/)?.[1] ?? null;
     const minSdkRaw = dump.match(/minSdk=(\d+)/)?.[1];

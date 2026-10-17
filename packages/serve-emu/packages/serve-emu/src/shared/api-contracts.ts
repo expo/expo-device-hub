@@ -81,10 +81,7 @@ export type DeviceSelectionResponse = ApiSuccess<{
 export const STREAM_MODES = ["scrcpy", "grpc-screenshot"] as const;
 export type StreamMode = (typeof STREAM_MODES)[number];
 export function isStreamMode(value: unknown): value is StreamMode {
-  return (
-    typeof value === "string" &&
-    STREAM_MODES.some((mode) => mode === value)
-  );
+  return typeof value === "string" && STREAM_MODES.some((mode) => mode === value);
 }
 
 /** Input transport used while the Android Emulator gRPC source provides video. */
@@ -92,10 +89,7 @@ export const INPUT_SOURCES = ["scrcpy", "grpc"] as const;
 export type InputSource = (typeof INPUT_SOURCES)[number];
 export const DEFAULT_GRPC_INPUT_SOURCE: InputSource = "scrcpy";
 export function isInputSource(value: unknown): value is InputSource {
-  return (
-    typeof value === "string" &&
-    INPUT_SOURCES.some((source) => source === value)
-  );
+  return typeof value === "string" && INPUT_SOURCES.some((source) => source === value);
 }
 
 /** Exact image delivery mode used by the emulator gRPC screenshot source. */
@@ -103,10 +97,7 @@ export const GRPC_IMAGE_MODES = ["png", "mmap", "rgb888"] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
 export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = "png";
 export function isGrpcImageMode(value: unknown): value is GrpcImageMode {
-  return (
-    typeof value === "string" &&
-    GRPC_IMAGE_MODES.some((mode) => mode === value)
-  );
+  return typeof value === "string" && GRPC_IMAGE_MODES.some((mode) => mode === value);
 }
 
 /** Host H.264 implementation used by the emulator gRPC screenshot source. */
@@ -114,10 +105,7 @@ export const GRPC_ENCODERS = ["software", "hardware"] as const;
 export type GrpcEncoder = (typeof GRPC_ENCODERS)[number];
 export const DEFAULT_GRPC_ENCODER: GrpcEncoder = "software";
 export function isGrpcEncoder(value: unknown): value is GrpcEncoder {
-  return (
-    typeof value === "string" &&
-    GRPC_ENCODERS.some((encoder) => encoder === value)
-  );
+  return typeof value === "string" && GRPC_ENCODERS.some((encoder) => encoder === value);
 }
 
 export type RollingTimingSummary = {
@@ -250,12 +238,7 @@ export type FontScaleStatus = { scale: number; raw: string };
 export type FontScaleResponse = ApiSuccess<{ fontScale: FontScaleStatus }>;
 
 export function parseFontScale(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    value < 0.7 ||
-    value > 2
-  ) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0.7 || value > 2) {
     throw new Error("scale must be a number between 0.7 and 2.0");
   }
   return value;
@@ -268,30 +251,19 @@ export type ReduceMotionStatus = {
 export type ReduceMotionResponse = ApiSuccess<{ reduceMotion: ReduceMotionStatus }>;
 
 export type HighTextContrastStatus = { enabled: boolean; raw: string };
-export type HighTextContrastResponse = ApiSuccess<
-  { highTextContrast: HighTextContrastStatus }
->;
+export type HighTextContrastResponse = ApiSuccess<{ highTextContrast: HighTextContrastStatus }>;
 
 export type FontWeightStatus = { enabled: boolean; raw: string };
 export type FontWeightResponse = ApiSuccess<{ fontWeight: FontWeightStatus }>;
 
 export type SoftwareKeyboardStatus = { enabled: boolean; raw: string; hardwareKeyboard: boolean };
-export type SoftwareKeyboardResponse = ApiSuccess<
-  { softwareKeyboard: SoftwareKeyboardStatus }
->;
+export type SoftwareKeyboardResponse = ApiSuccess<{ softwareKeyboard: SoftwareKeyboardStatus }>;
 
 export type DisplayDensityStatus = { scale: number; widthDp: number; raw: string };
-export type DisplayDensityResponse = ApiSuccess<
-  { displayDensity: DisplayDensityStatus }
->;
+export type DisplayDensityResponse = ApiSuccess<{ displayDensity: DisplayDensityStatus }>;
 
 export function parseDisplayDensityScale(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    value < 0.5 ||
-    value > 2
-  ) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0.5 || value > 2) {
     throw new Error("scale must be a number between 0.5 and 2.0");
   }
   return value;
@@ -463,12 +435,7 @@ export type AppPermissionsResponse = ApiSuccess<{
   permissions: RuntimePermission[];
 }>;
 
-const APP_ICON_MIME_TYPES = [
-  "image/png",
-  "image/webp",
-  "image/jpeg",
-  "image/gif",
-] as const;
+const APP_ICON_MIME_TYPES = ["image/png", "image/webp", "image/jpeg", "image/gif"] as const;
 export type AppIconMimeType = (typeof APP_ICON_MIME_TYPES)[number];
 /** `data` is base64, with no `data:` URL prefix. */
 export type AppIcon = { mimeType: AppIconMimeType; data: string };
@@ -756,24 +723,21 @@ export type ApiContractMap = {
 
 export type ApiPath = keyof ApiContractMap;
 export type ApiMethod<Path extends ApiPath> = Extract<keyof ApiContractMap[Path], string>;
-type ContractAt<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
-> = ApiContractMap[Path][Method] extends EndpointContract<infer Request, infer Response>
-  ? EndpointContract<Request, Response>
-  : never;
-export type ApiRequest<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
-> = ContractAt<Path, Method>["request"];
-export type ApiResponse<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
-> = ContractAt<Path, Method>["response"] | ApiFailure;
-export type ApiSuccessResponse<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
-> = Exclude<ApiResponse<Path, Method>, ApiFailure>;
+type ContractAt<Path extends ApiPath, Method extends ApiMethod<Path>> =
+  ApiContractMap[Path][Method] extends EndpointContract<infer Request, infer Response>
+    ? EndpointContract<Request, Response>
+    : never;
+export type ApiRequest<Path extends ApiPath, Method extends ApiMethod<Path>> = ContractAt<
+  Path,
+  Method
+>["request"];
+export type ApiResponse<Path extends ApiPath, Method extends ApiMethod<Path>> =
+  | ContractAt<Path, Method>["response"]
+  | ApiFailure;
+export type ApiSuccessResponse<Path extends ApiPath, Method extends ApiMethod<Path>> = Exclude<
+  ApiResponse<Path, Method>,
+  ApiFailure
+>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -851,9 +815,7 @@ export function parseApiResult<T extends object>(
   value: unknown,
   parseSuccess: (value: unknown) => ApiSuccess<T>,
 ): ApiResult<T> {
-  return isRecord(value) && value.ok === false
-    ? parseApiFailure(value)
-    : parseSuccess(value);
+  return isRecord(value) && value.ok === false ? parseApiFailure(value) : parseSuccess(value);
 }
 
 function parseDeviceSize(value: unknown, name = "size"): DeviceSize {
@@ -877,28 +839,15 @@ function parseIceServer(
   const username = item.username;
   const credential = item.credential;
   return {
-    urls: item.urls.map((url, urlIndex) =>
-      string(url, `${name}.urls[${urlIndex}]`),
-    ),
-    ...(username === undefined
-      ? {}
-      : { username: string(username, `${name}.username`) }),
-    ...(credential === undefined
-      ? {}
-      : { credential: string(credential, `${name}.credential`) }),
+    urls: item.urls.map((url, urlIndex) => string(url, `${name}.urls[${urlIndex}]`)),
+    ...(username === undefined ? {} : { username: string(username, `${name}.username`) }),
+    ...(credential === undefined ? {} : { credential: string(credential, `${name}.credential`) }),
   };
 }
 
-function parseWebRtcStreamSettings(
-  value: unknown,
-  name: string,
-): WebRtcStreamSettings {
+function parseWebRtcStreamSettings(value: unknown, name: string): WebRtcStreamSettings {
   const item = record(value, name);
-  const transport = oneOf(
-    item.transport,
-    STREAM_TRANSPORTS,
-    `${name}.transport`,
-  );
+  const transport = oneOf(item.transport, STREAM_TRANSPORTS, `${name}.transport`);
   if (transport !== "webrtc") {
     fail(`${name}.transport must be webrtc`);
   }
@@ -907,14 +856,8 @@ function parseWebRtcStreamSettings(
   }
   return {
     transport,
-    codec: oneOf(
-      item.codec,
-      ["h264"] as const,
-      `${name}.codec`,
-    ),
-    iceServers: item.iceServers.map((server, index) =>
-      parseIceServer(server, index, name),
-    ),
+    codec: oneOf(item.codec, ["h264"] as const, `${name}.codec`),
+    iceServers: item.iceServers.map((server, index) => parseIceServer(server, index, name)),
     iceTransportPolicy: oneOf(
       item.iceTransportPolicy,
       ["all", "relay"] as const,
@@ -925,11 +868,7 @@ function parseWebRtcStreamSettings(
 
 export function parseStreamSettings(value: unknown): StreamSettings {
   const item = record(value, "API info response.stream");
-  const transport = oneOf(
-    item.transport,
-    STREAM_TRANSPORTS,
-    "API info response.stream.transport",
-  );
+  const transport = oneOf(item.transport, STREAM_TRANSPORTS, "API info response.stream.transport");
   return transport === "websocket"
     ? { transport }
     : parseWebRtcStreamSettings(value, "API info response.stream");
@@ -938,11 +877,7 @@ export function parseStreamSettings(value: unknown): StreamSettings {
 function parseViewerTransports(value: unknown): ViewerTransports {
   const name = "API info response.viewerTransports";
   const item = record(value, name);
-  const defaultTransport = oneOf(
-    item.default,
-    STREAM_TRANSPORTS,
-    `${name}.default`,
-  );
+  const defaultTransport = oneOf(item.default, STREAM_TRANSPORTS, `${name}.default`);
   if (!Array.isArray(item.available) || item.available.length === 0) {
     fail(`${name}.available must be a non-empty array`);
   }
@@ -957,17 +892,12 @@ function parseViewerTransports(value: unknown): ViewerTransports {
   }
   const webRtcAvailable = available.includes("webrtc");
   if (webRtcAvailable !== (item.webrtc !== null)) {
-    fail(
-      `${name}.webrtc must be present exactly when webrtc is available`,
-    );
+    fail(`${name}.webrtc must be present exactly when webrtc is available`);
   }
   return {
     default: defaultTransport,
     available,
-    webrtc:
-      item.webrtc === null
-        ? null
-        : parseWebRtcStreamSettings(item.webrtc, `${name}.webrtc`),
+    webrtc: item.webrtc === null ? null : parseWebRtcStreamSettings(item.webrtc, `${name}.webrtc`),
   };
 }
 
@@ -984,18 +914,15 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.streamMode === undefined
       ? {}
       : {
-          streamMode: oneOf(
-            root.streamMode,
-            STREAM_MODES,
-            "API info response.streamMode",
-          ),
+          streamMode: oneOf(root.streamMode, STREAM_MODES, "API info response.streamMode"),
         }),
     ...(root.encoderName === undefined
       ? {}
       : {
-          encoderName: root.encoderName === null
-            ? null
-            : string(root.encoderName, "API info response.encoderName"),
+          encoderName:
+            root.encoderName === null
+              ? null
+              : string(root.encoderName, "API info response.encoderName"),
         }),
     codec: string(root.codec, "API info response.codec"),
     size: parseDeviceSize(root.size, "API info response.size"),
@@ -1030,7 +957,10 @@ export function parseDeviceListResponse(value: unknown): DeviceListResponse {
   };
 }
 
-function parseOkDeviceResponse(value: unknown, kind: "selection" | "avd-start"): DeviceSelectionResponse | AvdStartResponse {
+function parseOkDeviceResponse(
+  value: unknown,
+  kind: "selection" | "avd-start",
+): DeviceSelectionResponse | AvdStartResponse {
   const root = record(value, `${kind} response`);
   if (root.ok !== true) fail(`${kind} response.ok must be true`);
   const serial = string(root.serial, `${kind} response.serial`);
@@ -1055,14 +985,10 @@ export function parseStreamModeRequest(value: unknown): StreamModeRequest {
   const mode = oneOf(root.mode, STREAM_MODES, "stream mode request.mode");
   if (mode === "scrcpy") {
     if (root.grpcImageMode !== undefined) {
-      fail(
-        "stream mode request.grpcImageMode is available only with mode grpc-screenshot",
-      );
+      fail("stream mode request.grpcImageMode is available only with mode grpc-screenshot");
     }
     if (root.inputSource !== undefined) {
-      fail(
-        "stream mode request.inputSource is available only with mode grpc-screenshot",
-      );
+      fail("stream mode request.inputSource is available only with mode grpc-screenshot");
     }
     if (root.encoder !== undefined) {
       fail("stream mode request.encoder is available only with mode grpc-screenshot");
@@ -1088,11 +1014,7 @@ export function parseStreamModeRequest(value: unknown): StreamModeRequest {
     ...(root.inputSource === undefined
       ? {}
       : {
-          inputSource: oneOf(
-            root.inputSource,
-            INPUT_SOURCES,
-            "stream mode request.inputSource",
-          ),
+          inputSource: oneOf(root.inputSource, INPUT_SOURCES, "stream mode request.inputSource"),
         }),
   };
 }
@@ -1108,15 +1030,16 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     GRPC_IMAGE_MODES,
     "stream mode response.grpcImageMode",
   );
-  const encoder = root.encoder === undefined
-    ? DEFAULT_GRPC_ENCODER
-    : oneOf(root.encoder, GRPC_ENCODERS, "stream mode response.encoder");
-  const encoderName = root.encoderName === undefined || root.encoderName === null
-    ? null
-    : string(root.encoderName, "stream mode response.encoderName");
-  const rawEncoders = root.availableEncoders === undefined
-    ? [DEFAULT_GRPC_ENCODER]
-    : root.availableEncoders;
+  const encoder =
+    root.encoder === undefined
+      ? DEFAULT_GRPC_ENCODER
+      : oneOf(root.encoder, GRPC_ENCODERS, "stream mode response.encoder");
+  const encoderName =
+    root.encoderName === undefined || root.encoderName === null
+      ? null
+      : string(root.encoderName, "stream mode response.encoderName");
+  const rawEncoders =
+    root.availableEncoders === undefined ? [DEFAULT_GRPC_ENCODER] : root.availableEncoders;
   if (!Array.isArray(rawEncoders)) {
     fail("stream mode response.availableEncoders must be an array");
   }
@@ -1129,20 +1052,12 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
   if (new Set(availableEncoders).size !== availableEncoders.length) {
     fail("stream mode response.availableEncoders must not contain duplicates");
   }
-  const inputSource = oneOf(
-    root.inputSource,
-    INPUT_SOURCES,
-    "stream mode response.inputSource",
-  );
+  const inputSource = oneOf(root.inputSource, INPUT_SOURCES, "stream mode response.inputSource");
   if (!Array.isArray(root.availableInputSources)) {
     fail("stream mode response.availableInputSources must be an array");
   }
   const availableInputSources = root.availableInputSources.map((value, index) =>
-    oneOf(
-      value,
-      INPUT_SOURCES,
-      `stream mode response.availableInputSources[${index}]`,
-    ),
+    oneOf(value, INPUT_SOURCES, `stream mode response.availableInputSources[${index}]`),
   );
   if (availableInputSources.length === 0) {
     fail("stream mode response.availableInputSources must not be empty");
@@ -1157,11 +1072,7 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     fail("stream mode response.availableModes must be an array");
   }
   const availableModes = root.availableModes.map((value, index) =>
-    oneOf(
-      value,
-      STREAM_MODES,
-      `stream mode response.availableModes[${index}]`,
-    ),
+    oneOf(value, STREAM_MODES, `stream mode response.availableModes[${index}]`),
   );
   if (availableModes.length === 0) {
     fail("stream mode response.availableModes must not be empty");
@@ -1177,9 +1088,7 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     "stream mode response.sessionGeneration",
   );
   if (!Number.isSafeInteger(sessionGeneration) || sessionGeneration < 0) {
-    fail(
-      "stream mode response.sessionGeneration must be a non-negative safe integer",
-    );
+    fail("stream mode response.sessionGeneration must be a non-negative safe integer");
   }
   return {
     ok: true,
@@ -1204,25 +1113,14 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
   };
 }
 
-export function parseStreamEncoderSettingsResponse(
-  value: unknown,
-): StreamEncoderSettingsResponse {
+export function parseStreamEncoderSettingsResponse(value: unknown): StreamEncoderSettingsResponse {
   const root = record(value, "stream encoder settings response");
   if (root.ok !== true) {
     fail("stream encoder settings response.ok must be true");
   }
-  const maxDimension = number(
-    root.maxDimension,
-    "stream encoder settings response.maxDimension",
-  );
-  const h264Bitrate = number(
-    root.h264Bitrate,
-    "stream encoder settings response.h264Bitrate",
-  );
-  const h264Fps = number(
-    root.h264Fps,
-    "stream encoder settings response.h264Fps",
-  );
+  const maxDimension = number(root.maxDimension, "stream encoder settings response.maxDimension");
+  const h264Bitrate = number(root.h264Bitrate, "stream encoder settings response.h264Bitrate");
+  const h264Fps = number(root.h264Fps, "stream encoder settings response.h264Fps");
   if (
     !Number.isSafeInteger(maxDimension) ||
     maxDimension < 0 ||
@@ -1241,11 +1139,7 @@ export function parseStreamEncoderSettingsResponse(
       `stream encoder settings response.h264Bitrate must be an integer between ${MIN_H264_BITRATE} and ${MAX_H264_BITRATE}`,
     );
   }
-  if (
-    !Number.isSafeInteger(h264Fps) ||
-    h264Fps < 1 ||
-    h264Fps > MAX_H264_FPS
-  ) {
+  if (!Number.isSafeInteger(h264Fps) || h264Fps < 1 || h264Fps > MAX_H264_FPS) {
     fail(
       `stream encoder settings response.h264Fps must be an integer between 1 and ${MAX_H264_FPS}`,
     );
@@ -1271,7 +1165,11 @@ export function parseDeviceGridResponse(value: unknown): DeviceGridResponse {
         const item = record(value, `devices[${index}]`);
         return {
           id: string(item.id, `devices[${index}].id`),
-          kind: oneOf(item.kind, ["physical", "emulator", "avd"] as const, `devices[${index}].kind`),
+          kind: oneOf(
+            item.kind,
+            ["physical", "emulator", "avd"] as const,
+            `devices[${index}].kind`,
+          ),
           serial: nullableString(item.serial, `devices[${index}].serial`),
           avd: nullableString(item.avd, `devices[${index}].avd`),
           name: string(item.name, `devices[${index}].name`),
@@ -1320,9 +1218,14 @@ export function parseFoldResponse(value: unknown): FoldResponse {
   const root = record(value, "fold response");
   if (root.ok !== true) fail("fold response.ok must be true");
   const fold = record(root.fold, "fold");
-  const posture = fold.posture === null
-    ? null
-    : oneOf(fold.posture, ["closed", "half_opened", "opened", "flipped", "tent"] as const, "fold.posture");
+  const posture =
+    fold.posture === null
+      ? null
+      : oneOf(
+          fold.posture,
+          ["closed", "half_opened", "opened", "flipped", "tent"] as const,
+          "fold.posture",
+        );
   const hingeAngle = fold.hingeAngle === null ? null : number(fold.hingeAngle, "fold.hingeAngle");
   if (typeof fold.supported !== "boolean") fail("fold.supported must be a boolean");
   return { ok: true, fold: { supported: fold.supported, posture, hingeAngle } };
@@ -1395,9 +1298,7 @@ export function parseReduceMotionResponse(value: unknown): ReduceMotionResponse 
   };
 }
 
-export function parseHighTextContrastResponse(
-  value: unknown,
-): HighTextContrastResponse {
+export function parseHighTextContrastResponse(value: unknown): HighTextContrastResponse {
   const root = record(value, "high text contrast response");
   if (root.ok !== true) fail("high text contrast response.ok must be true");
   const status = record(root.highTextContrast, "highTextContrast");
@@ -1423,9 +1324,7 @@ export function parseFontWeightResponse(value: unknown): FontWeightResponse {
   };
 }
 
-export function parseSoftwareKeyboardResponse(
-  value: unknown,
-): SoftwareKeyboardResponse {
+export function parseSoftwareKeyboardResponse(value: unknown): SoftwareKeyboardResponse {
   const root = record(value, "software keyboard response");
   if (root.ok !== true) fail("software keyboard response.ok must be true");
   const status = record(root.softwareKeyboard, "softwareKeyboard");
@@ -1439,9 +1338,7 @@ export function parseSoftwareKeyboardResponse(
   };
 }
 
-export function parseDisplayDensityResponse(
-  value: unknown,
-): DisplayDensityResponse {
+export function parseDisplayDensityResponse(value: unknown): DisplayDensityResponse {
   const root = record(value, "display density response");
   if (root.ok !== true) fail("display density response.ok must be true");
   const status = record(root.displayDensity, "displayDensity");
@@ -1529,7 +1426,8 @@ function parseGeoFix(value: unknown, name = "location"): GeoFix {
     longitude: number(item.longitude, `${name}.longitude`),
   };
   if (item.altitude !== undefined) result.altitude = number(item.altitude, `${name}.altitude`);
-  if (item.satellites !== undefined) result.satellites = number(item.satellites, `${name}.satellites`);
+  if (item.satellites !== undefined)
+    result.satellites = number(item.satellites, `${name}.satellites`);
   if (item.velocity !== undefined) result.velocity = number(item.velocity, `${name}.velocity`);
   return result;
 }
@@ -1611,9 +1509,7 @@ function parseCameraStatus(value: unknown): CameraStatus {
     serial: string(root.serial, "camera.serial"),
     supported: boolean(root.supported, "camera.supported"),
     wiredAtLaunch: boolean(root.wiredAtLaunch, "camera.wiredAtLaunch"),
-    launchArgs: root.launchArgs.map((arg, index) =>
-      string(arg, `camera.launchArgs[${index}]`),
-    ),
+    launchArgs: root.launchArgs.map((arg, index) => string(arg, `camera.launchArgs[${index}]`)),
     feeds: root.feeds.map(parseCameraFeedStatus),
   };
 }
@@ -1680,7 +1576,8 @@ export function parseAppActionResponse(value: unknown): AppActionResponse {
 export function parseAppPermissionsResponse(value: unknown): AppPermissionsResponse {
   const root = record(value, "app permissions response");
   if (root.ok !== true) fail("app permissions response.ok must be true");
-  if (!Array.isArray(root.permissions)) fail("app permissions response.permissions must be an array");
+  if (!Array.isArray(root.permissions))
+    fail("app permissions response.permissions must be an array");
   return {
     ok: true,
     packageName: string(root.packageName, "app permissions response.packageName"),
@@ -1733,7 +1630,11 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
   const data = string(root.data, "screenshot response.data");
   if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data };
   const artifact = record(root.artifact, "screenshot response.artifact");
-  const status = oneOf(artifact.status, SCREENSHOT_ARTIFACT_STATUSES, "screenshot response.artifact.status");
+  const status = oneOf(
+    artifact.status,
+    SCREENSHOT_ARTIFACT_STATUSES,
+    "screenshot response.artifact.status",
+  );
   return {
     ok: true,
     mimeType: "image/png",
@@ -1755,9 +1656,7 @@ export function parseLogcatEvent<Event extends keyof LogcatEventMap>(
     return {
       serial: string(item.serial, "logcat ready event.serial"),
       package: nullableString(item.package, "logcat ready event.package"),
-      pids: item.pids.map((pid, index) =>
-        string(pid, `logcat ready event.pids[${index}]`)
-      ),
+      pids: item.pids.map((pid, index) => string(pid, `logcat ready event.pids[${index}]`)),
       search: nullableString(item.search, "logcat ready event.search"),
     } as LogcatEventMap[Event];
   }
@@ -1799,24 +1698,28 @@ function parseCameraImageResponse(value: unknown): BinaryPngResponse {
 function parseFrameStatsSummary(value: unknown): FrameStatsSummary | null {
   if (value === null) return null;
   const item = record(value, "health response.frameStats");
-  const interval = item.intervalMs === null
-    ? null
-    : record(item.intervalMs, "health response.frameStats.intervalMs");
+  const interval =
+    item.intervalMs === null
+      ? null
+      : record(item.intervalMs, "health response.frameStats.intervalMs");
   return {
     windowFrames: number(item.windowFrames, "health response.frameStats.windowFrames"),
-    intervalMs: interval === null
-      ? null
-      : {
-          p50: number(interval.p50, "health response.frameStats.intervalMs.p50"),
-          p95: number(interval.p95, "health response.frameStats.intervalMs.p95"),
-          max: number(interval.max, "health response.frameStats.intervalMs.max"),
-        },
-    avgKeyFrameBytes: item.avgKeyFrameBytes === null
-      ? null
-      : number(item.avgKeyFrameBytes, "health response.frameStats.avgKeyFrameBytes"),
-    avgDeltaFrameBytes: item.avgDeltaFrameBytes === null
-      ? null
-      : number(item.avgDeltaFrameBytes, "health response.frameStats.avgDeltaFrameBytes"),
+    intervalMs:
+      interval === null
+        ? null
+        : {
+            p50: number(interval.p50, "health response.frameStats.intervalMs.p50"),
+            p95: number(interval.p95, "health response.frameStats.intervalMs.p95"),
+            max: number(interval.max, "health response.frameStats.intervalMs.max"),
+          },
+    avgKeyFrameBytes:
+      item.avgKeyFrameBytes === null
+        ? null
+        : number(item.avgKeyFrameBytes, "health response.frameStats.avgKeyFrameBytes"),
+    avgDeltaFrameBytes:
+      item.avgDeltaFrameBytes === null
+        ? null
+        : number(item.avgDeltaFrameBytes, "health response.frameStats.avgDeltaFrameBytes"),
     keyFramesInWindow: number(
       item.keyFramesInWindow,
       "health response.frameStats.keyFramesInWindow",
@@ -1824,10 +1727,7 @@ function parseFrameStatsSummary(value: unknown): FrameStatsSummary | null {
   };
 }
 
-function parseRollingTimingSummary(
-  value: unknown,
-  name: string,
-): RollingTimingSummary | null {
+function parseRollingTimingSummary(value: unknown, name: string): RollingTimingSummary | null {
   if (value === null) return null;
   const item = record(value, name);
   return {
@@ -1842,23 +1742,17 @@ function parseRollingTimingSummary(
 function parseGrpcCaptureDiagnostics(value: unknown): GrpcCaptureDiagnostics {
   const item = record(value, "health response.grpcCapture");
   const timing = (field: keyof GrpcCaptureDiagnostics) =>
-    parseRollingTimingSummary(
-      item[field],
-      `health response.grpcCapture.${field}`,
-    );
+    parseRollingTimingSummary(item[field], `health response.grpcCapture.${field}`);
   const numeric = (field: keyof GrpcCaptureDiagnostics) =>
     number(item[field], `health response.grpcCapture.${field}`);
   const nullableNumeric = (field: keyof GrpcCaptureDiagnostics) =>
     item[field] === null ? null : numeric(field);
   return {
-    imageMode: oneOf(
-      item.imageMode,
-      GRPC_IMAGE_MODES,
-      "health response.grpcCapture.imageMode",
-    ),
-    encoderName: item.encoderName === undefined || item.encoderName === null
-      ? null
-      : string(item.encoderName, "health response.grpcCapture.encoderName"),
+    imageMode: oneOf(item.imageMode, GRPC_IMAGE_MODES, "health response.grpcCapture.imageMode"),
+    encoderName:
+      item.encoderName === undefined || item.encoderName === null
+        ? null
+        : string(item.encoderName, "health response.grpcCapture.encoderName"),
     rawGrpcMessagesReceived: numeric("rawGrpcMessagesReceived"),
     rawGrpcMessagesEmitted: numeric("rawGrpcMessagesEmitted"),
     rawGrpcMessagesCoalesced: numeric("rawGrpcMessagesCoalesced"),
@@ -1891,14 +1785,8 @@ function parseHealthClient(value: unknown, index: number): HealthClient {
   const item = record(value, `health response.clientsDetail[${index}]`);
   return {
     id: number(item.id, `health response.clientsDetail[${index}].id`),
-    frameMeta: boolean(
-      item.frameMeta,
-      `health response.clientsDetail[${index}].frameMeta`,
-    ),
-    sentFrames: number(
-      item.sentFrames,
-      `health response.clientsDetail[${index}].sentFrames`,
-    ),
+    frameMeta: boolean(item.frameMeta, `health response.clientsDetail[${index}].frameMeta`),
+    sentFrames: number(item.sentFrames, `health response.clientsDetail[${index}].sentFrames`),
     droppedFrames: number(
       item.droppedFrames,
       `health response.clientsDetail[${index}].droppedFrames`,
@@ -1934,17 +1822,17 @@ export function parseHealthResponse(value: unknown): HealthResponse {
   // Validate the fields consumed by clients plus the nested state contracts.
   const health: HealthResponse = {
     ok: boolean(root.ok, "health response.ok"),
-    status: oneOf(root.status, ["streaming", "stopped", "error"] as const, "health response.status"),
+    status: oneOf(
+      root.status,
+      ["streaming", "stopped", "error"] as const,
+      "health response.status",
+    ),
     serial: string(root.serial, "health response.serial"),
     device: string(root.device, "health response.device"),
     ...(root.streamMode === undefined
       ? {}
       : {
-          streamMode: oneOf(
-            root.streamMode,
-            STREAM_MODES,
-            "health response.streamMode",
-          ),
+          streamMode: oneOf(root.streamMode, STREAM_MODES, "health response.streamMode"),
         }),
     ...(root.grpcImageMode === undefined
       ? {}
@@ -1958,25 +1846,21 @@ export function parseHealthResponse(value: unknown): HealthResponse {
     ...(root.inputSource === undefined
       ? {}
       : {
-          inputSource: oneOf(
-            root.inputSource,
-            INPUT_SOURCES,
-            "health response.inputSource",
-          ),
+          inputSource: oneOf(root.inputSource, INPUT_SOURCES, "health response.inputSource"),
         }),
     ...(root.encoderName === undefined
       ? {}
       : {
-          encoderName: root.encoderName === null
-            ? null
-            : string(root.encoderName, "health response.encoderName"),
+          encoderName:
+            root.encoderName === null
+              ? null
+              : string(root.encoderName, "health response.encoderName"),
         }),
     ...(root.grpcCapture === undefined
       ? {}
       : {
-          grpcCapture: root.grpcCapture === null
-            ? null
-            : parseGrpcCaptureDiagnostics(root.grpcCapture),
+          grpcCapture:
+            root.grpcCapture === null ? null : parseGrpcCaptureDiagnostics(root.grpcCapture),
         }),
     codec: string(root.codec, "health response.codec"),
     size: parseDeviceSize(root.size, "health response.size"),
@@ -1989,8 +1873,12 @@ export function parseHealthResponse(value: unknown): HealthResponse {
     backpressureEvents: number(root.backpressureEvents, "health response.backpressureEvents"),
     videoResetRequests: number(root.videoResetRequests, "health response.videoResetRequests"),
     lastVideoResetAt: nullableString(root.lastVideoResetAt, "health response.lastVideoResetAt"),
-    lastVideoResetReason: nullableString(root.lastVideoResetReason, "health response.lastVideoResetReason"),
-    location: root.location === null ? null : parseAppliedGeoFix(root.location, "health response.location"),
+    lastVideoResetReason: nullableString(
+      root.lastVideoResetReason,
+      "health response.lastVideoResetReason",
+    ),
+    location:
+      root.location === null ? null : parseAppliedGeoFix(root.location, "health response.location"),
     route: parseRoutePlaybackSnapshot(root.route),
     session: parseSessionSnapshot(root.session),
     clientsDetail: Array.isArray(root.clientsDetail)
@@ -2004,10 +1892,7 @@ export function parseHealthResponse(value: unknown): HealthResponse {
     lastErrorMeta: parseErrorMeta(root.lastErrorMeta),
   };
   if (root.sessionGeneration !== undefined) {
-    const generation = number(
-      root.sessionGeneration,
-      "health response.sessionGeneration",
-    );
+    const generation = number(root.sessionGeneration, "health response.sessionGeneration");
     if (!Number.isSafeInteger(generation) || generation < 0) {
       fail("health response.sessionGeneration must be a non-negative safe integer");
     }
@@ -2030,13 +1915,12 @@ export function parseHealthResponse(value: unknown): HealthResponse {
 type AnySuccessParser = (value: unknown) => unknown;
 type ApiSuccessParserMap = {
   [Path in ApiPath]: {
-    [Method in ApiMethod<Path>]: (
-      value: unknown,
-    ) => ApiSuccessResponse<Path, Method>;
+    [Method in ApiMethod<Path>]: (value: unknown) => ApiSuccessResponse<Path, Method>;
   };
 };
 
-const unsupportedStreamingResponse = (): never => fail("streaming responses are not JSON API payloads");
+const unsupportedStreamingResponse = (): never =>
+  fail("streaming responses are not JSON API payloads");
 
 /** Runtime parser table used by both server tests and the typed UI client. */
 export const API_SUCCESS_PARSERS = {
@@ -2111,20 +1995,22 @@ export const API_SUCCESS_PARSERS = {
   },
 } satisfies ApiSuccessParserMap;
 
-export function parseApiSuccess<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
->(path: Path, method: Method, value: unknown): ApiSuccessResponse<Path, Method> {
+export function parseApiSuccess<Path extends ApiPath, Method extends ApiMethod<Path>>(
+  path: Path,
+  method: Method,
+  value: unknown,
+): ApiSuccessResponse<Path, Method> {
   const methods = API_SUCCESS_PARSERS[path] as Partial<Record<ApiMethod<Path>, AnySuccessParser>>;
   const parser = methods[method];
   if (!parser) fail(`no API parser registered for ${method} ${path}`);
   return parser(value) as ApiSuccessResponse<Path, Method>;
 }
 
-export function parseApiResponse<
-  Path extends ApiPath,
-  Method extends ApiMethod<Path>,
->(path: Path, method: Method, value: unknown): ApiResponse<Path, Method> {
+export function parseApiResponse<Path extends ApiPath, Method extends ApiMethod<Path>>(
+  path: Path,
+  method: Method,
+  value: unknown,
+): ApiResponse<Path, Method> {
   return isRecord(value) && value.ok === false
     ? parseApiFailure(value)
     : parseApiSuccess(path, method, value);

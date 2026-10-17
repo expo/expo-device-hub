@@ -4,11 +4,11 @@ import {
   type DeviceInputSource,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
-} from './types';
+} from "./types";
 
 const ANDROID_STREAM_SOURCES = [
-  'scrcpy',
-  'grpc-screenshot',
+  "scrcpy",
+  "grpc-screenshot",
 ] as const satisfies readonly DeviceStreamSource[];
 
 function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
@@ -18,48 +18,48 @@ function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
 /** Prefer serve-emu's actionable failure detail, falling back to the HTTP status. */
 export function androidStreamSourceErrorMessage(status: number, value: unknown): string {
   const candidate =
-    value && typeof value === 'object' && !Array.isArray(value)
+    value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
   const error = candidate?.error;
   const structuredMessage =
-    error && typeof error === 'object' && !Array.isArray(error) && 'message' in error
+    error && typeof error === "object" && !Array.isArray(error) && "message" in error
       ? error.message
       : undefined;
   const detail =
-    typeof error === 'string'
+    typeof error === "string"
       ? error.trim()
-      : typeof structuredMessage === 'string'
+      : typeof structuredMessage === "string"
         ? structuredMessage.trim()
-        : typeof candidate?.message === 'string'
+        : typeof candidate?.message === "string"
           ? candidate.message.trim()
-          : '';
+          : "";
   return detail
     ? `Unable to change stream source: ${detail}`
     : `Unable to change stream source (HTTP ${status}).`;
 }
 
 function isGrpcImageMode(value: unknown): value is DeviceGrpcImageMode {
-  return value === 'png' || value === 'mmap' || value === 'rgb888';
+  return value === "png" || value === "mmap" || value === "rgb888";
 }
 
 function isGrpcEncoder(value: unknown): value is DeviceGrpcEncoder {
-  return value === 'software' || value === 'hardware';
+  return value === "software" || value === "hardware";
 }
 
 function isInputSource(value: unknown): value is DeviceInputSource {
-  return value === 'scrcpy' || value === 'grpc';
+  return value === "scrcpy" || value === "grpc";
 }
 
 /** Parse serve-emu's authoritative device-scoped `/api/stream-mode` response. */
 export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStatus | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   // Older serve-emu hosts expose only software encoding and omit these fields.
-  const encoder = candidate.encoder === undefined ? 'software' : candidate.encoder;
+  const encoder = candidate.encoder === undefined ? "software" : candidate.encoder;
   const encoderName = candidate.encoderName === undefined ? null : candidate.encoderName;
   const availableEncoders =
-    candidate.availableEncoders === undefined ? ['software'] : candidate.availableEncoders;
+    candidate.availableEncoders === undefined ? ["software"] : candidate.availableEncoders;
   if (
     candidate.ok !== true ||
     !isAndroidStreamSource(candidate.mode) ||
@@ -70,14 +70,14 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
     return null;
   }
   if (
-    (encoderName !== null &&
-      (typeof encoderName !== 'string' || !encoderName.trim())) ||
+    (encoderName !== null && (typeof encoderName !== "string" || !encoderName.trim())) ||
     !Array.isArray(availableEncoders) ||
     !availableEncoders.every(isGrpcEncoder) ||
     new Set(availableEncoders).size !== availableEncoders.length ||
-    !availableEncoders.includes('software') ||
+    !availableEncoders.includes("software") ||
     (candidate.hardwareEncoderError !== undefined &&
-      (typeof candidate.hardwareEncoderError !== 'string' || !candidate.hardwareEncoderError.trim()))
+      (typeof candidate.hardwareEncoderError !== "string" ||
+        !candidate.hardwareEncoderError.trim()))
   ) {
     return null;
   }
@@ -100,7 +100,7 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
     return null;
   }
   if (
-    typeof candidate.sessionGeneration !== 'number' ||
+    typeof candidate.sessionGeneration !== "number" ||
     !Number.isInteger(candidate.sessionGeneration) ||
     candidate.sessionGeneration < 0
   ) {
@@ -112,7 +112,7 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
     encoder,
     encoderName,
     availableEncoders,
-    ...(typeof candidate.hardwareEncoderError === 'string'
+    ...(typeof candidate.hardwareEncoderError === "string"
       ? { hardwareEncoderError: candidate.hardwareEncoderError }
       : {}),
     inputSource: candidate.inputSource,

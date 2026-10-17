@@ -19,7 +19,12 @@ describe.skipIf(!existsSync(CLI_PATH))("permissions list", () => {
   beforeAll(() => {
     nodePath = execFileSync("node", ["-p", "process.execPath"], { encoding: "utf8" }).trim();
     home = mkdtempSync(join(tmpdir(), "serve-sim-permissions-"));
-    const db = join(home, "Library/Developer/CoreSimulator/Devices", UDID, "data/Library/TCC/TCC.db");
+    const db = join(
+      home,
+      "Library/Developer/CoreSimulator/Devices",
+      UDID,
+      "data/Library/TCC/TCC.db",
+    );
     mkdirSync(dirname(db), { recursive: true });
     const database = new Database(db);
     database.run(

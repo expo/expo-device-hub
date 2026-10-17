@@ -7,7 +7,9 @@ function pointer(type: string, pointerType: string, buttons = 0): Event {
 
 function hoverIsBlocked(target: EventTarget, type: string): boolean {
   let blocked = false;
-  const observe = (event: Event) => { blocked = event.cancelBubble; };
+  const observe = (event: Event) => {
+    blocked = event.cancelBubble;
+  };
   target.addEventListener(type, observe);
   target.dispatchEvent(new Event(type));
   target.removeEventListener(type, observe);
@@ -100,7 +102,9 @@ describe("toast hover", () => {
       Object.defineProperty(event, "relatedTarget", { configurable: true, get: () => destination });
       Object.defineProperty(event, "toElement", { configurable: true, get: () => destination });
       let left = false;
-      target.addEventListener("mouseout", (event) => { left = !event.cancelBubble; });
+      target.addEventListener("mouseout", (event) => {
+        left = !event.cancelBubble;
+      });
       target.dispatchEvent(event);
       expect(left).toBe(true);
       expect((event as MouseEvent).relatedTarget).toBeNull();

@@ -1,8 +1,8 @@
-import { type CSSProperties, useEffect, useRef } from 'react';
+import { type CSSProperties, useEffect, useRef } from "react";
 
-import { type DeviceLog } from '@expo/hub-client';
-import { text, textSize } from '../primitives';
-import { LogRow } from './LogRow';
+import { type DeviceLog } from "@expo/hub-client";
+import { text, textSize } from "../primitives";
+import { LogRow } from "./LogRow";
 
 // An always-visible, styled scrollbar. Styling `::-webkit-scrollbar` opts out of
 // the macOS overlay (auto-hiding) scrollbar in Chromium. We intentionally do NOT
@@ -26,13 +26,13 @@ const SCROLLBAR_CSS = `
 const scrollStyle: CSSProperties = {
   height: 200,
   flexShrink: 0,
-  overflowY: 'auto',
-  overflowX: 'hidden',
-  display: 'flex',
-  flexDirection: 'column',
+  overflowY: "auto",
+  overflowX: "hidden",
+  display: "flex",
+  flexDirection: "column",
   // The rolling buffer trims lines off the top; without this the browser's
   // scroll anchoring fights our tail-follow by nudging scrollTop on each trim.
-  overflowAnchor: 'none',
+  overflowAnchor: "none",
 };
 
 /**
@@ -62,8 +62,8 @@ export function LogList({
   const emptyMessage =
     emptyMessageOverride ??
     (enabled
-      ? 'No logs. The stream resumes on the next event.'
-      : 'Logs are paused. Press Start to stream device logs.');
+      ? "No logs. The stream resumes on the next event."
+      : "Logs are paused. Press Start to stream device logs.");
 
   return (
     <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
@@ -71,13 +71,14 @@ export function LogList({
       {logs.length === 0 ? (
         <div
           style={{
-            display: 'flex',
+            display: "flex",
             flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '40px 24px',
-            textAlign: 'center',
-          }}>
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "40px 24px",
+            textAlign: "center",
+          }}
+        >
           <span style={{ ...textSize.xs, color: text.secondary }}>{emptyMessage}</span>
         </div>
       ) : (

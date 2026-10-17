@@ -47,11 +47,7 @@ export const SideTools = memo(function SideTools({
 }: Props) {
   return (
     <>
-      <ToolSection
-        id="stream-source-tool"
-        title="Stream"
-        defaultExpanded
-      >
+      <ToolSection id="stream-source-tool" title="Stream" defaultExpanded>
         <StreamModePanel />
       </ToolSection>
       <StaticTool id="network-tool" title="Network" panel={NetworkPanel} />

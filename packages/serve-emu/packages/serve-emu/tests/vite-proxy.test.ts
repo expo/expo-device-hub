@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
-import {
-  createBackendProxy,
-  DEFAULT_BACKEND_ORIGIN,
-  DEFAULT_UI_PORT,
-} from "../vite.config.ts";
+import { createBackendProxy, DEFAULT_BACKEND_ORIGIN, DEFAULT_UI_PORT } from "../vite.config.ts";
 
 describe("createBackendProxy", () => {
   test("keeps the existing Vite development port", () => {
@@ -80,10 +76,7 @@ async function availablePort(): Promise<number> {
   return port;
 }
 
-async function startViteCli(
-  backendOrigin: string,
-  port: number,
-): Promise<ChildProcess> {
+async function startViteCli(backendOrigin: string, port: number): Promise<ChildProcess> {
   const packageDirectory = resolve(import.meta.dir, "..");
   const viteCli = resolve(packageDirectory, "node_modules/vite/bin/vite.js");
   const child = spawn(
@@ -142,10 +135,7 @@ function processHasExited(child: ChildProcess): boolean {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
-function waitForProcessExit(
-  child: ChildProcess,
-  timeoutMs: number,
-): Promise<boolean> {
+function waitForProcessExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   if (processHasExited(child)) return Promise.resolve(true);
   return new Promise((resolveExit) => {
     let settled = false;
@@ -213,98 +203,91 @@ interface FakeSocketData {
   origin: string | null;
 }
 
-test(
-  "the Vite CLI proxies API, health, and WebSocket traffic to a non-default backend",
-  async () => {
-    const backend = Bun.serve<FakeSocketData>({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request, server) {
-        const url = new URL(request.url);
-        if (url.pathname === "/api/echo" && request.method === "POST") {
-          return request.json().then((body) =>
-            Response.json({
-              method: request.method,
-              path: url.pathname,
-              host: request.headers.get("host"),
-              origin: request.headers.get("origin"),
-              body,
-            }),
-          );
-        }
-        if (url.pathname === "/health" && request.method === "GET") {
-          return Response.json({ status: "ok", port: server.port });
-        }
-        if (
-          url.pathname === "/ws" &&
-          server.upgrade(request, {
-            data: {
-              path: url.pathname,
-              search: url.search,
-              host: request.headers.get("host"),
-              origin: request.headers.get("origin"),
-            },
-          })
-        ) {
-          return;
-        }
-        return new Response("Not found", { status: 404 });
+test("the Vite CLI proxies API, health, and WebSocket traffic to a non-default backend", async () => {
+  const backend = Bun.serve<FakeSocketData>({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request, server) {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/echo" && request.method === "POST") {
+        return request.json().then((body) =>
+          Response.json({
+            method: request.method,
+            path: url.pathname,
+            host: request.headers.get("host"),
+            origin: request.headers.get("origin"),
+            body,
+          }),
+        );
+      }
+      if (url.pathname === "/health" && request.method === "GET") {
+        return Response.json({ status: "ok", port: server.port });
+      }
+      if (
+        url.pathname === "/ws" &&
+        server.upgrade(request, {
+          data: {
+            path: url.pathname,
+            search: url.search,
+            host: request.headers.get("host"),
+            origin: request.headers.get("origin"),
+          },
+        })
+      ) {
+        return;
+      }
+      return new Response("Not found", { status: 404 });
+    },
+    websocket: {
+      open(socket) {
+        socket.send(JSON.stringify(socket.data));
       },
-      websocket: {
-        open(socket) {
-          socket.send(JSON.stringify(socket.data));
-        },
-        message() {},
-      },
+      message() {},
+    },
+  });
+
+  let vite: ChildProcess | undefined;
+  try {
+    const vitePort = await availablePort();
+    vite = await startViteCli(`http://127.0.0.1:${backend.port}`, vitePort);
+    const origin = `http://127.0.0.1:${vitePort}`;
+
+    const apiResponse = await fetch(`${origin}/api/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ value: 42 }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(apiResponse.status).toBe(200);
+    expect(await apiResponse.json()).toEqual({
+      method: "POST",
+      path: "/api/echo",
+      host: new URL(origin).host,
+      origin,
+      body: { value: 42 },
     });
 
-    let vite: ChildProcess | undefined;
-    try {
-      const vitePort = await availablePort();
-      vite = await startViteCli(
-        `http://127.0.0.1:${backend.port}`,
-        vitePort,
-      );
-      const origin = `http://127.0.0.1:${vitePort}`;
+    const healthResponse = await fetch(`${origin}/health`, {
+      signal: AbortSignal.timeout(5_000),
+    });
+    expect(healthResponse.status).toBe(200);
+    expect(await healthResponse.json()).toEqual({
+      status: "ok",
+      port: backend.port,
+    });
 
-      const apiResponse = await fetch(`${origin}/api/echo`, {
-        method: "POST",
-        headers: { "content-type": "application/json", origin },
-        body: JSON.stringify({ value: 42 }),
-        signal: AbortSignal.timeout(5_000),
-      });
-      expect(apiResponse.status).toBe(200);
-      expect(await apiResponse.json()).toEqual({
-        method: "POST",
-        path: "/api/echo",
-        host: new URL(origin).host,
-        origin,
-        body: { value: 42 },
-      });
-
-      const healthResponse = await fetch(`${origin}/health`, {
-        signal: AbortSignal.timeout(5_000),
-      });
-      expect(healthResponse.status).toBe(200);
-      expect(await healthResponse.json()).toEqual({
-        status: "ok",
-        port: backend.port,
-      });
-
-      const message = await receiveWebSocketMessage(
-        `${origin.replace("http:", "ws:")}/ws?source=vite`,
-        origin,
-      );
-      expect(JSON.parse(message)).toEqual({
-        path: "/ws",
-        search: "?source=vite",
-        host: new URL(origin).host,
-        origin,
-      });
-    } finally {
-      await stopProcess(vite);
-      await backend.stop(true);
-    }
-  },
-  20_000,
-);
+    const message = await receiveWebSocketMessage(
+      `${origin.replace("http:", "ws:")}/ws?source=vite`,
+      origin,
+    );
+    expect(JSON.parse(message)).toEqual({
+      path: "/ws",
+      search: "?source=vite",
+      host: new URL(origin).host,
+      origin,
+    });
+  } finally {
+    await stopProcess(vite);
+    await backend.stop(true);
+  }
+}, 20_000);

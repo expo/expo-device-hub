@@ -55,16 +55,10 @@ describe("accessibility selector boundaries", () => {
 
   test("rejects invalid selector containers and bounded field values", () => {
     for (const value of [null, [], "text", 1]) {
-      expect(() => parseAccessibilitySelector(value)).toThrow(
-        "selector must be an object",
-      );
+      expect(() => parseAccessibilitySelector(value)).toThrow("selector must be an object");
     }
-    expect(() => parseAccessibilitySelector({ text: 1 })).toThrow(
-      "text must be a string",
-    );
-    expect(() => parseAccessibilitySelector({ text: "   " })).toThrow(
-      "text cannot be empty",
-    );
+    expect(() => parseAccessibilitySelector({ text: 1 })).toThrow("text must be a string");
+    expect(() => parseAccessibilitySelector({ text: "   " })).toThrow("text cannot be empty");
     expect(() => parseAccessibilitySelector({ text: "🙂".repeat(129) })).toThrow(
       "text is too long",
     );
@@ -152,9 +146,22 @@ describe("uiautomator XML parsing", () => {
 
   test("swaps the natural display size for a dump taken in landscape", () => {
     const natural = { width: 1080, height: 2400 };
-    expect(screenForDump(`<hierarchy rotation="0"><node bounds="[0,0][1080,2400]" /></hierarchy>`, natural)).toEqual(natural);
-    expect(screenForDump(`<hierarchy rotation="1"><node bounds="[0,0][2400,1080]" /></hierarchy>`, natural)).toEqual({ width: 2400, height: 1080 });
-    expect(screenForDump(`<hierarchy rotation="3"></hierarchy>`, natural)).toEqual({ width: 2400, height: 1080 });
+    expect(
+      screenForDump(
+        `<hierarchy rotation="0"><node bounds="[0,0][1080,2400]" /></hierarchy>`,
+        natural,
+      ),
+    ).toEqual(natural);
+    expect(
+      screenForDump(
+        `<hierarchy rotation="1"><node bounds="[0,0][2400,1080]" /></hierarchy>`,
+        natural,
+      ),
+    ).toEqual({ width: 2400, height: 1080 });
+    expect(screenForDump(`<hierarchy rotation="3"></hierarchy>`, natural)).toEqual({
+      width: 2400,
+      height: 1080,
+    });
     expect(screenForDump(`<hierarchy></hierarchy>`, natural)).toEqual(natural);
   });
 

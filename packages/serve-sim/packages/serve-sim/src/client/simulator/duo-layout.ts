@@ -5,7 +5,9 @@ export type DuoCanvasRect = DuoViewportSize & { left: number; top: number };
 export type DuoScreenPoint = { x: number; y: number };
 
 function validSize(size: DuoViewportSize) {
-  return Number.isFinite(size.width) && size.width > 0 && Number.isFinite(size.height) && size.height > 0;
+  return (
+    Number.isFinite(size.width) && size.width > 0 && Number.isFinite(size.height) && size.height > 0
+  );
 }
 
 function visitBoxCorners(box: Box3, point: Vector3, visit: (point: Vector3) => void) {
@@ -47,7 +49,10 @@ export function duoFitScale(
     if (!bounds || bounds.isEmpty()) return;
     visitBoxCorners(bounds, point, (corner) => {
       corner.applyMatrix4(child.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
-      if (corner.z >= -camera.near) { crossesCamera = true; return; }
+      if (corner.z >= -camera.near) {
+        crossesCamera = true;
+        return;
+      }
       corner.applyMatrix4(camera.projectionMatrix);
       extentX = Math.max(extentX, Math.abs(corner.x / camera.zoom));
       extentY = Math.max(extentY, Math.abs(corner.y / camera.zoom));
@@ -79,7 +84,11 @@ export function duoPanelEdgeAnchor(panel: Object3D, side: "left" | "right"): Vec
     visitBoxCorners(box, point, (corner) => bounds.expandByPoint(corner.applyMatrix4(relative)));
   });
   if (bounds.isEmpty()) return null;
-  return new Vector3(side === "left" ? bounds.min.x : bounds.max.x, (bounds.min.y + bounds.max.y) / 2, bounds.max.z);
+  return new Vector3(
+    side === "left" ? bounds.min.x : bounds.max.x,
+    (bounds.min.y + bounds.max.y) / 2,
+    bounds.max.z,
+  );
 }
 
 /** Project a physical anchor into the same client-coordinate space as pointer events. */
@@ -92,13 +101,16 @@ export function duoProjectAnchor(
   if (!validSize(canvas)) return null;
   panel.updateWorldMatrix(true, false);
   camera.updateWorldMatrix(true, false);
-  const point = anchor.clone().applyMatrix4(panel.matrixWorld).applyMatrix4(camera.matrixWorldInverse);
+  const point = anchor
+    .clone()
+    .applyMatrix4(panel.matrixWorld)
+    .applyMatrix4(camera.matrixWorldInverse);
   if (point.z >= -camera.near) return null;
   point.applyMatrix4(camera.projectionMatrix);
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
   return {
-    x: canvas.left + (point.x + 1) * canvas.width / 2,
-    y: canvas.top + (1 - point.y) * canvas.height / 2,
+    x: canvas.left + ((point.x + 1) * canvas.width) / 2,
+    y: canvas.top + ((1 - point.y) * canvas.height) / 2,
   };
 }
 
@@ -116,7 +128,19 @@ export function duoHingeDragAngle(
   delta: DuoScreenPoint,
 ): number {
   const start = Number.isFinite(startAngle) ? Math.max(0, Math.min(180, startAngle)) : 90;
-  if (![startPoint.x, startPoint.y, closedPoint.x, closedPoint.y, openPoint.x, openPoint.y, delta.x, delta.y].every(Number.isFinite)) return start;
+  if (
+    ![
+      startPoint.x,
+      startPoint.y,
+      closedPoint.x,
+      closedPoint.y,
+      openPoint.x,
+      openPoint.y,
+      delta.x,
+      delta.y,
+    ].every(Number.isFinite)
+  )
+    return start;
   const dx = openPoint.x - closedPoint.x;
   const dy = openPoint.y - closedPoint.y;
   const length = Math.hypot(dx, dy);
@@ -129,10 +153,13 @@ export function duoHingeDragAngle(
   const endpoint = opening ? openPoint : closedPoint;
   const target = opening ? 180 : 0;
   if (target === start) return start;
-  const projectedDistance = Math.abs((endpoint.x - startPoint.x) * axisX + (endpoint.y - startPoint.y) * axisY);
+  const projectedDistance = Math.abs(
+    (endpoint.x - startPoint.x) * axisX + (endpoint.y - startPoint.y) * axisY,
+  );
   // A presentation can place the current handle on an endpoint before its
   // hinge reaches it. Use proportional travel in that collapsed interval.
-  const distance = projectedDistance > 1e-6 ? projectedDistance : length * Math.abs(target - start) / 180;
+  const distance =
+    projectedDistance > 1e-6 ? projectedDistance : (length * Math.abs(target - start)) / 180;
   const progress = Math.min(1, Math.abs(travel) / distance);
   return start + (target - start) * progress;
 }

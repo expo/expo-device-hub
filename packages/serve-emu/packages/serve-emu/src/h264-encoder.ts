@@ -1,15 +1,7 @@
-import {
-  spawn,
-  type ChildProcessWithoutNullStreams,
-} from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { access } from "node:fs/promises";
 import { constants } from "node:fs";
-import {
-  execText,
-  execBuffer,
-  type ExecOpts,
-  type ExecResult,
-} from "./exec.ts";
+import { execText, execBuffer, type ExecOpts, type ExecResult } from "./exec.ts";
 import type { VideoFrame } from "./scrcpy.ts";
 
 /**
@@ -21,11 +13,9 @@ import type { VideoFrame } from "./scrcpy.ts";
  * timestamps paired with output access units in submission order.
  */
 
-const FFMPEG_ENCODER_NAMES = [
-  "libx264", "h264_videotoolbox", "h264_nvenc", "h264_vaapi",
-] as const;
+const FFMPEG_ENCODER_NAMES = ["libx264", "h264_videotoolbox", "h264_nvenc", "h264_vaapi"] as const;
 
-export type FfmpegEncoderName = typeof FFMPEG_ENCODER_NAMES[number];
+export type FfmpegEncoderName = (typeof FFMPEG_ENCODER_NAMES)[number];
 
 export type H264EncoderInputFormat = "rgb24" | "png";
 
@@ -83,17 +73,14 @@ export class FfmpegStderrTail {
       ? chunk
       : Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
     if (incoming.length >= MAX_FFMPEG_STDERR_BYTES) {
-      this.#buffer = Buffer.from(
-        incoming.subarray(incoming.length - MAX_FFMPEG_STDERR_BYTES),
-      );
+      this.#buffer = Buffer.from(incoming.subarray(incoming.length - MAX_FFMPEG_STDERR_BYTES));
       return;
     }
-    const combined = this.#buffer.length
-      ? Buffer.concat([this.#buffer, incoming])
-      : incoming;
-    this.#buffer = combined.length > MAX_FFMPEG_STDERR_BYTES
-      ? Buffer.from(combined.subarray(combined.length - MAX_FFMPEG_STDERR_BYTES))
-      : combined;
+    const combined = this.#buffer.length ? Buffer.concat([this.#buffer, incoming]) : incoming;
+    this.#buffer =
+      combined.length > MAX_FFMPEG_STDERR_BYTES
+        ? Buffer.from(combined.subarray(combined.length - MAX_FFMPEG_STDERR_BYTES))
+        : combined;
   }
 
   text(): string {
@@ -131,10 +118,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
   }
   finitePositive(opts.fps, "fps", MAX_FPS);
   positiveInteger(opts.bitRate, "bitRate", MAX_BIT_RATE);
-  if (
-    !Number.isFinite(opts.keyFrameInterval) ||
-    opts.keyFrameInterval < 0
-  ) {
+  if (!Number.isFinite(opts.keyFrameInterval) || opts.keyFrameInterval < 0) {
     throw new RangeError("keyFrameInterval must be a non-negative number");
   }
   const keyint = Math.round(opts.fps * opts.keyFrameInterval);
@@ -149,10 +133,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
     throw new RangeError("quarterTurn must be an integer from 0 through 3");
   }
 
-  if (
-    opts.encoderName !== undefined &&
-    !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)
-  ) {
+  if (opts.encoderName !== undefined && !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)) {
     throw new RangeError(`unsupported ffmpeg H.264 encoder ${opts.encoderName}`);
   }
 
@@ -163,9 +144,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
 
   const bytes = width * height * 3;
   if (!Number.isSafeInteger(bytes) || bytes > MAX_RAW_FRAME_BYTES) {
-    throw new RangeError(
-      `raw RGB frame must not exceed ${MAX_RAW_FRAME_BYTES} bytes`,
-    );
+    throw new RangeError(`raw RGB frame must not exceed ${MAX_RAW_FRAME_BYTES} bytes`);
   }
   return inputFormat === "rgb24" ? bytes : null;
 }
@@ -241,13 +220,15 @@ export function ffmpegEncoderArgs(
   vaapiDevice = resolveVaapiDevice(),
 ): string[] {
   const encoderName = opts.encoderName ?? "libx264";
-  const keyint = opts.keyFrameInterval > 0
-    ? Math.max(1, Math.round(opts.fps * opts.keyFrameInterval))
-    : 250;
+  const keyint =
+    opts.keyFrameInterval > 0 ? Math.max(1, Math.round(opts.fps * opts.keyFrameInterval)) : 250;
   const rate = [
-    "-b:v", String(opts.bitRate),
-    "-maxrate", String(opts.bitRate),
-    "-bufsize", String(opts.bitRate),
+    "-b:v",
+    String(opts.bitRate),
+    "-maxrate",
+    String(opts.bitRate),
+    "-bufsize",
+    String(opts.bitRate),
   ];
   const filter = videoFilter(opts.quarterTurn ?? 0);
   const args = ["-hide_banner", "-loglevel", "error"];
@@ -264,9 +245,17 @@ export function ffmpegEncoderArgs(
     case "libx264":
       // Preserve this command line byte for byte for existing software users.
       args.push(
-        "-pix_fmt", "yuv420p", "-c:v", "libx264",
-        "-preset", "ultrafast", "-tune", "zerolatency",
-        "-profile:v", "baseline", ...rate,
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-tune",
+        "zerolatency",
+        "-profile:v",
+        "baseline",
+        ...rate,
         "-x264-params",
         `keyint=${keyint}:min-keyint=${keyint}:scenecut=0:repeat-headers=1:aud=1`,
       );
@@ -275,28 +264,75 @@ export function ffmpegEncoderArgs(
       // Real-time alone retains a frame: low_delay lets one idle duplicate
       // provide the next AUD without waiting for further screenshot input.
       args.push(
-        "-pix_fmt", "nv12", "-c:v", encoderName,
-        "-allow_sw", "0", "-realtime", "1", "-flags", "+low_delay",
-        "-profile:v", "baseline",
-        ...rate, "-g", String(keyint), "-bf", "0",
-        "-bsf:v", "h264_metadata=aud=insert",
+        "-pix_fmt",
+        "nv12",
+        "-c:v",
+        encoderName,
+        "-allow_sw",
+        "0",
+        "-realtime",
+        "1",
+        "-flags",
+        "+low_delay",
+        "-profile:v",
+        "baseline",
+        ...rate,
+        "-g",
+        String(keyint),
+        "-bf",
+        "0",
+        "-bsf:v",
+        "h264_metadata=aud=insert",
       );
       break;
     case "h264_nvenc":
       args.push(
-        "-pix_fmt", "nv12", "-c:v", encoderName,
-        "-preset", "p1", "-tune", "ull", "-zerolatency", "1",
-        "-delay", "0", "-bf", "0", "-rc-lookahead", "0", "-rc", "cbr",
-        ...rate, "-g", String(keyint), "-forced-idr", "1", "-aud", "1",
-        "-profile:v", "baseline",
+        "-pix_fmt",
+        "nv12",
+        "-c:v",
+        encoderName,
+        "-preset",
+        "p1",
+        "-tune",
+        "ull",
+        "-zerolatency",
+        "1",
+        "-delay",
+        "0",
+        "-bf",
+        "0",
+        "-rc-lookahead",
+        "0",
+        "-rc",
+        "cbr",
+        ...rate,
+        "-g",
+        String(keyint),
+        "-forced-idr",
+        "1",
+        "-aud",
+        "1",
+        "-profile:v",
+        "baseline",
       );
       break;
     case "h264_vaapi":
       args.push(
-        "-c:v", encoderName, "-rc_mode", "CBR", ...rate,
-        "-g", String(keyint), "-bf", "0", "-async_depth", "1",
-        "-profile:v", "constrained_baseline",
-        "-bsf:v", "h264_metadata=aud=insert",
+        "-c:v",
+        encoderName,
+        "-rc_mode",
+        "CBR",
+        ...rate,
+        "-g",
+        String(keyint),
+        "-bf",
+        "0",
+        "-async_depth",
+        "1",
+        "-profile:v",
+        "constrained_baseline",
+        "-bsf:v",
+        "h264_metadata=aud=insert",
       );
       break;
     default:
@@ -356,9 +392,7 @@ export class H264OutputParser {
         `ffmpeg H.264 output exceeded ${MAX_PENDING_OUTPUT_BYTES} bytes without a complete access unit`,
       );
     }
-    this.#pending = this.#pending.length
-      ? Buffer.concat([this.#pending, incoming])
-      : incoming;
+    this.#pending = this.#pending.length ? Buffer.concat([this.#pending, incoming]) : incoming;
     this.#scanNals();
     if (
       this.#pending.length > MAX_OUTPUT_WITHOUT_AUD_BYTES &&
@@ -382,10 +416,7 @@ export class H264OutputParser {
 
       let dataPos = -1;
       if (this.#pending[i + 2] === 1) dataPos = i + 3;
-      else if (
-        this.#pending[i + 2] === 0 &&
-        this.#pending[i + 3] === 1
-      ) {
+      else if (this.#pending[i + 2] === 0 && this.#pending[i + 3] === 1) {
         dataPos = i + 4;
       }
       if (dataPos === -1) {
@@ -413,10 +444,7 @@ export class H264OutputParser {
     for (let index = 0; index < this.#nals.length; index++) {
       if (this.#nals[index]!.type !== NAL_AUD) continue;
       if (lastAud >= 0) {
-        this.#emitAccessUnit(
-          this.#nals.slice(lastAud + 1, index),
-          this.#nals[index]!.pos,
-        );
+        this.#emitAccessUnit(this.#nals.slice(lastAud + 1, index), this.#nals[index]!.pos);
       }
       lastAud = index;
     }
@@ -515,26 +543,18 @@ export function createFfmpegAvailabilityProbe(
     const binary = resolveBinary();
     if (available.has(binary)) return;
 
-    const result = await runExec(
-      binary,
-      ["-hide_banner", "-encoders"],
-      {
-        timeout: FFMPEG_PROBE_TIMEOUT_MS,
-        maxBuffer: FFMPEG_PROBE_MAX_BYTES,
-        signal,
-        lane: "background",
-      },
-    );
+    const result = await runExec(binary, ["-hide_banner", "-encoders"], {
+      timeout: FFMPEG_PROBE_TIMEOUT_MS,
+      maxBuffer: FFMPEG_PROBE_MAX_BYTES,
+      signal,
+      lane: "background",
+    });
     if (signal?.aborted) throw probeAbortReason(signal);
     if (result.error || result.status !== 0) {
       const detail = result.timedOut
         ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
-        : result.error?.message ||
-          result.stderr.trim() ||
-          `exit ${result.status}`;
-      throw new Error(
-        `ffmpeg not found or unusable (tried "${binary}"): ${detail}`,
-      );
+        : result.error?.message || result.stderr.trim() || `exit ${result.status}`;
+      throw new Error(`ffmpeg not found or unusable (tried "${binary}"): ${detail}`);
     }
     if (!/\blibx264\b/.test(`${result.stdout}\n${result.stderr}`)) {
       throw new Error(
@@ -555,17 +575,13 @@ export type FfmpegSmokeRunner = (
 ) => Promise<ExecResult<Buffer>>;
 
 /** Share subprocess lanes, deadlines, output bounds and cancellation with other commands. */
-export const runFfmpegSmokeEncode: FfmpegSmokeRunner = (
-  binary,
-  args,
-  input,
-  options,
-) => execBuffer(binary, args, {
-  ...options,
-  stdin: input,
-  timeout: options.timeout ?? HARDWARE_PROBE_TIMEOUT_MS,
-  maxBuffer: options.maxBuffer ?? HARDWARE_PROBE_MAX_BYTES,
-});
+export const runFfmpegSmokeEncode: FfmpegSmokeRunner = (binary, args, input, options) =>
+  execBuffer(binary, args, {
+    ...options,
+    stdin: input,
+    timeout: options.timeout ?? HARDWARE_PROBE_TIMEOUT_MS,
+    maxBuffer: options.maxBuffer ?? HARDWARE_PROBE_MAX_BYTES,
+  });
 
 export type FfmpegEncoderResolverOptions = FfmpegAvailabilityProbeOptions & {
   platform?: () => NodeJS.Platform;
@@ -600,10 +616,11 @@ function validateSmokeOutput(output: Buffer): void {
 }
 
 /** Strict hardware selection; cache only successes for the binary and config. */
-export function createFfmpegEncoderResolver(
-  options: FfmpegEncoderResolverOptions = {},
-): {
-  resolveEncoder: (encoder: GrpcEncoderSelection, signal?: AbortSignal) => Promise<FfmpegEncoderName>;
+export function createFfmpegEncoderResolver(options: FfmpegEncoderResolverOptions = {}): {
+  resolveEncoder: (
+    encoder: GrpcEncoderSelection,
+    signal?: AbortSignal,
+  ) => Promise<FfmpegEncoderName>;
   getHardwareEncoderError: () => string | undefined;
   reportEncoderFailure: (encoderName: FfmpegEncoderName, message: string) => void;
 } {
@@ -612,11 +629,11 @@ export function createFfmpegEncoderResolver(
   const runExec = options.runExec ?? execText;
   const runSmoke = options.runSmoke ?? runFfmpegSmokeEncode;
   const platform = options.platform ?? (() => process.platform);
-  const hardwareEncoder = options.hardwareEncoder ??
-    (() => process.env.SERVE_EMU_HARDWARE_ENCODER?.trim());
+  const hardwareEncoder =
+    options.hardwareEncoder ?? (() => process.env.SERVE_EMU_HARDWARE_ENCODER?.trim());
   const vaapiDevice = options.vaapiDevice ?? resolveVaapiDevice;
-  const checkVaapiDevice = options.checkVaapiDevice ??
-    ((path: string) => access(path, constants.R_OK | constants.W_OK));
+  const checkVaapiDevice =
+    options.checkVaapiDevice ?? ((path: string) => access(path, constants.R_OK | constants.W_OK));
   const successes = new Map<string, FfmpegEncoderName>();
   const errors = new Map<string, string>();
   const config = () => {
@@ -649,8 +666,11 @@ export function createFfmpegEncoderResolver(
       }
       const candidates: FfmpegEncoderName[] = pin
         ? [backendNames[pin as keyof typeof backendNames]]
-        : host === "darwin" ? ["h264_videotoolbox"]
-        : host === "linux" ? ["h264_nvenc", "h264_vaapi"] : [];
+        : host === "darwin"
+          ? ["h264_videotoolbox"]
+          : host === "linux"
+            ? ["h264_nvenc", "h264_vaapi"]
+            : [];
       if (!candidates.length) {
         throw new Error(`hardware H.264 encoding is not supported on ${host}`);
       }
@@ -662,10 +682,13 @@ export function createFfmpegEncoderResolver(
       });
       if (signal?.aborted) throw probeAbortReason(signal);
       if (listing.error || listing.status !== 0) {
-        throw new Error(listing.timedOut
-          ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
-          : listing.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
-            listing.error?.message || `exit ${listing.status}`);
+        throw new Error(
+          listing.timedOut
+            ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
+            : listing.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+                listing.error?.message ||
+                `exit ${listing.status}`,
+        );
       }
       const listed = `${listing.stdout}\n${listing.stderr}`;
       const failures: string[] = [];
@@ -684,21 +707,36 @@ export function createFfmpegEncoderResolver(
             }
           }
           if (signal?.aborted) throw probeAbortReason(signal);
-          const smoke = await runSmoke(binary, ffmpegEncoderArgs({
-            width: HARDWARE_PROBE_DIMENSION, height: HARDWARE_PROBE_DIMENSION,
-            fps: 30, bitRate: 1_000_000, keyFrameInterval: 1, encoderName,
-          }, device), Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96), {
-            timeout: HARDWARE_PROBE_TIMEOUT_MS,
-            maxBuffer: HARDWARE_PROBE_MAX_BYTES,
-            signal,
-            lane: "background",
-          });
+          const smoke = await runSmoke(
+            binary,
+            ffmpegEncoderArgs(
+              {
+                width: HARDWARE_PROBE_DIMENSION,
+                height: HARDWARE_PROBE_DIMENSION,
+                fps: 30,
+                bitRate: 1_000_000,
+                keyFrameInterval: 1,
+                encoderName,
+              },
+              device,
+            ),
+            Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96),
+            {
+              timeout: HARDWARE_PROBE_TIMEOUT_MS,
+              maxBuffer: HARDWARE_PROBE_MAX_BYTES,
+              signal,
+              lane: "background",
+            },
+          );
           if (signal?.aborted) throw probeAbortReason(signal);
           if (smoke.error || smoke.status !== 0) {
-            throw new Error(smoke.timedOut
-              ? `smoke encode timed out after ${HARDWARE_PROBE_TIMEOUT_MS}ms`
-              : smoke.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
-                smoke.error?.message || `exit ${smoke.status}`);
+            throw new Error(
+              smoke.timedOut
+                ? `smoke encode timed out after ${HARDWARE_PROBE_TIMEOUT_MS}ms`
+                : smoke.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+                    smoke.error?.message ||
+                    `exit ${smoke.status}`,
+            );
           }
           validateSmokeOutput(smoke.stdout);
           successes.set(key, encoderName);
@@ -706,7 +744,9 @@ export function createFfmpegEncoderResolver(
           return encoderName;
         } catch (error) {
           if (signal?.aborted) throw probeAbortReason(signal);
-          failures.push(`${encoderName}: ${error instanceof Error ? error.message : String(error)}`);
+          failures.push(
+            `${encoderName}: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
       throw new Error(failures.join("; "));
@@ -756,9 +796,11 @@ export function createFfmpegEncoderResolver(
         const started = task;
         // A departing last waiter removes the task before its process settles.
         // Its cleanup must never remove a newer retry for the same key.
-        void task.promise.finally(() => {
-          if (pending.get(key) === started) pending.delete(key);
-        }).catch(() => {});
+        void task.promise
+          .finally(() => {
+            if (pending.get(key) === started) pending.delete(key);
+          })
+          .catch(() => {});
       }
       const shared = task;
       shared.waiters++;
@@ -836,11 +878,9 @@ export class H264Encoder {
       this.#resolveProcessDone = resolve;
     });
 
-    this.#proc = spawn(
-      resolveFfmpeg(),
-      ffmpegEncoderArgs(opts),
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
+    this.#proc = spawn(resolveFfmpeg(), ffmpegEncoderArgs(opts), {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     this.#proc.stdout.on("data", (chunk: Buffer) => this.#append(chunk));
     this.#proc.stdout.once("error", (error) => {
@@ -888,10 +928,7 @@ export class H264Encoder {
     if (!Buffer.isBuffer(image)) {
       throw new TypeError("encoder input must be a Buffer");
     }
-    if (
-      this.inputFormat === "rgb24" &&
-      image.length !== this.#inputFrameBytes
-    ) {
+    if (this.inputFormat === "rgb24" && image.length !== this.#inputFrameBytes) {
       throw new RangeError(
         `rgb frame must be a ${this.#inputFrameBytes}-byte Buffer (${this.width}x${this.height} rgb24)`,
       );
@@ -900,9 +937,7 @@ export class H264Encoder {
       this.inputFormat === "png" &&
       (image.length < 8 ||
         image.length > MAX_PNG_FRAME_BYTES ||
-        !image.subarray(0, 8).equals(
-          Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-        ))
+        !image.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])))
     ) {
       throw new RangeError(
         `png frame must be a complete PNG Buffer of at most ${MAX_PNG_FRAME_BYTES} bytes`,

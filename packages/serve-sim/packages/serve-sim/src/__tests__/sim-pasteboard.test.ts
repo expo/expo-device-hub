@@ -23,13 +23,18 @@ describe("buildSimpbArtifact", () => {
     process.env.SERVE_SIM_SIMPB_DIR = shims.dir;
     const log = spyOn(console, "error").mockImplementation(() => {});
     let ticks = 0;
-    const timer = setInterval(() => { ticks++; }, 10);
+    const timer = setInterval(() => {
+      ticks++;
+    }, 10);
     try {
       const built = await Promise.all([
         buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard"),
         buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard"),
       ]);
-      expect(built).toEqual([join(shims.dir, "serve-sim-pasteboard"), join(shims.dir, "serve-sim-pasteboard")]);
+      expect(built).toEqual([
+        join(shims.dir, "serve-sim-pasteboard"),
+        join(shims.dir, "serve-sim-pasteboard"),
+      ]);
       expect(readFileSync(join(shims.dir, "builds"), "utf8")).toBe("build\n");
       expect(ticks).toBeGreaterThan(0);
     } finally {
@@ -48,27 +53,34 @@ describe("writeSimPasteboard", () => {
     const log = join(dir, "writes");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let shortcutStarted!: () => void;
-    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    const shortcut = new Promise<void>((resolve) => {
+      shortcutStarted = resolve;
+    });
     try {
-      await withShimsAsync({ xcrun: `#!/bin/sh\ncat >> ${quotedLog}\nprintf '\n' >> ${quotedLog}\n` }, async () => {
-        const udid = `PASTE-LOCK-TEST-${process.pid}`;
-        const first = pasteTextIntoSim(udid, "alpha", async () => {
-          shortcutStarted();
-          await gate;
-        });
-        await shortcut;
-        const second = writeSimPasteboard(udid, "beta");
-        try {
-          await Bun.sleep(100);
-          expect(readFileSync(log, "utf8")).toBe("alpha\n");
-        } finally {
-          release();
-        }
-        await Promise.all([first, second]);
-        expect(readFileSync(log, "utf8")).toBe("alpha\nbeta\n");
-      });
+      await withShimsAsync(
+        { xcrun: `#!/bin/sh\ncat >> ${quotedLog}\nprintf '\n' >> ${quotedLog}\n` },
+        async () => {
+          const udid = `PASTE-LOCK-TEST-${process.pid}`;
+          const first = pasteTextIntoSim(udid, "alpha", async () => {
+            shortcutStarted();
+            await gate;
+          });
+          await shortcut;
+          const second = writeSimPasteboard(udid, "beta");
+          try {
+            await Bun.sleep(100);
+            expect(readFileSync(log, "utf8")).toBe("alpha\n");
+          } finally {
+            release();
+          }
+          await Promise.all([first, second]);
+          expect(readFileSync(log, "utf8")).toBe("alpha\nbeta\n");
+        },
+      );
     } finally {
       release();
       rmSync(dir, { recursive: true, force: true });
@@ -77,7 +89,12 @@ describe("writeSimPasteboard", () => {
 
   test("asks the tool to write with --write", async () => {
     const shims = installShims({
-      xcrun: ["#!/bin/sh", 'printf "%s\\n" "$@" > "$SERVE_SIM_SIMPB_DIR/argv"', "cat > /dev/null", ""].join("\n"),
+      xcrun: [
+        "#!/bin/sh",
+        'printf "%s\\n" "$@" > "$SERVE_SIM_SIMPB_DIR/argv"',
+        "cat > /dev/null",
+        "",
+      ].join("\n"),
       "serve-sim-pasteboard": "",
     });
     const oldToolDir = process.env.SERVE_SIM_SIMPB_DIR;
@@ -85,8 +102,13 @@ describe("writeSimPasteboard", () => {
     try {
       const udid = `WRITE-ARGS-TEST-${process.pid}`;
       await writeSimPasteboard(udid, "alpha");
-      expect(readFileSync(join(shims.dir, "argv"), "utf8").trimEnd().split("\n"))
-        .toEqual(["simctl", "spawn", udid, join(shims.dir, "serve-sim-pasteboard"), "--write"]);
+      expect(readFileSync(join(shims.dir, "argv"), "utf8").trimEnd().split("\n")).toEqual([
+        "simctl",
+        "spawn",
+        udid,
+        join(shims.dir, "serve-sim-pasteboard"),
+        "--write",
+      ]);
     } finally {
       if (oldToolDir === undefined) delete process.env.SERVE_SIM_SIMPB_DIR;
       else process.env.SERVE_SIM_SIMPB_DIR = oldToolDir;
@@ -97,7 +119,14 @@ describe("writeSimPasteboard", () => {
   test("reports simctl's reason when it exits without reading the text", async () => {
     const shims = installShims({
       // Close stdin and stay alive, so the write fails with EPIPE before xcrun exits.
-      xcrun: ["#!/bin/sh", "exec 0<&-", 'echo "Invalid device: $3" >&2', "sleep 1", "exit 148", ""].join("\n"),
+      xcrun: [
+        "#!/bin/sh",
+        "exec 0<&-",
+        'echo "Invalid device: $3" >&2',
+        "sleep 1",
+        "exit 148",
+        "",
+      ].join("\n"),
       "serve-sim-pasteboard": "",
     });
     const oldToolDir = process.env.SERVE_SIM_SIMPB_DIR;
@@ -105,8 +134,9 @@ describe("writeSimPasteboard", () => {
     try {
       // Larger than a pipe buffer, so the write cannot finish before stdin closes.
       const text = "x".repeat(1024 * 1024);
-      await expect(writeSimPasteboard("00000000-0000-0000-0000-000000000000", text))
-        .rejects.toThrow("Invalid device: 00000000-0000-0000-0000-000000000000");
+      await expect(
+        writeSimPasteboard("00000000-0000-0000-0000-000000000000", text),
+      ).rejects.toThrow("Invalid device: 00000000-0000-0000-0000-000000000000");
     } finally {
       if (oldToolDir === undefined) delete process.env.SERVE_SIM_SIMPB_DIR;
       else process.env.SERVE_SIM_SIMPB_DIR = oldToolDir;

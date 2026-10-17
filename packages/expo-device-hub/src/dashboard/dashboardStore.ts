@@ -1,16 +1,16 @@
-import { type DeviceStreamMode } from '@expo/hub-client';
-import { type Device, type StreamModeAvailability } from '@expo/hub-components';
-import { create } from 'zustand';
+import { type DeviceStreamMode } from "@expo/hub-client";
+import { type Device, type StreamModeAvailability } from "@expo/hub-components";
+import { create } from "zustand";
 
-import { dashboardHideSidebar } from '../sidebar';
-import { dashboardTransport } from '../transport';
-import { browserStreamModeAvailability, resolveStreamMode } from './streamMode';
+import { dashboardHideSidebar } from "../sidebar";
+import { dashboardTransport } from "../transport";
+import { browserStreamModeAvailability, resolveStreamMode } from "./streamMode";
 
 export const DEFAULT_SIDEBAR_WIDTH = 400;
-export const HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY = 'expo-device-hub.hideUnsupportedDevices';
+export const HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY = "expo-device-hub.hideUnsupportedDevices";
 
-export type SidebarPreference = 'auto' | 'open' | 'hidden';
-export type SidebarSide = 'left' | 'right';
+export type SidebarPreference = "auto" | "open" | "hidden";
+export type SidebarSide = "left" | "right";
 
 type DashboardStoreValues = {
   selectedDeviceId: string;
@@ -36,13 +36,13 @@ export type DashboardStore = DashboardStoreValues & {
   setShowDeviceFrame: (show: boolean) => void;
 };
 
-type ReadableStorage = Pick<Storage, 'getItem'>;
-type WritableStorage = Pick<Storage, 'getItem' | 'setItem'>;
+type ReadableStorage = Pick<Storage, "getItem">;
+type WritableStorage = Pick<Storage, "getItem" | "setItem">;
 
 /** Missing or malformed values use the safe default: hide untested devices. */
 export function readHideUnsupportedDevices(storage: ReadableStorage): boolean {
   try {
-    return storage.getItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) !== 'false';
+    return storage.getItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) !== "false";
   } catch {
     return true;
   }
@@ -52,7 +52,7 @@ export function readHideUnsupportedDevices(storage: ReadableStorage): boolean {
 export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): void {
   try {
     if (storage.getItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) === null) {
-      storage.setItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY, 'true');
+      storage.setItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY, "true");
     }
   } catch {
     // Storage can be unavailable in restricted browser contexts; retain the in-memory default.
@@ -60,7 +60,7 @@ export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): 
 }
 
 function initialHideUnsupportedDevices(): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === "undefined") return true;
   try {
     return readHideUnsupportedDevices(window.localStorage);
   } catch {
@@ -71,15 +71,15 @@ function initialHideUnsupportedDevices(): boolean {
 function defaultDashboardStoreValues(): DashboardStoreValues {
   const availability = browserStreamModeAvailability();
   return {
-    selectedDeviceId: '',
+    selectedDeviceId: "",
     addedDevices: [],
     streamMode: resolveStreamMode(dashboardTransport(), availability),
     sidebarWidths: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
     sidebarPreferences: {
-      left: dashboardHideSidebar() ? 'hidden' : 'auto',
-      right: 'auto',
+      left: dashboardHideSidebar() ? "hidden" : "auto",
+      right: "auto",
     },
-    lastOpenedSidebar: 'right',
+    lastOpenedSidebar: "right",
     hideUnsupportedDevices: initialHideUnsupportedDevices(),
     showDeviceFrame: true,
   };
@@ -94,7 +94,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
       set((state) =>
         availableIds.includes(state.selectedDeviceId)
           ? state
-          : { selectedDeviceId: availableIds[0] ?? '' },
+          : { selectedDeviceId: availableIds[0] ?? "" },
       ),
     trackAddedDevice: (device, replacedIds) =>
       set((state) => {
@@ -107,7 +107,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
     dismissDevice: (id) =>
       set((state) => ({
         addedDevices: state.addedDevices.filter((item) => item.id !== id),
-        selectedDeviceId: state.selectedDeviceId === id ? '' : state.selectedDeviceId,
+        selectedDeviceId: state.selectedDeviceId === id ? "" : state.selectedDeviceId,
       })),
     chooseStreamMode: (mode, availability) =>
       set({ streamMode: resolveStreamMode(mode, availability) }),
@@ -117,13 +117,13 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
       set((state) => ({
         sidebarPreferences: {
           ...state.sidebarPreferences,
-          [side]: canDock ? 'auto' : 'open',
+          [side]: canDock ? "auto" : "open",
         },
         lastOpenedSidebar: side,
       })),
     closeSidebar: (side) =>
       set((state) => ({
-        sidebarPreferences: { ...state.sidebarPreferences, [side]: 'hidden' },
+        sidebarPreferences: { ...state.sidebarPreferences, [side]: "hidden" },
       })),
     setHideUnsupportedDevices: (hideUnsupportedDevices) => set({ hideUnsupportedDevices }),
     setShowDeviceFrame: (showDeviceFrame) => set({ showDeviceFrame }),

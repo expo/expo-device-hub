@@ -1,13 +1,13 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 import type {
   AndroidUtilsResult,
   BootDeviceOptions,
   BootedDevice,
   EmulatorExit,
-} from '@expo/hub-android-utils';
+} from "@expo/hub-android-utils";
 
-import { bootHubDevice, shutdownHubDevice, type EmulatorCameraFeeds } from '../device-actions';
+import { bootHubDevice, shutdownHubDevice, type EmulatorCameraFeeds } from "../device-actions";
 
 const calls: string[] = [];
 
@@ -16,7 +16,7 @@ function pending<T>(): Promise<T> {
 }
 
 function feedArgs(serial: string): string[] {
-  return ['-camera-back', `imagefile:/feeds/${serial}-back.png`];
+  return ["-camera-back", `imagefile:/feeds/${serial}-back.png`];
 }
 
 interface Scenario {
@@ -35,12 +35,12 @@ const scenario: Scenario = {
   shutdownOk: true,
 };
 
-const androidUtils = await import('@expo/hub-android-utils');
+const androidUtils = await import("@expo/hub-android-utils");
 
-mock.module('@expo/hub-android-utils', () => ({
+mock.module("@expo/hub-android-utils", () => ({
   ...androidUtils,
   freeEmulatorPort: async () => {
-    calls.push('freeEmulatorPort');
+    calls.push("freeEmulatorPort");
     return { value: scenario.port, error: null };
   },
   bootDevice: async (options: BootDeviceOptions) => {
@@ -87,7 +87,7 @@ function cameraFeeds(seedFailure?: Error): EmulatorCameraFeeds {
 }
 
 function bootRequest() {
-  return { platform: 'android' as const, id: '', name: 'Pixel_9' };
+  return { platform: "android" as const, id: "", name: "Pixel_9" };
 }
 
 beforeEach(() => {
@@ -99,74 +99,74 @@ beforeEach(() => {
   scenario.shutdownOk = true;
 });
 
-describe('bootHubDevice camera feeds', () => {
-  test('seeds the allocated serial before it spawns the emulator', async () => {
+describe("bootHubDevice camera feeds", () => {
+  test("seeds the allocated serial before it spawns the emulator", async () => {
     const result = await bootHubDevice(bootRequest(), cameraFeeds());
 
     expect(calls).toEqual([
-      'freeEmulatorPort',
-      'seedPlaceholders emulator-5560',
-      'launchArgs emulator-5560',
-      'spawn Pixel_9',
-      'waitForAdbOnline emulator-5560',
+      "freeEmulatorPort",
+      "seedPlaceholders emulator-5560",
+      "launchArgs emulator-5560",
+      "spawn Pixel_9",
+      "waitForAdbOnline emulator-5560",
     ]);
     expect(result).toEqual({
       ok: true,
-      id: 'emulator-5560',
-      serial: 'emulator-5560',
+      id: "emulator-5560",
+      serial: "emulator-5560",
       errors: [],
     });
   });
 
-  test('spawns with the launch args for the allocated serial', async () => {
+  test("spawns with the launch args for the allocated serial", async () => {
     scenario.port = 5570;
 
     await bootHubDevice(bootRequest(), cameraFeeds());
 
     expect(scenario.spawned).toEqual({
-      name: 'Pixel_9',
+      name: "Pixel_9",
       port: 5570,
-      extraArgs: feedArgs('emulator-5570'),
+      extraArgs: feedArgs("emulator-5570"),
     });
   });
 
-  test('boots without camera feeds when seeding fails', async () => {
-    const result = await bootHubDevice(bootRequest(), cameraFeeds(new Error('disk full')));
+  test("boots without camera feeds when seeding fails", async () => {
+    const result = await bootHubDevice(bootRequest(), cameraFeeds(new Error("disk full")));
 
     expect(calls).toEqual([
-      'freeEmulatorPort',
-      'seedPlaceholders emulator-5560',
-      'spawn Pixel_9',
-      'waitForAdbOnline emulator-5560',
+      "freeEmulatorPort",
+      "seedPlaceholders emulator-5560",
+      "spawn Pixel_9",
+      "waitForAdbOnline emulator-5560",
     ]);
     expect(scenario.spawned?.extraArgs).toBeUndefined();
     expect(result.ok).toBe(true);
-    expect(result.errors[0]?.message).toBe('Failed to prepare camera feeds for Pixel_9');
+    expect(result.errors[0]?.message).toBe("Failed to prepare camera feeds for Pixel_9");
   });
 });
 
-describe('shutdownHubDevice', () => {
-  test('waits for the emulator to go offline after the shutdown', async () => {
+describe("shutdownHubDevice", () => {
+  test("waits for the emulator to go offline after the shutdown", async () => {
     const result = await shutdownHubDevice({
-      platform: 'android',
-      id: 'emulator-5560',
-      name: 'Pixel_9',
+      platform: "android",
+      id: "emulator-5560",
+      name: "Pixel_9",
     });
 
-    expect(calls).toEqual(['shutdownDevice emulator-5560', 'waitForAdbOffline emulator-5560']);
+    expect(calls).toEqual(["shutdownDevice emulator-5560", "waitForAdbOffline emulator-5560"]);
     expect(result).toEqual({ ok: true, errors: [] });
   });
 
-  test('does not wait for adb when the shutdown itself fails', async () => {
+  test("does not wait for adb when the shutdown itself fails", async () => {
     scenario.shutdownOk = false;
 
     const result = await shutdownHubDevice({
-      platform: 'android',
-      id: 'emulator-5560',
-      name: 'Pixel_9',
+      platform: "android",
+      id: "emulator-5560",
+      name: "Pixel_9",
     });
 
-    expect(calls).toEqual(['shutdownDevice emulator-5560']);
+    expect(calls).toEqual(["shutdownDevice emulator-5560"]);
     expect(result.ok).toBe(false);
   });
 });

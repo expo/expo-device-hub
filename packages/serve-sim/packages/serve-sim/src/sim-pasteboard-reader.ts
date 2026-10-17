@@ -9,7 +9,14 @@ import { isCapabilityEnabled } from "./launch-manager";
 import { readLaunchState } from "./launch-state";
 import { simctl } from "./simctl";
 import { withStateLock } from "./state-lock";
-import { buildSimpbArtifact, locateSimpbArtifact, MAX_PASTEBOARD_TEXT_BYTES, PasteboardTooLargeError, readPasteboardViaSimctl, type PasteboardReadResult } from "./sim-pasteboard";
+import {
+  buildSimpbArtifact,
+  locateSimpbArtifact,
+  MAX_PASTEBOARD_TEXT_BYTES,
+  PasteboardTooLargeError,
+  readPasteboardViaSimctl,
+  type PasteboardReadResult,
+} from "./sim-pasteboard";
 
 export const CLIPBOARD_CAPABILITY = "clipboard";
 
@@ -35,7 +42,7 @@ export const clipboardCapability: CapabilityDefinition = {
   async setEnabled({ enabled }) {
     if (!enabled) return null;
     return {
-      dylib: locatePasteboardReaderDylib() ?? await buildPasteboardReaderDylib(),
+      dylib: locatePasteboardReaderDylib() ?? (await buildPasteboardReaderDylib()),
     };
   },
 };
@@ -47,9 +54,11 @@ export function readSimPasteboardResult(udid: string): Promise<PasteboardReadRes
     .catch(() => {})
     .then(() => readPasteboardOnce(udid));
   readsInFlight.set(udid, queued);
-  void queued.catch(() => {}).finally(() => {
-    if (readsInFlight.get(udid) === queued) readsInFlight.delete(udid);
-  });
+  void queued
+    .catch(() => {})
+    .finally(() => {
+      if (readsInFlight.get(udid) === queued) readsInFlight.delete(udid);
+    });
   return queued;
 }
 
@@ -65,14 +74,24 @@ async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
   try {
     return await readViaInjectedReader(udid);
   } catch (error) {
-    if (error instanceof PasteboardTooLargeError || error instanceof PasteboardUnavailableError) throw error;
-    console.error(`[serve-sim] Could not read the simulator clipboard through the app reader on ${udid}:`, error);
-    throw new PasteboardUnavailableError("Could not read the simulator clipboard. Open the app you copied from and retry.");
+    if (error instanceof PasteboardTooLargeError || error instanceof PasteboardUnavailableError)
+      throw error;
+    console.error(
+      `[serve-sim] Could not read the simulator clipboard through the app reader on ${udid}:`,
+      error,
+    );
+    throw new PasteboardUnavailableError(
+      "Could not read the simulator clipboard. Open the app you copied from and retry.",
+    );
   }
 }
 
-export function pasteboardTarget(frontmost: { bundleId: string } | null, launched: string | null): string | null {
-  const bundleId = frontmost && frontmost.bundleId !== SPRINGBOARD_BUNDLE ? frontmost.bundleId : launched;
+export function pasteboardTarget(
+  frontmost: { bundleId: string } | null,
+  launched: string | null,
+): string | null {
+  const bundleId =
+    frontmost && frontmost.bundleId !== SPRINGBOARD_BUNDLE ? frontmost.bundleId : launched;
   return bundleId && bundleId !== SPRINGBOARD_BUNDLE ? bundleId : null;
 }
 
@@ -80,23 +99,31 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
   const frontmost = await frontmostAppOf(udid);
   const bundleId = pasteboardTarget(frontmost, readLaunchState(udid)?.bundleId ?? null);
   if (!bundleId) {
-    throw new PasteboardUnavailableError("Could not read the simulator clipboard. Open the app you copied from and retry.");
+    throw new PasteboardUnavailableError(
+      "Could not read the simulator clipboard. Open the app you copied from and retry.",
+    );
   }
   if (!isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)) {
-    throw new PasteboardUnavailableError("Clipboard reader is unavailable. Start a session with clipboard enabled and retry.");
+    throw new PasteboardUnavailableError(
+      "Clipboard reader is unavailable. Start a session with clipboard enabled and retry.",
+    );
   }
   const container = await simctl(["get_app_container", udid, bundleId, "data"]);
   if (!isContainerPath(container)) {
-    throw new PasteboardUnavailableError("Clipboard is unavailable in this app. Open another app and retry.");
+    throw new PasteboardUnavailableError(
+      "Clipboard is unavailable in this app. Open another app and retry.",
+    );
   }
   // A denied read and an empty pasteboard both produce an empty string.
   await simctl(["privacy", udid, "grant", "pasteboard", bundleId]);
   const text = await requestInjectedPasteboard(container);
   if (text === null) {
     // @ref LLP 0010#reads-never-restart-apps — why the error asks for a restart instead of restarting
-    throw new PasteboardUnavailableError(frontmost?.bundleId === SPRINGBOARD_BUNDLE
-      ? "Could not read the simulator clipboard. Open the app you copied from and retry."
-      : "Could not read this app's clipboard. Restart the app and retry.");
+    throw new PasteboardUnavailableError(
+      frontmost?.bundleId === SPRINGBOARD_BUNDLE
+        ? "Could not read the simulator clipboard. Open the app you copied from and retry."
+        : "Could not read this app's clipboard. Restart the app and retry.",
+    );
   }
   return { text };
 }

@@ -1,19 +1,15 @@
-import { endpointFor } from './connections';
-import {
-  type DeviceClient,
-  type DeviceConnectionOptions,
-  type DevicePlatform,
-} from './types';
-import { useAndroidDeviceClient } from './useAndroidDevice';
-import { useIosDeviceClient } from './useIosDevice';
-import { NOOP_DEVICE_CLIENT } from './useNoopDeviceClient';
+import { endpointFor } from "./connections";
+import { type DeviceClient, type DeviceConnectionOptions, type DevicePlatform } from "./types";
+import { useAndroidDeviceClient } from "./useAndroidDevice";
+import { useIosDeviceClient } from "./useIosDevice";
+import { NOOP_DEVICE_CLIENT } from "./useNoopDeviceClient";
 
 export interface ActiveDeviceTarget {
   platform: DevicePlatform;
   /** Which running device (udid/serial) to stream. */
   device?: string | null;
   /** Explicit consumer-owned stream selection. */
-  streamMode: DeviceConnectionOptions['streamMode'];
+  streamMode: DeviceConnectionOptions["streamMode"];
 }
 
 export interface ActiveDeviceClientOptions {
@@ -32,21 +28,21 @@ export function useActiveDeviceClient(
   hubBase: string,
   { token = null }: ActiveDeviceClientOptions = {},
 ): DeviceClient {
-  const iosActive = target?.platform === 'ios';
-  const androidActive = target?.platform === 'android';
+  const iosActive = target?.platform === "ios";
+  const androidActive = target?.platform === "android";
 
   const ios = useIosDeviceClient({
     enabled: iosActive,
-    baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
-    device: iosActive ? target?.device ?? null : null,
-    streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    baseUrl: iosActive ? endpointFor("ios", hubBase) : null,
+    device: iosActive ? (target?.device ?? null) : null,
+    streamMode: target?.streamMode as DeviceConnectionOptions["streamMode"],
     token,
   });
   const android = useAndroidDeviceClient({
     enabled: androidActive,
-    baseUrl: androidActive ? endpointFor('android', hubBase) : null,
-    device: androidActive ? target?.device ?? null : null,
-    streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    baseUrl: androidActive ? endpointFor("android", hubBase) : null,
+    device: androidActive ? (target?.device ?? null) : null,
+    streamMode: target?.streamMode as DeviceConnectionOptions["streamMode"],
     token,
   });
 

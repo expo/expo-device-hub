@@ -7,18 +7,21 @@ export async function runRecordingShutdown(steps: {
   // @ref LLP 0001#control-and-shutdown — report deadline expiry without interrupting an MP4 writer.
   let expired = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const completed = steps.finishRecordings().then(success => {
+  const completed = steps.finishRecordings().then((success) => {
     clearTimeout(timer);
     return steps.completeShutdown(success && !expired);
   });
   try {
-    await Promise.race([completed, new Promise<void>(resolve => {
-      timer = setTimeout(() => {
-        expired = true;
-        steps.onTimeout();
-        resolve();
-      }, steps.timeoutMs);
-    })]);
+    await Promise.race([
+      completed,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          expired = true;
+          steps.onTimeout();
+          resolve();
+        }, steps.timeoutMs);
+      }),
+    ]);
   } finally {
     clearTimeout(timer);
   }
@@ -39,7 +42,10 @@ export async function runShutdownSteps(steps: {
   const within = async (work: Promise<unknown>, ms: number) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await Promise.race([work.catch(() => {}), new Promise((done) => (timer = setTimeout(done, Math.max(0, ms))))]);
+      await Promise.race([
+        work.catch(() => {}),
+        new Promise((done) => (timer = setTimeout(done, Math.max(0, ms)))),
+      ]);
     } finally {
       clearTimeout(timer);
     }

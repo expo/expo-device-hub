@@ -55,9 +55,7 @@ export type DisposeDeviceSessionOpts = {
  * source generations share `deviceState`; a real device switch does not.
  * Async stream work can only see this context and its aborted signal.
  */
-export class ActiveDeviceSession<
-  TClient extends SessionClient = SessionClient,
-> {
+export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> {
   readonly serial: string;
   readonly generation: number;
   readonly stream: EmuSession;
@@ -118,9 +116,7 @@ export class ActiveDeviceSession<
       ((client, code, reason) => {
         client.ws.close(code, reason);
       });
-    this.inputQueue =
-      opts.inputQueue ??
-      opts.stream.controls;
+    this.inputQueue = opts.inputQueue ?? opts.stream.controls;
     const applyLocation = opts.applyLocation;
     this.deviceState =
       opts.deviceState ??
@@ -189,10 +185,7 @@ export class ActiveDeviceSession<
   ): Promise<AccessibilitySnapshot> {
     this.assertUsable();
     const now = this.#now();
-    if (
-      this.#accessibilitySnapshotCache &&
-      this.#accessibilitySnapshotCache.expiresMs > now
-    ) {
+    if (this.#accessibilitySnapshotCache && this.#accessibilitySnapshotCache.expiresMs > now) {
       return Promise.resolve(this.#accessibilitySnapshotCache.snapshot);
     }
     if (this.#accessibilitySnapshotInFlight) {
@@ -353,8 +346,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
     if (!this.isCurrent(context)) {
       throw new SessionChangedError(
         context.generation,
-        this.#closed ||
-          (this.#current === context && context.signal.aborted)
+        this.#closed || (this.#current === context && context.signal.aborted)
           ? null
           : this.#current.generation,
       );
@@ -372,11 +364,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
 
   switch(
     serial: string,
-    prepare: (
-      serial: string,
-      generation: number,
-      signal: AbortSignal,
-    ) => Promise<TContext>,
+    prepare: (serial: string, generation: number, signal: AbortSignal) => Promise<TContext>,
     activate?: (context: TContext) => void,
   ): Promise<TContext> {
     return this.#enqueue(async () => {
@@ -399,11 +387,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
    * a device switch.
    */
   replace(
-    prepare: (
-      current: TContext,
-      generation: number,
-      signal: AbortSignal,
-    ) => Promise<TContext>,
+    prepare: (current: TContext, generation: number, signal: AbortSignal) => Promise<TContext>,
     activate?: (context: TContext) => void,
     reason = "device session replaced",
     shouldReplace: (current: TContext) => boolean = () => true,
@@ -421,11 +405,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
     });
   }
 
-  stop(
-    context: TContext,
-    reason: string,
-    opts: DisposeDeviceSessionOpts = {},
-  ): Promise<void> {
+  stop(context: TContext, reason: string, opts: DisposeDeviceSessionOpts = {}): Promise<void> {
     return this.#enqueue(async () => {
       this.assertPublished(context);
       await context.dispose(reason, opts);
@@ -434,9 +414,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
 
   close(reason: string): Promise<void> {
     this.#closing = true;
-    this.#transitionController?.abort(
-      new SessionChangedError(this.#current.generation, null),
-    );
+    this.#transitionController?.abort(new SessionChangedError(this.#current.generation, null));
     const activeAtClose = this.#current;
     const immediateDispose = activeAtClose.dispose(reason, {
       clientCode: 1001,
@@ -465,10 +443,7 @@ export class DeviceSessionManager<TContext extends ManagedDeviceSession> {
 
   async #replacePublished(
     previous: TContext,
-    prepare: (
-      generation: number,
-      signal: AbortSignal,
-    ) => Promise<TContext>,
+    prepare: (generation: number, signal: AbortSignal) => Promise<TContext>,
     activate: ((context: TContext) => void) | undefined,
     reason: string,
   ): Promise<TContext> {

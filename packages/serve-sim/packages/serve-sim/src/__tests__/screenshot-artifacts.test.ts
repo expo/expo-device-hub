@@ -2,7 +2,11 @@ import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { clientSafeErrorMessage, saveScreenshotArtifact, screenshotArtifactHeaders } from "../screenshot-artifacts";
+import {
+  clientSafeErrorMessage,
+  saveScreenshotArtifact,
+  screenshotArtifactHeaders,
+} from "../screenshot-artifacts";
 
 describe("screenshot artifacts", () => {
   test("uses readable UTC timestamps and keeps simultaneous captures distinct", async () => {
@@ -16,9 +20,9 @@ describe("screenshot artifacts", () => {
       ]);
       const files = await readdir(directory);
       expect(files).toHaveLength(2);
-      expect(results.map((result) => (result.status === "saved" ? result.file : null)).sort()).toEqual(
-        files.map((file) => join(directory, file)).sort(),
-      );
+      expect(
+        results.map((result) => (result.status === "saved" ? result.file : null)).sort(),
+      ).toEqual(files.map((file) => join(directory, file)).sort());
       for (const file of files) {
         expect(file).toMatch(/^screenshot-2026-09-24T08-45-59-123Z-[a-f0-9]{12}\.png$/);
         expect(new Uint8Array(await readFile(join(directory, file)))).toEqual(png);
@@ -34,7 +38,8 @@ describe("screenshot artifacts", () => {
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
     try {
       const result = await saveScreenshotArtifact(null as unknown as Uint8Array, directory);
-      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      if (result.status !== "failed")
+        throw new Error(`expected a failed save, got ${result.status}`);
       expect(result.error).toBe("unknown error");
       expect(result.file.startsWith(join(directory, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(1);
@@ -62,7 +67,8 @@ describe("screenshot artifacts", () => {
       const file = join(directory, "file");
       await writeFile(file, "occupied");
       const result = await saveScreenshotArtifact(new Uint8Array(), file);
-      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      if (result.status !== "failed")
+        throw new Error(`expected a failed save, got ${result.status}`);
       expect(result.error).toMatch(/^E(EXIST|NOTDIR)$/);
       expect(result.file.startsWith(join(file, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(2);
@@ -84,7 +90,8 @@ describe("screenshot artifacts", () => {
       const nested = join(directory, "missing", "artifacts");
       await writeFile(join(directory, "missing"), "occupied");
       const result = await saveScreenshotArtifact(new Uint8Array(), nested);
-      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      if (result.status !== "failed")
+        throw new Error(`expected a failed save, got ${result.status}`);
       expect(result.error).toMatch(/^E(EXIST|NOTDIR)$/);
       expect(result.error).not.toContain(directory);
       expect(String(consoleError.mock.calls[0]?.[1])).toContain(directory);
@@ -95,15 +102,20 @@ describe("screenshot artifacts", () => {
   });
 
   test("clientSafeErrorMessage sends only an errno code, never the message", () => {
-    const enospc = Object.assign(new Error("ENOSPC: no space left on device, open '/srv/artifacts/a.png.tmp'"), {
-      code: "ENOSPC",
-    });
+    const enospc = Object.assign(
+      new Error("ENOSPC: no space left on device, open '/srv/artifacts/a.png.tmp'"),
+      {
+        code: "ENOSPC",
+      },
+    );
     expect(clientSafeErrorMessage(enospc)).toBe("ENOSPC");
     const invalidArg = Object.assign(new TypeError('The "data" argument must be of type string'), {
       code: "ERR_INVALID_ARG_TYPE",
     });
     expect(clientSafeErrorMessage(invalidArg)).toBe("unknown error");
-    expect(clientSafeErrorMessage(new Error("open '/srv/artifacts/a.png.tmp' failed"))).toBe("unknown error");
+    expect(clientSafeErrorMessage(new Error("open '/srv/artifacts/a.png.tmp' failed"))).toBe(
+      "unknown error",
+    );
     expect(clientSafeErrorMessage("boom")).toBe("unknown error");
   });
 
@@ -136,7 +148,11 @@ describe("screenshot artifact headers", () => {
   });
 
   test("cap the failure reason at 512 characters", () => {
-    const headers = screenshotArtifactHeaders({ status: "failed", file: "/tmp/shot.png", error: "x".repeat(2000) });
+    const headers = screenshotArtifactHeaders({
+      status: "failed",
+      file: "/tmp/shot.png",
+      error: "x".repeat(2000),
+    });
     expect(headers["X-Expo-Screenshot-Artifact-Error"]).toHaveLength(512);
   });
 });

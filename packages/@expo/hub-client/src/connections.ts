@@ -1,20 +1,19 @@
-
-import { type DevicePlatform } from './types';
+import { type DevicePlatform } from "./types";
 
 const VENDOR_PREFIXES: Record<DevicePlatform, string> = {
-  ios: '/vendor/serve-sim',
-  android: '/vendor/serve-emu',
+  ios: "/vendor/serve-sim",
+  android: "/vendor/serve-emu",
 };
 
 function trimTrailingSlash(path: string): string {
-  return path.replace(/\/+$/, '');
+  return path.replace(/\/+$/, "");
 }
 
 /** Qualify a same-origin path with the current origin so `new URL(..)` against it
  *  keeps the base path (a bare absolute path would be dropped). */
 function sameOrigin(path: string): string {
-  if (path.startsWith('http')) return path;
-  if (typeof window !== 'undefined' && window.location?.origin) {
+  if (path.startsWith("http")) return path;
+  if (typeof window !== "undefined" && window.location?.origin) {
     return `${window.location.origin}${path}`;
   }
   return path;
@@ -28,10 +27,7 @@ function sameOrigin(path: string): string {
  * ('' or '/' = origin root; trailing slashes trimmed) with the vendor prefix
  * appended.
  */
-export function endpointFor(
-  platform: DevicePlatform,
-  hubBase: string,
-): string {
+export function endpointFor(platform: DevicePlatform, hubBase: string): string {
   return sameOrigin(`${trimTrailingSlash(hubBase)}${VENDOR_PREFIXES[platform]}`);
 }
 
@@ -48,8 +44,8 @@ export async function startIosHelper(
 ): Promise<void> {
   const base = trimTrailingSlash(sameOrigin(endpoint));
   await fetchImpl(`${base}/grid/api/start`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ udid }),
     // A cold boot can take well over a minute; don't time out early.
     signal: AbortSignal.timeout(190_000),

@@ -14,13 +14,12 @@ import { createMjpegFrameParser } from "../utils/mjpeg-frame-parser";
 export function useMjpegStream(streamUrl: string | null) {
   const subscribersRef = useRef<Set<(blobUrl: string) => void>>(new Set());
 
-  const subscribeFrame = useCallback(
-    (cb: (blobUrl: string) => void) => {
-      subscribersRef.current.add(cb);
-      return () => { subscribersRef.current.delete(cb); };
-    },
-    [],
-  );
+  const subscribeFrame = useCallback((cb: (blobUrl: string) => void) => {
+    subscribersRef.current.add(cb);
+    return () => {
+      subscribersRef.current.delete(cb);
+    };
+  }, []);
 
   useEffect(() => {
     if (!streamUrl) return;

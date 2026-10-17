@@ -16,7 +16,6 @@ const SIMULATOR_TEST_TIMEOUT_MS = 45_000;
 
 const middleware = simMiddleware({ basePath: "/preview", corsOrigins: [DASHBOARD] });
 
-
 describe("POST /api/screenshot", () => {
   test("rejects non-POST methods with CORS headers", async () => {
     const res = await middleware(
@@ -45,10 +44,10 @@ describe("POST /api/screenshot", () => {
   test("returns CORS headers when screenshot capture fails", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
     const res = await middleware(
-      new Request(
-        `http://localhost:3200/preview/api/screenshot?device=${unavailableUdid}`,
-        { method: "POST", headers: { origin: DASHBOARD } },
-      ),
+      new Request(`http://localhost:3200/preview/api/screenshot?device=${unavailableUdid}`, {
+        method: "POST",
+        headers: { origin: DASHBOARD },
+      }),
     );
     expect(res?.status).toBe(500);
     expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
@@ -93,7 +92,9 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
         expect(res.headers.get("content-type")).toBe("image/png");
         expect(res.headers.get("x-expo-screenshot-artifact")).toBe("saved");
         expect(res.headers.has("x-expo-screenshot-artifact-error")).toBe(false);
-        expect(res.headers.get("access-control-expose-headers")).toContain("X-Expo-Screenshot-Artifact");
+        expect(res.headers.get("access-control-expose-headers")).toContain(
+          "X-Expo-Screenshot-Artifact",
+        );
         expect(Buffer.from(await res.arrayBuffer())).toEqual(PNG);
         const files = await readdir(directory);
         expect(files).toHaveLength(1);
@@ -132,28 +133,36 @@ requireE2E("screenshot-endpoint", Boolean(bootedUdid));
 describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-  test("returns a PNG for an explicit device", async () => {
-    const res = await middleware(
-      new Request(
-        `http://localhost:3200/preview/api/screenshot?device=${encodeURIComponent(bootedUdid!)}`,
-        { method: "POST", headers: { origin: DASHBOARD } },
-      ),
-    );
-    expect(res?.status).toBe(200);
-    expect(res?.headers.get("content-type")).toBe("image/png");
-    expect(res?.headers.get("cache-control")).toBe("no-store");
-    expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
-    const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
-  }, SIMULATOR_TEST_TIMEOUT_MS);
+  test(
+    "returns a PNG for an explicit device",
+    async () => {
+      const res = await middleware(
+        new Request(
+          `http://localhost:3200/preview/api/screenshot?device=${encodeURIComponent(bootedUdid!)}`,
+          { method: "POST", headers: { origin: DASHBOARD } },
+        ),
+      );
+      expect(res?.status).toBe(200);
+      expect(res?.headers.get("content-type")).toBe("image/png");
+      expect(res?.headers.get("cache-control")).toBe("no-store");
+      expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
+      const bytes = new Uint8Array(await res!.arrayBuffer());
+      expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
+    },
+    SIMULATOR_TEST_TIMEOUT_MS,
+  );
 
-  test("falls back to a booted simulator when no device is given", async () => {
-    const res = await middleware(
-      new Request("http://localhost:3200/preview/api/screenshot", { method: "POST" }),
-    );
-    expect(res?.status).toBe(200);
-    expect(res?.headers.get("content-type")).toBe("image/png");
-    const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
-  }, SIMULATOR_TEST_TIMEOUT_MS);
+  test(
+    "falls back to a booted simulator when no device is given",
+    async () => {
+      const res = await middleware(
+        new Request("http://localhost:3200/preview/api/screenshot", { method: "POST" }),
+      );
+      expect(res?.status).toBe(200);
+      expect(res?.headers.get("content-type")).toBe("image/png");
+      const bytes = new Uint8Array(await res!.arrayBuffer());
+      expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
+    },
+    SIMULATOR_TEST_TIMEOUT_MS,
+  );
 });

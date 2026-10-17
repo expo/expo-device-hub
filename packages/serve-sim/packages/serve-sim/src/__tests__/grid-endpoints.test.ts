@@ -16,7 +16,7 @@ describe("grid catalog and status endpoints", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-cache");
     expect(response.headers.get("etag")).toBeTruthy();
 
-    const body = await response.json() as {
+    const body = (await response.json()) as {
       devices: Array<Record<string, unknown>>;
       total: number;
       offset: number;
@@ -54,7 +54,7 @@ describe("grid catalog and status endpoints", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
 
-    const body = await response.json() as { statuses: Array<Record<string, unknown>> };
+    const body = (await response.json()) as { statuses: Array<Record<string, unknown>> };
     expect(Array.isArray(body.statuses)).toBe(true);
     for (const status of body.statuses) {
       expect(Object.keys(status).sort()).toEqual(["device", "helper", "state"]);

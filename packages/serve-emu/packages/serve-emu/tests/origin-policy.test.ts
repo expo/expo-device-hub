@@ -55,9 +55,7 @@ describe("browser origin policy", () => {
       ),
     ).toBe(true);
     expect(
-      isAllowedMutationOrigin(
-        new Request("http://127.0.0.1:3300/api/action", { method: "POST" }),
-      ),
+      isAllowedMutationOrigin(new Request("http://127.0.0.1:3300/api/action", { method: "POST" })),
     ).toBe(true);
   });
 
@@ -82,9 +80,13 @@ describe("browser origin policy", () => {
 
     expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), policy)).toBe(true);
     expect(isAllowedBrowserOrigin(fromOrigin("https://a.b.expo.dev"), policy)).toBe(true);
-    expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), policy)).toBe(true);
+    expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), policy)).toBe(
+      true,
+    );
     expect(
-      corsHeadersForRequest(fromOrigin("https://pr-12.expo.dev"), policy)["Access-Control-Allow-Origin"],
+      corsHeadersForRequest(fromOrigin("https://pr-12.expo.dev"), policy)[
+        "Access-Control-Allow-Origin"
+      ],
     ).toBe("https://pr-12.expo.dev");
     // Subdomains only, with the same scheme and port.
     expect(isAllowedBrowserOrigin(fromOrigin("https://expo.dev"), policy)).toBe(false);
@@ -92,16 +94,28 @@ describe("browser origin policy", () => {
     expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev:8443"), policy)).toBe(false);
     expect(isAllowedBrowserOrigin(fromOrigin("https://evilexpo.dev"), policy)).toBe(false);
     // Only a star spelled `*.`: URL would turn these into `*.expo.dev` and grant the whole domain.
-    for (const configured of ["https://%2A.expo.dev", "https://\uFF0A.expo.dev", "https://\uFE61.expo.dev"]) {
-      expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), { allowedOrigins: [configured] })).toBe(false);
-      expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), { allowedOrigins: [configured] })).toBe(
-        false,
-      );
+    for (const configured of [
+      "https://%2A.expo.dev",
+      "https://\uFF0A.expo.dev",
+      "https://\uFE61.expo.dev",
+    ]) {
+      expect(
+        isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), {
+          allowedOrigins: [configured],
+        }),
+      ).toBe(false);
+      expect(
+        isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), {
+          allowedOrigins: [configured],
+        }),
+      ).toBe(false);
     }
     // Two labels after the star, as in serve-sim.
-    expect(isAllowedBrowserOrigin(fromOrigin("https://example.com"), { allowedOrigins: ["https://*.com"] })).toBe(
-      false,
-    );
+    expect(
+      isAllowedBrowserOrigin(fromOrigin("https://example.com"), {
+        allowedOrigins: ["https://*.com"],
+      }),
+    ).toBe(false);
   });
 
   test("refuses a request Origin of *, which no page sends", () => {
@@ -111,7 +125,9 @@ describe("browser origin policy", () => {
 
     expect(isAllowedBrowserOrigin(fromStar(), policy)).toBe(false);
     expect(isAllowedMutationOrigin(fromStar("POST"), policy)).toBe(false);
-    expect(corsHeadersForRequest(fromStar(), policy)["Access-Control-Allow-Origin"]).toBeUndefined();
+    expect(
+      corsHeadersForRequest(fromStar(), policy)["Access-Control-Allow-Origin"],
+    ).toBeUndefined();
   });
 
   test("adds the policy to a response whose headers are immutable", () => {
@@ -133,7 +149,10 @@ describe("browser origin policy", () => {
       headers: { Origin: "http://localhost:5173" },
     });
 
-    const varied = withCorsPolicy(req, new Response("ok", { headers: { Vary: "Accept-Encoding" } }));
+    const varied = withCorsPolicy(
+      req,
+      new Response("ok", { headers: { Vary: "Accept-Encoding" } }),
+    );
     const alreadyOrigin = withCorsPolicy(req, new Response("ok", { headers: { Vary: "Origin" } }));
 
     expect(varied.headers.get("vary")).toBe("Accept-Encoding, Origin");

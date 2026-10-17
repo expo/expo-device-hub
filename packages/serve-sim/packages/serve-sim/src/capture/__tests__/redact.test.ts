@@ -119,7 +119,15 @@ describe("redactHeaders", () => {
   });
 
   test("redacts joined credential names that have no separator around the word", () => {
-    for (const name of ["X-CSRFToken", "X-AuthToken", "x-accesstoken", "x-sessiontoken", "x-apitoken", "X-ClientSecret", "x-userpassword"]) {
+    for (const name of [
+      "X-CSRFToken",
+      "X-AuthToken",
+      "x-accesstoken",
+      "x-sessiontoken",
+      "x-apitoken",
+      "X-ClientSecret",
+      "x-userpassword",
+    ]) {
       expect(isSensitiveHeaderName(name)).toBe(true);
     }
     // `key` and `auth` stay bounded, so these remain readable.
@@ -168,5 +176,4 @@ describe("redactHeaders", () => {
     expect(isSensitiveHeaderName("x-session-id")).toBe(true);
     expect(isSensitiveHeaderName("accept")).toBe(false);
   });
-
 });
