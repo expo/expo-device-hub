@@ -481,9 +481,13 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.
 - `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
   `value` is `on` or `off`.
-- `hinge.get`: `{udid}`. Reads the hinge state as JSON. When the helper reports
-  `observedDeviceState`, native observations replace the last commanded pose,
-  just as in the live Duo preview; omitted native fields stay unknown.
+- `hinge.get`: `{udid}`. Reads hinge state as JSON. New helpers advertise
+  `supportsHingeStateReadback` and answer binary request `0x13` with `0x93`:
+  `{ok, state?, error?}`. The read takes its turn in the hinge queue and uses
+  native eligibility, which reconciles acknowledged controls with newer source
+  samples. `tableMode` remains the acknowledged persistent setting;
+  `tableModeActive` reports native tabletop activity separately. Older helpers
+  retain their config-based fallback. Unknown native pose fields stay unknown.
 - `hinge.set`: `{udid, value}`. `value` is `fold`, `half`, `unfold` or an angle from
   0 to 180.
 - `permissions.list`: `{udid, bundleId?}`. Returns the app permissions as JSON.
