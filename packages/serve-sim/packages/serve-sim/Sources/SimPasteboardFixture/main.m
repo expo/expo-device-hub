@@ -34,6 +34,12 @@ static NSString *const kCopyFixtureText = @"serve-sim-copy-probe";
   (void)scene;
   [self.textView becomeFirstResponder];
   self.textView.selectedRange = NSMakeRange(0, self.textView.text.length);
+  // Tests wait for this file, with this process's pid, before they send Copy.
+  NSString *marker = [NSTemporaryDirectory() stringByAppendingPathComponent:@"serve-sim-copy-fixture.selected"];
+  [[NSString stringWithFormat:@"%d", getpid()] writeToFile:marker
+                                                atomically:YES
+                                                  encoding:NSUTF8StringEncoding
+                                                     error:nil];
 }
 @end
 

@@ -17,6 +17,7 @@ import {
   sendSimSelectAllShortcut,
   sendSimTap,
   waitForDataMigration,
+  waitForFixtureSelection,
 } from "./pasteboard-sim";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { useTempStateDir } from "./helpers";
@@ -152,7 +153,7 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
     beforeAll(async () => {
       ensureFixtureInstalled(udid!);
       session = await launchWithoutReader(udid!, FIXTURE_BUNDLE);
-      await Bun.sleep(300);
+      await waitForFixtureSelection(udid!);
     }, 60_000);
 
     afterAll(() => {
@@ -161,10 +162,16 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
     });
 
     test("Copy returns the selected field text", async () => {
-      const body = await copyFromSim();
-      expect(body.status).toBe(200);
-      expect(body.ok).toBe(true);
-      expect(body.text).toBe(COPY_FIXTURE_TEXT);
+      // Copy returns after the first pasteboard change, which another writer can make. If the
+      // text is not the field's, a user would copy again, so the test does too.
+      let body: Awaited<ReturnType<typeof copyFromSim>> | undefined;
+      for (let attempt = 0; attempt < 3 && body?.text !== COPY_FIXTURE_TEXT; attempt++) {
+        body = await copyFromSim();
+        console.log(`[pasteboard-copy] user app Copy attempt ${attempt + 1}: status ${body.status}`);
+      }
+      expect(body?.status).toBe(200);
+      expect(body?.ok).toBe(true);
+      expect(body?.text).toBe(COPY_FIXTURE_TEXT);
     }, 45_000);
   });
 });
