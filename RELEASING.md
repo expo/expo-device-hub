@@ -61,9 +61,9 @@ The native release build is pinned to `macos-tahoe-26.5-xcode-26.6`. Both the EA
 builder and Ubuntu cache reader set `EXPO_DEVICE_HUB_BUILD_IMAGE` to that image;
 Turborepo includes it in the cache key, so outputs from a different toolchain do
 not satisfy the release build. Update the image and both values together.
-The PR workflow tests one Xcode 26 build on Xcode 26 and 27 images, and separately
-checks that serve-sim builds from source with Xcode 27. It does not publish that
-Xcode 27 build.
+The PR workflow tests one Xcode 26 build on Xcode 26 and 27 images. It also builds
+serve-sim with Xcode 27 and tests that build on the Xcode 27 image, for users who
+build from source. It does not publish the Xcode 27 build.
 
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
 latest commit on `main`.
