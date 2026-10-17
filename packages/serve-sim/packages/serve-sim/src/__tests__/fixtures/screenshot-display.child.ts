@@ -9,14 +9,15 @@ let unavailable = false;
 let sequence: Array<number | Error> = [];
 const owners: unknown[][] = [];
 mock.module("../../device-session", () => ({
-  getDeviceSession: (...args: unknown[]) => {
+  withScreenshotDeviceSession: (udid: string, settings: unknown, capture: (session: unknown) => unknown) => {
+    const args = [udid, settings];
     owners.push(args);
-    return { activeScreenId: async () => {
+    return capture({ activeScreenId: async () => {
       if (unavailable) throw new Error("Simulator did not report its active display");
       const value = sequence.shift();
       if (value instanceof Error) throw value;
       return value ?? active;
-    } };
+    } });
   },
 }));
 const { runHostActionAsync } = await import("../../host-actions");

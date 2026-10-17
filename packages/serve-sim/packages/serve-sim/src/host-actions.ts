@@ -910,20 +910,19 @@ async function runProcedureAsync(
     case "screenshot.capture": {
       const p = parseParams(action, raw);
       try {
-        let display = p.display;
-        let readActiveDisplay: (() => Promise<number>) | undefined;
-        if (display === undefined) {
-          const { getDeviceSession } = await import("./device-session");
-          const { resolveBootedDeviceAsync } = await import("./device");
-          p.udid = await resolveBootedDeviceAsync(p.udid);
-          const session = getDeviceSession(p.udid, streamSettings);
-          readActiveDisplay = () => session.activeScreenId();
-          display = await readActiveDisplay();
-        }
-        return await captureScreenshotAsync(
-          { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
-          readActiveDisplay,
-        );
+        const capture = (display: number, read?: () => Promise<number>) =>
+          captureScreenshotAsync(
+            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            read,
+          );
+        if (p.display !== undefined) return await capture(p.display);
+        const { withScreenshotDeviceSession } = await import("./device-session");
+        const { resolveBootedDeviceAsync } = await import("./device");
+        p.udid = await resolveBootedDeviceAsync(p.udid);
+        return await withScreenshotDeviceSession(p.udid, streamSettings, async (session) => {
+          const read = () => session.activeScreenId();
+          return await capture(await read(), read);
+        });
       } catch (error) {
         return {
           stdout: "",
