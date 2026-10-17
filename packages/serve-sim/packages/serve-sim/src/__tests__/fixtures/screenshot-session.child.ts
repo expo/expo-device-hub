@@ -26,3 +26,17 @@ test("a screenshot borrows an existing session without closing or replacing it",
   expect(peekDeviceSession(UDID)).toBe(existing);expect(starts).toBe(before);expect(stops).toBe(3);
   closeDeviceSession(UDID);await stopped(4);
 });
+
+test("overlapping screenshots share startup and a newly joined stream retains capture",async()=>{
+  let entered!:()=>void,release!:()=>void;
+  const ready=new Promise<void>(r=>{entered=r;}),gate=new Promise<void>(r=>{release=r;});
+  const before=starts,beforeStops=stops;
+  const first=withScreenshotDeviceSession(UDID,undefined,async()=>{entered();await gate;});
+  await ready;
+  const shared=peekDeviceSession(UDID);
+  expect(await withScreenshotDeviceSession(UDID,undefined,s=>s.activeScreenId())).toBe(3);
+  expect(starts).toBe(before+1);expect(stops).toBe(beforeStops);
+  expect(getDeviceSession(UDID)).toBe(shared);release();await first;
+  expect(peekDeviceSession(UDID)).toBe(shared);expect(stops).toBe(beforeStops);
+  closeDeviceSession(UDID);await stopped(beforeStops+1);
+});
