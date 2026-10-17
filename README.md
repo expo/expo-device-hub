@@ -104,6 +104,15 @@ bun install
 bun run build   # turbo build across all packages
 ```
 
+### Formatting
+
+JavaScript and TypeScript use Oxfmt with double quotes, including JSX attributes,
+as configured in `.oxfmtrc.json`. Oxfmt may choose the other quote when it avoids
+escaping. `bun run format` formats all supported repository files, and
+`bun run lint` checks their formatting before running the workspace linters.
+The existing EAS Checks job runs the same lint command. Installed agent skills
+and LLP tooling are excluded so their upstream copies and receipts stay intact.
+
 ### Run the example
 
 The [`example`](example) app is a host Expo project that has `expo-device-hub`
