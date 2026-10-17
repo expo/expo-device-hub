@@ -28,6 +28,7 @@ import {
   parseAndroidActivityFrame,
 } from './android-activity';
 import { apiUrl, deviceApiUrl } from './android-api-url';
+import { ANDROID_LOGCAT_LINE_EVENTS, parseAndroidLogcatLines } from './android-logcat';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import { androidPermissionsBackend } from './android-permissions';
 import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon';
@@ -1641,14 +1642,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     } catch {
       return;
     }
-    source.addEventListener('log', (event) => {
-      try {
-        const data = JSON.parse((event as MessageEvent).data) as { line: string };
-        setLogs((prev) =>
-          [...prev, { id: `a${++logSeqRef.current}`, source: 'logcat', message: data.line }].slice(-MAX_LOGS),
-        );
-      } catch {}
-    });
+    const onLines = (event: Event) => {
+      const lines = parseAndroidLogcatLines(event.type, String((event as MessageEvent).data));
+      if (lines.length === 0) return;
+      const entries = lines.map((message) => ({
+        id: `a${++logSeqRef.current}`,
+        source: 'logcat',
+        message,
+      }));
+      setLogs((prev) => [...prev, ...entries].slice(-MAX_LOGS));
+    };
+    for (const name of ANDROID_LOGCAT_LINE_EVENTS) source.addEventListener(name, onLines);
     return () => source?.close();
   }, [logsEnabled, active, baseUrl, targetDevice, token]);
 
