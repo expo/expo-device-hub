@@ -49,10 +49,12 @@ for (const app of PASTEBOARD_TEST_APPS) {
     // vmmap refuses to examine Safari, so this runs on our own app. The
     // answer assertions below prove the load either way; this one proves it
     // without trusting the protocol.
-    test.skipIf(app.bundleId !== FIXTURE_BUNDLE)("the reader is mapped into the app", () => {
-      expect(
-        mappedDylibCount(udid!, session!.pid, "libSimPasteboardReader.dylib"),
-      ).toBeGreaterThan(0);
+    test.skipIf(app.bundleId !== FIXTURE_BUNDLE)("the reader is mapped into the app", async () => {
+      // On iOS 27 the reader is mapped 2 to 3 s after the app opens.
+      const mapped = () => mappedDylibCount(udid!, session!.pid, "libSimPasteboardReader.dylib");
+      const deadline = Date.now() + 10_000;
+      while (mapped() === 0 && Date.now() < deadline) await Bun.sleep(250);
+      expect(mapped()).toBeGreaterThan(0);
     }, 20_000);
 
     test("the dylib answers a request in the app container", async () => {

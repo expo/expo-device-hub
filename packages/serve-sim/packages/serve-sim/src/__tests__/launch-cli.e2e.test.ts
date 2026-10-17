@@ -155,8 +155,14 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
       expect(stdout, `serve-sim did not become ready:\n${stderr}`).toContain(readyLine);
       expect(simctl(["get_app_container", udid!, INSTALL_APP]).trim()).not.toBe("");
       expect(fixtureLines(INSTALL_APP)).toEqual([]);
+      const expectedLaunches = previousLaunches + (bundleId ? 1 : 0);
+      // On iOS 27 the app records its launch about a second after serve-sim is ready.
+      await waitFor(
+        () => fixtureLines().filter((line) => line.startsWith("launch\t")).length >= expectedLaunches,
+        15_000,
+      );
       const launches = fixtureLines().filter((line) => line.startsWith("launch\t"));
-      expect(launches).toHaveLength(previousLaunches + (bundleId ? 1 : 0));
+      expect(launches).toHaveLength(expectedLaunches);
       if (bundleId) expect(launches.at(-1)?.split("\t")[2]).toBe("-IndependentInstall");
     } finally {
       server.kill("SIGTERM");
