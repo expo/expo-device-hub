@@ -2,6 +2,8 @@ import { mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 
 // Exercise the real CLI, DeviceSession recording lifecycle, and state/report files.
 // Only the host/native boundaries and the 65-second timer are controlled here.
@@ -16,6 +18,25 @@ const event = (name: string) => appendFileSync(events, JSON.stringify({
   reportPresent: existsSync(join(directory, `recording-shutdown-failed-${process.pid}.json`)),
 }) + "\n");
 const completed = new Promise<void>(resolve => process.stdin.once("data", () => resolve()));
+const foregroundModule = await import("../../foreground-tracker");
+const foregroundTracker = foregroundModule.createForegroundTrackerCache({
+  frontmostApp: async () => null,
+  restartDelayMs: 1,
+  spawnLogStream: () => {
+    event("foreground-start");
+    const child = Object.assign(new EventEmitter(), {
+      stdout: Object.assign(new EventEmitter(), { destroy() {} }),
+      kill() {
+        event("foreground-stop");
+        child.emit("exit", 0);
+        return true;
+      },
+    });
+    return child as unknown as ChildProcess;
+  },
+});
+foregroundTracker.subscribe(device);
+mock.module("../../foreground-tracker", () => ({ ...foregroundModule, foregroundTracker }));
 
 mock.module("child_process", () => ({
   ...childProcess,

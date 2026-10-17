@@ -345,6 +345,12 @@ A start refused before writer creation is an expected cancellation during shutdo
 
 ## Control and shutdown
 
+Preview shutdown stops the foreground-app log trackers before waiting for recording
+finalization. Pending restarts are cancelled, and subscriptions arriving during
+shutdown cannot start another tail. Exit cleanup repeats this stop as a fallback
+[observed: `src/foreground-tracker.ts`, `createForegroundTrackerCache`; `src/index.ts`,
+`serve` shutdown and exit handlers].
+
 The in-process preview server reports a recording-shutdown error after 65 seconds,
 including its PID. It keeps the writer, output and existing device state alive;
 it does not exit or tear down capture while recording finalization is pending.
