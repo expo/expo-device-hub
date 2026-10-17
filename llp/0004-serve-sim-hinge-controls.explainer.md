@@ -82,12 +82,13 @@ loads Apple's `V68.usdz` from a local Xcode installation, with the live stream
 on its cover or inner display. Folding, unfolding, and
 switching poses animate continuously, including when a new preset interrupts a
 transition. Closed presents the cover straight toward the viewer, and Open
-presents the inner display straight toward the viewer. The view uses native
-orientation once when connecting. Rotate controls and pose presets choose the
-device's orientation. In Closed, Book (Partially open), and Open, hinge edits
+presents the inner display straight toward the viewer. The view initializes from display geometry, then follows native physical
+orientation for external rotations. UI rotation previews immediately and ignores
+stale native readback for up to 1500 ms, so acknowledgement does not turn the
+model twice. Pose presets choose their own physical camera framing. In Closed, Book (Partially open), and Open, hinge edits
 smoothly turn the cover or inner screens toward the viewer while retaining the
-chosen portrait/landscape orientation. Display switches and delayed orientation
-updates never rotate the model.
+chosen portrait/landscape orientation. Display switches and delayed app orientation
+updates never rotate the model; physical orientation updates do.
 Laptop has a level base and horizontal hinge; Tent presents the outer cover
 screen with both halves descending from a horizontal ridge. In these two tabletop
 modes, slider adjustments preserve the view through the closed and open endpoints.
