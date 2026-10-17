@@ -2973,6 +2973,19 @@ export function getDeviceSession(
   return session;
 }
 
+/** A one-shot screenshot borrows a live session or owns a temporary capture. */
+export async function withScreenshotDeviceSession<T>(udid: string, settings: StreamSettings | undefined,
+  capture: (session: DeviceSession) => Promise<T>): Promise<T> {
+  const existing = peekDeviceSession(udid);
+  const session = existing ?? new DeviceSession(udid, settings);
+  try {
+    await session.start();
+    return await capture(session);
+  } finally {
+    if (!existing) session.close();
+  }
+}
+
 export async function suspendDeviceSessionForReboot(udid: string): Promise<void> {
   await sessions.get(udid)?.suspendForReboot();
 }
