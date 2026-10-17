@@ -122,7 +122,7 @@ test("reads external native hinge changes instead of the last commanded pose", a
     observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false } }]);
   expect(await readHingeStateFromWs(url)).toEqual({
     hingeAngle: 180, hingePose: "open", physicalOrientation: "portrait",
-    tableMode: false, tableModeAvailable: true,
+    tableMode: true, tableModeActive: false, tableModeAvailable: true,
   });
 });
 
@@ -131,7 +131,7 @@ test("does not replace omitted native state with an older command", async () => 
     physicalOrientation: "portrait", tableMode: true, observedDeviceState: {} }]);
   expect(await readHingeStateFromWs(url)).toEqual({
     hingeAngle: undefined, hingePose: undefined, physicalOrientation: undefined,
-    tableMode: undefined, tableModeAvailable: false,
+    tableMode: true, tableModeActive: undefined, tableModeAvailable: false,
   });
 });
 
@@ -151,4 +151,9 @@ test("reconciled readback rejects malformed replies", async () => {
     message(ws){ws.send(Buffer.concat([Buffer.from([0x93]),Buffer.from('{"ok":true,"state":null}')]));},
   }});
   await expect(readHingeStateFromWs(`ws://127.0.0.1:${server.port}`)).rejects.toThrow("Invalid hinge state");
+});
+
+test("times out if a helper advertises readback but does not answer", async () => {
+  const url = serveConfigs([{supportsHingeAngle:true,supportsHingeStateReadback:true,hingeAngle:90}]);
+  await expect(readHingeStateFromWs(url,{timeoutMs:50})).rejects.toThrow("Timed out");
 });
