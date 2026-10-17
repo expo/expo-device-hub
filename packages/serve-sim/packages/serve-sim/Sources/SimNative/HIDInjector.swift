@@ -214,7 +214,8 @@ actor HIDInjector {
                 break
             } catch {
                 if attempt == 9 {
-                    if !isFoldable && transport == "keyboard" { break }
+                    // Without the keyboard service, guest HID delivery may never start, so
+                    // CoreDevice touches could vanish. Fail setup; ordinary iOS uses legacy input.
                     throw NSError(domain: "HIDInjector", code: 8,
                                   userInfo: [NSLocalizedDescriptionKey: "CoreDevice \(transport) capability lookup failed: \(error)",
                                              NSUnderlyingErrorKey: error])
@@ -222,7 +223,7 @@ actor HIDInjector {
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
         }
-        if !keyboardAvailable || keyboardCapability == nil {
+        if !keyboardAvailable {
             print("[hid] CoreDevice keyboard unavailable; touch input remains available")
         }
     }

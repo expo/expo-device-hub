@@ -391,8 +391,11 @@ Unsupported digitizers retain Indigo. CoreDevice key encoding is optional for
 ordinary iOS: its absence is logged without disabling touch or falling touch
 back to legacy input. Setup still opens the keyboard service, which also starts
 guest HID delivery; the missing-key-encoder regression verifies actual UIKit
-touch receipts. If keys cannot be encoded, native setup reports that capability
-separately: `NativeHid` logs and rejects keyboard requests, config publishes
+touch receipts. If the keyboard service itself cannot be opened, CoreDevice
+setup fails like a missing digitizer capability, and ordinary iOS uses legacy
+input instead of CoreDevice touches that may never be delivered [observed:
+`setupCoreDeviceHID`, `HIDInjector.setup`]. If keys cannot be encoded, native
+setup reports that capability separately: `NativeHid` logs and rejects keyboard requests, config publishes
 `keyboardUnavailable`, and the preview shows a keyboard-only warning while
 touch remains usable. Legacy keyboard sends also failed delivery under the
 reproduced ownership state, so they are not a fallback for missing CoreDevice
