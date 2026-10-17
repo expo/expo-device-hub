@@ -33,7 +33,7 @@ test("overlapping screenshots share startup and a newly joined stream retains ca
   const before=starts,beforeStops=stops;
   const first=withScreenshotDeviceSession(UDID,undefined,async()=>{entered();await gate;});
   await ready;
-  const shared=peekDeviceSession(UDID);
+  const shared=peekDeviceSession(UDID)!;
   expect(await withScreenshotDeviceSession(UDID,undefined,s=>s.activeScreenId())).toBe(3);
   expect(starts).toBe(before+1);expect(stops).toBe(beforeStops);
   expect(getDeviceSession(UDID)).toBe(shared);release();await first;
