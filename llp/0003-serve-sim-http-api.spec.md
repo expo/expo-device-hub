@@ -560,7 +560,8 @@ called.
 `screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID, so a client
 can capture a particular panel even when it is inactive. Without it, the action
-starts or reuses the owning middleware's device session and selects the same
-native active display as the live stream. If that display cannot be determined,
+borrows an existing device session or creates a temporary capture with the
+middleware's trusted settings, then selects the native active display. Temporary
+capture is closed after success or failure; existing streams remain open. If that display cannot be determined,
 the action fails instead of silently capturing a different panel. An inactive
 panel's screenshot may be black.
