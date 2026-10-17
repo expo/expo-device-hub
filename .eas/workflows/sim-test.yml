@@ -7,6 +7,7 @@ on:
       - .eas/workflows/sim-test.yml
       - .eas/functions/restore-sim-test-build/**
       - .eas/functions/test-sim-runtime/**
+      - .eas/functions/install-mitmproxy/**
       - .eas/workflows/build-release-cache.yml
       - .github/workflows/release.yml
       - turbo.json
@@ -88,6 +89,8 @@ jobs:
       - uses: ./.eas/functions/restore-sim-test-build
         with:
           artifact_id: ${{ needs.build.outputs.artifact_id }}
+      # Real mitmdump unit coverage, such as upstream-mitmdump.test.ts, skips without it.
+      - uses: ./.eas/functions/install-mitmproxy
 
       - name: Run two isolated unit shards
         working_directory: packages/serve-sim
@@ -110,6 +113,7 @@ jobs:
       - uses: ./.eas/functions/restore-sim-test-build
         with:
           artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
       - uses: ./.eas/functions/test-sim-runtime
 
   sim-test-27:
@@ -121,6 +125,7 @@ jobs:
       - uses: ./.eas/functions/restore-sim-test-build
         with:
           artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
       - uses: ./.eas/functions/test-sim-runtime
 
   source-build-27:
