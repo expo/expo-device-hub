@@ -128,13 +128,46 @@ jobs:
       - uses: ./.eas/functions/install-mitmproxy
       - uses: ./.eas/functions/test-sim-runtime
 
-  source-build-27:
-    name: Build serve-sim from source with Xcode 27
+  build27:
+    name: Build serve-sim with Xcode 27
     runs_on: macos-medium
     image: macos-tahoe-26.6-xcode-27.1
+    outputs:
+      artifact_id: ${{ steps.upload_build.outputs.artifact_id }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
       - name: Build serve-sim
         working_directory: packages/serve-sim/packages/serve-sim
         run: bun run build.ts
+
+      - name: Build native test fixtures
+        run: bash Sources/build-test-fixtures.sh
+        working_directory: packages/serve-sim/packages/serve-sim
+
+      - name: Archive the built package and fixtures
+        working_directory: packages/serve-sim/packages/serve-sim
+        run: |
+          tar -czf /tmp/serve-sim-e2e.tar.gz dist
+          shasum -a 256 /tmp/serve-sim-e2e.tar.gz
+
+      - name: Upload E2E build
+        id: upload_build
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: serve-sim-e2e-build-xcode27
+          path: /tmp/serve-sim-e2e.tar.gz
+
+  # For users who build serve-sim from source with Xcode 27. Releases still use the Xcode 26 build.
+  sim-test-27-build-27:
+    name: Xcode 27 build on Xcode 27 runtime
+    needs: [build27]
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build27.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
