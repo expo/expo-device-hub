@@ -55,9 +55,7 @@ export function useMetricsStream(path: string): {
             const lastBundleId =
               [...prev].reverse().find((s) => s.bundleId !== null)?.bundleId ?? null;
             const appSwitched =
-              lastBundleId !== null &&
-              sample.bundleId !== null &&
-              lastBundleId !== sample.bundleId;
+              lastBundleId !== null && sample.bundleId !== null && lastBundleId !== sample.bundleId;
             return [...(appSwitched ? [] : prev), sample].slice(-MAX_POINTS);
           });
         }

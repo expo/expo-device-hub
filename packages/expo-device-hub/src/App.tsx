@@ -1,4 +1,4 @@
-import Dashboard from './Dashboard';
+import Dashboard from "./Dashboard";
 
 export default function App() {
   // The single Hub screen lives in a DOM component (`'use dom'`) so it is

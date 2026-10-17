@@ -49,7 +49,10 @@ function trackedRouter(
     },
   };
   const router = createRouter(
-    { ...(sessionToken === undefined ? {} : { sessionToken }), ...(allowedOrigins ? { allowedOrigins } : {}) },
+    {
+      ...(sessionToken === undefined ? {} : { sessionToken }),
+      ...(allowedOrigins ? { allowedOrigins } : {}),
+    },
     dependencies,
   );
   const request = (path: string, init?: RequestInit) =>
@@ -63,7 +66,9 @@ function upgrade(headers: Record<string, string> = {}, query = ""): Request {
 
 function closableSocket() {
   const closes: Array<[number | undefined, string | undefined]> = [];
-  const socket = { close: (code?: number, reason?: string) => closes.push([code, reason]) } as unknown as StreamSocket;
+  const socket = {
+    close: (code?: number, reason?: string) => closes.push([code, reason]),
+  } as unknown as StreamSocket;
   return { socket, closes };
 }
 
@@ -108,13 +113,30 @@ describe("createRouter without a session token", () => {
   // A client sends the token as a header, a query, or a subprotocol, so the
   // router refuses one that cannot travel unchanged in all three.
   test("refuses a token that some clients could never send", () => {
-    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "caf\u00e9", "end\n", "end\r", "end\r\n", "end\u2028"]) {
+    for (const token of [
+      "a,b",
+      " padded ",
+      "with space",
+      "a+b",
+      "YWJjZA==",
+      "semi;colon",
+      "caf\u00e9",
+      "end\n",
+      "end\r",
+      "end\r\n",
+      "end\u2028",
+    ]) {
       expect(() => trackedRouter(token)).toThrow("sessionToken");
     }
   });
 
   test("takes base64url, hex, and UUID tokens", () => {
-    for (const token of ["jJ3k_Qx-9Zp2", "9f86d081884c7d65", "550e8400-e29b-41d4-a716-446655440000", "a.b~c"]) {
+    for (const token of [
+      "jJ3k_Qx-9Zp2",
+      "9f86d081884c7d65",
+      "550e8400-e29b-41d4-a716-446655440000",
+      "a.b~c",
+    ]) {
       expect(() => trackedRouter(token)).not.toThrow();
     }
   });
@@ -170,8 +192,12 @@ describe("createRouter with a session token", () => {
   test("accepts the token as a bearer header", async () => {
     const { request, created } = trackedRouter(TOKEN);
 
-    expect((await request("/api/devices", { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200);
-    expect((await request("/api", { headers: { authorization: `bearer ${TOKEN}` } })).status).toBe(200);
+    expect(
+      (await request("/api/devices", { headers: { Authorization: `Bearer ${TOKEN}` } })).status,
+    ).toBe(200);
+    expect((await request("/api", { headers: { authorization: `bearer ${TOKEN}` } })).status).toBe(
+      200,
+    );
     expect(created).toEqual([SERIAL]);
   });
 
@@ -184,7 +210,9 @@ describe("createRouter with a session token", () => {
   test("refuses a wrong token in either place", async () => {
     const { request } = trackedRouter(TOKEN);
 
-    expect((await request("/api/devices", { headers: { Authorization: "Bearer nope" } })).status).toBe(401);
+    expect(
+      (await request("/api/devices", { headers: { Authorization: "Bearer nope" } })).status,
+    ).toBe(401);
     expect((await request("/api/devices?token=nope")).status).toBe(401);
     expect((await request(`/api/devices?token=${TOKEN}x`)).status).toBe(401);
   });
@@ -226,7 +254,9 @@ describe("createRouter with a session token", () => {
     const { request } = trackedRouter(TOKEN, [ALLOWED_ORIGIN]);
 
     const allowed = await request("/api/metrics", { headers: { Origin: ALLOWED_ORIGIN } });
-    const other = await request("/api/metrics", { headers: { Origin: "https://elsewhere.example" } });
+    const other = await request("/api/metrics", {
+      headers: { Origin: "https://elsewhere.example" },
+    });
 
     expect(allowed.status).toBe(401);
     expect(allowed.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
@@ -240,7 +270,11 @@ describe("createRouter CORS policy", () => {
   test("lets an allowed origin read every route, not only WebRTC and SSE", async () => {
     const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
 
-    for (const path of ["/api/devices", `/api?device=${SERIAL}`, `/api/foreground?device=${SERIAL}`]) {
+    for (const path of [
+      "/api/devices",
+      `/api?device=${SERIAL}`,
+      `/api/foreground?device=${SERIAL}`,
+    ]) {
       const allowed = await request(path, { headers: { Origin: ALLOWED_ORIGIN } });
       expect(allowed.status).toBe(200);
       expect(allowed.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
@@ -252,7 +286,9 @@ describe("createRouter CORS policy", () => {
   test("names no origin for another page, but varies every response on Origin", async () => {
     const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
 
-    const other = await request("/api/devices", { headers: { Origin: "https://elsewhere.example" } });
+    const other = await request("/api/devices", {
+      headers: { Origin: "https://elsewhere.example" },
+    });
     const sameOrigin = await request("/api/devices");
 
     expect(other.headers.get("access-control-allow-origin")).toBeNull();
@@ -265,7 +301,9 @@ describe("createRouter CORS policy", () => {
     const { router } = trackedRouter();
 
     const response = await router.handleRequest(
-      new Request("http://127.0.0.1:3400/api/devices", { headers: { Origin: "http://localhost:5173" } }),
+      new Request("http://127.0.0.1:3400/api/devices", {
+        headers: { Origin: "http://localhost:5173" },
+      }),
     );
 
     expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
@@ -295,7 +333,12 @@ describe("createRouter CORS policy", () => {
   test("answers a preflight on any route before the token gate and without a device", async () => {
     const { request, created } = trackedRouter(TOKEN, [ALLOWED_ORIGIN]);
 
-    for (const path of ["/api/orientation", "/api/stream-mode", "/api/devices", "/api/camera/back"]) {
+    for (const path of [
+      "/api/orientation",
+      "/api/stream-mode",
+      "/api/devices",
+      "/api/camera/back",
+    ]) {
       const { path: target, ...init } = preflight(path);
       const response = await request(target, init);
       expect(response.status).toBe(204);
@@ -313,8 +356,13 @@ describe("createRouter CORS policy", () => {
         : Response.json({ ok: false, error: "capture failed" }, { status: 500 }),
     );
 
-    for (const [path, status] of [["/api/missing", 404], ["/api/foreground", 500]] as const) {
-      const response = await request(`${path}?device=${SERIAL}`, { headers: { Origin: ALLOWED_ORIGIN } });
+    for (const [path, status] of [
+      ["/api/missing", 404],
+      ["/api/foreground", 500],
+    ] as const) {
+      const response = await request(`${path}?device=${SERIAL}`, {
+        headers: { Origin: ALLOWED_ORIGIN },
+      });
       expect([path, response.status]).toEqual([path, status]);
       expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
       expect(response.headers.get("vary")).toBe("Origin");
@@ -325,21 +373,26 @@ describe("createRouter CORS policy", () => {
   test("streams events through the policy and stops when the page cancels", async () => {
     let cancelled = false;
     let push!: (chunk: string) => void;
-    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], () =>
-      new Response(
-        new ReadableStream<Uint8Array>({
-          start(controller) {
-            push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk));
-          },
-          cancel() {
-            cancelled = true;
-          },
-        }),
-        { headers: { "Content-Type": "text/event-stream" } },
-      ),
+    const { request } = trackedRouter(
+      undefined,
+      [ALLOWED_ORIGIN],
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
     );
 
-    const response = await request(`/api/events?device=${SERIAL}`, { headers: { Origin: ALLOWED_ORIGIN } });
+    const response = await request(`/api/events?device=${SERIAL}`, {
+      headers: { Origin: ALLOWED_ORIGIN },
+    });
     expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     const reader = response.body!.getReader();
@@ -350,20 +403,28 @@ describe("createRouter CORS policy", () => {
   });
 
   test("keeps a screenshot's artifact headers readable for an allowed origin", async () => {
-    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], () =>
-      new Response(new Uint8Array([137, 80, 78, 71]), {
-        headers: {
-          "Content-Type": "image/png",
-          "X-Expo-Screenshot-Artifact": "saved",
-          "Access-Control-Expose-Headers": "X-Expo-Screenshot-Artifact",
-        },
-      }),
+    const { request } = trackedRouter(
+      undefined,
+      [ALLOWED_ORIGIN],
+      () =>
+        new Response(new Uint8Array([137, 80, 78, 71]), {
+          headers: {
+            "Content-Type": "image/png",
+            "X-Expo-Screenshot-Artifact": "saved",
+            "Access-Control-Expose-Headers": "X-Expo-Screenshot-Artifact",
+          },
+        }),
     );
 
-    const response = await request(`/api/screenshot?device=${SERIAL}`, { method: "POST", headers: { Origin: ALLOWED_ORIGIN } });
+    const response = await request(`/api/screenshot?device=${SERIAL}`, {
+      method: "POST",
+      headers: { Origin: ALLOWED_ORIGIN },
+    });
 
     expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
-    expect(response.headers.get("access-control-expose-headers")).toBe("X-Expo-Screenshot-Artifact");
+    expect(response.headers.get("access-control-expose-headers")).toBe(
+      "X-Expo-Screenshot-Artifact",
+    );
     expect(response.headers.get("x-expo-screenshot-artifact")).toBe("saved");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
   });
@@ -393,10 +454,14 @@ describe("authorizeUpgrade with a session token", () => {
   });
 
   test("accepts the token subprotocol, alone or among others", () => {
-    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-emu.token.${TOKEN}` }))).toBe(true);
+    expect(
+      router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-emu.token.${TOKEN}` })),
+    ).toBe(true);
     expect(
       router.authorizeUpgrade(
-        upgrade({ "Sec-WebSocket-Protocol": `chat, serve-emu.token.stale, serve-emu.token.${TOKEN}` }),
+        upgrade({
+          "Sec-WebSocket-Protocol": `chat, serve-emu.token.stale, serve-emu.token.${TOKEN}`,
+        }),
       ),
     ).toBe(true);
   });
@@ -404,8 +469,12 @@ describe("authorizeUpgrade with a session token", () => {
   test("refuses an upgrade with no token, a wrong token, or another package's prefix", () => {
     expect(router.authorizeUpgrade(upgrade())).toBe(false);
     expect(router.authorizeUpgrade(upgrade({ Authorization: "Bearer nope" }))).toBe(false);
-    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": "serve-emu.token.nope" }))).toBe(false);
-    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-sim.token.${TOKEN}` }))).toBe(false);
+    expect(
+      router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": "serve-emu.token.nope" })),
+    ).toBe(false);
+    expect(
+      router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-sim.token.${TOKEN}` })),
+    ).toBe(false);
   });
 
   // Proxy and tunnel access logs record query strings, so a socket never takes the token there.
@@ -419,7 +488,9 @@ describe("authorizeUpgrade with a session token", () => {
     ).toBe(false);
     expect(
       router.authorizeUpgrade(
-        upgrade({ "Sec-WebSocket-Protocol": [...guesses.slice(0, 3), `serve-emu.token.${TOKEN}`].join(", ") }),
+        upgrade({
+          "Sec-WebSocket-Protocol": [...guesses.slice(0, 3), `serve-emu.token.${TOKEN}`].join(", "),
+        }),
       ),
     ).toBe(true);
   });
@@ -437,7 +508,11 @@ describe("attachWebSocket with a session token", () => {
 
     for (const request of [undefined, upgrade(), upgrade({ Authorization: "Bearer nope" })]) {
       const { socket, closes } = closableSocket();
-      router.attachWebSocket(socket, { serial: SERIAL, frameMeta: false, ...(request ? { request } : {}) });
+      router.attachWebSocket(socket, {
+        serial: SERIAL,
+        frameMeta: false,
+        ...(request ? { request } : {}),
+      });
       expect(closes).toEqual([[1008, "Unauthorized"]]);
     }
     expect(attached).toEqual([]);

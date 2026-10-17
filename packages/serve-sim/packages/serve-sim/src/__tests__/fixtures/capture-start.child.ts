@@ -87,7 +87,12 @@ describe("createCaptureStarter", () => {
     const start = createCaptureStarter(runtime);
     let enables = 0;
 
-    await start([UDID], () => ({ enable: async () => { enables++; return { proxyAddress: "x" }; } }));
+    await start([UDID], () => ({
+      enable: async () => {
+        enables++;
+        return { proxyAddress: "x" };
+      },
+    }));
 
     expect(enables).toBe(0);
   });

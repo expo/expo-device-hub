@@ -92,8 +92,7 @@ export function createControlSocket(
     if (!ws || !ready || disposed || sendingRequests) return;
     sendingRequests = true;
     try {
-      if (inFlight.size >= MAX_IN_FLIGHT_REQUESTS &&
-        ![...inFlight].some(id => pending.has(id))) {
+      if (inFlight.size >= MAX_IN_FLIGHT_REQUESTS && ![...inFlight].some((id) => pending.has(id))) {
         // A health reply cannot free abandoned server work. Surface exhaustion
         // without replaying writes or pretending their server slots are free.
         for (const request of [...pending.values()])

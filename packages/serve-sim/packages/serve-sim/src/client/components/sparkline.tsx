@@ -4,9 +4,15 @@ export const SPARK_W = 96;
 export const SPARK_H = 24;
 
 /** Minimal filled-area sparkline for a series of values. */
-export function Sparkline(
-  { values, max, className }: { values: number[]; max?: number; className: string },
-) {
+export function Sparkline({
+  values,
+  max,
+  className,
+}: {
+  values: number[];
+  max?: number;
+  className: string;
+}) {
   const line = sparklinePath(values, SPARK_W, SPARK_H, max);
   // Close the line down to the baseline and back to fill the area under it.
   const area = line ? `${line} L${SPARK_W},${SPARK_H} L0,${SPARK_H} Z` : "";

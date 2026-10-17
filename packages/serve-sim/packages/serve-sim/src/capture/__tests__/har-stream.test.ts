@@ -47,10 +47,14 @@ describe("HAR stream failures under Node", () => {
           rmSync(dir, { recursive: true, force: true });
         }
       `;
-      const result = spawnSync("node", ["--unhandled-rejections=strict", "--input-type=module", "-e", code], {
-        encoding: "utf8",
-        timeout: 10_000,
-      });
+      const result = spawnSync(
+        "node",
+        ["--unhandled-rejections=strict", "--input-type=module", "-e", code],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      );
       expect(result.status, result.stderr).toBe(0);
     });
   }

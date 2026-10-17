@@ -184,6 +184,13 @@ describe("LocationSection", () => {
     const html = render(locationClient());
     const options = html.match(/data-test-options="([^"]*)"/);
 
-    expect(options?.[1].split("\n")).toEqual(["Custom", "Apple Park", "Googleplex", "London", "Tokyo", "Sydney"]);
+    expect(options?.[1].split("\n")).toEqual([
+      "Custom",
+      "Apple Park",
+      "Googleplex",
+      "London",
+      "Tokyo",
+      "Sydney",
+    ]);
   });
 });

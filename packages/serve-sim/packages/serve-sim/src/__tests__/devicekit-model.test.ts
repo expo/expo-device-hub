@@ -6,13 +6,18 @@ import { join } from "path";
 import { resolveDeviceKitModel, serveDeviceKitModelAsset } from "../devicekit-model";
 
 const folders: string[] = [];
-afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true });
+});
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "serve-sim-model-test-"));
   folders.push(root);
   const model = (app: string, bytes = "local USDZ") => {
-    const resources = join(app, "Contents/SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources");
+    const resources = join(
+      app,
+      "Contents/SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources",
+    );
     mkdirSync(resources, { recursive: true });
     const file = join(resources, "V68.usdz");
     writeFileSync(file, bytes);
@@ -36,8 +41,15 @@ describe("local Xcode 3D asset", () => {
     const { root, model } = fixture();
     model(join(root, "Xcode-27.9.app"));
     const expected = model(join(root, "Xcode-27.10 Beta.app"));
-    expect(resolveDeviceKitModel({ developerDir: join(root, "Old.app/Contents/Developer"), applicationsDirs: [root] })).toBe(expected);
-    expect(resolveDeviceKitModel({ developerDir: root, applicationsDirs: [join(root, "missing")] })).toBeNull();
+    expect(
+      resolveDeviceKitModel({
+        developerDir: join(root, "Old.app/Contents/Developer"),
+        applicationsDirs: [root],
+      }),
+    ).toBe(expected);
+    expect(
+      resolveDeviceKitModel({ developerDir: root, applicationsDirs: [join(root, "missing")] }),
+    ).toBeNull();
   });
 
   test("serves the installed bytes, revalidates changes, and reports a missing asset", async () => {

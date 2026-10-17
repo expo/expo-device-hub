@@ -1,8 +1,8 @@
-import { usePrefersReducedMotion } from '@expo/hub-components';
-import { useEffect, useRef, useState } from 'react';
+import { usePrefersReducedMotion } from "@expo/hub-components";
+import { useEffect, useRef, useState } from "react";
 
 export const SIDEBAR_TRANSITION_MS = 200;
-export const SIDEBAR_TRANSITION_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
+export const SIDEBAR_TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 
 /** Keep a closing sidebar mounted long enough for its CSS transition to finish. */
 export function useSidebarPresence(open: boolean, animateExit: boolean) {

@@ -16,12 +16,7 @@ describe("device capabilities", () => {
   });
 
   test("offers host screenshot streaming only to emulators", () => {
-    expect(availableStreamModesForSerial("emulator-5554")).toEqual([
-      "scrcpy",
-      "grpc-screenshot",
-    ]);
-    expect(availableStreamModesForSerial("physical-device")).toEqual([
-      "scrcpy",
-    ]);
+    expect(availableStreamModesForSerial("emulator-5554")).toEqual(["scrcpy", "grpc-screenshot"]);
+    expect(availableStreamModesForSerial("physical-device")).toEqual(["scrcpy"]);
   });
 });

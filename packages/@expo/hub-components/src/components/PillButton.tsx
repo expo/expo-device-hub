@@ -1,8 +1,8 @@
-import { type ButtonHTMLAttributes, forwardRef, useState } from 'react';
+import { type ButtonHTMLAttributes, forwardRef, useState } from "react";
 
-import { text } from '../theme/tokens';
-import { isFocusVisible } from './focusVisible';
-import { pillControlStyle } from './pill';
+import { text } from "../theme/tokens";
+import { isFocusVisible } from "./focusVisible";
+import { pillControlStyle } from "./pill";
 
 export type PillButtonProps = {
   /** Color the label as a destructive action (e.g. removing a device). */
@@ -64,7 +64,7 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(functio
         onMouseUp?.(event);
       }}
       onKeyDown={(event) => {
-        if (event.key === ' ' || event.key === 'Enter') setPressed(true);
+        if (event.key === " " || event.key === "Enter") setPressed(true);
         onKeyDown?.(event);
       }}
       onKeyUp={(event) => {
@@ -83,8 +83,8 @@ export const PillButton = forwardRef<HTMLButtonElement, PillButtonProps>(functio
       style={{
         ...pillControlStyle({ hovered, focused, disabled }),
         color: destructive ? text.danger : text.default,
-        transform: pressed && !disabled ? 'scale(0.96)' : undefined,
-        transition: 'background-color 120ms ease, transform 100ms ease',
+        transform: pressed && !disabled ? "scale(0.96)" : undefined,
+        transition: "background-color 120ms ease, transform 100ms ease",
         ...style,
       }}
       {...rest}

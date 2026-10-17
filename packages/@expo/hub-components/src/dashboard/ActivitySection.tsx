@@ -1,13 +1,9 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
-import { icon, text, textSize } from '../primitives';
-import { CollapsibleSection } from './CollapsibleSection';
-import {
-  MetricChart,
-  type MetricChartSeries,
-  maxChartValue,
-} from './MetricChart';
+import { type DeviceActivitySample, type DeviceClient } from "@expo/hub-client";
+import { icon, text, textSize } from "../primitives";
+import { CollapsibleSection } from "./CollapsibleSection";
+import { MetricChart, type MetricChartSeries, maxChartValue } from "./MetricChart";
 
 const MAX_SAMPLES = 60;
 /** The CPU sparkline always shows at least one full core of headroom. */
@@ -39,19 +35,19 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
   const latest = latestSample(samples);
 
   const cpuSeries: MetricChartSeries[] = [
-    { label: 'CPU', color: icon.success, values: samples.map((sample) => sample.cpuPct) },
+    { label: "CPU", color: icon.success, values: samples.map((sample) => sample.cpuPct) },
   ];
   const memorySeries: MetricChartSeries[] = [
-    { label: 'Memory', color: icon.info, values: samples.map((sample) => sample.memBytes) },
+    { label: "Memory", color: icon.info, values: samples.map((sample) => sample.memBytes) },
   ];
   const networkSeries: MetricChartSeries[] = [
     {
-      label: 'Inbound',
+      label: "Inbound",
       color: icon.preview,
       values: samples.map((sample) => sample.netInBytesPerSec),
     },
     {
-      label: 'Outbound',
+      label: "Outbound",
       color: icon.preview,
       dashed: true,
       values: samples.map((sample) => sample.netOutBytesPerSec),
@@ -64,16 +60,16 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
     : undefined;
 
   let message: string | null = null;
-  if (activity?.errored) message = 'Activity data is unavailable for this app.';
-  else if (!latest) message = 'Waiting for activity data…';
-  else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
+  if (activity?.errored) message = "Activity data is unavailable for this app.";
+  else if (!latest) message = "Waiting for activity data…";
+  else if (activity?.stale) message = "Activity data is paused. Showing the most recent samples.";
 
   return (
     <div data-testid="activity-charts" style={{ minWidth: 0, paddingTop: 8 }}>
       {message && (
         <span
-          role={activity?.errored ? 'alert' : undefined}
-          style={{ ...textSize.xs, display: 'block', padding: '2px 0 8px', color: text.tertiary }}
+          role={activity?.errored ? "alert" : undefined}
+          style={{ ...textSize.xs, display: "block", padding: "2px 0 8px", color: text.tertiary }}
         >
           {message}
         </span>
@@ -81,9 +77,9 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
       {latest && (
         <div
           style={{
-            display: 'flex',
+            display: "flex",
             minWidth: 0,
-            flexDirection: 'column',
+            flexDirection: "column",
             gap: 4,
             paddingTop: message ? 0 : 4,
           }}

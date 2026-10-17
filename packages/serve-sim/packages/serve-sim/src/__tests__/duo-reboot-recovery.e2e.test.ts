@@ -24,7 +24,9 @@ const APP = "dev.expo.serve-sim.launch-fixture";
 
 function simctl(...args: string[]): string {
   return execFileSync("xcrun", ["simctl", ...args], {
-    encoding: "utf8", stdio: "pipe", timeout: args[0] === "bootstatus" ? 180_000 : 60_000,
+    encoding: "utf8",
+    stdio: "pipe",
+    timeout: args[0] === "bootstatus" ? 180_000 : 60_000,
   });
 }
 
@@ -32,10 +34,16 @@ function bootedDuo(device: string): boolean {
   const listing = JSON.parse(simctl("list", "devices", "booted", "-j")) as {
     devices: Record<string, { name: string; udid: string }[]>;
   };
-  return Object.values(listing.devices).flat().some((sim) => sim.udid === device && sim.name.includes("iPhone Duo"));
+  return Object.values(listing.devices)
+    .flat()
+    .some((sim) => sim.udid === device && sim.name.includes("iPhone Duo"));
 }
 
-async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: number, message: string): Promise<void> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  timeoutMs: number,
+  message: string,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await check()) return;
@@ -44,14 +52,19 @@ async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: numbe
   throw new Error(message);
 }
 
-async function gridPost(serverUrl: string, action: "shutdown" | "start", device: string): Promise<void> {
+async function gridPost(
+  serverUrl: string,
+  action: "shutdown" | "start",
+  device: string,
+): Promise<void> {
   const response = await fetch(`${serverUrl}/grid/api/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ udid: device }),
     signal: AbortSignal.timeout(action === "start" ? 190_000 : 35_000),
   });
-  if (!response.ok) throw new Error(`grid ${action} failed: ${response.status} ${await response.text()}`);
+  if (!response.ok)
+    throw new Error(`grid ${action} failed: ${response.status} ${await response.text()}`);
 }
 
 /** Run `capture.reboot` over the exec socket, as the panel does; resolves once the device is back. */
@@ -59,18 +72,36 @@ async function captureReboot(serverUrl: string, device: string, token: string): 
   const url = new URL(serverUrl);
   await new Promise<void>((resolve, reject) => {
     const ws = new WebSocket(`ws://${url.host}/exec-ws`, { origin: url.origin });
-    const timer = setTimeout(() => { ws.terminate(); reject(new Error("capture.reboot timed out")); }, 240_000);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error("capture.reboot timed out"));
+    }, 240_000);
     ws.on("open", () => ws.send(JSON.stringify({ token })));
     ws.on("message", (data) => {
-      const reply = JSON.parse(data.toString()) as { ready?: boolean; id?: number; exitCode?: number; stderr?: string };
-      if (reply.ready) ws.send(JSON.stringify({ id: 1, action: "capture.reboot", params: { udid: device, enabled: false } }));
+      const reply = JSON.parse(data.toString()) as {
+        ready?: boolean;
+        id?: number;
+        exitCode?: number;
+        stderr?: string;
+      };
+      if (reply.ready)
+        ws.send(
+          JSON.stringify({
+            id: 1,
+            action: "capture.reboot",
+            params: { udid: device, enabled: false },
+          }),
+        );
       if (reply.id !== 1) return;
       clearTimeout(timer);
       ws.close();
       if (reply.exitCode === 0) resolve();
       else reject(new Error(`capture.reboot failed: ${reply.stderr ?? JSON.stringify(reply)}`));
     });
-    ws.on("error", (error) => { clearTimeout(timer); reject(error); });
+    ws.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
   });
 }
 
@@ -134,44 +165,83 @@ async function expectRecoveryAfter(reboot: Reboot): Promise<void> {
 
   const stateDir = mkdtempSync(join(tmpdir(), "serve-sim-duo-reboot-"));
   const env = { ...process.env, SERVE_SIM_STATE_DIR: stateDir, SERVE_SIM_DEBUG_HID: "1" };
-  const cli = (...args: string[]) => execFileSync("node", [CLI, ...args], {
-    env, encoding: "utf8", stdio: "pipe", timeout: 120_000,
-  });
+  const cli = (...args: string[]) =>
+    execFileSync("node", [CLI, ...args], {
+      env,
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: 120_000,
+    });
   let fixtureLog = "";
   const lines = () => {
-    try { return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean); }
-    catch { return []; }
+    try {
+      return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
   };
   try {
     simctl("install", udid, FIXTURE);
-    fixtureLog = join(simctl("get_app_container", udid, APP, "data").trim(), "Documents/launches.tsv");
+    fixtureLog = join(
+      simctl("get_app_container", udid, APP, "data").trim(),
+      "Documents/launches.tsv",
+    );
     const launchFixture = async () => {
       const start = lines().length;
-      try { simctl("terminate", udid, APP); } catch {}
+      try {
+        simctl("terminate", udid, APP);
+      } catch {}
       simctl("launch", udid, APP, "--input-test");
-      await waitFor(() => lines().slice(start).some((line) => line.startsWith("input-ready\t")),
-        30_000, "input fixture never reached the foreground");
+      await waitFor(
+        () =>
+          lines()
+            .slice(start)
+            .some((line) => line.startsWith("input-ready\t")),
+        30_000,
+        "input fixture never reached the foreground",
+      );
     };
     const tapFixture = async (timeoutMs = 15_000) => {
       const start = lines().length;
       cli("tap", "0.5", "0.5", "-d", udid);
-      await waitFor(() => {
-        const fresh = lines().slice(start);
-        return fresh.some((line) => line.startsWith("touch-began\t")) &&
-          fresh.some((line) => line.startsWith("touch-ended\t"));
-      }, timeoutMs, "serve-sim tap did not reach UIKit");
+      await waitFor(
+        () => {
+          const fresh = lines().slice(start);
+          return (
+            fresh.some((line) => line.startsWith("touch-began\t")) &&
+            fresh.some((line) => line.startsWith("touch-ended\t"))
+          );
+        },
+        timeoutMs,
+        "serve-sim tap did not reach UIKit",
+      );
     };
 
     const port = await freePortAsync();
     const detach = spawnSync("node", [CLI, "--detach", "-p", String(port), udid], {
-      env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
+      env,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 120_000,
     });
     if (detach.status !== 0) throw new Error(`serve-sim --detach failed: ${detach.stderr}`);
     const state = parseDetachState<ServeSimDeviceState>(detach.stdout);
-    const pid = (JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid;
-    const liveFrames = async (message: string) => waitFor(async () => {
-      try { await readJpegFrame(state.streamUrl); return true; } catch { return false; }
-    }, 90_000, message);
+    const pid = (
+      JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState
+    ).pid;
+    const liveFrames = async (message: string) =>
+      waitFor(
+        async () => {
+          try {
+            await readJpegFrame(state.streamUrl);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        90_000,
+        message,
+      );
 
     await liveFrames("no live main MJPEG frames before reboot");
     await launchFixture();
@@ -184,9 +254,17 @@ async function expectRecoveryAfter(reboot: Reboot): Promise<void> {
     await launchFixture();
     // A repeated cached frame, or a feed of the inactive panel, would keep
     // showing the image from before the fixture launched.
-    await waitFor(async () => {
-      try { return !(await readJpegFrame(state.streamUrl)).equals(beforeLaunch); } catch { return false; }
-    }, 15_000, "main MJPEG did not show the fixture after Duo reboot");
+    await waitFor(
+      async () => {
+        try {
+          return !(await readJpegFrame(state.streamUrl)).equals(beforeLaunch);
+        } catch {
+          return false;
+        }
+      },
+      15_000,
+      "main MJPEG did not show the fixture after Duo reboot",
+    );
     // CoreDevice can switch the active Duo display a few times after boot, and
     // iOS may drop a tap sent during that switch. Allow the first tap to
     // retry. With stale HID state, every tap is lost.
@@ -201,41 +279,68 @@ async function expectRecoveryAfter(reboot: Reboot): Promise<void> {
     }
     // Input must then stay live: each further tap must land on its first try.
     for (let i = 0; i < 3; i++) await tapFixture(5_000);
-    expect((JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid).toBe(pid);
+    expect(
+      (
+        JSON.parse(
+          readFileSync(join(stateDir, `server-${udid}.json`), "utf8"),
+        ) as ServeSimDeviceState
+      ).pid,
+    ).toBe(pid);
     process.kill(pid, 0);
   } catch (err) {
     // Keep the evidence that the finally block is about to delete.
     let serverLog = "";
-    try { serverLog = readFileSync(join(stateDir, `server-${udid}.log`), "utf8"); } catch {}
+    try {
+      serverLog = readFileSync(join(stateDir, `server-${udid}.log`), "utf8");
+    } catch {}
     console.error(`--- server log (tail) ---\n${serverLog.split("\n").slice(-80).join("\n")}`);
     console.error(`--- fixture log (tail) ---\n${lines().slice(-20).join("\n")}`);
     throw err;
   } finally {
-    try { cli("--kill", udid); } catch {}
+    try {
+      cli("--kill", udid);
+    } catch {}
     let booted = false;
-    try { booted = bootedDuo(udid); } catch {}
+    try {
+      booted = bootedDuo(udid);
+    } catch {}
     if (!booted) {
-      try { simctl("boot", udid); simctl("bootstatus", udid, "-b"); } catch {}
+      try {
+        simctl("boot", udid);
+        simctl("bootstatus", udid, "-b");
+      } catch {}
     }
-    try { simctl("terminate", udid, APP); } catch {}
-    try { simctl("uninstall", udid, APP); } catch {}
+    try {
+      simctl("terminate", udid, APP);
+    } catch {}
+    try {
+      simctl("uninstall", udid, APP);
+    } catch {}
     rmSync(stateDir, { recursive: true, force: true });
   }
 }
 
-test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot in the same server PID", async () => {
-  // Reboot through the preview's own controls: shutdown closes the session,
-  // and start boots the device so the next stream opens a fresh capture.
-  await expectRecoveryAfter(async (state, device) => {
-    await gridPost(state.url, "shutdown", device);
-    await gridPost(state.url, "start", device);
-  });
-}, 360_000);
+test.skipIf(!enabled)(
+  "Duo main capture and HID recover after a preview reboot in the same server PID",
+  async () => {
+    // Reboot through the preview's own controls: shutdown closes the session,
+    // and start boots the device so the next stream opens a fresh capture.
+    await expectRecoveryAfter(async (state, device) => {
+      await gridPost(state.url, "shutdown", device);
+      await gridPost(state.url, "start", device);
+    });
+  },
+  360_000,
+);
 
-test.skipIf(!enabled)("Duo main capture and HID recover after a network-capture reboot in the same server PID", async () => {
-  // The panel's capture toggle reboots the device itself, outside the grid controls; input must recover
-  // there too.
-  await expectRecoveryAfter(async (state, device) => {
-    await captureReboot(state.url, device, await pageExecToken(state.url));
-  });
-}, 420_000);
+test.skipIf(!enabled)(
+  "Duo main capture and HID recover after a network-capture reboot in the same server PID",
+  async () => {
+    // The panel's capture toggle reboots the device itself, outside the grid controls; input must recover
+    // there too.
+    await expectRecoveryAfter(async (state, device) => {
+      await captureReboot(state.url, device, await pageExecToken(state.url));
+    });
+  },
+  420_000,
+);

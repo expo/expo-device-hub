@@ -2,9 +2,16 @@ import type { StreamSettings, WebRtcIceServer } from "./state";
 import { normalizeStreamEncoderSettings } from "./stream-settings";
 
 export function parseIceUrlList(value: string, kind: "stun" | "turn"): string[] {
-  const urls = value.split(",").map((url) => url.trim()).filter(Boolean);
+  const urls = value
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
   const scheme = kind === "stun" ? /^stuns?:/i : /^turns?:/i;
-  if (urls.length === 0 || urls.length > 16 || urls.some((url) => url.length > 2_048 || !scheme.test(url))) {
+  if (
+    urls.length === 0 ||
+    urls.length > 16 ||
+    urls.some((url) => url.length > 2_048 || !scheme.test(url))
+  ) {
     throw new Error(`Expected one or more comma-separated ${kind.toUpperCase()} URLs`);
   }
   return urls;
@@ -20,11 +27,11 @@ export function streamSettingsEqual(
   const leftEncoder = normalizeStreamEncoderSettings(normalizedLeft);
   const rightEncoder = normalizeStreamEncoderSettings(normalizedRight);
   if (
-    leftEncoder.mjpegFps !== rightEncoder.mjpegFps
-    || leftEncoder.mjpegQuality !== rightEncoder.mjpegQuality
-    || leftEncoder.maxDimension !== rightEncoder.maxDimension
-    || leftEncoder.h264Bitrate !== rightEncoder.h264Bitrate
-    || leftEncoder.h264Fps !== rightEncoder.h264Fps
+    leftEncoder.mjpegFps !== rightEncoder.mjpegFps ||
+    leftEncoder.mjpegQuality !== rightEncoder.mjpegQuality ||
+    leftEncoder.maxDimension !== rightEncoder.maxDimension ||
+    leftEncoder.h264Bitrate !== rightEncoder.h264Bitrate ||
+    leftEncoder.h264Fps !== rightEncoder.h264Fps
   ) {
     return false;
   }
@@ -38,17 +45,16 @@ export function streamSettingsEqual(
   if (leftServers.length !== rightServers.length) return false;
   return leftServers.every((server, index) => {
     const other = rightServers[index]!;
-    return server.username === other.username &&
+    return (
+      server.username === other.username &&
       server.credential === other.credential &&
       server.urls.length === other.urls.length &&
-      server.urls.every((url, urlIndex) => url === other.urls[urlIndex]);
+      server.urls.every((url, urlIndex) => url === other.urls[urlIndex])
+    );
   });
 }
 
-function urlsWithPrefix(
-  servers: WebRtcIceServer[] | undefined,
-  prefixes: string[],
-): string[] {
+function urlsWithPrefix(servers: WebRtcIceServer[] | undefined, prefixes: string[]): string[] {
   const urls: string[] = [];
   for (const server of servers ?? []) {
     for (const url of server.urls) {
@@ -59,9 +65,7 @@ function urlsWithPrefix(
   return urls;
 }
 
-function firstTurnServer(
-  servers: WebRtcIceServer[] | undefined,
-): WebRtcIceServer | null {
+function firstTurnServer(servers: WebRtcIceServer[] | undefined): WebRtcIceServer | null {
   for (const server of servers ?? []) {
     if (server.urls.some((url) => /^turns?:/i.test(url))) return server;
   }
@@ -91,9 +95,12 @@ export function streamRuntimeArgs(settings?: StreamSettings): string[] {
   }
 
   if (settings.mjpegFps !== undefined) args.push("--mjpeg-fps", String(settings.mjpegFps));
-  if (settings.mjpegQuality !== undefined) args.push("--mjpeg-quality", String(settings.mjpegQuality));
-  if (settings.maxDimension !== undefined) args.push("--max-dimension", String(settings.maxDimension));
-  if (settings.h264Bitrate !== undefined) args.push("--video-bitrate", String(settings.h264Bitrate));
+  if (settings.mjpegQuality !== undefined)
+    args.push("--mjpeg-quality", String(settings.mjpegQuality));
+  if (settings.maxDimension !== undefined)
+    args.push("--max-dimension", String(settings.maxDimension));
+  if (settings.h264Bitrate !== undefined)
+    args.push("--video-bitrate", String(settings.h264Bitrate));
   if (settings.h264Fps !== undefined) args.push("--video-fps", String(settings.h264Fps));
 
   return args;
@@ -105,12 +112,5 @@ export function streamHelperArgs(
   host: string,
   settings?: StreamSettings,
 ): string[] {
-  return [
-    udid,
-    "--port",
-    String(port),
-    "--host",
-    host,
-    ...streamRuntimeArgs(settings),
-  ];
+  return [udid, "--port", String(port), "--host", host, ...streamRuntimeArgs(settings)];
 }

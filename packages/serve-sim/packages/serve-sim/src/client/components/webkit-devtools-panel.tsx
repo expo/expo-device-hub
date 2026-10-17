@@ -1,8 +1,5 @@
 import { Panel, PanelCloseButton, PanelHeader } from "../panel";
-import {
-  collapseScreencastPane,
-  type WebKitDevtoolsTarget,
-} from "../utils/devtools";
+import { collapseScreencastPane, type WebKitDevtoolsTarget } from "../utils/devtools";
 import { WebKitTargetPicker } from "./webkit-target-picker";
 
 export function WebKitDevtoolsPanel({
@@ -29,7 +26,7 @@ export function WebKitDevtoolsPanel({
   width: number;
 }) {
   const selected = selectedTargetId
-    ? targets.find((target) => target.id === selectedTargetId) ?? null
+    ? (targets.find((target) => target.id === selectedTargetId) ?? null)
     : null;
 
   return (
@@ -45,7 +42,9 @@ export function WebKitDevtoolsPanel({
           />
         ) : (
           <span className="text-[12px] text-white/[0.48] overflow-hidden text-ellipsis whitespace-nowrap">
-            {loading ? "Looking for Safari and inspectable webviews..." : "No inspectable Safari or WKWebView targets"}
+            {loading
+              ? "Looking for Safari and inspectable webviews..."
+              : "No inspectable Safari or WKWebView targets"}
           </span>
         )}
         <PanelCloseButton
@@ -58,7 +57,9 @@ export function WebKitDevtoolsPanel({
 
       <div className="flex-1 min-h-0 bg-white relative">
         {error ? (
-          <div className="h-full flex items-center justify-center p-6 bg-panel-deep text-white/[0.58] text-center text-[13px]">{error}</div>
+          <div className="h-full flex items-center justify-center p-6 bg-panel-deep text-white/[0.58] text-center text-[13px]">
+            {error}
+          </div>
         ) : selected && open ? (
           // Mount the iframe only while the panel is visible. Unmounting tears
           // down the WebSocket so WIR releases the page; otherwise we'd hold

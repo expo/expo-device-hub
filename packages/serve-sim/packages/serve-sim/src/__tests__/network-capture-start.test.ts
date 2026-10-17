@@ -40,7 +40,10 @@ describe("enableNetworkCaptureForStartedDevice", () => {
     captureRuntime.setDeviceCaptureEnabled("EXPLICIT-OFF", false);
     let called = false;
     await enableNetworkCaptureForStartedDevice("EXPLICIT-OFF", true, {
-      enable: async () => { called = true; return { proxyAddress: null }; },
+      enable: async () => {
+        called = true;
+        return { proxyAddress: null };
+      },
     });
     expect(called).toBe(false);
   });
@@ -49,7 +52,10 @@ describe("enableNetworkCaptureForStartedDevice", () => {
     captureRuntime.setDeviceCaptureEnabled("EXPLICIT-ON", true);
     let called = false;
     await enableNetworkCaptureForStartedDevice("EXPLICIT-ON", false, {
-      enable: async () => { called = true; return { proxyAddress: null }; },
+      enable: async () => {
+        called = true;
+        return { proxyAddress: null };
+      },
       log: () => {},
     });
     expect(called).toBe(true);
@@ -117,9 +123,21 @@ describe("overlapping cleanup retries", () => {
     const session = { id: "overlap" };
     const base = { session: () => session };
     expect(
-      await disableNetworkCaptureForStoppedDevice("OVERLAP-1", { ...base, disable: async () => { throw new Error("locked"); } }),
+      await disableNetworkCaptureForStoppedDevice("OVERLAP-1", {
+        ...base,
+        disable: async () => {
+          throw new Error("locked");
+        },
+      }),
     ).toBe(false);
-    const slow = { ...base, disable: async () => { attempts++; await gate; throw new Error("still locked"); } };
+    const slow = {
+      ...base,
+      disable: async () => {
+        attempts++;
+        await gate;
+        throw new Error("still locked");
+      },
+    };
     const first = retryPendingCaptureCleanup(slow);
     const second = retryPendingCaptureCleanup(slow);
     await second;
@@ -154,7 +172,9 @@ describe("capture startup cancellation", () => {
   test("does not arm another device after an in-flight start is cancelled", async () => {
     let stopping = false;
     let cancel!: (error: Error) => void;
-    const pending = new Promise<never>((_resolve, reject) => { cancel = reject; });
+    const pending = new Promise<never>((_resolve, reject) => {
+      cancel = reject;
+    });
     const enabled: string[] = [];
     const start = async () => {
       for (const udid of ["FIRST", "SECOND"]) {

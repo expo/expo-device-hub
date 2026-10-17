@@ -1,12 +1,12 @@
-import { Logo, SidebarToggle, bg } from '../primitives';
-import { DeviceSection } from './DeviceSection';
+import { Logo, SidebarToggle, bg } from "../primitives";
+import { DeviceSection } from "./DeviceSection";
 import {
   type AddDeviceOutcome,
   type AddDeviceTarget,
   type Device,
   type NewDeviceOptions,
   type Platform,
-} from './data';
+} from "./data";
 
 /** Left column: simulators + emulators lists. The device output (logs) lives in {@link LogSidebar}. */
 export function Sidebar({
@@ -52,31 +52,33 @@ export function Sidebar({
   return (
     <aside
       style={{
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         gap: 32,
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
-        height: '100vh',
-        boxSizing: 'border-box',
-        padding: '32px 24px',
+        height: "100vh",
+        boxSizing: "border-box",
+        padding: "32px 24px",
         backgroundColor: bg.default,
-        overflow: 'hidden',
-      }}>
+        overflow: "hidden",
+      }}
+    >
       <div
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}
+      >
         <Logo />
         {onToggle && <SidebarToggle onClick={onToggle} />}
       </div>
-      {platform !== 'android' && (
+      {platform !== "android" && (
         <DeviceSection
           title="Simulators"
           addLabel="Add simulator"
           kind="simulator"
           emptyLabel={
             onAddDevice
-              ? 'No booted simulators. Use the + button to add one.'
-              : 'No booted simulators.'
+              ? "No booted simulators. Use the + button to add one."
+              : "No booted simulators."
           }
           devices={simulators}
           recent={recentSimulators}
@@ -87,15 +89,15 @@ export function Sidebar({
           onAdd={onAddDevice}
         />
       )}
-      {platform !== 'ios' && (
+      {platform !== "ios" && (
         <DeviceSection
           title="Emulators"
           addLabel="Add emulator"
           kind="emulator"
           emptyLabel={
             onAddDevice
-              ? 'No booted emulators or devices. Use the + button to add one.'
-              : 'No booted emulators or devices.'
+              ? "No booted emulators or devices. Use the + button to add one."
+              : "No booted emulators or devices."
           }
           devices={emulators}
           recent={recentEmulators}

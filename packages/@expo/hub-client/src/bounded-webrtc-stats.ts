@@ -9,13 +9,20 @@ export async function readStatsBeforeDeadline(
   if (!peer) return null;
   let read = readsInFlight.get(peer);
   if (!read) {
-    read = Promise.resolve().then(() => peer.getStats()).catch(() => null);
+    read = Promise.resolve()
+      .then(() => peer.getStats())
+      .catch(() => null);
     readsInFlight.set(peer, read);
     void read.then(() => readsInFlight.delete(peer));
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([read, new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), deadlineMs); })]);
+    return await Promise.race([
+      read,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), deadlineMs);
+      }),
+    ]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }

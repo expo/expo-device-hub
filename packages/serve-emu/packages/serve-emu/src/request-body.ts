@@ -11,8 +11,7 @@ export const MAX_REQUEST_BODY_CHUNKS = 262_144;
 export const REQUEST_BODY_YIELD_INTERVAL = 256;
 
 export type HttpBodyErrorCode = keyof typeof HTTP_BODY_ERROR_STATUS;
-export type HttpBodyErrorStatus =
-  (typeof HTTP_BODY_ERROR_STATUS)[HttpBodyErrorCode];
+export type HttpBodyErrorStatus = (typeof HTTP_BODY_ERROR_STATUS)[HttpBodyErrorCode];
 
 type HttpBodyErrorOptions = {
   cause?: unknown;
@@ -26,11 +25,7 @@ export class HttpBodyError extends Error {
   readonly limit?: number;
   readonly received?: number;
 
-  constructor(
-    code: HttpBodyErrorCode,
-    message: string,
-    options: HttpBodyErrorOptions = {},
-  ) {
+  constructor(code: HttpBodyErrorCode, message: string, options: HttpBodyErrorOptions = {}) {
     super(message, { cause: options.cause });
     this.name = "HttpBodyError";
     this.code = code;
@@ -52,15 +47,11 @@ function abortedError(signal: AbortSignal): HttpBodyError {
   });
 }
 
-function bodyTooLargeError(
-  maxBytes: number,
-  received?: number,
-): HttpBodyError {
-  return new HttpBodyError(
-    "payload-too-large",
-    `request body exceeds ${maxBytes} bytes`,
-    { limit: maxBytes, received },
-  );
+function bodyTooLargeError(maxBytes: number, received?: number): HttpBodyError {
+  return new HttpBodyError("payload-too-large", `request body exceeds ${maxBytes} bytes`, {
+    limit: maxBytes,
+    received,
+  });
 }
 
 function tooManyBodyChunksError(received: number): HttpBodyError {
@@ -91,9 +82,7 @@ function parseContentLength(request: Request, maxBytes: number): number | null {
   if (declared > BigInt(maxBytes)) {
     throw bodyTooLargeError(
       maxBytes,
-      declared <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number(declared)
-        : undefined,
+      declared <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(declared) : undefined,
     );
   }
   return Number(declared);
@@ -219,12 +208,8 @@ export async function readBodyLimited(
     const error =
       cause instanceof HttpBodyError
         ? cause
-        : abortFailure ??
-          new HttpBodyError(
-            "body-read-failed",
-            "failed to read request body",
-            { cause },
-          );
+        : (abortFailure ??
+          new HttpBodyError("body-read-failed", "failed to read request body", { cause }));
     await cancel(error);
     throw error;
   } finally {

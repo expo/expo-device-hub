@@ -31,10 +31,10 @@ export function originMatches(configured: string, origin: URL): boolean {
   const suffix = parsed.hostname.slice(1).toLowerCase();
   const host = origin.hostname.toLowerCase();
   return (
-    parsed.protocol === origin.protocol
-    && parsed.port === origin.port
-    && host.length > suffix.length
-    && host.endsWith(suffix)
+    parsed.protocol === origin.protocol &&
+    parsed.port === origin.port &&
+    host.length > suffix.length &&
+    host.endsWith(suffix)
   );
 }
 
@@ -98,7 +98,8 @@ function normalizeHost(protocol: string, host: string): string | null {
 }
 
 // Same wildcard rule as WILDCARD_HOST, plus the bare host and IPv6 shapes a frame source may use.
-const FRAMEABLE_ORIGIN = /^https?:\/\/(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+|\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?$/i;
+const FRAMEABLE_ORIGIN =
+  /^https?:\/\/(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+|\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?$/i;
 
 /**
  * Who may frame a gated preview. Browsers that ignore the Partitioned cookie attribute would

@@ -1,7 +1,7 @@
-import { existsSync } from 'node:fs';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { fileURLToPath, URL } from 'node:url';
-import sirv from 'sirv';
+import { existsSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { fileURLToPath, URL } from "node:url";
+import sirv from "sirv";
 
 /** Serve files under `rootUrl`; resolves false (not 404) so callers keep their own fallback. */
 export function staticFileHandler(
@@ -22,9 +22,9 @@ export function staticFileHandler(
   return (req, res) =>
     new Promise((resolve) => {
       const onServed = () => resolve(true);
-      res.once('finish', onServed);
+      res.once("finish", onServed);
       middleware(req, res, () => {
-        res.removeListener('finish', onServed);
+        res.removeListener("finish", onServed);
         resolve(false);
       });
     });

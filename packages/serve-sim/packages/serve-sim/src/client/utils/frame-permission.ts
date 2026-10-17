@@ -1,7 +1,10 @@
 type FramePermission = "clipboard-read";
 
 type PermissionsPolicy = { allowsFeature(feature: string): boolean };
-type PolicyDocument = Document & { permissionsPolicy?: PermissionsPolicy; featurePolicy?: PermissionsPolicy };
+type PolicyDocument = Document & {
+  permissionsPolicy?: PermissionsPolicy;
+  featurePolicy?: PermissionsPolicy;
+};
 
 function framePolicy(): PermissionsPolicy | undefined {
   const doc: PolicyDocument = document;
@@ -38,7 +41,9 @@ export function requestFramePermission(permission: FramePermission): void {
  * On a later load in the same tab, after this page asked the embedding page for a permission:
  * "allowed" when the frame policy now has it, "unknown" when the browser has no policy API to check it.
  */
-export function takeFramePermissionGrant(permission: FramePermission): "allowed" | "unknown" | null {
+export function takeFramePermissionGrant(
+  permission: FramePermission,
+): "allowed" | "unknown" | null {
   try {
     const key = `${REQUESTED_KEY}${permission}`;
     if (!window.sessionStorage.getItem(key)) return null;

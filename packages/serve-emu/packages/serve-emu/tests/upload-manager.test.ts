@@ -112,12 +112,7 @@ describe("UploadManager", () => {
       queueTimeoutMs: 1_000,
       clock,
     });
-    const gates = [
-      deferred<string>(),
-      deferred<string>(),
-      deferred<string>(),
-      deferred<string>(),
-    ];
+    const gates = [deferred<string>(), deferred<string>(), deferred<string>(), deferred<string>()];
     const started: number[] = [];
     const runs = gates.map((gate, index) =>
       manager.run({ context: context(index) }, () => {
@@ -190,10 +185,7 @@ describe("UploadManager", () => {
     const firstGate = deferred<string>();
     const secondGate = deferred<string>();
     const first = manager.run({ context: context(1) }, () => firstGate.promise);
-    const second = manager.run(
-      { context: context(2) },
-      () => secondGate.promise,
-    );
+    const second = manager.run({ context: context(2) }, () => secondGate.promise);
     const staleTimer = clock.timers[0]!;
 
     firstGate.resolve("first");
@@ -204,10 +196,7 @@ describe("UploadManager", () => {
     expect(await second).toBe("second");
 
     const activeGate = deferred<string>();
-    const active = manager.run(
-      { context: context(3) },
-      () => activeGate.promise,
-    );
+    const active = manager.run({ context: context(3) }, () => activeGate.promise);
     let timedOutStarted = false;
     const timedOut = manager.run({ context: context(4) }, () => {
       timedOutStarted = true;
@@ -244,17 +233,11 @@ describe("UploadManager", () => {
       clock: immediateClock,
     });
     const blocker = deferred<void>();
-    const active = immediateManager.run(
-      { context: context(1) },
-      () => blocker.promise,
-    );
+    const active = immediateManager.run({ context: context(1) }, () => blocker.promise);
     let invoked = false;
-    const synchronousTimeout = immediateManager.run(
-      { context: context(2) },
-      () => {
-        invoked = true;
-      },
-    );
+    const synchronousTimeout = immediateManager.run({ context: context(2) }, () => {
+      invoked = true;
+    });
     await rejectsWithCode(synchronousTimeout, "queue-timeout");
     expect(invoked).toBe(false);
     expect(immediateManager.snapshot()).toMatchObject({
@@ -273,10 +256,7 @@ describe("UploadManager", () => {
       clock,
     });
     const activeGate = deferred<void>();
-    const blocking = manager.run(
-      { context: context(3) },
-      () => activeGate.promise,
-    );
+    const blocking = manager.run({ context: context(3) }, () => activeGate.promise);
     const requestFirst = new AbortController();
     const cancelled = manager.run(
       { context: context(4), requestSignal: requestFirst.signal },
@@ -329,14 +309,14 @@ describe("UploadManager", () => {
     await flush();
 
     request.abort(new Error("client disconnected"));
-    expect((activeSignal!.reason as { code: string }).code).toBe(
-      "upload-cancelled",
-    );
+    expect((activeSignal!.reason as { code: string }).code).toBe("upload-cancelled");
     expect(manager.snapshot().active).toBe(1);
     let settled = false;
-    void active.finally(() => {
-      settled = true;
-    }).catch(() => {});
+    void active
+      .finally(() => {
+        settled = true;
+      })
+      .catch(() => {});
     await flush();
     expect(settled).toBe(false);
 
@@ -348,12 +328,9 @@ describe("UploadManager", () => {
     const blocking = manager.run({ context: context(2) }, () => blocker.promise);
     const queuedRequest = new AbortController();
     let queuedStarted = false;
-    const queued = manager.run(
-      { context: context(3), requestSignal: queuedRequest.signal },
-      () => {
-        queuedStarted = true;
-      },
-    );
+    const queued = manager.run({ context: context(3), requestSignal: queuedRequest.signal }, () => {
+      queuedStarted = true;
+    });
     const queuedRejected = rejectsWithCode(queued, "upload-cancelled");
     queuedRequest.abort();
     await queuedRejected;
@@ -364,10 +341,7 @@ describe("UploadManager", () => {
       { context: context(4), sessionSignal: session.signal },
       () => "never",
     );
-    const sessionRejected = rejectsWithCode(
-      sessionQueued,
-      "device-session-changed",
-    );
+    const sessionRejected = rejectsWithCode(sessionQueued, "device-session-changed");
     session.abort();
     await sessionRejected;
     blocker.resolve();
@@ -389,14 +363,8 @@ describe("UploadManager", () => {
       });
     });
     const activeRejected = rejectsWithCode(active, "device-session-changed");
-    const oldQueued = manager.run(
-      { context: context(7, "old") },
-      () => "old queued",
-    );
-    const oldQueuedRejected = rejectsWithCode(
-      oldQueued,
-      "device-session-changed",
-    );
+    const oldQueued = manager.run({ context: context(7, "old") }, () => "old queued");
+    const oldQueuedRejected = rejectsWithCode(oldQueued, "device-session-changed");
     let nextStarted = false;
     const next = manager.run({ context: context(8, "new") }, () => {
       nextStarted = true;
@@ -408,9 +376,7 @@ describe("UploadManager", () => {
     const cancellation = manager.cancelGeneration(7).then(() => {
       cancellationFinished = true;
     });
-    expect((observedSignal!.reason as { code: string }).code).toBe(
-      "device-session-changed",
-    );
+    expect((observedSignal!.reason as { code: string }).code).toBe("device-session-changed");
     await oldQueuedRejected;
     await flush();
     expect(cancellationFinished).toBe(false);
@@ -444,17 +410,19 @@ describe("UploadManager", () => {
     const manager = new UploadManager({ maxActive: 1, maxQueued: 1 });
     const cleanup = deferred<void>();
     let nestedClose: Promise<void> | null = null;
-    const active = manager.run({ context: context(1) }, ({ signal }) =>
-      new Promise<string>((resolve) => {
-        signal.addEventListener(
-          "abort",
-          () => {
-            nestedClose = manager.close();
-            void cleanup.promise.then(() => resolve("ignored"));
-          },
-          { once: true },
-        );
-      }),
+    const active = manager.run(
+      { context: context(1) },
+      ({ signal }) =>
+        new Promise<string>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => {
+              nestedClose = manager.close();
+              void cleanup.promise.then(() => resolve("ignored"));
+            },
+            { once: true },
+          );
+        }),
     );
     const activeRejected = rejectsWithCode(active, "closed");
     const queued = manager.run({ context: context(2) }, () => "never");
@@ -510,10 +478,7 @@ describe("UploadManager", () => {
     await syncRejected;
     expect(await next).toBe("next");
 
-    const undefinedFailure = manager.run(
-      { context: context(3) },
-      () => Promise.reject(undefined),
-    );
+    const undefinedFailure = manager.run({ context: context(3) }, () => Promise.reject(undefined));
     await expect(undefinedFailure).rejects.toBeUndefined();
     expect(manager.snapshot()).toMatchObject({
       active: 0,
@@ -526,10 +491,7 @@ describe("UploadManager", () => {
     const manager = new UploadManager({ maxActive: 1, maxQueued: 1 });
     const gate = deferred<string>();
     const racing = manager.run({ context: context(9) }, () => gate.promise);
-    const racingRejected = rejectsWithCode(
-      racing,
-      "device-session-changed",
-    );
+    const racingRejected = rejectsWithCode(racing, "device-session-changed");
     await flush();
 
     gate.resolve("too late");
@@ -557,21 +519,16 @@ describe("UploadManager", () => {
     async (cleanupCode) => {
       const manager = new UploadManager({ maxActive: 1, maxQueued: 1 });
       const request = new AbortController();
-      const cleanupFailure = Object.assign(
-        new Error("failed to remove staging directory"),
-        { code: cleanupCode },
-      );
+      const cleanupFailure = Object.assign(new Error("failed to remove staging directory"), {
+        code: cleanupCode,
+      });
       let operationStarted = false;
       const run = manager.run(
         { context: context(10), requestSignal: request.signal },
         ({ signal }) =>
           new Promise<never>((_resolve, reject) => {
             operationStarted = true;
-            signal.addEventListener(
-              "abort",
-              () => reject(cleanupFailure),
-              { once: true },
-            );
+            signal.addEventListener("abort", () => reject(cleanupFailure), { once: true });
           }),
       );
       await flush();

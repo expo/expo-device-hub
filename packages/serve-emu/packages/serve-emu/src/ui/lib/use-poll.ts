@@ -45,12 +45,16 @@ export function usePoll<Result, Key>({
         intervalMs,
         task: (context) => pollRef.current(context),
         onResult: (result, context) => {
-          if (shouldApplyPollResult(desiredEnabledRef.current, desiredKeyRef.current, context.key)) {
+          if (
+            shouldApplyPollResult(desiredEnabledRef.current, desiredKeyRef.current, context.key)
+          ) {
             onResultRef.current(result, context);
           }
         },
         onError: (error, context) => {
-          if (shouldApplyPollResult(desiredEnabledRef.current, desiredKeyRef.current, context.key)) {
+          if (
+            shouldApplyPollResult(desiredEnabledRef.current, desiredKeyRef.current, context.key)
+          ) {
             onErrorRef.current?.(error, context);
           }
         },
@@ -69,9 +73,7 @@ export function usePoll<Result, Key>({
     const controller = controllerRef.current;
     if (!controller) return;
     const visibilitySource =
-      pauseWhenHidden && typeof document !== "undefined"
-        ? document as VisibilitySource
-        : null;
+      pauseWhenHidden && typeof document !== "undefined" ? (document as VisibilitySource) : null;
     const unbindVisibility = visibilitySource
       ? bindPollVisibility(controller, visibilitySource)
       : null;

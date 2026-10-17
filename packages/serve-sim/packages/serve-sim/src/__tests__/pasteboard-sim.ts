@@ -11,7 +11,11 @@ import {
   removeCapabilityLoaderSync,
 } from "../launch-manager";
 import { locateSimpbArtifact, locatePasteboardTool } from "../sim-pasteboard";
-import { CLIPBOARD_CAPABILITY, locatePasteboardReaderDylib, requestInjectedPasteboard } from "../sim-pasteboard-reader";
+import {
+  CLIPBOARD_CAPABILITY,
+  locatePasteboardReaderDylib,
+  requestInjectedPasteboard,
+} from "../sim-pasteboard-reader";
 
 export const SAFARI_BUNDLE = "com.apple.mobilesafari";
 export const FIXTURE_BUNDLE = "dev.expo.serve-sim.pasteboard-fixture";
@@ -60,14 +64,19 @@ export function runningPid(udid: string, bundleId: string): number | null {
 export async function armClipboardForAllApps(udid: string): Promise<void> {
   const dylib = locatePasteboardReaderDylib();
   if (!dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
-  await enableCapabilities(udid, null, [
-    {
-      name: CLIPBOARD_CAPABILITY,
-      dylib,
-      scope: "allApps",
-      loadDelayMs: 0,
-    },
-  ], { relaunch: false });
+  await enableCapabilities(
+    udid,
+    null,
+    [
+      {
+        name: CLIPBOARD_CAPABILITY,
+        dylib,
+        scope: "allApps",
+        loadDelayMs: 0,
+      },
+    ],
+    { relaunch: false },
+  );
 }
 
 export function mappedDylibCount(udid: string, pid: number, name: string): number {
@@ -130,9 +139,7 @@ function launchedPid(output: string): number | null {
 }
 
 function simctlLaunch(udid: string, bundleId: string): number | null {
-  return launchedPid(
-    simctlSync(["launch", udid, bundleId], { timeout: 12_000 }),
-  );
+  return launchedPid(simctlSync(["launch", udid, bundleId], { timeout: 12_000 }));
 }
 
 async function resetLaunchState(udid: string, bundleId: string): Promise<void> {
@@ -196,12 +203,14 @@ export async function openAppForPasteboard(
   try {
     await resetLaunchState(udid, bundleId);
     grantPasteboard(udid, bundleId);
-    await enableCapabilities(udid, bundleId, [{
-      name: CLIPBOARD_CAPABILITY,
-      dylib,
-      scope: "allApps",
-      loadDelayMs: 0,
-    }]);
+    await enableCapabilities(udid, bundleId, [
+      {
+        name: CLIPBOARD_CAPABILITY,
+        dylib,
+        scope: "allApps",
+        loadDelayMs: 0,
+      },
+    ]);
     const pid = runningPid(udid, bundleId);
     return { unsubscribe: cleanup, pid: await waitForLaunch(udid, bundleId, pid) };
   } catch (error: unknown) {

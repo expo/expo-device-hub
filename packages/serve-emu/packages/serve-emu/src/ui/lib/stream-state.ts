@@ -65,19 +65,11 @@ export function parseStreamHealth(value: unknown): StreamHealth {
     throw new Error("health status is invalid");
   }
   const lastFrameAt = value.lastFrameAt;
-  if (
-    lastFrameAt !== undefined &&
-    lastFrameAt !== null &&
-    typeof lastFrameAt !== "string"
-  ) {
+  if (lastFrameAt !== undefined && lastFrameAt !== null && typeof lastFrameAt !== "string") {
     throw new Error("health lastFrameAt is invalid");
   }
   const lastError = value.lastError;
-  if (
-    lastError !== undefined &&
-    lastError !== null &&
-    typeof lastError !== "string"
-  ) {
+  if (lastError !== undefined && lastError !== null && typeof lastError !== "string") {
     throw new Error("health lastError is invalid");
   }
   return {
@@ -88,15 +80,11 @@ export function parseStreamHealth(value: unknown): StreamHealth {
   };
 }
 
-export function parseStreamWorkerEvent(
-  value: unknown,
-): StreamWorkerEvent | null {
+export function parseStreamWorkerEvent(value: unknown): StreamWorkerEvent | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;
   if (value.type === "rendered") return { type: "rendered" };
   if (value.type === "status") {
-    return typeof value.status === "string"
-      ? { type: "status", status: value.status }
-      : null;
+    return typeof value.status === "string" ? { type: "status", status: value.status } : null;
   }
   if (value.type === "session") {
     try {
@@ -132,15 +120,10 @@ export function parseStreamWorkerEvent(
   };
 }
 
-export function applyWorkerEvent(
-  state: StreamState,
-  event: StreamWorkerEvent,
-): StreamState {
+export function applyWorkerEvent(state: StreamState, event: StreamWorkerEvent): StreamState {
   switch (event.type) {
     case "status":
-      return state.status === event.status
-        ? state
-        : { ...state, status: event.status };
+      return state.status === event.status ? state : { ...state, status: event.status };
     case "session":
       return { ...state, deviceSize: event.size };
     case "stats":
@@ -156,22 +139,15 @@ export function applyWorkerEvent(
   }
 }
 
-const RECOVERABLE_HEALTH_STATUSES = new Set([
-  "metadata unavailable",
-  "waiting for video",
-]);
+const RECOVERABLE_HEALTH_STATUSES = new Set(["metadata unavailable", "waiting for video"]);
 
 export function applyStreamHealth(
   state: StreamState,
   health: StreamHealth,
   options: { nowMs: number; hasRenderedFrame: boolean },
 ): StreamState {
-  const lastFrameMs = health.lastFrameAt
-    ? Date.parse(health.lastFrameAt)
-    : Number.NaN;
-  const lastFrameAgeMs = Number.isFinite(lastFrameMs)
-    ? options.nowMs - lastFrameMs
-    : Infinity;
+  const lastFrameMs = health.lastFrameAt ? Date.parse(health.lastFrameAt) : Number.NaN;
+  const lastFrameAgeMs = Number.isFinite(lastFrameMs) ? options.nowMs - lastFrameMs : Infinity;
   let status = state.status;
   if (health.status && health.status !== "streaming") {
     status = health.lastError || health.status;

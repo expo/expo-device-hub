@@ -93,16 +93,20 @@ export function ToolsPanel({
           />
           <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
-          <SimulatorSettingsTool udid={udid} runtime={deviceRuntime} hingeControls={hingeControls} />
-          <AxTreeTool
-            overlayEnabled={axOverlayEnabled}
-            onToggleOverlay={onToggleAxOverlay}
+          <SimulatorSettingsTool
+            udid={udid}
+            runtime={deviceRuntime}
+            hingeControls={hingeControls}
           />
+          <AxTreeTool overlayEnabled={axOverlayEnabled} onToggleOverlay={onToggleAxOverlay} />
           <CameraTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
           <LocationEmulationTool udid={udid} />
           <AppPermissionsTool udid={udid} bundleId={currentApp?.bundleId ?? null} />
           {hasChrome && onChromeEnabledChange && (
-            <DisplayTool chromeEnabled={!!chromeEnabled} onChromeEnabledChange={onChromeEnabledChange} />
+            <DisplayTool
+              chromeEnabled={!!chromeEnabled}
+              onChromeEnabledChange={onChromeEnabledChange}
+            />
           )}
           <StreamSettingsTool
             settings={streamSettings}
@@ -147,7 +151,11 @@ function DisplayTool({
       <div className="flex items-center gap-2.5 px-1">
         <Smartphone size={14} strokeWidth={1.75} className="text-white/50 shrink-0" />
         <span className="flex-1 text-[13px] text-white/80">Device frame</span>
-        <SettingSwitch label="Device frame" checked={chromeEnabled} onChange={onChromeEnabledChange} />
+        <SettingSwitch
+          label="Device frame"
+          checked={chromeEnabled}
+          onChange={onChromeEnabledChange}
+        />
       </div>
     </CollapsibleSection>
   );

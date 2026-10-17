@@ -75,10 +75,7 @@ function multipartRequest(
   });
 }
 
-function ignoredUploadRequest(
-  signal?: AbortSignal,
-  onCancel?: (reason: unknown) => void,
-): Request {
+function ignoredUploadRequest(signal?: AbortSignal, onCancel?: (reason: unknown) => void): Request {
   return new Request("http://localhost/api/apps/install", {
     method: "POST",
     signal,
@@ -92,9 +89,7 @@ function ignoredUploadRequest(
 
 describe("middleware uploads", () => {
   test("streams a Fetch request without Content-Length and removes the staged file", async () => {
-    const tempRoot = await mkdtemp(
-      join(tmpdir(), "serve-emu-middleware-upload-test-"),
-    );
+    const tempRoot = await mkdtemp(join(tmpdir(), "serve-emu-middleware-upload-test-"));
     let stagedPath = "";
     let observedBytes = "";
     const uploader = createMiddlewareUploader(
@@ -118,10 +113,7 @@ describe("middleware uploads", () => {
     try {
       const boundary = "middleware-success";
       const response = await uploader.install(
-        multipartRequest(
-          multipartBody(boundary, "apk", "demo.apk", "apk-bytes"),
-          boundary,
-        ),
+        multipartRequest(multipartBody(boundary, "apk", "demo.apk", "apk-bytes"), boundary),
       );
 
       expect(response.status).toBe(200);
@@ -142,9 +134,7 @@ describe("middleware uploads", () => {
     ["missing Content-Length", undefined],
     ["understated Content-Length", "1"],
   ])("rejects oversized actual bytes with %s", async (_label, contentLength) => {
-    const tempRoot = await mkdtemp(
-      join(tmpdir(), "serve-emu-middleware-upload-limit-test-"),
-    );
+    const tempRoot = await mkdtemp(join(tmpdir(), "serve-emu-middleware-upload-limit-test-"));
     let actionCalls = 0;
     const uploader = createMiddlewareUploader(
       {
@@ -165,11 +155,9 @@ describe("middleware uploads", () => {
     try {
       const boundary = "middleware-too-large";
       const response = await uploader.install(
-        multipartRequest(
-          multipartBody(boundary, "apk", "large.apk", "12345"),
-          boundary,
-          { contentLength },
-        ),
+        multipartRequest(multipartBody(boundary, "apk", "large.apk", "12345"), boundary, {
+          contentLength,
+        }),
       );
 
       expect(response.status).toBe(413);
@@ -287,9 +275,7 @@ describe("middleware uploads", () => {
     );
 
     try {
-      const responsePromise = uploader.install(
-        ignoredUploadRequest(controller.signal),
-      );
+      const responsePromise = uploader.install(ignoredUploadRequest(controller.signal));
       await flushUntil(() => actionStarted);
       controller.abort(new Error("client disconnected"));
       const response = await responsePromise;

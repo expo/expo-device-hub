@@ -21,9 +21,7 @@ describe("AppPermissionsLoading", () => {
   });
 
   test("renders for the permissions tool while foreground app data is missing", () => {
-    const html = renderToStaticMarkup(
-      <AppPermissionsTool udid="booted" bundleId={null} />,
-    );
+    const html = renderToStaticMarkup(<AppPermissionsTool udid="booted" bundleId={null} />);
 
     expect(html).toContain('data-testid="app-permissions-loading"');
     expect(html).toContain('data-testid="permissions-loading-indicator"');

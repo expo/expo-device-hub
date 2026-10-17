@@ -43,7 +43,8 @@ function setup({ dropFirst = false, actionDelayMs = 0, hangActions = false } = {
         if (typeof body.sub === "number") reply({ sub: body.sub, data: "current" });
         else if (typeof body.id === "number") {
           if (typeof body.action !== "string") reply({ id: body.id, error: "unsupported request" });
-          else if (!hangActions) setTimeout(() => reply({ id: body.id, stdout: "done" }), actionDelayMs);
+          else if (!hangActions)
+            setTimeout(() => reply({ id: body.id, stdout: "done" }), actionDelayMs);
         }
       },
     },
@@ -111,17 +112,27 @@ test("disposal removes the health timer and prevents a subscription reconnect", 
   expect(connections()).toBe(1);
 });
 
-
 test("responsive health probes do not conceal exhausted abandoned action slots", async () => {
-  const {channel, messages, connections} = setup({hangActions: true});
+  const { channel, messages, connections } = setup({ hangActions: true });
   const chunks: string[] = [];
-  channel.subscribe('/logs', chunk => chunks.push(chunk), () => {});
-  const results = Array.from({length: 8}, (_, n) =>
-    channel.request({action: `hung-${n}`}, 60).catch(error => error));
-  expect((await Promise.all(results)).every(error => error.message === 'exec-ws timeout')).toBe(true);
-  await expect(channel.request({action: 'new'}, 200)).rejects.toThrow('too many actions in flight on this connection');
+  channel.subscribe(
+    "/logs",
+    (chunk) => chunks.push(chunk),
+    () => {},
+  );
+  const results = Array.from({ length: 8 }, (_, n) =>
+    channel.request({ action: `hung-${n}` }, 60).catch((error) => error),
+  );
+  expect((await Promise.all(results)).every((error) => error.message === "exec-ws timeout")).toBe(
+    true,
+  );
+  await expect(channel.request({ action: "new" }, 200)).rejects.toThrow(
+    "too many actions in flight on this connection",
+  );
   expect(connections()).toBe(1);
-  expect(chunks).toEqual(['current']);
-  expect(messages.filter(({body}) => typeof body.id === 'number' && !('action' in body)).length).toBeGreaterThan(0);
-  expect(messages.filter(({body}) => typeof body.action === 'string')).toHaveLength(8);
+  expect(chunks).toEqual(["current"]);
+  expect(
+    messages.filter(({ body }) => typeof body.id === "number" && !("action" in body)).length,
+  ).toBeGreaterThan(0);
+  expect(messages.filter(({ body }) => typeof body.action === "string")).toHaveLength(8);
 });

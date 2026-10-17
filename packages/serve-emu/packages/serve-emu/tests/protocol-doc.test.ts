@@ -23,10 +23,9 @@ describe("canonical protocol documentation", () => {
     expect(await PROTOCOL_DOC.exists()).toBe(true);
     const docs = await PROTOCOL_DOC.text();
     for (const [name, value] of Object.entries(PROTOCOL_GOLDEN_HEX)) {
-      expect(
-        docs,
-        `${name} golden is missing or mislabeled in LLP 0008`,
-      ).toMatch(new RegExp(`^${name}:\\s+${value}$`, "m"));
+      expect(docs, `${name} golden is missing or mislabeled in LLP 0008`).toMatch(
+        new RegExp(`^${name}:\\s+${value}$`, "m"),
+      );
     }
   });
 });

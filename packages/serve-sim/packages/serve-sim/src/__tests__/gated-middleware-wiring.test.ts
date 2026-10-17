@@ -92,7 +92,10 @@ describe("the socket's own wiring into the middleware", () => {
     expect(await socket.next()).toMatchObject({ ready: true });
 
     // The set path spawns simctl; the status path answers "unsupported" without failing.
-    socket.send({ id: 2, ui: { device: "NO-SUCH-DEVICE-0000", option: "appearance", value: "dark" } });
+    socket.send({
+      id: 2,
+      ui: { device: "NO-SUCH-DEVICE-0000", option: "appearance", value: "dark" },
+    });
     const reply = (await socket.next()) as { error?: string };
     socket.close();
 
@@ -123,10 +126,9 @@ describe("devtools proxy", () => {
       return new Response("//", { headers: { "Content-Type": "application/javascript" } });
     }) as typeof fetch;
 
-    const res = await fetch(
-      `${BASE}/devtools-frontend/panel.js?token=${TOKEN}&rev=1`,
-      { headers: { Authorization: `Bearer ${TOKEN}` } },
-    );
+    const res = await fetch(`${BASE}/devtools-frontend/panel.js?token=${TOKEN}&rev=1`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
 
     expect(res.status).toBe(200);
     expect(upstream).toContain("rev=1");
@@ -146,6 +148,9 @@ describe("the app icon route's wiring into the middleware", () => {
   it("reaches the icon handler with a query token", async () => {
     const res = await fetch(`${BASE}/api/apps/icon?device=${DEVICE}&bundleId=-bad&token=${TOKEN}`);
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ ok: false, error: "bundleId must look like com.example.app" });
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "bundleId must look like com.example.app",
+    });
   });
 });

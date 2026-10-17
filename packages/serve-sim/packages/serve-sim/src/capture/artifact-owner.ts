@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 import { withLaunchStateLockSync } from "../launch-state-lock";
@@ -77,7 +85,8 @@ export function claimCaptureDirectory(dir: string, ownerFile = CAPTURE_OWNER_FIL
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     // `mode` applies only to a folder mkdir creates; a session folder left by an earlier run keeps
     // whatever mode it had. A `capture har -o` folder is the user's (it may be /tmp) and is left alone.
-    if (ownerFile === CAPTURE_OWNER_FILENAME && !lstatSync(dir).isSymbolicLink()) chmodSync(dir, 0o700);
+    if (ownerFile === CAPTURE_OWNER_FILENAME && !lstatSync(dir).isSymbolicLink())
+      chmodSync(dir, 0o700);
     const started = thisProcessStartTime();
     const owner = `${process.pid}\n${randomUUID()}${started ? `\n${started}` : ""}`;
     writeFileNoFollow(ownerPath, owner);

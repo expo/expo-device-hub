@@ -24,7 +24,10 @@ export const UploadId = z
   .regex(/^(?!\.)[A-Za-z0-9._-]{1,128}$/, "must be a short plain file name");
 
 /** ~3MB of raw bytes, matching the client's 192KB slices with generous headroom. */
-export const UploadChunk = z.base64().min(1).max(4 * 1024 * 1024);
+export const UploadChunk = z
+  .base64()
+  .min(1)
+  .max(4 * 1024 * 1024);
 
 /** The folder name UPLOAD_DIR uses: the owner's pid, then a random suffix. */
 const SERVER_FOLDER = /^(\d+)-[0-9a-f]{8}$/;
@@ -62,7 +65,14 @@ async function pruneStagingAsync(): Promise<number> {
     held += await pruneStaleEntriesAsync(full, MAX_UPLOAD_AGE_MS);
   }
   // Files that earlier versions staged directly in the root.
-  return held + (await pruneStaleEntriesAsync(UPLOAD_ROOT, MAX_UPLOAD_AGE_MS, (entry) => !SERVER_FOLDER.test(entry)));
+  return (
+    held +
+    (await pruneStaleEntriesAsync(
+      UPLOAD_ROOT,
+      MAX_UPLOAD_AGE_MS,
+      (entry) => !SERVER_FOLDER.test(entry),
+    ))
+  );
 }
 
 export function stagedUploadPath(uploadId: string): string {
@@ -71,7 +81,10 @@ export function stagedUploadPath(uploadId: string): string {
 
 /** Hold the staging queue while a reader captures bytes, excluding reset, prune and removal. */
 // @ref LLP 0003#uploading-an-app-fixture — resets, pruning and removals wait while a copy reads its source
-export function readStagedUploadAsync<T>(uploadId: string, read: (path: string) => Promise<T>): Promise<T> {
+export function readStagedUploadAsync<T>(
+  uploadId: string,
+  read: (path: string) => Promise<T>,
+): Promise<T> {
   return queueUploadAsync(() => read(stagedUploadPath(uploadId)));
 }
 

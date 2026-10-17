@@ -220,13 +220,18 @@ export class MsePlayer {
       const start = buffered.start(0);
       const end = buffered.end(buffered.length - 1);
       const drift = end - video.currentTime;
-      if (video.currentTime > end + 0.05 || video.currentTime < start - 0.05 || drift > SEEK_TO_EDGE_SEC) {
+      if (
+        video.currentTime > end + 0.05 ||
+        video.currentTime < start - 0.05 ||
+        drift > SEEK_TO_EDGE_SEC
+      ) {
         try {
           video.currentTime = Math.max(start, end - EDGE_CUSHION_SEC);
         } catch {}
         video.playbackRate = 1;
       } else if (drift > TARGET_LATENCY_SEC) {
-        video.playbackRate = 1 + Math.min((drift - TARGET_LATENCY_SEC) * CATCHUP_GAIN, MAX_CATCHUP_BOOST);
+        video.playbackRate =
+          1 + Math.min((drift - TARGET_LATENCY_SEC) * CATCHUP_GAIN, MAX_CATCHUP_BOOST);
       } else {
         video.playbackRate = 1;
       }

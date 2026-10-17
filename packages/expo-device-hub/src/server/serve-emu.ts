@@ -6,25 +6,25 @@ import {
   seedCameraFeeds,
   SESSION_TOKEN_SUBPROTOCOL_PREFIX,
   type WsWebSocketLike,
-} from '../../vendor/serve-emu/dist/middleware.js';
+} from "../../vendor/serve-emu/dist/middleware.js";
 
-import { type EmulatorCameraFeeds } from './device-actions';
-import { AndroidSession, type RecordingFinish, type RecordingStart } from './android-session';
-import { recordingLimitsFromEnv } from './recording-limits';
+import { type EmulatorCameraFeeds } from "./device-actions";
+import { AndroidSession, type RecordingFinish, type RecordingStart } from "./android-session";
+import { recordingLimitsFromEnv } from "./recording-limits";
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
   serveEmuAllowsOrigin,
   serveEmuWebSocketOptions,
-} from './serve-emu-options';
-import { SESSION_TOKEN } from './session-token';
+} from "./serve-emu-options";
+import { SESSION_TOKEN } from "./session-token";
 
-export const EMU_PREFIX = '/vendor/serve-emu';
+export const EMU_PREFIX = "/vendor/serve-emu";
 /** The subprotocol prefix a browser names serve-emu's session token under. */
 export const EMU_TOKEN_SUBPROTOCOL_PREFIX: string = SESSION_TOKEN_SUBPROTOCOL_PREFIX;
 
 /** The `ws` socket the transport hands over; `on('error')` lets the Hub guard it. */
-type EmuSocket = WsWebSocketLike & { on(event: 'error', listener: () => void): unknown };
+type EmuSocket = WsWebSocketLike & { on(event: "error", listener: () => void): unknown };
 
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
 const router = createRouter({
@@ -53,18 +53,18 @@ export const finishAndroidScreenRecording = (): Promise<RecordingFinish> =>
 export const shutdownAndroid = (): Promise<void> => androidSession.shutdown();
 
 // Preserve embedded-host cleanup. The CLI awaits the same shutdown promise before exiting.
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     void shutdownAndroid().catch(() => {});
   });
 }
-process.once('exit', () => {
+process.once("exit", () => {
   void router.stopAll();
 });
 
 export function handleEmuRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const rest = `${url.pathname.slice(EMU_PREFIX.length) || '/'}${url.search}`;
+  const rest = `${url.pathname.slice(EMU_PREFIX.length) || "/"}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
   return router.handleRequest(forwarded);
 }
@@ -72,13 +72,13 @@ export function handleEmuRequest(request: Request): Promise<Response> {
 async function attachEmuSocket(socket: EmuSocket, request: Request): Promise<void> {
   // Before `ensure`, which starts the device.
   if (!router.authorizeUpgrade(request)) {
-    socket.close(1008, 'Unauthorized');
+    socket.close(1008, "Unauthorized");
     return;
   }
   const url = new URL(request.url);
   let serial: string;
   try {
-    serial = (await router.ensure(url.searchParams.get('device'))).serial;
+    serial = (await router.ensure(url.searchParams.get("device"))).serial;
   } catch {
     try {
       socket.close();

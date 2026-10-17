@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode, type Ref } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { createPortal } from "react-dom";
 
 export interface ActionMenuItem {
@@ -36,10 +44,10 @@ export function ActionMenu({
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
       const halfWidth = (popupRef.current?.offsetWidth ?? 196) / 2;
-      const left = Math.max(halfWidth + MENU_GAP, Math.min(
-        rect.left + rect.width / 2,
-        window.innerWidth - halfWidth - MENU_GAP,
-      ));
+      const left = Math.max(
+        halfWidth + MENU_GAP,
+        Math.min(rect.left + rect.width / 2, window.innerWidth - halfWidth - MENU_GAP),
+      );
       setPos({ bottom: window.innerHeight - rect.top + MENU_GAP, left });
     };
     updatePosition();
@@ -102,7 +110,9 @@ export function ActionMenu({
               onKeyDown={(event) => {
                 if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
                 event.preventDefault();
-                const buttons = itemRefs.current.filter((node): node is HTMLButtonElement => node != null);
+                const buttons = itemRefs.current.filter(
+                  (node): node is HTMLButtonElement => node != null,
+                );
                 if (buttons.length === 0) return;
                 const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
                 const step = event.key === "ArrowDown" ? 1 : -1;

@@ -19,8 +19,10 @@ import { freePortAsync } from "./helpers";
 const PKG_DIR = join(import.meta.dir, "../..");
 const CLI = join(PKG_DIR, "dist/serve-sim.js");
 
-
-async function waitFor(check: () => boolean | Promise<boolean>, budgetMs: number): Promise<boolean> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  budgetMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
     if (await check()) return true;
@@ -59,17 +61,26 @@ describeIfSim("WebRTC frame pump cadence", () => {
       [
         CLI,
         "--no-preview",
-        "--port", String(port),
-        "--transport", "webrtc",
-        "--webrtc-codec", "vp8",
-        "--max-dimension", "1280",
-        "--video-fps", "60",
+        "--port",
+        String(port),
+        "--transport",
+        "webrtc",
+        "--webrtc-codec",
+        "vp8",
+        "--max-dimension",
+        "1280",
+        "--video-fps",
+        "60",
         udid!,
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
-    server.stdout?.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
-    server.stderr?.on("data", (chunk: Buffer) => { serverOutput += chunk.toString(); });
+    server.stdout?.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
+    server.stderr?.on("data", (chunk: Buffer) => {
+      serverOutput += chunk.toString();
+    });
 
     const ready = await waitFor(async () => {
       try {
@@ -90,14 +101,18 @@ describeIfSim("WebRTC frame pump cadence", () => {
   test("the pump repeats the retained frame at the configured rate", async () => {
     const pc = new RTCPeerConnection({
       codecs: {
-        video: [new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, payloadType: 96 })],
+        video: [
+          new RTCRtpCodecParameters({ mimeType: "video/VP8", clockRate: 90000, payloadType: 96 }),
+        ],
       },
     });
     try {
       const transceiver = pc.addTransceiver("video", { direction: "recvonly" });
       let rtpSeen = 0;
       transceiver.onTrack.subscribe((track) => {
-        track.onReceiveRtp.subscribe(() => { rtpSeen += 1; });
+        track.onReceiveRtp.subscribe(() => {
+          rtpSeen += 1;
+        });
       });
       await pc.setLocalDescription(await pc.createOffer());
       const response = await fetch(`${baseUrl}/helper/${udid}/webrtc/offer`, {
@@ -111,14 +126,17 @@ describeIfSim("WebRTC frame pump cadence", () => {
         }),
       });
       if (!response.ok) {
-        throw new Error(`offer rejected: ${response.status} ${(await response.text()).slice(0, 200)}`);
+        throw new Error(
+          `offer rejected: ${response.status} ${(await response.text()).slice(0, 200)}`,
+        );
       }
       const answer = (await response.json()) as { sdp: string };
       await pc.setRemoteDescription({ type: "answer", sdp: answer.sdp });
 
       // Media must actually be flowing before the measurement window starts.
       const streaming = await waitFor(() => rtpSeen > 10, 25_000);
-      if (!streaming) throw new Error(`no RTP arrived\nserver output:\n${serverOutput.slice(-1_000)}`);
+      if (!streaming)
+        throw new Error(`no RTP arrived\nserver output:\n${serverOutput.slice(-1_000)}`);
 
       const before = await captureCounts();
       await new Promise((r) => setTimeout(r, 4_000));

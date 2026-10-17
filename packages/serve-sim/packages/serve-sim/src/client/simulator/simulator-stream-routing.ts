@@ -21,9 +21,7 @@ export function resolveSimulatorStreamRouting({
   hasExternalInput: boolean;
   hasExternalFrames: boolean;
 }): SimulatorStreamRouting {
-  const effectiveStreamMode = streamMode === "avcc" && !avccSupported
-    ? "mjpeg"
-    : streamMode;
+  const effectiveStreamMode = streamMode === "avcc" && !avccSupported ? "mjpeg" : streamMode;
   const useWebRtc = effectiveStreamMode === "webrtc";
   const useAvcc = effectiveStreamMode === "avcc";
   const externalMjpeg = effectiveStreamMode === "mjpeg" && hasExternalFrames;

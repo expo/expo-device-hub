@@ -20,10 +20,7 @@ const DUMP = `
         android.permission.CAMERA: granted=true, flags=[ USER_SET]
 `;
 
-function recordingExec(
-  calls: string[][],
-  stdout = DUMP,
-): typeof execText {
+function recordingExec(calls: string[][], stdout = DUMP): typeof execText {
   return async (_cmd, args, _opts: ExecOpts = {}) => {
     calls.push(args);
     const result: ExecResult<string> = {

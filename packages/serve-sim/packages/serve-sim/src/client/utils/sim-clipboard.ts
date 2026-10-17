@@ -7,7 +7,10 @@ import { EXEC_WS_MAX_MESSAGE_BYTES } from "../../socket/control-utils";
  * pastes its own clipboard. Bound the encoded frame because JSON escaping can make it larger
  * than the text.
  */
-export function encodePasteRequest(requestId: number, text?: string): Uint8Array<ArrayBuffer> | null {
+export function encodePasteRequest(
+  requestId: number,
+  text?: string,
+): Uint8Array<ArrayBuffer> | null {
   const message = encodeWsMessage(0x12, { requestId, text });
   return message.byteLength <= EXEC_WS_MAX_MESSAGE_BYTES ? message : null;
 }

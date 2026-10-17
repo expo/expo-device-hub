@@ -1,9 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { Euler, Vector2, Vector3 } from "three";
-import { duoPose, duoScreenMapping, duoScreenPoint, stepDuoSpring } from "../client/simulator/duo-pose";
+import {
+  duoPose,
+  duoScreenMapping,
+  duoScreenPoint,
+  stepDuoSpring,
+} from "../client/simulator/duo-pose";
 import type { SimulatorOrientation } from "../client/types";
 
-function advanceSpring(value: number, target: number, steps: number, seconds: number, velocity = 0) {
+function advanceSpring(
+  value: number,
+  target: number,
+  steps: number,
+  seconds: number,
+  velocity = 0,
+) {
   let state = { value, velocity };
   for (let i = 0; i < steps; i++) {
     state = stepDuoSpring(state.value, state.velocity, target, seconds);
@@ -16,7 +27,7 @@ describe("iPhone Duo physical poses", () => {
     for (const degrees of [0, 45, 90, 135, 180]) {
       const { fold } = duoPose(degrees, null);
       const interiorAngle = Math.PI - 2 * fold;
-      expect(interiorAngle).toBeCloseTo(degrees * Math.PI / 180, 12);
+      expect(interiorAngle).toBeCloseTo((degrees * Math.PI) / 180, 12);
     }
     expect(duoPose(-10, null).fold).toBe(duoPose(0, null).fold);
     expect(duoPose(200, null).fold).toBe(duoPose(180, null).fold);
@@ -46,7 +57,12 @@ describe("iPhone Duo physical poses", () => {
     for (const pose of poses) {
       const expected = duoPose(pose.angle, pose.id);
       for (const screenId of [1, 3]) {
-        for (const orientation of ["portrait", "landscape_left", "landscape_right", "portrait_upside_down"] as const) {
+        for (const orientation of [
+          "portrait",
+          "landscape_left",
+          "landscape_right",
+          "portrait_upside_down",
+        ] as const) {
           const config = { width: 2007, height: 2853, screenId, orientation };
           const visibleScreen = pose.angle === 0 ? 1 : 3;
           if (pose.id === "laptop" || pose.id === "tent" || screenId !== visibleScreen) {
@@ -88,7 +104,11 @@ describe("iPhone Duo physical poses", () => {
   });
 
   test("initial framing accounts for native orientation on closed, half-open, and open devices", () => {
-    const orientations: { orientation: SimulatorOrientation; right: [number, number]; up: [number, number] }[] = [
+    const orientations: {
+      orientation: SimulatorOrientation;
+      right: [number, number];
+      up: [number, number];
+    }[] = [
       { orientation: "portrait", right: [1, 0], up: [0, 1] },
       { orientation: "landscape_left", right: [0, -1], up: [1, 0] },
       { orientation: "landscape_right", right: [0, 1], up: [-1, 0] },
@@ -98,7 +118,12 @@ describe("iPhone Duo physical poses", () => {
       const cover = angle === 0;
       const screenId = cover ? 1 : 3;
       for (const { orientation, right, up } of orientations) {
-        const config = { width: cover ? 1398 : 2007, height: cover ? 2034 : 2853, screenId, orientation };
+        const config = {
+          width: cover ? 1398 : 2007,
+          height: cover ? 2034 : 2853,
+          screenId,
+          orientation,
+        };
         const pose = duoPose(angle, null, screenId, config);
         const body = new Euler(...pose.rotation, "YXZ");
         for (const side of cover ? [1] : [1, -1]) {
@@ -123,7 +148,10 @@ describe("iPhone Duo physical poses", () => {
 
 describe("iPhone Duo transition spring", () => {
   test("folds and unfolds from rest without overshooting either endpoint", () => {
-    for (const [start, target] of [[0, Math.PI / 2], [Math.PI / 2, 0]] as const) {
+    for (const [start, target] of [
+      [0, Math.PI / 2],
+      [Math.PI / 2, 0],
+    ] as const) {
       let state = { value: start, velocity: 0 };
       let distance = Math.abs(state.value - target);
       for (let frame = 0; frame < 120; frame++) {
@@ -192,8 +220,19 @@ describe("iPhone Duo transition spring", () => {
 });
 
 describe("iPhone Duo screen hit mapping", () => {
-  const points = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0.23, y: 0.67 }];
-  const orientations: SimulatorOrientation[] = ["portrait", "portrait_upside_down", "landscape_left", "landscape_right"];
+  const points = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 1, y: 1 },
+    { x: 0.23, y: 0.67 },
+  ];
+  const orientations: SimulatorOrientation[] = [
+    "portrait",
+    "portrait_upside_down",
+    "landscape_left",
+    "landscape_right",
+  ];
 
   test("cover pixels stay upright and inner pixels have a fixed clockwise mounting rotation", () => {
     const cover = duoScreenMapping({ width: 2, height: 3, screenId: 1 }, 2, 3);
@@ -220,7 +259,9 @@ describe("iPhone Duo screen hit mapping", () => {
         const mapping = duoScreenMapping({ ...config, orientation }, panel.width, panel.height);
         expect(mapping).toEqual(expected);
         for (const point of points) {
-          expect(duoScreenPoint(point.x, point.y, mapping)).toEqual(duoScreenPoint(point.x, point.y, expected));
+          expect(duoScreenPoint(point.x, point.y, mapping)).toEqual(
+            duoScreenPoint(point.x, point.y, expected),
+          );
         }
       }
     }
@@ -256,7 +297,11 @@ describe("iPhone Duo screen hit mapping", () => {
       const raw = screenId === 1 ? { width: 1398, height: 2034 } : { width: 2007, height: 2853 };
       const panel = screenId === 1 ? raw : { width: raw.height, height: raw.width };
       for (const scale of [1, 0.5, 0.25]) {
-        const mapping = duoScreenMapping({ ...raw, screenId }, panel.width * scale, panel.height * scale);
+        const mapping = duoScreenMapping(
+          { ...raw, screenId },
+          panel.width * scale,
+          panel.height * scale,
+        );
         expect(mapping.drawnWidth).toBeCloseTo(raw.width * scale, 9);
         expect(mapping.drawnHeight).toBeCloseTo(raw.height * scale, 9);
         expect(mapping.drawnWidth / mapping.drawnHeight).toBeCloseTo(raw.width / raw.height, 12);
@@ -273,14 +318,25 @@ describe("iPhone Duo screen hit mapping", () => {
     for (const screenId of [1, 3]) {
       const config = { width: 2007, height: 2853, screenId };
       const mapping = duoScreenMapping(config, 1000, 1000);
-      expect(mapping.drawnWidth / mapping.drawnHeight).toBeCloseTo(config.width / config.height, 12);
-      const diagonalA = new Vector2(mapping.drawnWidth, mapping.drawnHeight).rotateAround(new Vector2(), mapping.rotation);
-      const diagonalB = new Vector2(mapping.drawnWidth, -mapping.drawnHeight).rotateAround(new Vector2(), mapping.rotation);
+      expect(mapping.drawnWidth / mapping.drawnHeight).toBeCloseTo(
+        config.width / config.height,
+        12,
+      );
+      const diagonalA = new Vector2(mapping.drawnWidth, mapping.drawnHeight).rotateAround(
+        new Vector2(),
+        mapping.rotation,
+      );
+      const diagonalB = new Vector2(mapping.drawnWidth, -mapping.drawnHeight).rotateAround(
+        new Vector2(),
+        mapping.rotation,
+      );
       const boundsWidth = Math.max(Math.abs(diagonalA.x), Math.abs(diagonalB.x));
       const boundsHeight = Math.max(Math.abs(diagonalA.y), Math.abs(diagonalB.y));
       expect(boundsWidth).toBeLessThanOrEqual(1000 + 1e-9);
       expect(boundsHeight).toBeLessThanOrEqual(1000 + 1e-9);
-      expect(Math.min(Math.abs(boundsWidth - 1000), Math.abs(boundsHeight - 1000))).toBeLessThan(1e-9);
+      expect(Math.min(Math.abs(boundsWidth - 1000), Math.abs(boundsHeight - 1000))).toBeLessThan(
+        1e-9,
+      );
     }
   });
 

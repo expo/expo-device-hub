@@ -69,11 +69,10 @@ test("execText aborts a running child and releases its executor slot", async () 
   const dir = await mkdtemp(join(tmpdir(), "serve-emu-exec-abort-"));
   const readyPath = join(dir, "ready");
   const controller = new AbortController();
-  const running = execText(
-    process.execPath,
-    ["-e", hangingChildScript(readyPath)],
-    { signal: controller.signal, timeout: 10_000 },
-  );
+  const running = execText(process.execPath, ["-e", hangingChildScript(readyPath)], {
+    signal: controller.signal,
+    timeout: 10_000,
+  });
   void running.catch(() => {});
 
   try {
@@ -97,11 +96,7 @@ test("execText aborts a running child and releases its executor slot", async () 
 test("execText enforces a deadline and leaves the executor usable", async () => {
   const startedAt = Date.now();
   const result = await within(
-    execText(
-      process.execPath,
-      ["-e", "setInterval(() => {}, 1_000)"],
-      { timeout: 250 },
-    ),
+    execText(process.execPath, ["-e", "setInterval(() => {}, 1_000)"], { timeout: 250 }),
     BOUNDED_COMPLETION_MS,
   );
 
@@ -117,37 +112,26 @@ test("execText reaps a child that exceeds maxBuffer before releasing its slot", 
   const result = await within(
     execText(
       process.execPath,
-      [
-        "-e",
-        'process.stdout.write("x".repeat(64 * 1024)); setInterval(() => {}, 1_000)',
-      ],
+      ["-e", 'process.stdout.write("x".repeat(64 * 1024)); setInterval(() => {}, 1_000)'],
       { maxBuffer: 1_024, timeout: 10_000 },
     ),
     BOUNDED_COMPLETION_MS,
   );
 
-  expect(result.error?.message).toBe(
-    "combined stdout and stderr exceed 1024 bytes",
-  );
+  expect(result.error?.message).toBe("combined stdout and stderr exceed 1024 bytes");
   expect(result.signal).toBe("SIGKILL");
   await expectExecutorStillWorks();
 });
 
 test("aborting a command queued at the concurrency gate does not consume a slot", async () => {
   const dir = await mkdtemp(join(tmpdir(), "serve-emu-exec-queue-"));
-  const holderControllers = Array.from(
-    { length: 4 },
-    () => new AbortController(),
-  );
-  const holderPaths = holderControllers.map((_, index) =>
-    join(dir, `holder-${index}`),
-  );
+  const holderControllers = Array.from({ length: 4 }, () => new AbortController());
+  const holderPaths = holderControllers.map((_, index) => join(dir, `holder-${index}`));
   const holders = holderControllers.map((controller, index) =>
-    execText(
-      process.execPath,
-      ["-e", hangingChildScript(holderPaths[index])],
-      { signal: controller.signal, timeout: 10_000 },
-    ),
+    execText(process.execPath, ["-e", hangingChildScript(holderPaths[index])], {
+      signal: controller.signal,
+      timeout: 10_000,
+    }),
   );
   for (const holder of holders) void holder.catch(() => {});
 
@@ -158,11 +142,10 @@ test("aborting a command queued at the concurrency gate does not consume a slot"
   try {
     await Promise.all(holderPaths.map(waitForPath));
 
-    const queued = execText(
-      process.execPath,
-      ["-e", hangingChildScript(queuedPath)],
-      { signal: queuedController.signal, timeout: 10_000 },
-    );
+    const queued = execText(process.execPath, ["-e", hangingChildScript(queuedPath)], {
+      signal: queuedController.signal,
+      timeout: 10_000,
+    });
     void queued.catch(() => {});
     queuedController.abort(new Error("cancel queued command"));
 

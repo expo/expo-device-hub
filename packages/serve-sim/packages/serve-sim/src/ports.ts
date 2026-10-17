@@ -68,7 +68,9 @@ export function killOwnListeners(port: number): void {
   if (pids.length === 0) return;
   console.log(`\x1b[90mPort ${port} busy, killing listener pid(s): ${pids.join(", ")}\x1b[0m`);
   for (const pid of pids) {
-    try { process.kill(pid, "SIGKILL"); } catch {}
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {}
   }
   sleepSync(100);
 }

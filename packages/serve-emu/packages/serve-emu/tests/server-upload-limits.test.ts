@@ -19,10 +19,7 @@ type Deferred<T> = {
 
 type CapturedServeOptions = {
   maxRequestBodySize?: number;
-  fetch(
-    request: Request,
-    server: { upgrade(): boolean },
-  ): Response | Promise<Response> | undefined;
+  fetch(request: Request, server: { upgrade(): boolean }): Response | Promise<Response> | undefined;
   websocket?: { maxPayloadLength?: number };
 };
 
@@ -150,10 +147,7 @@ function jsonRequest(path: string, body: unknown): Request {
   });
 }
 
-function streamedJsonRequest(
-  chunks: string[],
-  headers: HeadersInit = {},
-): Request {
+function streamedJsonRequest(chunks: string[], headers: HeadersInit = {}): Request {
   const encoder = new TextEncoder();
   let index = 0;
   return new Request("http://localhost/api/devices/select", {
@@ -212,7 +206,7 @@ describe("server request and upload limits", () => {
   ])("rejects %s oversized JSON with a structured 413", async (_, headers) => {
     const harness = await createHarness();
     const response = await harness.fetch(
-      streamedJsonRequest(["{\"serial\":\"", "x".repeat(9_000), "\"}"], headers),
+      streamedJsonRequest(['{"serial":"', "x".repeat(9_000), '"}'], headers),
     );
 
     expect(response.status).toBe(413);
@@ -409,31 +403,31 @@ describe("server request and upload limits", () => {
     const next = fakeSession("device-new", () => events.push("new-close"));
     let stageStarted = false;
     let actionCalled = false;
-    const harness = await createHarness({}, {
-      startScrcpy: async ({ serial }) =>
-        serial === "device-old" ? old.session : next.session,
-      stageMultipartUpload: async (_request, options) => {
-        stageStarted = true;
-        return await new Promise<StagedMultipartFile>((_resolve, reject) => {
-          const abort = () => {
-            events.push("staging-cleanup");
-            reject(options.signal?.reason);
-          };
-          options.signal?.addEventListener("abort", abort, { once: true });
-          if (options.signal?.aborted) abort();
-        });
+    const harness = await createHarness(
+      {},
+      {
+        startScrcpy: async ({ serial }) => (serial === "device-old" ? old.session : next.session),
+        stageMultipartUpload: async (_request, options) => {
+          stageStarted = true;
+          return await new Promise<StagedMultipartFile>((_resolve, reject) => {
+            const abort = () => {
+              events.push("staging-cleanup");
+              reject(options.signal?.reason);
+            };
+            options.signal?.addEventListener("abort", abort, { once: true });
+            if (options.signal?.aborted) abort();
+          });
+        },
+        installApk: async () => {
+          actionCalled = true;
+          return { ok: true, output: "unexpected" };
+        },
       },
-      installApk: async () => {
-        actionCalled = true;
-        return { ok: true, output: "unexpected" };
-      },
-    });
+    );
 
     const upload = harness.fetch(fakeUploadRequest("/api/apps/install"));
     await flushUntil(() => stageStarted);
-    const switching = harness.fetch(
-      jsonRequest("/api/devices/select", { serial: "device-new" }),
-    );
+    const switching = harness.fetch(jsonRequest("/api/devices/select", { serial: "device-new" }));
     const [uploadResponse, switchResponse] = await Promise.all([upload, switching]);
 
     expect(uploadResponse.status).toBe(409);
@@ -452,28 +446,30 @@ describe("server request and upload limits", () => {
     const next = fakeSession("device-new");
     let adbStarted = false;
     let actionSerial = "";
-    const harness = await createHarness({}, {
-      startScrcpy: async ({ serial }) =>
-        serial === "device-old" ? old.session : next.session,
-      stageMultipartUpload: async () =>
-        stagedFile("switch.apk", async () => {
-          events.push("cleanup-start");
-          await cleanupGate.promise;
-          events.push("cleanup-done");
-        }),
-      installApk: async (serial, _file, signal) => {
-        actionSerial = serial;
-        adbStarted = true;
-        return await new Promise((_resolve, reject) => {
-          const abort = () => {
-            events.push("adb-abort");
-            reject(signal?.reason);
-          };
-          signal?.addEventListener("abort", abort, { once: true });
-          if (signal?.aborted) abort();
-        });
+    const harness = await createHarness(
+      {},
+      {
+        startScrcpy: async ({ serial }) => (serial === "device-old" ? old.session : next.session),
+        stageMultipartUpload: async () =>
+          stagedFile("switch.apk", async () => {
+            events.push("cleanup-start");
+            await cleanupGate.promise;
+            events.push("cleanup-done");
+          }),
+        installApk: async (serial, _file, signal) => {
+          actionSerial = serial;
+          adbStarted = true;
+          return await new Promise((_resolve, reject) => {
+            const abort = () => {
+              events.push("adb-abort");
+              reject(signal?.reason);
+            };
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted) abort();
+          });
+        },
       },
-    });
+    );
 
     const upload = harness.fetch(fakeUploadRequest("/api/apps/install"));
     await flushUntil(() => adbStarted);
@@ -493,36 +489,32 @@ describe("server request and upload limits", () => {
     const [uploadResponse, switchResponse] = await Promise.all([upload, switching]);
     expect(uploadResponse.status).toBe(409);
     expect(switchResponse.status).toBe(200);
-    expect(events).toEqual([
-      "adb-abort",
-      "cleanup-start",
-      "cleanup-done",
-      "old-close",
-    ]);
+    expect(events).toEqual(["adb-abort", "cleanup-start", "cleanup-done", "old-close"]);
   });
 
   test("request abort cancels active work and cleans its staged file", async () => {
     const controller = new AbortController();
     let actionStarted = false;
     let cleanupCalls = 0;
-    const harness = await createHarness({}, {
-      stageMultipartUpload: async () =>
-        stagedFile("aborted.apk", async () => {
-          cleanupCalls++;
-        }),
-      installApk: async (_serial, _file, signal) => {
-        actionStarted = true;
-        return await new Promise((_resolve, reject) => {
-          const abort = () => reject(signal?.reason);
-          signal?.addEventListener("abort", abort, { once: true });
-          if (signal?.aborted) abort();
-        });
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () =>
+          stagedFile("aborted.apk", async () => {
+            cleanupCalls++;
+          }),
+        installApk: async (_serial, _file, signal) => {
+          actionStarted = true;
+          return await new Promise((_resolve, reject) => {
+            const abort = () => reject(signal?.reason);
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted) abort();
+          });
+        },
       },
-    });
-
-    const upload = harness.fetch(
-      fakeUploadRequest("/api/apps/install", controller.signal),
     );
+
+    const upload = harness.fetch(fakeUploadRequest("/api/apps/install", controller.signal));
     await flushUntil(() => actionStarted);
     controller.abort(new Error("client disconnected"));
     const response = await upload;
@@ -538,24 +530,25 @@ describe("server request and upload limits", () => {
   test("reports a staging cleanup failure even when the request is cancelled", async () => {
     const controller = new AbortController();
     let actionStarted = false;
-    const harness = await createHarness({}, {
-      stageMultipartUpload: async () =>
-        stagedFile("cleanup-failure.apk", async () => {
-          throw new Error("temporary directory is still present");
-        }),
-      installApk: async (_serial, _file, signal) => {
-        actionStarted = true;
-        return await new Promise((_resolve, reject) => {
-          const abort = () => reject(signal?.reason);
-          signal?.addEventListener("abort", abort, { once: true });
-          if (signal?.aborted) abort();
-        });
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () =>
+          stagedFile("cleanup-failure.apk", async () => {
+            throw new Error("temporary directory is still present");
+          }),
+        installApk: async (_serial, _file, signal) => {
+          actionStarted = true;
+          return await new Promise((_resolve, reject) => {
+            const abort = () => reject(signal?.reason);
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted) abort();
+          });
+        },
       },
-    });
-
-    const upload = harness.fetch(
-      fakeUploadRequest("/api/apps/install", controller.signal),
     );
+
+    const upload = harness.fetch(fakeUploadRequest("/api/apps/install", controller.signal));
     await flushUntil(() => actionStarted);
     controller.abort(new Error("client disconnected"));
     const response = await upload;
@@ -570,27 +563,28 @@ describe("server request and upload limits", () => {
   test("reports a remote partial cleanup failure after cancellation", async () => {
     const controller = new AbortController();
     let actionStarted = false;
-    const harness = await createHarness({}, {
-      stageMultipartUpload: async () => stagedFile("cleanup-failure.jpg"),
-      importMediaFile: async (_serial, _file, signal) => {
-        actionStarted = true;
-        await new Promise<void>((resolve) => {
-          if (signal?.aborted) resolve();
-          else
-            signal?.addEventListener("abort", () => resolve(), {
-              once: true,
-            });
-        });
-        throw new AppManagementError(
-          "adb-cleanup-failed",
-          "failed to remove remote partial upload",
-        );
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () => stagedFile("cleanup-failure.jpg"),
+        importMediaFile: async (_serial, _file, signal) => {
+          actionStarted = true;
+          await new Promise<void>((resolve) => {
+            if (signal?.aborted) resolve();
+            else
+              signal?.addEventListener("abort", () => resolve(), {
+                once: true,
+              });
+          });
+          throw new AppManagementError(
+            "adb-cleanup-failed",
+            "failed to remove remote partial upload",
+          );
+        },
       },
-    });
-
-    const upload = harness.fetch(
-      fakeUploadRequest("/api/files/import", controller.signal),
     );
+
+    const upload = harness.fetch(fakeUploadRequest("/api/files/import", controller.signal));
     await flushUntil(() => actionStarted);
     controller.abort(new Error("client disconnected"));
     const response = await upload;
@@ -605,19 +599,22 @@ describe("server request and upload limits", () => {
   test("maps ADB failure and timeout errors and still cleans staging", async () => {
     let action = 0;
     let cleanupCalls = 0;
-    const harness = await createHarness({}, {
-      stageMultipartUpload: async () =>
-        stagedFile("error.apk", async () => {
-          cleanupCalls++;
-        }),
-      installApk: async () => {
-        action++;
-        throw new AppManagementError(
-          action === 1 ? "adb-failed" : "adb-timeout",
-          action === 1 ? "adb install failed" : "adb install timed out",
-        );
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () =>
+          stagedFile("error.apk", async () => {
+            cleanupCalls++;
+          }),
+        installApk: async () => {
+          action++;
+          throw new AppManagementError(
+            action === 1 ? "adb-failed" : "adb-timeout",
+            action === 1 ? "adb install failed" : "adb install timed out",
+          );
+        },
       },
-    });
+    );
 
     const failed = await harness.fetch(fakeUploadRequest("/api/apps/install"));
     const timedOut = await harness.fetch(fakeUploadRequest("/api/apps/install"));
@@ -633,21 +630,24 @@ describe("server request and upload limits", () => {
     const cleanupGate = deferred<void>();
     let actionStarted = false;
     let cleanupStarted = false;
-    const harness = await createHarness({}, {
-      stageMultipartUpload: async () =>
-        stagedFile("stop.apk", async () => {
-          cleanupStarted = true;
-          await cleanupGate.promise;
-        }),
-      installApk: async (_serial, _file, signal) => {
-        actionStarted = true;
-        return await new Promise((_resolve, reject) => {
-          const abort = () => reject(signal?.reason);
-          signal?.addEventListener("abort", abort, { once: true });
-          if (signal?.aborted) abort();
-        });
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () =>
+          stagedFile("stop.apk", async () => {
+            cleanupStarted = true;
+            await cleanupGate.promise;
+          }),
+        installApk: async (_serial, _file, signal) => {
+          actionStarted = true;
+          return await new Promise((_resolve, reject) => {
+            const abort = () => reject(signal?.reason);
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted) abort();
+          });
+        },
       },
-    });
+    );
 
     const upload = harness.fetch(fakeUploadRequest("/api/apps/install"));
     await flushUntil(() => actionStarted);
@@ -676,15 +676,12 @@ describe("server request and upload limits", () => {
       maxMediaUploadBytes: 456,
     });
 
-    expect(harness.options.maxRequestBodySize).toBe(
-      456 + 2 * 1024 * 1024,
-    );
+    expect(harness.options.maxRequestBodySize).toBe(456 + 2 * 1024 * 1024);
     expect(harness.options.websocket?.maxPayloadLength).toBe(16 * 1024);
   });
 
   test("rejects upload limits that would overflow Bun's body ceiling", async () => {
-    const unsafeUploadLimit =
-      Number.MAX_SAFE_INTEGER - 2 * 1024 * 1024 + 1;
+    const unsafeUploadLimit = Number.MAX_SAFE_INTEGER - 2 * 1024 * 1024 + 1;
 
     await expect(
       startServer({

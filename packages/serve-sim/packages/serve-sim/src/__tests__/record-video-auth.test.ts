@@ -99,7 +99,6 @@ test("gated recording control rejects a preview cookie without the bearer token"
   expect(response.status).toBe(401);
 });
 
-
 test("recording preflight permits lease renewal and stop", async () => {
   const response = await fetch(url, {
     method: "OPTIONS",

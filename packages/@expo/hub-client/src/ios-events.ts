@@ -1,8 +1,8 @@
-import { type DeviceEvent } from './types';
+import { type DeviceEvent } from "./types";
 
 export const MAX_IOS_DEVICE_EVENTS = 500;
 
-export type IosEventLogStatus = 'ok' | 'error';
+export type IosEventLogStatus = "ok" | "error";
 
 /** The forward-compatible subset of a serve-sim event-log entry consumed by Hub. */
 export interface IosEventLogEntry {
@@ -49,7 +49,7 @@ const MAX_TOKEN_LENGTH = 128;
 const MAX_DETAIL_DEPTH = 5;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function hasOwn(value: object, key: PropertyKey): boolean {
@@ -57,7 +57,7 @@ function hasOwn(value: object, key: PropertyKey): boolean {
 }
 
 function wireToken(value: unknown): string | null {
-  return typeof value === 'string' &&
+  return typeof value === "string" &&
     value.length > 0 &&
     value.length <= MAX_TOKEN_LENGTH &&
     SAFE_TOKEN.test(value)
@@ -68,7 +68,7 @@ function wireToken(value: unknown): string | null {
 function parseEntry(value: unknown): IosEventLogEntry | null {
   if (!isRecord(value)) return null;
   if (!Number.isSafeInteger(value.id) || (value.id as number) < 0) return null;
-  if (typeof value.timestamp !== 'string' || !Number.isFinite(Date.parse(value.timestamp))) {
+  if (typeof value.timestamp !== "string" || !Number.isFinite(Date.parse(value.timestamp))) {
     return null;
   }
 
@@ -78,7 +78,7 @@ function parseEntry(value: unknown): IosEventLogEntry | null {
 
   const action = value.action === undefined ? undefined : wireToken(value.action);
   if (value.action !== undefined && !action) return null;
-  const status = value.status === 'ok' || value.status === 'error' ? value.status : undefined;
+  const status = value.status === "ok" || value.status === "error" ? value.status : undefined;
   const details = isRecord(value.details) ? { ...value.details } : undefined;
 
   return {
@@ -86,9 +86,9 @@ function parseEntry(value: unknown): IosEventLogEntry | null {
     timestamp: value.timestamp,
     source,
     kind,
-    ...(typeof value.msg === 'string' ? { msg: value.msg } : {}),
-    ...(typeof value.summary === 'string' ? { summary: value.summary } : {}),
-    ...(typeof value.device === 'string' ? { device: value.device } : {}),
+    ...(typeof value.msg === "string" ? { msg: value.msg } : {}),
+    ...(typeof value.summary === "string" ? { summary: value.summary } : {}),
+    ...(typeof value.device === "string" ? { device: value.device } : {}),
     ...(action ? { action } : {}),
     ...(status ? { status } : {}),
     ...(details ? { details } : {}),
@@ -98,7 +98,7 @@ function parseEntry(value: unknown): IosEventLogEntry | null {
 /** Parse one raw event-log SSE frame. Invalid JSON and malformed shapes return null. */
 export function parseIosEventLogPayload(input: unknown): IosEventLogPayload | null {
   let value = input;
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     try {
       value = JSON.parse(value) as unknown;
     } catch {
@@ -110,7 +110,7 @@ export function parseIosEventLogPayload(input: unknown): IosEventLogPayload | nu
   const payload: IosEventLogPayload = {};
   let recognized = false;
 
-  if (hasOwn(value, 'events')) {
+  if (hasOwn(value, "events")) {
     if (!Array.isArray(value.events)) return null;
     payload.events = value.events
       .map((entry) => parseEntry(entry))
@@ -118,7 +118,7 @@ export function parseIosEventLogPayload(input: unknown): IosEventLogPayload | nu
     recognized = true;
   }
 
-  if (hasOwn(value, 'event')) {
+  if (hasOwn(value, "event")) {
     const event = parseEntry(value.event);
     if (!event) return recognized ? payload : null;
     payload.event = event;
@@ -140,7 +140,7 @@ function numericId(event: DeviceEvent, deviceUdid: string): number | null {
 }
 
 function humanize(value: string): string {
-  return value.replace(/[-_]+/g, ' ');
+  return value.replace(/[-_]+/g, " ");
 }
 
 function title(value: string): string {
@@ -149,12 +149,12 @@ function title(value: string): string {
 }
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function pointFrom(
   details: Record<string, unknown> | undefined,
-  key: 'start' | 'current',
+  key: "start" | "current",
 ): { x: number; y: number } | null {
   const point = details?.[key];
   if (!isRecord(point)) return null;
@@ -172,8 +172,8 @@ function formatPoint(value: { x: number; y: number }): string {
 }
 
 function safeKeyboardKey(value: unknown): string {
-  if (typeof value !== 'string') return 'key';
-  if (value === 'character') return value;
+  if (typeof value !== "string") return "key";
+  if (value === "character") return value;
   if (
     /^(?:Arrow(?:Down|Left|Right|Up)|Backspace|CapsLock|Delete|End|Enter|Escape|F\d{1,2}|Home|Insert|Numpad[A-Za-z0-9]+|PageDown|PageUp|Pause|PrintScreen|ScrollLock|Space|Tab)$/.test(
       value,
@@ -182,11 +182,11 @@ function safeKeyboardKey(value: unknown): string {
   ) {
     return value;
   }
-  return 'character';
+  return "character";
 }
 
 function sanitizeDetailValue(value: unknown, depth: number): unknown {
-  if (depth >= MAX_DETAIL_DEPTH) return '[truncated]';
+  if (depth >= MAX_DETAIL_DEPTH) return "[truncated]";
   if (Array.isArray(value)) {
     return value.slice(0, 100).map((item) => sanitizeDetailValue(item, depth + 1));
   }
@@ -195,7 +195,7 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
   const sanitized: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     sanitized[key] = SENSITIVE_DETAIL_KEY.test(key)
-      ? '[redacted]'
+      ? "[redacted]"
       : sanitizeDetailValue(child, depth + 1);
   }
   return sanitized;
@@ -205,10 +205,10 @@ function safeDetails(entry: IosEventLogEntry): Record<string, unknown> | undefin
   if (!entry.details) return undefined;
   const details = sanitizeDetailValue(entry.details, 0) as Record<string, unknown>;
 
-  if (entry.kind === 'key') {
+  if (entry.kind === "key") {
     const key = safeKeyboardKey(entry.details.key);
     details.key = key;
-    if (key === 'character') {
+    if (key === "character") {
       details.redacted = true;
       delete details.usage;
     }
@@ -218,27 +218,27 @@ function safeDetails(entry: IosEventLogEntry): Record<string, unknown> | undefin
 
 function mappedKind(entry: IosEventLogEntry): string {
   switch (entry.kind) {
-    case 'tap':
-    case 'drag':
-    case 'touch':
-    case 'multi-touch':
-    case 'scroll':
-      return 'touch';
-    case 'key':
-    case 'software-keyboard':
-      return 'keyboard';
-    case 'ui-setting':
-      return 'settings';
+    case "tap":
+    case "drag":
+    case "touch":
+    case "multi-touch":
+    case "scroll":
+      return "touch";
+    case "key":
+    case "software-keyboard":
+      return "keyboard";
+    case "ui-setting":
+      return "settings";
     default:
       return entry.kind;
   }
 }
 
 function mappedAction(entry: IosEventLogEntry): string | undefined {
-  if (entry.kind === 'tap' || entry.kind === 'drag' || entry.kind === 'scroll') return entry.kind;
-  if (entry.kind === 'software-keyboard') return 'toggle';
-  if (entry.kind === 'multi-touch') {
-    return entry.action ? `multi-touch-${entry.action}` : 'multi-touch';
+  if (entry.kind === "tap" || entry.kind === "drag" || entry.kind === "scroll") return entry.kind;
+  if (entry.kind === "software-keyboard") return "toggle";
+  if (entry.kind === "multi-touch") {
+    return entry.action ? `multi-touch-${entry.action}` : "multi-touch";
   }
   return entry.action;
 }
@@ -249,58 +249,58 @@ function eventMessage(
 ): string {
   const action = mappedAction(entry);
   switch (entry.kind) {
-    case 'tap': {
-      const point = pointFrom(details, 'current') ?? pointFrom(details, 'start');
-      return point ? `Tap at ${formatPoint(point)}` : 'Tap';
+    case "tap": {
+      const point = pointFrom(details, "current") ?? pointFrom(details, "start");
+      return point ? `Tap at ${formatPoint(point)}` : "Tap";
     }
-    case 'drag': {
-      const start = pointFrom(details, 'start');
-      const current = pointFrom(details, 'current');
+    case "drag": {
+      const start = pointFrom(details, "start");
+      const current = pointFrom(details, "current");
       return start && current
         ? `Drag from ${formatPoint(start)} to ${formatPoint(current)}`
-        : 'Drag';
+        : "Drag";
     }
-    case 'touch':
-      return action ? `Touch ${humanize(action)}` : 'Touch';
-    case 'multi-touch':
-      return entry.action ? `Multi-touch ${humanize(entry.action)}` : 'Multi-touch';
-    case 'scroll':
-      return 'Scroll';
-    case 'key': {
+    case "touch":
+      return action ? `Touch ${humanize(action)}` : "Touch";
+    case "multi-touch":
+      return entry.action ? `Multi-touch ${humanize(entry.action)}` : "Multi-touch";
+    case "scroll":
+      return "Scroll";
+    case "key": {
       const key = safeKeyboardKey(details?.key);
       return action ? `Key ${humanize(action)} ${key}` : `Key ${key}`;
     }
-    case 'software-keyboard':
-      return 'Software keyboard';
-    case 'button':
-      return action ? `Button ${title(action)}` : 'Button';
-    case 'rotate':
-      return action ? `Rotate ${humanize(action)}` : 'Rotate';
-    case 'memory-warning':
-      return 'Memory warning';
-    case 'ca-debug':
-      return action ? `Core Animation ${humanize(action)}` : 'Core Animation setting';
-    case 'digital-crown':
-      return 'Digital Crown';
-    case 'app':
-      return action ? `${title(action)} app` : 'App event';
-    case 'media':
-      return 'Add media';
-    case 'screenshot': {
-      if (entry.status !== 'error') return 'Screenshot';
+    case "software-keyboard":
+      return "Software keyboard";
+    case "button":
+      return action ? `Button ${title(action)}` : "Button";
+    case "rotate":
+      return action ? `Rotate ${humanize(action)}` : "Rotate";
+    case "memory-warning":
+      return "Memory warning";
+    case "ca-debug":
+      return action ? `Core Animation ${humanize(action)}` : "Core Animation setting";
+    case "digital-crown":
+      return "Digital Crown";
+    case "app":
+      return action ? `${title(action)} app` : "App event";
+    case "media":
+      return "Add media";
+    case "screenshot": {
+      if (entry.status !== "error") return "Screenshot";
       const label =
-        typeof details?.file === 'string'
-          ? 'Screenshot not saved to session artifacts'
-          : 'Screenshot failed';
-      return typeof details?.error === 'string' ? `${label}: ${details.error}` : label;
+        typeof details?.file === "string"
+          ? "Screenshot not saved to session artifacts"
+          : "Screenshot failed";
+      return typeof details?.error === "string" ? `${label}: ${details.error}` : label;
     }
-    case 'camera':
-      return action ? `Camera ${humanize(action)}` : 'Camera';
-    case 'ui-setting': {
+    case "camera":
+      return action ? `Camera ${humanize(action)}` : "Camera";
+    case "ui-setting": {
       const value = wireToken(details?.value);
       return action
-        ? `Set ${title(action)}${value ? ` to ${title(value)}` : ''}`
-        : 'Device setting changed';
+        ? `Set ${title(action)}${value ? ` to ${title(value)}` : ""}`
+        : "Device setting changed";
     }
     default:
       return `Event ${humanize(entry.kind)}`;

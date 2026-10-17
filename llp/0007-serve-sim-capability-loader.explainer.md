@@ -31,7 +31,7 @@ a process starts. Two facts follow, and they shape everything else:
 
 The second fact is the reason this indirection exists. A capability dylib links
 real frameworks: the camera injector pulls in UIKit, AVFoundation, CoreMedia and
-others. Inserting *that* device-wide crash-loops system daemons. This was
+others. Inserting _that_ device-wide crash-loops system daemons. This was
 observed as GSSCred crash-looping when an inserted image linked Foundation.
 
 So the inserted image must be inert and dependency-free, and something else must
@@ -95,8 +95,7 @@ serve-sim. One capability per line, tab-separated:
 - **dylib**: absolute path. A relative path is refused.
 - **env**: `NAME=VALUE` pairs joined by `;`, applied with `setenv` before the
   `dlopen`.
-- **delay-ms**: how long to wait before loading this one. Optional, defaults to
-  0. Delayed loads are scheduled on the main queue without blocking it.
+- **delay-ms**: how long to wait before loading this one. Optional, defaults to 0. Delayed loads are scheduled on the main queue without blocking it.
   Pending and loaded paths are deduplicated, and delayed callbacks reject
   removed or reconfigured entries.
 
@@ -110,7 +109,7 @@ needs the app to exist yet, so a capability can be armed before anything is
 installed. That is what makes serve-sim usable in agent flows, where the app is
 installed later by the agent rather than by the workflow.
 
-Scope decides *which processes load the dylib*. It is not the same as "which app
+Scope decides _which processes load the dylib_. It is not the same as "which app
 this is about": the optional bundle id is a launch target and never narrows what loads.
 
 ## Arriving late

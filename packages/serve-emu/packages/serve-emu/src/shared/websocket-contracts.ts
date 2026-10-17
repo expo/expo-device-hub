@@ -51,7 +51,8 @@ export function parseWsClientJson(raw: string): WsClientMessage {
   try {
     return parseWsClientMessage(JSON.parse(raw) as unknown);
   } catch (error) {
-    if (error instanceof SyntaxError) throw new TypeError("WebSocket client message must be valid JSON");
+    if (error instanceof SyntaxError)
+      throw new TypeError("WebSocket client message must be valid JSON");
     throw error;
   }
 }
@@ -92,7 +93,8 @@ export function parseWsServerJson(raw: string): WsServerMessage {
   try {
     return parseWsServerMessage(JSON.parse(raw) as unknown);
   } catch (error) {
-    if (error instanceof SyntaxError) throw new TypeError("WebSocket server message must be valid JSON");
+    if (error instanceof SyntaxError)
+      throw new TypeError("WebSocket server message must be valid JSON");
     throw error;
   }
 }

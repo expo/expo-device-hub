@@ -4,7 +4,8 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-const describeNative = process.platform === "darwin" && process.arch === "arm64" ? describe : describe.skip;
+const describeNative =
+  process.platform === "darwin" && process.arch === "arm64" ? describe : describe.skip;
 
 describeNative("CoreDevice digitizer edge gestures", () => {
   let directory: string;
@@ -13,12 +14,21 @@ describeNative("CoreDevice digitizer edge gestures", () => {
   beforeAll(() => {
     directory = mkdtempSync(join(tmpdir(), "serve-sim-digitizer-report-"));
     executable = join(directory, "digitizer-report");
-    execFileSync("xcrun", [
-      "clang", "-fblocks", "-framework", "Foundation",
-      "-I", join(import.meta.dir, "../../Sources/CoreDeviceShim/include"),
-      join(import.meta.dir, "fixtures/core-device-digitizer-report.m"),
-      "-o", executable,
-    ], { timeout: 30_000, stdio: "pipe" });
+    execFileSync(
+      "xcrun",
+      [
+        "clang",
+        "-fblocks",
+        "-framework",
+        "Foundation",
+        "-I",
+        join(import.meta.dir, "../../Sources/CoreDeviceShim/include"),
+        join(import.meta.dir, "fixtures/core-device-digitizer-report.m"),
+        "-o",
+        executable,
+      ],
+      { timeout: 30_000, stdio: "pipe" },
+    );
   }, 30_000);
 
   afterAll(() => {
@@ -27,8 +37,12 @@ describeNative("CoreDevice digitizer edge gestures", () => {
 
   function report(edge: number, touching: boolean, count = 1) {
     return execFileSync(executable, [String(edge), touching ? "1" : "0", String(count)], {
-      encoding: "utf8", timeout: 5000,
-    }).trim().split(" ").map(Number);
+      encoding: "utf8",
+      timeout: 5000,
+    })
+      .trim()
+      .split(" ")
+      .map(Number);
   }
 
   test.each([1, 2, 3, 4])("edge %i locks the inward swipe through touch-up", (edge) => {
@@ -37,8 +51,11 @@ describeNative("CoreDevice digitizer edge gestures", () => {
     expect(report(edge, false)).toEqual([0x103, edgeFlags, 1]);
   });
 
-  test.each([1, 2])("ordinary %i-finger gestures remain unlocked and release every contact", (count) => {
-    expect(report(0, true, count)).toEqual([0x103, count === 1 ? 0x60 : 0x6060, count]);
-    expect(report(0, false, count)).toEqual([0x103, 0, count]);
-  });
+  test.each([1, 2])(
+    "ordinary %i-finger gestures remain unlocked and release every contact",
+    (count) => {
+      expect(report(0, true, count)).toEqual([0x103, count === 1 ? 0x60 : 0x6060, count]);
+      expect(report(0, false, count)).toEqual([0x103, 0, count]);
+    },
+  );
 });

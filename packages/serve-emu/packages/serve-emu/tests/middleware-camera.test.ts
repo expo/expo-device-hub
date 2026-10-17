@@ -6,11 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
 import { cameraFeedPath, placeholderCameraImage } from "../src/camera.ts";
 import type { RunningAvd } from "../src/emulator.ts";
-import {
-  createRouter,
-  type EmuApp,
-  type RouterDependencies,
-} from "../src/middleware.ts";
+import { createRouter, type EmuApp, type RouterDependencies } from "../src/middleware.ts";
 import {
   parseCameraStatusResponse,
   type CameraFacing,
@@ -93,12 +89,10 @@ function fakeState(overrides: Partial<FakeState> = {}): FakeState {
 
 function routerDependencies(state: FakeState): RouterDependencies {
   return {
-    listDevices: async () =>
-      state.devices.filter((device) => device.state === "device"),
+    listDevices: async () => state.devices.filter((device) => device.state === "device"),
     listAllDevices: async () => state.devices.map((device) => ({ ...device })),
     listAvds: async () => [...state.avds],
-    listRunningAvds: async () =>
-      state.running.map((running) => ({ ...running })),
+    listRunningAvds: async () => state.running.map((running) => ({ ...running })),
     resolveRunningAvds: async (devices) => {
       const serials = new Set(devices.map((device) => device.serial));
       return state.running
@@ -132,12 +126,8 @@ function routerDependencies(state: FakeState): RouterDependencies {
       };
     },
     stopEmulator: async (serial) => {
-      state.devices = state.devices.filter(
-        (device) => device.serial !== serial,
-      );
-      state.running = state.running.filter(
-        (running) => running.serial !== serial,
-      );
+      state.devices = state.devices.filter((device) => device.serial !== serial);
+      state.running = state.running.filter((running) => running.serial !== serial);
     },
     readCameraWiring: async () => state.cameraWired,
   };
@@ -147,10 +137,7 @@ function onlineState(overrides: Partial<FakeState> = {}): FakeState {
   return fakeState({ devices: [{ serial: SERIAL, state: "device" }], ...overrides });
 }
 
-function runningAvdState(
-  avd: string,
-  overrides: Partial<FakeState> = {},
-): FakeState {
+function runningAvdState(avd: string, overrides: Partial<FakeState> = {}): FakeState {
   return fakeState({
     avds: [avd],
     devices: [
@@ -194,9 +181,7 @@ describe("createRouter camera routes", () => {
   test("reports an unwired serial and still names the flags that would wire it", async () => {
     const router = createRouter({}, routerDependencies(onlineState()));
 
-    const status = await cameraStatus(
-      await router.handleRequest(get("/api/camera")),
-    );
+    const status = await cameraStatus(await router.handleRequest(get("/api/camera")));
 
     expect(status).toMatchObject({
       serial: SERIAL,
@@ -214,9 +199,7 @@ describe("createRouter camera routes", () => {
   test("reports the wiring the running emulator's config yields", async () => {
     const readWired = async (state: FakeState) => {
       const router = createRouter({}, routerDependencies(state));
-      return (
-        await cameraStatus(await router.handleRequest(get("/api/camera")))
-      ).wiredAtLaunch;
+      return (await cameraStatus(await router.handleRequest(get("/api/camera")))).wiredAtLaunch;
     };
 
     expect(await readWired(onlineState({ cameraWired: true }))).toBe(true);
@@ -227,14 +210,10 @@ describe("createRouter camera routes", () => {
     const router = createRouter({}, routerDependencies(onlineState()));
     const png = solidPng(64, 48, [1, 2, 3]);
 
-    const posted = await router.handleRequest(
-      postImage("/api/camera/image?facing=front", png),
-    );
+    const posted = await router.handleRequest(postImage("/api/camera/image?facing=front", png));
     expect(posted.status).toBe(200);
 
-    const status = await cameraStatus(
-      await router.handleRequest(get("/api/camera")),
-    );
+    const status = await cameraStatus(await router.handleRequest(get("/api/camera")));
     expect(feed(status, "front")).toMatchObject({
       present: true,
       placeholder: false,
@@ -250,9 +229,7 @@ describe("createRouter camera routes", () => {
     const router = createRouter({}, routerDependencies(onlineState()));
     const png = solidPng(48, 36, [9, 8, 7]);
 
-    const missing = await router.handleRequest(
-      get("/api/camera/image?facing=front"),
-    );
+    const missing = await router.handleRequest(get("/api/camera/image?facing=front"));
     expect(missing.status).toBe(404);
     expect(await responseJson(missing)).toMatchObject({
       ok: false,
@@ -261,21 +238,13 @@ describe("createRouter camera routes", () => {
     });
 
     expect(
-      (
-        await router.handleRequest(
-          postImage("/api/camera/image?facing=front", png),
-        )
-      ).status,
+      (await router.handleRequest(postImage("/api/camera/image?facing=front", png))).status,
     ).toBe(200);
 
-    const served = await router.handleRequest(
-      get("/api/camera/image?facing=front"),
-    );
+    const served = await router.handleRequest(get("/api/camera/image?facing=front"));
     expect(served.status).toBe(200);
     expect(served.headers.get("Content-Type")).toBe("image/png");
-    expect(new Uint8Array(await served.arrayBuffer())).toEqual(
-      Uint8Array.from(png),
-    );
+    expect(new Uint8Array(await served.arrayBuffer())).toEqual(Uint8Array.from(png));
   });
 
   test("DELETE restores the placeholder image", async () => {
@@ -283,11 +252,7 @@ describe("createRouter camera routes", () => {
     const png = solidPng(32, 24, [4, 5, 6]);
 
     expect(
-      (
-        await router.handleRequest(
-          postImage("/api/camera/image?facing=back", png),
-        )
-      ).status,
+      (await router.handleRequest(postImage("/api/camera/image?facing=back", png))).status,
     ).toBe(200);
 
     const cleared = await cameraStatus(
@@ -303,26 +268,18 @@ describe("createRouter camera routes", () => {
     const router = createRouter({}, routerDependencies(onlineState()));
     const png = solidPng(40, 30, [2, 2, 2]);
     expect(
-      (
-        await router.handleRequest(
-          postImage("/api/camera/image?facing=back", png),
-        )
-      ).status,
+      (await router.handleRequest(postImage("/api/camera/image?facing=back", png))).status,
     ).toBe(200);
 
     const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, ...new Array(64).fill(0)]);
-    const response = await router.handleRequest(
-      postImage("/api/camera/image?facing=back", jpeg),
-    );
+    const response = await router.handleRequest(postImage("/api/camera/image?facing=back", jpeg));
     expect(response.status).toBe(400);
     expect(await responseJson(response)).toMatchObject({
       ok: false,
       error: expect.stringContaining("PNG only"),
     });
 
-    const status = await cameraStatus(
-      await router.handleRequest(get("/api/camera")),
-    );
+    const status = await cameraStatus(await router.handleRequest(get("/api/camera")));
     expect(feed(status, "back").digest).toBe(digestOf(png));
   });
 
@@ -394,18 +351,10 @@ describe("createRouter camera routes", () => {
 
     expect((await router.handleRequest(get("/api/camera"))).status).toBe(200);
     expect(
-      (
-        await router.handleRequest(
-          postImage("/api/camera/image?facing=front", png),
-        )
-      ).status,
+      (await router.handleRequest(postImage("/api/camera/image?facing=front", png))).status,
     ).toBe(200);
-    expect(
-      (await router.handleRequest(get("/api/camera/image?facing=front"))).status,
-    ).toBe(200);
-    expect(
-      (await router.handleRequest(del("/api/camera/image?facing=front"))).status,
-    ).toBe(200);
+    expect((await router.handleRequest(get("/api/camera/image?facing=front"))).status).toBe(200);
+    expect((await router.handleRequest(del("/api/camera/image?facing=front"))).status).toBe(200);
 
     expect(state.created).toEqual([]);
   });
@@ -434,9 +383,7 @@ describe("createRouter camera routes", () => {
       },
     });
 
-    const status = await cameraStatus(
-      await router.handleRequest(get("/api/camera")),
-    );
+    const status = await cameraStatus(await router.handleRequest(get("/api/camera")));
     expect(feed(status, "back").present).toBe(false);
   });
 });

@@ -4,10 +4,7 @@
  */
 
 import type { StreamConfig } from "../types.js";
-import {
-  displayStreamConfig,
-  isLandscapeConfig,
-} from "./orientation.js";
+import { displayStreamConfig, isLandscapeConfig } from "./orientation.js";
 
 export type DeviceType = "iphone" | "ipad" | "watch" | "vision";
 
@@ -27,7 +24,6 @@ export const DEVICE_FRAMES = {
   watch: { width: 274, height: 322, bezelX: 12, bezelY: 12, innerRadius: 79 },
   vision: { width: 640, height: 400, bezelX: 12, bezelY: 12, innerRadius: 32 },
 } as const;
-
 
 /**
  * Known simulator screen dimensions (pixels from `xcrun simctl io <udid> enumerate`).
@@ -219,7 +215,13 @@ export function simulatorResizeCornerArc(params: {
 }
 
 /** Renders the correct frame chrome for the given device type. */
-export function DeviceFrameChrome({ type = "iphone", streaming = false }: { type?: DeviceType; streaming?: boolean }) {
+export function DeviceFrameChrome({
+  type = "iphone",
+  streaming = false,
+}: {
+  type?: DeviceType;
+  streaming?: boolean;
+}) {
   switch (type) {
     case "ipad":
       return <IPadFrameChrome streaming={streaming} />;
@@ -234,7 +236,12 @@ export function DeviceFrameChrome({ type = "iphone", streaming = false }: { type
 
 export function PhoneFrameChrome({ streaming = false }: { streaming?: boolean }) {
   return (
-    <svg viewBox="0 0 427 881" style={{ width: '100%', height: '100%' }} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox="0 0 427 881"
+      style={{ width: "100%", height: "100%" }}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <defs>
         <filter
           id="chrome-filter0"
@@ -307,8 +314,14 @@ export function PhoneFrameChrome({ streaming = false }: { streaming?: boolean })
         />
       </g>
       {/* Dynamic Island */}
-      <rect x="151.666" y="31.667" width="123.333" height="36" rx="18" fill="black"
-        style={{ opacity: streaming ? 0 : 1, transition: 'opacity 0.3s ease' }}
+      <rect
+        x="151.666"
+        y="31.667"
+        width="123.333"
+        height="36"
+        rx="18"
+        fill="black"
+        style={{ opacity: streaming ? 0 : 1, transition: "opacity 0.3s ease" }}
       />
     </svg>
   );
@@ -321,33 +334,90 @@ function IPadFrameChrome({ streaming = false }: { streaming?: boolean }) {
   const innerRx = 26;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: '100%' }} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      style={{ width: "100%", height: "100%" }}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <defs>
-        <filter id="ipad-glow0" x="0" y="0" width={w} height={h} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <filter
+          id="ipad-glow0"
+          x="0"
+          y="0"
+          width={w}
+          height={h}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="0.5" result="blur" />
         </filter>
-        <filter id="ipad-glow1" x="5" y="5" width={w - 10} height={h - 10} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <filter
+          id="ipad-glow1"
+          x="5"
+          y="5"
+          width={w - 10}
+          height={h - 10}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="0.333333" result="blur" />
         </filter>
       </defs>
       {/* Inner border */}
-      <rect x="3.5" y="3.5" width={w - 7} height={h - 7} rx={innerRx} stroke="#454548" strokeWidth="4" />
+      <rect
+        x="3.5"
+        y="3.5"
+        width={w - 7}
+        height={h - 7}
+        rx={innerRx}
+        stroke="#454548"
+        strokeWidth="4"
+      />
       {/* Outer border */}
-      <rect x="0.833" y="0.833" width={w - 1.666} height={h - 1.666} rx={outerRx} stroke="#37373a" strokeWidth="1.666" />
+      <rect
+        x="0.833"
+        y="0.833"
+        width={w - 1.666}
+        height={h - 1.666}
+        rx={outerRx}
+        stroke="#37373a"
+        strokeWidth="1.666"
+      />
       {/* Border glow effects */}
       <g opacity="0.9" filter="url(#ipad-glow0)">
-        <rect x="1.5" y="1.5" width={w - 3} height={h - 3} rx={outerRx - 1} stroke="#454548" strokeWidth="1.666" />
+        <rect
+          x="1.5"
+          y="1.5"
+          width={w - 3}
+          height={h - 3}
+          rx={outerRx - 1}
+          stroke="#454548"
+          strokeWidth="1.666"
+        />
       </g>
       <g opacity="0.8" filter="url(#ipad-glow1)">
-        <rect x="6" y="6" width={w - 12} height={h - 12} rx={innerRx - 2} stroke="#646464" strokeWidth="0.666" />
+        <rect
+          x="6"
+          y="6"
+          width={w - 12}
+          height={h - 12}
+          rx={innerRx - 2}
+          stroke="#646464"
+          strokeWidth="0.666"
+        />
       </g>
       {/* Front camera dot */}
-      <circle cx={w / 2} cy={DEVICE_FRAMES.ipad.bezelY / 2 + 1} r="3" fill="#1a1a1a"
-        style={{ opacity: streaming ? 0 : 0.8, transition: 'opacity 0.3s ease' }}
+      <circle
+        cx={w / 2}
+        cy={DEVICE_FRAMES.ipad.bezelY / 2 + 1}
+        r="3"
+        fill="#1a1a1a"
+        style={{ opacity: streaming ? 0 : 0.8, transition: "opacity 0.3s ease" }}
       />
       {/* Home indicator */}
       <rect
@@ -357,7 +427,11 @@ function IPadFrameChrome({ streaming = false }: { streaming?: boolean }) {
         height="5"
         rx="2.5"
         fill="white"
-        style={{ opacity: streaming ? 0 : 0.35, mixBlendMode: 'difference', transition: 'opacity 0.3s ease' }}
+        style={{
+          opacity: streaming ? 0 : 0.35,
+          mixBlendMode: "difference",
+          transition: "opacity 0.3s ease",
+        }}
       />
     </svg>
   );
@@ -381,25 +455,80 @@ function WatchFrameChrome({ streaming: _streaming = false }: { streaming?: boole
   // and side button extend beyond the right edge via `overflow: visible`, so
   // they can poke out without distorting the case-to-screen alignment.
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: '100%', overflow: 'visible' }} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      style={{ width: "100%", height: "100%", overflow: "visible" }}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <defs>
-        <filter id="watch-glow0" x="0" y="0" width={w + 12} height={h} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <filter
+          id="watch-glow0"
+          x="0"
+          y="0"
+          width={w + 12}
+          height={h}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="0.5" result="blur" />
         </filter>
       </defs>
       {/* Digital Crown */}
-      <rect x={w - 2} y={crownY} width={crownW} height={crownH} rx="3" fill="#2a2a2c" stroke="#454548" strokeWidth="1" />
+      <rect
+        x={w - 2}
+        y={crownY}
+        width={crownW}
+        height={crownH}
+        rx="3"
+        fill="#2a2a2c"
+        stroke="#454548"
+        strokeWidth="1"
+      />
       {/* Side button */}
-      <rect x={w - 1} y={sideButtonY} width={crownW - 2} height={sideButtonH} rx="2.5" fill="#2a2a2c" stroke="#454548" strokeWidth="0.8" />
+      <rect
+        x={w - 1}
+        y={sideButtonY}
+        width={crownW - 2}
+        height={sideButtonH}
+        rx="2.5"
+        fill="#2a2a2c"
+        stroke="#454548"
+        strokeWidth="0.8"
+      />
       {/* Inner border */}
-      <rect x="3.5" y="3.5" width={w - 7} height={h - 7} rx={innerRx} stroke="#454548" strokeWidth="3.5" />
+      <rect
+        x="3.5"
+        y="3.5"
+        width={w - 7}
+        height={h - 7}
+        rx={innerRx}
+        stroke="#454548"
+        strokeWidth="3.5"
+      />
       {/* Outer border */}
-      <rect x="0.833" y="0.833" width={w - 1.666} height={h - 1.666} rx={outerRx} stroke="#37373a" strokeWidth="1.666" />
+      <rect
+        x="0.833"
+        y="0.833"
+        width={w - 1.666}
+        height={h - 1.666}
+        rx={outerRx}
+        stroke="#37373a"
+        strokeWidth="1.666"
+      />
       {/* Border glow */}
       <g opacity="0.9" filter="url(#watch-glow0)">
-        <rect x="1.5" y="1.5" width={w - 3} height={h - 3} rx={outerRx - 1} stroke="#454548" strokeWidth="1.666" />
+        <rect
+          x="1.5"
+          y="1.5"
+          width={w - 3}
+          height={h - 3}
+          rx={outerRx - 1}
+          stroke="#454548"
+          strokeWidth="1.666"
+        />
       </g>
     </svg>
   );
@@ -412,14 +541,35 @@ function VisionProFrameChrome({ streaming = false }: { streaming?: boolean }) {
   const innerRx = 34;
 
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: '100%' }} fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      style={{ width: "100%", height: "100%" }}
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <defs>
-        <filter id="vision-glow0" x="0" y="0" width={w} height={h} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <filter
+          id="vision-glow0"
+          x="0"
+          y="0"
+          width={w}
+          height={h}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="0.5" result="blur" />
         </filter>
-        <filter id="vision-glow1" x="5" y="5" width={w - 10} height={h - 10} filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+        <filter
+          id="vision-glow1"
+          x="5"
+          y="5"
+          width={w - 10}
+          height={h - 10}
+          filterUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feGaussianBlur stdDeviation="0.333" result="blur" />
@@ -433,19 +583,58 @@ function VisionProFrameChrome({ streaming = false }: { streaming?: boolean }) {
       {/* Subtle glass tint on the bezel */}
       <rect x="0" y="0" width={w} height={h} rx={outerRx} fill="url(#vision-glass)" />
       {/* Inner border */}
-      <rect x="3.5" y="3.5" width={w - 7} height={h - 7} rx={innerRx} stroke="#454548" strokeWidth="3" />
+      <rect
+        x="3.5"
+        y="3.5"
+        width={w - 7}
+        height={h - 7}
+        rx={innerRx}
+        stroke="#454548"
+        strokeWidth="3"
+      />
       {/* Outer border */}
-      <rect x="0.833" y="0.833" width={w - 1.666} height={h - 1.666} rx={outerRx} stroke="#37373a" strokeWidth="1.666" />
+      <rect
+        x="0.833"
+        y="0.833"
+        width={w - 1.666}
+        height={h - 1.666}
+        rx={outerRx}
+        stroke="#37373a"
+        strokeWidth="1.666"
+      />
       {/* Glow effects */}
       <g opacity="0.9" filter="url(#vision-glow0)">
-        <rect x="1.5" y="1.5" width={w - 3} height={h - 3} rx={outerRx - 1} stroke="#454548" strokeWidth="1.666" />
+        <rect
+          x="1.5"
+          y="1.5"
+          width={w - 3}
+          height={h - 3}
+          rx={outerRx - 1}
+          stroke="#454548"
+          strokeWidth="1.666"
+        />
       </g>
       <g opacity="0.8" filter="url(#vision-glow1)">
-        <rect x="6" y="6" width={w - 12} height={h - 12} rx={innerRx - 2} stroke="#646464" strokeWidth="0.666" />
+        <rect
+          x="6"
+          y="6"
+          width={w - 12}
+          height={h - 12}
+          rx={innerRx - 2}
+          stroke="#646464"
+          strokeWidth="0.666"
+        />
       </g>
       {/* Front sensors (EyeSight display area indicator) */}
-      <ellipse cx={w / 2} cy={h / 2} rx={w / 2 - 30} ry={h / 2 - 24} stroke="#4a4a4d" strokeWidth="0.5" opacity="0.3"
-        style={{ opacity: streaming ? 0 : 0.3, transition: 'opacity 0.3s ease' }}
+      <ellipse
+        cx={w / 2}
+        cy={h / 2}
+        rx={w / 2 - 30}
+        ry={h / 2 - 24}
+        stroke="#4a4a4d"
+        strokeWidth="0.5"
+        opacity="0.3"
+        style={{ opacity: streaming ? 0 : 0.3, transition: "opacity 0.3s ease" }}
       />
     </svg>
   );

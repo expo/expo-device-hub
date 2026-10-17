@@ -25,43 +25,49 @@ export function useUploadToasts() {
   }, []);
 
   const render = useCallback((toast: UploadToast, duration = Infinity) => {
-    sonnerToast.custom(
-      () => <UploadToastContent toast={toast} />,
-      { id: toast.id, duration },
-    );
+    sonnerToast.custom(() => <UploadToastContent toast={toast} />, { id: toast.id, duration });
   }, []);
 
-  const add = useCallback((name: string, kind: DropKind): string => {
-    const id = crypto.randomUUID();
-    const next: UploadToast = { id, name, kind, status: "uploading", progress: 0 };
-    toastsRef.current.set(id, next);
-    render(next);
-    return id;
-  }, [render]);
+  const add = useCallback(
+    (name: string, kind: DropKind): string => {
+      const id = crypto.randomUUID();
+      const next: UploadToast = { id, name, kind, status: "uploading", progress: 0 };
+      toastsRef.current.set(id, next);
+      render(next);
+      return id;
+    },
+    [render],
+  );
 
-  const update = useCallback((id: string, patch: Partial<UploadToast>) => {
-    const current = toastsRef.current.get(id);
-    if (!current) return;
-    clearDismissTimer(id);
-    const next = { ...current, ...patch };
-    toastsRef.current.set(id, next);
-    render(next, patch.status === "success" || patch.status === "error" ? 3000 : Infinity);
-    if (patch.status === "success" || patch.status === "error") {
-      const timer = setTimeout(() => {
-        toastsRef.current.delete(id);
-        dismissTimersRef.current.delete(id);
-      }, 3000);
-      dismissTimersRef.current.set(id, timer);
-    }
-  }, [clearDismissTimer, render]);
+  const update = useCallback(
+    (id: string, patch: Partial<UploadToast>) => {
+      const current = toastsRef.current.get(id);
+      if (!current) return;
+      clearDismissTimer(id);
+      const next = { ...current, ...patch };
+      toastsRef.current.set(id, next);
+      render(next, patch.status === "success" || patch.status === "error" ? 3000 : Infinity);
+      if (patch.status === "success" || patch.status === "error") {
+        const timer = setTimeout(() => {
+          toastsRef.current.delete(id);
+          dismissTimersRef.current.delete(id);
+        }, 3000);
+        dismissTimersRef.current.set(id, timer);
+      }
+    },
+    [clearDismissTimer, render],
+  );
 
-  const setProgress = useCallback((id: string, progress: number | null) => {
-    const current = toastsRef.current.get(id);
-    if (!current) return;
-    const next = { ...current, progress };
-    toastsRef.current.set(id, next);
-    render(next);
-  }, [render]);
+  const setProgress = useCallback(
+    (id: string, progress: number | null) => {
+      const current = toastsRef.current.get(id);
+      if (!current) return;
+      const next = { ...current, progress };
+      toastsRef.current.set(id, next);
+      render(next);
+    },
+    [render],
+  );
 
   return { add, update, setProgress };
 }

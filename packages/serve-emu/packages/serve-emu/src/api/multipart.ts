@@ -10,17 +10,10 @@ export const MAX_MEDIA_MULTIPART_BYTES = 1024 * 1024 * 1024 + MULTIPART_OVERHEAD
  * FormData/File objects. The dedicated streaming upload path can replace this
  * adapter without changing the domain route contract.
  */
-export async function readMultipartFormData(
-  request: Request,
-  maxBytes: number,
-): Promise<FormData> {
+export async function readMultipartFormData(request: Request, maxBytes: number): Promise<FormData> {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("multipart/form-data;")) {
-    throw new ApiError(
-      400,
-      "invalid_request",
-      "Request body must be multipart/form-data",
-    );
+    throw new ApiError(400, "invalid_request", "Request body must be multipart/form-data");
   }
 
   const bytes = await readBodyBytes(request, maxBytes);
@@ -34,11 +27,8 @@ export async function readMultipartFormData(
   try {
     return await boundedRequest.formData();
   } catch (cause) {
-    throw new ApiError(
-      400,
-      "invalid_request",
-      "Request body must be valid multipart/form-data",
-      { cause },
-    );
+    throw new ApiError(400, "invalid_request", "Request body must be valid multipart/form-data", {
+      cause,
+    });
   }
 }

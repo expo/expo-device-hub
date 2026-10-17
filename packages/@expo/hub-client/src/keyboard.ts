@@ -1,4 +1,4 @@
-import { type KeyboardInput } from './types';
+import { type KeyboardInput } from "./types";
 
 // Browser KeyboardEvent.code → USB HID Usage Page 0x07 keyboard usage code.
 // This mirrors serve-sim's browser client so physical keys, including modifiers,
@@ -114,9 +114,9 @@ export function hidUsageForCode(code: string): number | null {
 }
 
 export type AndroidKeyboardMessage =
-  | { type: 'back' }
-  | { type: 'key'; keycode: number }
-  | { type: 'text'; text: string };
+  | { type: "back" }
+  | { type: "key"; keycode: number }
+  | { type: "text"; text: string };
 
 // Android KeyEvent codes accepted by serve-emu's scrcpy control channel. The
 // standalone client only needs Enter for basic typing; Hub also maps editing and
@@ -141,15 +141,15 @@ const ANDROID_KEYCODE_BY_KEY: Readonly<Record<string, number>> = {
 export function androidMessageForKeyboardInput(
   input: KeyboardInput,
 ): AndroidKeyboardMessage | null {
-  if (input.phase !== 'down') return null;
-  if (input.key === 'Escape') return { type: 'back' };
+  if (input.phase !== "down") return null;
+  if (input.key === "Escape") return { type: "back" };
 
   const keycode = ANDROID_KEYCODE_BY_KEY[input.key];
-  if (keycode !== undefined) return { type: 'key', keycode };
+  if (keycode !== undefined) return { type: "key", keycode };
 
   // KeyboardEvent.key already reflects Shift and the host keyboard layout, and
   // serve-emu's INJECT_TEXT path accepts UTF-8, so printable text needs no map.
-  if (input.key.length === 1) return { type: 'text', text: input.key };
+  if (input.key.length === 1) return { type: "text", text: input.key };
   return null;
 }
 
@@ -158,7 +158,17 @@ export function androidMessageForKeyboardInput(
 export function iosMessageForKeyboardInput(input: KeyboardInput) {
   const usage = hidUsageForCode(input.code);
   if (usage === null) return null;
-  const printable = input.phase === 'down' && !input.metaKey && !input.ctrlKey && !input.altKey && input.key.length === 1;
-  const shifted = printable && input.shiftKey && input.key !== ' ';
-  return {type: input.phase, usage, ...(printable ? {key: input.key} : {}), ...(shifted ? {shifted: true} : {})};
+  const printable =
+    input.phase === "down" &&
+    !input.metaKey &&
+    !input.ctrlKey &&
+    !input.altKey &&
+    input.key.length === 1;
+  const shifted = printable && input.shiftKey && input.key !== " ";
+  return {
+    type: input.phase,
+    usage,
+    ...(printable ? { key: input.key } : {}),
+    ...(shifted ? { shifted: true } : {}),
+  };
 }

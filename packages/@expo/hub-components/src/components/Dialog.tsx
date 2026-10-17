@@ -7,13 +7,13 @@ import {
   Portal,
   Root,
   Title,
-} from '@radix-ui/react-dialog';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { type ComponentPropsWithoutRef, type PropsWithChildren } from 'react';
+} from "@radix-ui/react-dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { type ComponentPropsWithoutRef, type PropsWithChildren } from "react";
 
-import { heading } from '../theme/tokens';
-import { cx } from './cx';
-import { CloseIcon } from './icons';
+import { heading } from "../theme/tokens";
+import { cx } from "./cx";
+import { CloseIcon } from "./icons";
 
 /**
  * Dialog — a port of the universe website's `Dialog` (`ui/components/Dialog/*`),
@@ -52,9 +52,9 @@ export function DialogContent({
       <Overlay className="dialog-overlay group absolute z-dialogOverlay-600">
         <div
           className={cx(
-            'fixed inset-0 bg-[#000000]/50',
-            'group-data-[state=open]:animate-fadeIn group-data-[state=closed]:animate-fadeOut',
-            overlayClassName
+            "fixed inset-0 bg-[#000000]/50",
+            "group-data-[state=open]:animate-fadeIn group-data-[state=closed]:animate-fadeOut",
+            overlayClassName,
           )}
         />
         {/* Nesting the content inside the overlay fixes nested-portal/select issues
@@ -62,19 +62,21 @@ export function DialogContent({
         <div className="fixed top-0 left-0 z-dialogContent-601 flex h-dvh w-dvw items-center justify-center">
           <Content
             className={cx(
-              'overflow-hidden rounded-lg shadow-md outline-0',
-              'data-[state=open]:animate-largeSlideUpAndFadeIn data-[state=closed]:animate-fadeOut',
-              containerClassName
+              "overflow-hidden rounded-lg shadow-md outline-0",
+              "data-[state=open]:animate-largeSlideUpAndFadeIn data-[state=closed]:animate-fadeOut",
+              containerClassName,
             )}
-            {...restProps}>
+            {...restProps}
+          >
             <VisuallyHidden asChild>
               <Description />
             </VisuallyHidden>
             <div
               className={cx(
-                'w-[90vw] max-w-125 overflow-hidden rounded-lg border border-default bg-default text-default outline-0',
-                className
-              )}>
+                "w-[90vw] max-w-125 overflow-hidden rounded-lg border border-default bg-default text-default outline-0",
+                className,
+              )}
+            >
               {children}
             </div>
           </Content>
@@ -108,9 +110,10 @@ export function DialogContentContainer({
   return (
     <div
       className={cx(
-        'flex max-h-[calc(90vh-69px-53px)] flex-col gap-1.5 overflow-y-auto p-6 pt-4 outline-0',
-        className
-      )}>
+        "flex max-h-[calc(90vh-69px-53px)] flex-col gap-1.5 overflow-y-auto p-6 pt-4 outline-0",
+        className,
+      )}
+    >
       {children}
     </div>
   );

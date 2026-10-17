@@ -15,7 +15,7 @@ describe("LogsDrawer", () => {
         leftInset={0}
         rightInset={0}
         onResizePointerDown={() => {}}
-      />
+      />,
     );
 
     expect(html).toContain("data-logs");
@@ -40,7 +40,7 @@ describe("LogsDrawer", () => {
           leftInset={0}
           rightInset={0}
           onResizePointerDown={() => {}}
-        />
+        />,
       );
 
     expect(render(null)).toContain('aria-label="Current app" disabled=""');
@@ -59,7 +59,7 @@ describe("LogsDrawer", () => {
         leftInset={0}
         rightInset={0}
         onResizePointerDown={() => {}}
-      />
+      />,
     );
 
     expect(html).toContain("translateY(100%)");
@@ -77,7 +77,7 @@ describe("LogsDrawer", () => {
         leftInset={0}
         rightInset={0}
         onResizePointerDown={() => {}}
-      />
+      />,
     );
 
     expect(html).toContain("translateY(100%)");

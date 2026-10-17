@@ -27,24 +27,24 @@ installed; `location` in particular silently no-ops on an uninstalled bundle.
 
 ## Supported permissions
 
-| Permission | `--value` options | Notes |
-|---|---|---|
-| `notifications` | `critical` | Push notifications. The headline feature — `simctl privacy` cannot do this. |
-| `location` | `always`, `inuse` (default), `never` | `revoke` ⇒ never. |
-| `camera` | — | |
-| `microphone` | — | |
-| `photos` | `limited` | `limited` ⇒ the iOS 14+ limited-library mode. |
-| `photos-add` | — | Add-to-photos only. |
-| `contacts` | — | |
-| `calendar` | — | |
-| `reminders` | — | |
-| `motion` | — | |
-| `media-library` | — | |
-| `siri` | — | |
-| `speech` | — | |
-| `faceid` | — | |
-| `user-tracking` | — | |
-| `homekit` | — | |
+| Permission      | `--value` options                    | Notes                                                                       |
+| --------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `notifications` | `critical`                           | Push notifications. The headline feature — `simctl privacy` cannot do this. |
+| `location`      | `always`, `inuse` (default), `never` | `revoke` ⇒ never.                                                           |
+| `camera`        | —                                    |                                                                             |
+| `microphone`    | —                                    |                                                                             |
+| `photos`        | `limited`                            | `limited` ⇒ the iOS 14+ limited-library mode.                               |
+| `photos-add`    | —                                    | Add-to-photos only.                                                         |
+| `contacts`      | —                                    |                                                                             |
+| `calendar`      | —                                    |                                                                             |
+| `reminders`     | —                                    |                                                                             |
+| `motion`        | —                                    |                                                                             |
+| `media-library` | —                                    |                                                                             |
+| `siri`          | —                                    |                                                                             |
+| `speech`        | —                                    |                                                                             |
+| `faceid`        | —                                    |                                                                             |
+| `user-tracking` | —                                    |                                                                             |
+| `homekit`       | —                                    |                                                                             |
 
 Aliases accepted for parity with AppleSimulatorUtils / agent-device:
 `push` → `notifications`, `photo-library`/`photo` → `photos`, `mic` →
@@ -67,7 +67,7 @@ A trailing positional is also accepted as the value, e.g.
   `plutil` and `PlistBuddy` cannot address, but `simctl privacy` handles
   correctly.
 
-This command manages the *permission* only — it does not deliver a
+This command manages the _permission_ only — it does not deliver a
 notification. To push a test notification, use `xcrun simctl push`.
 
 ## Examples

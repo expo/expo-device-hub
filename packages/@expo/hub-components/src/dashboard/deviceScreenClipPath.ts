@@ -2,7 +2,7 @@ const CIRCLE_SUPERELLIPSE_PARAMETER = 1;
 const IOS_SUPERELLIPSE_PARAMETER = 1.1;
 const CIRCLE_CONTROL = superellipseControl(CIRCLE_SUPERELLIPSE_PARAMETER);
 const IOS_SUPERELLIPSE_CONTROL = superellipseControl(IOS_SUPERELLIPSE_PARAMETER);
-const VERTICAL_EDGE_BLEED = '0.5px';
+const VERTICAL_EDGE_BLEED = "0.5px";
 
 /** Matches a symmetric cubic's midpoint to the CSS superellipse(K) half-corner. */
 function superellipseControl(parameter: number): number {
@@ -33,6 +33,6 @@ export function deviceScreenClipPath(radiusCqw: number, squircle: boolean): stri
     `curve to 0 ${bottomRadius} with -${control} 0 from start / 0 ${control} from end`,
     `vline to ${topRadius}`,
     `curve to ${radius} ${top} with 0 -${control} from start / -${control} 0 from end`,
-    'close)',
-  ].join(', ');
+    "close)",
+  ].join(", ");
 }

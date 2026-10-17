@@ -78,18 +78,13 @@ export type StreamStatsDownloadFile = {
   blob: Blob;
 };
 
-export type StreamStatsFetch = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type StreamStatsFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type StreamStatsClock = {
   now(): number;
 };
 
-export type StreamStatsDownloadAdapter = (
-  file: StreamStatsDownloadFile,
-) => void | Promise<void>;
+export type StreamStatsDownloadAdapter = (file: StreamStatsDownloadFile) => void | Promise<void>;
 
 export type StreamStatsDownloadDependencies = {
   fetch?: StreamStatsFetch;
@@ -156,9 +151,7 @@ function isCredentialKey(key: string, iceCandidateContext: boolean): boolean {
   if (normalized === "candidate") return true;
   if (
     normalized.includes("candidate") &&
-    (normalized.includes("url") ||
-      normalized.includes("address") ||
-      normalized.endsWith("ip"))
+    (normalized.includes("url") || normalized.includes("address") || normalized.endsWith("ip"))
   ) {
     return true;
   }
@@ -168,13 +161,15 @@ function isCredentialKey(key: string, iceCandidateContext: boolean): boolean {
   ) {
     return true;
   }
-  return iceCandidateContext &&
+  return (
+    iceCandidateContext &&
     (normalized === "url" ||
       normalized === "urls" ||
       normalized === "address" ||
       normalized === "ip" ||
       normalized === "ipaddress" ||
-      normalized === "username");
+      normalized === "username")
+  );
 }
 
 function startsIceCandidateContext(key: string): boolean {
@@ -210,13 +205,8 @@ function isSensitiveString(value: string, iceCandidateContext: boolean): boolean
   }
   const containsNetworkAddress =
     /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(trimmed) ||
-    /(?:^|[^a-f0-9])(?:[a-f0-9]{0,4}:){2,}[a-f0-9]{0,4}(?:$|[^a-f0-9])/i.test(
-      trimmed,
-    );
-  if (
-    containsNetworkAddress &&
-    (iceCandidateContext || /\b(?:ice|candidate)\b/i.test(trimmed))
-  ) {
+    /(?:^|[^a-f0-9])(?:[a-f0-9]{0,4}:){2,}[a-f0-9]{0,4}(?:$|[^a-f0-9])/i.test(trimmed);
+  if (containsNetworkAddress && (iceCandidateContext || /\b(?:ice|candidate)\b/i.test(trimmed))) {
     return true;
   }
   return false;
@@ -231,10 +221,7 @@ function sanitizeString(value: string, iceCandidateContext: boolean): string {
     : `${value.slice(0, MAX_SERVER_STRING_LENGTH - 1)}…`;
 }
 
-function sanitizeValue(
-  value: unknown,
-  context: SanitizeContext,
-): StreamStatsJsonValue {
+function sanitizeValue(value: unknown, context: SanitizeContext): StreamStatsJsonValue {
   if (value === null) return null;
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -248,22 +235,19 @@ function sanitizeValue(
   context.ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      return value
-        .slice(0, MAX_SERVER_ARRAY_ITEMS)
-        .map((item) =>
-          sanitizeValue(item, {
-            ...context,
-            depth: context.depth + 1,
-          })
-        );
+      return value.slice(0, MAX_SERVER_ARRAY_ITEMS).map((item) =>
+        sanitizeValue(item, {
+          ...context,
+          depth: context.depth + 1,
+        }),
+      );
     }
 
     const entries = Object.entries(value).slice(0, MAX_SERVER_OBJECT_KEYS);
     return Object.fromEntries(
       entries.map(([key, item]) => {
         const outputKey = key.length <= 256 ? key : key.slice(0, 256);
-        const nextIceContext =
-          context.iceCandidateContext || startsIceCandidateContext(key);
+        const nextIceContext = context.iceCandidateContext || startsIceCandidateContext(key);
         return [
           outputKey,
           isCredentialKey(key, context.iceCandidateContext)
@@ -297,10 +281,10 @@ function boundedNumber(
   integer = false,
 ): number | null {
   return typeof value === "number" &&
-      Number.isFinite(value) &&
-      value >= minimum &&
-      value <= maximum &&
-      (!integer || Number.isInteger(value))
+    Number.isFinite(value) &&
+    value >= minimum &&
+    value <= maximum &&
+    (!integer || Number.isInteger(value))
     ? value
     : null;
 }
@@ -308,9 +292,7 @@ function boundedNumber(
 function boundedViewerString(value: unknown, maximum: number): string | null {
   if (typeof value !== "string") return null;
   const sanitized = sanitizeString(value, false);
-  return sanitized.length <= maximum
-    ? sanitized
-    : `${sanitized.slice(0, maximum - 1)}…`;
+  return sanitized.length <= maximum ? sanitized : `${sanitized.slice(0, maximum - 1)}…`;
 }
 
 /** Select only known local metrics so arbitrary viewer state never enters an export. */
@@ -320,18 +302,8 @@ export function buildStreamStatsViewerSnapshot(
 ): StreamStatsViewerSnapshot {
   const deviceSize = isRecord(viewerState.deviceSize)
     ? {
-        width: boundedNumber(
-          viewerState.deviceSize.width,
-          1,
-          MAX_DEVICE_DIMENSION,
-          true,
-        ),
-        height: boundedNumber(
-          viewerState.deviceSize.height,
-          1,
-          MAX_DEVICE_DIMENSION,
-          true,
-        ),
+        width: boundedNumber(viewerState.deviceSize.width, 1, MAX_DEVICE_DIMENSION, true),
+        height: boundedNumber(viewerState.deviceSize.height, 1, MAX_DEVICE_DIMENSION, true),
       }
     : null;
   const stats = isRecord(viewerState.stats) ? viewerState.stats : null;
@@ -339,33 +311,17 @@ export function buildStreamStatsViewerSnapshot(
   return {
     transport,
     status: boundedViewerString(viewerState.status, MAX_STATUS_LENGTH),
-    generation: boundedNumber(
-      viewerState.generation,
-      0,
-      Number.MAX_SAFE_INTEGER,
-      true,
-    ),
-    lastRenderedAt: boundedNumber(
-      viewerState.lastRenderedAt,
-      0,
-      Number.MAX_SAFE_INTEGER,
-    ),
+    generation: boundedNumber(viewerState.generation, 0, Number.MAX_SAFE_INTEGER, true),
+    lastRenderedAt: boundedNumber(viewerState.lastRenderedAt, 0, Number.MAX_SAFE_INTEGER),
     fps: boundedNumber(viewerState.fps, 0, MAX_FPS),
     deviceSize:
-      deviceSize !== null &&
-        deviceSize.width !== null &&
-        deviceSize.height !== null
+      deviceSize !== null && deviceSize.width !== null && deviceSize.height !== null
         ? { width: deviceSize.width, height: deviceSize.height }
         : null,
     stats: stats
       ? {
           fps: boundedNumber(stats.fps, 0, MAX_FPS),
-          decodeQueue: boundedNumber(
-            stats.decodeQueue,
-            0,
-            MAX_DECODE_QUEUE,
-            true,
-          ),
+          decodeQueue: boundedNumber(stats.decodeQueue, 0, MAX_DECODE_QUEUE, true),
           transitMs: boundedNumber(stats.transitMs, 0, MAX_LATENCY_MS),
           e2eMs: boundedNumber(stats.e2eMs, 0, MAX_LATENCY_MS),
           codec: boundedViewerString(stats.codec, MAX_CODEC_LENGTH),
@@ -412,8 +368,7 @@ function defaultBrowserDownloadEnvironment(): StreamStatsBrowserDownloadEnvironm
 
 /** Build the browser adapter separately so its URL lifecycle is directly testable. */
 export function createBrowserStreamStatsDownloadAdapter(
-  environment: StreamStatsBrowserDownloadEnvironment =
-    defaultBrowserDownloadEnvironment(),
+  environment: StreamStatsBrowserDownloadEnvironment = defaultBrowserDownloadEnvironment(),
 ): StreamStatsDownloadAdapter {
   return ({ filename, blob }) => {
     const objectUrl = environment.createObjectUrl(blob);
@@ -453,10 +408,7 @@ function statsRequestError(
 
 async function readBoundedJson(response: Response): Promise<unknown> {
   const advertisedLength = Number(response.headers.get("content-length"));
-  if (
-    Number.isFinite(advertisedLength) &&
-    advertisedLength > MAX_SERVER_RESPONSE_BYTES
-  ) {
+  if (Number.isFinite(advertisedLength) && advertisedLength > MAX_SERVER_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => {});
     throw new StreamStatsResponseTooLargeError();
   }
@@ -503,10 +455,7 @@ async function fetchStatsJson(
   },
 ): Promise<StreamStatsFetchResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options.requestTimeoutMs,
-  );
+  const timeout = setTimeout(() => controller.abort(), options.requestTimeoutMs);
   try {
     let response: Response;
     try {
@@ -522,9 +471,7 @@ async function fetchStatsJson(
         value: null,
         error: statsRequestError(
           source,
-          controller.signal.aborted
-            ? `${source} request timed out`
-            : `${source} request failed`,
+          controller.signal.aborted ? `${source} request timed out` : `${source} request failed`,
         ),
       };
     }
@@ -533,10 +480,7 @@ async function fetchStatsJson(
       await response.body?.cancel().catch(() => {});
       return {
         value: null,
-        error: statsRequestError(
-          source,
-          `${source} request failed with HTTP ${response.status}`,
-        ),
+        error: statsRequestError(source, `${source} request failed with HTTP ${response.status}`),
       };
     }
 
@@ -558,10 +502,7 @@ async function fetchStatsJson(
       value,
       error: response.ok
         ? null
-        : statsRequestError(
-            source,
-            `${source} request failed with HTTP ${response.status}`,
-          ),
+        : statsRequestError(source, `${source} request failed with HTTP ${response.status}`),
     };
   } finally {
     clearTimeout(timeout);
@@ -583,18 +524,15 @@ export async function downloadStreamStats(
 ): Promise<StreamStatsDownloadResult> {
   const fetcher = dependencies.fetch ?? globalThis.fetch.bind(globalThis);
   const clock = dependencies.clock ?? SYSTEM_CLOCK;
-  const download = dependencies.download ??
-    createBrowserStreamStatsDownloadAdapter();
+  const download = dependencies.download ?? createBrowserStreamStatsDownloadAdapter();
   const requestTimeoutMs =
     typeof dependencies.requestTimeoutMs === "number" &&
-      Number.isFinite(dependencies.requestTimeoutMs) &&
-      dependencies.requestTimeoutMs > 0
+    Number.isFinite(dependencies.requestTimeoutMs) &&
+    dependencies.requestTimeoutMs > 0
       ? Math.min(dependencies.requestTimeoutMs, MAX_REQUEST_TIMEOUT_MS)
       : DEFAULT_REQUEST_TIMEOUT_MS;
   const now = clock.now();
-  const sampledAt = new Date(
-    Number.isFinite(now) ? now : 0,
-  ).toISOString();
+  const sampledAt = new Date(Number.isFinite(now) ? now : 0).toISOString();
 
   const healthRequest = fetchStatsJson(fetcher, "health", "/health", {
     preserveErrorBody: true,
@@ -603,10 +541,7 @@ export async function downloadStreamStats(
   let webRtcRequest: Promise<StreamStatsFetchResult> | null = null;
   let webRtcInputError: StreamStatsDownloadError | null = null;
   if (input.transport === "webrtc") {
-    if (
-      input.webRtcSessionId === null ||
-      !WEBRTC_SESSION_ID.test(input.webRtcSessionId)
-    ) {
+    if (input.webRtcSessionId === null || !WEBRTC_SESSION_ID.test(input.webRtcSessionId)) {
       webRtcInputError = {
         source: "webrtc",
         message: "WebRTC session ID is unavailable",
@@ -635,21 +570,14 @@ export async function downloadStreamStats(
   const document: StreamStatsDocument = {
     schemaVersion: STREAM_STATS_SCHEMA_VERSION,
     sampledAt,
-    viewer: buildStreamStatsViewerSnapshot(
-      input.transport,
-      input.viewerState,
-    ),
+    viewer: buildStreamStatsViewerSnapshot(input.transport, input.viewerState),
     server: {
       health: sanitizeStreamStatsValue(rawHealth),
       webrtc: sanitizeStreamStatsValue(webRtcResult?.value ?? null),
     },
     errors,
   };
-  const filename = streamStatsDownloadFilename(
-    healthSerial(rawHealth),
-    input.transport,
-    sampledAt,
-  );
+  const filename = streamStatsDownloadFilename(healthSerial(rawHealth), input.transport, sampledAt);
   const blob = streamStatsDocumentBlob(document);
   await download({ filename, blob });
   return { filename, blob, document };

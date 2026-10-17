@@ -28,7 +28,10 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
 
   test("rejects an installation path that is not an app directory", async () => {
     const { code, stderr } = await runCli([
-      "--install-app-path", CLI, "--launch-app-identifier", "dev.example.app",
+      "--install-app-path",
+      CLI,
+      "--launch-app-identifier",
+      "dev.example.app",
     ]);
     expect(code).toBe(1);
     expect(stderr).toContain("--install-app-path needs an existing .app directory");
@@ -36,7 +39,10 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
 
   test.each([
     [["--install-app-path", CLI], "--install-app-path needs an existing .app directory"],
-    [["--install-app-path", CLI, "--launch-app-identifier", "dev.example.app"], "--install-app-path needs an existing .app directory"],
+    [
+      ["--install-app-path", CLI, "--launch-app-identifier", "dev.example.app"],
+      "--install-app-path needs an existing .app directory",
+    ],
   ])("quiet installation validation reports JSON for %j", async (args, diagnostic) => {
     const { code, stdout } = await runCli(["--quiet", ...args]);
     expect(code).toBe(1);
@@ -44,7 +50,10 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
   });
 
   test("rejects an invalid capture proxy before touching a simulator, without exposing credentials", async () => {
-    const { code, stderr } = await runCli(["--network-capture-proxy", "socks://user:cli-secret@proxy:8899"]);
+    const { code, stderr } = await runCli([
+      "--network-capture-proxy",
+      "socks://user:cli-secret@proxy:8899",
+    ]);
     expect(code).toBe(1);
     expect(stderr).toContain("HTTP proxy URL");
     expect(stderr).not.toContain("cli-secret");
@@ -52,7 +61,12 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
 
   test("accepts direct and authenticated capture proxy launch arguments", async () => {
     for (const proxy of ["none", "http://user:cli-secret@proxy:8899"]) {
-      const { code, stderr } = await runCli(["--network-capture-proxy", proxy, "--transport", "invalid"]);
+      const { code, stderr } = await runCli([
+        "--network-capture-proxy",
+        proxy,
+        "--transport",
+        "invalid",
+      ]);
       expect(code).toBe(1);
       expect(stderr).toContain("--transport must be one of");
       expect(stderr).not.toContain("HTTP proxy URL");
@@ -60,31 +74,47 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     }
   });
 
-  test.each(["--detach", "--no-preview"])("rejects configured upstreams with %s without exposing credentials", async (mode) => {
-    for (const proxy of ["http://proxy:8899", "http://user:cli-secret@proxy:8899"]) {
-      const { code, stderr } = await runCli(["--network-capture-proxy", proxy, mode]);
-      expect(code).toBe(1);
-      expect(stderr).toContain("--network-capture-proxy needs the preview server");
-      expect(stderr).not.toContain("cli-secret");
-    }
-  });
+  test.each(["--detach", "--no-preview"])(
+    "rejects configured upstreams with %s without exposing credentials",
+    async (mode) => {
+      for (const proxy of ["http://proxy:8899", "http://user:cli-secret@proxy:8899"]) {
+        const { code, stderr } = await runCli(["--network-capture-proxy", proxy, mode]);
+        expect(code).toBe(1);
+        expect(stderr).toContain("--network-capture-proxy needs the preview server");
+        expect(stderr).not.toContain("cli-secret");
+      }
+    },
+  );
 
-  test.each(["--detach", "--no-preview"])("quiet upstream rejection reports JSON with %s", async (mode) => {
-    const { code, stdout, stderr } = await runCli(["--quiet", "--network-capture-proxy", "http://user:cli-secret@proxy:8899", mode]);
-    expect(code).toBe(1);
-    expect(JSON.parse(stdout)).toEqual({ error: expect.stringContaining("--network-capture-proxy needs the preview server") });
-    expect(stdout + stderr).not.toContain("cli-secret");
-  });
-
-  test.each(["--detach", "--no-preview"])("allows omitted or explicitly direct upstream with %s", async (mode) => {
-    for (const proxyArgs of [[], ["--network-capture-proxy", "none"]]) {
-      // This later validation stops before device selection and proves the upstream check allowed it.
-      const { code, stderr } = await runCli([...proxyArgs, mode, "--require-token"]);
+  test.each(["--detach", "--no-preview"])(
+    "quiet upstream rejection reports JSON with %s",
+    async (mode) => {
+      const { code, stdout, stderr } = await runCli([
+        "--quiet",
+        "--network-capture-proxy",
+        "http://user:cli-secret@proxy:8899",
+        mode,
+      ]);
       expect(code).toBe(1);
-      expect(stderr).toContain("--require-token needs the preview server");
-      expect(stderr).not.toContain("--network-capture-proxy needs");
-    }
-  });
+      expect(JSON.parse(stdout)).toEqual({
+        error: expect.stringContaining("--network-capture-proxy needs the preview server"),
+      });
+      expect(stdout + stderr).not.toContain("cli-secret");
+    },
+  );
+
+  test.each(["--detach", "--no-preview"])(
+    "allows omitted or explicitly direct upstream with %s",
+    async (mode) => {
+      for (const proxyArgs of [[], ["--network-capture-proxy", "none"]]) {
+        // This later validation stops before device selection and proves the upstream check allowed it.
+        const { code, stderr } = await runCli([...proxyArgs, mode, "--require-token"]);
+        expect(code).toBe(1);
+        expect(stderr).toContain("--require-token needs the preview server");
+        expect(stderr).not.toContain("--network-capture-proxy needs");
+      }
+    },
+  );
 
   test("rejects an empty app identifier", async () => {
     const { code, stderr } = await runCli(["--launch-app-identifier", ""]);
@@ -155,7 +185,13 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     // --disable wins, so nothing captures and a public preview needs no token for it. A device that
     // does not exist stops the run right after the check, with or without a simulator to serve.
     const { code, stderr } = await runCli([
-      "NOT-A-DEVICE", "--enable", "networkCapture", "--disable", "networkCapture", "--host", "0.0.0.0",
+      "NOT-A-DEVICE",
+      "--enable",
+      "networkCapture",
+      "--disable",
+      "networkCapture",
+      "--host",
+      "0.0.0.0",
     ]);
     expect(code).toBe(1);
     expect(stderr).not.toContain("needs --require-token");

@@ -22,7 +22,10 @@ function start(reply?: (angle: number) => unknown) {
         received.push({ tag: frame[0], payload });
         // Screen updates may arrive before the operation's acknowledgement.
         ws.send(Buffer.concat([Buffer.from([0x82]), Buffer.from('{"width":2007,"height":2853}')]));
-        if (reply) ws.send(Buffer.concat([Buffer.from([0x8f]), Buffer.from(JSON.stringify(reply(payload.angle)))]));
+        if (reply)
+          ws.send(
+            Buffer.concat([Buffer.from([0x8f]), Buffer.from(JSON.stringify(reply(payload.angle)))]),
+          );
       },
     },
   });
@@ -33,7 +36,11 @@ test("sends hinge presets through the authenticated input channel and waits for 
   const { url, received, authorization } = start((angle) => ({ ok: true, angle }));
   for (const angle of [0, 90, 180]) await sendHingeAngleToWs(url, angle, { token: "test-session" });
   expect(received).toEqual([0, 90, 180].map((angle) => ({ tag: 0x0f, payload: { angle } })));
-  expect(authorization).toEqual(["Bearer test-session", "Bearer test-session", "Bearer test-session"]);
+  expect(authorization).toEqual([
+    "Bearer test-session",
+    "Bearer test-session",
+    "Bearer test-session",
+  ]);
 });
 
 test("reports a rejected hinge operation instead of claiming success", async () => {
@@ -48,7 +55,9 @@ test("times out when a server does not acknowledge hinge control", async () => {
 
 test("rejects a malformed acknowledgement without crashing the process", async () => {
   const { url } = start(() => null);
-  await expect(sendHingeAngleToWs(url, 90)).rejects.toThrow("Invalid hinge control acknowledgement");
+  await expect(sendHingeAngleToWs(url, 90)).rejects.toThrow(
+    "Invalid hinge control acknowledgement",
+  );
 });
 
 test("rejects invalid angles before opening the input connection", async () => {
@@ -70,7 +79,8 @@ function serveConfigs(configs: unknown[]) {
     },
     websocket: {
       open(ws) {
-        for (const config of configs) ws.send(Buffer.concat([Buffer.from([0x82]), Buffer.from(JSON.stringify(config))]));
+        for (const config of configs)
+          ws.send(Buffer.concat([Buffer.from([0x82]), Buffer.from(JSON.stringify(config))]));
       },
       message() {},
     },
@@ -81,7 +91,16 @@ function serveConfigs(configs: unknown[]) {
 test("reads the hinge state once the server has probed the simulator", async () => {
   const url = serveConfigs([
     { width: 2007, height: 2853 },
-    { width: 2007, height: 2853, supportsHingeAngle: true, hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false, tableModeAvailable: true },
+    {
+      width: 2007,
+      height: 2853,
+      supportsHingeAngle: true,
+      hingeAngle: 90,
+      hingePose: "book",
+      physicalOrientation: "portrait",
+      tableMode: false,
+      tableModeAvailable: true,
+    },
   ]);
   expect(await readHingeStateFromWs(url)).toEqual({
     hingeAngle: 90,

@@ -43,19 +43,19 @@ class ManualClock implements RecoveryWatchdogClock {
   }
 }
 
-const client = (
-  overrides: Partial<RecoveryClientState> = {},
-): RecoveryClientState => ({
+const client = (overrides: Partial<RecoveryClientState> = {}): RecoveryClientState => ({
   awaitingKeyFrame: false,
   awaitingKeyFrameSinceMs: null,
   lastKeyFrameRequestMs: null,
   ...overrides,
 });
 
-function harness(options: {
-  clients?: RecoveryClientState[];
-  requestReset?: (reason: string, nowMs: number) => boolean;
-} = {}) {
+function harness(
+  options: {
+    clients?: RecoveryClientState[];
+    requestReset?: (reason: string, nowMs: number) => boolean;
+  } = {},
+) {
   const clock = new ManualClock();
   const clients = options.clients ?? [];
   const resets: Array<{ reason: string; nowMs: number }> = [];
@@ -242,9 +242,7 @@ describe("SessionRecoveryWatchdog", () => {
     oldTimer.callback();
     expect(resets).toHaveLength(0);
     clock.fireActive();
-    expect(resets).toEqual([
-      { reason: "first video frame not received", nowMs: 5_000 },
-    ]);
+    expect(resets).toEqual([{ reason: "first video frame not received", nowMs: 5_000 }]);
   });
 
   test("a synchronous reset failure consumes cooldown without marking clients", () => {

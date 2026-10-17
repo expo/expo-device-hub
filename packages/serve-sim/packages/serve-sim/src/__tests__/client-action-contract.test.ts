@@ -41,8 +41,16 @@ const CALLS: Array<[string, string, Record<string, unknown> | undefined]> = [
   ["camera-tool", "camera.switch", { source: "placeholder", udid: UDID }],
   ["camera-tool", "camera.switch", { source: "webcam", target: "MacBook Pro Camera", udid: UDID }],
   ["camera-tool", "camera.switch", { source: "file", target: STAGED, udid: UDID }],
-  ["camera-tool", "camera.inject", { bundleId: BUNDLE, udid: UDID, source: "placeholder", mirror: "on" }],
-  ["camera-tool", "camera.inject", { bundleId: BUNDLE, udid: UDID, source: "file", target: STAGED, mirror: "off" }],
+  [
+    "camera-tool",
+    "camera.inject",
+    { bundleId: BUNDLE, udid: UDID, source: "placeholder", mirror: "on" },
+  ],
+  [
+    "camera-tool",
+    "camera.inject",
+    { bundleId: BUNDLE, udid: UDID, source: "file", target: STAGED, mirror: "off" },
+  ],
   ["camera-tool", "camera.mirror", { udid: UDID, value: "on" }],
   ["camera-tool", "camera.stopWebcam", { udid: UDID }],
 
@@ -54,11 +62,11 @@ const CALLS: Array<[string, string, Record<string, unknown> | undefined]> = [
   // app-permissions-tool.tsx — every service key the sidebar offers
   ...(["camera", "photos", "notifications", "location", "microphone", "contacts"] as const).map(
     (service) =>
-      ["permissions-tool", "permissions.set", { action: "grant", service, bundleId: BUNDLE, udid: UDID }] as [
-        string,
-        string,
-        Record<string, unknown>,
-      ],
+      [
+        "permissions-tool",
+        "permissions.set",
+        { action: "grant", service, bundleId: BUNDLE, udid: UDID },
+      ] as [string, string, Record<string, unknown>],
   ),
   ["permissions-tool", "permissions.resetAll", { bundleId: BUNDLE, udid: UDID }],
 

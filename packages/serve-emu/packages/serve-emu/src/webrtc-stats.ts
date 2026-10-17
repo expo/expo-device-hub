@@ -11,10 +11,7 @@ import {
   isAllowedBrowserOrigin,
   type BrowserOriginPolicy,
 } from "./origin-policy.ts";
-import {
-  parseWebRtcStatsSessionId,
-  WebRtcSignalingError,
-} from "./webrtc-signaling.ts";
+import { parseWebRtcStatsSessionId, WebRtcSignalingError } from "./webrtc-signaling.ts";
 
 export type WebRtcSourceStats = {
   /** Active capture implementation producing the encoded stream. */
@@ -189,8 +186,7 @@ export function handleWebRtcStatsRequest(
     device = parseDevice(searchParams);
   } catch (error) {
     const expected =
-      error instanceof WebRtcSignalingError ||
-      error instanceof WebRtcStatsRequestError;
+      error instanceof WebRtcSignalingError || error instanceof WebRtcStatsRequestError;
     const status = expected ? error.status : 400;
     const code = expected ? error.code : "invalid_session_id";
     return statsFailure(code, status, jsonHeaders, errorMessage(error));

@@ -32,9 +32,7 @@ type ParserWrite = (buffer: Buffer) => Promise<void>;
  * released the parser input's backing memory before the ring is reused.
  */
 class ParserTrailerBuffer {
-  readonly #buffer = Buffer.allocUnsafe(
-    PARSER_FEED_BYTES + PARSER_TRAILER_BYTES,
-  );
+  readonly #buffer = Buffer.allocUnsafe(PARSER_FEED_BYTES + PARSER_TRAILER_BYTES);
   #start = 0;
   #length = 0;
 
@@ -45,20 +43,12 @@ class ParserTrailerBuffer {
         await this.#flushPrefix(PARSER_FEED_BYTES, write);
       }
 
-      const writable = Math.min(
-        this.#buffer.byteLength - this.#length,
-        chunk.byteLength - offset,
-      );
+      const writable = Math.min(this.#buffer.byteLength - this.#length, chunk.byteLength - offset);
       const end = (this.#start + this.#length) % this.#buffer.byteLength;
       const first = Math.min(writable, this.#buffer.byteLength - end);
       chunk.copy(this.#buffer, end, offset, offset + first);
       if (first < writable) {
-        chunk.copy(
-          this.#buffer,
-          0,
-          offset + first,
-          offset + writable,
-        );
+        chunk.copy(this.#buffer, 0, offset + first, offset + writable);
       }
       this.#length += writable;
       offset += writable;
@@ -72,10 +62,7 @@ class ParserTrailerBuffer {
     if (this.#length === 0) return;
 
     const trailer = Buffer.allocUnsafe(this.#length);
-    const first = Math.min(
-      this.#length,
-      this.#buffer.byteLength - this.#start,
-    );
+    const first = Math.min(this.#length, this.#buffer.byteLength - this.#start);
     this.#buffer.copy(trailer, 0, this.#start, this.#start + first);
     if (first < this.#length) {
       this.#buffer.copy(trailer, first, 0, this.#length - first);
@@ -88,18 +75,12 @@ class ParserTrailerBuffer {
   async #flushPrefix(bytes: number, write: ParserWrite): Promise<void> {
     let remaining = bytes;
     while (remaining > 0) {
-      const contiguous = Math.min(
-        remaining,
-        this.#buffer.byteLength - this.#start,
-      );
+      const contiguous = Math.min(remaining, this.#buffer.byteLength - this.#start);
       // Busboy can retain a slice after its write callback. Copy before this
       // ring region is reused, otherwise later trailer bytes corrupt the file.
-      const owned = Buffer.from(
-        this.#buffer.subarray(this.#start, this.#start + contiguous),
-      );
+      const owned = Buffer.from(this.#buffer.subarray(this.#start, this.#start + contiguous));
       await write(owned);
-      this.#start =
-        (this.#start + contiguous) % this.#buffer.byteLength;
+      this.#start = (this.#start + contiguous) % this.#buffer.byteLength;
       this.#length -= contiguous;
       remaining -= contiguous;
     }
@@ -113,8 +94,7 @@ export const MULTIPART_UPLOAD_ERROR_STATUS = {
   "upload-cleanup-failed": 500,
 } as const;
 
-export type MultipartUploadErrorCode =
-  keyof typeof MULTIPART_UPLOAD_ERROR_STATUS;
+export type MultipartUploadErrorCode = keyof typeof MULTIPART_UPLOAD_ERROR_STATUS;
 
 type MultipartUploadErrorOptions = {
   cause?: unknown;
@@ -238,9 +218,7 @@ function parseDeclaredLength(request: Request, maxBodyBytes: number): void {
   if (declared > BigInt(maxBodyBytes)) {
     throw bodyTooLarge(
       maxBodyBytes,
-      declared <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? Number(declared)
-        : undefined,
+      declared <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(declared) : undefined,
     );
   }
 }
@@ -257,11 +235,7 @@ async function cancelUnlockedBody(
 
 function normalizeFailure(error: unknown): Error {
   if (error instanceof Error) return error;
-  return new MultipartUploadError(
-    "invalid-multipart",
-    "multipart upload failed",
-    { cause: error },
-  );
+  return new MultipartUploadError("invalid-multipart", "multipart upload failed", { cause: error });
 }
 
 function parserFailure(error: unknown): MultipartUploadError {
@@ -272,11 +246,7 @@ function parserFailure(error: unknown): MultipartUploadError {
   );
 }
 
-async function writeParserChunk(
-  parser: Busboy,
-  chunk: Buffer,
-  signal: AbortSignal,
-): Promise<void> {
+async function writeParserChunk(parser: Busboy, chunk: Buffer, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     let callbackDone = false;
     let drainDone = false;
@@ -339,10 +309,8 @@ export async function stageMultipartUpload(
   assertNonNegativeSafeInteger(options.maxFileBytes, "maxFileBytes");
   const maxHeaderPairs = options.maxHeaderPairs ?? DEFAULT_HEADER_PAIRS;
   const maxHeaderBytes = options.maxHeaderBytes ?? DEFAULT_HEADER_BYTES;
-  const highWaterMark =
-    options.highWaterMark ?? DEFAULT_STREAM_HIGH_WATER_MARK;
-  const fileHighWaterMark =
-    options.fileHighWaterMark ?? DEFAULT_STREAM_HIGH_WATER_MARK;
+  const highWaterMark = options.highWaterMark ?? DEFAULT_STREAM_HIGH_WATER_MARK;
+  const fileHighWaterMark = options.fileHighWaterMark ?? DEFAULT_STREAM_HIGH_WATER_MARK;
   assertPositiveSafeInteger(maxHeaderPairs, "maxHeaderPairs");
   assertPositiveSafeInteger(maxHeaderBytes, "maxHeaderBytes");
   assertPositiveSafeInteger(highWaterMark, "highWaterMark");
@@ -412,9 +380,7 @@ export async function stageMultipartUpload(
 
   try {
     try {
-      directory = await mkdtemp(
-        join(options.tempRoot ?? tmpdir(), "serve-emu-upload-"),
-      );
+      directory = await mkdtemp(join(options.tempRoot ?? tmpdir(), "serve-emu-upload-"));
     } catch (cause) {
       throw new MultipartUploadError(
         "upload-write-failed",
@@ -467,9 +433,7 @@ export async function stageMultipartUpload(
     });
     parser.once("close", () => {
       if (!parserFinished) {
-        parserDone.reject(
-          primaryFailure ?? parserFailure("multipart parser closed early"),
-        );
+        parserDone.reject(primaryFailure ?? parserFailure("multipart parser closed early"));
       }
     });
     parser.once("finish", () => {
@@ -516,111 +480,100 @@ export async function stageMultipartUpload(
         ),
       );
     });
-    parser.on(
-      "file",
-      (
-        fieldName,
-        stream,
-        uploadedFilename,
-        _transferEncoding,
-        mimeType,
-      ) => {
-        if (fileSeen || fieldName !== options.fieldName) {
-          stream.resume();
-          fileDone.reject(
-            recordFailure(
-              new MultipartUploadError(
-                "unexpected-multipart-part",
-                `unexpected multipart file field ${fieldName}`,
-              ),
+    parser.on("file", (fieldName, stream, uploadedFilename, _transferEncoding, mimeType) => {
+      if (fileSeen || fieldName !== options.fieldName) {
+        stream.resume();
+        fileDone.reject(
+          recordFailure(
+            new MultipartUploadError(
+              "unexpected-multipart-part",
+              `unexpected multipart file field ${fieldName}`,
             ),
-          );
-          return;
-        }
-        if (typeof uploadedFilename !== "string") {
-          stream.resume();
-          fileDone.reject(
-            recordFailure(
-              new MultipartUploadError(
-                "unexpected-multipart-part",
-                `multipart field ${options.fieldName} must include a filename`,
-              ),
+          ),
+        );
+        return;
+      }
+      if (typeof uploadedFilename !== "string") {
+        stream.resume();
+        fileDone.reject(
+          recordFailure(
+            new MultipartUploadError(
+              "unexpected-multipart-part",
+              `multipart field ${options.fieldName} must include a filename`,
             ),
-          );
-          return;
-        }
+          ),
+        );
+        return;
+      }
 
-        fileSeen = true;
-        filename = uploadedFilename;
-        mediaType = mimeType;
-        if (uploadedFilename.toLowerCase().endsWith(".apk")) {
-          // Recent adb versions reject local install paths without an APK
-          // suffix, even when the uploaded filename itself is valid.
-          stagedPath = join(directory!, "upload.apk");
-        }
-        activeFile = stream;
-        stream.once("limit", () => {
-          fileDone.reject(
-            recordFailure(
-              bodyTooLarge(
-                options.maxFileBytes,
-                options.maxFileBytes + 1,
-                `multipart file exceeds ${options.maxFileBytes} bytes`,
-              ),
+      fileSeen = true;
+      filename = uploadedFilename;
+      mediaType = mimeType;
+      if (uploadedFilename.toLowerCase().endsWith(".apk")) {
+        // Recent adb versions reject local install paths without an APK
+        // suffix, even when the uploaded filename itself is valid.
+        stagedPath = join(directory!, "upload.apk");
+      }
+      activeFile = stream;
+      stream.once("limit", () => {
+        fileDone.reject(
+          recordFailure(
+            bodyTooLarge(
+              options.maxFileBytes,
+              options.maxFileBytes + 1,
+              `multipart file exceeds ${options.maxFileBytes} bytes`,
             ),
-          );
-        });
+          ),
+        );
+      });
 
-        try {
-          activeWriter = options.writerFactory
-            ? options.writerFactory(stagedPath)
-            : createWriteStream(stagedPath, { flags: "wx", mode: 0o600 });
-          filePipeline = pipeline(stream, activeWriter, {
-            signal: processing.signal,
-          }).then(
-            () => {
-              if (stream.truncated) {
-                fileDone.reject(
-                  recordFailure(
-                    bodyTooLarge(
-                      options.maxFileBytes,
-                      stream.bytesRead + 1,
-                      `multipart file exceeds ${options.maxFileBytes} bytes`,
-                    ),
+      try {
+        activeWriter = options.writerFactory
+          ? options.writerFactory(stagedPath)
+          : createWriteStream(stagedPath, { flags: "wx", mode: 0o600 });
+        filePipeline = pipeline(stream, activeWriter, {
+          signal: processing.signal,
+        }).then(
+          () => {
+            if (stream.truncated) {
+              fileDone.reject(
+                recordFailure(
+                  bodyTooLarge(
+                    options.maxFileBytes,
+                    stream.bytesRead + 1,
+                    `multipart file exceeds ${options.maxFileBytes} bytes`,
                   ),
-                );
-                return;
-              }
-              size = stream.bytesRead;
-              activeFile = null;
-              activeWriter = null;
-              fileDone.resolve();
-            },
-            (error) => {
-              const failure =
-                primaryFailure ??
-                new MultipartUploadError(
-                  "upload-write-failed",
-                  "failed to write multipart upload",
-                  { cause: error },
-                );
-              fileDone.reject(recordFailure(failure));
-            },
-          );
-        } catch (error) {
-          stream.resume();
-          fileDone.reject(
-            recordFailure(
-              new MultipartUploadError(
-                "upload-write-failed",
-                "failed to create multipart upload file",
-                { cause: error },
-              ),
+                ),
+              );
+              return;
+            }
+            size = stream.bytesRead;
+            activeFile = null;
+            activeWriter = null;
+            fileDone.resolve();
+          },
+          (error) => {
+            const failure =
+              primaryFailure ??
+              new MultipartUploadError("upload-write-failed", "failed to write multipart upload", {
+                cause: error,
+              });
+            fileDone.reject(recordFailure(failure));
+          },
+        );
+      } catch (error) {
+        stream.resume();
+        fileDone.reject(
+          recordFailure(
+            new MultipartUploadError(
+              "upload-write-failed",
+              "failed to create multipart upload file",
+              { cause: error },
             ),
-          );
-        }
-      },
-    );
+          ),
+        );
+      }
+    });
 
     if (!request.body) {
       throw parserFailure("multipart request body is missing");
@@ -630,8 +583,7 @@ export async function stageMultipartUpload(
       let received = 0;
       let chunksRead = 0;
       const trailer = new ParserTrailerBuffer();
-      const write: ParserWrite = (buffer) =>
-        writeParserChunk(parser!, buffer, processing.signal);
+      const write: ParserWrite = (buffer) => writeParserChunk(parser!, buffer, processing.signal);
       while (true) {
         const next = await reader!.read();
         if (processing.signal.aborted) throw processing.signal.reason;
@@ -641,17 +593,10 @@ export async function stageMultipartUpload(
           throw tooManyBodyChunks(chunksRead);
         }
         if (next.value.byteLength > options.maxBodyBytes - received) {
-          throw bodyTooLarge(
-            options.maxBodyBytes,
-            received + next.value.byteLength,
-          );
+          throw bodyTooLarge(options.maxBodyBytes, received + next.value.byteLength);
         }
         received += next.value.byteLength;
-        const chunk = Buffer.from(
-          next.value.buffer,
-          next.value.byteOffset,
-          next.value.byteLength,
-        );
+        const chunk = Buffer.from(next.value.buffer, next.value.byteOffset, next.value.byteLength);
         await trailer.append(chunk, write);
         if (chunksRead % REQUEST_BODY_YIELD_INTERVAL === 0) {
           await yieldToMacrotask();
@@ -675,9 +620,7 @@ export async function stageMultipartUpload(
     const failure = recordFailure(normalizeFailure(error));
     stop(failure);
     await Promise.allSettled(
-      [ingestion, filePipeline].filter(
-        (promise): promise is Promise<void> => promise !== null,
-      ),
+      [ingestion, filePipeline].filter((promise): promise is Promise<void> => promise !== null),
     );
     try {
       await cleanup();

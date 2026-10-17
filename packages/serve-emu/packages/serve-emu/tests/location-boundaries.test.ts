@@ -84,11 +84,7 @@ describe("asynchronous emulator location failures", () => {
     })) as typeof execText;
 
     try {
-      await setEmulatorLocationAsync(
-        "emulator-5554",
-        { latitude: 1, longitude: 2 },
-        runExec,
-      );
+      await setEmulatorLocationAsync("emulator-5554", { latitude: 1, longitude: 2 }, runExec);
       throw new Error("expected location update to fail");
     } catch (error) {
       expect(error).toBeInstanceOf(Error);

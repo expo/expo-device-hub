@@ -38,7 +38,7 @@ describe("parseDeviceLogEntry", () => {
         senderImagePath: "/usr/lib/libobjc.A.dylib",
         eventMessage: "hello",
         messageType: "Error",
-      })
+      }),
     ).toEqual({
       process: "libobjc.A.dylib",
       library: "libobjc.A.dylib",

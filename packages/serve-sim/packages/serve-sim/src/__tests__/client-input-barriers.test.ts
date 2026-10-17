@@ -4,7 +4,10 @@ import { createInputBarriers } from "../socket/client-input-barriers";
 test("a late acknowledgment cannot complete the next Copy after a timeout", async () => {
   const sent: number[] = [];
   const connection = {};
-  const barriers = createInputBarriers((_connection, id) => { sent.push(id); return true; }, 10);
+  const barriers = createInputBarriers((_connection, id) => {
+    sent.push(id);
+    return true;
+  }, 10);
   await expect(barriers.wait(connection)).rejects.toThrow("did not finish in time");
   const next = barriers.wait(connection);
   expect(sent).toEqual([1, 2]);
@@ -29,7 +32,10 @@ test("reconnect cancels old Copy work and ignores its acknowledgments", async ()
 
 test("Copy fails when input is unadmitted or the barrier cannot be sent", async () => {
   let attempts = 0;
-  const barriers = createInputBarriers(() => { attempts++; return false; });
+  const barriers = createInputBarriers(() => {
+    attempts++;
+    return false;
+  });
   await expect(barriers.wait(null)).rejects.toThrow("disconnected");
   expect(attempts).toBe(0);
   await expect(barriers.wait({})).rejects.toThrow("disconnected");

@@ -11,20 +11,32 @@ test("loader cleanup removes old and new names while preserving other inserts", 
   const previousLog = process.env.LOADER_TEST_LOG;
   process.env.LOADER_TEST_LOG = log;
   try {
-    await withShimsAsync({ xcrun: `#!/bin/sh
+    await withShimsAsync(
+      {
+        xcrun: `#!/bin/sh
 if [ "$5" = "getenv" ]; then
   echo '/old/libServeSimTrampoline.dylib:/new/libServeSimCapabilityLoader.dylib:/other/mylibServeSimCapabilityLoader.dylib'
 else
   echo "$*" >> "$LOADER_TEST_LOG"
 fi
-` }, async () => {
-      await removeCapabilityLoader("TEST-DEVICE");
-      const manager = join(import.meta.dir, "../launch-manager.ts");
-      execFileSync(process.execPath, ["-e", `
+`,
+      },
+      async () => {
+        await removeCapabilityLoader("TEST-DEVICE");
+        const manager = join(import.meta.dir, "../launch-manager.ts");
+        execFileSync(
+          process.execPath,
+          [
+            "-e",
+            `
         const { removeCapabilityLoaderSync } = await import(${JSON.stringify(manager)});
         removeCapabilityLoaderSync("TEST-DEVICE");
-      `], { env: { ...process.env } });
-    });
+      `,
+          ],
+          { env: { ...process.env } },
+        );
+      },
+    );
     const commands = readFileSync(log, "utf8").trim().split("\n");
     expect(commands.filter((line) => line.includes("setenv DYLD_INSERT_LIBRARIES"))).toEqual([
       "simctl spawn TEST-DEVICE launchctl setenv DYLD_INSERT_LIBRARIES /other/mylibServeSimCapabilityLoader.dylib",

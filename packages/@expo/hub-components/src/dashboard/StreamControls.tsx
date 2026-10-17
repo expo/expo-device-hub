@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react';
+import { type ReactNode } from "react";
 
-import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
   CameraIcon,
@@ -13,8 +13,8 @@ import {
   border,
   radius,
   text,
-} from '../primitives';
-import { type ColorScheme } from './data';
+} from "../primitives";
+import { type ColorScheme } from "./data";
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 24;
@@ -29,14 +29,15 @@ function ControlGroup({ children }: { children: ReactNode }) {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
+        display: "flex",
+        alignItems: "center",
         padding: GROUP_PADDING,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
         border: `1px solid ${border.default}`,
         borderRadius: radius.xl,
         backgroundColor: bg.element,
-      }}>
+      }}
+    >
       {children}
     </div>
   );
@@ -85,7 +86,8 @@ export function StreamControls({
     <div
       role="toolbar"
       aria-label="Device controls"
-      style={{ display: 'flex', alignItems: 'center', gap: GROUP_GAP }}>
+      style={{ display: "flex", alignItems: "center", gap: GROUP_GAP }}
+    >
       <ControlGroup>
         <ControlButton
           icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
@@ -96,10 +98,10 @@ export function StreamControls({
           icon={<ThemeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Theme"
           role="switch"
-          aria-checked={appearance === 'dark'}
+          aria-checked={appearance === "dark"}
           disabled={themeDisabled}
           onClick={themeDisabled ? undefined : onToggleAppearance}
-          style={themeDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
+          style={themeDisabled ? { color: text.tertiary, cursor: "not-allowed" } : undefined}
         />
         <ControlButton
           icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
@@ -117,13 +119,17 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            recording === 'unknown'
-              ? 'Rotation is unavailable until recording status is known.'
-              : recordingControlsLocked ? 'Rotation is unavailable while recording.' : undefined
+            recording === "unknown"
+              ? "Rotation is unavailable until recording status is known."
+              : recordingControlsLocked
+                ? "Rotation is unavailable while recording."
+                : undefined
           }
           aria-disabled={recordingControlsLocked || undefined}
           onClick={recordingControlsLocked ? undefined : onRotate}
-          style={recordingControlsLocked ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
+          style={
+            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+          }
         />
       </ControlGroup>
     </div>

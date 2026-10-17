@@ -1,7 +1,4 @@
-import {
-  encodeImageFormat,
-  type ImageFormatRequest,
-} from "../../src/emulator-grpc.ts";
+import { encodeImageFormat, type ImageFormatRequest } from "../../src/emulator-grpc.ts";
 
 /** Wrap a protobuf message in the uncompressed five-byte gRPC envelope. */
 export function grpcFrame(message: Buffer): Buffer {
@@ -30,9 +27,15 @@ export function encodeEmulatorImage(
 ): Buffer {
   const format = encodeImageFormat(image);
   return Buffer.concat([
-    Buffer.from([0x0a]), varint(format.length), format,
-    Buffer.from([0x22]), varint(image.image.length), image.image,
-    Buffer.from([0x28]), varint(image.seq ?? 0),
-    Buffer.from([0x30]), varint(image.timestampUs ?? 0n),
+    Buffer.from([0x0a]),
+    varint(format.length),
+    format,
+    Buffer.from([0x22]),
+    varint(image.image.length),
+    image.image,
+    Buffer.from([0x28]),
+    varint(image.seq ?? 0),
+    Buffer.from([0x30]),
+    varint(image.timestampUs ?? 0n),
   ]);
 }

@@ -3,7 +3,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { clearServeSimState, inProcessServeSimState, stateFileForDevice, writeServeSimState } from "../state";
+import {
+  clearServeSimState,
+  inProcessServeSimState,
+  stateFileForDevice,
+  writeServeSimState,
+} from "../state";
 import { freePortAsync, useTempStateDir } from "./helpers";
 
 const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
@@ -31,7 +36,9 @@ describe("clearServeSimState", () => {
   });
 
   afterEach(() => {
-    try { unlinkSync(file); } catch {}
+    try {
+      unlinkSync(file);
+    } catch {}
   });
 
   test("drops the record the caller owns", () => {
@@ -66,18 +73,24 @@ describeWithSim(`serve-sim state ownership e2e (booted sim ${bootedUdid ?? "<ski
 
   function stopServer(): void {
     execFileSync("bun", ["run", CLI_PATH, "--kill", bootedUdid!], {
-      stdio: "pipe", env: { ...process.env }, timeout: 75_000,
+      stdio: "pipe",
+      env: { ...process.env },
+      timeout: 75_000,
     });
   }
 
   async function startServerAsync(): Promise<number> {
     const port = await freePortAsync();
-    const detach = spawnSync("bun", ["run", CLI_PATH, "--detach", "-p", String(port), bootedUdid!], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "inherit"],
-      timeout: 45_000,
-      env: { ...process.env },
-    });
+    const detach = spawnSync(
+      "bun",
+      ["run", CLI_PATH, "--detach", "-p", String(port), bootedUdid!],
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "inherit"],
+        timeout: 45_000,
+        env: { ...process.env },
+      },
+    );
     if (detach.status !== 0 || !detach.stdout) {
       throw new Error(
         `serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\nstdout: ${detach.stdout ?? "<none>"}`,
@@ -89,7 +102,11 @@ describeWithSim(`serve-sim state ownership e2e (booted sim ${bootedUdid ?? "<ski
   async function waitForExit(pid: number, timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      try { process.kill(pid, 0); } catch { return; }
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return;
+      }
       await new Promise((r) => setTimeout(r, 25));
     }
   }
@@ -101,8 +118,12 @@ describeWithSim(`serve-sim state ownership e2e (booted sim ${bootedUdid ?? "<ski
 
   afterAll(() => {
     if (predecessorPid > 0) {
-      try { process.kill(predecessorPid, "SIGCONT"); } catch {}
-      try { process.kill(predecessorPid, "SIGKILL"); } catch {}
+      try {
+        process.kill(predecessorPid, "SIGCONT");
+      } catch {}
+      try {
+        process.kill(predecessorPid, "SIGKILL");
+      } catch {}
     }
     stopServer();
   }, 90_000);

@@ -79,10 +79,7 @@ function rawChunkedRequest(port: number, body: string): Promise<string> {
       );
       for (let offset = 0; offset < body.length; offset += 97) {
         const chunk = body.slice(offset, offset + 97);
-        socket.write(
-          `${Buffer.byteLength(chunk).toString(16)}\r\n`,
-          ignoreWriteError,
-        );
+        socket.write(`${Buffer.byteLength(chunk).toString(16)}\r\n`, ignoreWriteError);
         socket.write(chunk, ignoreWriteError);
         socket.write("\r\n", ignoreWriteError);
       }
@@ -106,9 +103,7 @@ test("real Bun HTTP rejects oversized chunked JSON with structured 413", async (
     { serial: session.serial, port: 0 },
     {
       startScrcpy: async () => session,
-      listAllDevices: async () => [
-        { serial: session.serial, state: "device" },
-      ],
+      listAllDevices: async () => [{ serial: session.serial, state: "device" }],
     },
   );
   try {

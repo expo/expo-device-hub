@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  fetchScreenshotPng,
-  isLoopbackPreviewHostname,
-} from "../client/utils/screenshot-capture";
+import { fetchScreenshotPng, isLoopbackPreviewHostname } from "../client/utils/screenshot-capture";
 
 describe("tunneled screenshot capture", () => {
   test("uses the host-only workflow exclusively for loopback previews", () => {
@@ -34,9 +31,7 @@ describe("tunneled screenshot capture", () => {
     });
 
     expect(requests).toHaveLength(1);
-    expect(String(requests[0]!.input)).toBe(
-      "/preview/api/screenshot?device=DEVICE%20A%2FB",
-    );
+    expect(String(requests[0]!.input)).toBe("/preview/api/screenshot?device=DEVICE%20A%2FB");
     expect(requests[0]!.init?.method).toBe("POST");
     expect(blob.type).toBe("image/png");
     expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
@@ -54,7 +49,9 @@ describe("tunneled screenshot capture", () => {
       }).then((result) => result.artifact);
 
     expect(await capture({ "X-Expo-Screenshot-Artifact": "saved" })).toEqual({ status: "saved" });
-    expect(await capture({ "X-Expo-Screenshot-Artifact": "disabled" })).toEqual({ status: "disabled" });
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "disabled" })).toEqual({
+      status: "disabled",
+    });
     expect(
       await capture({
         "X-Expo-Screenshot-Artifact": "failed",
@@ -67,10 +64,7 @@ describe("tunneled screenshot capture", () => {
 
   test("surfaces the server's screenshot error", async () => {
     const fetchImpl = async () =>
-      Response.json(
-        { ok: false, error: "simctl screenshot timed out" },
-        { status: 500 },
-      );
+      Response.json({ ok: false, error: "simctl screenshot timed out" }, { status: 500 });
 
     expect(
       fetchScreenshotPng("DEVICE-A", {

@@ -49,7 +49,8 @@ function ips({
 }
 
 /** A real report for this crash that also names the file it was read from. */
-const ipsAt = (path: string): string => ips().replace('"app_name":"Demo"', `"app_name":"Demo","source":"${path}"`);
+const ipsAt = (path: string): string =>
+  ips().replace('"app_name":"Demo"', `"app_name":"Demo","source":"${path}"`);
 
 type FakeRes = ServerResponse & {
   statusCode_: number;
@@ -127,9 +128,7 @@ async function runtimeWithRepeat(): Promise<CrashRuntime> {
       return { close: () => {} };
     },
     readReport: async (path) =>
-      path.endsWith("Demo-2.ips")
-        ? ips({ capturedAt: "2026-08-04 23:15:07.8433 -0700" })
-        : ips(),
+      path.endsWith("Demo-2.ips") ? ips({ capturedAt: "2026-08-04 23:15:07.8433 -0700" }) : ips(),
     readDir: async () => [],
     statFile: async () => ({ mtimeMs: 0, ino: 1 }),
     onError: () => {},
@@ -254,7 +253,14 @@ describe("handleCrashesRequest", () => {
     const runtime = await runtimeWithCrash();
     const { buffers, readers } = countingBuffers();
 
-    handleCrashesRequest(fakeReq({ accept: "text/event-stream" }), fakeRes(), state, "", runtime, buffers);
+    handleCrashesRequest(
+      fakeReq({ accept: "text/event-stream" }),
+      fakeRes(),
+      state,
+      "",
+      runtime,
+      buffers,
+    );
 
     expect(readers()).toBe(0);
   });
@@ -266,7 +272,15 @@ describe("handleCrashesRequest", () => {
     const { buffers, readers } = countingBuffers();
     const started = Promise.withResolvers<void>();
 
-    const serving = handleCrashesRequestAfter(() => started.promise, req, res, state, "?tail=1", runtime, buffers);
+    const serving = handleCrashesRequestAfter(
+      () => started.promise,
+      req,
+      res,
+      state,
+      "?tail=1",
+      runtime,
+      buffers,
+    );
     expect(readers()).toBe(1);
     started.resolve();
     await serving;
@@ -281,7 +295,15 @@ describe("handleCrashesRequest", () => {
     const { buffers, readers } = countingBuffers();
     const started = Promise.withResolvers<void>();
 
-    const json = handleCrashesRequestAfter(() => started.promise, fakeReq(), fakeRes(), state, "?tail=1", runtime, buffers);
+    const json = handleCrashesRequestAfter(
+      () => started.promise,
+      fakeReq(),
+      fakeRes(),
+      state,
+      "?tail=1",
+      runtime,
+      buffers,
+    );
     const plain = handleCrashesRequestAfter(
       () => started.promise,
       fakeReq({ accept: "text/event-stream" }),
@@ -289,7 +311,7 @@ describe("handleCrashesRequest", () => {
       state,
       "",
       runtime,
-      buffers
+      buffers,
     );
     expect(readers()).toBe(0);
     started.resolve();
@@ -329,7 +351,9 @@ describe("handleCrashReportRequest", () => {
   test("returns the record and the full report", async () => {
     const runtime = await runtimeWithCrash();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () => ips());
+    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () =>
+      ips(),
+    );
 
     expect(res.statusCode_).toBe(200);
     const payload = JSON.parse(res.body_);
@@ -337,7 +361,13 @@ describe("handleCrashReportRequest", () => {
     expect(payload.record.logTailLines).toBe(0);
     expect(payload.occurrence.logTail).toEqual([]);
     expect(payload.occurrence.frames).toEqual([
-      { image: "Demo", symbol: "AppDelegate.boot()", imageOffset: 1, imageUuid: null, appOwned: true },
+      {
+        image: "Demo",
+        symbol: "AppDelegate.boot()",
+        imageOffset: 1,
+        imageUuid: null,
+        appOwned: true,
+      },
     ]);
     expect(payload.report).toBe(ips());
     expect(payload.reportError).toBeNull();
@@ -364,7 +394,15 @@ describe("handleCrashReportRequest", () => {
     const id = runtime.listFor(UDID)[0]!.id;
 
     const same = fakeRes();
-    await handleCrashReportRequest(fakeReq(), same, state, id, null, runtime, async () => incidentless);
+    await handleCrashReportRequest(
+      fakeReq(),
+      same,
+      state,
+      id,
+      null,
+      runtime,
+      async () => incidentless,
+    );
     expect(JSON.parse(same.body_).report).toBe(incidentless);
 
     const other = fakeRes();
@@ -378,7 +416,15 @@ describe("handleCrashReportRequest", () => {
     const runtime = await runtimeWithCrash();
     const res = fakeRes();
     const cutOff = `${ips().split("\n")[0]}\n{ "pid":`;
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () => cutOff);
+    await handleCrashReportRequest(
+      fakeReq(),
+      res,
+      state,
+      "INC-1",
+      null,
+      runtime,
+      async () => cutOff,
+    );
 
     const payload = JSON.parse(res.body_);
     expect(payload.report).toBeNull();
@@ -388,7 +434,15 @@ describe("handleCrashReportRequest", () => {
   test("does not serve a file at this occurrence's path that no longer parses", async () => {
     const runtime = await runtimeWithCrash();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () => '{"app_name":"De');
+    await handleCrashReportRequest(
+      fakeReq(),
+      res,
+      state,
+      "INC-1",
+      null,
+      runtime,
+      async () => '{"app_name":"De',
+    );
 
     const payload = JSON.parse(res.body_);
     expect(payload.report).toBeNull();
@@ -398,17 +452,29 @@ describe("handleCrashReportRequest", () => {
   test("returns the selected occurrence's own parsed stack", async () => {
     const runtime = await runtimeWithCrash();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () => ips());
+    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () =>
+      ips(),
+    );
 
     const payload = JSON.parse(res.body_);
-    expect(payload.occurrence.frames.map((frame: { symbol: string }) => frame.symbol)).toEqual(["AppDelegate.boot()"]);
+    expect(payload.occurrence.frames.map((frame: { symbol: string }) => frame.symbol)).toEqual([
+      "AppDelegate.boot()",
+    ]);
   });
 
   test("does not show a newer report that took over this occurrence's path", async () => {
     const runtime = await runtimeWithCrash();
     const res = fakeRes();
     const newer = ips().replace('"INC-1"', '"INC-2"');
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async () => newer);
+    await handleCrashReportRequest(
+      fakeReq(),
+      res,
+      state,
+      "INC-1",
+      null,
+      runtime,
+      async () => newer,
+    );
 
     const payload = JSON.parse(res.body_);
     expect(payload.report).toBeNull();
@@ -418,11 +484,29 @@ describe("handleCrashReportRequest", () => {
   test("serves an occurrence by its key wherever it sits now, and 404s once it aged out", async () => {
     const runtime = await runtimeWithRepeat();
     const found = fakeRes();
-    await handleCrashReportRequest(fakeReq(), found, state, "INC-1", "1", runtime, async (path) => path, "1");
+    await handleCrashReportRequest(
+      fakeReq(),
+      found,
+      state,
+      "INC-1",
+      "1",
+      runtime,
+      async (path) => path,
+      "1",
+    );
     expect(JSON.parse(found.body_).occurrence).toMatchObject({ key: 1, index: 0 });
 
     const gone = fakeRes();
-    await handleCrashReportRequest(fakeReq(), gone, state, "INC-1", "1", runtime, async (path) => path, "99");
+    await handleCrashReportRequest(
+      fakeReq(),
+      gone,
+      state,
+      "INC-1",
+      "1",
+      runtime,
+      async (path) => path,
+      "99",
+    );
     expect(gone.statusCode_).toBe(404);
     expect(JSON.parse(gone.body_).error).toContain("no longer kept");
   });
@@ -430,7 +514,9 @@ describe("handleCrashReportRequest", () => {
   test("serves the newest occurrence when none is asked for", async () => {
     const runtime = await runtimeWithRepeat();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async (path) => ipsAt(path));
+    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", null, runtime, async (path) =>
+      ipsAt(path),
+    );
 
     const payload = JSON.parse(res.body_);
     expect(payload.record.count).toBe(2);
@@ -455,7 +541,9 @@ describe("handleCrashReportRequest", () => {
   test("serves an older occurrence on request", async () => {
     const runtime = await runtimeWithRepeat();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", "0", runtime, async (path) => ipsAt(path));
+    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", "0", runtime, async (path) =>
+      ipsAt(path),
+    );
 
     const payload = JSON.parse(res.body_);
     expect(payload.occurrence).toMatchObject({ index: 0, total: 2 });
@@ -465,7 +553,9 @@ describe("handleCrashReportRequest", () => {
   test("treats an empty occurrence param as the newest occurrence", async () => {
     const runtime = await runtimeWithRepeat();
     const res = fakeRes();
-    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", "", runtime, async (path) => ipsAt(path));
+    await handleCrashReportRequest(fakeReq(), res, state, "INC-1", "", runtime, async (path) =>
+      ipsAt(path),
+    );
 
     expect(res.statusCode_).toBe(200);
     expect(JSON.parse(res.body_).occurrence).toMatchObject({ index: 1, total: 2 });

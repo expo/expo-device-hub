@@ -3,23 +3,21 @@
  * `webrtc-codec-fallback.ts` and `webrtc-failure-policy.ts`.
  */
 
-export type WebRtcCodec = 'h264' | 'vp8' | 'vp9';
+export type WebRtcCodec = "h264" | "vp8" | "vp9";
 
-export type WebRtcFailureReason =
-  | { kind: 'permanent' }
-  | { kind: 'codec'; codec: WebRtcCodec };
+export type WebRtcFailureReason = { kind: "permanent" } | { kind: "codec"; codec: WebRtcCodec };
 
 export type WebRtcStreamFailure = WebRtcFailureReason & { sessionId: string };
 
 export type WebRtcFallbackDecision =
-  | { type: 'retry-codec'; codec: WebRtcCodec }
-  | { type: 'restart-ladder'; codec: WebRtcCodec }
-  | { type: 'switch-to-http' };
+  | { type: "retry-codec"; codec: WebRtcCodec }
+  | { type: "restart-ladder"; codec: WebRtcCodec }
+  | { type: "switch-to-http" };
 
 const FALLBACK_ATTEMPTS: Record<WebRtcCodec, readonly WebRtcCodec[]> = {
-  h264: ['h264', 'vp8', 'vp9'],
-  vp9: ['vp9', 'vp8'],
-  vp8: ['vp8'],
+  h264: ["h264", "vp8", "vp9"],
+  vp9: ["vp9", "vp8"],
+  vp8: ["vp8"],
 };
 
 export function nextWebRtcFallbackCodec(
@@ -38,12 +36,14 @@ export function webRtcFallbackDecision(
   failure: WebRtcFailureReason,
   transportLocked = false,
 ): WebRtcFallbackDecision | null {
-  if (failure.kind === 'permanent') return transportLocked ? null : { type: 'switch-to-http' };
+  if (failure.kind === "permanent") return transportLocked ? null : { type: "switch-to-http" };
   if (failure.codec !== current) return null;
   const nextCodec = nextWebRtcFallbackCodec(requested, current);
   return nextCodec && nextCodec !== current
-    ? { type: 'retry-codec', codec: nextCodec }
-    : transportLocked ? { type: 'restart-ladder', codec: requested } : { type: 'switch-to-http' };
+    ? { type: "retry-codec", codec: nextCodec }
+    : transportLocked
+      ? { type: "restart-ladder", codec: requested }
+      : { type: "switch-to-http" };
 }
 
 // @ref LLP 0012#locked-transport — a locked session restarts the ladder; it has no HTTP stream
@@ -56,18 +56,20 @@ export function createLadderBackoff() {
       if (lastFailureAt !== null && now - lastFailureAt >= 90_000) attempt = 0;
       lastFailureAt = now;
     },
-    takeRestartDelayMs() { return Math.min(2_000 * 2 ** Math.min(attempt++, 4), 30_000); },
+    takeRestartDelayMs() {
+      return Math.min(2_000 * 2 ** Math.min(attempt++, 4), 30_000);
+    },
   };
 }
 
 export type WebRtcFailureEvent =
-  | 'first-frame-timeout'
-  | 'playback-stall'
-  | 'connection-failed'
-  | 'signaling-failed';
+  | "first-frame-timeout"
+  | "playback-stall"
+  | "connection-failed"
+  | "signaling-failed";
 
 /** 'wait' means the deadline passed but media is arriving, so the caller should re-arm. */
-export type WebRtcFailureDisposition = 'codec' | 'transport' | 'wait';
+export type WebRtcFailureDisposition = "codec" | "transport" | "wait";
 
 export interface WebRtcMediaProgress {
   mediaArriving: boolean;
@@ -84,14 +86,14 @@ export function webRtcFailureDisposition(
   connectionState: RTCPeerConnectionState,
   progress: WebRtcMediaProgress = { mediaArriving: false },
 ): WebRtcFailureDisposition {
-  if (connectionState !== 'connected') return 'transport';
-  if (event === 'first-frame-timeout') {
-    if (progress.mediaArriving) return 'wait';
+  if (connectionState !== "connected") return "transport";
+  if (event === "first-frame-timeout") {
+    if (progress.mediaArriving) return "wait";
     // Unknown stays 'codec': only a sender known to be encoding redirects the blame.
-    return progress.senderEncoding === true ? 'transport' : 'codec';
+    return progress.senderEncoding === true ? "transport" : "codec";
   }
-  if (event === 'playback-stall') return progress.mediaArriving ? 'codec' : 'transport';
-  return 'transport';
+  if (event === "playback-stall") return progress.mediaArriving ? "codec" : "transport";
+  return "transport";
 }
 
 /** Repeated stalls within this window can demote the codec. */
@@ -102,9 +104,9 @@ export const STALL_RECONNECT_TTL_MS = 30_000;
 export function playbackStallAction(
   disposition: WebRtcFailureDisposition,
   msSinceCodecReconnect: number | null,
-): 'retry-transport' | 'fail-codec' | 'none' {
-  if (disposition === 'transport') return 'retry-transport';
-  if (disposition !== 'codec') return 'none';
-  if (msSinceCodecReconnect === null) return 'retry-transport';
-  return msSinceCodecReconnect < STALL_RECONNECT_TTL_MS ? 'fail-codec' : 'retry-transport';
+): "retry-transport" | "fail-codec" | "none" {
+  if (disposition === "transport") return "retry-transport";
+  if (disposition !== "codec") return "none";
+  if (msSinceCodecReconnect === null) return "retry-transport";
+  return msSinceCodecReconnect < STALL_RECONNECT_TTL_MS ? "fail-codec" : "retry-transport";
 }

@@ -10,8 +10,11 @@ describe("serverBaseUrl", () => {
   });
 
   test("keeps the mount prefix of an embedded server", () => {
-    expect(serverBaseUrl(inProcessServeSimState(UDID, 3200, "/.sim"))).toBe("http://127.0.0.1:3200/.sim");
-    expect(serverBaseUrl(inProcessServeSimState(UDID, 3200, "tools/sim/"))).toBe("http://127.0.0.1:3200/tools/sim");
+    expect(serverBaseUrl(inProcessServeSimState(UDID, 3200, "/.sim"))).toBe(
+      "http://127.0.0.1:3200/.sim",
+    );
+    expect(serverBaseUrl(inProcessServeSimState(UDID, 3200, "tools/sim/"))).toBe(
+      "http://127.0.0.1:3200/tools/sim",
+    );
   });
 });
-

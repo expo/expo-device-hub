@@ -8,15 +8,7 @@
 // in WebGL or a 3D library.
 
 import { runHostAction } from "../socket/client-control";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   DEFAULT_TRAILS,
   defaultSpeed,
@@ -89,7 +81,9 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
   // where they were before the simulation started.
   const sessionOriginRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  useEffect(() => { speedRef.current = defaultSpeed(mode) * multiplier; }, [mode, multiplier]);
+  useEffect(() => {
+    speedRef.current = defaultSpeed(mode) * multiplier;
+  }, [mode, multiplier]);
   // Morph state — when the trail changes we keep the previous prepared trail
   // around briefly so the renderer can interpolate between the two shapes.
   // The state precomputes nearest-neighbour-aligned point samples so each
@@ -206,16 +200,21 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
       if (now - lastPushed < LOCATION_PUSH_INTERVAL_MS) return;
       lastPushed = now;
       const pt = pointAtDistance(trailRef.current, arcRef.current);
-      inflight = runHostAction("location.set", { udid, lat: pt.lat, lng: pt.lng }).then((res) => {
-        if (cancelled) return;
-        if (res.exitCode !== 0) {
-          setError(parseSimctlError(res.stderr) || "simctl location set failed");
-        } else {
-          setError(null);
-        }
-      }).catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      }).finally(() => { inflight = null; });
+      inflight = runHostAction("location.set", { udid, lat: pt.lat, lng: pt.lng })
+        .then((res) => {
+          if (cancelled) return;
+          if (res.exitCode !== 0) {
+            setError(parseSimctlError(res.stderr) || "simctl location set failed");
+          } else {
+            setError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        })
+        .finally(() => {
+          inflight = null;
+        });
     };
 
     void push();
@@ -277,15 +276,18 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
   // Stop simulating when the panel unmounts so we don't leave the simulator
   // parked on the last waypoint. If we captured a session origin, restore it
   // first so the device lands back where the user started.
-  useEffect(() => () => {
-    if (statusRef.current === "idle") return;
-    const origin = sessionOriginRef.current;
-    const restore = () =>
-      origin
-        ? runHostAction("location.set", { udid, lat: origin.lat, lng: origin.lng })
-        : runHostAction("location.clear", { udid });
-    void restore().catch(() => {});
-  }, [udid]);
+  useEffect(
+    () => () => {
+      if (statusRef.current === "idle") return;
+      const origin = sessionOriginRef.current;
+      const restore = () =>
+        origin
+          ? runHostAction("location.set", { udid, lat: origin.lat, lng: origin.lng })
+          : runHostAction("location.clear", { udid });
+      void restore().catch(() => {});
+    },
+    [udid],
+  );
 
   // ── Render ───────────────────────────────────────────────────────────────
   const playing = playback.status === "playing";
@@ -300,7 +302,9 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
       summaryClassName="grid [grid-template-columns:auto_minmax(0,1fr)_auto] [container-type:inline-size] items-center gap-2 text-left"
       summary={
         <>
-          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">Location</span>
+          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">
+            Location
+          </span>
           {open ? (
             <span
               data-location-status
@@ -309,12 +313,20 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
               <span
                 className="size-1.5 rounded-full shrink-0 [transition:background_0.2s,box-shadow_0.2s]"
                 style={{
-                  background: playing ? "#4ade80" : prepared.totalDistance > 0 ? "rgba(255,255,255,0.3)" : "transparent",
+                  background: playing
+                    ? "#4ade80"
+                    : prepared.totalDistance > 0
+                      ? "rgba(255,255,255,0.3)"
+                      : "transparent",
                   boxShadow: playing ? "0 0 6px rgba(74,222,128,0.7)" : "none",
                 }}
               />
               <span className="min-w-0 overflow-hidden text-ellipsis">{headerMetric}</span>
-              {!playing && <span data-location-status-total className="shrink-0">total</span>}
+              {!playing && (
+                <span data-location-status-total className="shrink-0">
+                  total
+                </span>
+              )}
             </span>
           ) : (
             <span />
@@ -322,91 +334,96 @@ export function LocationEmulationTool({ udid }: { udid: string }) {
         </>
       }
     >
-          <div className="flex flex-col gap-1">
-            <div className="relative block">
-              <Select
-                label="Trail"
-                value={trailId}
-                onChange={onTrailChange}
-                options={DEFAULT_TRAILS.map((t) => ({ value: t.id, label: t.name }))}
-                className="bg-white/[0.04] border border-white/8 rounded-md text-white/90 text-[12px] py-1.5 pr-[26px] pl-2 w-full [transition:background_0.12s,border-color_0.12s] hover:bg-white/[0.07] hover:border-[rgba(255,255,255,0.16)] focus:outline-none focus:bg-white/[0.08] focus:border-[rgba(255,255,255,0.24)]"
-              />
-              <span className="absolute right-[9px] top-1/2 -translate-y-1/2 pointer-events-none flex items-center" aria-hidden="true">
-                <Chevron open={false} />
-              </span>
-            </div>
-            <div className="text-[10px] text-white/45">{trail.description}</div>
-          </div>
+      <div className="flex flex-col gap-1">
+        <div className="relative block">
+          <Select
+            label="Trail"
+            value={trailId}
+            onChange={onTrailChange}
+            options={DEFAULT_TRAILS.map((t) => ({ value: t.id, label: t.name }))}
+            className="bg-white/[0.04] border border-white/8 rounded-md text-white/90 text-[12px] py-1.5 pr-[26px] pl-2 w-full [transition:background_0.12s,border-color_0.12s] hover:bg-white/[0.07] hover:border-[rgba(255,255,255,0.16)] focus:outline-none focus:bg-white/[0.08] focus:border-[rgba(255,255,255,0.24)]"
+          />
+          <span
+            className="absolute right-[9px] top-1/2 -translate-y-1/2 pointer-events-none flex items-center"
+            aria-hidden="true"
+          >
+            <Chevron open={false} />
+          </span>
+        </div>
+        <div className="text-[10px] text-white/45">{trail.description}</div>
+      </div>
 
-          <div className="relative w-full rounded-[10px] overflow-hidden bg-[#0a0a0c] border border-white/[0.06] [aspect-ratio:16/11]">
-            <canvas ref={canvasRef} className="w-full h-full block" />
-            <ElevationBadges prepared={prepared} />
-          </div>
+      <div className="relative w-full rounded-[10px] overflow-hidden bg-[#0a0a0c] border border-white/[0.06] [aspect-ratio:16/11]">
+        <canvas ref={canvasRef} className="w-full h-full block" />
+        <ElevationBadges prepared={prepared} />
+      </div>
 
-          <div className="grid [grid-template-columns:1fr_1fr_1fr] gap-1.5">
-            <Stat label="Distance" value={formatDistance(playback.arc)} />
-            <Stat label="Pace" value={formatPace(speedRef.current)} />
-            <Stat label="Elapsed" value={formatDuration(playback.elapsedMs)} />
-          </div>
+      <div className="grid [grid-template-columns:1fr_1fr_1fr] gap-1.5">
+        <Stat label="Distance" value={formatDistance(playback.arc)} />
+        <Stat label="Pace" value={formatPace(speedRef.current)} />
+        <Stat label="Elapsed" value={formatDuration(playback.elapsedMs)} />
+      </div>
 
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={onPlayPause}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 border-none rounded-[7px] text-[12px] font-semibold cursor-pointer font-[inherit] ${playing ? "bg-white/[0.16] text-white enabled:hover:bg-white/[0.22]" : "bg-success-emerald text-[#062018] enabled:hover:brightness-[1.08]"}`}
-              aria-pressed={playing}
-              title={playing ? "Pause" : "Play"}
-            >
-              {playing ? <PauseGlyph /> : <PlayGlyph />}
-              <span>{playing ? "Pause" : "Play"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onStop}
-              className="flex items-center justify-center gap-1.5 py-2 px-3 border border-white/12 rounded-[7px] text-[12px] font-medium bg-transparent text-white/85 cursor-pointer font-[inherit] enabled:hover:bg-white/[0.06] enabled:hover:border-white/20 enabled:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-              disabled={playback.status === "idle" && playback.arc === 0}
-              title="Stop and clear simulated location"
-            >
-              <StopGlyph />
-              <span>Stop</span>
-            </button>
-          </div>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={onPlayPause}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 border-none rounded-[7px] text-[12px] font-semibold cursor-pointer font-[inherit] ${playing ? "bg-white/[0.16] text-white enabled:hover:bg-white/[0.22]" : "bg-success-emerald text-[#062018] enabled:hover:brightness-[1.08]"}`}
+          aria-pressed={playing}
+          title={playing ? "Pause" : "Play"}
+        >
+          {playing ? <PauseGlyph /> : <PlayGlyph />}
+          <span>{playing ? "Pause" : "Play"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onStop}
+          className="flex items-center justify-center gap-1.5 py-2 px-3 border border-white/12 rounded-[7px] text-[12px] font-medium bg-transparent text-white/85 cursor-pointer font-[inherit] enabled:hover:bg-white/[0.06] enabled:hover:border-white/20 enabled:hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={playback.status === "idle" && playback.arc === 0}
+          title="Stop and clear simulated location"
+        >
+          <StopGlyph />
+          <span>Stop</span>
+        </button>
+      </div>
 
-          <div className="flex flex-row items-stretch gap-1.5">
-            <div className="flex-1 min-w-0">
-              <Segmented
-                ariaLabel="Transport mode"
-                value={mode}
-                onChange={(v) => setMode(v as TrailMode)}
-                options={[
-                  { value: "walk", label: "Walk", icon: <WalkGlyph /> },
-                  { value: "run", label: "Run", icon: <RunGlyph /> },
-                  { value: "cycle", label: "Cycle", icon: <CycleGlyph /> },
-                  { value: "drive", label: "Drive", icon: <DriveGlyph /> },
-                ]}
-              />
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const idx = SPEED_MULTIPLIERS.indexOf(multiplier);
-                const next = SPEED_MULTIPLIERS[(idx + 1) % SPEED_MULTIPLIERS.length]!;
-                setMultiplier(next);
-              }}
-              className={`flex items-center justify-center gap-1 px-2.5 border rounded-[7px] cursor-pointer font-[inherit] text-[11px] font-semibold min-w-[56px] active:scale-[0.97] ${multiplier > 1 ? "bg-white border-white text-[#0a0a0c] hover:bg-white/[0.88] hover:border-white/[0.88] hover:text-[#0a0a0c]" : "bg-white/[0.04] border-white/8 text-white/85 hover:bg-white/[0.09] hover:border-[rgba(255,255,255,0.18)] hover:text-white"}`}
-              aria-label={`Speed ${multiplier}× — tap to cycle`}
-              title={`Speed ${multiplier}× — tap to cycle`}
-            >
-              <FastForwardGlyph />
-              {multiplier > 1 && <span className="font-mono [font-variant-numeric:tabular-nums]">{multiplier}×</span>}
-            </button>
-          </div>
-
-          {error && (
-            <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md">
-              {error}
-            </div>
+      <div className="flex flex-row items-stretch gap-1.5">
+        <div className="flex-1 min-w-0">
+          <Segmented
+            ariaLabel="Transport mode"
+            value={mode}
+            onChange={(v) => setMode(v as TrailMode)}
+            options={[
+              { value: "walk", label: "Walk", icon: <WalkGlyph /> },
+              { value: "run", label: "Run", icon: <RunGlyph /> },
+              { value: "cycle", label: "Cycle", icon: <CycleGlyph /> },
+              { value: "drive", label: "Drive", icon: <DriveGlyph /> },
+            ]}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const idx = SPEED_MULTIPLIERS.indexOf(multiplier);
+            const next = SPEED_MULTIPLIERS[(idx + 1) % SPEED_MULTIPLIERS.length]!;
+            setMultiplier(next);
+          }}
+          className={`flex items-center justify-center gap-1 px-2.5 border rounded-[7px] cursor-pointer font-[inherit] text-[11px] font-semibold min-w-[56px] active:scale-[0.97] ${multiplier > 1 ? "bg-white border-white text-[#0a0a0c] hover:bg-white/[0.88] hover:border-white/[0.88] hover:text-[#0a0a0c]" : "bg-white/[0.04] border-white/8 text-white/85 hover:bg-white/[0.09] hover:border-[rgba(255,255,255,0.18)] hover:text-white"}`}
+          aria-label={`Speed ${multiplier}× — tap to cycle`}
+          title={`Speed ${multiplier}× — tap to cycle`}
+        >
+          <FastForwardGlyph />
+          {multiplier > 1 && (
+            <span className="font-mono [font-variant-numeric:tabular-nums]">{multiplier}×</span>
           )}
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md">
+          {error}
+        </div>
+      )}
     </CollapsibleSection>
   );
 }
@@ -417,7 +434,9 @@ const Stat = memo(function Stat({ label, value }: { label: string; value: string
   return (
     <div className="flex flex-col gap-0.5 bg-white/[0.03] border border-white/[0.06] rounded-md py-[5px] px-[7px] min-w-0">
       <div className="text-[9px] uppercase tracking-[0.06em] text-white/45">{label}</div>
-      <div className="text-[12px] font-mono text-white overflow-hidden text-ellipsis whitespace-nowrap">{value}</div>
+      <div className="text-[12px] font-mono text-white overflow-hidden text-ellipsis whitespace-nowrap">
+        {value}
+      </div>
     </div>
   );
 });
@@ -473,7 +492,6 @@ function ElevationBadges({ prepared }: { prepared: PreparedTrail }) {
   );
 }
 
-
 // ─── Trail morphing ────────────────────────────────────────────────────────
 // We don't morph in raw geographic coords — two trails can be hundreds of
 // km apart, which makes a per-arc-fraction lerp draw long straight lines
@@ -484,7 +502,11 @@ function ElevationBadges({ prepared }: { prepared: PreparedTrail }) {
 
 const MORPH_SAMPLES = 140;
 
-interface Vec3 { x: number; y: number; z: number }
+interface Vec3 {
+  x: number;
+  y: number;
+  z: number;
+}
 
 interface MorphState {
   from: PreparedTrail;
@@ -520,14 +542,14 @@ function buildMorphState(
   const fromCz = (from.bounds.z[0] + from.bounds.z[1]) / 2;
   const fromY0 = from.bounds.y[0];
   const fromPlanar = Math.max(
-    1, from.bounds.x[1] - from.bounds.x[0], from.bounds.z[1] - from.bounds.z[0],
+    1,
+    from.bounds.x[1] - from.bounds.x[0],
+    from.bounds.z[1] - from.bounds.z[0],
   );
   const toCx = (to.bounds.x[0] + to.bounds.x[1]) / 2;
   const toCz = (to.bounds.z[0] + to.bounds.z[1]) / 2;
   const toY0 = to.bounds.y[0];
-  const toPlanar = Math.max(
-    1, to.bounds.x[1] - to.bounds.x[0], to.bounds.z[1] - to.bounds.z[0],
-  );
+  const toPlanar = Math.max(1, to.bounds.x[1] - to.bounds.x[0], to.bounds.z[1] - to.bounds.z[0]);
   const scale = toPlanar / fromPlanar;
 
   const fromRaw = sampleEvenly(from, MORPH_SAMPLES);
@@ -572,7 +594,9 @@ function nearestNeighbourAlign(from: Vec3[], to: Vec3[], loop: boolean): Vec3[] 
       for (let i = 0; i < N; i++) {
         const a = from[i]!;
         const b = target[(i + k) % N]!;
-        const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        const dx = a.x - b.x,
+          dy = a.y - b.y,
+          dz = a.z - b.z;
         cost += dx * dx + dy * dy + dz * dz;
         if (cost >= bestCost) break;
       }
@@ -595,9 +619,12 @@ function morphFrame(state: MorphState, t: number): PreparedTrail {
   const points = Array.from<RoutePoint>({ length: N });
   let arc = 0;
   let prev: RoutePoint | null = null;
-  let xMin = Infinity, xMax = -Infinity;
-  let yMin = Infinity, yMax = -Infinity;
-  let zMin = Infinity, zMax = -Infinity;
+  let xMin = Infinity,
+    xMax = -Infinity;
+  let yMin = Infinity,
+    yMax = -Infinity;
+  let zMin = Infinity,
+    zMax = -Infinity;
   for (let i = 0; i < N; i++) {
     const a = state.fromPts[i]!;
     const b = state.toPts[i]!;
@@ -605,15 +632,20 @@ function morphFrame(state: MorphState, t: number): PreparedTrail {
     const y = a.y + (b.y - a.y) * t;
     const z = a.z + (b.z - a.z) * t;
     if (prev) {
-      const dx = x - prev.x, dy = y - prev.y, dz = z - prev.z;
+      const dx = x - prev.x,
+        dy = y - prev.y,
+        dz = z - prev.z;
       arc += Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
     const pt: RoutePoint = { x, y, z, arc, lat: 0, lng: 0 };
     points[i] = pt;
     prev = pt;
-    if (x < xMin) xMin = x; if (x > xMax) xMax = x;
-    if (y < yMin) yMin = y; if (y > yMax) yMax = y;
-    if (z < zMin) zMin = z; if (z > zMax) zMax = z;
+    if (x < xMin) xMin = x;
+    if (x > xMax) xMax = x;
+    if (y < yMin) yMin = y;
+    if (y > yMax) yMax = y;
+    if (z < zMin) zMin = z;
+    if (z > zMax) zMax = z;
   }
   return {
     trail: state.to.trail,
@@ -661,8 +693,12 @@ function renderScene(
 
   // Background — radial vignette for that "scene viewport" feel.
   const bg = ctx.createRadialGradient(
-    cssW * 0.5, cssH * 0.55, Math.min(cssW, cssH) * 0.2,
-    cssW * 0.5, cssH * 0.55, Math.max(cssW, cssH) * 0.85,
+    cssW * 0.5,
+    cssH * 0.55,
+    Math.min(cssW, cssH) * 0.2,
+    cssW * 0.5,
+    cssH * 0.55,
+    Math.max(cssW, cssH) * 0.85,
   );
   bg.addColorStop(0, "#1a1a1d");
   bg.addColorStop(1, "#0a0a0c");
@@ -697,21 +733,16 @@ function renderScene(
   const fitH = Math.max(zExtent * cosT + yExtent * sinT, xExtent * 0.4) * 1.15;
   const padX = cssW * 0.08;
   const padY = cssH * 0.18; // extra room at top for elevation badges
-  const scale = Math.min(
-    (cssW - padX * 2) / fitW,
-    (cssH - padY * 2) / fitH,
-  ) * 1.45;
+  const scale = Math.min((cssW - padX * 2) / fitW, (cssH - padY * 2) / fitH) * 1.45;
 
   // Vertical exaggeration — real ridges look pancake-flat in plain ortho,
   // so we push hills harder. Cap at 24× and scale down on big xy extents so
   // flat trails stay flat.
-  const elevationGain = yExtent < 1
-    ? 1
-    : Math.min(24, 140 / Math.max(20, yExtent));
+  const elevationGain = yExtent < 1 ? 1 : Math.min(24, 140 / Math.max(20, yExtent));
 
   const project = (x: number, y: number, z: number) => {
-    const px = (x - cx);
-    const pz = (z - cz);
+    const px = x - cx;
+    const pz = z - cz;
     // Rotate around y axis.
     const rx = px * cosA + pz * sinA;
     const rz = -px * sinA + pz * cosA;
@@ -791,8 +822,10 @@ function renderScene(
   for (let i = 0; i < projected.length; i++) {
     const { p, top } = projected[i]!;
     if (p.arc > cutoff) break;
-    if (!started) { ctx.moveTo(top.sx, top.sy); started = true; }
-    else ctx.lineTo(top.sx, top.sy);
+    if (!started) {
+      ctx.moveTo(top.sx, top.sy);
+      started = true;
+    } else ctx.lineTo(top.sx, top.sy);
   }
   if (started) ctx.stroke();
 

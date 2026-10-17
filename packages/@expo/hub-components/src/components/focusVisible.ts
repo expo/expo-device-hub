@@ -1,4 +1,4 @@
-import { type FocusEvent } from 'react';
+import { type FocusEvent } from "react";
 
 /**
  * Whether a focus event should show a visible focus ring. Mirrors the
@@ -7,7 +7,7 @@ import { type FocusEvent } from 'react';
  */
 export function isFocusVisible(event: FocusEvent<HTMLElement>): boolean {
   try {
-    return event.currentTarget.matches(':focus-visible');
+    return event.currentTarget.matches(":focus-visible");
   } catch {
     return true;
   }

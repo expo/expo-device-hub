@@ -37,16 +37,11 @@ console.log(`::group::Applying canary versions (${canaryId})`);
 for (const pkg of await getPublicPackages()) {
   const path = `${pkg.dir}/package.json`;
   const json = await Bun.file(path).json();
-  const committedVersion = JSON.parse(
-    await $`git show ${`HEAD:${pkg.path}`}`.text(),
-  ).version;
-  const baseVersion =
-    pkg.version === committedVersion ? nextMinor(pkg.version) : pkg.version;
+  const committedVersion = JSON.parse(await $`git show ${`HEAD:${pkg.path}`}`.text()).version;
+  const baseVersion = pkg.version === committedVersion ? nextMinor(pkg.version) : pkg.version;
   const canaryVersion = `${baseVersion}-canary-${canaryId}`;
   json.version = canaryVersion;
   await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
-  console.log(
-    `${pkg.name}: ${committedVersion} -> ${pkg.version} -> ${canaryVersion}`,
-  );
+  console.log(`${pkg.name}: ${committedVersion} -> ${pkg.version} -> ${canaryVersion}`);
 }
 console.log("::endgroup::");

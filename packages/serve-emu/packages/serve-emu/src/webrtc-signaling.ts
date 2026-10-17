@@ -49,7 +49,11 @@ export function parseWebRtcOffer(value: unknown): WebRtcOffer {
     throw new WebRtcSignalingError("Invalid WebRTC offer SDP", 400, "invalid_offer");
   }
   if (value.codec !== undefined && value.codec !== "h264") {
-    throw new WebRtcSignalingError("serve-emu WebRTC currently supports only H.264", 400, "invalid_offer");
+    throw new WebRtcSignalingError(
+      "serve-emu WebRTC currently supports only H.264",
+      400,
+      "invalid_offer",
+    );
   }
   if (value.iceServers !== undefined) {
     throw new WebRtcSignalingError(
@@ -75,11 +79,7 @@ export function parseWebRtcCloseRequest(value: unknown): WebRtcCloseRequest {
 
 export function parseWebRtcStatsSessionId(value: string | null): string {
   if (value === null || value === "") {
-    throw new WebRtcSignalingError(
-      "WebRTC session ID is required",
-      400,
-      "missing_session_id",
-    );
+    throw new WebRtcSignalingError("WebRTC session ID is required", 400, "missing_session_id");
   }
   return requireSessionId(value);
 }

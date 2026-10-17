@@ -12,11 +12,14 @@ export type ScreenshotArtifactResult =
 // message goes only to the stderr line and the failure record; the EAS worker reads that record and
 // reports it in the job log and to Sentry, never to the browser.
 export function clientSafeErrorMessage(error: unknown): string {
-  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  const code =
+    typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
   return typeof code === "string" && /^E[A-Z]{2,}$/.test(code) ? code : "unknown error";
 }
 
-export type ScreenshotOutcome = ScreenshotArtifactResult | { status: "capture-failed"; error: string };
+export type ScreenshotOutcome =
+  | ScreenshotArtifactResult
+  | { status: "capture-failed"; error: string };
 
 // The PNG filename pattern and the failure record (screenshot-<time>-<suffix>.failed.json holding
 // { file, error, at }) are a contract with the EAS worker in the eas-cli repository,
@@ -71,7 +74,9 @@ const WHITESPACE_RUN = /\s+/g;
 
 // The preview UIs read these to tell the user whether the capture they downloaded also reached the
 // session artifacts.
-export function screenshotArtifactHeaders(result: ScreenshotArtifactResult): Record<string, string> {
+export function screenshotArtifactHeaders(
+  result: ScreenshotArtifactResult,
+): Record<string, string> {
   if (result.status !== "failed") return { [SCREENSHOT_ARTIFACT_HEADER]: result.status };
   const error = result.error
     .replace(NOT_PRINTABLE_ASCII, "")

@@ -23,17 +23,32 @@ afterAll(() => {
   if (ready) execFileSync("xcrun", ["simctl", "uninstall", udid!, bundleId], { timeout: 60_000 });
 }, 60_000);
 
-test.skipIf(!ready)("reads, lists and removes files from the selected Simulator app data container", async () => {
-  const container = await action("app.container", { type: "data" });
-  expect(container.exitCode).toBe(0);
-  setup = join(container.stdout.trim(), "Documents/file-api-fixture");
-  mkdirSync(setup, { recursive: true });
-  writeFileSync(join(setup, "session.json"), '{"session":"fixture"}');
-  expect(JSON.parse((await action("app.file.list", { relativePath: "Documents/file-api-fixture" })).stdout)).toEqual([{name:"session.json",type:"file"}]);
-  const read = await action("app.file.read", { relativePath: "Documents/file-api-fixture/session.json" });
-  expect(read.exitCode).toBe(0);
-  expect(Buffer.from(read.stdout,"base64").toString()).toBe('{"session":"fixture"}');
-  expect((await action("app.file.remove", { relativePath: "Documents/file-api-fixture/session.json" })).exitCode).toBe(0);
-  expect(existsSync(join(setup,"session.json"))).toBe(false);
-  expect((await action("app.file.remove", { relativePath: "Documents/file-api-fixture" })).exitCode).toBe(1);
-}, 60_000);
+test.skipIf(!ready)(
+  "reads, lists and removes files from the selected Simulator app data container",
+  async () => {
+    const container = await action("app.container", { type: "data" });
+    expect(container.exitCode).toBe(0);
+    setup = join(container.stdout.trim(), "Documents/file-api-fixture");
+    mkdirSync(setup, { recursive: true });
+    writeFileSync(join(setup, "session.json"), '{"session":"fixture"}');
+    expect(
+      JSON.parse(
+        (await action("app.file.list", { relativePath: "Documents/file-api-fixture" })).stdout,
+      ),
+    ).toEqual([{ name: "session.json", type: "file" }]);
+    const read = await action("app.file.read", {
+      relativePath: "Documents/file-api-fixture/session.json",
+    });
+    expect(read.exitCode).toBe(0);
+    expect(Buffer.from(read.stdout, "base64").toString()).toBe('{"session":"fixture"}');
+    expect(
+      (await action("app.file.remove", { relativePath: "Documents/file-api-fixture/session.json" }))
+        .exitCode,
+    ).toBe(0);
+    expect(existsSync(join(setup, "session.json"))).toBe(false);
+    expect(
+      (await action("app.file.remove", { relativePath: "Documents/file-api-fixture" })).exitCode,
+    ).toBe(1);
+  },
+  60_000,
+);

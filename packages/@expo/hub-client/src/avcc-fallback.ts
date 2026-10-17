@@ -3,7 +3,7 @@ export interface AvccFallbackState {
   fellBack: boolean;
 }
 
-export type AvccFallbackEvent = 'decoded-frame' | 'timeout' | 'error' | 'reset';
+export type AvccFallbackEvent = "decoded-frame" | "timeout" | "error" | "reset";
 
 export const initialAvccFallback: AvccFallbackState = {
   streamed: false,
@@ -16,13 +16,13 @@ export function avccFallbackReducer(
   event: AvccFallbackEvent,
 ): AvccFallbackState {
   switch (event) {
-    case 'decoded-frame':
+    case "decoded-frame":
       return state.streamed ? state : { ...state, streamed: true };
-    case 'timeout':
+    case "timeout":
       return state.streamed || state.fellBack ? state : { ...state, fellBack: true };
-    case 'error':
+    case "error":
       return state.fellBack ? state : { ...state, fellBack: true };
-    case 'reset':
+    case "reset":
       return initialAvccFallback;
   }
 }

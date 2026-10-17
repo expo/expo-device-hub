@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 import {
   areRecordingControlsLocked,
@@ -13,15 +13,15 @@ import {
   type DeviceStreamMode,
   type DeviceStreamSource,
   type DeviceWebRtcCodec,
-} from '@expo/hub-client';
-import { Select, type SelectOption } from '../primitives';
-import { CollapsibleSection } from './CollapsibleSection';
-import { SectionNote } from './SectionNote';
-import { SidebarRow } from './SidebarRow';
-import { type StreamModeAvailability } from './StreamSection';
-import { StreamStatistics } from './StreamStatistics';
+} from "@expo/hub-client";
+import { Select, type SelectOption } from "../primitives";
+import { CollapsibleSection } from "./CollapsibleSection";
+import { SectionNote } from "./SectionNote";
+import { SidebarRow } from "./SidebarRow";
+import { type StreamModeAvailability } from "./StreamSection";
+import { StreamStatistics } from "./StreamStatistics";
 
-type StreamTransport = 'http' | 'websocket' | 'webrtc';
+type StreamTransport = "http" | "websocket" | "webrtc";
 
 export type StreamOptionsSectionProps = {
   client: DeviceClient;
@@ -50,68 +50,68 @@ const DEFAULT_AVAILABILITY: StreamModeAvailability = {
 
 const DEFAULT_STREAM_CAPABILITIES = {
   modeAvailability: DEFAULT_AVAILABILITY,
-  httpCodecs: ['auto', 'h264', 'mjpeg'],
-  webRtcCodecs: ['h264', 'vp9', 'vp8'],
+  httpCodecs: ["auto", "h264", "mjpeg"],
+  webRtcCodecs: ["h264", "vp9", "vp8"],
 } as const satisfies DeviceStreamCapabilities;
 
 const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
-  { value: 'scrcpy', label: 'scrcpy' },
-  { value: 'grpc-screenshot', label: 'gRPC' },
+  { value: "scrcpy", label: "scrcpy" },
+  { value: "grpc-screenshot", label: "gRPC" },
 ];
 const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> = [
-  { value: 'png', label: 'PNG' },
-  { value: 'mmap', label: 'MMAP' },
-  { value: 'rgb888', label: 'RGB888' },
+  { value: "png", label: "PNG" },
+  { value: "mmap", label: "MMAP" },
+  { value: "rgb888", label: "RGB888" },
 ];
 const GRPC_ENCODER_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcEncoder>> = [
-  { value: 'software', label: 'Software' },
-  { value: 'hardware', label: 'Hardware' },
+  { value: "software", label: "Software" },
+  { value: "hardware", label: "Hardware" },
 ];
 const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceInputSource>> = [
-  { value: 'scrcpy', label: 'scrcpy' },
-  { value: 'grpc', label: 'gRPC' },
+  { value: "scrcpy", label: "scrcpy" },
+  { value: "grpc", label: "gRPC" },
 ];
 
 const HTTP_CODEC_OPTIONS: ReadonlyArray<SelectOption<DeviceHttpCodec>> = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'h264', label: 'H.264' },
-  { value: 'mjpeg', label: 'MJPEG' },
+  { value: "auto", label: "Auto" },
+  { value: "h264", label: "H.264" },
+  { value: "mjpeg", label: "MJPEG" },
 ];
 
 const WEBRTC_CODEC_OPTIONS: ReadonlyArray<SelectOption<DeviceWebRtcCodec>> = [
-  { value: 'h264', label: 'H.264' },
-  { value: 'vp9', label: 'VP9' },
-  { value: 'vp8', label: 'VP8' },
+  { value: "h264", label: "H.264" },
+  { value: "vp9", label: "VP9" },
+  { value: "vp8", label: "VP8" },
 ];
 
 const MAX_DIMENSION_OPTIONS: SelectOption[] = [
-  { value: '0', label: 'Full' },
-  { value: '1920', label: '1920 px' },
-  { value: '1600', label: '1600 px' },
-  { value: '1280', label: '1280 px' },
-  { value: '960', label: '960 px' },
-  { value: '720', label: '720 px' },
+  { value: "0", label: "Full" },
+  { value: "1920", label: "1920 px" },
+  { value: "1600", label: "1600 px" },
+  { value: "1280", label: "1280 px" },
+  { value: "960", label: "960 px" },
+  { value: "720", label: "720 px" },
 ];
 
-const FPS_OPTIONS: SelectOption[] = ['60', '30', '20', '15', '10', '5'].map((value) => ({
+const FPS_OPTIONS: SelectOption[] = ["60", "30", "20", "15", "10", "5"].map((value) => ({
   value,
   label: `${value} FPS`,
 }));
 
 const QUALITY_OPTIONS: SelectOption[] = [
-  { value: '0.45', label: '45%' },
-  { value: '0.55', label: '55%' },
-  { value: '0.7', label: '70%' },
-  { value: '0.85', label: '85%' },
-  { value: '1', label: '100%' },
+  { value: "0.45", label: "45%" },
+  { value: "0.55", label: "55%" },
+  { value: "0.7", label: "70%" },
+  { value: "0.85", label: "85%" },
+  { value: "1", label: "100%" },
 ];
 
 const BITRATE_OPTIONS: SelectOption[] = [
-  { value: '1500000', label: '1.5 Mbps' },
-  { value: '3000000', label: '3 Mbps' },
-  { value: '6000000', label: '6 Mbps' },
-  { value: '10000000', label: '10 Mbps' },
-  { value: '16000000', label: '16 Mbps' },
+  { value: "1500000", label: "1.5 Mbps" },
+  { value: "3000000", label: "3 Mbps" },
+  { value: "6000000", label: "6 Mbps" },
+  { value: "10000000", label: "10 Mbps" },
+  { value: "16000000", label: "16 Mbps" },
 ];
 
 function withCurrentValue(
@@ -129,7 +129,7 @@ function withCurrentValue(
 export function StreamOptionsSection({
   client,
   defaultOpen = false,
-  streamMode = 'mjpeg',
+  streamMode = "mjpeg",
   httpCodec,
   streamModeAvailability = DEFAULT_AVAILABILITY,
   onStreamModeChange,
@@ -139,9 +139,9 @@ export function StreamOptionsSection({
   const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : client.screenRecording === 'unknown'
-      ? 'Unavailable until recording status is known.'
-      : 'Unavailable until recording finishes.';
+    : client.screenRecording === "unknown"
+      ? "Unavailable until recording status is known."
+      : "Unavailable until recording finishes.";
   const backend: DeviceStreamCapabilities =
     client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
   const availability: StreamModeAvailability = {
@@ -150,9 +150,9 @@ export function StreamOptionsSection({
     webrtc: streamModeAvailability.webrtc && backend.modeAvailability.webrtc,
   };
   const activeStreamMode = resolveDeviceStreamMode(streamMode, availability);
-  const primaryTransport: Exclude<StreamTransport, 'webrtc'> =
-    client.platform === 'android' ? 'websocket' : 'http';
-  const primaryTransportLabel = client.platform === 'android' ? 'WebSocket' : 'HTTP';
+  const primaryTransport: Exclude<StreamTransport, "webrtc"> =
+    client.platform === "android" ? "websocket" : "http";
+  const primaryTransportLabel = client.platform === "android" ? "WebSocket" : "HTTP";
   const httpCodecOptions = HTTP_CODEC_OPTIONS.filter((option) =>
     backend.httpCodecs.includes(option.value),
   );
@@ -164,7 +164,7 @@ export function StreamOptionsSection({
   const streamSource = client.streamSource;
   const streamSourceError =
     client.streamSourceError ??
-    (streamSource?.mode === 'grpc-screenshot' ? streamSource.hardwareEncoderError : undefined);
+    (streamSource?.mode === "grpc-screenshot" ? streamSource.hardwareEncoderError : undefined);
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
   );
@@ -172,32 +172,32 @@ export function StreamOptionsSection({
     streamSource?.availableInputSources.includes(option.value),
   );
   const settingsReady = client.streamSettings !== null;
-  const settingsDisabled = recordingControlsLocked || !settingsReady || client.streamSettingsPending;
-  const transport: StreamTransport =
-    activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
+  const settingsDisabled =
+    recordingControlsLocked || !settingsReady || client.streamSettingsPending;
+  const transport: StreamTransport = activeStreamMode === "webrtc" ? "webrtc" : primaryTransport;
   const setStreamStatsEnabled = client.setStreamStatsEnabled;
   const httpAvailable = availability.mjpeg || availability.h264;
   const transportOptions: ReadonlyArray<SelectOption<StreamTransport>> = [
     { value: primaryTransport, label: primaryTransportLabel, disabled: !httpAvailable },
-    { value: 'webrtc', label: 'WebRTC', disabled: !availability.webrtc },
+    { value: "webrtc", label: "WebRTC", disabled: !availability.webrtc },
   ];
 
   useEffect(() => {
-    setStreamStatsEnabled(open && transport === 'webrtc');
+    setStreamStatsEnabled(open && transport === "webrtc");
     return () => setStreamStatsEnabled(false);
   }, [open, setStreamStatsEnabled, transport]);
 
   function httpCodecAvailable(codec: DeviceHttpCodec): boolean {
-    if (codec === 'h264') return availability.h264;
-    if (codec === 'mjpeg') return availability.mjpeg;
+    if (codec === "h264") return availability.h264;
+    if (codec === "mjpeg") return availability.mjpeg;
     return httpAvailable;
   }
 
   const requestedHttpCodec: DeviceHttpCodec =
     httpCodec ??
-    (activeStreamMode === 'mjpeg' ? 'mjpeg' : activeStreamMode === 'h264' ? 'h264' : 'auto');
+    (activeStreamMode === "mjpeg" ? "mjpeg" : activeStreamMode === "h264" ? "h264" : "auto");
   const modeHttpCodec =
-    activeStreamMode === 'mjpeg' || activeStreamMode === 'h264' ? activeStreamMode : null;
+    activeStreamMode === "mjpeg" || activeStreamMode === "h264" ? activeStreamMode : null;
   const fallbackHttpCodec =
     (modeHttpCodec &&
     backend.httpCodecs.includes(modeHttpCodec) &&
@@ -211,23 +211,21 @@ export function StreamOptionsSection({
   const selectedWebRtcCodec = backend.webRtcCodecs.includes(client.webRtcCodec)
     ? client.webRtcCodec
     : (webRtcCodecOptions[0]?.value ?? client.webRtcCodec);
-  const h264Active =
-    transport === 'webrtc' ||
-    (availability.h264 && selectedHttpCodec !== 'mjpeg');
+  const h264Active = transport === "webrtc" || (availability.h264 && selectedHttpCodec !== "mjpeg");
 
   function httpMode(codec: DeviceHttpCodec): DeviceStreamMode {
-    if (codec === 'mjpeg') return 'mjpeg';
-    if (codec === 'h264') return availability.h264 ? 'h264' : 'mjpeg';
-    return availability.h264 ? 'h264' : 'mjpeg';
+    if (codec === "mjpeg") return "mjpeg";
+    if (codec === "h264") return availability.h264 ? "h264" : "mjpeg";
+    return availability.h264 ? "h264" : "mjpeg";
   }
 
   function changeTransport(nextTransport: StreamTransport) {
-    onStreamModeChange?.(nextTransport === 'webrtc' ? 'webrtc' : httpMode(selectedHttpCodec));
+    onStreamModeChange?.(nextTransport === "webrtc" ? "webrtc" : httpMode(selectedHttpCodec));
   }
 
   function changeHttpCodec(codec: DeviceHttpCodec) {
     onHttpCodecChange?.(codec);
-    if (transport !== 'webrtc') onStreamModeChange?.(httpMode(codec));
+    if (transport !== "webrtc") onStreamModeChange?.(httpMode(codec));
   }
 
   function patchSetting<Key extends keyof DeviceStreamEncoderSettings>(
@@ -240,8 +238,7 @@ export function StreamOptionsSection({
   const restricted =
     (backend.modeAvailability.h264 && !streamModeAvailability.h264) ||
     (backend.modeAvailability.webrtc && !streamModeAvailability.webrtc);
-  const hostWebRtcDisabled =
-    client.platform === 'android' && !backend.modeAvailability.webrtc;
+  const hostWebRtcDisabled = client.platform === "android" && !backend.modeAvailability.webrtc;
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
@@ -259,7 +256,7 @@ export function StreamOptionsSection({
           </SidebarRow>
         </>
       )}
-      {streamSource?.mode === 'grpc-screenshot' && (
+      {streamSource?.mode === "grpc-screenshot" && (
         <>
           {inputSourceOptions.length > 1 && (
             <SidebarRow label="Input">
@@ -322,7 +319,7 @@ export function StreamOptionsSection({
               disabled: !httpCodecAvailable(option.value),
             }))}
             value={selectedHttpCodec}
-            disabled={transport === 'webrtc' || !onHttpCodecChange}
+            disabled={transport === "webrtc" || !onHttpCodecChange}
             onChange={changeHttpCodec}
           />
         </SidebarRow>
@@ -333,20 +330,22 @@ export function StreamOptionsSection({
             ariaLabel="WebRTC codec"
             options={webRtcCodecOptions}
             value={selectedWebRtcCodec}
-            disabled={transport !== 'webrtc' || !availability.webrtc}
+            disabled={transport !== "webrtc" || !availability.webrtc}
             onChange={(codec: DeviceWebRtcCodec) => client.setWebRtcCodec(codec)}
           />
         </SidebarRow>
       )}
       {restricted && (
         <SectionNote>
-          {client.platform === 'android' || !backend.modeAvailability.mjpeg
-            ? 'WebRTC requires localhost or HTTPS.'
-            : 'H.264 and WebRTC require localhost or HTTPS. MJPEG remains available on insecure HTTP.'}
+          {client.platform === "android" || !backend.modeAvailability.mjpeg
+            ? "WebRTC requires localhost or HTTPS."
+            : "H.264 and WebRTC require localhost or HTTPS. MJPEG remains available on insecure HTTP."}
         </SectionNote>
       )}
       {hostWebRtcDisabled && (
-        <SectionNote>Start the standalone server with --transport webrtc to enable WebRTC.</SectionNote>
+        <SectionNote>
+          Start the standalone server with --transport webrtc to enable WebRTC.
+        </SectionNote>
       )}
       {settingsCapabilities && (
         <>
@@ -356,11 +355,11 @@ export function StreamOptionsSection({
                 ariaLabel="Max size"
                 value={String(settings.maxDimension)}
                 options={withCurrentValue(settings.maxDimension, MAX_DIMENSION_OPTIONS, (value) =>
-                  value === 0 ? 'Full' : `${value} px`,
+                  value === 0 ? "Full" : `${value} px`,
                 )}
                 disabled={settingsDisabled}
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting('maxDimension', Number(value))}
+                onChange={(value) => patchSetting("maxDimension", Number(value))}
               />
             </SidebarRow>
           )}
@@ -369,10 +368,14 @@ export function StreamOptionsSection({
               <Select
                 ariaLabel="MJPEG FPS"
                 value={String(settings.mjpegFps)}
-                options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
-                disabled={settingsDisabled || transport !== 'http'}
+                options={withCurrentValue(
+                  settings.mjpegFps,
+                  FPS_OPTIONS,
+                  (value) => `${value} FPS`,
+                )}
+                disabled={settingsDisabled || transport !== "http"}
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting('mjpegFps', Number(value))}
+                onChange={(value) => patchSetting("mjpegFps", Number(value))}
               />
             </SidebarRow>
           )}
@@ -386,9 +389,9 @@ export function StreamOptionsSection({
                   QUALITY_OPTIONS,
                   (value) => `${Math.round(value * 100)}%`,
                 )}
-                disabled={settingsDisabled || transport !== 'http'}
+                disabled={settingsDisabled || transport !== "http"}
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting('mjpegQuality', Number(value))}
+                onChange={(value) => patchSetting("mjpegQuality", Number(value))}
               />
             </SidebarRow>
           )}
@@ -400,7 +403,7 @@ export function StreamOptionsSection({
                 options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
                 disabled={settingsDisabled || !h264Active}
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting('h264Fps', Number(value))}
+                onChange={(value) => patchSetting("h264Fps", Number(value))}
               />
             </SidebarRow>
           )}
@@ -416,13 +419,13 @@ export function StreamOptionsSection({
                 )}
                 disabled={settingsDisabled || !h264Active}
                 disabledReason={recordingDisabledReason}
-                onChange={(value) => patchSetting('h264Bitrate', Number(value))}
+                onChange={(value) => patchSetting("h264Bitrate", Number(value))}
               />
             </SidebarRow>
           )}
         </>
       )}
-      {transport === 'webrtc' && (
+      {transport === "webrtc" && (
         <StreamStatistics stats={client.streamStats} platform={client.platform} />
       )}
     </CollapsibleSection>

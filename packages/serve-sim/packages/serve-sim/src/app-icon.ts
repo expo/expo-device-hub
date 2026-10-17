@@ -43,10 +43,16 @@ export function appContainerFromResult(result: HostActionResult): string | null 
 const defaultDeps: AppIconDeps = {
   appContainer: async (udid, bundleId) =>
     appContainerFromResult(
-      await runInvocation({ file: "xcrun", args: ["simctl", "get_app_container", udid, bundleId, "app"] }),
+      await runInvocation({
+        file: "xcrun",
+        args: ["simctl", "get_app_container", udid, bundleId, "app"],
+      }),
     ),
   readInfoPlist: async (path) => {
-    const result = await runInvocation({ file: "plutil", args: ["-convert", "json", "-o", "-", path] });
+    const result = await runInvocation({
+      file: "plutil",
+      args: ["-convert", "json", "-o", "-", path],
+    });
     try {
       return result.exitCode === 0 ? JSON.parse(result.stdout) : null;
     } catch {
@@ -72,13 +78,21 @@ const defaultDeps: AppIconDeps = {
  */
 export function appIconCandidates(info: unknown): string[] {
   const plist = (info ?? {}) as Record<string, any>;
-  const primary = plist.CFBundleIcons?.CFBundlePrimaryIcon ?? plist["CFBundleIcons~ipad"]?.CFBundlePrimaryIcon;
+  const primary =
+    plist.CFBundleIcons?.CFBundlePrimaryIcon ?? plist["CFBundleIcons~ipad"]?.CFBundlePrimaryIcon;
   const iconFiles: unknown = primary?.CFBundleIconFiles ?? plist.CFBundleIconFiles;
-  const name = Array.isArray(iconFiles) && iconFiles.length > 0
-    ? iconFiles[iconFiles.length - 1]
-    : plist.CFBundleIconFile;
+  const name =
+    Array.isArray(iconFiles) && iconFiles.length > 0
+      ? iconFiles[iconFiles.length - 1]
+      : plist.CFBundleIconFile;
   if (typeof name !== "string" || !ICON_NAME.test(name)) return [];
-  return [`${name}@3x.png`, `${name}@2x.png`, `${name}.png`, `${name}60x60@3x.png`, `${name}60x60@2x.png`];
+  return [
+    `${name}@3x.png`,
+    `${name}@2x.png`,
+    `${name}.png`,
+    `${name}60x60@3x.png`,
+    `${name}60x60@2x.png`,
+  ];
 }
 
 /**
@@ -93,7 +107,9 @@ export async function readAppIcon(
   const deps = { ...defaultDeps, ...overrides };
   const appPath = await deps.appContainer(udid, bundleId);
   if (!appPath) return undefined;
-  for (const candidate of appIconCandidates(await deps.readInfoPlist(join(appPath, "Info.plist")))) {
+  for (const candidate of appIconCandidates(
+    await deps.readInfoPlist(join(appPath, "Info.plist")),
+  )) {
     const bytes = await deps.readIconFile(appPath, candidate);
     if (bytes && bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
       return { mimeType: "image/png", data: bytes.toString("base64") };
@@ -102,8 +118,17 @@ export async function readAppIcon(
   return null;
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
-  res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers });
+function sendJson(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store",
+    ...headers,
+  });
   res.end(JSON.stringify(body));
 }
 

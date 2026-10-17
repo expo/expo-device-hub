@@ -17,7 +17,10 @@ import type { SimulatorOrientation } from "../types.js";
 import { getDeviceType, type DeviceType } from "./device-frames.js";
 import { createRotationCursor } from "./rotation-cursor.js";
 
-type RotateFn = (orientation: SimulatorOrientation, direction?: "left" | "right") => void | Promise<void>;
+type RotateFn = (
+  orientation: SimulatorOrientation,
+  direction?: "left" | "right",
+) => void | Promise<void>;
 
 interface ToolbarContextValue {
   onRotate?: RotateFn;
@@ -336,14 +339,13 @@ const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function
         ...buttonStyle,
         padding: coarsePointer ? 9 : 6,
         color: effectiveDisabled ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.8)",
-        background:
-          effectiveDisabled
-            ? "transparent"
-            : pressed
-              ? "rgba(255,255,255,0.14)"
-              : hover
-                ? "rgba(255,255,255,0.1)"
-                : "transparent",
+        background: effectiveDisabled
+          ? "transparent"
+          : pressed
+            ? "rgba(255,255,255,0.14)"
+            : hover
+              ? "rgba(255,255,255,0.1)"
+              : "transparent",
         opacity: pressed && !effectiveDisabled ? 0.6 : 1,
         cursor: effectiveDisabled ? "not-allowed" : "pointer",
         ...style,
@@ -406,8 +408,6 @@ export function pressHomeAsync(
   return runHostAction("button", { value: "home" });
 }
 
-
-
 // -- Built-in action buttons -------------------------------------------
 
 const HomeIcon = (
@@ -438,7 +438,17 @@ const ScreenshotIcon = (
 );
 
 const RotateIcon = (
-  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+  <svg
+    width="21"
+    height="21"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    xmlns="http://www.w3.org/2000/svg"
+  >
     <path d="M12 5H6a2 2 0 0 0-2 2v3" />
     <path d="m9 8 3-3-3-3" />
     <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
@@ -466,31 +476,30 @@ const HomeButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function Ho
   );
 });
 
-const ScreenshotButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ScreenshotButton(
-  { onClick, ...rest },
-  ref,
-) {
-  const ctx = useToolbar("ScreenshotButton");
-  return (
-    <ToolbarButton
-      ref={ref}
-      aria-label="Screenshot"
-      onClick={(e) => {
-        onClick?.(e);
-        if (e.defaultPrevented) return;
-        if (ctx.deviceUdid) {
-          void runHostAction("screenshot.capture", {
-            udid: ctx.deviceUdid,
-            fileName: `serve-sim-screenshot-${Math.floor(Date.now() / 1000)}.png`,
-          });
-        }
-      }}
-      {...rest}
-    >
-      {ScreenshotIcon}
-    </ToolbarButton>
-  );
-});
+const ScreenshotButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(
+  function ScreenshotButton({ onClick, ...rest }, ref) {
+    const ctx = useToolbar("ScreenshotButton");
+    return (
+      <ToolbarButton
+        ref={ref}
+        aria-label="Screenshot"
+        onClick={(e) => {
+          onClick?.(e);
+          if (e.defaultPrevented) return;
+          if (ctx.deviceUdid) {
+            void runHostAction("screenshot.capture", {
+              udid: ctx.deviceUdid,
+              fileName: `serve-sim-screenshot-${Math.floor(Date.now() / 1000)}.png`,
+            });
+          }
+        }}
+        {...rest}
+      >
+        {ScreenshotIcon}
+      </ToolbarButton>
+    );
+  },
+);
 
 const ClipboardIcon = (
   <svg
@@ -508,21 +517,20 @@ const ClipboardIcon = (
   </svg>
 );
 
-const ClipboardButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ClipboardButton(
-  props,
-  ref,
-) {
-  return (
-    <ToolbarButton ref={ref} aria-label="Clipboard actions" {...props}>
-      {ClipboardIcon}
-    </ToolbarButton>
-  );
-});
+const ClipboardButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(
+  function ClipboardButton(props, ref) {
+    return (
+      <ToolbarButton ref={ref} aria-label="Clipboard actions" {...props}>
+        {ClipboardIcon}
+      </ToolbarButton>
+    );
+  },
+);
 
-const RotateButton = forwardRef<HTMLButtonElement, ToolbarButtonProps & { direction?: "left" | "right" }>(function RotateButton(
-  { onClick, forceDisabled, direction = "left", ...rest },
-  ref,
-) {
+const RotateButton = forwardRef<
+  HTMLButtonElement,
+  ToolbarButtonProps & { direction?: "left" | "right" }
+>(function RotateButton({ onClick, forceDisabled, direction = "left", ...rest }, ref) {
   const ctx = useToolbar("RotateButton");
   const cantRotate = ctx.deviceType === "watch" || ctx.deviceType === "vision";
   const rotationCursor = useRef(createRotationCursor(ctx.orientation ?? "portrait"));

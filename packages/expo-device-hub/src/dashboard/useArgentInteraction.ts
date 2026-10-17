@@ -1,25 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-import { type AgentInteraction } from '@expo/hub-client';
+import { type AgentInteraction } from "@expo/hub-client";
 
 import {
   ARGENT_INTERACTION_MESSAGE_TYPE,
   type ArgentInteractionMessage,
-} from '../argent-interaction-protocol';
+} from "../argent-interaction-protocol";
 import {
   activeAgentInteractions,
   type AgentInteractions,
   nextAgentInteractionExpiry,
   normalizeAgentInteractionTimestamp,
-} from './agentActivity';
-import { basePath } from './basePath';
+} from "./agentActivity";
+import { basePath } from "./basePath";
 
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
 
 export function argentInteractionsWebSocketUrl(locationHref = window.location.href): string {
   const url = new URL(`${basePath()}/api/argent-interactions/ws`, locationHref);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
 }
 
@@ -96,19 +96,19 @@ export function useArgentInteractions(): AgentInteractions {
 
 export function useArgentInteraction(deviceId?: string): AgentInteraction | null {
   const active = useArgentInteractions();
-  return deviceId ? active[deviceId] ?? null : null;
+  return deviceId ? (active[deviceId] ?? null) : null;
 }
 
 export function parseArgentInteractionMessage(data: unknown): ArgentInteractionMessage | null {
-  if (typeof data !== 'string') return null;
+  if (typeof data !== "string") return null;
   try {
     const message = JSON.parse(data) as Partial<ArgentInteractionMessage>;
     const interaction = message.interaction;
     if (
       message.type !== ARGENT_INTERACTION_MESSAGE_TYPE ||
-      typeof interaction?.id !== 'string' ||
-      typeof interaction.deviceId !== 'string' ||
-      typeof interaction.timestamp !== 'string' ||
+      typeof interaction?.id !== "string" ||
+      typeof interaction.deviceId !== "string" ||
+      typeof interaction.timestamp !== "string" ||
       !Array.isArray(interaction.segments) ||
       !interaction.segments.every(isInteractionSegment)
     ) {
@@ -132,15 +132,15 @@ function isInteractionSegment(value: unknown): boolean {
       frame.points.length >= 1 &&
       frame.points.length <= 2 &&
       frame.points.every(
-        (point) => isObject(point) && isFiniteNumber(point.x) && isFiniteNumber(point.y)
-      )
+        (point) => isObject(point) && isFiniteNumber(point.x) && isFiniteNumber(point.y),
+      ),
   );
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value);
 }

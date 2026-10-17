@@ -25,7 +25,9 @@ export function qualityLimitation(
   reason: string | null | undefined,
 ): { short: string; long: string } | null {
   if (!reason || reason === "none") return null;
-  return QUALITY_LIMITATION[reason] ?? { short: reason, long: "Encoder holding back (reason unknown)" };
+  return (
+    QUALITY_LIMITATION[reason] ?? { short: reason, long: "Encoder holding back (reason unknown)" }
+  );
 }
 
 /// Encoders round to even dimensions, so a ceiling can be missed by one step.
@@ -59,8 +61,6 @@ export function describeDownscale(
   const reason = sender.qualityLimitationReason;
   // Only at the level's ceiling; below it something else owns the answer.
   const atCodecCeiling = capped > 0 && capped < target && longEdge >= capped - EVEN_PX;
-  const cause = atCodecCeiling
-    ? "codec level"
-    : qualityLimitation(reason)?.short ?? null;
+  const cause = atCodecCeiling ? "codec level" : (qualityLimitation(reason)?.short ?? null);
   return `${longEdge} of ${target}${cause ? ` (${cause})` : ""}`;
 }

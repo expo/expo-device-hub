@@ -43,9 +43,7 @@ export function homeIndicatorEdge(y: number): number | undefined {
   return y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
-export function isLandscapeOrientation(
-  orientation?: SimulatorOrientation | null,
-): boolean {
+export function isLandscapeOrientation(orientation?: SimulatorOrientation | null): boolean {
   return orientation === "landscape_left" || orientation === "landscape_right";
 }
 
@@ -57,9 +55,7 @@ export function isLandscapeConfig(
 
 export function displayStreamConfig<
   T extends Pick<StreamConfig, "width" | "height" | "orientation">,
->(
-  config?: T | null,
-): T | null {
+>(config?: T | null): T | null {
   if (!config || config.width <= 0 || config.height <= 0) return null;
   const landscape = isLandscapeOrientation(config.orientation) || config.width > config.height;
   const width = landscape
@@ -86,8 +82,7 @@ export function streamDisplayGeometry(
   const orientationRotation = rotationDegreesForOrientation(config?.orientation);
   const rotatesSideways = Math.abs(orientationRotation) === 90;
   const rawIsLandscape = !!config && config.width > config.height;
-  const needsCssRotation =
-    orientationRotation === 180 || (rotatesSideways && !rawIsLandscape);
+  const needsCssRotation = orientationRotation === 180 || (rotatesSideways && !rawIsLandscape);
 
   return {
     displayConfig,
@@ -97,9 +92,7 @@ export function streamDisplayGeometry(
   };
 }
 
-export function rotationDegreesForOrientation(
-  orientation?: SimulatorOrientation | null,
-): number {
+export function rotationDegreesForOrientation(orientation?: SimulatorOrientation | null): number {
   switch (orientation) {
     case "landscape_left":
       return 90;

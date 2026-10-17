@@ -26,10 +26,7 @@ describe("AppDetectionTool app icon fallback", () => {
 
   test("uses official icon data even for Apple system apps", () => {
     const html = renderToStaticMarkup(
-      <AppIcon
-        bundleId="com.apple.Preferences"
-        iconDataUrl="data:image/png;base64,settings"
-      />,
+      <AppIcon bundleId="com.apple.Preferences" iconDataUrl="data:image/png;base64,settings" />,
     );
 
     expect(html).toContain("<img");
@@ -42,10 +39,7 @@ describe("AppDetectionTool app icon fallback", () => {
 describe("AppSummaryLabel", () => {
   test("renders app identity without a summary-level loading spinner", () => {
     const html = renderToStaticMarkup(
-      <AppSummaryLabel
-        bundleId="com.apple.springboard"
-        displayName="SpringBoard"
-      />,
+      <AppSummaryLabel bundleId="com.apple.springboard" displayName="SpringBoard" />,
     );
 
     expect(html).toContain("text-left");

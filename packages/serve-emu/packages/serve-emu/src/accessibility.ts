@@ -92,7 +92,8 @@ export function parseAccessibilitySelector(value: unknown): AccessibilitySelecto
 function matchesSelector(node: AccessibilityNode, selector: AccessibilitySelector): boolean {
   if (selector.id !== undefined && node.id !== selector.id) return false;
   if (selector.text !== undefined && node.text !== selector.text) return false;
-  if (selector.textContains !== undefined && !node.text.includes(selector.textContains)) return false;
+  if (selector.textContains !== undefined && !node.text.includes(selector.textContains))
+    return false;
   if (
     selector.contentDescription !== undefined &&
     node.contentDescription !== selector.contentDescription
@@ -138,7 +139,7 @@ export function findAccessibilityNode(
 
 function decodeXml(value: string): string {
   return value
-    .replace(/&quot;/g, "\"")
+    .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")

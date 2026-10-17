@@ -1,11 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/middleware.ts";
-import {
-  SCRCPY_DEFAULTS,
-  type ScrcpySession,
-  type StartOpts,
-} from "../src/scrcpy.ts";
+import { SCRCPY_DEFAULTS, type ScrcpySession, type StartOpts } from "../src/scrcpy.ts";
 import type { StreamSocket } from "../src/stream-socket.ts";
 
 type CapturedStartOpts = StartOpts & {
@@ -114,9 +110,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        new Request("http://localhost/api/stream-settings"),
-      );
+      const response = await app.handleRequest(new Request("http://localhost/api/stream-settings"));
 
       expect(await response.json()).toEqual({
         ok: true,
@@ -152,9 +146,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        new Request("http://localhost/api/stream-settings"),
-      );
+      const response = await app.handleRequest(new Request("http://localhost/api/stream-settings"));
 
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({
@@ -194,9 +186,7 @@ describe("stream settings HTTP API", () => {
         startScrcpy: async (options: StartOpts) => {
           starts.push(options);
           return fakeSession(
-            options.maxSize === 720
-              ? { width: 405, height: 720 }
-              : { width: 1080, height: 1920 },
+            options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
           );
         },
       },
@@ -253,9 +243,7 @@ describe("stream settings HTTP API", () => {
       {
         startScrcpy: async (options: StartOpts) =>
           fakeSession(
-            options.maxSize === 720
-              ? { width: 405, height: 720 }
-              : { width: 1080, height: 1920 },
+            options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
             options.maxSize === 720
               ? (data) => replacementControlWrites.push(Buffer.from(data))
               : undefined,
@@ -266,9 +254,7 @@ describe("stream settings HTTP API", () => {
     app.attachWebSocket(socket, { frameMeta: false });
 
     try {
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
       expect(response.status).toBe(200);
       expect(socket.closes).toEqual([]);
@@ -306,9 +292,7 @@ describe("stream settings HTTP API", () => {
         { resolution: 720 },
         { "": 1 },
       ]) {
-        const response = await app.handleRequest(
-          streamSettingsPatch(patch),
-        );
+        const response = await app.handleRequest(streamSettingsPatch(patch));
 
         expect(response.status).toBe(400);
         expect(await response.json()).toMatchObject({
@@ -317,9 +301,7 @@ describe("stream settings HTTP API", () => {
         });
       }
 
-      const settings = await app.handleRequest(
-        new Request("http://localhost/api/stream-settings"),
-      );
+      const settings = await app.handleRequest(new Request("http://localhost/api/stream-settings"));
       expect(await settings.json()).toEqual({
         ok: true,
         maxDimension: 1280,
@@ -339,9 +321,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }, null),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }, null));
 
       expect(response.status).toBe(415);
       expect(await response.json()).toEqual({
@@ -367,9 +347,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
       expect(response.status).toBe(500);
       expect(await response.json()).toMatchObject({
@@ -377,9 +355,7 @@ describe("stream settings HTTP API", () => {
         error: "stream_settings_failed",
       });
 
-      const settings = await app.handleRequest(
-        new Request("http://localhost/api/stream-settings"),
-      );
+      const settings = await app.handleRequest(new Request("http://localhost/api/stream-settings"));
       expect(await settings.json()).toEqual({
         ok: true,
         maxDimension: 960,
@@ -416,9 +392,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
       expect(response.status).toBe(500);
       expect(await response.json()).toMatchObject({
@@ -439,9 +413,7 @@ describe("stream settings HTTP API", () => {
         startScrcpy: async (options: StartOpts) => {
           starts++;
           const capture = fakeSession(
-            options.maxSize === 720
-              ? { width: 405, height: 720 }
-              : { width: 1080, height: 1920 },
+            options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
           );
           if (starts === 1) {
             capture.close = async () => {
@@ -455,9 +427,7 @@ describe("stream settings HTTP API", () => {
     );
 
     try {
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
       expect(response.status).toBe(200);
       const health = await app.handleRequest(new Request("http://localhost/health"));
@@ -483,22 +453,16 @@ describe("stream settings HTTP API", () => {
             return firstReplacement.promise;
           }
           return fakeSession(
-            options.maxSize === 960
-              ? { width: 540, height: 960 }
-              : { width: 405, height: 720 },
+            options.maxSize === 960 ? { width: 540, height: 960 } : { width: 405, height: 720 },
           );
         },
       },
     );
 
     try {
-      const firstPatch = app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const firstPatch = app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
       await firstReplacementStarted.promise;
-      const secondPatch = app.handleRequest(
-        streamSettingsPatch({ maxDimension: 960 }),
-      );
+      const secondPatch = app.handleRequest(streamSettingsPatch({ maxDimension: 960 }));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(starts).toBe(2);
@@ -534,10 +498,7 @@ describe("stream settings HTTP API", () => {
       },
     );
     const replayGate = deferred<void>();
-    app.deviceState.recorder.recordGesture(
-      { type: "tap", x: 0.5, y: 0.5 },
-      "test",
-    );
+    app.deviceState.recorder.recordGesture({ type: "tap", x: 0.5, y: 0.5 }, "test");
     const replay = app.deviceState.recorder.startReplay({
       dispatchGesture: () => replayGate.promise,
       setLocation: () => {},
@@ -547,9 +508,7 @@ describe("stream settings HTTP API", () => {
       await Promise.resolve();
       expect(app.deviceState.recorder.isReplaying).toBe(true);
 
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
       expect(response.status).toBe(409);
       expect(await response.json()).toEqual({
@@ -580,14 +539,9 @@ describe("stream settings HTTP API", () => {
         },
       },
     );
-    app.deviceState.recorder.recordGesture(
-      { type: "tap", x: 0.5, y: 0.5 },
-      "test",
-    );
+    app.deviceState.recorder.recordGesture({ type: "tap", x: 0.5, y: 0.5 }, "test");
 
-    const patch = app.handleRequest(
-      streamSettingsPatch({ maxDimension: 720 }),
-    );
+    const patch = app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
     await replacementStarted.promise;
 
     try {
@@ -643,9 +597,7 @@ describe("stream settings HTTP API", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const writesBeforeRestart = oldControlWrites;
 
-    const patch = app.handleRequest(
-      streamSettingsPatch({ maxDimension: 720 }),
-    );
+    const patch = app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
     await replacementStarted.promise;
     socket.receive(JSON.stringify({ type: "tap", x: 0.5, y: 0.5 }));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -668,9 +620,7 @@ describe("stream settings HTTP API", () => {
       {
         startScrcpy: async (options: StartOpts) =>
           fakeSession(
-            options.maxSize === 720
-              ? { width: 405, height: 720 }
-              : { width: 1080, height: 1920 },
+            options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
           ),
       },
     );
@@ -679,9 +629,7 @@ describe("stream settings HTTP API", () => {
 
     try {
       socket.receive(JSON.stringify({ type: "tap", x: 0.5, y: 0.5 }));
-      const response = await app.handleRequest(
-        streamSettingsPatch({ maxDimension: 720 }),
-      );
+      const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
       expect(response.status).toBe(200);
       await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -716,9 +664,7 @@ describe("stream settings HTTP API", () => {
       },
     );
 
-    const patch = app.handleRequest(
-      streamSettingsPatch({ maxDimension: 720 }),
-    );
+    const patch = app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
     await replacementStarted.promise;
     let stopSettled = false;
     const stopping = app.stop().then(() => {
@@ -752,9 +698,7 @@ describe("stream settings HTTP API", () => {
     );
     await app.stop();
 
-    const response = await app.handleRequest(
-      streamSettingsPatch({ maxDimension: 720 }),
-    );
+    const response = await app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
@@ -882,9 +826,7 @@ describe("stream settings HTTP API", () => {
       },
     );
 
-    const patch = app.handleRequest(
-      streamSettingsPatch({ maxDimension: 720 }),
-    );
+    const patch = app.handleRequest(streamSettingsPatch({ maxDimension: 720 }));
     await rollbackStarted.promise;
     app.stop();
     let closed = 0;

@@ -127,7 +127,11 @@ describe("createPollController", () => {
     pending.resolve("stale");
     await flushPromises();
     expect(results).toEqual([]);
-    expect(controller.snapshot()).toMatchObject({ active: false, running: false, scheduled: false });
+    expect(controller.snapshot()).toMatchObject({
+      active: false,
+      running: false,
+      scheduled: false,
+    });
   });
 
   test("device-session generation changes abort and ignore the old deferred response", async () => {
@@ -312,10 +316,14 @@ describe("device session store", () => {
     expect(store.applyHealth({ serial: "old", sessionGeneration: 1 }, staleRequest)).toBe(false);
     expect(store.getSnapshot()).toMatchObject({ serial: "new", transitioning: true });
     const duringTransition = store.beginHealthRequest();
-    expect(store.applyHealth({ serial: "old", sessionGeneration: 1 }, duringTransition)).toBe(false);
+    expect(store.applyHealth({ serial: "old", sessionGeneration: 1 }, duringTransition)).toBe(
+      false,
+    );
 
     store.endTransition();
-    expect(store.applyHealth({ serial: "old", sessionGeneration: 1 }, duringTransition)).toBe(false);
+    expect(store.applyHealth({ serial: "old", sessionGeneration: 1 }, duringTransition)).toBe(
+      false,
+    );
     const currentRequest = store.beginHealthRequest();
     expect(store.applyHealth({ serial: "new", sessionGeneration: 2 }, currentRequest)).toBe(true);
     expect(store.getSnapshot()).toMatchObject({

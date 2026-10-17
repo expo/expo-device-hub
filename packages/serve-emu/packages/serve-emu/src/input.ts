@@ -180,27 +180,42 @@ function touchPacket(
 ): Buffer {
   const buf = Buffer.allocUnsafe(32);
   let o = 0;
-  buf.writeUInt8(TYPE_INJECT_TOUCH, o); o += 1;
-  buf.writeUInt8(action, o); o += 1;
-  buf.writeBigUInt64BE(pointerId, o); o += 8;
-  buf.writeInt32BE(Math.round(x), o); o += 4;
-  buf.writeInt32BE(Math.round(y), o); o += 4;
-  buf.writeUInt16BE(screen.width, o); o += 2;
-  buf.writeUInt16BE(screen.height, o); o += 2;
-  buf.writeUInt16BE(action === ACTION_UP ? 0 : PRESSURE_FULL, o); o += 2;
-  buf.writeUInt32BE(BUTTON_PRIMARY, o); o += 4;
-  buf.writeUInt32BE(action === ACTION_UP ? 0 : BUTTON_PRIMARY, o); o += 4;
+  buf.writeUInt8(TYPE_INJECT_TOUCH, o);
+  o += 1;
+  buf.writeUInt8(action, o);
+  o += 1;
+  buf.writeBigUInt64BE(pointerId, o);
+  o += 8;
+  buf.writeInt32BE(Math.round(x), o);
+  o += 4;
+  buf.writeInt32BE(Math.round(y), o);
+  o += 4;
+  buf.writeUInt16BE(screen.width, o);
+  o += 2;
+  buf.writeUInt16BE(screen.height, o);
+  o += 2;
+  buf.writeUInt16BE(action === ACTION_UP ? 0 : PRESSURE_FULL, o);
+  o += 2;
+  buf.writeUInt32BE(BUTTON_PRIMARY, o);
+  o += 4;
+  buf.writeUInt32BE(action === ACTION_UP ? 0 : BUTTON_PRIMARY, o);
+  o += 4;
   return buf;
 }
 
 function keyPacket(action: number, keycode: number, metaState = 0): Buffer {
   const buf = Buffer.allocUnsafe(14);
   let o = 0;
-  buf.writeUInt8(TYPE_INJECT_KEYCODE, o); o += 1;
-  buf.writeUInt8(action, o); o += 1;
-  buf.writeInt32BE(keycode, o); o += 4;
-  buf.writeInt32BE(0, o); o += 4; // repeat
-  buf.writeInt32BE(metaState, o); o += 4;
+  buf.writeUInt8(TYPE_INJECT_KEYCODE, o);
+  o += 1;
+  buf.writeUInt8(action, o);
+  o += 1;
+  buf.writeInt32BE(keycode, o);
+  o += 4;
+  buf.writeInt32BE(0, o);
+  o += 4; // repeat
+  buf.writeInt32BE(metaState, o);
+  o += 4;
   return buf;
 }
 
@@ -250,10 +265,7 @@ function validateScreen(screen: Screen): Screen {
   return { width: screen.width, height: screen.height };
 }
 
-export function compileGesture(
-  gesture: Gesture,
-  screenValue: Screen,
-): CompiledGesture {
+export function compileGesture(gesture: Gesture, screenValue: Screen): CompiledGesture {
   const normalized = normalizeGesture(gesture);
   const screen = validateScreen(screenValue);
   const px = (n: number) => n * screen.width;
@@ -265,52 +277,22 @@ export function compileGesture(
 
   switch (normalized.type) {
     case "tap": {
-      append(
-        touchPacket(
-          ACTION_DOWN,
-          px(normalized.x),
-          py(normalized.y),
-          screen,
-        ),
-      );
-      append(
-        touchPacket(
-          ACTION_UP,
-          px(normalized.x),
-          py(normalized.y),
-          screen,
-        ),
-        20,
-      );
+      append(touchPacket(ACTION_DOWN, px(normalized.x), py(normalized.y), screen));
+      append(touchPacket(ACTION_UP, px(normalized.x), py(normalized.y), screen), 20);
       break;
     }
     case "swipe": {
       const dur = Math.max(80, normalized.durationMs ?? 250);
       const stepCount = Math.max(8, Math.round(dur / 16));
       const stepDelayMs = dur / stepCount;
-      append(
-        touchPacket(
-          ACTION_DOWN,
-          px(normalized.x1),
-          py(normalized.y1),
-          screen,
-        ),
-      );
+      append(touchPacket(ACTION_DOWN, px(normalized.x1), py(normalized.y1), screen));
       for (let i = 1; i < stepCount; i++) {
         const t = i / stepCount;
         const x = px(normalized.x1 + (normalized.x2 - normalized.x1) * t);
         const y = py(normalized.y1 + (normalized.y2 - normalized.y1) * t);
         append(touchPacket(ACTION_MOVE, x, y, screen), stepDelayMs);
       }
-      append(
-        touchPacket(
-          ACTION_UP,
-          px(normalized.x2),
-          py(normalized.y2),
-          screen,
-        ),
-        stepDelayMs,
-      );
+      append(touchPacket(ACTION_UP, px(normalized.x2), py(normalized.y2), screen), stepDelayMs);
       break;
     }
     case "touch": {

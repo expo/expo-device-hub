@@ -4,7 +4,12 @@ import { CollapsibleSection } from "./collapsible-section";
 import { TriangleAlert } from "lucide-react";
 import { useSenderStats } from "../hooks/use-sender-stats";
 import { useStreamStats, type StatsSubscriber } from "../hooks/use-stream-stats";
-import { StreamStatsDownload, StreamStatsSection, describeFaults, summariseStream } from "./stream-stats-tool";
+import {
+  StreamStatsDownload,
+  StreamStatsSection,
+  describeFaults,
+  summariseStream,
+} from "./stream-stats-tool";
 import { codecDrifted } from "./stream-stats-labels";
 import { SettingRow, SettingSelect } from "./simulator-settings-tool";
 import { maxDimensionOptions } from "../utils/stream-max-dimension-options";
@@ -106,9 +111,7 @@ export function StreamSettingsTool({
   /// is when the panel gets opened.
   const negotiatedCodec = senderView.session?.codec;
   const negotiatedCodecLabel =
-    settings.transport === "webrtc" && negotiatedCodec
-      ? `webrtc/${negotiatedCodec}`
-      : activeCodec;
+    settings.transport === "webrtc" && negotiatedCodec ? `webrtc/${negotiatedCodec}` : activeCodec;
   const faults = stats === null || stale ? [] : describeFaults(stats, sender);
   const warning = stale ? "Stream samples have stopped" : faults.join("; ");
   const summary = stats === null ? null : summariseStream(stats);
@@ -257,8 +260,8 @@ export function StreamSettingsTool({
             value={String(settings.h264Fps)}
             options={streamFpsOptions(settings.h264Fps, 120)}
             disabled={
-              encoderSettingsDisabled
-              || (httpActive && (!avccSupported || settings.httpCodec === "mjpeg"))
+              encoderSettingsDisabled ||
+              (httpActive && (!avccSupported || settings.httpCodec === "mjpeg"))
             }
             onChange={(v) => onEncoderSettingsChange({ h264Fps: Number(v) })}
           />
@@ -273,8 +276,8 @@ export function StreamSettingsTool({
               (value) => `${value / 1_000_000} Mbps`,
             )}
             disabled={
-              encoderSettingsDisabled
-              || (httpActive && (!avccSupported || settings.httpCodec === "mjpeg"))
+              encoderSettingsDisabled ||
+              (httpActive && (!avccSupported || settings.httpCodec === "mjpeg"))
             }
             onChange={(v) => onEncoderSettingsChange({ h264Bitrate: Number(v) })}
           />

@@ -12,7 +12,9 @@ export function useDeviceLogs(path: string, open: boolean) {
     let since = 0;
     return startLogsPoll(path, {
       getSince: () => since,
-      setSince: (seq) => { since = seq; },
+      setSince: (seq) => {
+        since = seq;
+      },
       onBatch: (batch) => dispatch({ type: "append", batch }),
       onError: setErrored,
     });

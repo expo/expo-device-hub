@@ -17,10 +17,7 @@ export class SessionScopedCache<T> {
 
   get(cacheMs: number): Promise<T> {
     const generation = this.currentGeneration();
-    if (
-      this.#cached?.generation === generation &&
-      this.#cached.expiresAt > this.now()
-    ) {
+    if (this.#cached?.generation === generation && this.#cached.expiresAt > this.now()) {
       return Promise.resolve(this.#cached.value);
     }
     if (this.#inFlight?.generation === generation) {
@@ -35,10 +32,7 @@ export class SessionScopedCache<T> {
     }
     promise = promise
       .then((value) => {
-        if (
-          this.currentGeneration() === generation &&
-          this.#inFlight?.promise === promise
-        ) {
+        if (this.currentGeneration() === generation && this.#inFlight?.promise === promise) {
           this.#cached = {
             generation,
             expiresAt: this.now() + cacheMs,

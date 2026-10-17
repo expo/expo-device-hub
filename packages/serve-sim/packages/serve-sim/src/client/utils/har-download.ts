@@ -58,7 +58,8 @@ export async function downloadHar(
       throw error;
     }
     const response = await env.fetch(url, { headers });
-    if (!response.ok || !response.body) throw new Error(`HAR download failed (HTTP ${response.status}).`);
+    if (!response.ok || !response.body)
+      throw new Error(`HAR download failed (HTTP ${response.status}).`);
     await response.body.pipeTo(await target.createWritable());
     return;
   }

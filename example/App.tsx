@@ -1,9 +1,9 @@
-import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StatusBar } from "expo-status-bar";
+import { useState } from "react";
+import { StyleSheet, Text, TextInput, View } from "react-native";
 
 export default function App() {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
 
   return (
     <View style={styles.container}>
@@ -19,7 +19,7 @@ export default function App() {
         style={styles.input}
       />
       <Text testID="keyboard-test-value" style={styles.value}>
-        {text || 'Waiting for physical keyboard input…'}
+        {text || "Waiting for physical keyboard input…"}
       </Text>
       <StatusBar style="auto" />
     </View>
@@ -29,29 +29,29 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
     padding: 24,
     gap: 16,
   },
   title: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   input: {
-    width: '100%',
+    width: "100%",
     maxWidth: 360,
     minHeight: 48,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#a1a1aa',
+    borderColor: "#a1a1aa",
     borderRadius: 10,
     fontSize: 16,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   value: {
     minHeight: 24,
-    color: '#3f3f46',
+    color: "#3f3f46",
   },
 });

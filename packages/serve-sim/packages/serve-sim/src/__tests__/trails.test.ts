@@ -31,10 +31,15 @@ describe("projectLatLng / unprojectMeters", () => {
 
 describe("prepareTrail", () => {
   test("rejects degenerate trails", () => {
-    expect(() => prepareTrail({
-      id: "x", name: "x", description: "", mode: "walk",
-      waypoints: [{ lat: 0, lng: 0 }],
-    })).toThrow();
+    expect(() =>
+      prepareTrail({
+        id: "x",
+        name: "x",
+        description: "",
+        mode: "walk",
+        waypoints: [{ lat: 0, lng: 0 }],
+      }),
+    ).toThrow();
   });
 
   test("produces densified points with monotonic arc length", () => {
@@ -73,7 +78,10 @@ describe("pointAtDistance", () => {
   test("returns endpoints for clamped values on non-loop trail", () => {
     // Synthetic non-loop trail — all defaults loop now.
     const prepared = prepareTrail({
-      id: "synth", name: "synth", description: "", mode: "walk",
+      id: "synth",
+      name: "synth",
+      description: "",
+      mode: "walk",
       waypoints: [
         { lat: 0, lng: 0 },
         { lat: 0, lng: 0.001 },

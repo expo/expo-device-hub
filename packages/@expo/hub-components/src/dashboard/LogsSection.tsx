@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-import { type DeviceClient } from '@expo/hub-client';
-import { CollapsibleSection } from './CollapsibleSection';
-import { LogControls } from './LogControls';
-import { LogList } from './LogList';
+import { type DeviceClient } from "@expo/hub-client";
+import { CollapsibleSection } from "./CollapsibleSection";
+import { LogControls } from "./LogControls";
+import { LogList } from "./LogList";
 
 /** Device syslog/logcat output in its own collapsible inspector section. */
 export function LogsSection({ client }: { client?: DeviceClient }) {

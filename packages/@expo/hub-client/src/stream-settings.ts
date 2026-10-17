@@ -1,4 +1,4 @@
-import { type DeviceStreamEncoderSettings } from './types';
+import { type DeviceStreamEncoderSettings } from "./types";
 
 export const DEVICE_STREAM_SETTING_BOUNDS = {
   mjpegFps: [1, 120],
@@ -31,7 +31,7 @@ export function sameDeviceStreamSettings(
 }
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function numberInRange(value: unknown, fallback: number, min: number, max: number): number {
@@ -49,7 +49,7 @@ export function normalizeDeviceStreamSettings(
   fallback: DeviceStreamEncoderSettings = DEFAULT_DEVICE_STREAM_SETTINGS,
 ): DeviceStreamEncoderSettings {
   const settings =
-    value && typeof value === 'object' && !Array.isArray(value)
+    value && typeof value === "object" && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : {};
   return {

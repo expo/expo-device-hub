@@ -29,7 +29,7 @@ Wrap the components that need the device connection. The components below all us
 provider:
 
 ```tsx
-import { DeviceClientProvider } from '@expo/hub-client';
+import { DeviceClientProvider } from "@expo/hub-client";
 
 export function LiveSession({ udid }: { udid: string }) {
   return (
@@ -37,9 +37,9 @@ export function LiveSession({ udid }: { udid: string }) {
       key={udid}
       platform="ios"
       options={{
-        baseUrl: 'http://localhost:3400/vendor/serve-sim',
+        baseUrl: "http://localhost:3400/vendor/serve-sim",
         device: udid,
-        streamMode: 'webrtc',
+        streamMode: "webrtc",
       }}
     >
       <Screen />
@@ -68,18 +68,24 @@ so the old connection closes. Set `options.enabled` to `false` to disconnect, or
 Destructure everything you need from one `useDeviceClient()` call:
 
 ```tsx
-import { useDeviceClient } from '@expo/hub-client';
+import { useDeviceClient } from "@expo/hub-client";
 
 function Controls() {
   const { status, pressButton, rotate, reload } = useDeviceClient();
-  const connected = status === 'streaming';
+  const connected = status === "streaming";
 
   return (
     <div>
       <span>{status}</span>
-      <button disabled={!connected} onClick={() => pressButton('home')}>Home</button>
-      <button disabled={!connected} onClick={rotate}>Rotate</button>
-      <button disabled={!connected} onClick={reload}>Reload</button>
+      <button disabled={!connected} onClick={() => pressButton("home")}>
+        Home
+      </button>
+      <button disabled={!connected} onClick={rotate}>
+        Rotate
+      </button>
+      <button disabled={!connected} onClick={reload}>
+        Reload
+      </button>
     </div>
   );
 }
@@ -97,15 +103,15 @@ and the first read, then `'ready'` or `'error'`. Settings reads time out after f
 seconds; `'ready'` can include empty settings.
 
 ```tsx
-import { useDeviceClient } from '@expo/hub-client';
+import { useDeviceClient } from "@expo/hub-client";
 
 function DeviceSettingsSummary() {
   const { deviceSettingsStatus, deviceSettings } = useDeviceClient();
-  if (deviceSettingsStatus === 'idle') return null;
-  if (deviceSettingsStatus === 'loading') return <span>Loading settings…</span>;
-  if (deviceSettingsStatus === 'error') return <span>Settings unavailable</span>;
+  if (deviceSettingsStatus === "idle") return null;
+  if (deviceSettingsStatus === "loading") return <span>Loading settings…</span>;
+  if (deviceSettingsStatus === "error") return <span>Settings unavailable</span>;
 
-  return <span>Appearance: {deviceSettings?.appearance ?? 'Unavailable'}</span>;
+  return <span>Appearance: {deviceSettings?.appearance ?? "Unavailable"}</span>;
 }
 ```
 
@@ -120,15 +126,15 @@ without updating for metrics or logs.
 `displayScreen` gives you the screen size after accounting for rotation.
 
 ```tsx
-import { DeviceScreen, displayScreen, useDeviceScreenClient } from '@expo/hub-client';
+import { DeviceScreen, displayScreen, useDeviceScreenClient } from "@expo/hub-client";
 
 function Screen() {
   const client = useDeviceScreenClient();
   const screen = displayScreen(client.screen);
-  const aspectRatio = screen ? `${screen.width} / ${screen.height}` : '9 / 19.5';
+  const aspectRatio = screen ? `${screen.width} / ${screen.height}` : "9 / 19.5";
 
   return (
-    <div style={{ position: 'relative', width: 360, aspectRatio }}>
+    <div style={{ position: "relative", width: 360, aspectRatio }}>
       <DeviceScreen client={client} />
     </div>
   );
@@ -141,12 +147,12 @@ Use `useDeviceClientSelector` when you need one value from a larger object. This
 updates when the latest CPU percentage changes, even if memory or network readings change.
 
 ```tsx
-import { useDeviceClientSelector } from '@expo/hub-client';
+import { useDeviceClientSelector } from "@expo/hub-client";
 
 function Cpu() {
   const cpuPct = useDeviceClientSelector((client) => client.activity?.samples.at(-1)?.cpuPct);
 
-  return <span>{cpuPct == null ? 'Waiting for metrics' : `CPU ${cpuPct.toFixed(1)}%`}</span>;
+  return <span>{cpuPct == null ? "Waiting for metrics" : `CPU ${cpuPct.toFixed(1)}%`}</span>;
 }
 ```
 
@@ -175,9 +181,9 @@ so pass the token to the provider:
   key={udid}
   platform="ios"
   options={{
-    baseUrl: 'http://127.0.0.1:3400/vendor/serve-sim',
+    baseUrl: "http://127.0.0.1:3400/vendor/serve-sim",
     device: udid,
-    streamMode: 'mjpeg',
+    streamMode: "mjpeg",
     token,
   }}
 >
@@ -211,23 +217,24 @@ and each backend ignores the buttons its platform does not have.
 
 ```ts
 // Hardware buttons: 'home' | 'back' | 'recents' | 'power' | 'appSwitcher' | 'hideKeyboard'
-client.pressButton('home');
+client.pressButton("home");
 
 client.rotate();
 client.reload(); // reload the running React Native bundle
-client.setAppearance('dark'); // 'light' | 'dark'; read it back from client.appearance
+client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
 // { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
 // { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
 // (null for a backend that does not report one).
 const capture = await client.screenshot();
-if (capture?.artifact?.status === 'failed') console.warn('not saved to session artifacts', capture.artifact.error);
+if (capture?.artifact?.status === "failed")
+  console.warn("not saved to session artifacts", capture.artifact.error);
 
 // Input is normalized to 0..1 of the screen, so it works for every device size.
-client.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });
-client.sendTouch({ phase: 'end', x: 0.5, y: 0.5 });
-client.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
-client.sendKey({ phase: 'up', code: 'KeyA', key: 'a', repeat: false });
+client.sendTouch({ phase: "begin", x: 0.5, y: 0.5 });
+client.sendTouch({ phase: "end", x: 0.5, y: 0.5 });
+client.sendKey({ phase: "down", code: "KeyA", key: "a", repeat: false });
+client.sendKey({ phase: "up", code: "KeyA", key: "a", repeat: false });
 
 // Logs are off until you attach them.
 client.attachLogs();
@@ -268,9 +275,9 @@ its session token on every request. Pass it as `options.token`:
   key={udid}
   platform="ios"
   options={{
-    baseUrl: 'https://sim.example.test/preview/session',
+    baseUrl: "https://sim.example.test/preview/session",
     device: udid,
-    streamMode: 'mjpeg',
+    streamMode: "mjpeg",
     token,
   }}
 >

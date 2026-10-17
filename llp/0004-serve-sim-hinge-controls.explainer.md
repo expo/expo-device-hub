@@ -18,13 +18,13 @@ and Table Mode follow as standard settings rows, with the decimal angle input
 beside the slider. Partially open uses Device Hub's Book pose.
 Both control locations share the same pending and confirmed state.
 
-| Pose | Hinge angle |
-| --- | --- |
-| Fully folded (Closed) | 0° |
-| Partially open (Book) | 90° |
-| Fully open (Open) | 180° |
-| Laptop | 90° |
-| Tent | 80° |
+| Pose                  | Hinge angle |
+| --------------------- | ----------- |
+| Fully folded (Closed) | 0°          |
+| Partially open (Book) | 90°         |
+| Fully open (Open)     | 180°        |
+| Laptop                | 90°         |
+| Tent                  | 80°         |
 
 Laptop and Book have the same hinge angle but different physical orientations.
 The live slider covers 0–180°, and the numeric input accepts decimal angles.
@@ -147,11 +147,11 @@ Laptop, Book, and Tent. Command+1–5 remain available for browser tab switching
 
 The existing CLI uses degrees and keeps its three angle aliases:
 
-| Alias | CLI | Angle | UIKit status |
-| --- | --- | --- | --- |
-| Fold | `serve-sim hinge fold` | 0° | `closed` |
-| Half Fold | `serve-sim hinge half` | 90° | `partiallyOpen` |
-| Unfold | `serve-sim hinge unfold` | 180° | `fullyOpen` |
+| Alias     | CLI                      | Angle | UIKit status    |
+| --------- | ------------------------ | ----- | --------------- |
+| Fold      | `serve-sim hinge fold`   | 0°    | `closed`        |
+| Half Fold | `serve-sim hinge half`   | 90°   | `partiallyOpen` |
+| Unfold    | `serve-sim hinge unfold` | 180°  | `fullyOpen`     |
 
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
@@ -245,13 +245,13 @@ defaults write com.apple.dt.Devices com.apple.dt.coredevicepop.useInternalV68Act
 The bar exposes a continuous 0–180° hinge slider, five pose presets, rotation
 controls, and Table Mode. The preset shortcuts and physical states are:
 
-| Shortcut | Pose | Angle | Physical orientation | Table Mode |
-| --- | --- | --- | --- | --- |
-| ⌘1 | Closed | 0° | Portrait | Off |
-| ⌘2 | Open | 180° | Portrait | Off |
-| ⌘3 | Laptop | 90° | Landscape left | Off |
-| ⌘4 | Book | 90° | Portrait | Off |
-| ⌘5 | Tent | 80° | Face down | On |
+| Shortcut | Pose   | Angle | Physical orientation | Table Mode |
+| -------- | ------ | ----- | -------------------- | ---------- |
+| ⌘1       | Closed | 0°    | Portrait             | Off        |
+| ⌘2       | Open   | 180°  | Portrait             | Off        |
+| ⌘3       | Laptop | 90°   | Landscape left       | Off        |
+| ⌘4       | Book   | 90°   | Portrait             | Off        |
+| ⌘5       | Tent   | 80°   | Face down            | On         |
 
 These orientations describe the physical device, independently of the active
 panel's native rotation. A Laptop preset therefore differs from sending a 90°
@@ -269,11 +269,11 @@ rotation control sends the new orientation before releasing Table Mode.
 Table Mode is a persistent simulated state. Device Hub enables its control for
 these combinations:
 
-| Hinge state | Physical orientations |
-| --- | --- |
-| Closed | Landscape left or right |
+| Hinge state    | Physical orientations                                     |
+| -------------- | --------------------------------------------------------- |
+| Closed         | Landscape left or right                                   |
 | Partially open | Portrait, upside down, landscape left or right, face down |
-| Open flat | Portrait |
+| Open flat      | Portrait                                                  |
 
 The installed Action Bar exposes one hinge-angle slider. Its other physical
 controls are presets and rotation controls; no independent pitch, roll, or yaw

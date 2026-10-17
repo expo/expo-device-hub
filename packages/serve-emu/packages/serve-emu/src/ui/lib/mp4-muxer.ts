@@ -81,7 +81,12 @@ function* nalUnits(au: Uint8Array): Generator<Uint8Array> {
 function toRbsp(nalBody: Uint8Array): Uint8Array {
   const out: number[] = [];
   for (let i = 0; i < nalBody.length; i++) {
-    if (i + 2 < nalBody.length && nalBody[i] === 0 && nalBody[i + 1] === 0 && nalBody[i + 2] === 3) {
+    if (
+      i + 2 < nalBody.length &&
+      nalBody[i] === 0 &&
+      nalBody[i + 1] === 0 &&
+      nalBody[i + 2] === 3
+    ) {
       out.push(0, 0);
       i += 2; // skip the 0x03; loop's i++ steps past it
     } else {
@@ -193,7 +198,7 @@ function parseSpsDimensions(spsNal: Uint8Array): { width: number; height: number
 
 /** WebCodecs/MSE `avc1.PPCCLL` codec string from an SPS NAL. */
 export function codecStringFromSps(spsNal: Uint8Array): string {
-  const hex = (b: number) => b.toString(16).padStart(2, '0');
+  const hex = (b: number) => b.toString(16).padStart(2, "0");
   return `avc1.${hex(spsNal[1])}${hex(spsNal[2])}${hex(spsNal[3])}`;
 }
 
@@ -226,7 +231,7 @@ export interface MuxResult {
 export class FragmentedMp4Muxer {
   private sps: Uint8Array | null = null;
   private pps: Uint8Array | null = null;
-  private codecKey = '';
+  private codecKey = "";
   private width = 0;
   private height = 0;
   private seq = 1;
@@ -260,7 +265,7 @@ export class FragmentedMp4Muxer {
 
     let init: Uint8Array | undefined;
     if (sps && pps) {
-      const key = `${sps.join(',')}|${pps.join(',')}`;
+      const key = `${sps.join(",")}|${pps.join(",")}`;
       if (key !== this.codecKey) {
         this.sps = sps;
         this.pps = pps;
@@ -294,7 +299,7 @@ export class FragmentedMp4Muxer {
     const sps = this.sps!;
     const pps = this.pps!;
     const avcc = box(
-      'avcC',
+      "avcC",
       new Uint8Array([
         1, // configurationVersion
         sps[1], // AVCProfileIndication
@@ -311,7 +316,7 @@ export class FragmentedMp4Muxer {
     );
 
     const avc1 = box(
-      'avc1',
+      "avc1",
       new Uint8Array(6), // reserved
       u16(1), // data_reference_index
       new Uint8Array(16), // pre_defined + reserved + pre_defined[3]
@@ -328,30 +333,30 @@ export class FragmentedMp4Muxer {
     );
 
     const stbl = box(
-      'stbl',
-      box('stsd', u32(0), u32(1), avc1),
-      box('stts', u32(0), u32(0)),
-      box('stsc', u32(0), u32(0)),
-      box('stsz', u32(0), u32(0), u32(0)),
-      box('stco', u32(0), u32(0)),
+      "stbl",
+      box("stsd", u32(0), u32(1), avc1),
+      box("stts", u32(0), u32(0)),
+      box("stsc", u32(0), u32(0)),
+      box("stsz", u32(0), u32(0), u32(0)),
+      box("stco", u32(0), u32(0)),
     );
-    const dinf = box('dinf', box('dref', u32(0), u32(1), box('url ', u32(1))));
-    const minf = box('minf', box('vmhd', u32(1), u32(0), u32(0)), dinf, stbl);
-    const mdhd = box('mdhd', u32(0), u32(0), u32(0), u32(TIMESCALE), u32(0), u16(0x55c4), u16(0));
+    const dinf = box("dinf", box("dref", u32(0), u32(1), box("url ", u32(1))));
+    const minf = box("minf", box("vmhd", u32(1), u32(0), u32(0)), dinf, stbl);
+    const mdhd = box("mdhd", u32(0), u32(0), u32(0), u32(TIMESCALE), u32(0), u16(0x55c4), u16(0));
     const hdlr = box(
-      'hdlr',
+      "hdlr",
       u32(0),
       u32(0),
-      str4('vide'),
+      str4("vide"),
       u32(0),
       u32(0),
       u32(0),
-      new Uint8Array([...str4('Vide'), ...str4('oHan'), ...str4('dler'), 0]),
+      new Uint8Array([...str4("Vide"), ...str4("oHan"), ...str4("dler"), 0]),
     );
-    const mdia = box('mdia', mdhd, hdlr, minf);
+    const mdia = box("mdia", mdhd, hdlr, minf);
 
     const tkhd = box(
-      'tkhd',
+      "tkhd",
       new Uint8Array([0, 0, 0, 0x07]), // flags: enabled | in movie | in preview
       u32(0),
       u32(0),
@@ -368,10 +373,10 @@ export class FragmentedMp4Muxer {
       u32(this.width << 16),
       u32(this.height << 16),
     );
-    const trak = box('trak', tkhd, mdia);
+    const trak = box("trak", tkhd, mdia);
 
     const mvhd = box(
-      'mvhd',
+      "mvhd",
       u32(0),
       u32(0),
       u32(0),
@@ -391,10 +396,18 @@ export class FragmentedMp4Muxer {
       u32(0),
       u32(2), // next_track_ID
     );
-    const trex = box('trex', u32(0), u32(1), u32(1), u32(0), u32(0), u32(0));
-    const moov = box('moov', mvhd, trak, box('mvex', trex));
+    const trex = box("trex", u32(0), u32(1), u32(1), u32(0), u32(0), u32(0));
+    const moov = box("moov", mvhd, trak, box("mvex", trex));
 
-    const ftyp = box('ftyp', str4('isom'), u32(0), str4('isom'), str4('iso6'), str4('avc1'), str4('mp41'));
+    const ftyp = box(
+      "ftyp",
+      str4("isom"),
+      u32(0),
+      str4("isom"),
+      str4("iso6"),
+      str4("avc1"),
+      str4("mp41"),
+    );
     return concat([ftyp, moov]);
   }
 
@@ -410,12 +423,12 @@ export class FragmentedMp4Muxer {
       o += nal.byteLength;
     }
 
-    const mfhd = box('mfhd', u32(0), u32(this.seq++));
-    const tfhd = box('tfhd', new Uint8Array([0, 0x02, 0, 0]), u32(1)); // default-base-is-moof
-    const tfdt = box('tfdt', new Uint8Array([1, 0, 0, 0]), u64(this.baseMediaDecodeTime));
+    const mfhd = box("mfhd", u32(0), u32(this.seq++));
+    const tfhd = box("tfhd", new Uint8Array([0, 0x02, 0, 0]), u32(1)); // default-base-is-moof
+    const tfdt = box("tfdt", new Uint8Array([1, 0, 0, 0]), u64(this.baseMediaDecodeTime));
     // trun: data-offset + sample-duration + sample-size + sample-flags present
     const trun = box(
-      'trun',
+      "trun",
       new Uint8Array([0, 0, 0x07, 0x01]),
       u32(1), // sample_count
       u32(0), // data_offset (patched below)
@@ -423,7 +436,7 @@ export class FragmentedMp4Muxer {
       u32(mdatSize),
       u32(isKey ? SAMPLE_FLAGS_KEY : SAMPLE_FLAGS_DELTA),
     );
-    const moof = box('moof', mfhd, box('traf', tfhd, tfdt, trun));
+    const moof = box("moof", mfhd, box("traf", tfhd, tfdt, trun));
 
     // data_offset points from the moof start to the first mdat payload byte. In a
     // single-sample trun it sits 16 bytes before the end of moof.
@@ -434,6 +447,6 @@ export class FragmentedMp4Muxer {
     );
 
     this.baseMediaDecodeTime += duration;
-    return concat([moof, box('mdat', mdatBody)]);
+    return concat([moof, box("mdat", mdatBody)]);
   }
 }

@@ -10,7 +10,7 @@
  *     device, the client rotates the video for display ({@link streamGeometry}).
  */
 
-import { type DeviceOrientation, type ScreenSize, type TouchSample } from './types';
+import { type DeviceOrientation, type ScreenSize, type TouchSample } from "./types";
 
 export const HID_EDGE_LEFT = 1;
 export const HID_EDGE_TOP = 2;
@@ -28,21 +28,21 @@ export const HOME_INDICATOR_BAND_NORM = 0.93;
 export function homeIndicatorEdge({
   y,
   edgeGestures = true,
-}: Pick<TouchSample, 'y' | 'edgeGestures'>): number | undefined {
+}: Pick<TouchSample, "y" | "edgeGestures">): number | undefined {
   return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
 export function isLandscapeOrientation(orientation?: DeviceOrientation | null): boolean {
-  return orientation === 'landscape_left' || orientation === 'landscape_right';
+  return orientation === "landscape_left" || orientation === "landscape_right";
 }
 
 export function rotationDegreesForOrientation(orientation?: DeviceOrientation | null): number {
   switch (orientation) {
-    case 'landscape_left':
+    case "landscape_left":
       return 90;
-    case 'landscape_right':
+    case "landscape_right":
       return -90;
-    case 'portrait_upside_down':
+    case "portrait_upside_down":
       return 180;
     default:
       return 0;
@@ -53,8 +53,12 @@ export function rotationDegreesForOrientation(orientation?: DeviceOrientation | 
 export function displayScreen(config?: ScreenSize | null): ScreenSize | null {
   if (!config || config.width <= 0 || config.height <= 0) return null;
   const landscape = isLandscapeOrientation(config.orientation) || config.width > config.height;
-  const width = landscape ? Math.max(config.width, config.height) : Math.min(config.width, config.height);
-  const height = landscape ? Math.min(config.width, config.height) : Math.max(config.width, config.height);
+  const width = landscape
+    ? Math.max(config.width, config.height)
+    : Math.min(config.width, config.height);
+  const height = landscape
+    ? Math.min(config.width, config.height)
+    : Math.max(config.width, config.height);
   if (width === config.width && height === config.height) return config;
   return { ...config, width, height };
 }
@@ -95,11 +99,11 @@ export function rawPointForDisplayPoint(
   y: number,
 ): { x: number; y: number } {
   switch (orientation) {
-    case 'landscape_left':
+    case "landscape_left":
       return { x: y, y: 1 - x };
-    case 'landscape_right':
+    case "landscape_right":
       return { x: 1 - y, y: x };
-    case 'portrait_upside_down':
+    case "portrait_upside_down":
       return { x: 1 - x, y: 1 - y };
     default:
       return { x, y };
@@ -117,11 +121,11 @@ export function rawDeltaForDisplayDelta(
   dy: number,
 ): { dx: number; dy: number } {
   switch (orientation) {
-    case 'landscape_left':
+    case "landscape_left":
       return { dx: dy, dy: -dx };
-    case 'landscape_right':
+    case "landscape_right":
       return { dx: -dy, dy: dx };
-    case 'portrait_upside_down':
+    case "portrait_upside_down":
       return { dx: -dx, dy: -dy };
     default:
       return { dx, dy };
@@ -134,7 +138,7 @@ export function rawEdgeForDisplayEdge(
   edge: number,
 ): number {
   switch (orientation) {
-    case 'landscape_left':
+    case "landscape_left":
       switch (edge) {
         case HID_EDGE_LEFT:
           return HID_EDGE_BOTTOM;
@@ -147,7 +151,7 @@ export function rawEdgeForDisplayEdge(
         default:
           return edge;
       }
-    case 'landscape_right':
+    case "landscape_right":
       switch (edge) {
         case HID_EDGE_LEFT:
           return HID_EDGE_TOP;
@@ -160,7 +164,7 @@ export function rawEdgeForDisplayEdge(
         default:
           return edge;
       }
-    case 'portrait_upside_down':
+    case "portrait_upside_down":
       switch (edge) {
         case HID_EDGE_LEFT:
           return HID_EDGE_RIGHT;

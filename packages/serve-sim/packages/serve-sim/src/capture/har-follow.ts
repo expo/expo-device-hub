@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, createReadStream, mkdirSync, openSync, readSync, statSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  createReadStream,
+  mkdirSync,
+  openSync,
+  readSync,
+  statSync,
+} from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -41,7 +49,11 @@ export interface FollowCaptureHarResult {
 }
 
 /** A recording's working files, named after its HAR so recordings can share a folder. */
-export function captureHarPaths(harPath: string): { eventsPath: string; entriesPath: string; ownerFile: string } {
+export function captureHarPaths(harPath: string): {
+  eventsPath: string;
+  entriesPath: string;
+  ownerFile: string;
+} {
   const stem = harPath.replace(/\.har$/i, "");
   return {
     eventsPath: `${stem}.network-capture.json`,
@@ -65,10 +77,16 @@ function captureUnavailable(data: string): string | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object") return null;
-  const event = parsed as { type?: string; meta?: { attachment?: string; attachError?: string | null } };
+  const event = parsed as {
+    type?: string;
+    meta?: { attachment?: string; attachError?: string | null };
+  };
   if (event.type !== "meta") return null;
   if (event.meta?.attachment === "not-enabled") {
-    return event.meta.attachError || "Network capture is not enabled on this device. Enable capture to record new requests.";
+    return (
+      event.meta.attachError ||
+      "Network capture is not enabled on this device. Enable capture to record new requests."
+    );
   }
   if (event.meta?.attachment === "failed") {
     return event.meta.attachError || "Network capture failed on this device.";
@@ -132,13 +150,21 @@ function requestKey(id: string, startedAt: number | null | undefined): string {
  * Open the completed entries the session already recorded. The live stream replays only the
  * in-memory store (the newest 500 requests), so a follower started late seeds itself first.
  */
-async function openSessionSeed(opts: FollowCaptureHarOptions, fetchImpl: FetchLike): Promise<ReadableStream<Uint8Array> | null> {
+async function openSessionSeed(
+  opts: FollowCaptureHarOptions,
+  fetchImpl: FetchLike,
+): Promise<ReadableStream<Uint8Array> | null> {
   const url = captureRoute(opts.baseUrl, "/network-capture.ndjson", opts.device);
-  const res = await fetchImpl(url, { signal: opts.signal, headers: { Authorization: `Bearer ${opts.token}` } });
+  const res = await fetchImpl(url, {
+    signal: opts.signal,
+    headers: { Authorization: `Bearer ${opts.token}` },
+  });
   // 404: no session recording yet, or a server without the route. The live stream still applies.
   if (res.status === 404) return null;
   if (!res.ok || !res.body) {
-    throw new Error(`Could not read the session's earlier requests (HTTP ${res.status}), so the recording would miss them.`);
+    throw new Error(
+      `Could not read the session's earlier requests (HTTP ${res.status}), so the recording would miss them.`,
+    );
   }
   return res.body;
 }
@@ -149,7 +175,10 @@ async function openSessionSeed(opts: FollowCaptureHarOptions, fetchImpl: FetchLi
  * a recording without its earlier requests would read as complete. Lines are streamed, so a large
  * recording never has to fit in memory.
  */
-async function stageSessionSeed(body: ReadableStream<Uint8Array>, stagePath: string): Promise<void> {
+async function stageSessionSeed(
+  body: ReadableStream<Uint8Array>,
+  stagePath: string,
+): Promise<void> {
   const handle = await open(
     stagePath,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
@@ -163,7 +192,9 @@ async function stageSessionSeed(body: ReadableStream<Uint8Array>, stagePath: str
     try {
       JSON.parse(line);
     } catch {
-      throw new Error("The session's earlier requests include an unreadable entry, so the recording would miss it.");
+      throw new Error(
+        "The session's earlier requests include an unreadable entry, so the recording would miss it.",
+      );
     }
     await writeAllAsync(handle, `${line}\n`);
   };
@@ -179,7 +210,9 @@ async function stageSessionSeed(body: ReadableStream<Uint8Array>, stagePath: str
     await stage(buffer + decoder.decode());
   } finally {
     // Under Bun, releasing a finished fetch body can throw; the stream is not reused either way.
-    try { reader.releaseLock(); } catch {}
+    try {
+      reader.releaseLock();
+    } catch {}
     await handle.close();
   }
 }
@@ -187,7 +220,10 @@ async function stageSessionSeed(body: ReadableStream<Uint8Array>, stagePath: str
 /** The identities of the staged seed's entries, so their replays on the live stream are skipped. */
 async function seededKeys(stagePath: string): Promise<Set<string>> {
   const keys = new Set<string>();
-  const lines = createInterface({ input: createReadStream(stagePath, { encoding: "utf8" }), crlfDelay: Infinity });
+  const lines = createInterface({
+    input: createReadStream(stagePath, { encoding: "utf8" }),
+    crlfDelay: Infinity,
+  });
   for await (const line of lines) {
     if (!line.trim()) continue;
     const entry = JSON.parse(line) as HarEntry;
@@ -205,7 +241,9 @@ async function seededKeys(stagePath: string): Promise<Set<string>> {
 /** Whether two paths name the same file. macOS and Windows file systems ignore case by default. */
 function samePath(a: string, b: string): boolean {
   const caseless = process.platform === "darwin" || process.platform === "win32";
-  return caseless ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b);
+  return caseless
+    ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+    : resolve(a) === resolve(b);
 }
 
 /** Whether a file is missing, empty, or starts like an event log: a JSON frame with a `type`. */
@@ -309,7 +347,13 @@ export function harHasEntries(path: string): boolean | null {
             top.expectKey = true;
           }
         } else if (c === "{" || c === "[") {
-          if (c === "[" && stack.length === 2 && stack[0]!.key === "log" && top?.object && top.key === "entries") {
+          if (
+            c === "[" &&
+            stack.length === 2 &&
+            stack[0]!.key === "log" &&
+            top?.object &&
+            top.key === "entries"
+          ) {
             inEntries = true;
           }
           stack.push({ object: c === "{", key: null, expectKey: c === "{" });
@@ -335,7 +379,9 @@ export class ExistingRecordingError extends Error {
   }
 }
 
-export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<FollowCaptureHarResult> {
+export async function followCaptureHar(
+  opts: FollowCaptureHarOptions,
+): Promise<FollowCaptureHarResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const paths = captureHarPaths(opts.outPath);
   const eventsPath = opts.eventsPath ?? paths.eventsPath;
@@ -348,7 +394,10 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
   ] as const;
   for (const [index, [label, path]] of named.entries()) {
     const clash = named.slice(0, index).find(([, other]) => samePath(other, path));
-    if (clash) throw new Error(`${label} and ${clash[0]} name the same file (${resolve(path)}). Choose different paths.`);
+    if (clash)
+      throw new Error(
+        `${label} and ${clash[0]} name the same file (${resolve(path)}). Choose different paths.`,
+      );
   }
   // A recording that stopped (capture turned off, serve-sim restarted) is often rerun with the same
   // --out; replacing it would lose the requests it holds, and the session's own copy may be gone.
@@ -437,7 +486,11 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
           // The HAR's claim covers its own files; a custom --events can name any path, so the event log
           // is claimed too, and a second live recording cannot replace it under the first.
           // Its own suffix: a HAR's owner file always ends in `.owner.pid`, so the two never coincide.
-          eventsClaim = { dir: dirname(eventsPath), file: `${basename(eventsPath)}.events-claim.pid`, owner: "" };
+          eventsClaim = {
+            dir: dirname(eventsPath),
+            file: `${basename(eventsPath)}.events-claim.pid`,
+            owner: "",
+          };
           eventsClaim.owner = claimCaptureDirectory(eventsClaim.dir, eventsClaim.file);
           if (seedPath) {
             const keys = await seededKeys(seedPath);
@@ -462,10 +515,11 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
         }
         const finished = parseFinishedCaptureRequest(data);
         if (
-          !finished
-          || seeded.has(requestKey(finished.id, finished.startedAt))
-          || seeded.has(`${finished.id} ${harStartedDateTime(finished.startedAt)}`)
-        ) continue;
+          !finished ||
+          seeded.has(requestKey(finished.id, finished.startedAt)) ||
+          seeded.has(`${finished.id} ${harStartedDateTime(finished.startedAt)}`)
+        )
+          continue;
         const body = await fetchBody(
           opts.baseUrl,
           opts.device,
@@ -478,12 +532,15 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
         disk.recordFinished(finished, body);
       }
     }
-    if (!seeded) throw new Error("The capture stream closed before capture was on, so nothing was recorded.");
+    if (!seeded)
+      throw new Error("The capture stream closed before capture was on, so nothing was recorded.");
   } catch (error) {
     streamFailure = { error };
   } finally {
     await reader?.cancel().catch(() => {});
-    try { reader?.releaseLock(); } catch {}
+    try {
+      reader?.releaseLock();
+    } catch {}
     if (seedPath) await unlink(seedPath).catch(() => {});
     flushFailure = await disk.end({ removeDir: false });
     if (eventsClaim?.owner) {

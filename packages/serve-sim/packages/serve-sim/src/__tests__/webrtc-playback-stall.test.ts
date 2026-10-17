@@ -42,7 +42,12 @@ describe("tracking whether decoding has stopped", () => {
   });
 
   test("a long gap between polls is not itself a stall", () => {
-    expect(run([{ decoded: 5, received: 10 }, { decoded: 9, received: 99 }])).not.toContain(true);
+    expect(
+      run([
+        { decoded: 5, received: 10 },
+        { decoded: 9, received: 99 },
+      ]),
+    ).not.toContain(true);
   });
 
   test("never stalls while the decode counter is unavailable", () => {
@@ -101,8 +106,9 @@ describe("tracking whether decoding has stopped", () => {
   });
 
   test("the first sample only establishes a baseline", () => {
-    expect(nextPlaybackStallState(initialPlaybackStallState, { decoded: 7, received: 1 }).stalled)
-      .toBe(false);
+    expect(
+      nextPlaybackStallState(initialPlaybackStallState, { decoded: 7, received: 1 }).stalled,
+    ).toBe(false);
   });
 });
 

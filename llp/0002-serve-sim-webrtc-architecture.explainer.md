@@ -98,11 +98,11 @@ WebRTCPublisher (LiveKit WebRTC framework)
 
 The browser has three rendering paths:
 
-| Mode | Server endpoint | Browser surface | Control |
-| --- | --- | --- | --- |
-| MJPEG | `/stream.mjpeg` | `<img>` | WebSocket |
-| AVCC | `/stream.avcc` | WebCodecs + `<canvas>` | WebSocket |
-| WebRTC | `/webrtc/offer` + RTP | `<video>` | WebSocket |
+| Mode   | Server endpoint       | Browser surface        | Control   |
+| ------ | --------------------- | ---------------------- | --------- |
+| MJPEG  | `/stream.mjpeg`       | `<img>`                | WebSocket |
+| AVCC   | `/stream.avcc`        | WebCodecs + `<canvas>` | WebSocket |
+| WebRTC | `/webrtc/offer` + RTP | `<video>`              | WebSocket |
 
 ### Capture and frame flow
 

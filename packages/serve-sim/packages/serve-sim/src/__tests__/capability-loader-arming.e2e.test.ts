@@ -33,7 +33,9 @@ function writeRawState(contents: string): void {
 
 afterEach(() => {
   clearLaunchState(UDID);
-  try { unlinkSync(capabilityConfigPath(UDID)); } catch {}
+  try {
+    unlinkSync(capabilityConfigPath(UDID));
+  } catch {}
 });
 
 const loaderBuilt = existsSync(capabilityLoaderPath());
@@ -46,30 +48,40 @@ describe.skipIf(!loaderBuilt)("armCapabilityLoader", () => {
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
     const quotedConfig = "'" + capabilityConfigPath(UDID).replaceAll("'", "'\\''") + "'";
     const dead = 999_999;
-    writeRawState(JSON.stringify({
-      launchArgs: [], sessionPids: [],
-      capabilities: {
-        camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
-        probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
-        live: { name: "live", scope: "allApps", dylib: "/live.dylib", ownerPid: process.pid },
-      },
-    }));
+    writeRawState(
+      JSON.stringify({
+        launchArgs: [],
+        sessionPids: [],
+        capabilities: {
+          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", ownerPid: dead },
+          probe: { name: "probe", scope: "allApps", dylib: "/probe.dylib", ownerPid: null },
+          live: { name: "live", scope: "allApps", dylib: "/live.dylib", ownerPid: process.pid },
+        },
+      }),
+    );
     writeFileSync(
       capabilityConfigPath(UDID),
       "all\t/camera.dylib\t\t0\nall\t/probe.dylib\t\t0\nall\t/live.dylib\t\t0\n",
     );
 
-    await withShimsAsync({ xcrun: `#!/bin/sh
+    await withShimsAsync(
+      {
+        xcrun: `#!/bin/sh
 printf '%s\\n' "$*" >> ${quotedLog}
 if [ "$5" = "setenv" ] && [ "$6" = "DYLD_INSERT_LIBRARIES" ]; then
   printf 'config-at-arm:%s\\n' "$(cat ${quotedConfig} 2>/dev/null | tr '\\t\\n' '  ')" >> ${quotedLog}
 fi
 exit 0
-` }, async () => {
-      await armCapabilityLoader(UDID);
-    });
+`,
+      },
+      async () => {
+        await armCapabilityLoader(UDID);
+      },
+    );
 
-    const atArm = readFileSync(log, "utf-8").split("\n").find((line) => line.startsWith("config-at-arm:"));
+    const atArm = readFileSync(log, "utf-8")
+      .split("\n")
+      .find((line) => line.startsWith("config-at-arm:"));
     expect(atArm).toContain("/probe.dylib");
     expect(atArm).toContain("/live.dylib");
     expect(atArm).not.toContain("/camera.dylib");

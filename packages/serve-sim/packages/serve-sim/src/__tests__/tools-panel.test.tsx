@@ -34,7 +34,14 @@ const defaultProps: ComponentProps<typeof ToolsPanel> = {
 };
 function renderPanel(props: Partial<ComponentProps<typeof ToolsPanel>> = {}) {
   return renderToStaticMarkup(
-    <AxSelectionContext value={{ highlightedKey: null, selectedKey: null, setHighlightedKey: noop, setSelectedKey: noop }}>
+    <AxSelectionContext
+      value={{
+        highlightedKey: null,
+        selectedKey: null,
+        setHighlightedKey: noop,
+        setSelectedKey: noop,
+      }}
+    >
       <ToolsPanel {...defaultProps} {...props} />
     </AxSelectionContext>,
   );
@@ -66,13 +73,18 @@ describe("ToolsPanel", () => {
       { angle: 90, pose: "laptop" as const, onChange: noop },
     ]) {
       const html = renderPanel({ open: true, hingeControls });
-      const simulatorSection = html.match(/<details[^>]*data-simulator-settings=""[^>]*>[\s\S]*?<\/details>/)?.[0];
+      const simulatorSection = html.match(
+        /<details[^>]*data-simulator-settings=""[^>]*>[\s\S]*?<\/details>/,
+      )?.[0];
       expect(simulatorSection).toBeDefined();
       expect(simulatorSection).toContain('aria-label="Fold pose"');
       expect(simulatorSection).toContain('aria-label="Hinge angle"');
       expect(simulatorSection).toContain('aria-label="Table Mode"');
       expect(html.match(/data-simulator-settings=""/g)).toHaveLength(1);
-      const sectionSummaries = Array.from(html.matchAll(/<summary[^>]*>([\s\S]*?)<\/summary>/g), ([, summary]) => summary);
+      const sectionSummaries = Array.from(
+        html.matchAll(/<summary[^>]*>([\s\S]*?)<\/summary>/g),
+        ([, summary]) => summary,
+      );
       expect(sectionSummaries.some((summary) => />Fold</.test(summary ?? ""))).toBe(false);
     }
   });

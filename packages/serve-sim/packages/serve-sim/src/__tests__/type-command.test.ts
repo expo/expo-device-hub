@@ -146,10 +146,15 @@ describe("sendKeyEventsToWs e2e", () => {
 
   it("waits for the server to finish queued input before reporting success", async () => {
     let releaseAcknowledgement!: () => void;
-    acknowledgementGate = new Promise<void>((resolve) => { releaseAcknowledgement = resolve; });
+    acknowledgementGate = new Promise<void>((resolve) => {
+      releaseAcknowledgement = resolve;
+    });
     let finished = false;
-    const sending = sendKeyEventsToWs(wsUrl, textToKeyEvents("AB"), { perEventDelayMs: 0 })
-      .then(() => { finished = true; });
+    const sending = sendKeyEventsToWs(wsUrl, textToKeyEvents("AB"), { perEventDelayMs: 0 }).then(
+      () => {
+        finished = true;
+      },
+    );
     try {
       for (let attempt = 0; !barrierReceived && attempt < 100; attempt++) await Bun.sleep(10);
       expect(barrierReceived).toBe(true);
@@ -163,15 +168,18 @@ describe("sendKeyEventsToWs e2e", () => {
 
   it("rejects when the server reports an input failure", async () => {
     acknowledgementSuccess = false;
-    await expect(sendKeyEventsToWs(wsUrl, textToKeyEvents("A"), { perEventDelayMs: 0 }))
-      .rejects.toThrow("Simulator keyboard input failed");
+    await expect(
+      sendKeyEventsToWs(wsUrl, textToKeyEvents("A"), { perEventDelayMs: 0 }),
+    ).rejects.toThrow("Simulator keyboard input failed");
   });
 
   it("rejects when the WS endpoint is unreachable", async () => {
     // Port 1 is virtually never accepting connections from a normal process.
     let err: unknown;
     try {
-      await sendKeyEventsToWs("ws://127.0.0.1:1/ws", [{ type: "down", usage: 0x04 }], { perEventDelayMs: 0 });
+      await sendKeyEventsToWs("ws://127.0.0.1:1/ws", [{ type: "down", usage: 0x04 }], {
+        perEventDelayMs: 0,
+      });
     } catch (e) {
       err = e;
     }
@@ -179,13 +187,17 @@ describe("sendKeyEventsToWs e2e", () => {
     expect((err as Error).message).toMatch(/WebSocket/);
   });
 
-  it.each([0, 4])("reports overload instead of silent truncation (delay %s)", async (perEventDelayMs) => {
-    rejection = { code: 1013, reason: "Simulator input queue full" };
-    try {
-      await expect(sendKeyEventsToWs(wsUrl, textToKeyEvents("A".repeat(300)), { perEventDelayMs }))
-        .rejects.toThrow("1013: Simulator input queue full");
-    } finally {
-      rejection = undefined;
-    }
-  });
+  it.each([0, 4])(
+    "reports overload instead of silent truncation (delay %s)",
+    async (perEventDelayMs) => {
+      rejection = { code: 1013, reason: "Simulator input queue full" };
+      try {
+        await expect(
+          sendKeyEventsToWs(wsUrl, textToKeyEvents("A".repeat(300)), { perEventDelayMs }),
+        ).rejects.toThrow("1013: Simulator input queue full");
+      } finally {
+        rejection = undefined;
+      }
+    },
+  );
 });

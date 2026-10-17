@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * What a running CLI Hub records, as serve-sim records each helper in `server-<udid>.json`. The CLI
@@ -20,7 +20,7 @@ type Env = Record<string, string | undefined>;
 
 /** Directory where the CLI records each running Hub. Override with `EXPO_DEVICE_HUB_STATE_DIR`. */
 export function hubStateDir(env: Env = process.env): string {
-  return env.EXPO_DEVICE_HUB_STATE_DIR || join(tmpdir(), 'expo-device-hub');
+  return env.EXPO_DEVICE_HUB_STATE_DIR || join(tmpdir(), "expo-device-hub");
 }
 
 export function hubStateFile(port: number, env: Env = process.env): string {
@@ -29,8 +29,8 @@ export function hubStateFile(port: number, env: Env = process.env): string {
 
 /** The Hub's URL on this machine: a wildcard bind answers on loopback. */
 export function localHubUrl(host: string, port: number): string {
-  const local = host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '::1' : host;
-  return `http://${local.includes(':') ? `[${local}]` : local}:${port}`;
+  const local = host === "0.0.0.0" ? "127.0.0.1" : host === "::" ? "::1" : host;
+  return `http://${local.includes(":") ? `[${local}]` : local}:${port}`;
 }
 
 /** Atomic, and readable only by its owner, because it can hold the session token. */
@@ -47,7 +47,7 @@ export function writeHubState(state: HubState, env: Env = process.env): string {
 export function clearHubState(port: number, ownerPid: number, env: Env = process.env): void {
   const file = hubStateFile(port, env);
   try {
-    const state = JSON.parse(readFileSync(file, 'utf-8')) as Partial<HubState>;
+    const state = JSON.parse(readFileSync(file, "utf-8")) as Partial<HubState>;
     if (state.pid === ownerPid) unlinkSync(file);
   } catch {}
 }

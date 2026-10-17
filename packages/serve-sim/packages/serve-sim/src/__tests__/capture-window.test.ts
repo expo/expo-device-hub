@@ -7,10 +7,21 @@ function sampleAt(atMs: number, overrides: Partial<CaptureCounts> = {}): Capture
   return {
     atMs,
     counts: {
-      pickCount: 0, pickSumMs: 0, pickMaxMs: 0,
-      screenFrames: 0, idleFrames: 0, offeredFrames: 0, forwardedFrames: 0,
-      pumpRestarts: 0, cpuFallbacks: 0, attempts: 0, stalls: 0, gapSumMs: 0,
-      stallSumMs: 0, pollTicks: 0, pollLateSumMs: 0,
+      pickCount: 0,
+      pickSumMs: 0,
+      pickMaxMs: 0,
+      screenFrames: 0,
+      idleFrames: 0,
+      offeredFrames: 0,
+      forwardedFrames: 0,
+      pumpRestarts: 0,
+      cpuFallbacks: 0,
+      attempts: 0,
+      stalls: 0,
+      gapSumMs: 0,
+      stallSumMs: 0,
+      pollTicks: 0,
+      pollLateSumMs: 0,
       ...overrides,
     },
   };
@@ -24,9 +35,14 @@ describe("describeCaptureCounts", () => {
   });
 
   test("still reports the session totals without a window, since one event matters", () => {
-    const only = describeCaptureCounts(null, sampleAt(1_000, {
-      stalls: 3, stallSumMs: 420, poolDrops: 2,
-    }));
+    const only = describeCaptureCounts(
+      null,
+      sampleAt(1_000, {
+        stalls: 3,
+        stallSumMs: 420,
+        poolDrops: 2,
+      }),
+    );
     expect(only.stalls).toBe(3);
     expect(only.stallSumMs).toBe(420);
     expect(only.poolDrops).toBe(2);

@@ -7,15 +7,13 @@ interface PublicPackage {
   version: string;
 }
 
-export async function getPublicPackages(
-  root = process.cwd(),
-): Promise<PublicPackage[]> {
+export async function getPublicPackages(root = process.cwd()): Promise<PublicPackage[]> {
   const rootPkg = await Bun.file(`${root}/package.json`).json();
   const patterns: string[] = Array.isArray(rootPkg.workspaces)
     ? rootPkg.workspaces
     : Array.isArray(rootPkg.workspaces?.packages)
-    ? rootPkg.workspaces.packages
-    : [];
+      ? rootPkg.workspaces.packages
+      : [];
 
   const seen = new Set<string>();
   const packages: PublicPackage[] = [];
@@ -34,7 +32,7 @@ export async function getPublicPackages(
         name: pkg.name,
         dir,
         path: rel,
-        version: pkg.version
+        version: pkg.version,
       });
     }
   }

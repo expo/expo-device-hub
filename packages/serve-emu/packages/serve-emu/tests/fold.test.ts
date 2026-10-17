@@ -28,13 +28,19 @@ describe("Android emulator fold controls", () => {
     };
 
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: true, posture: "opened", hingeAngle: 180,
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
     });
     expect(await setFoldPosture("emulator-5554", "closed", runExec)).toEqual({
-      supported: true, posture: "closed", hingeAngle: 0,
+      supported: true,
+      posture: "closed",
+      hingeAngle: 0,
     });
     expect(await setFoldPosture("emulator-5554", "opened", runExec)).toEqual({
-      supported: true, posture: "opened", hingeAngle: 180,
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
     });
     expect(commands).toContain("emu fold");
     expect(commands).toContain("emu unfold");
@@ -48,14 +54,19 @@ describe("Android emulator fold controls", () => {
       return result("KO: unknown sensor name: hinge-angle0");
     };
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: false, posture: null, hingeAngle: null,
+      supported: false,
+      posture: null,
+      hingeAngle: null,
     });
-    await expect(setFoldPosture("emulator-5554", "closed", runExec))
-      .rejects.toThrow("does not support folding");
+    await expect(setFoldPosture("emulator-5554", "closed", runExec)).rejects.toThrow(
+      "does not support folding",
+    );
     expect(commands).toEqual(["emu sensor get hinge-angle0", "emu sensor get hinge-angle0"]);
-    expect(await getFoldStatus("physical-1", async () => {
-      throw new Error("must not run adb");
-    })).toEqual({ supported: false, posture: null, hingeAngle: null });
+    expect(
+      await getFoldStatus("physical-1", async () => {
+        throw new Error("must not run adb");
+      }),
+    ).toEqual({ supported: false, posture: null, hingeAngle: null });
   });
 
   test("reports a disabled hinge sensor as unsupported", async () => {
@@ -65,10 +76,13 @@ describe("Android emulator fold controls", () => {
       return result("KO: 'hinge-angle0' sensor is disabled.\r\n");
     };
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: false, posture: null, hingeAngle: null,
+      supported: false,
+      posture: null,
+      hingeAngle: null,
     });
-    await expect(setFoldPosture("emulator-5554", "closed", runExec))
-      .rejects.toThrow("does not support folding");
+    await expect(setFoldPosture("emulator-5554", "closed", runExec)).rejects.toThrow(
+      "does not support folding",
+    );
     expect(commands).toEqual(["emu sensor get hinge-angle0", "emu sensor get hinge-angle0"]);
   });
 
@@ -78,16 +92,20 @@ describe("Android emulator fold controls", () => {
         ? result("hinge-angle0 = 0\r\nOK")
         : result("Unknown command: device_state", 1);
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: true, posture: "closed", hingeAngle: 0,
+      supported: true,
+      posture: "closed",
+      hingeAngle: 0,
     });
   });
 
   test("does not confuse a failed sensor read with an unsupported device", async () => {
     const runExec = async () => result("", 1);
-    await expect(getFoldStatus("emulator-5554", runExec))
-      .rejects.toThrow("hinge sensor read failed");
-    await expect(setFoldPosture("emulator-5554", "closed", runExec))
-      .rejects.toThrow("hinge sensor read failed");
+    await expect(getFoldStatus("emulator-5554", runExec)).rejects.toThrow(
+      "hinge sensor read failed",
+    );
+    await expect(setFoldPosture("emulator-5554", "closed", runExec)).rejects.toThrow(
+      "hinge sensor read failed",
+    );
   });
 
   test("honors a named tent posture even at an extreme hinge angle", async () => {
@@ -96,7 +114,9 @@ describe("Android emulator fold controls", () => {
         ? result("hinge-angle0 = 180\r\nOK")
         : result("Committed state: DeviceState{identifier=4, name='TENT'}");
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: true, posture: "tent", hingeAngle: 180,
+      supported: true,
+      posture: "tent",
+      hingeAngle: 180,
     });
   });
 
@@ -108,21 +128,27 @@ describe("Android emulator fold controls", () => {
         return result(`hinge-angle0 = ${posture === "CLOSED" ? 0 : 180}\r\nOK`);
       }
       if (command === "shell cmd device_state base-state") {
-        return result([
-          "Committed state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
-          "----------------------",
-          `Base state: DeviceState{identifier=2, name='${posture}', app_accessible=true}`,
-          "Override state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
-        ].join("\n"));
+        return result(
+          [
+            "Committed state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
+            "----------------------",
+            `Base state: DeviceState{identifier=2, name='${posture}', app_accessible=true}`,
+            "Override state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
+          ].join("\n"),
+        );
       }
       posture = command === "emu fold" ? "CLOSED" : "OPENED";
       return result("OK");
     };
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: true, posture: "opened", hingeAngle: 180,
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
     });
     expect(await setFoldPosture("emulator-5554", "opened", runExec)).toEqual({
-      supported: true, posture: "opened", hingeAngle: 180,
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
     });
   });
 
@@ -132,7 +158,9 @@ describe("Android emulator fold controls", () => {
         ? result("hinge-angle0 = 180\r\nOK")
         : result("Committed state: DeviceState{identifier=4, name='CONCURRENT_INNER_DEFAULT'}");
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
-      supported: true, posture: "opened", hingeAngle: 180,
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
     });
   });
 
@@ -145,7 +173,8 @@ describe("Android emulator fold controls", () => {
       }
       return result("KO: folding unavailable");
     };
-    await expect(setFoldPosture("emulator-5554", "closed", runExec))
-      .rejects.toThrow("folding unavailable");
+    await expect(setFoldPosture("emulator-5554", "closed", runExec)).rejects.toThrow(
+      "folding unavailable",
+    );
   });
 });

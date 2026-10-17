@@ -2,11 +2,7 @@
 
 Host your Android emulator or attached Android device for agent workflows like Codex, Cursor, Claude Desktop, and browser-based QA. `serve-emu` streams the screen locally, over your LAN, or through your tunnel of choice, then accepts low-latency input and device-control commands over HTTP and WebSocket.
 
-
-
 https://github.com/user-attachments/assets/5646d44c-7fd1-4e97-8705-b44b47c7fdc6
-
-
 
 ```sh
 bunx serve-emu@latest
@@ -112,42 +108,42 @@ serve-emu --avd-list
 serve-emu --running-avds
 ```
 
-| flag | default | meaning |
-| --- | --- | --- |
-| `-p, --port` | `3300` | HTTP port for the preview server |
-| `--host` | `127.0.0.1` | Address to bind. Defaults to loopback so the device is not exposed. Set `0.0.0.0` to serve over the LAN — see [Access control](#access-control) |
-| `--token` | none | Shared secret required on every data-bearing request. Auto-generated for non-loopback binds if omitted. Must not be empty and can contain only letters, digits, and `-._~` |
-| `--unsafe-no-auth` | false | Allow a non-loopback bind with **no** authentication (dangerous) |
-| `-s, --serial` | auto | adb device serial; required when multiple devices are online |
-| `--stream-mode` | `scrcpy` | Screen capture source: `scrcpy`, or emulator-only host capture through `grpc-screenshot` |
-| `--encoder` | `software` | Host H.264 encoder for gRPC streaming: `software` uses libx264; `hardware` requires VideoToolbox, NVENC, or VAAPI. No software fallback |
-| `--grpc-image-mode` | `png` | gRPC screenshot image delivery: compressed in-band `png`, raw pixels through shared-memory `mmap`, or raw pixels in each gRPC message with `rgb888`. The selected mode is strict; capture errors do not fall back to another mode |
-| `--input-source` | `scrcpy` | Input transport for gRPC streaming: a control-only `scrcpy` server, or the emulator's `grpc` endpoint |
-| `--max-fps` | `60` | Frame-rate target for capture and encoding; RGB888 forwards received frames whenever ffmpeg is ready without a local FPS cap |
-| `--bit-rate` | `8000000` | H.264 bit rate in bps |
-| `--max-size` | `1280` | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot` |
-| `--key-frame-interval` | `10` | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts |
-| `--repeat-frame-ms` | `0` | Re-encode the previous frame after N ms without screen changes (`16` ≈ steady 60fps on static screens, at extra CPU/bandwidth cost); `0` keeps the source default: 100ms for scrcpy and 500ms for `grpc-screenshot` |
-| `--transport` | `websocket` | Initial browser video transport: `websocket` or `webrtc`. Each tab can switch independently in the UI |
-| `--stun-url` | public STUN defaults | Comma-separated STUN URL(s) for WebRTC ICE |
-| `--turn-url` | none | Comma-separated TURN URL(s); requires both TURN credential flags |
-| `--turn-username` | none | TURN username |
-| `--turn-credential` | none | TURN credential |
-| `--webrtc-ice-policy` | `all` | ICE policy: `all` or `relay` (`relay` requires TURN) |
-| `--max-apk-upload-bytes` | `536870912` | Maximum APK file bytes accepted by the streaming multipart endpoint |
-| `--max-media-upload-bytes` | `1073741824` | Maximum media/file bytes accepted by the streaming multipart endpoint |
-| `--max-active-uploads` | `2` | Maximum upload operations reading, staging, or running through ADB concurrently |
-| `--max-queued-uploads` | `4` | Maximum uploads waiting for an active slot; further requests receive `429` |
-| `--upload-queue-timeout-ms` | `5000` | Maximum time an upload may wait for a slot before receiving `503` |
-| `--avd` | none | Launch this Android Virtual Device before streaming |
-| `--gpu` | `host` | Emulator GPU mode for `--avd` launches. `host` renders on the real GPU for smooth ~60fps; see [Smooth Emulator Playback](#smooth-emulator-playback) |
-| `--restart-avd` | false | Stop a running matching AVD before launching it |
-| `--avd-list` | false | List available Android Virtual Device names |
-| `--running-avds` | false | List currently running emulator serials and AVD names |
-| `--emulator` | auto | Android Emulator binary path; defaults to PATH, then the Android SDK (see [Requirements](#requirements)) |
-| `--emulator-port` | auto | Android Emulator console port for `--avd`; must be an even port from 5554 through 5682 |
-| `--camera` | false | Feed the emulator cameras from PNG files serve-emu owns, so the picture can change while the emulator runs. Requires `--avd`; see [Camera Image](#camera-image) |
-| `--camera-image` | none | Implies `--camera` and preloads this PNG as the back camera |
+| flag                        | default              | meaning                                                                                                                                                                                                                           |
+| --------------------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-p, --port`                | `3300`               | HTTP port for the preview server                                                                                                                                                                                                  |
+| `--host`                    | `127.0.0.1`          | Address to bind. Defaults to loopback so the device is not exposed. Set `0.0.0.0` to serve over the LAN — see [Access control](#access-control)                                                                                   |
+| `--token`                   | none                 | Shared secret required on every data-bearing request. Auto-generated for non-loopback binds if omitted. Must not be empty and can contain only letters, digits, and `-._~`                                                        |
+| `--unsafe-no-auth`          | false                | Allow a non-loopback bind with **no** authentication (dangerous)                                                                                                                                                                  |
+| `-s, --serial`              | auto                 | adb device serial; required when multiple devices are online                                                                                                                                                                      |
+| `--stream-mode`             | `scrcpy`             | Screen capture source: `scrcpy`, or emulator-only host capture through `grpc-screenshot`                                                                                                                                          |
+| `--encoder`                 | `software`           | Host H.264 encoder for gRPC streaming: `software` uses libx264; `hardware` requires VideoToolbox, NVENC, or VAAPI. No software fallback                                                                                           |
+| `--grpc-image-mode`         | `png`                | gRPC screenshot image delivery: compressed in-band `png`, raw pixels through shared-memory `mmap`, or raw pixels in each gRPC message with `rgb888`. The selected mode is strict; capture errors do not fall back to another mode |
+| `--input-source`            | `scrcpy`             | Input transport for gRPC streaming: a control-only `scrcpy` server, or the emulator's `grpc` endpoint                                                                                                                             |
+| `--max-fps`                 | `60`                 | Frame-rate target for capture and encoding; RGB888 forwards received frames whenever ffmpeg is ready without a local FPS cap                                                                                                      |
+| `--bit-rate`                | `8000000`            | H.264 bit rate in bps                                                                                                                                                                                                             |
+| `--max-size`                | `1280`               | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot`                                                |
+| `--key-frame-interval`      | `10`                 | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts                                                                   |
+| `--repeat-frame-ms`         | `0`                  | Re-encode the previous frame after N ms without screen changes (`16` ≈ steady 60fps on static screens, at extra CPU/bandwidth cost); `0` keeps the source default: 100ms for scrcpy and 500ms for `grpc-screenshot`               |
+| `--transport`               | `websocket`          | Initial browser video transport: `websocket` or `webrtc`. Each tab can switch independently in the UI                                                                                                                             |
+| `--stun-url`                | public STUN defaults | Comma-separated STUN URL(s) for WebRTC ICE                                                                                                                                                                                        |
+| `--turn-url`                | none                 | Comma-separated TURN URL(s); requires both TURN credential flags                                                                                                                                                                  |
+| `--turn-username`           | none                 | TURN username                                                                                                                                                                                                                     |
+| `--turn-credential`         | none                 | TURN credential                                                                                                                                                                                                                   |
+| `--webrtc-ice-policy`       | `all`                | ICE policy: `all` or `relay` (`relay` requires TURN)                                                                                                                                                                              |
+| `--max-apk-upload-bytes`    | `536870912`          | Maximum APK file bytes accepted by the streaming multipart endpoint                                                                                                                                                               |
+| `--max-media-upload-bytes`  | `1073741824`         | Maximum media/file bytes accepted by the streaming multipart endpoint                                                                                                                                                             |
+| `--max-active-uploads`      | `2`                  | Maximum upload operations reading, staging, or running through ADB concurrently                                                                                                                                                   |
+| `--max-queued-uploads`      | `4`                  | Maximum uploads waiting for an active slot; further requests receive `429`                                                                                                                                                        |
+| `--upload-queue-timeout-ms` | `5000`               | Maximum time an upload may wait for a slot before receiving `503`                                                                                                                                                                 |
+| `--avd`                     | none                 | Launch this Android Virtual Device before streaming                                                                                                                                                                               |
+| `--gpu`                     | `host`               | Emulator GPU mode for `--avd` launches. `host` renders on the real GPU for smooth ~60fps; see [Smooth Emulator Playback](#smooth-emulator-playback)                                                                               |
+| `--restart-avd`             | false                | Stop a running matching AVD before launching it                                                                                                                                                                                   |
+| `--avd-list`                | false                | List available Android Virtual Device names                                                                                                                                                                                       |
+| `--running-avds`            | false                | List currently running emulator serials and AVD names                                                                                                                                                                             |
+| `--emulator`                | auto                 | Android Emulator binary path; defaults to PATH, then the Android SDK (see [Requirements](#requirements))                                                                                                                          |
+| `--emulator-port`           | auto                 | Android Emulator console port for `--avd`; must be an even port from 5554 through 5682                                                                                                                                            |
+| `--camera`                  | false                | Feed the emulator cameras from PNG files serve-emu owns, so the picture can change while the emulator runs. Requires `--avd`; see [Camera Image](#camera-image)                                                                   |
+| `--camera-image`            | none                 | Implies `--camera` and preloads this PNG as the back camera                                                                                                                                                                       |
 
 By default, `serve-emu` attaches to the only online device. If more than one device is online, pass `-s <serial>` or select another running device later through the HTTP API/UI.
 
@@ -315,11 +311,11 @@ curl -X PATCH "$BASE/api/stream-settings?device=emulator-5554" \
 `PATCH /api/stream-settings` accepts a non-empty subset of those fields. Values
 must be integers within these bounds:
 
-| Field | Range | Meaning |
-| --- | ---: | --- |
-| `maxDimension` | 0–4096 | Longest encoded edge; `0` disables the size cap |
-| `h264Bitrate` | 100000–50000000 | Target H.264 bitrate in bits per second |
-| `h264Fps` | 1–120 | Maximum encoded frames per second |
+| Field          |           Range | Meaning                                         |
+| -------------- | --------------: | ----------------------------------------------- |
+| `maxDimension` |          0–4096 | Longest encoded edge; `0` disables the size cap |
+| `h264Bitrate`  | 100000–50000000 | Target H.264 bitrate in bits per second         |
+| `h264Fps`      |           1–120 | Maximum encoded frames per second               |
 
 A changed setting restarts only the active capture while keeping the device's
 recorded-session state. Middleware clients remain attached and resynchronize on
@@ -546,7 +542,7 @@ Three constraints come from the emulator, not from serve-emu:
 
 - **PNG only.** The emulator's `imagefile` camera loads PNG and nothing else; a
   JPEG body is rejected with `400`. Convert first with `sips -s format png
-  in.jpg --out out.png` or `magick in.jpg out.png`.
+in.jpg --out out.png` or `magick in.jpg out.png`.
 - **The guest re-reads the file when it opens the camera device.** An app
   already showing a preview keeps the old picture. Reopen the camera screen, or
   restart the app with `POST /api/apps/force-stop` and `POST /api/apps/launch`.

@@ -27,7 +27,7 @@ async function postJson(path: string, body: Record<string, unknown>): Promise<Ap
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return await res.json() as AppApiResult;
+  return (await res.json()) as AppApiResult;
 }
 
 function outputFor(result: AppApiResult): string {
@@ -35,7 +35,10 @@ function outputFor(result: AppApiResult): string {
 }
 
 function isApk(file: File): boolean {
-  return file.name.toLowerCase().endsWith(".apk") || file.type === "application/vnd.android.package-archive";
+  return (
+    file.name.toLowerCase().endsWith(".apk") ||
+    file.type === "application/vnd.android.package-archive"
+  );
 }
 
 export function AppManagementPanel() {
@@ -52,7 +55,7 @@ export function AppManagementPanel() {
   const { refresh: refreshForeground } = usePoll({
     poll: async ({ signal }) => {
       const res = await fetch("/api/foreground", { cache: "no-store", signal });
-      return await res.json() as { ok?: boolean; app?: ForegroundApp; error?: string };
+      return (await res.json()) as { ok?: boolean; app?: ForegroundApp; error?: string };
     },
     onResult: (json) => {
       if (json.ok && json.app) {
@@ -92,7 +95,7 @@ export function AppManagementPanel() {
         method: "POST",
         body: form,
       });
-      return await res.json() as AppApiResult;
+      return (await res.json()) as AppApiResult;
     });
   };
 
@@ -222,17 +225,24 @@ export function AppManagementPanel() {
         <button
           onClick={() =>
             void run("Launching", () =>
-              postJson("/api/apps/launch", { ...packageBody(), activity: activity.trim() || undefined }),
+              postJson("/api/apps/launch", {
+                ...packageBody(),
+                activity: activity.trim() || undefined,
+              }),
             )
           }
         >
           Launch
         </button>
-        <button onClick={() => void run("Clearing", () => postJson("/api/apps/clear", packageBody()))}>
+        <button
+          onClick={() => void run("Clearing", () => postJson("/api/apps/clear", packageBody()))}
+        >
           Clear
         </button>
         <button
-          onClick={() => void run("Stopping", () => postJson("/api/apps/force-stop", packageBody()))}
+          onClick={() =>
+            void run("Stopping", () => postJson("/api/apps/force-stop", packageBody()))
+          }
         >
           Stop
         </button>

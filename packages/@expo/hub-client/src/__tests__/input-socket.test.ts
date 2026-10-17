@@ -12,9 +12,16 @@ class FakeSocket {
   onerror: (() => void) | null = null;
   closed = false;
 
-  open() { this.readyState = 1; this.onopen?.(); }
-  message(data: unknown) { this.onmessage?.({ data }); }
-  send(data: ArrayBuffer) { this.sent.push(data); }
+  open() {
+    this.readyState = 1;
+    this.onopen?.();
+  }
+  message(data: unknown) {
+    this.onmessage?.({ data });
+  }
+  send(data: ArrayBuffer) {
+    this.sent.push(data);
+  }
   close(code = 1000, reason = "") {
     if (this.closed) return;
     this.closed = true;
@@ -29,30 +36,48 @@ function setup(requireAdmission = true) {
   let recoveries = 0;
   let admissions = 0;
   let disconnects = 0;
-  const input = createInputSocket("ws://localhost/ws", {
-    onAdmitted: () => { admissions++; },
-    onMessage: (data) => data === "legacy config",
-    onDisconnect: () => { disconnects++; },
-    onRefused: (reason) => { errors.push(reason); },
-    onRecovered: () => { recoveries++; },
-  }, {
-    requireAdmission,
-    legacyOpenGraceMs: 20,
-    reconnectDelayMs: 10,
-    refusalDelayMs: 40,
-    openSocket: () => {
-      const socket = new FakeSocket();
-      sockets.push(socket);
-      return socket as unknown as WebSocket;
+  const input = createInputSocket(
+    "ws://localhost/ws",
+    {
+      onAdmitted: () => {
+        admissions++;
+      },
+      onMessage: (data) => data === "legacy config",
+      onDisconnect: () => {
+        disconnects++;
+      },
+      onRefused: (reason) => {
+        errors.push(reason);
+      },
+      onRecovered: () => {
+        recoveries++;
+      },
     },
-  });
+    {
+      requireAdmission,
+      legacyOpenGraceMs: 20,
+      reconnectDelayMs: 10,
+      refusalDelayMs: 40,
+      openSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket as unknown as WebSocket;
+      },
+    },
+  );
   return {
     input,
     sockets,
     errors,
-    get admissions() { return admissions; },
-    get disconnects() { return disconnects; },
-    get recoveries() { return recoveries; },
+    get admissions() {
+      return admissions;
+    },
+    get disconnects() {
+      return disconnects;
+    },
+    get recoveries() {
+      return recoveries;
+    },
   };
 }
 
@@ -247,38 +272,69 @@ test("disposing stops reconnects and pending refusal reports", async () => {
   expect(state.errors).toEqual([]);
 });
 
-test('modern OPEN never clears a refusal without server admission', async () => {
+test("modern OPEN never clears a refusal without server admission", async () => {
   const state = setup();
   try {
-    state.input.start(); state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
-    await Bun.sleep(50); state.sockets[1]!.open(); await Bun.sleep(30);
+    state.input.start();
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
+    await Bun.sleep(50);
+    state.sockets[1]!.open();
+    await Bun.sleep(30);
     expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
-    expect(state.recoveries).toBe(0); expect(state.admissions).toBe(0);
+    expect(state.recoveries).toBe(0);
+    expect(state.admissions).toBe(0);
     state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(state.recoveries).toBe(1);
-  } finally { state.input.dispose(); }
+  } finally {
+    state.input.dispose();
+  }
 });
 
-test('retired sockets and disposed owners cannot admit or replay input', async () => {
+test("retired sockets and disposed owners cannot admit or replay input", async () => {
   const state = setup();
-  state.input.start(); const old = state.sockets[0]!; old.close();
-  await Bun.sleep(20); state.input.send(0x04, {button: 'home'});
-  old.open(); old.message(Uint8Array.of(0x83).buffer);
-  expect(state.admissions).toBe(0); expect(old.sent).toHaveLength(0);
-  state.input.dispose(); state.sockets[1]!.open(); state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
-  expect(state.admissions).toBe(0); expect(state.sockets[1]!.sent).toHaveLength(0);
+  state.input.start();
+  const old = state.sockets[0]!;
+  old.close();
+  await Bun.sleep(20);
+  state.input.send(0x04, { button: "home" });
+  old.open();
+  old.message(Uint8Array.of(0x83).buffer);
+  expect(state.admissions).toBe(0);
+  expect(old.sent).toHaveLength(0);
+  state.input.dispose();
+  state.sockets[1]!.open();
+  state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
+  expect(state.admissions).toBe(0);
+  expect(state.sockets[1]!.sent).toHaveLength(0);
 });
 
-test('a constructor failure retries and disposal cancels that retry', async () => {
+test("a constructor failure retries and disposal cancels that retry", async () => {
   let attempts = 0;
   const socket = new FakeSocket();
-  const input = createInputSocket('ws://local/ws', {
-    onAdmitted() {}, onMessage: () => false, onDisconnect() {}, onRefused() {}, onRecovered() {},
-  }, {reconnectDelayMs: 10, openSocket() { if (++attempts === 1) throw new Error('temporary'); return socket as unknown as WebSocket; }});
-  input.start(); await Bun.sleep(20); expect(attempts).toBe(2);
-  input.dispose(); await Bun.sleep(20); expect(attempts).toBe(2);
+  const input = createInputSocket(
+    "ws://local/ws",
+    {
+      onAdmitted() {},
+      onMessage: () => false,
+      onDisconnect() {},
+      onRefused() {},
+      onRecovered() {},
+    },
+    {
+      reconnectDelayMs: 10,
+      openSocket() {
+        if (++attempts === 1) throw new Error("temporary");
+        return socket as unknown as WebSocket;
+      },
+    },
+  );
+  input.start();
+  await Bun.sleep(20);
+  expect(attempts).toBe(2);
+  input.dispose();
+  await Bun.sleep(20);
+  expect(attempts).toBe(2);
 });
-
 
 test("modern config frames do not admit input or clear a reported refusal", async () => {
   const state = setup();
@@ -299,7 +355,9 @@ test("modern config frames do not admit input or clear a reported refusal", asyn
     expect(state.recoveries).toBe(1);
     expect(state.admissions).toBe(1);
     expect(retry.sent).toHaveLength(1);
-  } finally { state.input.dispose(); }
+  } finally {
+    state.input.dispose();
+  }
 });
 
 test("legacy config confirms recovery without waiting for an unsupported acknowledgement", async () => {
@@ -312,9 +370,10 @@ test("legacy config confirms recovery without waiting for an unsupported acknowl
     expect(state.recoveries).toBe(0);
     state.sockets[1]!.message("legacy config");
     expect(state.recoveries).toBe(1);
-  } finally { state.input.dispose(); }
+  } finally {
+    state.input.dispose();
+  }
 });
-
 
 test("queued rotations resolve at admission and record each delivered pose", () => {
   const state = setup();
@@ -324,15 +383,23 @@ test("queued rotations resolve at admission and record each delivered pose", () 
     state.input.start();
     state.sockets[0]!.open();
     for (let index = 0; index < 3; index++) {
-      state.input.send(0x07, () => ({ pose: pose + 1 }), payload => {
-        pose = (payload as { pose: number }).pose;
-        delivered.push(pose);
-      });
+      state.input.send(
+        0x07,
+        () => ({ pose: pose + 1 }),
+        (payload) => {
+          pose = (payload as { pose: number }).pose;
+          delivered.push(pose);
+        },
+      );
     }
     expect(delivered).toEqual([]);
     state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
     expect(delivered).toEqual([1, 2, 3]);
-    expect(state.sockets[0]!.sent.map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))))).toEqual([{ pose: 1 }, { pose: 2 }, { pose: 3 }]);
+    expect(
+      state.sockets[0]!.sent.map((data) =>
+        JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))),
+      ),
+    ).toEqual([{ pose: 1 }, { pose: 2 }, { pose: 3 }]);
   } finally {
     state.input.dispose();
   }
@@ -341,22 +408,29 @@ test("queued rotations resolve at admission and record each delivered pose", () 
 test("a failed admission setup preserves queued input for the next connection", async () => {
   const sockets: FakeSocket[] = [];
   let failSetup = true;
-  const input = createInputSocket("ws://localhost/ws", {
-    onAdmitted: () => input.trySend(0x0e, { enabled: false }),
-    onMessage: () => false,
-    onDisconnect() {},
-    onRefused() {},
-    onRecovered() {},
-  }, {
-    reconnectDelayMs: 5,
-    openSocket: () => {
-      const socket = new FakeSocket();
-      const send = socket.send.bind(socket);
-      socket.send = data => { if (failSetup) throw new Error("setup send failed"); send(data); };
-      sockets.push(socket);
-      return socket as unknown as WebSocket;
+  const input = createInputSocket(
+    "ws://localhost/ws",
+    {
+      onAdmitted: () => input.trySend(0x0e, { enabled: false }),
+      onMessage: () => false,
+      onDisconnect() {},
+      onRefused() {},
+      onRecovered() {},
     },
-  });
+    {
+      reconnectDelayMs: 5,
+      openSocket: () => {
+        const socket = new FakeSocket();
+        const send = socket.send.bind(socket);
+        socket.send = (data) => {
+          if (failSetup) throw new Error("setup send failed");
+          send(data);
+        };
+        sockets.push(socket);
+        return socket as unknown as WebSocket;
+      },
+    },
+  );
   try {
     input.send(0x04, { button: "home" });
     input.start();
@@ -368,7 +442,7 @@ test("a failed admission setup preserves queued input for the next connection", 
     await Bun.sleep(15);
     sockets[1]!.open();
     sockets[1]!.message(Uint8Array.of(0x83).buffer);
-    expect(sockets[1]!.sent.map(data => new Uint8Array(data)[0])).toEqual([0x0e, 0x04]);
+    expect(sockets[1]!.sent.map((data) => new Uint8Array(data)[0])).toEqual([0x0e, 0x04]);
   } finally {
     input.dispose();
   }

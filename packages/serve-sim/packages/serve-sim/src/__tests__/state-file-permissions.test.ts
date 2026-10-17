@@ -1,10 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { statSync, unlinkSync } from "fs";
-import {
-  stateFileForDevice,
-  writeServeSimState,
-  type ServeSimDeviceState,
-} from "../state";
+import { stateFileForDevice, writeServeSimState, type ServeSimDeviceState } from "../state";
 import { useTempStateDir } from "./helpers";
 
 const device = `PERMISSIONS-${process.pid}`;
@@ -17,7 +13,9 @@ beforeAll(() => {
 });
 
 afterEach(() => {
-  try { unlinkSync(file); } catch {}
+  try {
+    unlinkSync(file);
+  } catch {}
 });
 
 afterAll(() => {

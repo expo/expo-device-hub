@@ -1,27 +1,25 @@
-import { expect, test } from 'bun:test';
-import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
+import { expect, test } from "bun:test";
+import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
   NO_DEVICE_FRAME_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-} from '@expo/hub-components';
-import { renderToStaticMarkup } from 'react-dom/server';
+} from "@expo/hub-components";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
-import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
-import { PermissionsSection } from '../../../../@expo/hub-components/src/dashboard/PermissionsSection';
-import {
-  StreamOptionsSection,
-} from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
-import { StreamStatistics } from '../../../../@expo/hub-components/src/dashboard/StreamStatistics';
-import { StreamPanel } from '../../../../@expo/hub-components/src/dashboard/StreamPanel';
+import { LocationSection } from "../../../../@expo/hub-components/src/dashboard/LocationSection";
+import { LogSidebar } from "../../../../@expo/hub-components/src/dashboard/LogSidebar";
+import { PermissionsSection } from "../../../../@expo/hub-components/src/dashboard/PermissionsSection";
+import { StreamOptionsSection } from "../../../../@expo/hub-components/src/dashboard/StreamOptionsSection";
+import { StreamStatistics } from "../../../../@expo/hub-components/src/dashboard/StreamStatistics";
+import { StreamPanel } from "../../../../@expo/hub-components/src/dashboard/StreamPanel";
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
-  const ios = platform === 'ios';
+  const ios = platform === "ios";
   return {
     platform,
-    status: 'streaming',
+    status: "streaming",
     error: null,
     inputError: null,
     screenRecording: null,
@@ -39,21 +37,21 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     detachEvents: () => {},
     clearEvents: () => {},
     activity: { hostCores: ios ? 8 : 4, samples: [], errored: false, stale: false },
-    activityStatus: 'ready',
+    activityStatus: "ready",
     deviceSettings: ios
       ? {
-          appearance: 'light',
-          'liquid-glass': 'clear',
-          'color-filter': 'none',
-          'text-size': 'large',
-          'reduce-motion': 'off',
-          'increase-contrast': 'off',
-          'show-borders': 'off',
-          'reduce-transparency': 'off',
-          voiceover: 'off',
+          appearance: "light",
+          "liquid-glass": "clear",
+          "color-filter": "none",
+          "text-size": "large",
+          "reduce-motion": "off",
+          "increase-contrast": "off",
+          "show-borders": "off",
+          "reduce-transparency": "off",
+          voiceover: "off",
         }
-      : { appearance: 'light', network: 'on', 'text-size': 'medium' },
-    deviceSettingsStatus: 'ready',
+      : { appearance: "light", network: "on", "text-size": "medium" },
+    deviceSettingsStatus: "ready",
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
     displayWidthDp: null,
@@ -80,13 +78,13 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
-          httpCodecs: ['auto', 'h264', 'mjpeg'],
-          webRtcCodecs: ['h264', 'vp9', 'vp8'],
+          httpCodecs: ["auto", "h264", "mjpeg"],
+          webRtcCodecs: ["h264", "vp9", "vp8"],
         }
       : {
           modeAvailability: { mjpeg: false, h264: true, webrtc: true },
-          httpCodecs: ['h264'],
-          webRtcCodecs: ['h264'],
+          httpCodecs: ["h264"],
+          webRtcCodecs: ["h264"],
         },
     streamSettings: {
       mjpegFps: 60,
@@ -100,14 +98,14 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     streamSource: ios
       ? null
       : {
-          mode: 'scrcpy',
-          grpcImageMode: 'png',
-          encoder: 'software',
-          encoderName: 'libx264',
-          availableEncoders: ['software', 'hardware'],
-          inputSource: 'scrcpy',
-          availableInputSources: ['scrcpy'],
-          availableModes: ['scrcpy', 'grpc-screenshot'],
+          mode: "scrcpy",
+          grpcImageMode: "png",
+          encoder: "software",
+          encoderName: "libx264",
+          availableEncoders: ["software", "hardware"],
+          inputSource: "scrcpy",
+          availableInputSources: ["scrcpy"],
+          availableModes: ["scrcpy", "grpc-screenshot"],
           sessionGeneration: 0,
         },
     streamSourcePending: false,
@@ -118,7 +116,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     setGrpcInputSource: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
-    webRtcCodec: 'h264',
+    webRtcCodec: "h264",
     setWebRtcCodec: () => {},
     capabilities: {
       deviceSettings: true,
@@ -139,7 +137,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       location: false,
     },
     foregroundApp: null,
-    videoKind: 'img',
+    videoKind: "img",
     attachVideo: () => {},
     sendTouch: () => {},
     sendKey: () => false,
@@ -147,7 +145,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     reload: () => {},
     rotate: () => {},
     screenshot: async () => null,
-    appearance: 'light',
+    appearance: "light",
     setAppearance: () => {},
     hardwareKeyboardConnected: ios,
     setHardwareKeyboardConnected: () => {},
@@ -156,39 +154,47 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
 }
 
 test.each([
-  { h264: true, httpCodec: undefined, expected: 'H.264' },
-  { h264: false, httpCodec: undefined, expected: 'MJPEG' },
-  { h264: true, httpCodec: 'mjpeg' as const, expected: 'MJPEG' },
-  { h264: true, httpCodec: 'auto' as const, expected: 'Auto' },
-])('HTTP-only controls fall back from WebRTC with codec $expected (h264=$h264, httpCodec=$httpCodec)', ({ h264, httpCodec, expected }) => {
-  const client = {
-    ...inspectorClient('ios'),
-    streamCapabilities: {
-      modeAvailability: { mjpeg: true, h264: true, webrtc: false },
-      httpCodecs: ['auto', 'h264', 'mjpeg'] as const,
-      webRtcCodecs: [],
-    },
-  };
-  const html = renderToStaticMarkup(
-    <StreamOptionsSection client={client} defaultOpen streamMode="webrtc" httpCodec={httpCodec}
-      streamModeAvailability={{ mjpeg: true, h264, webrtc: true }} />,
-  );
-  expect(selectValue(html, 'Stream transport')).toBe('HTTP');
-  expect(selectValue(html, 'HTTP codec')).toBe(expected);
-});
+  { h264: true, httpCodec: undefined, expected: "H.264" },
+  { h264: false, httpCodec: undefined, expected: "MJPEG" },
+  { h264: true, httpCodec: "mjpeg" as const, expected: "MJPEG" },
+  { h264: true, httpCodec: "auto" as const, expected: "Auto" },
+])(
+  "HTTP-only controls fall back from WebRTC with codec $expected (h264=$h264, httpCodec=$httpCodec)",
+  ({ h264, httpCodec, expected }) => {
+    const client = {
+      ...inspectorClient("ios"),
+      streamCapabilities: {
+        modeAvailability: { mjpeg: true, h264: true, webrtc: false },
+        httpCodecs: ["auto", "h264", "mjpeg"] as const,
+        webRtcCodecs: [],
+      },
+    };
+    const html = renderToStaticMarkup(
+      <StreamOptionsSection
+        client={client}
+        defaultOpen
+        streamMode="webrtc"
+        httpCodec={httpCodec}
+        streamModeAvailability={{ mjpeg: true, h264, webrtc: true }}
+      />,
+    );
+    expect(selectValue(html, "Stream transport")).toBe("HTTP");
+    expect(selectValue(html, "HTTP codec")).toBe(expected);
+  },
+);
 
-function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): Device {
+function device(platform: DevicePlatform, deviceFrame: Device["deviceFrame"]): Device {
   return {
     id: `${platform}-device`,
     name:
-      deviceFrame === 'ios:iphone-17-pro'
-        ? 'iPhone 17 Pro'
-        : deviceFrame === 'android:pixel-9'
-          ? 'Pixel 9'
-          : deviceFrame === 'android:pixel-10-pro'
-            ? 'Pixel 10 Pro'
-            : 'Other',
-    version: platform === 'ios' ? 'iOS 27.0' : 'Android 17.0',
+      deviceFrame === "ios:iphone-17-pro"
+        ? "iPhone 17 Pro"
+        : deviceFrame === "android:pixel-9"
+          ? "Pixel 9"
+          : deviceFrame === "android:pixel-10-pro"
+            ? "Pixel 10 Pro"
+            : "Other",
+    version: platform === "ios" ? "iOS 27.0" : "Android 17.0",
     platform,
     booted: true,
     physical: false,
@@ -197,12 +203,10 @@ function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): D
   };
 }
 
-type WebRtcStreamStats = NonNullable<DeviceClient['streamStats']>;
-type WebRtcStreamStatsSample = WebRtcStreamStats['samples'][number];
+type WebRtcStreamStats = NonNullable<DeviceClient["streamStats"]>;
+type WebRtcStreamStatsSample = WebRtcStreamStats["samples"][number];
 
-function streamSample(
-  overrides: Partial<WebRtcStreamStatsSample> = {},
-): WebRtcStreamStatsSample {
+function streamSample(overrides: Partial<WebRtcStreamStatsSample> = {}): WebRtcStreamStatsSample {
   return {
     atMs: 1_000,
     serverFps: null,
@@ -215,14 +219,14 @@ function streamSample(
     clientFreezeCount: null,
     clientFreezeDurationMs: null,
     clientRoundTripMs: null,
-    clientIcePath: 'unknown',
+    clientIcePath: "unknown",
     ...overrides,
   };
 }
 
 function streamStats(
   samples: readonly WebRtcStreamStatsSample[],
-  overrides: Partial<Omit<WebRtcStreamStats, 'samples'>> = {},
+  overrides: Partial<Omit<WebRtcStreamStats, "samples">> = {},
 ): WebRtcStreamStats {
   return {
     samples,
@@ -235,7 +239,7 @@ function streamStats(
 }
 
 const encoderStats = {
-  codec: 'video/H264',
+  codec: "video/H264",
   encodeFps: 29.8,
   targetBitrateBps: 5_750_000,
   encodeMsPerFrame: 2.4,
@@ -243,12 +247,12 @@ const encoderStats = {
   framesSent: 1_190,
   framesDropped: 10,
   packetLossRatio: 0.012,
-  qualityLimitationReason: 'bandwidth',
+  qualityLimitationReason: "bandwidth",
   publisherFps: null,
   publisherSubmittedFrames: null,
   publisherDroppedFrames: null,
   payloadBitrateBps: null,
-} satisfies NonNullable<WebRtcStreamStats['encoder']>;
+} satisfies NonNullable<WebRtcStreamStats["encoder"]>;
 
 const captureStats = {
   screenFrames: 1_621_585,
@@ -257,14 +261,14 @@ const captureStats = {
   forwardedFrames: 4_414,
   pumpRestarts: 2,
   grpc: null,
-} satisfies NonNullable<WebRtcStreamStats['capture']>;
+} satisfies NonNullable<WebRtcStreamStats["capture"]>;
 
 function rowOpeningTag(html: string, label: string) {
   const labelIndex = html.indexOf(`>${label}</span>`);
   expect(labelIndex).toBeGreaterThanOrEqual(0);
 
   const rowStart = html.lastIndexOf('<div style="', labelIndex);
-  const rowEnd = html.indexOf('>', rowStart);
+  const rowEnd = html.indexOf(">", rowStart);
   return html.slice(rowStart, rowEnd + 1);
 }
 
@@ -272,47 +276,47 @@ function sectionMarkup(html: string, title: string) {
   const start = html.indexOf(`<section aria-label="${title}"`);
   expect(start).toBeGreaterThanOrEqual(0);
 
-  const next = html.indexOf('<section ', start + 1);
+  const next = html.indexOf("<section ", start + 1);
   return html.slice(start, next === -1 ? html.length : next);
 }
 
 function sectionExpanded(html: string, title: string) {
   const section = sectionMarkup(html, title);
-  return section.slice(0, section.indexOf('</button>')).includes('aria-expanded="true"');
+  return section.slice(0, section.indexOf("</button>")).includes('aria-expanded="true"');
 }
 
 function switchMarkup(html: string, label: string) {
   const labelIndex = html.indexOf(`aria-label="${label}"`);
   expect(labelIndex).toBeGreaterThanOrEqual(0);
 
-  const switchStart = html.lastIndexOf('<button', labelIndex);
-  const switchEnd = html.indexOf('</button>', labelIndex);
-  return html.slice(switchStart, switchEnd + '</button>'.length);
+  const switchStart = html.lastIndexOf("<button", labelIndex);
+  const switchEnd = html.indexOf("</button>", labelIndex);
+  return html.slice(switchStart, switchEnd + "</button>".length);
 }
 
 function selectMarkup(html: string, label: string) {
   const labelIndex = html.indexOf(`aria-label="${label}"`);
   expect(labelIndex).toBeGreaterThanOrEqual(0);
 
-  const selectStart = html.lastIndexOf('<button', labelIndex);
-  const selectEnd = html.indexOf('</button>', labelIndex);
-  const markup = html.slice(selectStart, selectEnd + '</button>'.length);
+  const selectStart = html.lastIndexOf("<button", labelIndex);
+  const selectEnd = html.indexOf("</button>", labelIndex);
+  const markup = html.slice(selectStart, selectEnd + "</button>".length);
   expect(markup).toContain('role="combobox"');
   return markup;
 }
 
 /** The label the select pill currently shows: the trigger's only text, as the chevron is an svg. */
 function selectValue(html: string, label: string) {
-  return selectMarkup(html, label).replace(/<[^>]+>/g, '');
+  return selectMarkup(html, label).replace(/<[^>]+>/g, "");
 }
 
 /** Every option label the select pill offers, in menu order. */
 function selectOptionLabels(html: string, label: string) {
   const match = selectMarkup(html, label).match(/data-test-options="([^"]*)"/);
   expect(match).not.toBeNull();
-  return match![1].split('\n').map((option) =>
-    option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
-  );
+  return match![1]
+    .split("\n")
+    .map((option) => option.replace(/&amp;/g, "&").replace(/&quot;/g, '"'));
 }
 
 function streamStatisticGroupMarkup(html: string, label: string) {
@@ -329,22 +333,25 @@ function streamStatisticValue(group: string, label: string) {
   expect(rowIndex).toBeGreaterThanOrEqual(0);
 
   const cellStart = group.indexOf('<span role="cell"', rowIndex);
-  const valueStart = group.indexOf('>', cellStart) + 1;
-  const valueEnd = group.indexOf('</span>', valueStart);
-  return group.slice(valueStart, valueEnd).replace(/<[^>]+>/g, '').trim();
+  const valueStart = group.indexOf(">", cellStart) + 1;
+  const valueEnd = group.indexOf("</span>", valueStart);
+  return group
+    .slice(valueStart, valueEnd)
+    .replace(/<[^>]+>/g, "")
+    .trim();
 }
 
 function openingTag(html: string, marker: string) {
   const start = html.indexOf(marker);
   expect(start).toBeGreaterThanOrEqual(0);
 
-  return html.slice(start, html.indexOf('>', start) + 1);
+  return html.slice(start, html.indexOf(">", start) + 1);
 }
 
-test('renders every supported iOS inspector section and option', () => {
+test("renders every supported iOS inspector section and option", () => {
   const html = renderToStaticMarkup(
     <LogSidebar
-      client={inspectorClient('ios')}
+      client={inspectorClient("ios")}
       streamMode="h264"
       httpCodec="h264"
       streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
@@ -353,89 +360,98 @@ test('renders every supported iOS inspector section and option', () => {
     />,
   );
 
-  const order = ['Current app', 'Device options', 'Stream options', 'Accessibility', 'Events', 'Logs'];
+  const order = [
+    "Current app",
+    "Device options",
+    "Stream options",
+    "Accessibility",
+    "Events",
+    "Logs",
+  ];
   const positions = order.map((label) => html.indexOf(`<section aria-label="${label}"`));
   expect(positions.every((index) => index >= 0)).toBe(true);
   expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   expect(html).not.toContain('aria-label="Activity"');
   for (const label of [
-    'Appearance',
-    'Liquid glass',
-    'Color filter',
-    'Text size',
-    'Reduce motion',
-    'Increase contrast',
-    'Show borders',
-    'Reduce transparency',
-    'VoiceOver',
+    "Appearance",
+    "Liquid glass",
+    "Color filter",
+    "Text size",
+    "Reduce motion",
+    "Increase contrast",
+    "Show borders",
+    "Reduce transparency",
+    "VoiceOver",
   ]) {
     expect(html).toContain(label);
   }
-  expect(html).not.toContain('>Network<');
-  expect(sectionExpanded(html, 'Current app')).toBe(true);
-  expect(sectionExpanded(html, 'Device options')).toBe(true);
+  expect(html).not.toContain(">Network<");
+  expect(sectionExpanded(html, "Current app")).toBe(true);
+  expect(sectionExpanded(html, "Device options")).toBe(true);
   // The first section has no separator above it; every following section does.
-  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain('border-top:');
-  expect(openingTag(html, '<section aria-label="Device options"')).toContain('border-top:');
-  const currentApp = sectionMarkup(html, 'Current app');
-  for (const label of ['App ID', 'Version', 'Build number']) {
+  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain("border-top:");
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain("border-top:");
+  const currentApp = sectionMarkup(html, "Current app");
+  for (const label of ["App ID", "Version", "Build number"]) {
     expect(currentApp).toContain(`>${label}<`);
   }
-  for (const label of ['Minimum iOS', 'Minimum SDK', 'PID']) {
+  for (const label of ["Minimum iOS", "Minimum SDK", "PID"]) {
     expect(currentApp).not.toContain(`>${label}<`);
   }
-  expect(currentApp).toContain('width:40px');
+  expect(currentApp).toContain("width:40px");
   expect(currentApp).toContain('data-testid="activity-charts"');
-  expect(currentApp).toContain('Waiting for activity data…');
-  for (const label of ['Stream options', 'Events', 'Logs']) {
+  expect(currentApp).toContain("Waiting for activity data…");
+  for (const label of ["Stream options", "Events", "Logs"]) {
     expect(sectionExpanded(html, label)).toBe(false);
-    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('border-top:');
-    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('padding:0 16px;');
-    expect(sectionMarkup(html, label)).toContain('grid-template-rows:0fr');
+    expect(openingTag(html, `<section aria-label="${label}"`)).toContain("border-top:");
+    expect(openingTag(html, `<section aria-label="${label}"`)).toContain("padding:0 16px;");
+    expect(sectionMarkup(html, label)).toContain("grid-template-rows:0fr");
   }
-  expect(openingTag(html, '<section aria-label="Device options"')).toContain('padding:0 16px;');
-  expect(sectionMarkup(html, 'Device options')).toContain('grid-template-rows:1fr');
-  expect(sectionMarkup(html, 'Device options')).toContain('padding-bottom:12px');
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain("padding:0 16px;");
+  expect(sectionMarkup(html, "Device options")).toContain("grid-template-rows:1fr");
+  expect(sectionMarkup(html, "Device options")).toContain("padding-bottom:12px");
   // The title sits centered in its row, so collapsed sections line up evenly.
-  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain('padding:18px 0');
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain(
+    "padding:18px 0",
+  );
 });
 
-test('renders Android stream options while omitting unsupported and iOS-only sections', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+test("renders Android stream options while omitting unsupported and iOS-only sections", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
 
   for (const label of [
-    'Current app',
-    'Device options',
-    'Stream options',
-    'Events',
-    'Logs',
-    'Appearance',
-    'Network',
-    'Text size',
+    "Current app",
+    "Device options",
+    "Stream options",
+    "Events",
+    "Logs",
+    "Appearance",
+    "Network",
+    "Text size",
   ]) {
     expect(html).toContain(label);
   }
-  for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
+  for (const label of ["Activity", "Liquid glass", "VoiceOver"]) {
     expect(html).not.toContain(`>${label}<`);
   }
   expect(html).toContain('<section aria-label="Accessibility"');
-  const currentApp = sectionMarkup(html, 'Current app');
+  const currentApp = sectionMarkup(html, "Current app");
   expect(currentApp).toContain('data-testid="activity-charts"');
-  expect(currentApp).toContain('Waiting for activity data…');
-  expect(currentApp).toContain('width:40px');
-  for (const label of ['App ID', 'Version', 'Build number']) {
+  expect(currentApp).toContain("Waiting for activity data…");
+  expect(currentApp).toContain("width:40px");
+  for (const label of ["App ID", "Version", "Build number"]) {
     expect(currentApp).toContain(`>${label}<`);
   }
-  expect(currentApp).not.toContain('>PID<');
-  expect(sectionExpanded(html, 'Current app')).toBe(true);
-  expect(sectionExpanded(html, 'Device options')).toBe(true);
-  for (const label of ['Stream options', 'Events', 'Logs']) {
+  expect(currentApp).not.toContain(">PID<");
+  expect(sectionExpanded(html, "Current app")).toBe(true);
+  expect(sectionExpanded(html, "Device options")).toBe(true);
+  for (const label of ["Stream options", "Events", "Logs"]) {
     expect(sectionExpanded(html, label)).toBe(false);
   }
 });
 
-test('shows the Camera section only when the client reports camera feeds', () => {
-  const android = inspectorClient('android');
+test("shows the Camera section only when the client reports camera feeds", () => {
+  const android = inspectorClient("android");
   const html = renderToStaticMarkup(
     <LogSidebar
       client={{
@@ -447,19 +463,19 @@ test('shows the Camera section only when the client reports camera feeds', () =>
   );
 
   expect(html).toContain('<section aria-label="Camera"');
-  const camera = sectionMarkup(html, 'Camera');
-  expect(camera).toContain('>Camera</span>');
+  const camera = sectionMarkup(html, "Camera");
+  expect(camera).toContain(">Camera</span>");
   expect(camera).toContain('aria-expanded="false"');
   const cameraIndex = html.indexOf('<section aria-label="Camera"');
   expect(cameraIndex).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
   expect(cameraIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
 
-  const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
   expect(iosHtml).not.toContain('<section aria-label="Camera"');
 });
 
-test('shows the Location section between Camera and Events, with Clear only where supported', () => {
-  const android = inspectorClient('android');
+test("shows the Location section between Camera and Events, with Clear only where supported", () => {
+  const android = inspectorClient("android");
   const client = {
     ...android,
     camera: { wiredAtLaunch: true, feeds: [] },
@@ -471,9 +487,9 @@ test('shows the Location section between Camera and Events, with Clear only wher
   const locationIndex = html.indexOf('<section aria-label="Location"');
   expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));
   expect(locationIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
-  expect(
-    renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />),
-  ).not.toContain('<section aria-label="Location"');
+  expect(renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />)).not.toContain(
+    '<section aria-label="Location"',
+  );
 
   const settable = renderToStaticMarkup(<LocationSection client={client} defaultOpen />);
   const clearable = renderToStaticMarkup(
@@ -482,16 +498,16 @@ test('shows the Location section between Camera and Events, with Clear only wher
       defaultOpen
     />,
   );
-  expect(settable).toContain('>Set location</span>');
-  expect(settable).not.toContain('>Clear</span>');
-  expect(clearable).toContain('>Clear</span>');
+  expect(settable).toContain(">Set location</span>");
+  expect(settable).not.toContain(">Clear</span>");
+  expect(clearable).toContain(">Clear</span>");
 });
 
-for (const streamMode of ['h264', 'webrtc'] as const) {
+for (const streamMode of ["h264", "webrtc"] as const) {
   test(`shows Android encoder controls over ${streamMode}`, () => {
     const html = renderToStaticMarkup(
       <StreamOptionsSection
-        client={inspectorClient('android')}
+        client={inspectorClient("android")}
         defaultOpen
         streamMode={streamMode}
         httpCodec="h264"
@@ -501,100 +517,98 @@ for (const streamMode of ['h264', 'webrtc'] as const) {
       />,
     );
 
-    expect(selectOptionLabels(html, 'Stream transport')).toEqual(['WebSocket', 'WebRTC']);
-    expect(selectValue(html, 'Stream transport')).toBe(
-      streamMode === 'webrtc' ? 'WebRTC' : 'WebSocket',
+    expect(selectOptionLabels(html, "Stream transport")).toEqual(["WebSocket", "WebRTC"]);
+    expect(selectValue(html, "Stream transport")).toBe(
+      streamMode === "webrtc" ? "WebRTC" : "WebSocket",
     );
-    expect(selectOptionLabels(html, 'WebSocket codec')).toEqual(['H.264']);
-    expect(selectOptionLabels(html, 'WebRTC codec')).toEqual(['H.264']);
-    expect(html).not.toContain('>HTTP<');
-    expect(html).not.toContain('>MJPEG<');
-    expect(html).not.toContain('>VP8<');
-    expect(html).not.toContain('>VP9<');
-    expect(html).toContain('>Max size</span>');
-    expect(selectMarkup(html, 'Max size')).not.toContain('disabled=""');
-    expect(html).not.toContain('>MJPEG FPS</span>');
-    expect(html).not.toContain('>MJPEG quality</span>');
-    expect(selectValue(html, 'Video FPS')).toBe('60 FPS');
-    expect(selectValue(html, 'Video bitrate')).toBe('6 Mbps');
-    expect(selectMarkup(html, 'Video FPS')).not.toContain('disabled=""');
-    expect(selectMarkup(html, 'Video bitrate')).not.toContain('disabled=""');
+    expect(selectOptionLabels(html, "WebSocket codec")).toEqual(["H.264"]);
+    expect(selectOptionLabels(html, "WebRTC codec")).toEqual(["H.264"]);
+    expect(html).not.toContain(">HTTP<");
+    expect(html).not.toContain(">MJPEG<");
+    expect(html).not.toContain(">VP8<");
+    expect(html).not.toContain(">VP9<");
+    expect(html).toContain(">Max size</span>");
+    expect(selectMarkup(html, "Max size")).not.toContain('disabled=""');
+    expect(html).not.toContain(">MJPEG FPS</span>");
+    expect(html).not.toContain(">MJPEG quality</span>");
+    expect(selectValue(html, "Video FPS")).toBe("60 FPS");
+    expect(selectValue(html, "Video bitrate")).toBe("6 Mbps");
+    expect(selectMarkup(html, "Video FPS")).not.toContain('disabled=""');
+    expect(selectMarkup(html, "Video bitrate")).not.toContain('disabled=""');
   });
 }
 
-test('shows the Android emulator capture source select', () => {
+test("shows the Android emulator capture source select", () => {
   const html = renderToStaticMarkup(
-    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+    <StreamOptionsSection client={inspectorClient("android")} defaultOpen />,
   );
 
-  expect(html).toContain('>Source</span>');
-  expect(selectValue(html, 'Stream source')).toBe('scrcpy');
-  expect(selectOptionLabels(html, 'Stream source')).toEqual(['scrcpy', 'gRPC']);
-  expect(selectMarkup(html, 'Stream source')).not.toContain('disabled=""');
+  expect(html).toContain(">Source</span>");
+  expect(selectValue(html, "Stream source")).toBe("scrcpy");
+  expect(selectOptionLabels(html, "Stream source")).toEqual(["scrcpy", "gRPC"]);
+  expect(selectMarkup(html, "Stream source")).not.toContain('disabled=""');
 });
 
-test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
+test("shows PNG, MMAP and RGB888 only while the gRPC source is active", () => {
   const scrcpyHtml = renderToStaticMarkup(
-    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+    <StreamOptionsSection client={inspectorClient("android")} defaultOpen />,
   );
   expect(scrcpyHtml).not.toContain('aria-label="gRPC image mode"');
   expect(scrcpyHtml).not.toContain('aria-label="gRPC encoder"');
 
   const grpcClient = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy", "grpc"],
+      availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 1,
     },
   } satisfies DeviceClient;
-  const grpcHtml = renderToStaticMarkup(
-    <StreamOptionsSection client={grpcClient} defaultOpen />,
-  );
+  const grpcHtml = renderToStaticMarkup(<StreamOptionsSection client={grpcClient} defaultOpen />);
 
-  expect(grpcHtml).toContain('>Input</span>');
-  expect(selectOptionLabels(grpcHtml, 'Input source')).toEqual(['scrcpy', 'gRPC']);
-  expect(selectValue(grpcHtml, 'Input source')).toBe('scrcpy');
-  expect(grpcHtml).toContain('>gRPC frames</span>');
-  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP', 'RGB888']);
-  expect(selectValue(grpcHtml, 'gRPC image mode')).toBe('MMAP');
-  expect(selectOptionLabels(grpcHtml, 'gRPC encoder')).toEqual(['Software', 'Hardware']);
-  expect(selectValue(grpcHtml, 'gRPC encoder')).toBe('Software');
-  expect(grpcHtml).toContain('Active encoder: libx264');
+  expect(grpcHtml).toContain(">Input</span>");
+  expect(selectOptionLabels(grpcHtml, "Input source")).toEqual(["scrcpy", "gRPC"]);
+  expect(selectValue(grpcHtml, "Input source")).toBe("scrcpy");
+  expect(grpcHtml).toContain(">gRPC frames</span>");
+  expect(selectOptionLabels(grpcHtml, "gRPC image mode")).toEqual(["PNG", "MMAP", "RGB888"]);
+  expect(selectValue(grpcHtml, "gRPC image mode")).toBe("MMAP");
+  expect(selectOptionLabels(grpcHtml, "gRPC encoder")).toEqual(["Software", "Hardware"]);
+  expect(selectValue(grpcHtml, "gRPC encoder")).toBe("Software");
+  expect(grpcHtml).toContain("Active encoder: libx264");
 });
 
-test('disables the Android capture source select while replacement is pending', () => {
+test("disables the Android capture source select while replacement is pending", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSourcePending: true,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
-  const source = selectMarkup(html, 'Stream source');
+  const source = selectMarkup(html, "Stream source");
 
   expect(source).toContain('disabled=""');
   // The previous source stays selected until the replacement stream renders.
-  expect(selectValue(html, 'Stream source')).toBe('scrcpy');
-  expect(html).not.toContain('Switching stream source…');
+  expect(selectValue(html, "Stream source")).toBe("scrcpy");
+  expect(html).not.toContain("Switching stream source…");
 });
 
-test('disables every gRPC capture control while replacement is pending', () => {
+test("disables every gRPC capture control while replacement is pending", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy", "grpc"],
+      availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 1,
     },
     streamSourcePending: true,
@@ -602,43 +616,43 @@ test('disables every gRPC capture control while replacement is pending', () => {
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
   // Input source and image mode restart the same capture session as Source.
-  expect(selectMarkup(html, 'Input source')).toContain('disabled=""');
-  expect(selectMarkup(html, 'gRPC image mode')).toContain('disabled=""');
-  expect(selectMarkup(html, 'gRPC encoder')).toContain('disabled=""');
-  expect(html).not.toContain('Switching stream source…');
+  expect(selectMarkup(html, "Input source")).toContain('disabled=""');
+  expect(selectMarkup(html, "gRPC image mode")).toContain('disabled=""');
+  expect(selectMarkup(html, "gRPC encoder")).toContain('disabled=""');
+  expect(html).not.toContain("Switching stream source…");
 });
 
-test('shows no switching hint once the capture source is settled', () => {
+test("shows no switching hint once the capture source is settled", () => {
   const html = renderToStaticMarkup(
-    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+    <StreamOptionsSection client={inspectorClient("android")} defaultOpen />,
   );
 
-  expect(html).not.toContain('Switching stream source…');
+  expect(html).not.toContain("Switching stream source…");
 });
 
-test('shows an Android capture source failure below the switch', () => {
+test("shows an Android capture source failure below the switch", () => {
   const client = {
-    ...inspectorClient('android'),
-    streamSourceError: 'Unable to change stream source: Emulator gRPC endpoint is unavailable',
+    ...inspectorClient("android"),
+    streamSourceError: "Unable to change stream source: Emulator gRPC endpoint is unavailable",
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
   expect(html).toContain('role="alert"');
-  expect(html).toContain('Unable to change stream source: Emulator gRPC endpoint is unavailable');
+  expect(html).toContain("Unable to change stream source: Emulator gRPC endpoint is unavailable");
 });
 
-test('hides the Android capture source row when gRPC is unavailable', () => {
+test("hides the Android capture source row when gRPC is unavailable", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSource: {
-      mode: 'scrcpy',
-      grpcImageMode: 'png',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy'],
-      availableModes: ['scrcpy'],
+      mode: "scrcpy",
+      grpcImageMode: "png",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy"],
+      availableModes: ["scrcpy"],
       sessionGeneration: 0,
     },
   } satisfies DeviceClient;
@@ -647,21 +661,21 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
   expect(html).not.toContain('aria-label="Stream source"');
 });
 
-test('disables Android encoder controls while a stream restart is pending', () => {
+test("disables Android encoder controls while a stream restart is pending", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSettingsPending: true,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  for (const label of ['Max size', 'Video FPS', 'Video bitrate']) {
+  for (const label of ["Max size", "Video FPS", "Video bitrate"]) {
     expect(selectMarkup(html, label)).toContain('disabled=""');
   }
 });
 
-test('renders grouped WebRTC statistics with rich client, encoder, and capture values', () => {
+test("renders grouped WebRTC statistics with rich client, encoder, and capture values", () => {
   const client = {
-    ...inspectorClient('ios'),
+    ...inspectorClient("ios"),
     streamStats: streamStats(
       [
         streamSample(),
@@ -677,7 +691,7 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
           clientFreezeCount: 2,
           clientFreezeDurationMs: 1_500,
           clientRoundTripMs: 30.6,
-          clientIcePath: 'relay',
+          clientIcePath: "relay",
         }),
       ],
       { encoder: encoderStats, capture: captureStats },
@@ -697,56 +711,53 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
     '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
   );
   expect(
-    openingTag(
-      html,
-      '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
-    ),
-  ).toContain('overflow:visible');
+    openingTag(html, '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"'),
+  ).toContain("overflow:visible");
   expect(
     html.match(/grid-template-columns:repeat\(auto-fit, minmax\(150px, 1fr\)\)/g),
   ).toHaveLength(5);
-  const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
-  const receiver = streamStatisticGroupMarkup(html, 'Client statistics');
-  const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
-  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
+  const stream = streamStatisticGroupMarkup(html, "Stream statistics");
+  const receiver = streamStatisticGroupMarkup(html, "Client statistics");
+  const encoder = streamStatisticGroupMarkup(html, "Encoder statistics");
+  const capture = streamStatisticGroupMarkup(html, "Capture statistics");
 
-  expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(stream, 'Client FPS')).toBe('29 FPS');
-  expect(streamStatisticValue(stream, 'Client bitrate')).toBe('5.75 Mbps');
-  expect(streamStatisticValue(receiver, 'Packet loss')).toBe('1.2%');
-  expect(streamStatisticValue(receiver, 'Jitter')).toBe('8.4 ms');
-  expect(streamStatisticValue(receiver, 'Jitter buffer')).toBe('40 ms');
-  expect(streamStatisticValue(receiver, 'Dropped frames')).toBe('3');
-  expect(streamStatisticValue(receiver, 'Freezes')).toBe('2 · 1.5 s');
-  expect(streamStatisticValue(receiver, 'RTT')).toBe('31 ms');
-  expect(streamStatisticValue(receiver, 'ICE path')).toBe('Via relay');
-  expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
-  expect(streamStatisticValue(encoder, 'Encode FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(encoder, 'Target bitrate')).toBe('5.75 Mbps');
-  expect(streamStatisticValue(encoder, 'Encode time / frame')).toBe('2.4 ms');
-  expect(streamStatisticValue(encoder, 'Frames encoded')).toBe('1.2k');
-  expect(streamStatisticValue(encoder, 'Frames dropped')).toBe('10');
-  expect(streamStatisticValue(encoder, 'Packet loss')).toBe('1.2%');
-  expect(streamStatisticValue(encoder, 'Limitation')).toBe('Network');
-  expect(streamStatisticValue(capture, 'Screen frames')).toBe('1.62M');
-  expect(streamStatisticValue(capture, 'Idle frames')).toBe('0');
-  expect(streamStatisticValue(capture, 'Capture deliveries')).toBe('105.5k');
-  expect(streamStatisticValue(capture, 'Pacer submissions')).toBe('4.4k');
-  expect(streamStatisticValue(capture, 'Pump restarts')).toBe('2');
+  expect(streamStatisticValue(stream, "Server FPS")).toBe("30 FPS");
+  expect(streamStatisticValue(stream, "Client FPS")).toBe("29 FPS");
+  expect(streamStatisticValue(stream, "Client bitrate")).toBe("5.75 Mbps");
+  expect(streamStatisticValue(receiver, "Packet loss")).toBe("1.2%");
+  expect(streamStatisticValue(receiver, "Jitter")).toBe("8.4 ms");
+  expect(streamStatisticValue(receiver, "Jitter buffer")).toBe("40 ms");
+  expect(streamStatisticValue(receiver, "Dropped frames")).toBe("3");
+  expect(streamStatisticValue(receiver, "Freezes")).toBe("2 · 1.5 s");
+  expect(streamStatisticValue(receiver, "RTT")).toBe("31 ms");
+  expect(streamStatisticValue(receiver, "ICE path")).toBe("Via relay");
+  expect(streamStatisticValue(encoder, "Codec")).toBe("H.264");
+  expect(streamStatisticValue(encoder, "Encode FPS")).toBe("30 FPS");
+  expect(streamStatisticValue(encoder, "Target bitrate")).toBe("5.75 Mbps");
+  expect(streamStatisticValue(encoder, "Encode time / frame")).toBe("2.4 ms");
+  expect(streamStatisticValue(encoder, "Frames encoded")).toBe("1.2k");
+  expect(streamStatisticValue(encoder, "Frames dropped")).toBe("10");
+  expect(streamStatisticValue(encoder, "Packet loss")).toBe("1.2%");
+  expect(streamStatisticValue(encoder, "Limitation")).toBe("Network");
+  expect(streamStatisticValue(capture, "Screen frames")).toBe("1.62M");
+  expect(streamStatisticValue(capture, "Idle frames")).toBe("0");
+  expect(streamStatisticValue(capture, "Capture deliveries")).toBe("105.5k");
+  expect(streamStatisticValue(capture, "Pacer submissions")).toBe("4.4k");
+  expect(streamStatisticValue(capture, "Pump restarts")).toBe("2");
   expect(html).toContain('role="img" aria-label="Client FPS: 29 FPS"');
   expect(html).toContain('role="img" aria-label="Client bitrate: 5.75 Mbps"');
   expect(openingTag(html, '<svg role="img" aria-label="Client FPS: 29 FPS"')).toContain(
-    'overflow:visible',
+    "overflow:visible",
   );
   expect(openingTag(html, '<svg role="img" aria-label="Client bitrate: 5.75 Mbps"')).toContain(
-    'overflow:visible',
+    "overflow:visible",
   );
   expect(html.match(/title="Last 60 samples"/g)).toHaveLength(2);
 });
 
-test('keeps measured zero distinct from unavailable WebRTC values', () => {
+test("keeps measured zero distinct from unavailable WebRTC values", () => {
   const client = {
-    ...inspectorClient('ios'),
+    ...inspectorClient("ios"),
     streamStats: streamStats(
       [
         streamSample({
@@ -768,7 +779,7 @@ test('keeps measured zero distinct from unavailable WebRTC values', () => {
           framesSent: 0,
           framesDropped: 0,
           packetLossRatio: 0,
-          qualityLimitationReason: 'none',
+          qualityLimitationReason: "none",
           publisherFps: null,
           publisherSubmittedFrames: null,
           publisherDroppedFrames: null,
@@ -786,34 +797,34 @@ test('keeps measured zero distinct from unavailable WebRTC values', () => {
       onStreamModeChange={() => {}}
     />,
   );
-  const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
-  const receiver = streamStatisticGroupMarkup(html, 'Client statistics');
-  const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
+  const stream = streamStatisticGroupMarkup(html, "Stream statistics");
+  const receiver = streamStatisticGroupMarkup(html, "Client statistics");
+  const encoder = streamStatisticGroupMarkup(html, "Encoder statistics");
 
-  expect(streamStatisticValue(stream, 'Server FPS')).toBe('0.0 FPS');
-  expect(streamStatisticValue(stream, 'Client bitrate')).toBe('0 kbps');
-  expect(streamStatisticValue(receiver, 'Packet loss')).toBe('0.0%');
-  expect(streamStatisticValue(receiver, 'Jitter')).toBe('—');
-  expect(streamStatisticValue(receiver, 'Dropped frames')).toBe('0');
-  expect(streamStatisticValue(receiver, 'Freezes')).toBe('0');
-  expect(streamStatisticValue(receiver, 'RTT')).toBe('—');
-  expect(streamStatisticValue(receiver, 'ICE path')).toBe('—');
-  expect(streamStatisticValue(encoder, 'Codec')).toBe('—');
-  expect(streamStatisticValue(encoder, 'Frames sent')).toBe('0');
-  expect(streamStatisticValue(encoder, 'Packet loss')).toBe('0.0%');
-  expect(streamStatisticValue(encoder, 'Limitation')).toBe('None');
-  expect(html).not.toContain('— ms');
-  expect(html).not.toContain('— FPS');
+  expect(streamStatisticValue(stream, "Server FPS")).toBe("0.0 FPS");
+  expect(streamStatisticValue(stream, "Client bitrate")).toBe("0 kbps");
+  expect(streamStatisticValue(receiver, "Packet loss")).toBe("0.0%");
+  expect(streamStatisticValue(receiver, "Jitter")).toBe("—");
+  expect(streamStatisticValue(receiver, "Dropped frames")).toBe("0");
+  expect(streamStatisticValue(receiver, "Freezes")).toBe("0");
+  expect(streamStatisticValue(receiver, "RTT")).toBe("—");
+  expect(streamStatisticValue(receiver, "ICE path")).toBe("—");
+  expect(streamStatisticValue(encoder, "Codec")).toBe("—");
+  expect(streamStatisticValue(encoder, "Frames sent")).toBe("0");
+  expect(streamStatisticValue(encoder, "Packet loss")).toBe("0.0%");
+  expect(streamStatisticValue(encoder, "Limitation")).toBe("None");
+  expect(html).not.toContain("— ms");
+  expect(html).not.toContain("— FPS");
 });
 
-test('shows only the server statistics that serve-emu can provide', () => {
+test("shows only the server statistics that serve-emu can provide", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamStats: streamStats(
       [streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 })],
       {
         encoder: {
-          codec: 'video/H264',
+          codec: "video/H264",
           encodeFps: 30,
           targetBitrateBps: 8_000_000,
           encodeMsPerFrame: null,
@@ -847,54 +858,54 @@ test('shows only the server statistics that serve-emu can provide', () => {
       onStreamModeChange={() => {}}
     />,
   );
-  const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
-  const receiver = streamStatisticGroupMarkup(html, 'Client statistics');
-  const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
-  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
+  const stream = streamStatisticGroupMarkup(html, "Stream statistics");
+  const receiver = streamStatisticGroupMarkup(html, "Client statistics");
+  const encoder = streamStatisticGroupMarkup(html, "Encoder statistics");
+  const capture = streamStatisticGroupMarkup(html, "Capture statistics");
 
   // No divider lines between metrics: groups are separated by spacing only.
-  expect(stream + receiver + encoder + capture).not.toContain('border-top:');
-  expect(openingTag(stream, '<span role="columnheader"')).toContain('padding:7px 8px 5px');
-  expect(openingTag(receiver, '<span role="columnheader"')).toContain('padding:14px 8px 5px');
-  expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
+  expect(stream + receiver + encoder + capture).not.toContain("border-top:");
+  expect(openingTag(stream, '<span role="columnheader"')).toContain("padding:7px 8px 5px");
+  expect(openingTag(receiver, '<span role="columnheader"')).toContain("padding:14px 8px 5px");
+  expect(streamStatisticValue(stream, "Server FPS")).toBe("30 FPS");
+  expect(streamStatisticValue(encoder, "Codec")).toBe("H.264");
   expect(encoder).not.toContain('data-stream-statistic="Output FPS"');
-  expect(streamStatisticValue(encoder, 'Configured bitrate')).toBe('8.00 Mbps');
-  expect(streamStatisticValue(encoder, 'Output frames')).toBe('1.2k');
-  expect(streamStatisticValue(encoder, 'Publisher FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(encoder, 'Payload bitrate')).toBe('5.75 Mbps');
-  expect(streamStatisticValue(encoder, 'Publisher submissions')).toBe('1.2k');
-  expect(streamStatisticValue(encoder, 'Publisher drops')).toBe('10');
-  expect(streamStatisticValue(capture, 'Publisher offers')).toBe('1.2k');
-  expect(streamStatisticValue(capture, 'Publisher forwards')).toBe('1.2k');
+  expect(streamStatisticValue(encoder, "Configured bitrate")).toBe("8.00 Mbps");
+  expect(streamStatisticValue(encoder, "Output frames")).toBe("1.2k");
+  expect(streamStatisticValue(encoder, "Publisher FPS")).toBe("30 FPS");
+  expect(streamStatisticValue(encoder, "Payload bitrate")).toBe("5.75 Mbps");
+  expect(streamStatisticValue(encoder, "Publisher submissions")).toBe("1.2k");
+  expect(streamStatisticValue(encoder, "Publisher drops")).toBe("10");
+  expect(streamStatisticValue(capture, "Publisher offers")).toBe("1.2k");
+  expect(streamStatisticValue(capture, "Publisher forwards")).toBe("1.2k");
   expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(7);
   expect(capture.match(/data-stream-statistic=/g)).toHaveLength(2);
   for (const label of [
-    'Encode FPS',
-    'Target bitrate',
-    'Encode time / frame',
-    'Frames encoded',
-    'Frames sent',
-    'Frames dropped',
-    'Packet loss',
-    'Limitation',
-    'Screen frames',
-    'Idle frames',
-    'Capture deliveries',
-    'Pacer submissions',
-    'Pump restarts',
+    "Encode FPS",
+    "Target bitrate",
+    "Encode time / frame",
+    "Frames encoded",
+    "Frames sent",
+    "Frames dropped",
+    "Packet loss",
+    "Limitation",
+    "Screen frames",
+    "Idle frames",
+    "Capture deliveries",
+    "Pacer submissions",
+    "Pump restarts",
   ]) {
     expect(`${encoder}${capture}`).not.toContain(`data-stream-statistic="${label}"`);
   }
-  expect(`${encoder}${capture}`).not.toContain('>—</span>');
+  expect(`${encoder}${capture}`).not.toContain(">—</span>");
 });
 
-test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline diagnostics', (imageMode) => {
-  const client = {
-    ...inspectorClient('android'),
-    streamStats: streamStats(
-      [streamSample({ serverFps: 58, clientFps: 57.5 })],
-      {
+test.each(["mmap", "rgb888"] as const)(
+  "shows the %s producer-to-client pipeline diagnostics",
+  (imageMode) => {
+    const client = {
+      ...inspectorClient("android"),
+      streamStats: streamStats([streamSample({ serverFps: 58, clientFps: 57.5 })], {
         capture: {
           screenFrames: null,
           idleFrames: null,
@@ -908,8 +919,8 @@ test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline
             usableImageFps: 59,
             encoderInputFps: 30,
             messagesReceived: 600,
-            messagesEmitted: imageMode === 'rgb888' ? 600 : 590,
-            messagesCoalesced: imageMode === 'rgb888' ? 0 : 10,
+            messagesEmitted: imageMode === "rgb888" ? 600 : 590,
+            messagesCoalesced: imageMode === "rgb888" ? 0 : 10,
             sequenceGaps: 2,
             imagePayloadBytes: 552_960,
             transportBytes: 55_296_000,
@@ -923,50 +934,50 @@ test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline
             mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
           },
         },
-      },
-    ),
-  } satisfies DeviceClient;
+      }),
+    } satisfies DeviceClient;
+    const html = renderToStaticMarkup(
+      <StreamOptionsSection
+        client={client}
+        defaultOpen
+        streamMode="webrtc"
+        streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+        onStreamModeChange={() => {}}
+      />,
+    );
+    const capture = streamStatisticGroupMarkup(html, "Capture statistics");
+
+    expect(streamStatisticValue(capture, "gRPC image mode")).toBe(imageMode.toUpperCase());
+    expect(streamStatisticValue(capture, "Emulator producer FPS")).toBe("60 FPS");
+    expect(streamStatisticValue(capture, "Host receive FPS")).toBe("60 FPS");
+    expect(streamStatisticValue(capture, "Usable image FPS")).toBe("59 FPS");
+    expect(streamStatisticValue(capture, "Encoder input FPS")).toBe("30 FPS");
+    expect(streamStatisticValue(capture, "gRPC notifications")).toBe("600");
+    if (imageMode === "rgb888") {
+      expect(streamStatisticValue(capture, "Decoded responses")).toBe("600");
+      expect(streamStatisticValue(capture, "Predecode coalescing")).toBe("0");
+      expect(capture).not.toContain("Selected notifications");
+      expect(capture).not.toContain("Coalesced notifications");
+    } else {
+      expect(streamStatisticValue(capture, "Selected notifications")).toBe("590");
+      expect(streamStatisticValue(capture, "Coalesced notifications")).toBe("10");
+    }
+    expect(streamStatisticValue(capture, "Latest image payload")).toBe("540.0 KiB");
+    expect(streamStatisticValue(capture, "Produce→usable p50 / p95")).toBe("4.7 / 9.2 ms");
+    if (imageMode === "mmap") {
+      expect(streamStatisticValue(capture, "MMAP read p50 / p95")).toBe("0.3 / 0.6 ms");
+      expect(streamStatisticValue(capture, "Torn frames dropped")).toBe("0");
+    } else {
+      expect(capture).not.toContain("MMAP");
+      expect(capture).not.toContain("Torn frames dropped");
+    }
+  },
+);
+
+test("shows the WebRTC measuring state without inventing zero readings", () => {
   const html = renderToStaticMarkup(
     <StreamOptionsSection
-      client={client}
-      defaultOpen
-      streamMode="webrtc"
-      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
-      onStreamModeChange={() => {}}
-    />,
-  );
-  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
-
-  expect(streamStatisticValue(capture, 'gRPC image mode')).toBe(imageMode.toUpperCase());
-  expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
-  expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
-  expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
-  expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(capture, 'gRPC notifications')).toBe('600');
-  if (imageMode === 'rgb888') {
-    expect(streamStatisticValue(capture, 'Decoded responses')).toBe('600');
-    expect(streamStatisticValue(capture, 'Predecode coalescing')).toBe('0');
-    expect(capture).not.toContain('Selected notifications');
-    expect(capture).not.toContain('Coalesced notifications');
-  } else {
-    expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
-    expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
-  }
-  expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
-  expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
-  if (imageMode === 'mmap') {
-    expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
-    expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
-  } else {
-    expect(capture).not.toContain('MMAP');
-    expect(capture).not.toContain('Torn frames dropped');
-  }
-});
-
-test('shows the WebRTC measuring state without inventing zero readings', () => {
-  const html = renderToStaticMarkup(
-    <StreamOptionsSection
-      client={inspectorClient('android')}
+      client={inspectorClient("android")}
       defaultOpen
       streamMode="webrtc"
       streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
@@ -975,15 +986,15 @@ test('shows the WebRTC measuring state without inventing zero readings', () => {
   );
 
   expect(html).toContain('role="status"');
-  expect(html).toContain('Measuring WebRTC stream…');
+  expect(html).toContain("Measuring WebRTC stream…");
   expect(html).toContain('aria-label="WebRTC stream statistics"');
   expect(html.match(/>—<\/span>/g)).toHaveLength(10);
   expect(html).not.toContain('role="img"');
 });
 
-test('keeps measuring when the first WebRTC counter sample has no rate window yet', () => {
+test("keeps measuring when the first WebRTC counter sample has no rate window yet", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamStats: streamStats([streamSample()]),
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
@@ -996,17 +1007,15 @@ test('keeps measuring when the first WebRTC counter sample has no rate window ye
     />,
   );
 
-  expect(html).toContain('Measuring WebRTC stream…');
+  expect(html).toContain("Measuring WebRTC stream…");
   expect(html.match(/>—<\/span>/g)).toHaveLength(10);
   expect(html).not.toContain('role="img"');
 });
 
-test('omits unsupported server groups while retaining client statistics', () => {
+test("omits unsupported server groups while retaining client statistics", () => {
   const client = {
-    ...inspectorClient('android'),
-    streamStats: streamStats([
-      streamSample({ clientFps: 30, clientBitrateBps: 3_000_000 }),
-    ]),
+    ...inspectorClient("android"),
+    streamStats: streamStats([streamSample({ clientFps: 30, clientBitrateBps: 3_000_000 })]),
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -1023,7 +1032,7 @@ test('omits unsupported server groups while retaining client statistics', () => 
   expect(html).not.toContain('aria-label="Capture statistics"');
 });
 
-test('distinguishes paused server statistics from paused client statistics', () => {
+test("distinguishes paused server statistics from paused client statistics", () => {
   const sample = streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 });
   const renderStats = (stats: WebRtcStreamStats) =>
     renderToStaticMarkup(<StreamStatistics stats={stats} platform="android" />);
@@ -1031,32 +1040,29 @@ test('distinguishes paused server statistics from paused client statistics', () 
   const serverHtml = renderStats(
     streamStats([sample], { encoder: encoderStats, serverStale: true }),
   );
-  expect(serverHtml).toContain('Server stream statistics are paused');
-  expect(streamStatisticGroupMarkup(serverHtml, 'Stream statistics')).toContain(
+  expect(serverHtml).toContain("Server stream statistics are paused");
+  expect(streamStatisticGroupMarkup(serverHtml, "Stream statistics")).toContain(
     'data-server-stale="true"',
   );
-  expect(streamStatisticGroupMarkup(serverHtml, 'Encoder statistics')).toContain(
+  expect(streamStatisticGroupMarkup(serverHtml, "Encoder statistics")).toContain(
     'data-stale="true"',
   );
   expect(
-    streamStatisticValue(
-      streamStatisticGroupMarkup(serverHtml, 'Stream statistics'),
-      'Server FPS',
-    ),
-  ).toBe('30 FPS');
+    streamStatisticValue(streamStatisticGroupMarkup(serverHtml, "Stream statistics"), "Server FPS"),
+  ).toBe("30 FPS");
   expect(serverHtml).toContain('role="img" aria-label="Client FPS: 29 FPS"');
 
   const clientHtml = renderStats(streamStats([sample], { stale: true }));
-  expect(clientHtml).toContain('Client stream statistics are paused');
-  expect(streamStatisticGroupMarkup(clientHtml, 'Client statistics')).toContain(
+  expect(clientHtml).toContain("Client stream statistics are paused");
+  expect(streamStatisticGroupMarkup(clientHtml, "Client statistics")).toContain(
     'data-stale="true"',
   );
-  expect(clientHtml).not.toContain('Server stream statistics are paused');
+  expect(clientHtml).not.toContain("Server stream statistics are paused");
 });
 
-test('hides WebRTC statistics when another transport is active', () => {
+test("hides WebRTC statistics when another transport is active", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamStats: streamStats([
       streamSample({
         atMs: 2_000,
@@ -1080,13 +1086,13 @@ test('hides WebRTC statistics when another transport is active', () => {
   expect(html).not.toContain('role="img"');
 });
 
-test('WebRTC-only iOS servers do not promise an MJPEG fallback in insecure browsers', () => {
+test("WebRTC-only iOS servers do not promise an MJPEG fallback in insecure browsers", () => {
   const client = {
-    ...inspectorClient('ios'),
+    ...inspectorClient("ios"),
     streamCapabilities: {
       modeAvailability: { mjpeg: false, h264: false, webrtc: true },
       httpCodecs: [],
-      webRtcCodecs: ['h264', 'vp9', 'vp8'],
+      webRtcCodecs: ["h264", "vp9", "vp8"],
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
@@ -1097,17 +1103,17 @@ test('WebRTC-only iOS servers do not promise an MJPEG fallback in insecure brows
       streamModeAvailability={{ mjpeg: true, h264: false, webrtc: false }}
     />,
   );
-  expect(html).toContain('WebRTC requires localhost or HTTPS.');
-  expect(html).not.toContain('MJPEG remains available');
+  expect(html).toContain("WebRTC requires localhost or HTTPS.");
+  expect(html).not.toContain("MJPEG remains available");
 });
 
-test('explains when the Android host was not launched with WebRTC', () => {
+test("explains when the Android host was not launched with WebRTC", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamCapabilities: {
       modeAvailability: { mjpeg: false, h264: true, webrtc: false },
-      httpCodecs: ['h264'],
-      webRtcCodecs: ['h264'],
+      httpCodecs: ["h264"],
+      webRtcCodecs: ["h264"],
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
@@ -1122,215 +1128,234 @@ test('explains when the Android host was not launched with WebRTC', () => {
     />,
   );
 
-  expect(selectValue(html, 'Stream transport')).toBe('WebSocket');
-  expect(html).toContain('Start the standalone server with --transport webrtc');
+  expect(selectValue(html, "Stream transport")).toBe("WebSocket");
+  expect(html).toContain("Start the standalone server with --transport webrtc");
 });
 
-test('renders every iOS device option as a select pill sized by its options', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+test("renders every iOS device option as a select pill sized by its options", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
 
   for (const [label, options, selected] of [
-    ['Appearance', ['Light', 'Dark'], 'Light'],
-    ['Liquid glass', ['Clear', 'Tinted'], 'Clear'],
-    ['Color filter', ['None', 'Grayscale', 'Red-green', 'Green-red', 'Blue-yellow'], 'None'],
-    ['Text size', ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'], 'L'],
+    ["Appearance", ["Light", "Dark"], "Light"],
+    ["Liquid glass", ["Clear", "Tinted"], "Clear"],
+    ["Color filter", ["None", "Grayscale", "Red-green", "Green-red", "Blue-yellow"], "None"],
+    ["Text size", ["XS", "S", "M", "L", "XL", "2XL", "3XL"], "L"],
   ] as const) {
-    expect(rowOpeningTag(html, label)).toContain('padding:12px 0');
-    expect(rowOpeningTag(html, label)).not.toContain('border-bottom:');
+    expect(rowOpeningTag(html, label)).toContain("padding:12px 0");
+    expect(rowOpeningTag(html, label)).not.toContain("border-bottom:");
     // Row labels sit between body text (400) and section titles (600).
     expect(html).toMatch(new RegExp(`<span style="[^"]*font-weight:500[^"]*">${label}</span>`));
-    expect(selectMarkup(html, label)).toContain('height:28px');
+    expect(selectMarkup(html, label)).toContain("height:28px");
     expect(selectValue(html, label)).toBe(selected);
     expect(selectOptionLabels(html, label)).toEqual([...options]);
   }
 });
 
-test('maps Android device options onto Network and S–XL selects', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+test("maps Android device options onto Network and S–XL selects", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
 
-  expect(selectOptionLabels(html, 'Network')).toEqual(['On', 'Off']);
-  expect(selectValue(html, 'Network')).toBe('On');
-  expect(selectOptionLabels(html, 'Text size')).toEqual(['S', 'M', 'L', 'XL']);
-  expect(selectValue(html, 'Text size')).toBe('M');
+  expect(selectOptionLabels(html, "Network")).toEqual(["On", "Off"]);
+  expect(selectValue(html, "Network")).toBe("On");
+  expect(selectOptionLabels(html, "Text size")).toEqual(["S", "M", "L", "XL"]);
+  expect(selectValue(html, "Text size")).toBe("M");
 });
 
-test('renders the Android display-size control the backend reports', () => {
+test("renders the Android display-size control the backend reports", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      appearance: "light",
+      network: "on",
+      "text-size": "medium",
+      "display-size": "large",
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(selectOptionLabels(html, 'Display size')).toEqual(['S', 'M', 'L', 'XL']);
-  expect(selectValue(html, 'Display size')).toBe('L');
+  expect(selectOptionLabels(html, "Display size")).toEqual(["S", "M", "L", "XL"]);
+  expect(selectValue(html, "Display size")).toBe("L");
 });
 
-test('describes the Android display-size control with the resulting dp width', () => {
+test("describes the Android display-size control with the resulting dp width", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      appearance: "light",
+      network: "on",
+      "text-size": "medium",
+      "display-size": "large",
     },
     displayWidthDp: 411,
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
-  const describedBy = /aria-describedby="([^"]+)"/.exec(selectMarkup(html, 'Display size'))?.[1];
+  const describedBy = /aria-describedby="([^"]+)"/.exec(selectMarkup(html, "Display size"))?.[1];
 
-  expect(html).toContain('>sw411dp<');
+  expect(html).toContain(">sw411dp<");
   expect(describedBy).toBeTruthy();
   expect(html).toContain(`id="${describedBy}"`);
 });
 
-test('omits the dp width when the Android device has not reported one', () => {
+test("omits the dp width when the Android device has not reported one", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      appearance: "light",
+      network: "on",
+      "text-size": "medium",
+      "display-size": "large",
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
   expect(html).not.toMatch(/sw\d+dp/);
-  expect(selectMarkup(html, 'Display size')).not.toContain('aria-describedby');
+  expect(selectMarkup(html, "Display size")).not.toContain("aria-describedby");
 });
 
-test('omits the Android display-size control the backend does not report', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+test("omits the Android display-size control the backend does not report", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
 
-  expect(html).not.toContain('>Display size<');
+  expect(html).not.toContain(">Display size<");
 });
 
-test('never renders the Android-only display-size control on iOS', () => {
+test("never renders the Android-only display-size control on iOS", () => {
   const client = {
-    ...inspectorClient('ios'),
-    deviceSettings: { ...inspectorClient('ios').deviceSettings, 'display-size': 'large' },
+    ...inspectorClient("ios"),
+    deviceSettings: { ...inspectorClient("ios").deviceSettings, "display-size": "large" },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(html).not.toContain('>Display size<');
+  expect(html).not.toContain(">Display size<");
 });
 
-test('renders the Android accessibility switches the backend reports', () => {
+test("renders the Android accessibility switches the backend reports", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'reduce-motion': 'on',
-      'bold-text': 'on',
-      'increase-contrast': 'off',
+      appearance: "light",
+      network: "on",
+      "text-size": "medium",
+      "reduce-motion": "on",
+      "bold-text": "on",
+      "increase-contrast": "off",
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(switchMarkup(html, 'Reduce motion')).toContain('aria-checked="true"');
-  expect(switchMarkup(html, 'Bold text')).toContain('aria-checked="true"');
-  expect(switchMarkup(html, 'Increase contrast')).toContain('aria-checked="false"');
+  expect(switchMarkup(html, "Reduce motion")).toContain('aria-checked="true"');
+  expect(switchMarkup(html, "Bold text")).toContain('aria-checked="true"');
+  expect(switchMarkup(html, "Increase contrast")).toContain('aria-checked="false"');
 });
 
-test('omits the Android accessibility switches the backend does not report', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+test("omits the Android accessibility switches the backend does not report", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
 
-  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'Force on-screen keyboard']) {
+  for (const label of [
+    "Reduce motion",
+    "Bold text",
+    "Increase contrast",
+    "Force on-screen keyboard",
+  ]) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
 
-test('keeps keyboard controls at the end of the device options list', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
-  const section = sectionMarkup(html, 'Device options');
+test("keeps keyboard controls at the end of the device options list", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const section = sectionMarkup(html, "Device options");
 
-  expect(section.indexOf('>Hardware keyboard</span>')).toBeGreaterThan(
-    section.indexOf('>VoiceOver</span>'),
+  expect(section.indexOf(">Hardware keyboard</span>")).toBeGreaterThan(
+    section.indexOf(">VoiceOver</span>"),
   );
-  expect(section.indexOf('>Software keyboard</span>')).toBeGreaterThan(
-    section.indexOf('>Hardware keyboard</span>'),
+  expect(section.indexOf(">Software keyboard</span>")).toBeGreaterThan(
+    section.indexOf(">Hardware keyboard</span>"),
   );
   expect(section.match(/>Toggle</g)).toHaveLength(2);
 });
 
-test('stacks device option rows without dividers', () => {
-  for (const platform of ['ios', 'android'] as const) {
+test("stacks device option rows without dividers", () => {
+  for (const platform of ["ios", "android"] as const) {
     const html = renderToStaticMarkup(<LogSidebar client={inspectorClient(platform)} />);
-    const section = sectionMarkup(html, 'Device options');
+    const section = sectionMarkup(html, "Device options");
 
-    expect(openingTag(section, '<section')).toContain('border-top:');
-    expect(section).not.toContain('border-bottom:');
+    expect(openingTag(section, "<section")).toContain("border-top:");
+    expect(section).not.toContain("border-bottom:");
     expect(section.match(/padding:12px 0"/g)?.length).toBeGreaterThan(0);
   }
 });
 
-test('renders boolean device options as compact switches', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
-  const reduceMotion = switchMarkup(html, 'Reduce motion');
+test("renders boolean device options as compact switches", () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  const reduceMotion = switchMarkup(html, "Reduce motion");
 
   expect(reduceMotion).toContain('role="switch"');
   expect(reduceMotion).toContain('aria-checked="false"');
-  expect(reduceMotion).toContain('width:36px');
-  expect(reduceMotion).toContain('height:20px');
-  expect(reduceMotion).toContain('transform:translateX(0px)');
+  expect(reduceMotion).toContain("width:36px");
+  expect(reduceMotion).toContain("height:20px");
+  expect(reduceMotion).toContain("transform:translateX(0px)");
 });
 
-test('moves device actions into Device options and hides Remove for physical devices', () => {
+test("moves device actions into Device options and hides Remove for physical devices", () => {
   const android = renderToStaticMarkup(
     <LogSidebar
-      client={inspectorClient('android')}
-      device={device('android', 'android:pixel-10-pro')}
+      client={inspectorClient("android")}
+      device={device("android", "android:pixel-10-pro")}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
   );
-  const section = sectionMarkup(android, 'Device options');
+  const section = sectionMarkup(android, "Device options");
 
   for (const label of [
-    'Back button',
-    'Recents button',
-    'Dismiss on-screen keyboard',
-    'Shut down device',
-    'Remove device',
+    "Back button",
+    "Recents button",
+    "Dismiss on-screen keyboard",
+    "Shut down device",
+    "Remove device",
   ]) {
     expect(section).toContain(`>${label}</span>`);
   }
   expect(section.match(/>Press</g)).toHaveLength(3);
-  expect(section).toContain('>Shut down<');
-  expect(section).toContain('>Remove<');
-  expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
+  expect(section).toContain(">Shut down<");
+  expect(section).toContain(">Remove<");
+  expect(section.indexOf(">Back button</span>")).toBeGreaterThan(
+    section.indexOf(">Text size</span>"),
+  );
 
   const physical = renderToStaticMarkup(
     <LogSidebar
-      client={inspectorClient('android')}
-      device={{ ...device('android', 'android:pixel-10-pro'), physical: true }}
+      client={inspectorClient("android")}
+      device={{ ...device("android", "android:pixel-10-pro"), physical: true }}
       onShutdown={() => {}}
       onRemove={() => {}}
     />,
   );
-  expect(physical).toContain('>Shut down device</span>');
-  expect(physical).not.toContain('>Remove device</span>');
+  expect(physical).toContain(">Shut down device</span>");
+  expect(physical).not.toContain(">Remove device</span>");
 
-  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
-  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  for (const label of ["Back button", "Recents button", "Shut down device", "Remove device"]) {
     expect(ios).not.toContain(`>${label}</span>`);
   }
 });
 
-test('styles sidebar action buttons like the select pills', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} onShutdown={() => {}} />);
-  const toggle = html.slice(html.lastIndexOf('<button', html.indexOf('>Toggle<')), html.indexOf('>Toggle<') + 1);
-  const select = selectMarkup(html, 'Appearance');
+test("styles sidebar action buttons like the select pills", () => {
+  const html = renderToStaticMarkup(
+    <LogSidebar client={inspectorClient("ios")} onShutdown={() => {}} />,
+  );
+  const toggle = html.slice(
+    html.lastIndexOf("<button", html.indexOf(">Toggle<")),
+    html.indexOf(">Toggle<") + 1,
+  );
+  const select = selectMarkup(html, "Appearance");
 
-  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px', 'font-weight:500']) {
+  for (const style of [
+    "height:28px",
+    "border:1px solid var(--expo-theme-border-default)",
+    "border-radius:var(--expo-radius-lg)",
+    "background-color:var(--expo-theme-background-element)",
+    "font-size:14px",
+    "font-weight:500",
+  ]) {
     expect(toggle).toContain(style);
     expect(select).toContain(style);
   }
@@ -1348,77 +1373,83 @@ function themeButtonMarkup(client: DeviceClient) {
   return html.match(/<button[^>]*aria-label="Theme"[^>]*>/)?.[0];
 }
 
-test('keeps toolbar and sidebar appearance availability aligned without locking the viewer-local frame control', () => {
-  for (const platform of ['ios', 'android'] as const) {
-    for (const status of ['idle', 'loading', 'error', 'ready'] as const) {
+test("keeps toolbar and sidebar appearance availability aligned without locking the viewer-local frame control", () => {
+  for (const platform of ["ios", "android"] as const) {
+    for (const status of ["idle", "loading", "error", "ready"] as const) {
       const base = inspectorClient(platform);
       const client = {
         ...base,
-        deviceSettings: { ...base.deviceSettings, appearance: 'dark' },
+        deviceSettings: { ...base.deviceSettings, appearance: "dark" },
         deviceSettingsStatus: status,
       };
       const html = renderToStaticMarkup(
         <LogSidebar
           client={client}
-          device={device(platform, platform === 'ios' ? 'ios:iphone-17-pro' : 'android:pixel-10-pro')}
+          device={device(
+            platform,
+            platform === "ios" ? "ios:iphone-17-pro" : "android:pixel-10-pro",
+          )}
           showDeviceFrame
           onShowDeviceFrameChange={() => {}}
         />,
       );
-      const appearance = selectMarkup(html, 'Appearance');
-      expect(appearance).toContain('Dark');
-      expect(appearance.includes('disabled=""')).toBe(status !== 'ready');
+      const appearance = selectMarkup(html, "Appearance");
+      expect(appearance).toContain("Dark");
+      expect(appearance.includes('disabled=""')).toBe(status !== "ready");
       const theme = themeButtonMarkup(client);
       expect(theme).toContain('aria-checked="true"');
-      expect(theme?.includes('disabled=""')).toBe(status !== 'ready');
-      const otherControl = platform === 'ios'
-        ? switchMarkup(html, 'Reduce motion')
-        : selectMarkup(html, 'Network');
-      expect(otherControl.includes('disabled=""')).toBe(status !== 'ready');
-      expect(switchMarkup(html, 'Show device frame')).not.toContain('disabled=""');
+      expect(theme?.includes('disabled=""')).toBe(status !== "ready");
+      const otherControl =
+        platform === "ios" ? switchMarkup(html, "Reduce motion") : selectMarkup(html, "Network");
+      expect(otherControl.includes('disabled=""')).toBe(status !== "ready");
+      expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
     }
   }
 });
 
-test('disables only the pending Android device setting', () => {
+test("disables only the pending Android device setting", () => {
   const client = {
-    ...inspectorClient('android'),
-    deviceSettingsPending: new Set(['network'] as const),
+    ...inspectorClient("android"),
+    deviceSettingsPending: new Set(["network"] as const),
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(selectMarkup(html, 'Network')).toContain('disabled=""');
-  expect(selectMarkup(html, 'Appearance')).not.toContain('disabled=""');
-  expect(selectMarkup(html, 'Text size')).not.toContain('disabled=""');
+  expect(selectMarkup(html, "Network")).toContain('disabled=""');
+  expect(selectMarkup(html, "Appearance")).not.toContain('disabled=""');
+  expect(selectMarkup(html, "Text size")).not.toContain('disabled=""');
   expect(themeButtonMarkup(client)).not.toContain('disabled=""');
 });
 
-test('disables only the device setting with an in-flight update', () => {
-  for (const platform of ['ios', 'android'] as const) {
+test("disables only the device setting with an in-flight update", () => {
+  for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
-      deviceSettingsPending: new Set(['appearance'] as const),
+      deviceSettingsPending: new Set(["appearance"] as const),
     };
     const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-    expect(selectMarkup(html, 'Appearance')).toContain('disabled=""');
+    expect(selectMarkup(html, "Appearance")).toContain('disabled=""');
     expect(themeButtonMarkup(client)).toContain('disabled=""');
-    expect(selectMarkup(html, platform === 'ios' ? 'Liquid glass' : 'Network')).not.toContain('disabled=""');
+    expect(selectMarkup(html, platform === "ios" ? "Liquid glass" : "Network")).not.toContain(
+      'disabled=""',
+    );
   }
 });
 
-test('disables the toolbar Theme button for missing or unsupported settings', () => {
-  for (const platform of ['ios', 'android'] as const) {
-    for (const deviceSettings of [null, {}, { appearance: 'unsupported' }]) {
-      expect(themeButtonMarkup({ ...inspectorClient(platform), deviceSettings })).toContain('disabled=""');
+test("disables the toolbar Theme button for missing or unsupported settings", () => {
+  for (const platform of ["ios", "android"] as const) {
+    for (const deviceSettings of [null, {}, { appearance: "unsupported" }]) {
+      expect(themeButtonMarkup({ ...inspectorClient(platform), deviceSettings })).toContain(
+        'disabled=""',
+      );
     }
   }
 });
 
-test('shows an enabled viewer-local frame switch for exact device profiles', () => {
+test("shows an enabled viewer-local frame switch for exact device profiles", () => {
   for (const [platform, frame] of [
-    ['ios', 'ios:iphone-17-pro'],
-    ['android', 'android:pixel-10-pro'],
+    ["ios", "ios:iphone-17-pro"],
+    ["android", "android:pixel-10-pro"],
   ] as const) {
     const onMarkup = renderToStaticMarkup(
       <LogSidebar
@@ -1437,45 +1468,45 @@ test('shows an enabled viewer-local frame switch for exact device profiles', () 
       />,
     );
 
-    expect(switchMarkup(onMarkup, 'Show device frame')).toContain('aria-checked="true"');
-    expect(switchMarkup(onMarkup, 'Show device frame')).not.toContain('disabled=""');
-    expect(switchMarkup(offMarkup, 'Show device frame')).toContain('aria-checked="false"');
-    expect(switchMarkup(offMarkup, 'Show device frame')).not.toContain('disabled=""');
+    expect(switchMarkup(onMarkup, "Show device frame")).toContain('aria-checked="true"');
+    expect(switchMarkup(onMarkup, "Show device frame")).not.toContain('disabled=""');
+    expect(switchMarkup(offMarkup, "Show device frame")).toContain('aria-checked="false"');
+    expect(switchMarkup(offMarkup, "Show device frame")).not.toContain('disabled=""');
   }
 });
 
-test('places the device frame option immediately above the hardware keyboard', () => {
+test("places the device frame option immediately above the hardware keyboard", () => {
   const html = renderToStaticMarkup(
     <LogSidebar
-      client={inspectorClient('ios')}
-      device={device('ios', 'ios:iphone-17-pro')}
+      client={inspectorClient("ios")}
+      device={device("ios", "ios:iphone-17-pro")}
       showDeviceFrame
       onShowDeviceFrameChange={() => {}}
     />,
   );
 
-  const frameIndex = html.indexOf('>Show device frame</span>');
-  const hardwareKeyboardIndex = html.indexOf('>Hardware keyboard</span>');
+  const frameIndex = html.indexOf(">Show device frame</span>");
+  const hardwareKeyboardIndex = html.indexOf(">Hardware keyboard</span>");
 
-  expect(frameIndex).toBeGreaterThan(html.indexOf('>VoiceOver</span>'));
+  expect(frameIndex).toBeGreaterThan(html.indexOf(">VoiceOver</span>"));
   expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
-test('shows the Permissions section only when the client can change permissions', () => {
-  const android = inspectorClient('android');
+test("shows the Permissions section only when the client can change permissions", () => {
+  const android = inspectorClient("android");
   const client = {
     ...android,
-    foregroundApp: { id: 'com.android.chrome', label: 'Chrome' },
+    foregroundApp: { id: "com.android.chrome", label: "Chrome" },
     permissions: [
-      { id: 'android.permission.CAMERA', label: 'Camera', state: 'granted' as const },
-      { id: 'android.permission.RECORD_AUDIO', label: 'Record audio', state: 'denied' as const },
+      { id: "android.permission.CAMERA", label: "Camera", state: "granted" as const },
+      { id: "android.permission.RECORD_AUDIO", label: "Record audio", state: "denied" as const },
     ],
-    permissionsPending: new Set(['android.permission.RECORD_AUDIO']),
+    permissionsPending: new Set(["android.permission.RECORD_AUDIO"]),
     capabilities: { ...android.capabilities, permissions: true },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(sectionMarkup(html, 'Permissions')).toContain('aria-expanded="false"');
+  expect(sectionMarkup(html, "Permissions")).toContain('aria-expanded="false"');
   const index = html.indexOf('<section aria-label="Permissions"');
   expect(index).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
   expect(index).toBeLessThan(html.indexOf('<section aria-label="Events"'));
@@ -1484,27 +1515,27 @@ test('shows the Permissions section only when the client can change permissions'
   );
 
   const section = renderToStaticMarkup(<PermissionsSection client={client} defaultOpen />);
-  expect(section).toContain('>Camera</span>');
-  expect(section).toContain('>Granted</span>');
-  expect(section).toContain('>Record audio</span>');
-  expect(section).toContain('>Updating…</span>');
+  expect(section).toContain(">Camera</span>");
+  expect(section).toContain(">Granted</span>");
+  expect(section).toContain(">Record audio</span>");
+  expect(section).toContain(">Updating…</span>");
   expect(section.match(/>Grant</g)).toHaveLength(2);
   expect(section.match(/>Revoke</g)).toHaveLength(2);
-  expect(section).toContain('>Reset all<');
-  const buttons = [...section.matchAll(/<button[^>]*><span[^>]*>(Grant|Revoke|Reset all)<\/span>/g)].map(
-    (match) => `${match[1]}:${match[0].includes('disabled=""') ? 'disabled' : 'enabled'}`,
-  );
+  expect(section).toContain(">Reset all<");
+  const buttons = [
+    ...section.matchAll(/<button[^>]*><span[^>]*>(Grant|Revoke|Reset all)<\/span>/g),
+  ].map((match) => `${match[1]}:${match[0].includes('disabled=""') ? "disabled" : "enabled"}`);
   expect(buttons).toEqual([
-    'Grant:disabled',
-    'Revoke:enabled',
-    'Grant:disabled',
-    'Revoke:disabled',
-    'Reset all:disabled',
+    "Grant:disabled",
+    "Revoke:enabled",
+    "Grant:disabled",
+    "Revoke:disabled",
+    "Reset all:disabled",
   ]);
 });
 
-test('keeps the frame option disabled with an explanation for unsupported devices', () => {
-  for (const platform of ['ios', 'android'] as const) {
+test("keeps the frame option disabled with an explanation for unsupported devices", () => {
+  for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
       capabilities: {
@@ -1528,16 +1559,16 @@ test('keeps the frame option disabled with an explanation for unsupported device
     );
 
     expect(html).toContain('aria-label="Device options"');
-    expect(switchMarkup(html, 'Show device frame')).toContain('aria-checked="false"');
-    expect(switchMarkup(html, 'Show device frame')).toContain('disabled=""');
+    expect(switchMarkup(html, "Show device frame")).toContain('aria-checked="false"');
+    expect(switchMarkup(html, "Show device frame")).toContain('disabled=""');
     expect(html).toContain(NO_DEVICE_FRAME_DESCRIPTION);
-    expect(html).not.toContain('>Appearance</span>');
+    expect(html).not.toContain(">Appearance</span>");
   }
 });
 
-test('shows only the viewer-local frame option while iOS device settings are unavailable', () => {
+test("shows only the viewer-local frame option while iOS device settings are unavailable", () => {
   const client = {
-    ...inspectorClient('ios'),
+    ...inspectorClient("ios"),
     capabilities: {
       deviceSettings: false,
       activity: false,
@@ -1553,51 +1584,51 @@ test('shows only the viewer-local frame option while iOS device settings are una
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device('ios', 'ios:iphone-17-pro')}
+      device={device("ios", "ios:iphone-17-pro")}
       showDeviceFrame
       onShowDeviceFrameChange={() => {}}
     />,
   );
 
-  expect(switchMarkup(html, 'Show device frame')).not.toContain('disabled=""');
-  expect(html).not.toContain('>Appearance</span>');
-  expect(html).not.toContain('>Liquid glass</span>');
-  expect(html).not.toContain('>Keyboard</span>');
+  expect(switchMarkup(html, "Show device frame")).not.toContain('disabled=""');
+  expect(html).not.toContain(">Appearance</span>");
+  expect(html).not.toContain(">Liquid glass</span>");
+  expect(html).not.toContain(">Keyboard</span>");
 });
 
-test('shows RGB888 applied, pending, and failed without changing the selection', () => {
-  for (const state of ['applied', 'pending', 'failed']) {
+test("shows RGB888 applied, pending, and failed without changing the selection", () => {
+  for (const state of ["applied", "pending", "failed"]) {
     const client = {
-      ...inspectorClient('android'),
+      ...inspectorClient("android"),
       streamSource: {
-        mode: 'grpc-screenshot',
-        grpcImageMode: 'rgb888',
-        encoder: 'software',
-        encoderName: 'libx264',
-        availableEncoders: ['software', 'hardware'],
-        inputSource: 'scrcpy',
-        availableInputSources: ['scrcpy', 'grpc'],
-        availableModes: ['scrcpy', 'grpc-screenshot'],
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        encoder: "software",
+        encoderName: "libx264",
+        availableEncoders: ["software", "hardware"],
+        inputSource: "scrcpy",
+        availableInputSources: ["scrcpy", "grpc"],
+        availableModes: ["scrcpy", "grpc-screenshot"],
         sessionGeneration: 2,
       },
-      streamSourcePending: state === 'pending',
-      streamSourceError: state === 'failed' ? 'RGB888 capture failed' : null,
+      streamSourcePending: state === "pending",
+      streamSourceError: state === "failed" ? "RGB888 capture failed" : null,
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
-    expect(selectValue(html, 'gRPC image mode')).toBe('RGB888');
-    expect(html).not.toContain('Raw pixels over gRPC');
-    expect(selectMarkup(html, 'gRPC image mode').includes('disabled=""')).toBe(state === 'pending');
-    expect(html).not.toContain('Switching stream source…');
-    if (state === 'failed') {
+    expect(selectValue(html, "gRPC image mode")).toBe("RGB888");
+    expect(html).not.toContain("Raw pixels over gRPC");
+    expect(selectMarkup(html, "gRPC image mode").includes('disabled=""')).toBe(state === "pending");
+    expect(html).not.toContain("Switching stream source…");
+    if (state === "failed") {
       expect(html).toContain('role="alert"');
-      expect(html).toContain('RGB888 capture failed');
+      expect(html).toContain("RGB888 capture failed");
     }
   }
 });
 
-test('keeps the Android on-screen keyboard row off iOS while device settings load', () => {
+test("keeps the Android on-screen keyboard row off iOS while device settings load", () => {
   const client = {
-    ...inspectorClient('ios'),
+    ...inspectorClient("ios"),
     capabilities: {
       deviceSettings: true,
       activity: false,
@@ -1613,87 +1644,88 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device('ios', 'ios:iphone-17-pro')}
+      device={device("ios", "ios:iphone-17-pro")}
       showDeviceFrame
       onShowDeviceFrameChange={() => {}}
     />,
   );
 
   expect(html).toContain('aria-label="Device options"');
-  expect(html).not.toContain('>Force on-screen keyboard</span>');
+  expect(html).not.toContain(">Force on-screen keyboard</span>");
 });
 
-test('disables the keyboard switch on a device with no hardware keyboard', () => {
-  const base = inspectorClient('android');
-  const settings = { ...base, deviceSettings: { 'onscreen-keyboard': 'off' } } as const;
+test("disables the keyboard switch on a device with no hardware keyboard", () => {
+  const base = inspectorClient("android");
+  const settings = { ...base, deviceSettings: { "onscreen-keyboard": "off" } } as const;
 
   const without = renderToStaticMarkup(
-    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient} />,
+    <LogSidebar
+      client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient}
+    />,
   );
-  expect(switchMarkup(without, 'Force on-screen keyboard')).toContain('disabled=""');
+  expect(switchMarkup(without, "Force on-screen keyboard")).toContain('disabled=""');
   expect(without).toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
 
   const with_ = renderToStaticMarkup(
     <LogSidebar client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient} />,
   );
-  expect(switchMarkup(with_, 'Force on-screen keyboard')).not.toContain('disabled=""');
+  expect(switchMarkup(with_, "Force on-screen keyboard")).not.toContain('disabled=""');
   expect(with_).not.toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
 });
 
-test('offers a keyboard dismiss action on Android only', () => {
-  const android = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
-  const options = sectionMarkup(android, 'Device options');
-  expect(options).toContain('>Dismiss on-screen keyboard</span>');
+test("offers a keyboard dismiss action on Android only", () => {
+  const android = renderToStaticMarkup(<LogSidebar client={inspectorClient("android")} />);
+  const options = sectionMarkup(android, "Device options");
+  expect(options).toContain(">Dismiss on-screen keyboard</span>");
 
-  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
-  expect(sectionMarkup(ios, 'Device options')).not.toContain('>Dismiss on-screen keyboard</span>');
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(sectionMarkup(ios, "Device options")).not.toContain(">Dismiss on-screen keyboard</span>");
 });
 
-test('renders the Android on-screen keyboard switch the backend reports', () => {
+test("renders the Android on-screen keyboard switch the backend reports", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     hardwareKeyboardConnected: true,
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'onscreen-keyboard': 'on',
+      appearance: "light",
+      network: "on",
+      "text-size": "medium",
+      "onscreen-keyboard": "on",
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(switchMarkup(html, 'Force on-screen keyboard')).toContain('aria-checked="true"');
+  expect(switchMarkup(html, "Force on-screen keyboard")).toContain('aria-checked="true"');
   expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
-
-test('shows hardware probe failures and the encoder still streaming with a single gRPC source', () => {
+test("shows hardware probe failures and the encoder still streaming with a single gRPC source", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'rgb888',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      hardwareEncoderError: 'No hardware H.264 encoder is available: VideoToolbox device failed.',
-      inputSource: 'grpc',
-      availableInputSources: ['grpc'],
-      availableModes: ['grpc-screenshot'],
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      encoder: "software",
+      encoderName: "libx264",
+      availableEncoders: ["software", "hardware"],
+      hardwareEncoderError: "No hardware H.264 encoder is available: VideoToolbox device failed.",
+      inputSource: "grpc",
+      availableInputSources: ["grpc"],
+      availableModes: ["grpc-screenshot"],
       sessionGeneration: 1,
     },
     streamSourceError:
-      'Unable to change stream source: No hardware H.264 encoder is available: VideoToolbox device failed.',
+      "Unable to change stream source: No hardware H.264 encoder is available: VideoToolbox device failed.",
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  expect(selectValue(html, 'gRPC encoder')).toBe('Software');
-  expect(selectMarkup(html, 'gRPC encoder')).not.toContain('disabled=""');
-  expect(html).toContain('VideoToolbox device failed.');
+  expect(selectValue(html, "gRPC encoder")).toBe("Software");
+  expect(selectMarkup(html, "gRPC encoder")).not.toContain('disabled=""');
+  expect(html).toContain("VideoToolbox device failed.");
   expect(html).toContain(client.streamSourceError);
   expect(html.match(/role="alert"/g)).toHaveLength(1);
   expect(html.match(/VideoToolbox device failed\./g)).toHaveLength(1);
-  expect(html).toContain('Active encoder: libx264');
+  expect(html).toContain("Active encoder: libx264");
 
   const advisory = renderToStaticMarkup(
     <StreamOptionsSection client={{ ...client, streamSourceError: null }} defaultOpen />,
@@ -1702,77 +1734,107 @@ test('shows hardware probe failures and the encoder still streaming with a singl
   expect(advisory.match(/role="alert"/g)).toHaveLength(1);
 
   const unrelated = renderToStaticMarkup(
-    <StreamOptionsSection client={{ ...client, streamSourceError: 'RGB888 capture failed' }} defaultOpen />,
+    <StreamOptionsSection
+      client={{ ...client, streamSourceError: "RGB888 capture failed" }}
+      defaultOpen
+    />,
   );
-  expect(unrelated).toContain('RGB888 capture failed');
+  expect(unrelated).toContain("RGB888 capture failed");
   expect(unrelated).not.toContain(client.streamSource.hardwareEncoderError);
   expect(unrelated.match(/role="alert"/g)).toHaveLength(1);
 });
 
-test('shows the active hardware encoder and hides unresolved encoder names', () => {
+test("shows the active hardware encoder and hides unresolved encoder names", () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient("android"),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'hardware',
-      encoderName: 'h264_videotoolbox',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      encoder: "hardware",
+      encoderName: "h264_videotoolbox",
+      availableEncoders: ["software", "hardware"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy", "grpc"],
+      availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 1,
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
-  expect(selectValue(html, 'gRPC encoder')).toBe('Hardware');
-  expect(html).toContain('Active encoder: h264_videotoolbox');
+  expect(selectValue(html, "gRPC encoder")).toBe("Hardware");
+  expect(html).toContain("Active encoder: h264_videotoolbox");
 
   const unresolved = { ...client, streamSource: { ...client.streamSource, encoderName: null } };
-  expect(renderToStaticMarkup(<StreamOptionsSection client={unresolved} defaultOpen />)).not.toContain(
-    'Active encoder:',
-  );
+  expect(
+    renderToStaticMarkup(<StreamOptionsSection client={unresolved} defaultOpen />),
+  ).not.toContain("Active encoder:");
 });
 
-test.each(['unknown', 'waiting', 'recording', 'finalizing', 'complete', 'failed', null] as const)(
-  'recording state %s locks only capture and destructive device controls', (screenRecording) => {
-    const base = inspectorClient('android');
+test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed", null] as const)(
+  "recording state %s locks only capture and destructive device controls",
+  (screenRecording) => {
+    const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
-      deviceSettings: { ...base.deviceSettings, 'display-size': 'medium' },
+      deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
-        mode: 'grpc-screenshot', grpcImageMode: 'rgb888', encoder: 'software',
-        encoderName: 'libx264', availableEncoders: ['software', 'hardware'],
-        inputSource: 'grpc', availableInputSources: ['grpc', 'scrcpy'],
-        availableModes: ['grpc-screenshot', 'scrcpy'], sessionGeneration: 0,
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        encoder: "software",
+        encoderName: "libx264",
+        availableEncoders: ["software", "hardware"],
+        inputSource: "grpc",
+        availableInputSources: ["grpc", "scrcpy"],
+        availableModes: ["grpc-screenshot", "scrcpy"],
+        sessionGeneration: 0,
       },
     };
-    const locked = screenRecording === 'unknown' || screenRecording === 'waiting' || screenRecording === 'recording' || screenRecording === 'finalizing';
+    const locked =
+      screenRecording === "unknown" ||
+      screenRecording === "waiting" ||
+      screenRecording === "recording" ||
+      screenRecording === "finalizing";
     const stream = renderToStaticMarkup(
-      <StreamOptionsSection client={client} defaultOpen streamMode="h264"
-        onStreamModeChange={() => {}} onHttpCodecChange={() => {}} />,
+      <StreamOptionsSection
+        client={client}
+        defaultOpen
+        streamMode="h264"
+        onStreamModeChange={() => {}}
+        onHttpCodecChange={() => {}}
+      />,
     );
-    for (const label of ['Stream source', 'Input source', 'gRPC image mode', 'gRPC encoder', 'Max size', 'Video FPS', 'Video bitrate']) {
+    for (const label of [
+      "Stream source",
+      "Input source",
+      "gRPC image mode",
+      "gRPC encoder",
+      "Max size",
+      "Video FPS",
+      "Video bitrate",
+    ]) {
       expect(selectMarkup(stream, label).includes('disabled=""')).toBe(locked);
     }
-    expect(selectMarkup(stream, 'Stream transport')).not.toContain('disabled=""');
-    expect(stream).not.toContain('Capture settings are locked');
-    expect(stream.includes('until recording status is known')).toBe(screenRecording === 'unknown');
+    expect(selectMarkup(stream, "Stream transport")).not.toContain('disabled=""');
+    expect(stream).not.toContain("Capture settings are locked");
+    expect(stream.includes("until recording status is known")).toBe(screenRecording === "unknown");
     expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
     if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
 
     const deviceOptions = renderToStaticMarkup(
       <LogSidebar client={client} onShutdown={() => {}} onRemove={() => {}} />,
     );
-    for (const label of ['Shut down', 'Remove']) {
+    for (const label of ["Shut down", "Remove"]) {
       const end = deviceOptions.indexOf(`>${label}<`);
-      const button = deviceOptions.slice(deviceOptions.lastIndexOf('<button', end), end);
+      const button = deviceOptions.slice(deviceOptions.lastIndexOf("<button", end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes('until recording status is known')).toBe(screenRecording === 'unknown');
-    expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(locked ? 2 : 0);
-    for (const label of ['Appearance', 'Display size', 'Text size', 'Network']) {
+    expect(deviceOptions.includes("until recording status is known")).toBe(
+      screenRecording === "unknown",
+    );
+    expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
+      locked ? 2 : 0,
+    );
+    for (const label of ["Appearance", "Display size", "Text size", "Network"]) {
       expect(selectMarkup(deviceOptions, label)).not.toContain('disabled=""');
     }
   },

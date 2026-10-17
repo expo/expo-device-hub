@@ -21,10 +21,15 @@ export type CaptureStreamFrame = CaptureEvent | { type: "meta"; meta: CaptureMet
  * turned off (from another viewer, a reboot, or cleanup) removes the session and its bodies with only
  * a `not-enabled` meta, so that empties it too.
  */
-export function applyCaptureEvent(requests: CapturedRequest[], event: CaptureStreamFrame): CapturedRequest[] {
+export function applyCaptureEvent(
+  requests: CapturedRequest[],
+  event: CaptureStreamFrame,
+): CapturedRequest[] {
   switch (event.type) {
     case "meta":
-      return ("initial" in event && event.initial) || event.meta.attachment === "not-enabled" ? [] : requests;
+      return ("initial" in event && event.initial) || event.meta.attachment === "not-enabled"
+        ? []
+        : requests;
     case "cleared":
       return [];
     case "evicted":
@@ -122,7 +127,9 @@ export function useCaptureStream(
     if (subscribedPath.current !== path) setMeta(null);
     subscribedPath.current = path;
     const stream = openHostEventStream(path);
-    const batch = batchFrames<CaptureStreamFrame>((events) => setRequests((prev) => events.reduce(applyCaptureEvent, prev)));
+    const batch = batchFrames<CaptureStreamFrame>((events) =>
+      setRequests((prev) => events.reduce(applyCaptureEvent, prev)),
+    );
     stream.onmessage = ({ data }) => {
       try {
         const event = JSON.parse(data) as CaptureStreamFrame;
@@ -151,7 +158,11 @@ export function useCaptureStream(
 export type CapturedBodyLookup = { body: CapturedBody | null; dropped?: true } | { error: string };
 
 /** A failed lookup is reported as an error, so it never looks like a request without a body. */
-export function readCapturedBodyResult(result: { exitCode: number; stdout: string; stderr: string }): CapturedBodyLookup {
+export function readCapturedBodyResult(result: {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}): CapturedBodyLookup {
   if (result.exitCode !== 0) return { error: result.stderr || "The body could not be loaded." };
   if (!result.stdout) return { body: null };
   try {

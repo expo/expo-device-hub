@@ -46,8 +46,4 @@ export {
 } from "../avcc-codec.js";
 export type { AvccChunk, AvccChunkType } from "../avcc-codec.js";
 export { useSimStream } from "./use-sim-stream.js";
-export type {
-  SimStreamInfo,
-  UseSimStreamOptions,
-  UseSimStreamResult,
-} from "./use-sim-stream.js";
+export type { SimStreamInfo, UseSimStreamOptions, UseSimStreamResult } from "./use-sim-stream.js";

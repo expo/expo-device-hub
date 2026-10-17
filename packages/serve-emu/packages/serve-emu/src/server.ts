@@ -56,15 +56,8 @@ import {
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
 import { readAppIcon } from "./apk-icon.ts";
-import {
-  terminalTransitionAllowed,
-  type SessionStatus,
-} from "./session-status.ts";
-import {
-  FRAME_META_HEADER_BYTES,
-  epochNowMs,
-  writeFrameMetaHeader,
-} from "./shared/frame-meta.ts";
+import { terminalTransitionAllowed, type SessionStatus } from "./session-status.ts";
+import { FRAME_META_HEADER_BYTES, epochNowMs, writeFrameMetaHeader } from "./shared/frame-meta.ts";
 import {
   SCRCPY_DEFAULTS,
   type StartOpts as ScrcpyStartOpts,
@@ -83,35 +76,14 @@ import {
   streamModeRequestErrorResponse,
   streamModeUnavailableResponse,
 } from "./stream-mode-api.ts";
-import {
-  listAvds,
-  listRunningAvds,
-  startEmulator,
-  stopEmulator,
-} from "./emulator.ts";
-import {
-  parseGesture,
-  type Gesture,
-} from "./input.ts";
+import { listAvds, listRunningAvds, startEmulator, stopEmulator } from "./emulator.ts";
+import { parseGesture, type Gesture } from "./input.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
-import {
-  ControlInputError,
-  ControlInputQueue,
-} from "./control-input-queue.ts";
-import {
-  availableStreamModesForSerial,
-  isEmulatorSerial,
-} from "./device-capabilities.ts";
-import {
-  parseGeoFix,
-  setEmulatorLocationAsync,
-  type GeoFix,
-} from "./location.ts";
+import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
+import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
+import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
-import {
-  parseSessionReplayMultiplier,
-  SessionReplayConflictError,
-} from "./session-recorder.ts";
+import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
   clearSessionReplayResponse,
   sessionReplayErrorResponse,
@@ -133,10 +105,7 @@ import {
   type RecoveryClientState,
   type RecoveryWatchdogClock,
 } from "./session-recovery-watchdog.ts";
-import {
-  MultipartUploadError,
-  stageMultipartUpload,
-} from "./multipart-upload.ts";
+import { MultipartUploadError, stageMultipartUpload } from "./multipart-upload.ts";
 import { HttpBodyError, readJsonLimited } from "./request-body.ts";
 import {
   MAX_UPLOAD_QUEUE_TIMEOUT_MS,
@@ -190,10 +159,7 @@ import {
   type InputSource,
   type StreamMode,
 } from "./shared/api-contracts.ts";
-import {
-  handleWebRtcStatsRequest,
-  WebRtcStatsCollector,
-} from "./webrtc-stats.ts";
+import { handleWebRtcStatsRequest, WebRtcStatsCollector } from "./webrtc-stats.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const UI_DIR = join(__dirname, "..", "dist", "ui");
@@ -352,24 +318,15 @@ export type ServerDependencies = {
   listRunningAvds?: typeof listRunningAvds;
   listAvds?: typeof listAvds;
   readCameraWiring?: typeof readCameraWiring;
-  loadAccessibility?: (
-    serial: string,
-    signal: AbortSignal,
-  ) => Promise<AccessibilitySnapshot>;
-  setLocation?: (
-    serial: string,
-    fix: GeoFix,
-    signal: AbortSignal,
-  ) => Promise<void>;
+  loadAccessibility?: (serial: string, signal: AbortSignal) => Promise<AccessibilitySnapshot>;
+  setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
   stageMultipartUpload?: typeof stageMultipartUpload;
   installApk?: typeof installApk;
   importMediaFile?: typeof importMediaFile;
-  createWebRtcPublisher?: (
-    options: WebRtcPublisherOptions,
-  ) => Promise<WebRtcPublisherLike>;
+  createWebRtcPublisher?: (options: WebRtcPublisherOptions) => Promise<WebRtcPublisherLike>;
 };
 
 function serverLimit(
@@ -380,38 +337,23 @@ function serverLimit(
 ): number {
   const resolved = value ?? fallback;
   if (!Number.isSafeInteger(resolved) || resolved < (allowZero ? 0 : 1)) {
-    throw new Error(
-      `${name} must be ${allowZero ? "a non-negative" : "a positive"} safe integer`,
-    );
+    throw new Error(`${name} must be ${allowZero ? "a non-negative" : "a positive"} safe integer`);
   }
   return resolved;
 }
 
-export async function startServer(
-  opts: ServerOpts,
-  dependencies: ServerDependencies = {},
-) {
+export async function startServer(opts: ServerOpts, dependencies: ServerDependencies = {}) {
   const requestedDefaultStreamMode: unknown = opts.streamMode ?? "scrcpy";
   if (!isStreamMode(requestedDefaultStreamMode)) {
-    throw new Error(
-      `streamMode must be one of: ${STREAM_MODES.join(", ")}`,
-    );
+    throw new Error(`streamMode must be one of: ${STREAM_MODES.join(", ")}`);
   }
-  if (
-    requestedDefaultStreamMode === "grpc-screenshot" &&
-    !isEmulatorSerial(opts.serial)
-  ) {
-    throw new Error(
-      "grpc-screenshot is available only for Android Emulator devices",
-    );
+  if (requestedDefaultStreamMode === "grpc-screenshot" && !isEmulatorSerial(opts.serial)) {
+    throw new Error("grpc-screenshot is available only for Android Emulator devices");
   }
   const defaultStreamMode = requestedDefaultStreamMode;
-  const requestedDefaultGrpcImageMode: unknown =
-    opts.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE;
+  const requestedDefaultGrpcImageMode: unknown = opts.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE;
   if (!isGrpcImageMode(requestedDefaultGrpcImageMode)) {
-    throw new Error(
-      `grpcImageMode must be one of: ${GRPC_IMAGE_MODES.join(", ")}`,
-    );
+    throw new Error(`grpcImageMode must be one of: ${GRPC_IMAGE_MODES.join(", ")}`);
   }
   const defaultGrpcImageMode = requestedDefaultGrpcImageMode;
   const requestedDefaultEncoder: unknown = opts.encoder ?? DEFAULT_GRPC_ENCODER;
@@ -419,16 +361,14 @@ export async function startServer(
     throw new Error(`encoder must be one of: ${GRPC_ENCODERS.join(", ")}`);
   }
   const defaultEncoder = requestedDefaultEncoder;
-  const requestedDefaultInputSource: unknown =
-    opts.inputSource ?? DEFAULT_GRPC_INPUT_SOURCE;
+  const requestedDefaultInputSource: unknown = opts.inputSource ?? DEFAULT_GRPC_INPUT_SOURCE;
   if (!isInputSource(requestedDefaultInputSource)) {
     throw new Error(`inputSource must be one of: ${INPUT_SOURCES.join(", ")}`);
   }
   const defaultInputSource = requestedDefaultInputSource;
   const serve = dependencies.serve ?? Bun.serve;
   const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
-  const listDevices =
-    dependencies.listDevices ?? dependencies.listAllDevices ?? listAllDevices;
+  const listDevices = dependencies.listDevices ?? dependencies.listAllDevices ?? listAllDevices;
   const launchEmulator = dependencies.startEmulator ?? startEmulator;
   const killEmulator = dependencies.stopEmulator ?? stopEmulator;
   const listActiveAvds = dependencies.listRunningAvds ?? listRunningAvds;
@@ -436,29 +376,20 @@ export async function startServer(
   const readWiring = dependencies.readCameraWiring ?? readCameraWiring;
   const loadAccessibility =
     dependencies.loadAccessibility ??
-    ((serial: string, signal: AbortSignal) =>
-      getAccessibilitySnapshot(serial, signal));
+    ((serial: string, signal: AbortSignal) => getAccessibilitySnapshot(serial, signal));
   const setLocation =
     dependencies.setLocation ??
     ((serial: string, fix: GeoFix, signal: AbortSignal) =>
       setEmulatorLocationAsync(serial, fix, signal));
   const createInputQueue =
     dependencies.createInputQueue ??
-    ((session: ScrcpySession) =>
-      new ControlInputQueue({ socket: session.controlSocket }));
+    ((session: ScrcpySession) => new ControlInputQueue({ socket: session.controlSocket }));
   const openSession =
     dependencies.openSession ??
     (async (options: StartEmuSessionOptions) => {
-      if (
-        options.mode === "scrcpy" &&
-        (dependencies.openScrcpy || dependencies.startScrcpy)
-      ) {
+      if (options.mode === "scrcpy" && (dependencies.openScrcpy || dependencies.startScrcpy)) {
         const raw = dependencies.openScrcpy
-          ? await dependencies.openScrcpy(
-              options.serial,
-              options.signal,
-              options,
-            )
+          ? await dependencies.openScrcpy(options.serial, options.signal, options)
           : await dependencies.startScrcpy!(options);
         try {
           return adaptScrcpySession(raw, createInputQueue(raw));
@@ -469,14 +400,11 @@ export async function startServer(
       }
       return startEmuSession(options);
     });
-  const recoveryClock =
-    dependencies.recoveryClock ?? SYSTEM_RECOVERY_WATCHDOG_CLOCK;
-  const stageUpload =
-    dependencies.stageMultipartUpload ?? stageMultipartUpload;
+  const recoveryClock = dependencies.recoveryClock ?? SYSTEM_RECOVERY_WATCHDOG_CLOCK;
+  const stageUpload = dependencies.stageMultipartUpload ?? stageMultipartUpload;
   const installStagedApk = dependencies.installApk ?? installApk;
   const importStagedMedia = dependencies.importMediaFile ?? importMediaFile;
-  const openWebRtcPublisher =
-    dependencies.createWebRtcPublisher ?? createWebRtcPublisher;
+  const openWebRtcPublisher = dependencies.createWebRtcPublisher ?? createWebRtcPublisher;
   const maxApkUploadBytes = serverLimit(
     opts.maxApkUploadBytes,
     DEFAULT_MAX_APK_UPLOAD_BYTES,
@@ -505,18 +433,10 @@ export async function startServer(
     true,
   );
   if (uploadQueueTimeoutMs > MAX_UPLOAD_QUEUE_TIMEOUT_MS) {
-    throw new Error(
-      `uploadQueueTimeoutMs must be at most ${MAX_UPLOAD_QUEUE_TIMEOUT_MS}`,
-    );
+    throw new Error(`uploadQueueTimeoutMs must be at most ${MAX_UPLOAD_QUEUE_TIMEOUT_MS}`);
   }
-  const maxUploadFileBytes = Math.max(
-    maxApkUploadBytes,
-    maxMediaUploadBytes,
-  );
-  if (
-    maxUploadFileBytes >
-    Number.MAX_SAFE_INTEGER - MULTIPART_BODY_OVERHEAD_BYTES * 2
-  ) {
+  const maxUploadFileBytes = Math.max(maxApkUploadBytes, maxMediaUploadBytes);
+  if (maxUploadFileBytes > Number.MAX_SAFE_INTEGER - MULTIPART_BODY_OVERHEAD_BYTES * 2) {
     throw new Error("upload byte limit is too large");
   }
   const maxRequestBodySize = Math.max(
@@ -536,9 +456,7 @@ export async function startServer(
   const authToken = opts.token && opts.token.length > 0 ? opts.token : null;
   const streamSettings = opts.streamSettings ?? DEFAULT_STREAM_SETTINGS;
   const webRtcStreamSettings: WebRtcStreamSettings =
-    streamSettings.transport === "webrtc"
-      ? streamSettings
-      : DEFAULT_WEBRTC_STREAM_SETTINGS;
+    streamSettings.transport === "webrtc" ? streamSettings : DEFAULT_WEBRTC_STREAM_SETTINGS;
   const streamModes = new Map<string, StreamMode>();
   const grpcImageModes = new Map<string, GrpcImageMode>();
   const encoders = new Map<string, GrpcEncoder>();
@@ -556,19 +474,12 @@ export async function startServer(
     streamEncoderSettings.get(serial) ?? defaultStreamEncoderSettings;
 
   const modeForSerial = (serial: string): StreamMode =>
-    streamModes.get(serial) ??
-    (isEmulatorSerial(serial) ? defaultStreamMode : "scrcpy");
+    streamModes.get(serial) ?? (isEmulatorSerial(serial) ? defaultStreamMode : "scrcpy");
   const grpcImageModeForSerial = (serial: string): GrpcImageMode =>
     grpcImageModes.get(serial) ?? defaultGrpcImageMode;
-  const encoderForSerial = (serial: string): GrpcEncoder =>
-    encoders.get(serial) ?? defaultEncoder;
-  const inputSourceForSerial = (
-    serial: string,
-    mode: StreamMode,
-  ): InputSource =>
-    mode === "grpc-screenshot"
-      ? inputSources.get(serial) ?? defaultInputSource
-      : "scrcpy";
+  const encoderForSerial = (serial: string): GrpcEncoder => encoders.get(serial) ?? defaultEncoder;
+  const inputSourceForSerial = (serial: string, mode: StreamMode): InputSource =>
+    mode === "grpc-screenshot" ? (inputSources.get(serial) ?? defaultInputSource) : "scrcpy";
 
   const openStream = (
     serial: string,
@@ -671,15 +582,9 @@ export async function startServer(
   encoders.set(opts.serial, defaultEncoder);
   inputSources.set(opts.serial, defaultInputSource);
   const sessions = new DeviceSessionManager(initialContext);
-  const recoveries = new WeakMap<
-    DeviceContext,
-    SessionRecoveryWatchdog<RecoveryClientState>
-  >();
+  const recoveries = new WeakMap<DeviceContext, SessionRecoveryWatchdog<RecoveryClientState>>();
   const publishers = new WeakMap<DeviceContext, WebRtcPublisherLike>();
-  const webRtcStatsCollectors = new WeakMap<
-    DeviceContext,
-    WebRtcStatsCollector
-  >();
+  const webRtcStatsCollectors = new WeakMap<DeviceContext, WebRtcStatsCollector>();
   const webRtcStatsCollectorFor = (context: DeviceContext) => {
     const existing = webRtcStatsCollectors.get(context);
     if (existing) return existing;
@@ -687,17 +592,13 @@ export async function startServer(
     webRtcStatsCollectors.set(context, created);
     return created;
   };
-  const publisherTasks = new WeakMap<
-    DeviceContext,
-    Promise<WebRtcPublisherLike>
-  >();
-  const webRtcRecoveryStates = new WeakMap<
-    DeviceContext,
-    RecoveryClientState
-  >();
-  const responseMetrics = new JsonResponseTracker(
-    ["health", "sessionPage", "sessionExport"] as const,
-  );
+  const publisherTasks = new WeakMap<DeviceContext, Promise<WebRtcPublisherLike>>();
+  const webRtcRecoveryStates = new WeakMap<DeviceContext, RecoveryClientState>();
+  const responseMetrics = new JsonResponseTracker([
+    "health",
+    "sessionPage",
+    "sessionExport",
+  ] as const);
   let stopRequested = false;
   console.log(
     `${initialMode} ready: ${initialStream.meta.deviceName} • ${initialStream.meta.codecId} • ${initialStream.meta.width}×${initialStream.meta.height}`,
@@ -715,83 +616,82 @@ export async function startServer(
       lastResetAttemptMs: null,
     };
     return {
-    ok: context.status === "streaming",
-    status: context.status,
-    generation: context.generation,
-    sessionGeneration: context.generation,
-    serial: context.serial,
-    device: context.stream.meta.deviceName,
-    codec: context.stream.meta.codecId,
-    streamMode: context.stream.mode,
-    grpcImageMode: grpcImageModeForContext(context),
-    encoder: encoderForContext(context),
-    encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
-    inputSource: context.stream.inputSource,
-    grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
-    size: { width: context.screen.width, height: context.screen.height },
-    clients: context.clients.size,
-    videoClients: Array.from(context.clients).filter((client) => client.video)
-      .length,
-    stream: redactedStreamSettings(streamSettings),
-    encoderSettings: { ...encoderSettingsForSerial(context.serial) },
-    webrtc: publishers.get(context)?.snapshot() ?? null,
-    frames: context.frameCount,
-    sourceFps: recoverySnapshot.sourceFps,
-    sourceFrameAgeMs: recoverySnapshot.sourceFrameAgeMs,
-    keyFrameRecovery: {
-      awaitingClients: recoverySnapshot.awaitingClients,
-      oldestAwaitingAgeMs: recoverySnapshot.oldestAwaitingAgeMs,
-      lastResetAttemptAt:
-        recoverySnapshot.lastResetAttemptMs === null
+      ok: context.status === "streaming",
+      status: context.status,
+      generation: context.generation,
+      sessionGeneration: context.generation,
+      serial: context.serial,
+      device: context.stream.meta.deviceName,
+      codec: context.stream.meta.codecId,
+      streamMode: context.stream.mode,
+      grpcImageMode: grpcImageModeForContext(context),
+      encoder: encoderForContext(context),
+      encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
+      inputSource: context.stream.inputSource,
+      grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
+      size: { width: context.screen.width, height: context.screen.height },
+      clients: context.clients.size,
+      videoClients: Array.from(context.clients).filter((client) => client.video).length,
+      stream: redactedStreamSettings(streamSettings),
+      encoderSettings: { ...encoderSettingsForSerial(context.serial) },
+      webrtc: publishers.get(context)?.snapshot() ?? null,
+      frames: context.frameCount,
+      sourceFps: recoverySnapshot.sourceFps,
+      sourceFrameAgeMs: recoverySnapshot.sourceFrameAgeMs,
+      keyFrameRecovery: {
+        awaitingClients: recoverySnapshot.awaitingClients,
+        oldestAwaitingAgeMs: recoverySnapshot.oldestAwaitingAgeMs,
+        lastResetAttemptAt:
+          recoverySnapshot.lastResetAttemptMs === null
+            ? null
+            : new Date(recoverySnapshot.lastResetAttemptMs).toISOString(),
+      },
+      frameStats: context.frameStats.summary(),
+      configPackets: context.configPacketCount,
+      droppedFrames: context.totalDroppedFrames,
+      backpressureEvents: context.totalBackpressureEvents,
+      videoResetRequests: context.videoResetRequests,
+      lastVideoResetAt: context.lastVideoResetAt,
+      lastVideoResetReason: context.lastVideoResetReason,
+      location: context.lastLocation,
+      route: context.route.snapshot(),
+      session: context.recorder.summary(),
+      responseMetrics: responseMetrics.snapshot(),
+      logcat: context.logcat.snapshot(),
+      uploads: uploads.snapshot(),
+      executor: getExecSnapshot(),
+      clientsDetail: Array.from(context.clients, (client) => ({
+        id: client.id,
+        frameMeta: client.frameMeta,
+        video: client.video,
+        sentFrames: client.sentFrames,
+        droppedFrames: client.droppedFrames,
+        backpressureEvents: client.backpressureEvents,
+        bufferedBytes: client.ws.getBufferedAmount(),
+        awaitingKeyFrame: client.awaitingKeyFrame,
+        awaitingKeyFrameSinceAt:
+          client.awaitingKeyFrameSinceMs === null
+            ? null
+            : new Date(client.awaitingKeyFrameSinceMs).toISOString(),
+        awaitingKeyFrameAgeMs:
+          client.awaitingKeyFrameSinceMs === null
+            ? null
+            : Math.max(0, now - client.awaitingKeyFrameSinceMs),
+        lastKeyFrameRequestAt:
+          client.lastKeyFrameRequestMs === null
+            ? null
+            : new Date(client.lastKeyFrameRequestMs).toISOString(),
+      })),
+      startedAt: context.startedAt,
+      stoppedAt: context.stoppedAt,
+      lastFrameAt:
+        recoverySnapshot.lastFrameMs === null
           ? null
-          : new Date(recoverySnapshot.lastResetAttemptMs).toISOString(),
-    },
-    frameStats: context.frameStats.summary(),
-    configPackets: context.configPacketCount,
-    droppedFrames: context.totalDroppedFrames,
-    backpressureEvents: context.totalBackpressureEvents,
-    videoResetRequests: context.videoResetRequests,
-    lastVideoResetAt: context.lastVideoResetAt,
-    lastVideoResetReason: context.lastVideoResetReason,
-    location: context.lastLocation,
-    route: context.route.snapshot(),
-    session: context.recorder.summary(),
-    responseMetrics: responseMetrics.snapshot(),
-    logcat: context.logcat.snapshot(),
-    uploads: uploads.snapshot(),
-    executor: getExecSnapshot(),
-    clientsDetail: Array.from(context.clients, (client) => ({
-      id: client.id,
-      frameMeta: client.frameMeta,
-      video: client.video,
-      sentFrames: client.sentFrames,
-      droppedFrames: client.droppedFrames,
-      backpressureEvents: client.backpressureEvents,
-      bufferedBytes: client.ws.getBufferedAmount(),
-      awaitingKeyFrame: client.awaitingKeyFrame,
-      awaitingKeyFrameSinceAt:
-        client.awaitingKeyFrameSinceMs === null
-          ? null
-          : new Date(client.awaitingKeyFrameSinceMs).toISOString(),
-      awaitingKeyFrameAgeMs:
-        client.awaitingKeyFrameSinceMs === null
-          ? null
-          : Math.max(0, now - client.awaitingKeyFrameSinceMs),
-      lastKeyFrameRequestAt:
-        client.lastKeyFrameRequestMs === null
-          ? null
-          : new Date(client.lastKeyFrameRequestMs).toISOString(),
-    })),
-    startedAt: context.startedAt,
-    stoppedAt: context.stoppedAt,
-    lastFrameAt:
-      recoverySnapshot.lastFrameMs === null
-        ? null
-        : new Date(recoverySnapshot.lastFrameMs).toISOString(),
-    lastError: context.lastError,
-    lastErrorCode: context.lastErrorCode,
-    lastErrorMeta: context.lastErrorMeta,
-  };
+          : new Date(recoverySnapshot.lastFrameMs).toISOString(),
+      lastError: context.lastError,
+      lastErrorCode: context.lastErrorCode,
+      lastErrorMeta: context.lastErrorMeta,
+    };
   };
 
   const webRtcStats = (context: DeviceContext, sessionId: string) => {
@@ -819,21 +719,15 @@ export async function startServer(
     );
   };
 
-  const deviceGrid = async (
-    context: DeviceContext,
-  ): Promise<DeviceGridResponse> => {
+  const deviceGrid = async (context: DeviceContext): Promise<DeviceGridResponse> => {
     const [adbDevices, runningAvds, avds] = await Promise.all([
       listDevices(),
       listActiveAvds(),
       availableAvds(),
     ]);
     sessions.assertPublished(context);
-    const runningBySerial = new Map(
-      runningAvds.map((running) => [running.serial, running]),
-    );
-    const runningByAvd = new Map(
-      runningAvds.map((running) => [running.avd, running]),
-    );
+    const runningBySerial = new Map(runningAvds.map((running) => [running.serial, running]));
+    const runningByAvd = new Map(runningAvds.map((running) => [running.avd, running]));
     const rows: GridDevice[] = adbDevices.map((device) => {
       const running = runningBySerial.get(device.serial);
       const isEmulator = isEmulatorSerial(device.serial);
@@ -851,9 +745,7 @@ export async function startServer(
       };
     });
 
-    const knownAvdSerials = new Set(
-      runningAvds.map((running) => running.serial),
-    );
+    const knownAvdSerials = new Set(runningAvds.map((running) => running.serial));
     for (const avd of avds) {
       const running = runningByAvd.get(avd);
       if (running && knownAvdSerials.has(running.serial)) continue;
@@ -910,9 +802,7 @@ export async function startServer(
     config: Buffer | null,
   ): Buffer => {
     const configBytes = config?.length ?? 0;
-    const out = Buffer.allocUnsafe(
-      FRAME_META_HEADER_BYTES + configBytes + frameData.length,
-    );
+    const out = Buffer.allocUnsafe(FRAME_META_HEADER_BYTES + configBytes + frameData.length);
     writeFrameMetaHeader(out, {
       isKey: frame.isKey,
       pts: frame.pts,
@@ -932,8 +822,7 @@ export async function startServer(
   };
 
   const wantsAck = (value: unknown) => {
-    if (typeof value !== "object" || value === null || Array.isArray(value))
-      return true;
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return true;
     return (value as Record<string, unknown>).ack !== false;
   };
 
@@ -960,10 +849,7 @@ export async function startServer(
   const errorResponse = (err: unknown, fallbackStatus = 400) => {
     const error = err instanceof Error ? err.message : String(err);
     if (err instanceof SessionChangedError) {
-      return Response.json(
-        { ok: false, code: err.code, error },
-        { status: 409 },
-      );
+      return Response.json({ ok: false, code: err.code, error }, { status: 409 });
     }
     let status = fallbackStatus;
     let code: string | undefined;
@@ -995,31 +881,21 @@ export async function startServer(
       status = err.code === "adb-timeout" ? 504 : 502;
       code = err.code;
     }
-    return Response.json(
-      { ok: false, ...(code ? { code } : {}), error },
-      { status },
-    );
+    return Response.json({ ok: false, ...(code ? { code } : {}), error }, { status });
   };
 
-  const inputErrorPayload = (
-    err: unknown,
-    status: "rejected" | "failed",
-  ) => ({
+  const inputErrorPayload = (err: unknown, status: "rejected" | "failed") => ({
     ok: false as const,
     status,
     ...(err instanceof ControlInputError ? { code: err.code } : {}),
     error: err instanceof Error ? err.message : String(err),
   });
 
-  const inputErrorResponse = (
-    err: unknown,
-    status: "rejected" | "failed",
-  ) => {
+  const inputErrorResponse = (err: unknown, status: "rejected" | "failed") => {
     if (err instanceof HttpBodyError) return errorResponse(err);
     return Response.json(inputErrorPayload(err, status), {
       status:
-        err instanceof ControlInputError &&
-        err.code === "control-queue-overloaded"
+        err instanceof ControlInputError && err.code === "control-queue-overloaded"
           ? 429
           : err instanceof ControlInputError
             ? 503
@@ -1053,14 +929,8 @@ export async function startServer(
     Array.isArray(value) ||
     (value as Record<string, unknown>).record !== false;
 
-  const readAccessibilitySnapshot = async (
-    context: DeviceContext,
-    cacheMs = 2_500,
-  ) => {
-    const snapshot = await context.readAccessibilitySnapshot(
-      loadAccessibility,
-      cacheMs,
-    );
+  const readAccessibilitySnapshot = async (context: DeviceContext, cacheMs = 2_500) => {
+    const snapshot = await context.readAccessibilitySnapshot(loadAccessibility, cacheMs);
     sessions.assertCurrent(context);
     return snapshot;
   };
@@ -1129,18 +999,11 @@ export async function startServer(
     try {
       const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, context);
       const gesture = parseGesture(
-        typeof payload === "object" &&
-          payload !== null &&
-          !Array.isArray(payload)
+        typeof payload === "object" && payload !== null && !Array.isArray(payload)
           ? { ...payload, type }
           : payload,
       );
-      const accepted = enqueueGesture(
-        context,
-        gesture,
-        source,
-        shouldRecord(payload),
-      );
+      const accepted = enqueueGesture(context, gesture, source, shouldRecord(payload));
       try {
         const result = await accepted.completion;
         return Response.json({ ok: true, status: result.status });
@@ -1155,11 +1018,7 @@ export async function startServer(
   const keyEndpoint = async (context: DeviceContext, req: Request) => {
     try {
       const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, context);
-      if (
-        typeof payload !== "object" ||
-        payload === null ||
-        Array.isArray(payload)
-      ) {
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
         throw new Error("key payload must be an object");
       }
       const key = (payload as Record<string, unknown>).key;
@@ -1167,12 +1026,7 @@ export async function startServer(
         key === "back" || key === "home" || key === "recents" || key === "power"
           ? parseGesture({ type: key })
           : parseGesture({ ...payload, type: "key" });
-      const accepted = enqueueGesture(
-        context,
-        gesture,
-        "rest:key",
-        shouldRecord(payload),
-      );
+      const accepted = enqueueGesture(context, gesture, "rest:key", shouldRecord(payload));
       try {
         const result = await accepted.completion;
         return Response.json({ ok: true, status: result.status });
@@ -1184,17 +1038,10 @@ export async function startServer(
     }
   };
 
-  const accessibilityTapEndpoint = async (
-    context: DeviceContext,
-    req: Request,
-  ) => {
+  const accessibilityTapEndpoint = async (context: DeviceContext, req: Request) => {
     try {
       const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, context);
-      if (
-        typeof payload !== "object" ||
-        payload === null ||
-        Array.isArray(payload)
-      ) {
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
         throw new Error("accessibility tap payload must be an object");
       }
       const body = payload as Record<string, unknown>;
@@ -1213,17 +1060,8 @@ export async function startServer(
       );
       const x = centerX / accessibilityWidth;
       const y = centerY / accessibilityHeight;
-      if (
-        !Number.isFinite(x) ||
-        !Number.isFinite(y) ||
-        x < 0 ||
-        x > 1 ||
-        y < 0 ||
-        y > 1
-      ) {
-        throw new Error(
-          "matched accessibility node is outside the current stream bounds",
-        );
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
+        throw new Error("matched accessibility node is outside the current stream bounds");
       }
       const accepted = enqueueGesture(
         context,
@@ -1258,11 +1096,7 @@ export async function startServer(
   ) => {
     try {
       const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, context);
-      if (
-        typeof payload !== "object" ||
-        payload === null ||
-        Array.isArray(payload)
-      ) {
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
         throw new Error("payload must be an object");
       }
       const result = await action(payload as Record<string, unknown>);
@@ -1301,8 +1135,7 @@ export async function startServer(
           const staged = await stageUpload(req, {
             fieldName: options.fieldName,
             maxFileBytes: options.maxFileBytes,
-            maxBodyBytes:
-              options.maxFileBytes + MULTIPART_BODY_OVERHEAD_BYTES,
+            maxBodyBytes: options.maxFileBytes + MULTIPART_BODY_OVERHEAD_BYTES,
             signal,
           });
           try {
@@ -1344,16 +1177,14 @@ export async function startServer(
     uploadEndpoint(context, req, {
       fieldName: "apk",
       maxFileBytes: maxApkUploadBytes,
-      action: (serial, file, signal) =>
-        installStagedApk(serial, file, signal),
+      action: (serial, file, signal) => installStagedApk(serial, file, signal),
     });
 
   const fileImportEndpoint = (context: DeviceContext, req: Request) =>
     uploadEndpoint(context, req, {
       fieldName: "file",
       maxFileBytes: maxMediaUploadBytes,
-      action: (serial, file, signal) =>
-        importStagedMedia(serial, file, signal),
+      action: (serial, file, signal) => importStagedMedia(serial, file, signal),
     });
 
   const enqueueVideoReset = (context: DeviceContext, reason: string) => {
@@ -1379,9 +1210,7 @@ export async function startServer(
     }
   };
 
-  const publisherFor = (
-    context: DeviceContext,
-  ): Promise<WebRtcPublisherLike> => {
+  const publisherFor = (context: DeviceContext): Promise<WebRtcPublisherLike> => {
     if (context.stream.meta.codecId !== webRtcStreamSettings.codec) {
       return Promise.reject(
         new WebRtcSignalingError(
@@ -1530,11 +1359,7 @@ export async function startServer(
           if (!sessions.isCurrent(context)) break;
           if (!f) {
             if (!stopRequested)
-              markTerminal(
-                context,
-                "stopped",
-                `${context.stream.mode} video stream ended`,
-              );
+              markTerminal(context, "stopped", `${context.stream.mode} video stream ended`);
             break;
           }
           if (f.type === "session") {
@@ -1553,9 +1378,9 @@ export async function startServer(
                   size: { width: f.width, height: f.height },
                 });
               }
-              recoveries.get(context)?.requestVideoReset(
-                `video session resized to ${f.width}×${f.height}`,
-              );
+              recoveries
+                .get(context)
+                ?.requestVideoReset(`video session resized to ${f.width}×${f.height}`);
             }
             continue;
           }
@@ -1571,11 +1396,7 @@ export async function startServer(
           const publisher = publishers.get(context);
           const webRtcDelivery = publisher?.sendFrame(f, config);
           webRtcStatsCollectorFor(context).recordDelivery(webRtcDelivery);
-          if (
-            f.isKey &&
-            webRtcDelivery?.accepted &&
-            !webRtcDelivery.awaitingKeyFrame
-          ) {
+          if (f.isKey && webRtcDelivery?.accepted && !webRtcDelivery.awaitingKeyFrame) {
             const webRtcState = webRtcRecoveryStates.get(context);
             if (webRtcState) {
               recoveries.get(context)?.keyFrameAccepted(webRtcState);
@@ -1597,10 +1418,7 @@ export async function startServer(
           }
         }
       } catch (err) {
-        if (
-          stopRequested ||
-          (context.signal.aborted && !context.terminalTransitionStarted)
-        ) {
+        if (stopRequested || (context.signal.aborted && !context.terminalTransitionStarted)) {
           return;
         }
         if (err instanceof ScrcpyStreamError) {
@@ -1623,15 +1441,10 @@ export async function startServer(
         sessions.current === context &&
         (!context.signal.aborted || context.terminalTransitionStarted)
       ) {
-        markTerminal(
-          context,
-          "error",
-          failure.message,
-          {
-            code: failure.code,
-            meta: failure.meta ?? null,
-          },
-        );
+        markTerminal(context, "error", failure.message, {
+          code: failure.code,
+          meta: failure.meta ?? null,
+        });
       }
     });
     context.registerCleanup(unsubscribe);
@@ -1671,9 +1484,7 @@ export async function startServer(
   ): Promise<DeviceContext> => {
     const stagingOwner = {};
     let retainedDeviceState =
-      deviceState && !deviceState.disposed && !deviceState.signal.aborted
-        ? deviceState
-        : undefined;
+      deviceState && !deviceState.disposed && !deviceState.signal.aborted ? deviceState : undefined;
     if (retainedDeviceState) {
       try {
         retainedDeviceState.acquire(stagingOwner);
@@ -1705,16 +1516,12 @@ export async function startServer(
         throw error;
       }
     } finally {
-      await retainedDeviceState?.release(
-        stagingOwner,
-        "stream source staging finished",
-      );
+      await retainedDeviceState?.release(stagingOwner, "stream source staging finished");
     }
   };
 
   const grpcImageModeForContext = (context: DeviceContext): GrpcImageMode =>
-    contextGrpcImageModes.get(context) ??
-    grpcImageModeForSerial(context.serial);
+    contextGrpcImageModes.get(context) ?? grpcImageModeForSerial(context.serial);
 
   const encoderForContext = (context: DeviceContext): GrpcEncoder =>
     contextEncoders.get(context) ?? encoderForSerial(context.serial);
@@ -1742,34 +1549,24 @@ export async function startServer(
     if (serial !== previous.serial) {
       await uploads.cancelGeneration(
         previous.generation,
-        new UploadManagerError(
-          "device-session-changed",
-          "device switched",
-          { serial: previous.serial, generation: previous.generation },
-        ),
+        new UploadManagerError("device-session-changed", "device switched", {
+          serial: previous.serial,
+          generation: previous.generation,
+        }),
       );
     }
     const context = await sessions.switch(
       serial,
       async (targetSerial, generation, signal) => {
-        const device = (await listDevices()).find(
-          (candidate) => candidate.serial === targetSerial,
-        );
+        const device = (await listDevices()).find((candidate) => candidate.serial === targetSerial);
         if (signal.aborted) {
-          throw signal.reason instanceof Error
-            ? signal.reason
-            : new Error("device switch aborted");
+          throw signal.reason instanceof Error ? signal.reason : new Error("device switch aborted");
         }
         if (!device) throw new Error(`Unknown adb device "${targetSerial}".`);
         if (device.state !== "device") {
           throw new Error(`${targetSerial} is ${device.state}, not ready.`);
         }
-        return prepareContext(
-          targetSerial,
-          generation,
-          modeForSerial(targetSerial),
-          signal,
-        );
+        return prepareContext(targetSerial, generation, modeForSerial(targetSerial), signal);
       },
       activateContext,
     );
@@ -1799,9 +1596,7 @@ export async function startServer(
     }
     const requestedSerial = active.serial;
     if (!availableStreamModesForSerial(active.serial).includes(mode)) {
-      throw new Error(
-        "grpc-screenshot is available only for Android Emulator devices",
-      );
+      throw new Error("grpc-screenshot is available only for Android Emulator devices");
     }
     let grpcImageMode: GrpcImageMode | undefined;
     let inputSource: InputSource | undefined;
@@ -1809,18 +1604,16 @@ export async function startServer(
     const context = await sessions.replace(
       (current, generation, signal) => {
         const selectedGrpcImageMode =
-          grpcImageMode ??
-          requestedGrpcImageMode ??
-          grpcImageModeForContext(current);
+          grpcImageMode ?? requestedGrpcImageMode ?? grpcImageModeForContext(current);
         grpcImageMode = selectedGrpcImageMode;
         encoder = encoder ?? requestedEncoder ?? encoderForContext(current);
         const selectedInputSource =
           mode === "grpc-screenshot"
-            ? inputSource ??
+            ? (inputSource ??
               requestedInputSource ??
               (current.stream.mode === "grpc-screenshot"
                 ? current.stream.inputSource
-                : inputSourceForSerial(current.serial, mode))
+                : inputSourceForSerial(current.serial, mode)))
             : "scrcpy";
         inputSource = selectedInputSource;
         return prepareContext(
@@ -1839,20 +1632,16 @@ export async function startServer(
       "stream source switched",
       (current) => {
         if (current.serial !== requestedSerial) {
-          throw new SessionChangedError(
-            active.generation,
-            current.generation,
-          );
+          throw new SessionChangedError(active.generation, current.generation);
         }
         encoder = requestedEncoder ?? encoderForContext(current);
-        grpcImageMode =
-          requestedGrpcImageMode ?? grpcImageModeForContext(current);
+        grpcImageMode = requestedGrpcImageMode ?? grpcImageModeForContext(current);
         inputSource =
           mode === "grpc-screenshot"
-            ? requestedInputSource ??
+            ? (requestedInputSource ??
               (current.stream.mode === "grpc-screenshot"
                 ? current.stream.inputSource
-                : inputSourceForSerial(current.serial, mode))
+                : inputSourceForSerial(current.serial, mode)))
             : "scrcpy";
         return (
           current.stream.mode !== mode ||
@@ -1862,16 +1651,12 @@ export async function startServer(
         );
       },
     );
-    const appliedGrpcImageMode =
-      grpcImageMode ?? grpcImageModeForContext(context);
+    const appliedGrpcImageMode = grpcImageMode ?? grpcImageModeForContext(context);
     streamModes.set(context.serial, mode);
     grpcImageModes.set(context.serial, appliedGrpcImageMode);
     encoders.set(context.serial, encoder ?? encoderForContext(context));
     if (mode === "grpc-screenshot") {
-      inputSources.set(
-        context.serial,
-        inputSource ?? context.stream.inputSource,
-      );
+      inputSources.set(context.serial, inputSource ?? context.stream.inputSource);
     }
     if (context.generation !== active.generation) {
       console.log(
@@ -1919,22 +1704,15 @@ export async function startServer(
       "stream settings changed",
       (current) => {
         if (current !== expected) {
-          throw new SessionChangedError(
-            expected.generation,
-            current.generation,
-          );
+          throw new SessionChangedError(expected.generation, current.generation);
         }
         if (current.status !== "streaming" || current.signal.aborted) {
-          throw new StreamSettingsUnavailableError(
-            `session is ${current.status}`,
-          );
+          throw new StreamSettingsUnavailableError(`session is ${current.status}`);
         }
         previousSettings = encoderSettingsForSerial(current.serial);
         hadPreviousSettings = streamEncoderSettings.has(current.serial);
         const requestedSettings = { ...previousSettings, ...patch };
-        if (
-          streamEncoderSettingsEqual(previousSettings, requestedSettings)
-        ) {
+        if (streamEncoderSettingsEqual(previousSettings, requestedSettings)) {
           return false;
         }
         if (current.recorder.isReplaying) {
@@ -1969,13 +1747,10 @@ export async function startServer(
       const requestContext = sessions.current;
       const url = new URL(req.url);
       const handleStatsRequest = () =>
-        handleWebRtcStatsRequest(
-          req,
-          {},
-          (sessionId, device) =>
-            device === null || device === requestContext.serial
-              ? webRtcStats(requestContext, sessionId)
-              : null,
+        handleWebRtcStatsRequest(req, {}, (sessionId, device) =>
+          device === null || device === requestContext.serial
+            ? webRtcStats(requestContext, sessionId)
+            : null,
         );
 
       // Bootstrap: exchange a valid one-time URL token for an HttpOnly cookie,
@@ -2008,33 +1783,24 @@ export async function startServer(
       }
 
       if (!tokenValid(req, url)) {
-        return new Response(
-          JSON.stringify({ ok: false, error: "unauthorized" }),
-          {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-              "WWW-Authenticate": "Bearer",
-            },
+        return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "WWW-Authenticate": "Bearer",
           },
-        );
+        });
       }
 
       // CSRF / cross-origin guard: reject upgrades and state-changing requests
       // whose Origin does not match the host. Applied even without auth so the
       // control channel is never open to arbitrary cross-origin pages.
-      if (
-        url.pathname === "/ws" ||
-        (req.method !== "GET" && req.method !== "HEAD")
-      ) {
+      if (url.pathname === "/ws" || (req.method !== "GET" && req.method !== "HEAD")) {
         if (!originAllowed(req)) {
-          return new Response(
-            JSON.stringify({ ok: false, error: "forbidden origin" }),
-            {
-              status: 403,
-              headers: { "Content-Type": "application/json; charset=utf-8" },
-            },
-          );
+          return new Response(JSON.stringify({ ok: false, error: "forbidden origin" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+          });
         }
       }
 
@@ -2087,16 +1853,12 @@ export async function startServer(
           const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES);
           const streamModeRequest = parseStreamModeRequest(payload);
           const { mode: requestedMode } = streamModeRequest;
-          if (
-            requestedMode === "grpc-screenshot" &&
-            !isEmulatorSerial(requestContext.serial)
-          ) {
-            throw new Error(
-              "grpc-screenshot is available only for Android Emulator devices",
-            );
+          if (requestedMode === "grpc-screenshot" && !isEmulatorSerial(requestContext.serial)) {
+            throw new Error("grpc-screenshot is available only for Android Emulator devices");
           }
           mode = requestedMode;
-          encoder = streamModeRequest.mode === "grpc-screenshot" ? streamModeRequest.encoder : undefined;
+          encoder =
+            streamModeRequest.mode === "grpc-screenshot" ? streamModeRequest.encoder : undefined;
           grpcImageMode =
             streamModeRequest.mode === "grpc-screenshot"
               ? streamModeRequest.grpcImageMode
@@ -2110,13 +1872,7 @@ export async function startServer(
         }
         try {
           return Response.json(
-            await switchStreamMode(
-              mode,
-              grpcImageMode,
-              inputSource,
-              encoder,
-              requestContext,
-            ),
+            await switchStreamMode(mode, grpcImageMode, inputSource, encoder, requestContext),
           );
         } catch (error) {
           return error instanceof SessionChangedError
@@ -2153,45 +1909,32 @@ export async function startServer(
           );
         }
         if (!isJsonRequest(req)) {
-          return Response.json(
-            { ok: false, error: "unsupported_media_type" },
-            { status: 415 },
-          );
+          return Response.json({ ok: false, error: "unsupported_media_type" }, { status: 415 });
         }
         let patch: StreamEncoderSettingsPatch;
         try {
-          patch = parseStreamEncoderSettingsPatch(
-            await readJsonBody(req, MAX_JSON_BODY_BYTES),
-          );
+          patch = parseStreamEncoderSettingsPatch(await readJsonBody(req, MAX_JSON_BODY_BYTES));
         } catch (error) {
-          const bodyTooLarge =
-            error instanceof HttpBodyError && error.status === 413;
+          const bodyTooLarge = error instanceof HttpBodyError && error.status === 413;
           return Response.json(
             {
               ok: false,
-              error: bodyTooLarge
-                ? "body_too_large"
-                : "invalid_stream_settings",
+              error: bodyTooLarge ? "body_too_large" : "invalid_stream_settings",
               message: error instanceof Error ? error.message : String(error),
             },
             { status: bodyTooLarge ? 413 : 400 },
           );
         }
         try {
-          const settings = await updateStreamEncoderSettings(
-            patch,
-            requestContext,
-          );
+          const settings = await updateStreamEncoderSettings(patch, requestContext);
           return Response.json(
             { ok: true, ...settings },
             { headers: { "Cache-Control": "no-store" } },
           );
         } catch (error) {
-          const unavailable =
-            stopRequested || error instanceof StreamSettingsUnavailableError;
+          const unavailable = stopRequested || error instanceof StreamSettingsUnavailableError;
           const conflict =
-            error instanceof SessionReplayConflictError ||
-            error instanceof SessionChangedError;
+            error instanceof SessionReplayConflictError || error instanceof SessionChangedError;
           return Response.json(
             {
               ok: false,
@@ -2213,11 +1956,7 @@ export async function startServer(
         }
         try {
           const offer = parseWebRtcOffer(
-            await readJsonLimited(
-              req,
-              MAX_WEBRTC_SIGNALING_BODY_BYTES,
-              requestContext.signal,
-            ),
+            await readJsonLimited(req, MAX_WEBRTC_SIGNALING_BODY_BYTES, requestContext.signal),
           );
           sessions.assertCurrent(requestContext);
           const publisher = await publisherFor(requestContext);
@@ -2250,11 +1989,7 @@ export async function startServer(
         }
         try {
           const payload = parseWebRtcCloseRequest(
-            await readJsonLimited(
-              req,
-              MAX_WEBRTC_CLOSE_BODY_BYTES,
-              requestContext.signal,
-            ),
+            await readJsonLimited(req, MAX_WEBRTC_CLOSE_BODY_BYTES, requestContext.signal),
           );
           sessions.assertCurrent(requestContext);
           const publisher =
@@ -2269,12 +2004,9 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/devices") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
-          const devices = await runForPublishedContext(requestContext, () =>
-            listDevices(),
-          );
+          const devices = await runForPublishedContext(requestContext, () => listDevices());
           return Response.json({
             ok: true,
             currentSerial: requestContext.serial,
@@ -2289,8 +2021,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/device-grid") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           return Response.json(await deviceGrid(requestContext));
         } catch (err) {
@@ -2299,20 +2030,10 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/devices/select") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
-          const payload = await readJsonBody(
-            req,
-            MAX_JSON_BODY_BYTES,
-            requestContext,
-            false,
-          );
-          if (
-            typeof payload !== "object" ||
-            payload === null ||
-            Array.isArray(payload)
-          ) {
+          const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext, false);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("select payload must be an object");
           }
           const serial = (payload as Record<string, unknown>).serial;
@@ -2326,25 +2047,14 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/avds/start") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
-          const payload = await readJsonBody(
-            req,
-            MAX_JSON_BODY_BYTES,
-            requestContext,
-            false,
-          );
-          if (
-            typeof payload !== "object" ||
-            payload === null ||
-            Array.isArray(payload)
-          ) {
+          const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext, false);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("start payload must be an object");
           }
           const avd = (payload as Record<string, unknown>).avd;
-          if (typeof avd !== "string" || !avd.trim())
-            throw new Error("avd is required");
+          if (typeof avd !== "string" || !avd.trim()) throw new Error("avd is required");
           const requestedCamera = (payload as Record<string, unknown>).camera;
           if (requestedCamera !== undefined && typeof requestedCamera !== "boolean") {
             throw new Error("camera must be a boolean");
@@ -2384,36 +2094,21 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/avds/stop") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
-          const payload = await readJsonBody(
-            req,
-            MAX_JSON_BODY_BYTES,
-            requestContext,
-            false,
-          );
-          if (
-            typeof payload !== "object" ||
-            payload === null ||
-            Array.isArray(payload)
-          ) {
+          const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext, false);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("stop payload must be an object");
           }
           const body = payload as Record<string, unknown>;
-          let serial =
-            typeof body.serial === "string" ? body.serial.trim() : "";
+          let serial = typeof body.serial === "string" ? body.serial.trim() : "";
           if (!serial && typeof body.avd === "string" && body.avd.trim()) {
             const running = await listActiveAvds();
             sessions.assertPublished(requestContext);
-            serial =
-              running.find(
-                (running) => running.avd === body.avd,
-              )?.serial ?? "";
+            serial = running.find((running) => running.avd === body.avd)?.serial ?? "";
           }
           if (!serial) throw new Error("serial or running avd is required");
-          if (!isEmulatorSerial(serial))
-            throw new Error(`${serial} is not an emulator`);
+          if (!isEmulatorSerial(serial)) throw new Error(`${serial} is not an emulator`);
           if (serial === requestContext.serial) {
             await stopCurrentSession(requestContext, "current emulator stopped");
           }
@@ -2440,36 +2135,22 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("orientation payload must be an object");
             }
-            const orientation = (payload as Record<string, unknown>)
-              .orientation;
+            const orientation = (payload as Record<string, unknown>).orientation;
             if (
               orientation !== "auto" &&
               orientation !== "portrait" &&
               orientation !== "landscape"
             ) {
-              throw new Error(
-                "orientation must be auto, portrait, or landscape",
-              );
+              throw new Error("orientation must be auto, portrait, or landscape");
             }
             return Response.json({
               ok: true,
               orientation: await runForContext(requestContext, (context) =>
-                setUserRotation(
-                  context.serial,
-                  orientation as OrientationMode,
-                ),
+                setUserRotation(context.serial, orientation as OrientationMode),
               ),
             });
           } catch (err) {
@@ -2484,9 +2165,7 @@ export async function startServer(
           try {
             return Response.json({
               ok: true,
-              fold: await runForContext(requestContext, (context) =>
-                getFoldStatus(context.serial),
-              ),
+              fold: await runForContext(requestContext, (context) => getFoldStatus(context.serial)),
             });
           } catch (err) {
             return errorResponse(err);
@@ -2530,16 +2209,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("night mode payload must be an object");
             }
             const mode = (payload as Record<string, unknown>).mode;
@@ -2574,21 +2245,11 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("font scale payload must be an object");
             }
-            const scale = parseFontScale(
-              (payload as Record<string, unknown>).scale,
-            );
+            const scale = parseFontScale((payload as Record<string, unknown>).scale);
             return Response.json({
               ok: true,
               fontScale: await runForContext(requestContext, (context) =>
@@ -2617,16 +2278,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("network payload must be an object");
             }
             const enabled = (payload as Record<string, unknown>).enabled;
@@ -2661,16 +2314,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("reduce motion payload must be an object");
             }
             const enabled = (payload as Record<string, unknown>).enabled;
@@ -2705,16 +2350,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("high text contrast payload must be an object");
             }
             const enabled = (payload as Record<string, unknown>).enabled;
@@ -2749,16 +2386,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("font weight payload must be an object");
             }
             const enabled = (payload as Record<string, unknown>).enabled;
@@ -2793,16 +2422,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("software keyboard payload must be an object");
             }
             const enabled = (payload as Record<string, unknown>).enabled;
@@ -2837,21 +2458,11 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const payload = await readJsonBody(
-              req,
-              MAX_JSON_BODY_BYTES,
-              requestContext,
-            );
-            if (
-              typeof payload !== "object" ||
-              payload === null ||
-              Array.isArray(payload)
-            ) {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
               throw new Error("display density payload must be an object");
             }
-            const scale = parseDisplayDensityScale(
-              (payload as Record<string, unknown>).scale,
-            );
+            const scale = parseDisplayDensityScale((payload as Record<string, unknown>).scale);
             return Response.json({
               ok: true,
               displayDensity: await runForContext(requestContext, (context) =>
@@ -2872,8 +2483,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/logcat") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           sessions.assertCurrent(requestContext);
           srv.timeout(req, 0);
@@ -2884,8 +2494,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/metrics") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           sessions.assertCurrent(requestContext);
           srv.timeout(req, 0);
@@ -2910,14 +2519,11 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/foreground") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           return Response.json({
             ok: true,
-            app: await runForContext(requestContext, (context) =>
-              getForegroundApp(context.serial),
-            ),
+            app: await runForContext(requestContext, (context) => getForegroundApp(context.serial)),
           });
         } catch (err) {
           return errorResponse(err);
@@ -2925,44 +2531,36 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/accessibility") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
-          return Response.json(
-            await readAccessibilitySnapshot(requestContext),
-          );
+          return Response.json(await readAccessibilitySnapshot(requestContext));
         } catch (err) {
           return errorResponse(err);
         }
       }
 
       if (url.pathname === "/api/accessibility/tap") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return accessibilityTapEndpoint(requestContext, req);
       }
 
       if (url.pathname === "/api/tap") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return gestureEndpoint(requestContext, req, "tap", "rest:tap");
       }
 
       if (url.pathname === "/api/swipe") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return gestureEndpoint(requestContext, req, "swipe", "rest:swipe");
       }
 
       if (url.pathname === "/api/text") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return gestureEndpoint(requestContext, req, "text", "rest:text");
       }
 
       if (url.pathname === "/api/key") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return keyEndpoint(requestContext, req);
       }
 
@@ -2971,9 +2569,7 @@ export async function startServer(
           try {
             return responseMetrics.response(
               "sessionPage",
-              requestContext.recorder.page(
-                parseSessionPageQuery(url.searchParams),
-              ),
+              requestContext.recorder.page(parseSessionPageQuery(url.searchParams)),
             );
           } catch (err) {
             return errorResponse(err);
@@ -2994,24 +2590,16 @@ export async function startServer(
         if (req.method !== "GET") {
           return new Response("method not allowed", { status: 405 });
         }
-        return responseMetrics.response(
-          "sessionExport",
-          requestContext.recorder.export(),
-        );
+        return responseMetrics.response("sessionExport", requestContext.recorder.export());
       }
 
       if (url.pathname === "/api/session/replay") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         const replayRecorder = requestContext.recorder;
         const replayAdmissionEpoch = replayRecorder.replayAdmissionEpoch;
         let multiplier: number;
         try {
-          const payload = await readJsonBody(
-            req,
-            MAX_JSON_BODY_BYTES,
-            requestContext,
-          );
+          const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
           multiplier = parseSessionReplayMultiplier(payload);
         } catch (err) {
           return err instanceof SessionChangedError
@@ -3033,36 +2621,30 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/session/replay/stop") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         const stoppedRecorder = requestContext.recorder;
         const stoppedDeviceState = requestContext.deviceState;
         const response = await stopSessionReplayResponse(stoppedRecorder);
         if (sessions.current.deviceState !== stoppedDeviceState) {
           return sessionReplayErrorResponse(
-            new SessionReplayConflictError(
-              "device session changed while stopping session replay",
-            ),
+            new SessionReplayConflictError("device session changed while stopping session replay"),
           );
         }
         return response;
       }
 
       if (url.pathname === "/api/apps/install") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return installEndpoint(requestContext, req);
       }
 
       if (url.pathname === "/api/files/import") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return fileImportEndpoint(requestContext, req);
       }
 
       if (url.pathname === "/api/apps/launch") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
           launchApp(
             requestContext.serial,
@@ -3075,30 +2657,21 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/apps/clear") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
-          clearAppData(
-            requestContext.serial,
-            String(payload.packageName ?? ""),
-          ),
+          clearAppData(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
       if (url.pathname === "/api/apps/force-stop") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
-          forceStopApp(
-            requestContext.serial,
-            String(payload.packageName ?? ""),
-          ),
+          forceStopApp(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
       if (url.pathname === "/api/apps/grant") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
           grantPermission(
             requestContext.serial,
@@ -3109,8 +2682,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/apps/permissions") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           return Response.json(
             await runForContext(requestContext, (context) =>
@@ -3123,8 +2695,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/apps/revoke") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
           revokePermission(
             requestContext.serial,
@@ -3135,16 +2706,14 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/apps/reset-permissions") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         return appJsonEndpoint(requestContext, req, (payload) =>
           resetPermissions(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
       if (url.pathname === "/api/apps/icon") {
-        if (req.method !== "GET")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
         try {
           const pkg = packageName(url.searchParams.get("packageName"));
           return Response.json({
@@ -3170,18 +2739,8 @@ export async function startServer(
         }
         if (req.method === "POST") {
           try {
-            const fix = parseGeoFix(
-              await readJsonBody(
-                req,
-                MAX_JSON_BODY_BYTES,
-                requestContext,
-              ),
-            );
-            const location = await applyLocation(
-              requestContext,
-              fix,
-              "rest:location",
-            );
+            const fix = parseGeoFix(await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext));
+            const location = await applyLocation(requestContext, fix, "rest:location");
             return Response.json({ ok: true, location });
           } catch (err) {
             return errorResponse(err);
@@ -3228,19 +2787,10 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/route/control") {
-        if (req.method !== "POST")
-          return new Response("method not allowed", { status: 405 });
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
-          const payload = await readJsonBody(
-            req,
-            MAX_JSON_BODY_BYTES,
-            requestContext,
-          );
-          if (
-            typeof payload !== "object" ||
-            payload === null ||
-            Array.isArray(payload)
-          ) {
+          const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("control payload must be an object");
           }
           const action = (payload as Record<string, unknown>).action;
@@ -3297,8 +2847,7 @@ export async function startServer(
       }
 
       const reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
-      if (reqPath.includes(".."))
-        return new Response("not found", { status: 404 });
+      if (reqPath.includes("..")) return new Response("not found", { status: 404 });
       const file = Bun.file(join(UI_DIR, reqPath));
       if (await file.exists()) return new Response(file);
       return new Response("not found", { status: 404 });
@@ -3357,10 +2906,7 @@ export async function startServer(
           const payload = JSON.parse(raw);
           acknowledge = wantsAck(payload);
           if (isResetVideoRequest(payload)) {
-            const accepted = enqueueVideoReset(
-              context,
-              "client requested keyframe",
-            );
+            const accepted = enqueueVideoReset(context, "client requested keyframe");
             void accepted.completion
               .then((result) => {
                 if (acknowledge) {
@@ -3428,10 +2974,9 @@ export async function startServer(
       serial: context.serial,
       generation: context.generation,
     });
-    stopTask = Promise.all([
-      sessions.close("server stopping"),
-      uploads.close(error),
-    ]).then(() => {});
+    stopTask = Promise.all([sessions.close("server stopping"), uploads.close(error)]).then(
+      () => {},
+    );
     return stopTask;
   };
 
@@ -3439,15 +2984,11 @@ export async function startServer(
     server,
     get session(): ScrcpySession | EmuSession | null {
       const context = sessions.current;
-      return context.signal.aborted
-        ? null
-        : (context.stream.rawScrcpy ?? context.stream);
+      return context.signal.aborted ? null : (context.stream.rawScrcpy ?? context.stream);
     },
     getSession(): ScrcpySession | EmuSession | null {
       const context = sessions.current;
-      return context.signal.aborted
-        ? null
-        : (context.stream.rawScrcpy ?? context.stream);
+      return context.signal.aborted ? null : (context.stream.rawScrcpy ?? context.stream);
     },
     stop,
   };

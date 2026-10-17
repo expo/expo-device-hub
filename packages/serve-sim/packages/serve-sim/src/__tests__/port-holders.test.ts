@@ -80,9 +80,15 @@ describe("who serve-sim is willing to kill for a port", () => {
   }, 15_000);
 
   it("targets a helper it recorded on that port", async () => {
-    await withRecordedListenerAsync("helper.js", "PORTS-TEST-OURS", OURS_PORT, OURS_PORT, async (pid) => {
-      expect(findOwnListeners(OURS_PORT)).toEqual([pid]);
-    });
+    await withRecordedListenerAsync(
+      "helper.js",
+      "PORTS-TEST-OURS",
+      OURS_PORT,
+      OURS_PORT,
+      async (pid) => {
+        expect(findOwnListeners(OURS_PORT)).toEqual([pid]);
+      },
+    );
   }, 15_000);
 
   it("does not target a recorded pid whose state names another port", async () => {

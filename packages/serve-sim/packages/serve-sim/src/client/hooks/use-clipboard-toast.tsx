@@ -69,13 +69,16 @@ export function useClipboardToast(
     ++pasteGeneration.current;
     sonnerToast.dismiss(PASTE_TOAST_ID);
   }, []);
-  useEffect(() => () => {
-    // An old read may finish after switching devices or closing the preview.
-    copyWriter.current?.begin();
-    cancelPaste();
-    sonnerToast.dismiss(COPY_TOAST_ID);
-    sonnerToast.dismiss(MANUAL_TOAST_ID);
-  }, [deviceUdid, cancelPaste]);
+  useEffect(
+    () => () => {
+      // An old read may finish after switching devices or closing the preview.
+      copyWriter.current?.begin();
+      cancelPaste();
+      sonnerToast.dismiss(COPY_TOAST_ID);
+      sonnerToast.dismiss(MANUAL_TOAST_ID);
+    },
+    [deviceUdid, cancelPaste],
+  );
   const copyFromSim = useCallback(async () => {
     const writer = copyWriter.current!;
     const generation = writer.begin();
@@ -91,11 +94,19 @@ export function useClipboardToast(
       try {
         if (!(await writer.write(generation, text, isCurrent))) return;
         if (!isCurrent()) return;
-        renderToast("success", text ? "Copied from simulator" : "Simulator clipboard is empty", COPY_TOAST_ID);
+        renderToast(
+          "success",
+          text ? "Copied from simulator" : "Simulator clipboard is empty",
+          COPY_TOAST_ID,
+        );
       } catch {
         if (!isCurrent()) return;
         if (!text) {
-          renderToast("error", "Simulator clipboard is empty. The browser clipboard still has older text", COPY_TOAST_ID);
+          renderToast(
+            "error",
+            "Simulator clipboard is empty. The browser clipboard still has older text",
+            COPY_TOAST_ID,
+          );
           return;
         }
         sonnerToast.dismiss(COPY_TOAST_ID);
@@ -116,11 +127,7 @@ export function useClipboardToast(
       if (error instanceof SimClipboardCopyError && error.cleanupWarning) {
         showClipboardKeyCleanupWarning(error.cleanupWarning);
       }
-      renderToast(
-        "error",
-        error instanceof Error ? error.message : "Copy failed",
-        COPY_TOAST_ID,
-      );
+      renderToast("error", error instanceof Error ? error.message : "Copy failed", COPY_TOAST_ID);
     }
   }, [deviceUdid, readClipboardAfterInput]);
 
@@ -154,16 +161,20 @@ export function useClipboardToast(
       const generation = pasteGeneration.current;
       void browserMayAllow("clipboard-read").then((allowed) => {
         if (!allowed || generation !== pasteGeneration.current) return;
-        if (grant === "allowed") renderToast("success", "Clipboard allowed. Paste again", PASTE_TOAST_ID);
+        if (grant === "allowed")
+          renderToast("success", "Clipboard allowed. Paste again", PASTE_TOAST_ID);
         else renderToast("info", "Paste again", PASTE_TOAST_ID);
       });
     }, 0);
     return () => clearTimeout(timer);
   }, []);
 
-  const pasteText = useCallback((text: string) => {
-    return pasteTextForGeneration(text, ++pasteGeneration.current);
-  }, [pasteTextForGeneration]);
+  const pasteText = useCallback(
+    (text: string) => {
+      return pasteTextForGeneration(text, ++pasteGeneration.current);
+    },
+    [pasteTextForGeneration],
+  );
 
   const pasteFromDevice = useCallback(async () => {
     const generation = ++pasteGeneration.current;

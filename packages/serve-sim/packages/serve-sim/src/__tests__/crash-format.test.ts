@@ -1,19 +1,23 @@
 import { crashStreamUrl } from "../client/utils/crash-format";
 import { describe, expect, test } from "bun:test";
 import type { CrashFrame } from "../crash/report";
-import {
-  collapseSystemFrames,
-  crashDetailUrl,
-  formatCrashAgo,
-} from "../client/utils/crash-format";
+import { collapseSystemFrames, crashDetailUrl, formatCrashAgo } from "../client/utils/crash-format";
 
 function frame(appOwned: boolean, symbol = "sym"): CrashFrame {
-  return { image: appOwned ? "Demo" : "libsystem", symbol, imageOffset: 0, imageUuid: null, appOwned };
+  return {
+    image: appOwned ? "Demo" : "libsystem",
+    symbol,
+    imageOffset: 0,
+    imageUuid: null,
+    appOwned,
+  };
 }
 
 describe("crashDetailUrl", () => {
   test("names the occurrence by key when it has one", () => {
-    expect(crashDetailUrl("/crashes?device=B", "INC-1", 2, 12)).toBe("/crashes/INC-1?device=B&occurrence=2&key=12");
+    expect(crashDetailUrl("/crashes?device=B", "INC-1", 2, 12)).toBe(
+      "/crashes/INC-1?device=B&occurrence=2&key=12",
+    );
   });
 
   test("keeps the list query when fetching a record", () => {
@@ -22,7 +26,7 @@ describe("crashDetailUrl", () => {
 
   test("adds occurrence without dropping device", () => {
     expect(crashDetailUrl("/.sim/crashes?device=B", "INC 1", 2)).toBe(
-      "/.sim/crashes/INC%201?device=B&occurrence=2"
+      "/.sim/crashes/INC%201?device=B&occurrence=2",
     );
   });
 });
@@ -42,9 +46,17 @@ describe("formatCrashAgo", () => {
 describe("collapseSystemFrames", () => {
   test("leaves a pure app or pure system stack alone", () => {
     const app = [frame(/* appOwned */ true), frame(/* appOwned */ true)];
-    const system = [frame(/* appOwned */ false), frame(/* appOwned */ false), frame(/* appOwned */ false)];
+    const system = [
+      frame(/* appOwned */ false),
+      frame(/* appOwned */ false),
+      frame(/* appOwned */ false),
+    ];
     expect(collapseSystemFrames(app).map((row) => row.kind)).toEqual(["frame", "frame"]);
-    expect(collapseSystemFrames(system).map((row) => row.kind)).toEqual(["frame", "frame", "frame"]);
+    expect(collapseSystemFrames(system).map((row) => row.kind)).toEqual([
+      "frame",
+      "frame",
+      "frame",
+    ]);
   });
 
   test("keeps the crashing instruction and folds the system run under it", () => {
@@ -104,9 +116,12 @@ describe("collapseSystemFrames", () => {
   });
 });
 
-
 test("crash URLs normalize the trailing slash and replace an existing tail option", () => {
   expect(crashDetailUrl("/.sim/crashes/?device=U", "A")).toBe("/.sim/crashes/A?device=U");
-  expect(crashStreamUrl("/.sim/crashes?device=U&tail=0", true)).toBe("/.sim/crashes?device=U&tail=1");
-  expect(crashStreamUrl("/.sim/crashes?device=U&tail=1", false)).toBe("/.sim/crashes?device=U&tail=0");
+  expect(crashStreamUrl("/.sim/crashes?device=U&tail=0", true)).toBe(
+    "/.sim/crashes?device=U&tail=1",
+  );
+  expect(crashStreamUrl("/.sim/crashes?device=U&tail=1", false)).toBe(
+    "/.sim/crashes?device=U&tail=0",
+  );
 });

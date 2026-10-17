@@ -220,11 +220,7 @@ describe("startServer device session lifecycle", () => {
           routeSignal = signal;
           routeLocationStarted.resolve();
           await new Promise<void>((_resolve, reject) => {
-            signal.addEventListener(
-              "abort",
-              () => reject(signal.reason),
-              { once: true },
-            );
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
           });
         },
         serve: capturingServe(captured),

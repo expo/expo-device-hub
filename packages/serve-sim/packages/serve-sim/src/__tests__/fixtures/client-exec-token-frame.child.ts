@@ -45,7 +45,11 @@ let runHostAction: typeof import("../../socket/client-control").runHostAction;
 
 beforeAll(async () => {
   const globals = globalThis as Record<string, unknown>;
-  globals.WebSocket = function BrowserLikeSocket(this: FakeSocket, _url: string, protocols?: string[]) {
+  globals.WebSocket = function BrowserLikeSocket(
+    this: FakeSocket,
+    _url: string,
+    protocols?: string[],
+  ) {
     if (protocols?.some((protocol) => !SUBPROTOCOL.test(protocol))) {
       throw new SyntaxError("The subprotocol is invalid.");
     }
@@ -56,7 +60,12 @@ beforeAll(async () => {
   (globals.WebSocket as { OPEN?: number }).OPEN = 1;
   globals.window = {
     __SIM_PREVIEW__: { execToken: TOKEN, basePath: "/" },
-    location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
+    location: {
+      href: "http://127.0.0.1:3100/",
+      protocol: "http:",
+      host: "127.0.0.1:3100",
+      pathname: "/",
+    },
   };
   ({ runHostAction } = await import("../../socket/client-control"));
 });

@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import {
   MAP_TILE_SIZE,
@@ -134,10 +127,7 @@ export function LocationPanel() {
   }, [invalidateRoutePoll]);
 
   const endRouteMutation = useCallback(() => {
-    routeMutationCountRef.current = Math.max(
-      0,
-      routeMutationCountRef.current - 1,
-    );
+    routeMutationCountRef.current = Math.max(0, routeMutationCountRef.current - 1);
     invalidateRoutePoll();
   }, [invalidateRoutePoll]);
 
@@ -182,7 +172,7 @@ export function LocationPanel() {
         const response = await fetch("/api/route", {
           signal: controller.signal,
         });
-        const route = await response.json() as RouteSnapshot;
+        const route = (await response.json()) as RouteSnapshot;
         if (
           cancelled ||
           generation !== routePollGenerationRef.current ||
@@ -194,9 +184,7 @@ export function LocationPanel() {
         if (route.currentLocation) {
           syncDraft(
             route.currentLocation,
-            followRoute &&
-              route.status === "running" &&
-              dragRef.current === null,
+            followRoute && route.status === "running" && dragRef.current === null,
           );
         }
         if (route.lastError) setStatus(route.lastError);
@@ -224,27 +212,16 @@ export function LocationPanel() {
     };
   }, [followRoute, syncDraft]);
 
-  const centerPixel = useMemo(
-    () => projectLocation(center, zoom),
-    [center, zoom],
-  );
-  const draftPixel = useMemo(
-    () => projectLocation(draft, zoom),
-    [draft, zoom],
-  );
+  const centerPixel = useMemo(() => projectLocation(center, zoom), [center, zoom]);
+  const draftPixel = useMemo(() => projectLocation(draft, zoom), [draft, zoom]);
 
   const tiles = useMemo<Tile[]>(() => {
     const maxTile = 2 ** zoom - 1;
     const leftWorld = centerPixel.x - size.width / 2;
     const topWorld = centerPixel.y - size.height / 2;
     const startX = Math.floor(leftWorld / TILE_SIZE) - TILE_OVERSCAN;
-    const endX =
-      Math.floor((leftWorld + size.width) / TILE_SIZE) + TILE_OVERSCAN;
-    const startY = clamp(
-      Math.floor(topWorld / TILE_SIZE) - TILE_OVERSCAN,
-      0,
-      maxTile,
-    );
+    const endX = Math.floor((leftWorld + size.width) / TILE_SIZE) + TILE_OVERSCAN;
+    const startY = clamp(Math.floor(topWorld / TILE_SIZE) - TILE_OVERSCAN, 0, maxTile);
     const endY = clamp(
       Math.floor((topWorld + size.height) / TILE_SIZE) + TILE_OVERSCAN,
       0,
@@ -279,11 +256,7 @@ export function LocationPanel() {
     );
   };
 
-  const markerWorldX = nearestWrappedWorldX(
-    draftPixel.x,
-    centerPixel.x,
-    worldSizeAtZoom(zoom),
-  );
+  const markerWorldX = nearestWrappedWorldX(draftPixel.x, centerPixel.x, worldSizeAtZoom(zoom));
   const markerLeft = markerWorldX - centerPixel.x + size.width / 2;
   const markerTop = draftPixel.y - centerPixel.y + size.height / 2;
 
@@ -304,15 +277,12 @@ export function LocationPanel() {
     };
   }, []);
   const displayRoute = useMemo(
-    () => routePoints.length > 0
-      ? routeProjectionCache.get(routePoints, routePoints, zoom)
-      : null,
+    () =>
+      routePoints.length > 0 ? routeProjectionCache.get(routePoints, routePoints, zoom) : null,
     [routePoints, routeProjectionCache, zoom],
   );
   const displayTransform = useMemo(
-    () => displayRoute
-      ? routeViewportTransform(displayRoute, centerPixel, size)
-      : null,
+    () => (displayRoute ? routeViewportTransform(displayRoute, centerPixel, size) : null),
     [centerPixel, displayRoute, size],
   );
   const progress =
@@ -373,9 +343,7 @@ export function LocationPanel() {
     // This check intentionally runs before the File crosses the worker
     // boundary; the worker repeats it before calling File.text().
     if (file.size > DEFAULT_MAX_ROUTE_FILE_BYTES) {
-      setStatus(
-        `Route file exceeds ${formatMegabytes(DEFAULT_MAX_ROUTE_FILE_BYTES)}`,
-      );
+      setStatus(`Route file exceeds ${formatMegabytes(DEFAULT_MAX_ROUTE_FILE_BYTES)}`);
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
@@ -389,10 +357,9 @@ export function LocationPanel() {
     setStatus(`Loading ${file.name} in worker...`);
     let worker: Worker;
     try {
-      worker = new Worker(
-        new URL("../lib/route-parser-worker.ts", import.meta.url),
-        { type: "module" },
-      );
+      worker = new Worker(new URL("../lib/route-parser-worker.ts", import.meta.url), {
+        type: "module",
+      });
     } catch (error) {
       setRouteParsing(false);
       setStatus(error instanceof Error ? error.message : "Worker start failed");
@@ -408,48 +375,40 @@ export function LocationPanel() {
       worker.terminate();
       setRouteParsing(false);
     };
-    worker.addEventListener(
-      "message",
-      (event: MessageEvent<RouteParserWorkerResponse>) => {
-        const message = event.data;
-        if (
-          requestId !== routeRequestRef.current ||
-          message.requestId !== requestId ||
-          routeWorkerRef.current !== worker
-        ) {
-          return;
-        }
-        if (message.type === "accepted") {
-          setStatus(`Reading ${message.fileName}...`);
-        } else if (message.type === "progress") {
-          setStatus(
-            message.stage === "reading"
-              ? `Reading route ${message.bytesRead === message.totalBytes ? "100%" : "..."}`
-              : `Parsing route... ${message.waypoints} waypoints`,
-          );
-        } else if (message.type === "result") {
-          const points = message.result.points;
-          routeProjectionCache.clear();
-          setRoutePoints(points);
-          syncDraft(points[0]!, true);
-          setStatus(
-            `Loaded ${points.length} ${message.result.format.toUpperCase()} waypoints`,
-          );
-          finish();
-        } else if (message.type === "error") {
-          setStatus(message.error.message);
-          finish();
-        } else if (message.type === "cancelled") {
-          setStatus("Route load cancelled");
-          finish();
-        }
-      },
-    );
-    worker.addEventListener("error", (event) => {
+    worker.addEventListener("message", (event: MessageEvent<RouteParserWorkerResponse>) => {
+      const message = event.data;
       if (
         requestId !== routeRequestRef.current ||
+        message.requestId !== requestId ||
         routeWorkerRef.current !== worker
       ) {
+        return;
+      }
+      if (message.type === "accepted") {
+        setStatus(`Reading ${message.fileName}...`);
+      } else if (message.type === "progress") {
+        setStatus(
+          message.stage === "reading"
+            ? `Reading route ${message.bytesRead === message.totalBytes ? "100%" : "..."}`
+            : `Parsing route... ${message.waypoints} waypoints`,
+        );
+      } else if (message.type === "result") {
+        const points = message.result.points;
+        routeProjectionCache.clear();
+        setRoutePoints(points);
+        syncDraft(points[0]!, true);
+        setStatus(`Loaded ${points.length} ${message.result.format.toUpperCase()} waypoints`);
+        finish();
+      } else if (message.type === "error") {
+        setStatus(message.error.message);
+        finish();
+      } else if (message.type === "cancelled") {
+        setStatus("Route load cancelled");
+        finish();
+      }
+    });
+    worker.addEventListener("error", (event) => {
+      if (requestId !== routeRequestRef.current || routeWorkerRef.current !== worker) {
         return;
       }
       event.preventDefault();
@@ -457,10 +416,7 @@ export function LocationPanel() {
       finish();
     });
     worker.addEventListener("messageerror", () => {
-      if (
-        requestId !== routeRequestRef.current ||
-        routeWorkerRef.current !== worker
-      ) {
+      if (requestId !== routeRequestRef.current || routeWorkerRef.current !== worker) {
         return;
       }
       setStatus("Route worker response could not be decoded");
@@ -474,9 +430,7 @@ export function LocationPanel() {
     try {
       worker.postMessage(command);
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Route file could not be sent",
-      );
+      setStatus(error instanceof Error ? error.message : "Route file could not be sent");
       finish();
     }
     if (fileRef.current) fileRef.current.value = "";
@@ -560,9 +514,10 @@ export function LocationPanel() {
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || e.pointerId !== drag.pointerId) return;
-    const coalesced = typeof e.nativeEvent.getCoalescedEvents === "function"
-      ? e.nativeEvent.getCoalescedEvents()
-      : [];
+    const coalesced =
+      typeof e.nativeEvent.getCoalescedEvents === "function"
+        ? e.nativeEvent.getCoalescedEvents()
+        : [];
     const latest = coalesced[coalesced.length - 1] ?? e;
     drag.dx = latest.clientX - drag.start.x;
     drag.dy = latest.clientY - drag.start.y;
@@ -576,8 +531,7 @@ export function LocationPanel() {
         const active = dragRef.current;
         if (!active || !mapWorldRef.current) return;
         setFollowRoute(false);
-        mapWorldRef.current.style.transform =
-          `translate3d(${active.dx}px, ${active.dy}px, 0)`;
+        mapWorldRef.current.style.transform = `translate3d(${active.dx}px, ${active.dy}px, 0)`;
       });
     }
   };
@@ -600,10 +554,7 @@ export function LocationPanel() {
     if (drag.moved) {
       if (mapWorldRef.current) mapWorldRef.current.style.transform = "";
       setCenter(
-        unprojectLocation(
-          { x: drag.center.x - drag.dx, y: drag.center.y - drag.dy },
-          drag.zoom,
-        ),
+        unprojectLocation({ x: drag.center.x - drag.dx, y: drag.center.y - drag.dy }, drag.zoom),
       );
       return;
     }
@@ -654,15 +605,10 @@ export function LocationPanel() {
             />
           ))}
           {displayRoute && displayTransform && (
-            <svg
-              className="route-overlay"
-              viewBox={`0 0 ${size.width} ${size.height}`}
-            >
+            <svg className="route-overlay" viewBox={`0 0 ${size.width} ${size.height}`}>
               <polyline
                 points={displayRoute.svgPoints}
-                transform={
-                  `translate(${displayTransform.translateX} ${displayTransform.translateY})`
-                }
+                transform={`translate(${displayTransform.translateX} ${displayTransform.translateY})`}
               />
             </svg>
           )}
@@ -716,7 +662,9 @@ export function LocationPanel() {
       <section className="route-panel">
         <div className="panel-heading">
           <h2>Route</h2>
-          <div className="location-status">{routeStatus?.status ?? "idle"} {progress}%</div>
+          <div className="location-status">
+            {routeStatus?.status ?? "idle"} {progress}%
+          </div>
         </div>
         <input
           ref={fileRef}
@@ -735,7 +683,9 @@ export function LocationPanel() {
           {displayRoute && displayRoute.points.length < routePoints.length
             ? ` • ${displayRoute.points.length} drawn`
             : ""}
-          {routeStatus ? ` • ${formatDistance(routeStatus.progressMeters)} / ${formatDistance(routeStatus.totalMeters)}` : ""}
+          {routeStatus
+            ? ` • ${formatDistance(routeStatus.progressMeters)} / ${formatDistance(routeStatus.totalMeters)}`
+            : ""}
         </div>
         <div className="coordinate-grid">
           <label>

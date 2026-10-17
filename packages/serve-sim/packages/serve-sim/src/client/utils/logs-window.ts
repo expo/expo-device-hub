@@ -9,7 +9,7 @@ export function logWindow(
   expandedIndex: number | null = null,
   rowHeight = LOG_ROW_HEIGHT,
   extraHeight = LOG_ROW_EXPAND_EXTRA,
-  overscan = LOG_ROW_OVERSCAN
+  overscan = LOG_ROW_OVERSCAN,
 ): { start: number; end: number; padTop: number; padBottom: number; total: number } {
   const extra =
     expandedIndex !== null && expandedIndex >= 0 && expandedIndex < count ? extraHeight : 0;
@@ -31,9 +31,11 @@ export function logWindow(
   }
   end = Math.min(count, Math.max(start + 1, end));
 
-  const padTop = start * rowHeight + (extra > 0 && expandedIndex !== null && start > expandedIndex ? extra : 0);
+  const padTop =
+    start * rowHeight + (extra > 0 && expandedIndex !== null && start > expandedIndex ? extra : 0);
   const last = end - 1;
   const lastBottom =
-    (last + 1) * rowHeight + (extra > 0 && expandedIndex !== null && last >= expandedIndex ? extra : 0);
+    (last + 1) * rowHeight +
+    (extra > 0 && expandedIndex !== null && last >= expandedIndex ? extra : 0);
   return { start, end, padTop, padBottom: Math.max(0, total - lastBottom), total };
 }

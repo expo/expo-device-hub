@@ -1,5 +1,5 @@
-import { apiUrl } from './android-api-url';
-import { type ScreenshotArtifact, type ScreenshotCapture } from './types';
+import { apiUrl } from "./android-api-url";
+import { type ScreenshotArtifact, type ScreenshotCapture } from "./types";
 
 type ScreenshotFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -9,11 +9,11 @@ export async function fetchScreenshot(
   device?: string | null,
   fetchImpl: ScreenshotFetch = fetch,
 ): Promise<ScreenshotCapture | null> {
-  const url = `${apiUrl(baseUrl, '/api/screenshot')}${
-    device ? `?device=${encodeURIComponent(device)}` : ''
+  const url = `${apiUrl(baseUrl, "/api/screenshot")}${
+    device ? `?device=${encodeURIComponent(device)}` : ""
   }`;
   try {
-    const response = await fetchImpl(url, { method: 'POST', cache: 'no-store' });
+    const response = await fetchImpl(url, { method: "POST", cache: "no-store" });
     if (!response.ok) return null;
     return { blob: await response.blob(), artifact: screenshotArtifact(response.headers) };
   } catch {
@@ -22,13 +22,13 @@ export async function fetchScreenshot(
 }
 
 function screenshotArtifact(headers: Headers): ScreenshotArtifact | null {
-  const status = headers.get('X-Expo-Screenshot-Artifact');
+  const status = headers.get("X-Expo-Screenshot-Artifact");
   if (status === null) return null;
-  if (status === 'failed') {
-    const error = headers.get('X-Expo-Screenshot-Artifact-Error')?.trim();
+  if (status === "failed") {
+    const error = headers.get("X-Expo-Screenshot-Artifact-Error")?.trim();
     return error ? { status, error } : { status };
   }
-  if (status === 'saved' || status === 'disabled') return { status };
+  if (status === "saved" || status === "disabled") return { status };
   console.warn(`Ignoring unknown X-Expo-Screenshot-Artifact value: ${status}`);
   return null;
 }

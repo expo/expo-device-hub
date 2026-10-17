@@ -21,13 +21,26 @@ beforeAll(async () => {
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
 
 async function runCLI(args: string[], env: Record<string, string | undefined>, preload?: string) {
-  const child = Bun.spawn(["node", "--unhandled-rejections=strict", ...(preload ? ["--require", preload] : []), entrypoint, ...args], {
-    env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe",
-  });
+  const child = Bun.spawn(
+    [
+      "node",
+      "--unhandled-rejections=strict",
+      ...(preload ? ["--require", preload] : []),
+      entrypoint,
+      ...args,
+    ],
+    {
+      env: { ...process.env, ...env },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
   const deadline = setTimeout(() => child.kill("SIGKILL"), 8_000);
   try {
     const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
     ]);
     return { stdout, stderr, exitCode };
   } finally {
@@ -38,52 +51,77 @@ async function runCLI(args: string[], env: Record<string, string | undefined>, p
 }
 
 test.each([
-  ["relative", false], ["relative", "before"], ["relative", "after"],
-  ["missing", false], ["missing", "before"], ["missing", "after"],
-] as const)("camera injection rejects a %s caller dylib before resolving a device (quiet=%s)", async (kind, quiet) => {
-  const state = useTempStateDir();
-  const log = join(state.dir, "calls.jsonl");
-  const guard = kind === "relative" ? "guard.dylib" : join(state.dir, "missing.dylib");
-  try {
-    await withShimsAsync({ xcrun: `#!/usr/bin/env node
+  ["relative", false],
+  ["relative", "before"],
+  ["relative", "after"],
+  ["missing", false],
+  ["missing", "before"],
+  ["missing", "after"],
+] as const)(
+  "camera injection rejects a %s caller dylib before resolving a device (quiet=%s)",
+  async (kind, quiet) => {
+    const state = useTempStateDir();
+    const log = join(state.dir, "calls.jsonl");
+    const guard = kind === "relative" ? "guard.dylib" : join(state.dir, "missing.dylib");
+    try {
+      await withShimsAsync(
+        {
+          xcrun: `#!/usr/bin/env node
 require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 process.exit(1);
-` }, async () => {
-      // A device name forces resolution; the refusing shim prevents helper startup on old code.
-      const result = await runCLI([
-        ...(quiet === "before" ? ["--quiet"] : []),
-        "camera", "dev.example.app", "-d", "Caller validation test",
-        ...(quiet === "after" ? ["--quiet"] : []),
-      ], {
-        SERVE_SIM_ADDITIONAL_DYLIBS: guard,
-      });
-      expect(result.exitCode).toBe(1);
-      if (quiet) {
-        expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
-        expect(result.stderr).toBe("");
-      } else {
-        expect(result.stderr).toContain(diagnostic);
-      }
-      expect(existsSync(log)).toBe(false);
-    });
-  } finally {
-    state.restore();
-  }
-}, 15_000);
+`,
+        },
+        async () => {
+          // A device name forces resolution; the refusing shim prevents helper startup on old code.
+          const result = await runCLI(
+            [
+              ...(quiet === "before" ? ["--quiet"] : []),
+              "camera",
+              "dev.example.app",
+              "-d",
+              "Caller validation test",
+              ...(quiet === "after" ? ["--quiet"] : []),
+            ],
+            {
+              SERVE_SIM_ADDITIONAL_DYLIBS: guard,
+            },
+          );
+          expect(result.exitCode).toBe(1);
+          if (quiet) {
+            expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
+            expect(result.stderr).toBe("");
+          } else {
+            expect(result.stderr).toContain(diagnostic);
+          }
+          expect(existsSync(log)).toBe(false);
+        },
+      );
+    } finally {
+      state.restore();
+    }
+  },
+  15_000,
+);
 
-test.each(["status", "--stop-webcam"])("camera %s stays available when a caller dylib disappears", async (command) => {
-  const state = useTempStateDir();
-  try {
-    const result = await runCLI(["camera", command, "-d", UDID, "--quiet"], {
-      SERVE_SIM_ADDITIONAL_DYLIBS: join(state.dir, "missing.dylib"),
-    });
-    expect(result.exitCode).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject(command === "status" ? { udid: UDID, alive: false } : { udid: UDID, stopped: true });
-    expect(result.stderr).toBe("");
-  } finally {
-    state.restore();
-  }
-}, 15_000);
+test.each(["status", "--stop-webcam"])(
+  "camera %s stays available when a caller dylib disappears",
+  async (command) => {
+    const state = useTempStateDir();
+    try {
+      const result = await runCLI(["camera", command, "-d", UDID, "--quiet"], {
+        SERVE_SIM_ADDITIONAL_DYLIBS: join(state.dir, "missing.dylib"),
+      });
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject(
+        command === "status" ? { udid: UDID, alive: false } : { udid: UDID, stopped: true },
+      );
+      expect(result.stderr).toBe("");
+    } finally {
+      state.restore();
+    }
+  },
+  15_000,
+);
 
 test("quiet preview reports a caller dylib removed after boot as one startup JSON error", async () => {
   const state = useTempStateDir();
@@ -93,7 +131,9 @@ test("quiet preview reports a caller dylib removed after boot as one startup JSO
   const preload = join(state.dir, "preload.cjs");
   writeFileSync(guard, "");
   // The CLI uses absolute GUI commands; keep them away from the host's Xcode and Simulator.
-  writeFileSync(preload, `const cp = require('node:child_process');
+  writeFileSync(
+    preload,
+    `const cp = require('node:child_process');
 const original = cp.execFileSync;
 cp.execFileSync = function(file, ...args) {
   if (file === '/usr/bin/xcode-select') return ${JSON.stringify(join(state.dir, "fake-xcode"))};
@@ -101,9 +141,12 @@ cp.execFileSync = function(file, ...args) {
   return original.call(this, file, ...args);
 };
 require('node:module').syncBuiltinESMExports();
-`);
+`,
+  );
   try {
-    await withShimsAsync({ xcrun: `#!/usr/bin/env node
+    await withShimsAsync(
+      {
+        xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
@@ -120,19 +163,29 @@ if (args[3] === 'launchctl') {
   if (args[4] === 'setenv') fs.writeFileSync(file, args[6]);
   if (args[4] === 'unsetenv') fs.rmSync(file, {force: true});
 }
-` }, async () => {
-      // This bundle has no clipboard reader next to it, and its warning would reach stderr.
-      const result = await runCLI([UDID, "--quiet", "--port", "0", "--disable", "clipboard"], {
-        SERVE_SIM_ADDITIONAL_DYLIBS: guard,
-        SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
-      }, preload);
-      expect(result.exitCode).toBe(1);
-      expect(result.stdout.trim().split("\n")).toHaveLength(1);
-      expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
-      expect(result.stderr).toBe("");
-      const calls: string[][] = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
-      expect(calls.filter(args => args[1] === "bootstatus")).toHaveLength(1);
-    });
+`,
+      },
+      async () => {
+        // This bundle has no clipboard reader next to it, and its warning would reach stderr.
+        const result = await runCLI(
+          [UDID, "--quiet", "--port", "0", "--disable", "clipboard"],
+          {
+            SERVE_SIM_ADDITIONAL_DYLIBS: guard,
+            SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
+          },
+          preload,
+        );
+        expect(result.exitCode).toBe(1);
+        expect(result.stdout.trim().split("\n")).toHaveLength(1);
+        expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
+        expect(result.stderr).toBe("");
+        const calls: string[][] = readFileSync(log, "utf8")
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line));
+        expect(calls.filter((args) => args[1] === "bootstatus")).toHaveLength(1);
+      },
+    );
   } finally {
     state.restore();
   }
@@ -149,8 +202,13 @@ test("plain preview initializes its exact target once and clears only stale inse
   const retained = `/caller-owned.dylib:${guard}`;
   writeFileSync(guard, "");
   writeFileSync(staleLoader, "");
-  writeFileSync(environment, JSON.stringify({ DYLD_INSERT_LIBRARIES: `${retained}:${staleLoader}` }));
-  writeFileSync(preload, `const cp = require('node:child_process');
+  writeFileSync(
+    environment,
+    JSON.stringify({ DYLD_INSERT_LIBRARIES: `${retained}:${staleLoader}` }),
+  );
+  writeFileSync(
+    preload,
+    `const cp = require('node:child_process');
 const original = cp.execFileSync;
 cp.execFileSync = function(file, ...args) {
   if (file === '/usr/bin/xcode-select') return ${JSON.stringify(join(state.dir, "fake-xcode"))};
@@ -158,9 +216,12 @@ cp.execFileSync = function(file, ...args) {
   return original.call(this, file, ...args);
 };
 require('node:module').syncBuiltinESMExports();
-`);
+`,
+  );
   try {
-    await withShimsAsync({ xcrun: `#!/usr/bin/env node
+    await withShimsAsync(
+      {
+        xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
@@ -180,62 +241,94 @@ if (args[1] === 'list') {
   else process.exit(1);
   fs.writeFileSync(file, JSON.stringify(values));
 } else process.exit(1);
-` }, async () => {
-      const port = await freePortAsync();
-      // This bundle has no clipboard reader next to it, and its warning would reach stderr.
-      const child = Bun.spawn([
-        "node", "--unhandled-rejections=strict", "--require", preload,
-        entrypoint, UDID, "--quiet", "--port", String(port), "--host", "127.0.0.1",
-        "--disable", "clipboard",
-      ], {
-        env: {
-          ...process.env,
-          SERVE_SIM_STATE_DIR: state.dir,
-          SERVE_SIM_ADDITIONAL_DYLIBS: guard,
-          SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
-        },
-        stdout: "pipe", stderr: "pipe",
-      });
-      const deadline = setTimeout(() => child.kill("SIGKILL"), 8_000);
-      const stderr = new Response(child.stderr).text();
-      const reader = child.stdout.getReader();
-      const decoder = new TextDecoder();
-      let stdout = "";
-      try {
-        while (!stdout.includes("\n")) {
-          const { done, value } = await reader.read();
-          if (done) throw new Error(`Preview exited before ready: ${stdout}\n${await stderr}`);
-          stdout += decoder.decode(value, { stream: true });
+`,
+      },
+      async () => {
+        const port = await freePortAsync();
+        // This bundle has no clipboard reader next to it, and its warning would reach stderr.
+        const child = Bun.spawn(
+          [
+            "node",
+            "--unhandled-rejections=strict",
+            "--require",
+            preload,
+            entrypoint,
+            UDID,
+            "--quiet",
+            "--port",
+            String(port),
+            "--host",
+            "127.0.0.1",
+            "--disable",
+            "clipboard",
+          ],
+          {
+            env: {
+              ...process.env,
+              SERVE_SIM_STATE_DIR: state.dir,
+              SERVE_SIM_ADDITIONAL_DYLIBS: guard,
+              SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        const deadline = setTimeout(() => child.kill("SIGKILL"), 8_000);
+        const stderr = new Response(child.stderr).text();
+        const reader = child.stdout.getReader();
+        const decoder = new TextDecoder();
+        let stdout = "";
+        try {
+          while (!stdout.includes("\n")) {
+            const { done, value } = await reader.read();
+            if (done) throw new Error(`Preview exited before ready: ${stdout}\n${await stderr}`);
+            stdout += decoder.decode(value, { stream: true });
+          }
+          const ready = JSON.parse(stdout.trim());
+          expect(ready).toMatchObject({ device: UDID, port, url: `http://127.0.0.1:${port}` });
+          const health = await fetch(`${ready.url}/healthz`, {
+            signal: AbortSignal.timeout(2_000),
+          });
+          expect(health.status).toBe(200);
+          expect(await health.json()).toEqual({ status: "ok" });
+          const calls: string[][] = readFileSync(log, "utf8")
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line));
+          expect(calls.filter((args) => args[1] === "bootstatus")).toEqual([
+            ["simctl", "bootstatus", UDID, "-b"],
+          ]);
+          expect(calls.some((args) => args[1] === "spawn" && args[4] === "getenv")).toBe(true);
+          expect(
+            calls.filter((args) => ["install", "launch", "openurl"].includes(args[1]!)),
+          ).toEqual([]);
+          expect(
+            calls.filter((args) => args[1] === "spawn").every((args) => args[2] === UDID),
+          ).toBe(true);
+          expect(JSON.parse(readFileSync(environment, "utf8")).DYLD_INSERT_LIBRARIES).toBe(
+            retained,
+          );
+          expect(
+            JSON.parse(readFileSync(join(state.dir, `server-${UDID}.json`), "utf8")),
+          ).toMatchObject({ device: UDID, pid: child.pid, port });
+          child.kill("SIGTERM");
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            stdout += decoder.decode(value, { stream: true });
+          }
+          expect(await child.exited).toBe(0);
+          expect(stdout.trim().split("\n")).toHaveLength(1);
+          expect(await stderr).toBe("");
+          expect(existsSync(join(state.dir, `server-${UDID}.json`))).toBe(false);
+        } finally {
+          child.kill("SIGKILL");
+          await child.exited;
+          clearTimeout(deadline);
+          reader.releaseLock();
         }
-        const ready = JSON.parse(stdout.trim());
-        expect(ready).toMatchObject({ device: UDID, port, url: `http://127.0.0.1:${port}` });
-        const health = await fetch(`${ready.url}/healthz`, { signal: AbortSignal.timeout(2_000) });
-        expect(health.status).toBe(200);
-        expect(await health.json()).toEqual({ status: "ok" });
-        const calls: string[][] = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
-        expect(calls.filter(args => args[1] === "bootstatus")).toEqual([["simctl", "bootstatus", UDID, "-b"]]);
-        expect(calls.some(args => args[1] === "spawn" && args[4] === "getenv")).toBe(true);
-        expect(calls.filter(args => ["install", "launch", "openurl"].includes(args[1]!))).toEqual([]);
-        expect(calls.filter(args => args[1] === "spawn").every(args => args[2] === UDID)).toBe(true);
-        expect(JSON.parse(readFileSync(environment, "utf8")).DYLD_INSERT_LIBRARIES).toBe(retained);
-        expect(JSON.parse(readFileSync(join(state.dir, `server-${UDID}.json`), "utf8"))).toMatchObject({ device: UDID, pid: child.pid, port });
-        child.kill("SIGTERM");
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          stdout += decoder.decode(value, { stream: true });
-        }
-        expect(await child.exited).toBe(0);
-        expect(stdout.trim().split("\n")).toHaveLength(1);
-        expect(await stderr).toBe("");
-        expect(existsSync(join(state.dir, `server-${UDID}.json`))).toBe(false);
-      } finally {
-        child.kill("SIGKILL");
-        await child.exited;
-        clearTimeout(deadline);
-        reader.releaseLock();
-      }
-    });
+      },
+    );
   } finally {
     state.restore();
   }

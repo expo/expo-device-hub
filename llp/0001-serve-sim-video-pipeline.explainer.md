@@ -204,11 +204,29 @@ An optional `deviceStates` timeline describes the recorded device:
   "deviceStates": [
     {
       "timeMs": 0,
-      "state": { "width": 2007, "height": 2853, "orientation": "landscape_left", "screen": "inner", "contentRect": { "x": 0, "y": 0, "width": 2007, "height": 2853 }, "hingeAngle": 180, "physicalOrientation": "portrait", "tableMode": false }
+      "state": {
+        "width": 2007,
+        "height": 2853,
+        "orientation": "landscape_left",
+        "screen": "inner",
+        "contentRect": { "x": 0, "y": 0, "width": 2007, "height": 2853 },
+        "hingeAngle": 180,
+        "physicalOrientation": "portrait",
+        "tableMode": false
+      }
     },
     {
       "timeMs": 2400,
-      "state": { "width": 1398, "height": 2034, "orientation": "landscape_left", "screen": "outer", "contentRect": { "x": 24, "y": 0, "width": 1960, "height": 2854 }, "hingeAngle": 80, "physicalOrientation": "facedown", "tableMode": true }
+      "state": {
+        "width": 1398,
+        "height": 2034,
+        "orientation": "landscape_left",
+        "screen": "outer",
+        "contentRect": { "x": 24, "y": 0, "width": 1960, "height": 2854 },
+        "hingeAngle": 80,
+        "physicalOrientation": "facedown",
+        "tableMode": true
+      }
     }
   ]
 }

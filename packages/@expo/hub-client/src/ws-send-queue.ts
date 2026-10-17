@@ -31,10 +31,10 @@ const DEFAULT_MAX_QUEUE_AGE_MS = 1_500;
 
 function sendMessage(
   ws: WsSendTarget,
-  message: Pick<QueuedWsMessage, 'tag' | 'payload' | 'onSent' | 'sent'>,
+  message: Pick<QueuedWsMessage, "tag" | "payload" | "onSent" | "sent">,
 ) {
   // Resolve intent only at delivery, so dropped rotations never advance a cursor.
-  const payload = typeof message.payload === 'function' ? message.payload() : message.payload;
+  const payload = typeof message.payload === "function" ? message.payload() : message.payload;
   ws.send(encodeWsMessage(message.tag, payload).buffer);
   message.sent = true;
   message.onSent?.(payload);
@@ -80,7 +80,9 @@ export function flushWsMessageQueue(
   now = Date.now(),
   maxQueueAgeMs = DEFAULT_MAX_QUEUE_AGE_MS,
 ): QueuedWsMessage[] {
-  const fresh = queue.filter((message) => !message.sent && now - message.createdAt <= maxQueueAgeMs);
+  const fresh = queue.filter(
+    (message) => !message.sent && now - message.createdAt <= maxQueueAgeMs,
+  );
   if (!ws || ws.readyState !== WS_OPEN_READY_STATE) return fresh;
   for (const message of fresh) {
     sendMessage(ws, message);

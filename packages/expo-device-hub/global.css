@@ -13,8 +13,8 @@
  */
 @layer theme, base, components, utilities;
 
-@import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/utilities.css';
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";
 
 /* The ported Radix components (Dialog, Dropdown, DropdownItem) now live in the
    @expo/hub-components package and style themselves with Tailwind utility classes

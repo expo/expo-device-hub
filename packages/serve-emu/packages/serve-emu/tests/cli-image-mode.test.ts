@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 async function runCli(...args: string[]) {
   const proc = Bun.spawn(
-    [
-      process.execPath,
-      new URL("../src/cli.ts", import.meta.url).pathname,
-      ...args,
-    ],
+    [process.execPath, new URL("../src/cli.ts", import.meta.url).pathname, ...args],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [stdout, stderr, code] = await Promise.all([
@@ -50,8 +46,6 @@ describe("CLI gRPC image modes", () => {
   test("rejects unsupported image modes before opening capture", async () => {
     const result = await runCli("--grpc-image-mode", "rgb");
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain(
-      "--grpc-image-mode must be one of: png, mmap, rgb888",
-    );
+    expect(result.stderr).toContain("--grpc-image-mode must be one of: png, mmap, rgb888");
   });
 });

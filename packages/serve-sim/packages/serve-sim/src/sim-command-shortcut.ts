@@ -15,7 +15,10 @@ export function isLiftedModifier(usage: number): boolean {
 }
 
 /** Command+V for Paste or Command+C for Copy. */
-export function simCommandShortcutHidEvents(pressed: ReadonlySet<number>, key: typeof KEY_C | typeof KEY_V): KeyEvent[] {
+export function simCommandShortcutHidEvents(
+  pressed: ReadonlySet<number>,
+  key: typeof KEY_C | typeof KEY_V,
+): KeyEvent[] {
   const lifted = LIFTED_MODIFIERS.filter((usage) => pressed.has(usage));
   const events: KeyEvent[] = lifted.map((usage) => ({ type: "up", usage }));
   const commandAlreadyDown = pressed.has(LEFT_COMMAND) || pressed.has(RIGHT_COMMAND);

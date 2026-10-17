@@ -11,14 +11,14 @@
 
 These are the **only** values accepted by `npx @expo/serve-sim button <name>`. Anything else prints `[hid] Unknown button: <name>` and does nothing.
 
-| Name | Effect |
-|---|---|
-| `home` | Single Home button press (down + up). Falls back to launching SpringBoard via `simctl launch` if the HID symbol is not available. |
-| `swipe_home` | Synthesizes a swipe-up-from-bottom gesture with `edge=3` — the canonical "go home" gesture on Face ID devices. Use this on iPhone X+ and modern iPads. |
-| `app_switcher` | Double Home press with a 150ms delay between presses. Opens the multitasking switcher. Requires the HID symbol. |
-| `lock` | Power / Sleep button press (down + up). Locks the device. |
-| `siri` | Holds the side button for ~300ms. A tap is ignored — the simulator only recognizes the long-press for Siri invocation. |
-| `side_button` | Single side-button press (down + up). On modern iPhones this is the wake/sleep button; double-click invokes Apple Pay. |
+| Name           | Effect                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `home`         | Single Home button press (down + up). Falls back to launching SpringBoard via `simctl launch` if the HID symbol is not available.                      |
+| `swipe_home`   | Synthesizes a swipe-up-from-bottom gesture with `edge=3` — the canonical "go home" gesture on Face ID devices. Use this on iPhone X+ and modern iPads. |
+| `app_switcher` | Double Home press with a 150ms delay between presses. Opens the multitasking switcher. Requires the HID symbol.                                        |
+| `lock`         | Power / Sleep button press (down + up). Locks the device.                                                                                              |
+| `siri`         | Holds the side button for ~300ms. A tap is ignored — the simulator only recognizes the long-press for Siri invocation.                                 |
+| `side_button`  | Single side-button press (down + up). On modern iPhones this is the wake/sleep button; double-click invokes Apple Pay.                                 |
 
 ## Button behavior details
 
@@ -43,12 +43,12 @@ A common test pattern: `lock` → wait → `lock` again wakes the device into th
 
 These are the **only** values accepted by `npx @expo/serve-sim rotate <orientation>`:
 
-| Value | Description |
-|---|---|
-| `portrait` | Home indicator / Home button at the bottom |
-| `portrait_upside_down` | Home indicator at the top |
-| `landscape_left` | Device rotated so its right side is up; status bar on the left |
-| `landscape_right` | Device rotated so its left side is up; status bar on the right |
+| Value                  | Description                                                    |
+| ---------------------- | -------------------------------------------------------------- |
+| `portrait`             | Home indicator / Home button at the bottom                     |
+| `portrait_upside_down` | Home indicator at the top                                      |
+| `landscape_left`       | Device rotated so its right side is up; status bar on the left |
+| `landscape_right`      | Device rotated so its left side is up; status bar on the right |
 
 These correspond to `UIDeviceOrientation` values 1, 2, 4, and 3 respectively in iOS's internal enum.
 

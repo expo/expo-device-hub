@@ -69,19 +69,11 @@ function execFailed(result: ExecResult<string | Buffer>): boolean {
 }
 
 function execFailure(result: ExecResult<string | Buffer>): string {
-  const stdout =
-    typeof result.stdout === "string" ? result.stdout.trim() : "";
-  return (
-    result.stderr.trim() ||
-    result.error?.message ||
-    stdout ||
-    "unknown error"
-  );
+  const stdout = typeof result.stdout === "string" ? result.stdout.trim() : "";
+  return result.stderr.trim() || result.error?.message || stdout || "unknown error";
 }
 
-export async function listAllDevices(
-  runExec: typeof execText = execText,
-): Promise<Device[]> {
+export async function listAllDevices(runExec: typeof execText = execText): Promise<Device[]> {
   const r = await runExec("adb", ["devices"], { timeout: ADB_QUERY_TIMEOUT_MS });
   if (execFailed(r)) throw new Error(`adb devices failed: ${execFailure(r)}`);
   return r.stdout
@@ -95,9 +87,7 @@ export async function listAllDevices(
     });
 }
 
-export async function listDevices(
-  runExec: typeof execText = execText,
-): Promise<Device[]> {
+export async function listDevices(runExec: typeof execText = execText): Promise<Device[]> {
   return (await listAllDevices(runExec)).filter((d) => d.state === "device");
 }
 
@@ -107,7 +97,8 @@ export async function pickDevice(
 ): Promise<string> {
   if (explicit) return explicit;
   const devices = await listDevices(runExec);
-  if (devices.length === 0) throw new Error("No booted Android device found. Start an emulator or attach a device.");
+  if (devices.length === 0)
+    throw new Error("No booted Android device found. Start an emulator or attach a device.");
   if (devices.length > 1)
     throw new Error(
       `Multiple devices online (${devices.map((d) => d.serial).join(", ")}). Pass -s <serial>.`,
@@ -136,17 +127,11 @@ export async function shell(
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `adb shell ${cmd.join(" ")} failed: ${execFailure(r)}`,
-    );
+    throw new Error(`adb shell ${cmd.join(" ")} failed: ${execFailure(r)}`);
   }
 }
 
-export function shellSpawn(
-  serial: string,
-  cmd: string[],
-  runSpawn: typeof spawn = spawn,
-) {
+export function shellSpawn(serial: string, cmd: string[], runSpawn: typeof spawn = spawn) {
   return runSpawn("adb", ["-s", serial, "shell", ...cmd]);
 }
 
@@ -193,26 +178,22 @@ export async function getDisplayRotation(
   runExec: typeof execText = execText,
   signal?: AbortSignal,
 ): Promise<DisplayRotation> {
-  const r = await runExec(
-    "adb",
-    ["-s", serial, "shell", "dumpsys", "window", "displays"],
-    { timeout: ADB_QUERY_TIMEOUT_MS, signal, lane: "background" },
-  );
+  const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "window", "displays"], {
+    timeout: ADB_QUERY_TIMEOUT_MS,
+    signal,
+    lane: "background",
+  });
   if (execFailed(r)) {
     throw new Error(`dumpsys window displays failed: ${execFailure(r)}`);
   }
 
-  const defaultDisplayMarker = r.stdout.match(
-    /(?:^|\n)[ \t]*Display:\s+mDisplayId=0\b/,
-  );
+  const defaultDisplayMarker = r.stdout.match(/(?:^|\n)[ \t]*Display:\s+mDisplayId=0\b/);
   let displayState = r.stdout;
   if (defaultDisplayMarker?.index !== undefined) {
     const start = defaultDisplayMarker.index + defaultDisplayMarker[0].length;
     const remainder = r.stdout.slice(start);
     const nextDisplay = remainder.search(/\n[ \t]*Display:\s+mDisplayId=/);
-    displayState = nextDisplay === -1
-      ? remainder
-      : remainder.slice(0, nextDisplay);
+    displayState = nextDisplay === -1 ? remainder : remainder.slice(0, nextDisplay);
   }
 
   const match = displayState.match(
@@ -225,7 +206,10 @@ export async function getDisplayRotation(
   return (value > 3 ? value / 90 : value) as DisplayRotation;
 }
 
-function orientationFromRotation(mode: "free" | "lock" | "unknown", rotation: number | null): OrientationStatus["orientation"] {
+function orientationFromRotation(
+  mode: "free" | "lock" | "unknown",
+  rotation: number | null,
+): OrientationStatus["orientation"] {
   if (mode === "free") return "auto";
   if (rotation === 0 || rotation === 2) return "portrait";
   if (rotation === 1 || rotation === 3) return "landscape";
@@ -240,9 +224,7 @@ export async function getUserRotation(
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `cmd window user-rotation failed: ${execFailure(r)}`,
-    );
+    throw new Error(`cmd window user-rotation failed: ${execFailure(r)}`);
   }
   const raw = r.stdout.trim();
   const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
@@ -267,9 +249,7 @@ export async function setUserRotation(
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
-    );
+    throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
   return getUserRotation(serial, runExec);
 }
@@ -278,13 +258,15 @@ export async function getFontScale(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<FontScaleStatus> {
-  const r = await runExec("adb", ["-s", serial, "shell", "settings", "get", "system", "font_scale"], {
-    timeout: ADB_QUERY_TIMEOUT_MS,
-  });
+  const r = await runExec(
+    "adb",
+    ["-s", serial, "shell", "settings", "get", "system", "font_scale"],
+    {
+      timeout: ADB_QUERY_TIMEOUT_MS,
+    },
+  );
   if (execFailed(r)) {
-    throw new Error(
-      `settings get system font_scale failed: ${execFailure(r)}`,
-    );
+    throw new Error(`settings get system font_scale failed: ${execFailure(r)}`);
   }
   const raw = r.stdout.trim();
   const scale = Number(raw);
@@ -308,9 +290,7 @@ export async function setFontScale(
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
-    );
+    throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
   return getFontScale(serial, runExec);
 }
@@ -349,9 +329,7 @@ export async function setNightMode(
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
-    );
+    throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
   return getNightMode(serial, runExec);
 }
@@ -361,18 +339,13 @@ async function globalSetting(
   name: string,
   runExec: typeof execText = execText,
 ): Promise<string> {
-  const r = await runExec(
-    "adb",
-    ["-s", serial, "shell", "settings", "get", "global", name],
-    {
-      timeout: ADB_QUERY_TIMEOUT_MS,
-    },
-  );
+  const r = await runExec("adb", ["-s", serial, "shell", "settings", "get", "global", name], {
+    timeout: ADB_QUERY_TIMEOUT_MS,
+  });
   if (execFailed(r)) {
-    throw new Error(
-      `settings get global ${name} failed: ${execFailure(r)}`,
-      { cause: r.error ?? undefined },
-    );
+    throw new Error(`settings get global ${name} failed: ${execFailure(r)}`, {
+      cause: r.error ?? undefined,
+    });
   }
   return r.stdout.trim();
 }
@@ -395,7 +368,8 @@ export async function getNetworkStatus(
   const mobileData = radioStatusFromSetting(mobileDataRaw);
   const radios = [wifi, mobileData];
   const knownRadios = radios.filter((radio) => radio !== "unknown");
-  const enabled = knownRadios.length === 0 ? null : knownRadios.some((radio) => radio === "enabled");
+  const enabled =
+    knownRadios.length === 0 ? null : knownRadios.some((radio) => radio === "enabled");
   return {
     enabled,
     wifi,
@@ -419,9 +393,7 @@ export async function setNetworkEnabled(
       timeout: ADB_MUTATION_TIMEOUT_MS,
     });
     if (execFailed(r)) {
-      throw new Error(
-        `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
-      );
+      throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
     }
   }
   return getNetworkStatus(serial, runExec);
@@ -432,18 +404,13 @@ async function secureSetting(
   name: string,
   runExec: typeof execText = execText,
 ): Promise<string> {
-  const r = await runExec(
-    "adb",
-    ["-s", serial, "shell", "settings", "get", "secure", name],
-    {
-      timeout: ADB_QUERY_TIMEOUT_MS,
-    },
-  );
+  const r = await runExec("adb", ["-s", serial, "shell", "settings", "get", "secure", name], {
+    timeout: ADB_QUERY_TIMEOUT_MS,
+  });
   if (execFailed(r)) {
-    throw new Error(
-      `settings get secure ${name} failed: ${execFailure(r)}`,
-      { cause: r.error ?? undefined },
-    );
+    throw new Error(`settings get secure ${name} failed: ${execFailure(r)}`, {
+      cause: r.error ?? undefined,
+    });
   }
   return r.stdout.trim();
 }
@@ -457,9 +424,7 @@ async function mutateShell(
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
-    throw new Error(
-      `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
-    );
+    throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
 }
 
@@ -583,11 +548,10 @@ async function hardwareKeyboardPresent(
 ): Promise<boolean> {
   const cached = hardwareKeyboardCache.get(serial);
   if (cached && now() - cached.at < HARDWARE_KEYBOARD_TTL_MS) return cached.present;
-  const result = await runExec(
-    "adb",
-    ["-s", serial, "shell", "dumpsys input | grep Classes:"],
-    { timeout: ADB_QUERY_TIMEOUT_MS, lane: "background" },
-  );
+  const result = await runExec("adb", ["-s", serial, "shell", "dumpsys input | grep Classes:"], {
+    timeout: ADB_QUERY_TIMEOUT_MS,
+    lane: "background",
+  });
   const present = hardwareKeyboardFromClasses(result.stdout ?? "");
   hardwareKeyboardCache.set(serial, { at: now(), present });
   return present;
@@ -654,14 +618,10 @@ export async function readEffectiveDisplaySize(
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
   const raw = r.stdout.trim();
-  const size = /Override size:\s*(\d+)x(\d+)/.exec(raw) ??
-    /Physical size:\s*(\d+)x(\d+)/.exec(raw);
+  const size = /Override size:\s*(\d+)x(\d+)/.exec(raw) ?? /Physical size:\s*(\d+)x(\d+)/.exec(raw);
   const widthPx = Number(size?.[1]);
   const heightPx = Number(size?.[2]);
-  if (
-    !Number.isFinite(widthPx) || widthPx <= 0 ||
-    !Number.isFinite(heightPx) || heightPx <= 0
-  ) {
+  if (!Number.isFinite(widthPx) || widthPx <= 0 || !Number.isFinite(heightPx) || heightPx <= 0) {
     throw new Error(`Could not parse wm size output: ${raw}`);
   }
   return { widthPx, heightPx };

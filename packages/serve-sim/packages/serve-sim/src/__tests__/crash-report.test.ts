@@ -58,7 +58,7 @@ function body(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 
 function ips(
   headerOverrides: Record<string, unknown> = {},
-  bodyOverrides: Record<string, unknown> = {}
+  bodyOverrides: Record<string, unknown> = {},
 ): string {
   return `${JSON.stringify(header(headerOverrides))}\n${JSON.stringify(body(bodyOverrides))}\n`;
 }
@@ -167,8 +167,8 @@ describe("parseCrashReport", () => {
               ],
             },
           ],
-        }
-      )
+        },
+      ),
     );
     expect(report?.culpritFrame).toBe("hermes facebook::hermes::badBytecode()");
   });
@@ -184,8 +184,8 @@ describe("parseCrashReport", () => {
           threads: [
             { triggered: true, frames: [{ imageIndex: 0, imageOffset: 5, symbol: "__kill" }] },
           ],
-        }
-      )
+        },
+      ),
     );
     expect(report?.culpritFrame).toBe("libsystem_kernel.dylib __kill");
   });
@@ -205,8 +205,8 @@ describe("parseCrashReport", () => {
               frames: [{ imageIndex: 2, imageOffset: 9, symbol: "AppDelegate.crash()" }],
             },
           ],
-        }
-      )
+        },
+      ),
     );
     expect(report?.culpritFrame).toBe("Demo AppDelegate.crash()");
   });
@@ -225,8 +225,8 @@ describe("parseCrashReport", () => {
                 frames: [{ imageIndex: 2, imageOffset: 9, symbol: "AppDelegate.crash()" }],
               },
             ],
-          }
-        )
+          },
+        ),
       );
       expect(report?.culpritFrame).toBe("Demo AppDelegate.crash()");
     }
@@ -250,8 +250,8 @@ describe("parseCrashReport", () => {
               ],
             },
           ],
-        }
-      )
+        },
+      ),
     );
     expect(report?.frames).toHaveLength(24);
   });
@@ -278,7 +278,7 @@ describe("parseCrashReport", () => {
               ],
             },
           ],
-        }
+        },
       );
 
     const first = parseCrashReport(deepStack("App.alpha()"));
@@ -290,7 +290,7 @@ describe("parseCrashReport", () => {
 
   test("ignores header fields that are not strings", () => {
     const report = parseCrashReport(
-      ips({ incident_id: 123, app_version: { major: 1 }, timestamp: {} })
+      ips({ incident_id: 123, app_version: { major: 1 }, timestamp: {} }),
     );
     expect(report?.incidentId).toBeNull();
     expect(report?.appVersion).toBeNull();
@@ -299,7 +299,7 @@ describe("parseCrashReport", () => {
 
   test("keeps a frame whose image index is out of range", () => {
     const report = parseCrashReport(
-      ips({}, { threads: [{ triggered: true, frames: [{ imageIndex: 99, imageOffset: 1 }] }] })
+      ips({}, { threads: [{ triggered: true, frames: [{ imageIndex: 99, imageOffset: 1 }] }] }),
     );
     expect(report?.culpritFrame).toBe("unknown +1");
   });
@@ -309,11 +309,9 @@ describe("parseCrashReport", () => {
       ips(
         {},
         {
-          threads: [
-            { triggered: true, frames: [{ imageIndex: 2, imageOffset: 4242 }] },
-          ],
-        }
-      )
+          threads: [{ triggered: true, frames: [{ imageIndex: 2, imageOffset: 4242 }] }],
+        },
+      ),
     );
     expect(report?.culpritFrame).toBe("Demo +4242");
   });
@@ -321,7 +319,7 @@ describe("parseCrashReport", () => {
   test("gives the same signature across occurrences with a different pid and time", () => {
     const first = parseCrashReport(ips({ incident_id: "INC-1" }, { pid: 1 }));
     const second = parseCrashReport(
-      ips({ incident_id: "INC-2" }, { pid: 2, captureTime: "2026-08-04 01:00:00.0000 -0700" })
+      ips({ incident_id: "INC-2" }, { pid: 2, captureTime: "2026-08-04 01:00:00.0000 -0700" }),
     );
     expect(first!.signature).toBe(second!.signature);
   });
@@ -338,8 +336,8 @@ describe("parseCrashReport", () => {
               frames: [{ imageIndex: 2, imageOffset: 77, symbol: "SomethingElse.boom()" }],
             },
           ],
-        }
-      )
+        },
+      ),
     );
     expect(first?.signature).not.toBe(second?.signature);
   });
@@ -352,8 +350,8 @@ describe("parseCrashReport", () => {
           {
             usedImages: [{ name: "Demo", path: `${BUNDLE_ROOT}/Demo`, uuid: "UUID-1" }],
             threads: [{ triggered: true, frames: [{ imageIndex: 0, imageOffset }] }],
-          }
-        )
+          },
+        ),
       );
 
     expect(at(100)?.signature).not.toBe(at(200)?.signature);

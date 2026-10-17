@@ -15,8 +15,10 @@ export function axElementsEqual(a: AxElement, b: AxElement) {
     a.role !== b.role ||
     a.type !== b.type ||
     a.enabled !== b.enabled
-  ) return false;
-  const fa = a.frame, fb = b.frame;
+  )
+    return false;
+  const fa = a.frame,
+    fb = b.frame;
   return (
     fa === fb ||
     (fa.x === fb.x && fa.y === fb.y && fa.width === fb.width && fa.height === fb.height)

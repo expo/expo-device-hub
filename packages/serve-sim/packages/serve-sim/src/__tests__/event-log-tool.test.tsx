@@ -4,9 +4,7 @@ import { EventLogTool } from "../client/components/event-log-tool";
 
 describe("EventLogTool", () => {
   test("keeps the count and chevron in the three-column summary row", () => {
-    const html = renderToStaticMarkup(
-      <EventLogTool udid="DEVICE" eventsEndpoint="/events" />,
-    );
+    const html = renderToStaticMarkup(<EventLogTool udid="DEVICE" eventsEndpoint="/events" />);
     const summary = html.match(/<summary[^>]*>(.*?)<\/summary>/)?.[1] ?? "";
 
     expect(summary).not.toContain("<span></span>");

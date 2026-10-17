@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { Euler, Quaternion, Vector2, Vector3 } from "three";
-import { duoFrameMatchesDisplay, duoIntendedScreen, duoPhysicalPoseChanged, duoPose, duoScreenMapping } from "../client/simulator/duo-pose";
+import {
+  duoFrameMatchesDisplay,
+  duoIntendedScreen,
+  duoPhysicalPoseChanged,
+  duoPose,
+  duoScreenMapping,
+} from "../client/simulator/duo-pose";
 import type { StreamConfig } from "../client/types";
 
 const hingeAxis = new Vector3(0, 1, 0);
@@ -12,18 +18,26 @@ function expectDirection(actual: Vector3, expected: Vector3, precision = 8) {
   expect(direction.z).toBeCloseTo(expected.z, precision);
 }
 
-function panelDirection(direction: Vector3, side: "left" | "right", physical: ReturnType<typeof duoPose>) {
-  return direction.clone()
+function panelDirection(
+  direction: Vector3,
+  side: "left" | "right",
+  physical: ReturnType<typeof duoPose>,
+) {
+  return direction
+    .clone()
     .applyAxisAngle(hingeAxis, side === "left" ? physical.fold : -physical.fold)
     .applyEuler(new Euler(...physical.rotation, "YXZ"));
 }
 
-function rawUiDirection(direction: Vector2, config: StreamConfig, physical: ReturnType<typeof duoPose>) {
+function rawUiDirection(
+  direction: Vector2,
+  config: StreamConfig,
+  physical: ReturnType<typeof duoPose>,
+) {
   const mapping = duoScreenMapping(config, config.height, config.width);
   const mounted = direction.clone().rotateAround(new Vector2(), mapping.rotation);
   // Raw and canvas Y point down, while the model's Y points up.
-  return new Vector3(mounted.x, -mounted.y, 0)
-    .applyEuler(new Euler(...physical.rotation, "YXZ"));
+  return new Vector3(mounted.x, -mounted.y, 0).applyEuler(new Euler(...physical.rotation, "YXZ"));
 }
 
 describe("iPhone Duo view alignment", () => {
@@ -88,7 +102,8 @@ describe("iPhone Duo view alignment", () => {
     expect(coverNormal.y).toBeGreaterThan(0);
     expect(innerCounterpart.z).toBeLessThan(-0.5);
     expectDirection(coverNormal.clone().negate(), innerCounterpart);
-    const levelView = (point: Vector3) => point.clone().applyAxisAngle(new Vector3(1, 0, 0), -Math.PI / 18);
+    const levelView = (point: Vector3) =>
+      point.clone().applyAxisAngle(new Vector3(1, 0, 0), -Math.PI / 18);
     const ridge = levelView(panelDirection(hingeAxis, "left", tent));
     const azimuth = Math.atan2(-ridge.z, ridge.x);
     expect(azimuth).toBeLessThan(-Math.PI / 18);
@@ -107,7 +122,7 @@ describe("iPhone Duo view alignment", () => {
   test("tabletop orientation stays level across hinge angles and viewing directions", () => {
     for (const angle of [0, 1, 15, 30, 55, 80, 90, 120, 150, 165, 179, 180]) {
       for (const elevation of [0, 10, 20, 45, 90]) {
-        const radians = elevation * Math.PI / 180;
+        const radians = (elevation * Math.PI) / 180;
         const tableNormal = new Vector3(0, Math.cos(radians), Math.sin(radians));
         for (const rotation of [-180, -90, -20, 0, 45, 90, 180]) {
           const view = { elevation, rotation };
@@ -128,10 +143,24 @@ describe("iPhone Duo view alignment", () => {
   });
 
   test("manual hinge changes retain the tabletop viewing direction through both endpoints", () => {
-    const coverConfig = { width: 1398, height: 2034, screenId: 1, orientation: "portrait" as const };
-    const innerConfig = { width: 2007, height: 2853, screenId: 3, orientation: "portrait" as const };
+    const coverConfig = {
+      width: 1398,
+      height: 2034,
+      screenId: 1,
+      orientation: "portrait" as const,
+    };
+    const innerConfig = {
+      width: 2007,
+      height: 2853,
+      screenId: 3,
+      orientation: "portrait" as const,
+    };
     for (const pose of ["laptop", "tent"] as const) {
-      const direction = panelDirection(hingeAxis, "left", duoPose(pose === "laptop" ? 90 : 80, pose));
+      const direction = panelDirection(
+        hingeAxis,
+        "left",
+        duoPose(pose === "laptop" ? 90 : 80, pose),
+      );
       for (let angle = 0; angle <= 180; angle++) {
         const config = angle <= 54 ? coverConfig : innerConfig;
         const physical = duoPose(angle, pose, config.screenId, config);
@@ -142,13 +171,26 @@ describe("iPhone Duo view alignment", () => {
 
   test("initial tabletop framing is continuous across endpoint angles and ignores display roll", () => {
     for (const pose of ["laptop", "tent"] as const) {
-      for (const range of [{ start: 0, end: 31, heldRoll: 0 }, { start: 149, end: 180, heldRoll: Math.PI / 2 }]) {
+      for (const range of [
+        { start: 0, end: 31, heldRoll: 0 },
+        { start: 149, end: 180, heldRoll: Math.PI / 2 },
+      ]) {
         let previous: Quaternion | undefined;
         for (let angle = range.start; angle <= range.end; angle++) {
-          const previousFrame = { width: 2007, height: 2853, screenId: 3, orientation: "portrait" as const };
+          const previousFrame = {
+            width: 2007,
+            height: 2853,
+            screenId: 3,
+            orientation: "portrait" as const,
+          };
           // Metadata can change before the displayed framebuffer. The held
           // roll must prevent it from turning the body underneath that frame.
-          const arrivingConfig = { width: 1398, height: 2034, screenId: 1, orientation: "landscape_left" as const };
+          const arrivingConfig = {
+            width: 1398,
+            height: 2034,
+            screenId: 1,
+            orientation: "landscape_left" as const,
+          };
           const before = duoPose(angle, pose, 3, previousFrame, range.heldRoll);
           const after = duoPose(angle, pose, 1, arrivingConfig, range.heldRoll);
           const current = new Quaternion().setFromEuler(new Euler(...before.rotation, "YXZ"));
@@ -170,9 +212,11 @@ describe("iPhone Duo frame and display matching", () => {
     for (const config of [cover, inner]) {
       expect(duoFrameMatchesDisplay(config.width, config.height, config)).toBe(true);
       for (const height of [1280, 960, 640]) {
-        const width = Math.round(config.width / config.height * height);
+        const width = Math.round((config.width / config.height) * height);
         expect(duoFrameMatchesDisplay(width, height, config)).toBe(true);
-        expect(duoFrameMatchesDisplay(config.width, config.height, { ...config, width, height })).toBe(true);
+        expect(
+          duoFrameMatchesDisplay(config.width, config.height, { ...config, width, height }),
+        ).toBe(true);
       }
     }
     expect(duoFrameMatchesDisplay(880, 1280, cover)).toBe(true);
@@ -181,12 +225,16 @@ describe("iPhone Duo frame and display matching", () => {
 
   test("rejects the previous panel's frame during both folding and unfolding", () => {
     for (const height of [1280, 960, 640]) {
-      const coverWidth = Math.round(cover.width / cover.height * height);
-      const innerWidth = Math.round(inner.width / inner.height * height);
+      const coverWidth = Math.round((cover.width / cover.height) * height);
+      const innerWidth = Math.round((inner.width / inner.height) * height);
       expect(duoFrameMatchesDisplay(coverWidth, height, inner)).toBe(false);
       expect(duoFrameMatchesDisplay(innerWidth, height, cover)).toBe(false);
-      expect(duoFrameMatchesDisplay(coverWidth, height, { ...inner, width: innerWidth, height })).toBe(false);
-      expect(duoFrameMatchesDisplay(innerWidth, height, { ...cover, width: coverWidth, height })).toBe(false);
+      expect(
+        duoFrameMatchesDisplay(coverWidth, height, { ...inner, width: innerWidth, height }),
+      ).toBe(false);
+      expect(
+        duoFrameMatchesDisplay(innerWidth, height, { ...cover, width: coverWidth, height }),
+      ).toBe(false);
     }
     expect(duoFrameMatchesDisplay(cover.width, cover.height, inner)).toBe(false);
     expect(duoFrameMatchesDisplay(inner.width, inner.height, cover)).toBe(false);

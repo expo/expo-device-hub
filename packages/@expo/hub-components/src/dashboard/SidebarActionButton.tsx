@@ -1,7 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ReactNode } from "react";
 
-import { PillButton } from '../primitives';
-import { DisabledControlHint } from '../components/DisabledControlHint';
+import { PillButton } from "../primitives";
+import { DisabledControlHint } from "../components/DisabledControlHint";
 
 /**
  * The action control on an inspector row (Toggle, Press, Shut down, Remove):
@@ -26,12 +26,14 @@ export function SidebarActionButton({
   return (
     <DisabledControlHint
       reason={disabled ? disabledReason : undefined}
-      label={typeof children === 'string' ? children : undefined}>
+      label={typeof children === "string" ? children : undefined}
+    >
       <PillButton
         disabled={disabled}
         aria-describedby={descriptionId}
         destructive={destructive}
-        onClick={onClick}>
+        onClick={onClick}
+      >
         {children}
       </PillButton>
     </DisabledControlHint>

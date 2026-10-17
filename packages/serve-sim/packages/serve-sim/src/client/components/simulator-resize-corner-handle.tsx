@@ -4,11 +4,7 @@
 // the arc path.
 
 import { useMemo, useState, type CSSProperties } from "react";
-import {
-  simulatorResizeCornerArc,
-  type DeviceType,
-  type StreamConfig,
-} from "../simulator";
+import { simulatorResizeCornerArc, type DeviceType, type StreamConfig } from "../simulator";
 import { useSimulatorResize } from "../hooks/use-simulator-resize";
 import { usePrefersMoreContrast } from "../hooks/use-prefers-more-contrast";
 import { usePrefersReducedMotion } from "../hooks/use-prefers-reduced-motion";
@@ -39,15 +35,13 @@ type SimulatorResizeCornerSvgProps = {
   focusVisible: boolean;
 };
 
-function SimulatorResizeCornerSvg(
-  {
-    arc,
-    phase,
-    reducedMotion,
-    highContrast,
-    focusVisible,
-  }: SimulatorResizeCornerSvgProps,
-) {
+function SimulatorResizeCornerSvg({
+  arc,
+  phase,
+  reducedMotion,
+  highContrast,
+  focusVisible,
+}: SimulatorResizeCornerSvgProps) {
   const isHot = phase !== "idle";
 
   const vw = highContrast ? 1.12 : 1;
@@ -61,7 +55,9 @@ function SimulatorResizeCornerSvg(
   // Spring is only used when the engine supports `linear()`.
   const scaleEase = isHot && supportsLinearEasing() ? SIMULATOR_RESIZE_SPRING : ease;
   const motionTransform = reducedMotion ? "none" : `transform ${dur} ${scaleEase}`;
-  const motionStroke = reducedMotion ? "none" : `stroke ${dur} ${ease}, stroke-width ${dur} ${ease}`;
+  const motionStroke = reducedMotion
+    ? "none"
+    : `stroke ${dur} ${ease}, stroke-width ${dur} ${ease}`;
 
   const vb = arc.viewBoxSize;
   const d = arc.d;
@@ -168,10 +164,7 @@ export function SimulatorResizeCornerHandle({
 }: {
   simulatorResize: SimulatorResize;
   deviceType: DeviceType;
-  streamConfig:
-    | Pick<StreamConfig, "width" | "height" | "orientation">
-    | null
-    | undefined;
+  streamConfig: Pick<StreamConfig, "width" | "height" | "orientation"> | null | undefined;
   containerWidth: number;
   containerHeight: number;
 }) {

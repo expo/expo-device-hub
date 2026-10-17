@@ -42,10 +42,7 @@ import type {
 import type { StreamEncoderSettingsPatch } from "../stream-settings.ts";
 
 export type { NightMode, OrientationMode } from "../shared/api-contracts.ts";
-export type RouteControlAction = ApiRequest<
-  "/api/route/control",
-  "POST"
->["action"];
+export type RouteControlAction = ApiRequest<"/api/route/control", "POST">["action"];
 
 /**
  * High-level operations used by the HTTP API. Keeping this interface free of
@@ -96,11 +93,7 @@ export type ApiDependencies = {
     record: boolean,
   ) => Promise<AccessibilityTapResponse>;
 
-  dispatchGesture: (
-    gesture: Gesture,
-    source: string,
-    record: boolean,
-  ) => Promise<void>;
+  dispatchGesture: (gesture: Gesture, source: string, record: boolean) => Promise<void>;
 
   getSession: () => SessionSnapshot;
   clearSession: () => SessionSnapshot;

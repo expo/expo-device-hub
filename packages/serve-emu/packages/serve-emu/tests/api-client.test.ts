@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  ApiClientError,
-  createApiClient,
-  type FetchLike,
-} from "../src/ui/lib/api-client.ts";
+import { ApiClientError, createApiClient, type FetchLike } from "../src/ui/lib/api-client.ts";
 
 function jsonResponse(value: unknown, init?: ResponseInit): Response {
   const headers = new Headers(init?.headers);
@@ -196,10 +192,11 @@ describe("API client", () => {
   });
 
   test("returns binary screenshots without forcing a JSON parse", async () => {
-    const request = createApiClient(async () =>
-      new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
-        headers: { "Content-Type": "image/png" },
-      })
+    const request = createApiClient(
+      async () =>
+        new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+          headers: { "Content-Type": "image/png" },
+        }),
     );
 
     const png = await request("/api/screenshot", { method: "POST" });

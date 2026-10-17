@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type SessionFetch } from './session-token';
-import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings';
-import { type DeviceStreamEncoderSettings } from './types';
+import { type SessionFetch } from "./session-token";
+import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from "./stream-settings";
+import { type DeviceStreamEncoderSettings } from "./types";
 
 type StreamSettingsParser = (
   value: unknown,
@@ -54,13 +54,13 @@ export function useStreamSettingsResource({
       const controller = new AbortController();
       readControllerRef.current = controller;
       try {
-        const response = await fetchImpl(url, { cache: 'no-store', signal: controller.signal });
+        const response = await fetchImpl(url, { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
         const next = parse(
           await response.json(),
           settingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS,
         );
-        if (!next) throw new Error('Stream settings request returned an invalid response');
+        if (!next) throw new Error("Stream settings request returned an invalid response");
         if (!controller.signal.aborted && requestRef.current === request) {
           settingsRef.current = next;
           setStreamSettings((current) =>
@@ -114,15 +114,15 @@ export function useStreamSettingsResource({
       setStreamSettingsPending(true);
       // Let the device client wait for the write before replacing its transport.
       return fetchImpl(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestPatch),
         signal: controller.signal,
       })
         .then(async (response) => {
           if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
           const next = parse(await response.json(), optimistic);
-          if (!next) throw new Error('Stream settings update returned an invalid response');
+          if (!next) throw new Error("Stream settings update returned an invalid response");
           if (!controller.signal.aborted && requestRef.current === request) {
             settingsRef.current = next;
             setStreamSettings(next);

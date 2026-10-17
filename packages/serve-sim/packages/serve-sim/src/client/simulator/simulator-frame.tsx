@@ -11,8 +11,10 @@ import {
 import { isLandscapeConfig } from "./orientation.js";
 import { SimulatorStream, type SimulatorStreamProps } from "./simulator-stream.js";
 
-export interface SimulatorFrameProps
-  extends Omit<SimulatorStreamProps, "style" | "imageStyle" | "headerless"> {
+export interface SimulatorFrameProps extends Omit<
+  SimulatorStreamProps,
+  "style" | "imageStyle" | "headerless"
+> {
   /** Device name (e.g. "iPhone 17 Pro Max"). Drives aspect ratio, chrome, and max-width. */
   deviceName?: string | null;
   /** Show the frame chrome (bezels, dynamic island, crown, etc.). Default: true. */
@@ -68,17 +70,20 @@ export function SimulatorFrame({
     );
   }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation]);
 
-  const handleScreenConfigChange = useCallback((config: StreamConfig) => {
-    setLiveScreenConfig((prev) =>
-      prev &&
-      prev.width === config.width &&
-      prev.height === config.height &&
-      prev.orientation === config.orientation
-        ? prev
-        : config,
-    );
-    onScreenConfigChange?.(config);
-  }, [onScreenConfigChange]);
+  const handleScreenConfigChange = useCallback(
+    (config: StreamConfig) => {
+      setLiveScreenConfig((prev) =>
+        prev &&
+        prev.width === config.width &&
+        prev.height === config.height &&
+        prev.orientation === config.orientation
+          ? prev
+          : config,
+      );
+      onScreenConfigChange?.(config);
+    },
+    [onScreenConfigChange],
+  );
 
   const aspectRatio = simulatorAspectRatio(activeScreen, fallbackScreen);
   const imgBorderRadius = bare ? 44 : screenBorderRadius(deviceType, activeScreen);
@@ -110,17 +115,17 @@ export function SimulatorFrame({
           flexDirection: "column",
           border: "none",
         }}
-        imageStyle={{
-          borderRadius: imgBorderRadius,
-          cornerShape: "superellipse(1.3)",
-        } as CSSProperties}
+        imageStyle={
+          {
+            borderRadius: imgBorderRadius,
+            cornerShape: "superellipse(1.3)",
+          } as CSSProperties
+        }
         enableDigitalCrown={enableDigitalCrown}
         onScreenConfigChange={handleScreenConfigChange}
       />
       {shouldShowChrome && (
-        <div
-          style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10 }}
-        >
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10 }}>
           <DeviceFrameChrome type={deviceType} />
         </div>
       )}

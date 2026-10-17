@@ -22,7 +22,11 @@ export function applyFullscreenSearch(href: string, presentation: boolean): stri
 
 export function writeFullscreenSearchParam(presentation: boolean): void {
   try {
-    window.history.replaceState(null, "", applyFullscreenSearch(window.location.href, presentation));
+    window.history.replaceState(
+      null,
+      "",
+      applyFullscreenSearch(window.location.href, presentation),
+    );
   } catch {}
 }
 
@@ -58,10 +62,10 @@ const EXIT_EXTENT = PRESENTATION_EXIT_WRAPPER_PADDING + PRESENTATION_EXIT_BUTTON
 
 // The device fills the viewport, so the control sits in whichever gutter its
 // aspect ratio leaves: beside it when wide, above it when tall.
-export function presentationExitOffset(gutters: {
-  side: number;
+export function presentationExitOffset(gutters: { side: number; top: number }): {
   top: number;
-}): { top: number; right: number } {
+  right: number;
+} {
   if (gutters.side >= PRESENTATION_EXIT_MARGIN + EXIT_EXTENT) {
     return { top: PRESENTATION_EXIT_MARGIN, right: PRESENTATION_EXIT_MARGIN };
   }

@@ -1,6 +1,6 @@
-import { type RefObject } from 'react';
+import { type RefObject } from "react";
 
-import { icon, radius, text, textSize } from '../theme/tokens';
+import { icon, radius, text, textSize } from "../theme/tokens";
 
 /** Reserved device-row status that appears without shifting the device name. */
 export function AgentDeviceStatus({
@@ -15,16 +15,17 @@ export function AgentDeviceStatus({
   return (
     <span
       aria-hidden={!active}
-      data-agent-device-status={active ? 'active' : 'inactive'}
+      data-agent-device-status={active ? "active" : "inactive"}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
+        display: "inline-flex",
+        alignItems: "center",
         gap: compact ? 0 : 5,
         flexShrink: 0,
-        visibility: active ? 'visible' : 'hidden',
+        visibility: active ? "visible" : "hidden",
         color: text.info,
-        ...textSize['2xs'],
-      }}>
+        ...textSize["2xs"],
+      }}
+    >
       <span
         data-agent-device-badge
         style={{
@@ -39,11 +40,12 @@ export function AgentDeviceStatus({
         ref={labelRef}
         data-agent-device-label
         style={{
-          display: 'inline-block',
+          display: "inline-block",
           maxWidth: compact ? 0 : undefined,
-          overflow: 'hidden',
-          whiteSpace: 'nowrap',
-        }}>
+          overflow: "hidden",
+          whiteSpace: "nowrap",
+        }}
+      >
         Used by agent
       </span>
     </span>

@@ -140,7 +140,10 @@ describe("toHarEntry", () => {
     expect(whole.response.bodySize).toBe(40);
     const cut = toHarEntry({ ...req, responseBytes: 40 }, { ...body, responseTruncated: true });
     expect(cut.response.content.size).toBe(2000);
-    expect(toHarEntry({ ...req, responseBytes: 9000 }, { ...body, responseTruncated: true }).response.content.size).toBe(9000);
+    expect(
+      toHarEntry({ ...req, responseBytes: 9000 }, { ...body, responseTruncated: true }).response
+        .content.size,
+    ).toBe(9000);
   });
 
   it("keeps the failure reason of a failed request", () => {
@@ -152,9 +155,7 @@ describe("toHarEntry", () => {
   });
 
   it("never emits negative required timings for in-flight rows", () => {
-    const entry = toHarEntry(
-      { ...req, status: null, ttfbMs: null, durationMs: null },
-    );
+    const entry = toHarEntry({ ...req, status: null, ttfbMs: null, durationMs: null });
     expect(entry.timings.send).toBeGreaterThanOrEqual(0);
     expect(entry.timings.wait).toBeGreaterThanOrEqual(0);
     expect(entry.timings.receive).toBeGreaterThanOrEqual(0);
@@ -208,7 +209,9 @@ describe("HarAccumulator", () => {
   });
 
   it("parses finished SSE payloads for body fetch", () => {
-    expect(parseFinishedCaptureRequest(JSON.stringify({ type: "started", request: req }))).toBeNull();
+    expect(
+      parseFinishedCaptureRequest(JSON.stringify({ type: "started", request: req })),
+    ).toBeNull();
     expect(parseFinishedCaptureRequest(JSON.stringify({ type: "cleared" }))).toBeNull();
     const finished = parseFinishedCaptureRequest(
       JSON.stringify({ type: "finished", request: { ...req, status: 200 } }),
@@ -257,8 +260,9 @@ it("labels request bodies with the recorded request MIME type when headers are a
     requestBinary: false,
     responseBinary: false,
   };
-  expect(toHarEntry({ ...req, requestMimeType: "application/json" }, body).request.postData?.mimeType)
-    .toBe("application/json");
+  expect(
+    toHarEntry({ ...req, requestMimeType: "application/json" }, body).request.postData?.mimeType,
+  ).toBe("application/json");
   expect(toHarEntry(req, body).request.postData?.mimeType).toBe("application/octet-stream");
 });
 

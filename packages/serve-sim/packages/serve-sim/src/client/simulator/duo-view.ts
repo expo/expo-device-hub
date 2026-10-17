@@ -20,7 +20,11 @@ function captureView(physical: ReturnType<typeof duoPose>, pose?: HingePose | nu
   };
 }
 
-export function duoInitialView(angle: number | undefined, pose: HingePose | null | undefined, config?: StreamConfig | null): DuoView {
+export function duoInitialView(
+  angle: number | undefined,
+  pose: HingePose | null | undefined,
+  config?: StreamConfig | null,
+): DuoView {
   return captureView(duoPose(angle, pose, config?.screenId, config), pose);
 }
 
@@ -31,7 +35,11 @@ export function duoPresetView(pose: HingePose): DuoView {
 }
 
 /** Complete native pose discovery while preserving a locally chosen view. */
-export function duoObservedView(current: DuoView | null, pose: HingePose, localIntent: boolean): DuoView {
+export function duoObservedView(
+  current: DuoView | null,
+  pose: HingePose,
+  localIntent: boolean,
+): DuoView {
   return localIntent && current ? current : duoPresetView(pose);
 }
 
@@ -56,7 +64,10 @@ export function duoFaceDownFraming(
 }
 
 export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
-  const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), quarterTurns * Math.PI / 2);
+  const turn = new Quaternion().setFromAxisAngle(
+    new Vector3(0, 0, 1),
+    (quarterTurns * Math.PI) / 2,
+  );
   return { ...view, rotation: turn.multiply(new Quaternion(...view.rotation)).toArray() };
 }
 
@@ -64,7 +75,9 @@ export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
 export function duoViewRotation(fold: number, view: DuoView): Quaternion {
   const rotation = new Quaternion(...view.rotation);
   if (view.facingYaw !== undefined) {
-    rotation.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), duoFacingYaw(fold) - view.facingYaw));
+    rotation.multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), duoFacingYaw(fold) - view.facingYaw),
+    );
   }
   return rotation;
 }

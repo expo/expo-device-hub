@@ -37,10 +37,7 @@ import {
 } from "../src/emulator-grpc.ts";
 import type { H264EncoderOpts, QuarterTurn } from "../src/h264-encoder.ts";
 import { compileGesture, parseGesture } from "../src/input.ts";
-import type {
-  ScrcpyControlSession,
-  VideoFrame,
-} from "../src/scrcpy.ts";
+import type { ScrcpyControlSession, VideoFrame } from "../src/scrcpy.ts";
 import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
 
 const CONFIG_FRAME: VideoFrame = {
@@ -102,9 +99,7 @@ class FakeMmapSchedulerClock implements GrpcMmapNotificationSchedulerClock {
     while (true) {
       const due = [...this.#timers.entries()]
         .filter(([, timer]) => timer.at <= target)
-        .sort(
-          (left, right) => left[1].at - right[1].at || left[0] - right[0],
-        )[0];
+        .sort((left, right) => left[1].at - right[1].at || left[0] - right[0])[0];
       if (!due) break;
       this.#timers.delete(due[0]);
       this.nowMs = due[1].at;
@@ -157,9 +152,9 @@ describe("gRPC screenshot session helpers", () => {
         action: "down",
       }),
     ).toEqual([{ key: "GoHome", eventType: "down" }]);
-    expect(
-      androidKeyGestureToKeyboardEvents({ type: "key", keycode: 187 }),
-    ).toEqual([{ key: "AppSwitch", eventType: "press" }]);
+    expect(androidKeyGestureToKeyboardEvents({ type: "key", keycode: 187 })).toEqual([
+      { key: "AppSwitch", eventType: "press" },
+    ]);
   });
 
   test("wraps supported Android metaState modifiers around keypresses", () => {
@@ -217,15 +212,9 @@ describe("gRPC screenshot session helpers", () => {
       seq: 1,
       timestampUs: 1n,
     };
-    expect(isUsableRgbFrame({ ...base, image: Buffer.alloc(2 * 3 * 3) })).toBe(
-      true,
-    );
-    expect(
-      isUsableRgbFrame({ ...base, image: Buffer.alloc(2 * 3 * 3 - 1) }),
-    ).toBe(false);
-    expect(
-      isUsableRgbFrame({ ...base, format: 0, image: Buffer.alloc(18) }),
-    ).toBe(false);
+    expect(isUsableRgbFrame({ ...base, image: Buffer.alloc(2 * 3 * 3) })).toBe(true);
+    expect(isUsableRgbFrame({ ...base, image: Buffer.alloc(2 * 3 * 3 - 1) })).toBe(false);
+    expect(isUsableRgbFrame({ ...base, format: 0, image: Buffer.alloc(18) })).toBe(false);
   });
 
   test("selects image-mode validation, encoding, and pacing behavior", () => {
@@ -239,9 +228,7 @@ describe("gRPC screenshot session helpers", () => {
       timestampUs: 1n,
     };
     expect(isUsablePngFrame({ ...base, image: png })).toBe(true);
-    expect(isUsablePngFrame({ ...base, image: Buffer.from("not png") })).toBe(
-      false,
-    );
+    expect(isUsablePngFrame({ ...base, image: Buffer.from("not png") })).toBe(false);
     const pngBehavior = grpcImageModeBehavior("png", 60);
     expect(pngBehavior.encoderInputFormat).toBe("png");
     expect(pngBehavior.predecodeMaxFps).toBe(60);
@@ -818,15 +805,13 @@ describe("gRPC screenshot session helpers", () => {
   });
 
   test("refreshes native touch size only after the display-size signal changes", async () => {
-    let displaySizeOutput =
-      "Physical size: 1440x2960\nOverride size: 1080x2220\n";
+    let displaySizeOutput = "Physical size: 1440x2960\nOverride size: 1080x2220\n";
     let probeCalls = 0;
     let failProbe = false;
     const updates: Array<{ width: number; height: number }> = [];
     const monitor = new GrpcNativeTouchGeometryMonitor({
       initialDisplaySizeSignal: parseDisplaySizeSignal(displaySizeOutput),
-      readDisplaySizeSignal: async () =>
-        parseDisplaySizeSignal(displaySizeOutput),
+      readDisplaySizeSignal: async () => parseDisplaySizeSignal(displaySizeOutput),
       readNativeImage: async () => {
         probeCalls++;
         if (failProbe) throw new Error("PNG probe failed");
@@ -888,11 +873,9 @@ describe("gRPC screenshot session helpers", () => {
   });
 
   test("parses bounded physical and override size signals", () => {
-    expect(
-      parseDisplaySizeSignal(
-        "Physical size: 1440x2960\nOverride size: 1080x2220\n",
-      ),
-    ).toBe("physical:1440x2960;override:1080x2220");
+    expect(parseDisplaySizeSignal("Physical size: 1440x2960\nOverride size: 1080x2220\n")).toBe(
+      "physical:1440x2960;override:1080x2220",
+    );
     expect(() => parseDisplaySizeSignal("size unavailable")).toThrow(
       "could not parse emulator display size",
     );
@@ -929,10 +912,7 @@ describe("gRPC screenshot session helpers", () => {
     });
 
     await expect(
-      input.sendTouch(
-        [{ x: 120, y: 240, identifier: 7, pressure: 1 }],
-        interrupted.signal,
-      ),
+      input.sendTouch([{ x: 120, y: 240, identifier: 7, pressure: 1 }], interrupted.signal),
     ).rejects.toThrow("touch interrupted");
     await expect(
       input.sendKey({ evdev: 29, eventType: "down" }, interrupted.signal),
@@ -957,9 +937,7 @@ describe("gRPC screenshot session helpers", () => {
 
   test("validates the normalized text shared by both control backends", () => {
     expect(normalizeGrpcText("hello\nworld")).toBe("hello\nworld");
-    expect(() => normalizeGrpcText(`${"a".repeat(300)}é`)).toThrow(
-      "ASCII text only",
-    );
+    expect(() => normalizeGrpcText(`${"a".repeat(300)}é`)).toThrow("ASCII text only");
 
     const parsed = parseGesture({
       type: "text",
@@ -1001,9 +979,7 @@ describe("gRPC screenshot session helpers", () => {
     gate.observe(CONFIG_FRAME);
     gate.fail(new Error("ffmpeg exited before producing a keyframe"));
 
-    await expect(waiting).rejects.toThrow(
-      "ffmpeg exited before producing a keyframe",
-    );
+    await expect(waiting).rejects.toThrow("ffmpeg exited before producing a keyframe");
   });
 
   test("bounds H.264 startup readiness with abort and timeout", async () => {
@@ -1012,9 +988,9 @@ describe("gRPC screenshot session helpers", () => {
     aborted.abort(new Error("switch cancelled"));
     await expect(abortWait).rejects.toThrow("switch cancelled");
 
-    await expect(
-      new H264StartupGate().wait(new AbortController().signal, 5),
-    ).rejects.toThrow("timed out waiting for decodable H.264 output");
+    await expect(new H264StartupGate().wait(new AbortController().signal, 5)).rejects.toThrow(
+      "timed out waiting for decodable H.264 output",
+    );
   });
 });
 
@@ -1023,11 +999,7 @@ class FakeGrpcClient implements GrpcSessionClient {
   readonly touches: unknown[] = [];
   closed = false;
   streamImage:
-    | ((
-        image: EmuImage,
-        source: GrpcScreenshotImageSource,
-        receivedAtMs: number,
-      ) => void)
+    | ((image: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number) => void)
     | null = null;
   sessionError: ((error: Error) => void) | null = null;
 
@@ -1047,11 +1019,7 @@ class FakeGrpcClient implements GrpcSessionClient {
 
   streamScreenshot(
     format: ImageFormatRequest,
-    onImage: (
-      image: EmuImage,
-      source: GrpcScreenshotImageSource,
-      receivedAtMs: number,
-    ) => void,
+    onImage: (image: EmuImage, source: GrpcScreenshotImageSource, receivedAtMs: number) => void,
     signal: AbortSignal,
     _options?: {
       maxFps?: number;
@@ -1156,7 +1124,9 @@ function integrationRuntime(
   } = {},
 ): GrpcSessionRuntime {
   return {
-    async resolveEncoder() { return "libx264"; },
+    async resolveEncoder() {
+      return "libx264";
+    },
     reportEncoderFailure() {},
     async ensureEndpoint() {
       return { port: 8554, token: "token", avdName: "Pixel_9" };
@@ -1185,11 +1155,15 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 describe("startGrpcSession integration", () => {
   test("consumes buffered RGB frames during encoder backpressure and submits the newest", async () => {
-    const width = 540, height = 1170, count = 8;
+    const width = 540,
+      height = 1170,
+      count = 8;
     const frame = (seq: number) => {
       const pixels = Buffer.alloc(width * height * 3);
       pixels.writeUInt32LE(seq);
-      return grpcFrame(encodeEmulatorImage({ format: IMG_FORMAT_RGB888, width, height, image: pixels, seq }));
+      return grpcFrame(
+        encodeEmulatorImage({ format: IMG_FORMAT_RGB888, width, height, image: pixels, seq }),
+      );
     };
     let source: ServerHttp2Stream | undefined;
     const server = http2.createServer();
@@ -1197,9 +1171,15 @@ describe("startGrpcSession integration", () => {
       stream.on("error", () => {});
       stream.resume();
       const streaming = String(headers[":path"]).endsWith("/streamScreenshot");
-      stream.respond({ ":status": 200, "content-type": "application/grpc", ...(streaming ? {} : { "grpc-status": "0" }) });
-      if (streaming) { source = stream; stream.write(frame(0)); }
-      else stream.end(frame(0));
+      stream.respond({
+        ":status": 200,
+        "content-type": "application/grpc",
+        ...(streaming ? {} : { "grpc-status": "0" }),
+      });
+      if (streaming) {
+        source = stream;
+        stream.write(frame(0));
+      } else stream.end(frame(0));
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -1210,11 +1190,19 @@ describe("startGrpcSession integration", () => {
     let session: Awaited<ReturnType<typeof startGrpcSession>> | undefined;
     try {
       session = await startGrpcSession(
-        { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc" },
-        { readDisplaySizeSignal: async () => `physical:${width}x${height}`, runtime: {
-          ...integrationRuntime(client, encoders, { autoBackpressure: true }),
-          ensureEndpoint: async () => endpoint,
-        } },
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+        },
+        {
+          readDisplaySizeSignal: async () => `physical:${width}x${height}`,
+          runtime: {
+            ...integrationRuntime(client, encoders, { autoBackpressure: true }),
+            ensureEndpoint: async () => endpoint,
+          },
+        },
       );
       for (let seq = 1; seq <= count; seq++) source!.write(frame(seq));
       await waitFor(() => session!.diagnostics!().grpcCapture!.usableImages === count + 1);
@@ -1230,37 +1218,61 @@ describe("startGrpcSession integration", () => {
     }
   });
 
-  test.each([false, true])("recovers or fails a missing drain when writable=%s", async (writable) => {
-    const rgb = { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
-    const client = new FakeGrpcClient(rgb);
-    const encoders: FakeGrpcEncoder[] = [];
-    const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc" },
-      { encoderDrainTimeoutMs: 25, readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders, { autoBackpressure: true }) },
-    );
-    try {
-      const failures: string[] = [];
-      session.onFatal((failure) => failures.push(failure.code!));
-      client.streamImage!({ ...rgb, seq: 2 }, "stream", Date.now());
-      encoders[0]!.writable = writable;
-      await waitFor(() => writable ? encoders[0]!.acceptedWrites === 2 : failures.length > 0);
-      expect(failures).toEqual(writable ? [] : ["encoder-exit"]);
-      expect(encoders[0]!.writes).toBe(writable ? 2 : 1);
-    } finally {
-      await session.close();
-    }
-  });
+  test.each([false, true])(
+    "recovers or fails a missing drain when writable=%s",
+    async (writable) => {
+      const rgb = { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
+      const client = new FakeGrpcClient(rgb);
+      const encoders: FakeGrpcEncoder[] = [];
+      const session = await startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+        },
+        {
+          encoderDrainTimeoutMs: 25,
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: integrationRuntime(client, encoders, { autoBackpressure: true }),
+        },
+      );
+      try {
+        const failures: string[] = [];
+        session.onFatal((failure) => failures.push(failure.code!));
+        client.streamImage!({ ...rgb, seq: 2 }, "stream", Date.now());
+        encoders[0]!.writable = writable;
+        await waitFor(() => (writable ? encoders[0]!.acceptedWrites === 2 : failures.length > 0));
+        expect(failures).toEqual(writable ? [] : ["encoder-exit"]);
+        expect(encoders[0]!.writes).toBe(writable ? 2 : 1);
+      } finally {
+        await session.close();
+      }
+    },
+  );
 
   test("fails startup promptly if the encoder never drains", async () => {
     const rgb = { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
     const client = new FakeGrpcClient(rgb);
     const encoders: FakeGrpcEncoder[] = [];
-    await expect(startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc" },
-      { encoderDrainTimeoutMs: 25, readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders, {
-        autoBackpressure: true, publishAfterAcceptedWrites: 2,
-      }) },
-    )).rejects.toThrow("ffmpeg input remained backpressured for 25ms");
+    await expect(
+      startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+        },
+        {
+          encoderDrainTimeoutMs: 25,
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: integrationRuntime(client, encoders, {
+            autoBackpressure: true,
+            publishAfterAcceptedWrites: 2,
+          }),
+        },
+      ),
+    ).rejects.toThrow("ffmpeg input remained backpressured for 25ms");
     expect(client.closed).toBe(true);
     expect(encoders[0]!.closed).toBe(true);
   });
@@ -1270,8 +1282,17 @@ describe("startGrpcSession integration", () => {
     const client = new FakeGrpcClient(rgb);
     const encoders: FakeGrpcEncoder[] = [];
     const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc" },
-      { encoderDrainTimeoutMs: 25, readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders, { autoBackpressure: true }) },
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+      },
+      {
+        encoderDrainTimeoutMs: 25,
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: integrationRuntime(client, encoders, { autoBackpressure: true }),
+      },
     );
     const failures: string[] = [];
     session.onFatal((failure) => failures.push(failure.message));
@@ -1294,40 +1315,62 @@ describe("startGrpcSession integration", () => {
     const client = new FakeGrpcClient(integrationImage());
     const encoders: FakeGrpcEncoder[] = [];
     const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "grpc" },
-      { readDisplaySizeSignal: async () => "physical:4x6", runtime: {
-        ...integrationRuntime(client, encoders),
-        createEncoder(options) {
-          options.onWritable!();
-          const encoder = new FakeGrpcEncoder(options);
-          encoders.push(encoder);
-          return encoder;
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "png",
+        inputSource: "grpc",
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: {
+          ...integrationRuntime(client, encoders),
+          createEncoder(options) {
+            options.onWritable!();
+            const encoder = new FakeGrpcEncoder(options);
+            encoders.push(encoder);
+            return encoder;
+          },
         },
-      } },
+      },
     );
     expect(encoders[0]!.acceptedWrites).toBe(1);
     await session.close();
   });
 
-  test.each(["png", "rgb888"] as const)("%s handoff submits immediately whenever the encoder is ready", async (grpcImageMode) => {
-    const rgb = grpcImageMode === "png" ? integrationImage() :
-      { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
-    const client = new FakeGrpcClient(rgb);
-    const encoders: FakeGrpcEncoder[] = [];
-    const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode, inputSource: "grpc", maxFps: 1 },
-      { readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders) },
-    );
-    try {
-      const initial = encoders[0]!.acceptedWrites;
-      for (let seq = 2; seq <= 5; seq++) {
-        client.streamImage!({ ...rgb, seq, image: Buffer.from(rgb.image) }, "stream", Date.now());
-        expect(encoders[0]!.acceptedWrites).toBe(initial + seq - 1);
+  test.each(["png", "rgb888"] as const)(
+    "%s handoff submits immediately whenever the encoder is ready",
+    async (grpcImageMode) => {
+      const rgb =
+        grpcImageMode === "png"
+          ? integrationImage()
+          : { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
+      const client = new FakeGrpcClient(rgb);
+      const encoders: FakeGrpcEncoder[] = [];
+      const session = await startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode,
+          inputSource: "grpc",
+          maxFps: 1,
+        },
+        {
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: integrationRuntime(client, encoders),
+        },
+      );
+      try {
+        const initial = encoders[0]!.acceptedWrites;
+        for (let seq = 2; seq <= 5; seq++) {
+          client.streamImage!({ ...rgb, seq, image: Buffer.from(rgb.image) }, "stream", Date.now());
+          expect(encoders[0]!.acceptedWrites).toBe(initial + seq - 1);
+        }
+      } finally {
+        await session.close();
       }
-    } finally {
-      await session.close();
-    }
-  });
+    },
+  );
 
   test("RGB handoff resumes the newest pending frame on drain without polling", async () => {
     const rgb = { ...integrationImage(), format: IMG_FORMAT_RGB888, image: Buffer.alloc(72) };
@@ -1335,8 +1378,17 @@ describe("startGrpcSession integration", () => {
     const encoders: FakeGrpcEncoder[] = [];
     const behavior = { writeResults: [true] };
     const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc", maxFps: 1 },
-      { readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders, behavior) },
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+        maxFps: 1,
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: integrationRuntime(client, encoders, behavior),
+      },
     );
     try {
       const encoder = encoders[0]!;
@@ -1365,14 +1417,26 @@ describe("startGrpcSession integration", () => {
     const client = new FakeGrpcClient(rgb);
     const encoders: FakeGrpcEncoder[] = [];
     const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc" },
-      { readDisplaySizeSignal: async () => "physical:4x6", runtime: integrationRuntime(client, encoders, { autoBackpressure: true }) },
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: integrationRuntime(client, encoders, { autoBackpressure: true }),
+      },
     );
     try {
       client.streamImage!({ ...rgb, width: 6, height: 4 }, "stream", Date.now());
       await waitFor(() => encoders[1]?.acceptedWrites === 1);
       expect(encoders[0]!.closed).toBe(true);
-      client.streamImage!({ ...rgb, width: 6, height: 4, image: Buffer.alloc(72, 9) }, "stream", Date.now());
+      client.streamImage!(
+        { ...rgb, width: 6, height: 4, image: Buffer.alloc(72, 9) },
+        "stream",
+        Date.now(),
+      );
       encoders[0]!.options.onWritable!();
       expect(encoders[1]!.acceptedWrites).toBe(1);
       encoders[1]!.writable = true;
@@ -1384,37 +1448,46 @@ describe("startGrpcSession integration", () => {
     }
   });
 
-  test.each(["software", "hardware"] as const)("resolves %s once and keeps the backend across size changes", async (encoder) => {
-    const client = new FakeGrpcClient(integrationImage());
-    const encoders: FakeGrpcEncoder[] = [];
-    const resolved = encoder === "hardware" ? "h264_videotoolbox" : "libx264";
-    const requests: string[] = [];
-    const session = await startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "grpc", encoder },
-      {
-        readDisplaySizeSignal: async () => "physical:4x6",
-        runtime: {
-          ...integrationRuntime(client, encoders),
-          async resolveEncoder(requested, signal) {
-            expect(signal.aborted).toBe(false);
-            requests.push(requested);
-            return resolved;
+  test.each(["software", "hardware"] as const)(
+    "resolves %s once and keeps the backend across size changes",
+    async (encoder) => {
+      const client = new FakeGrpcClient(integrationImage());
+      const encoders: FakeGrpcEncoder[] = [];
+      const resolved = encoder === "hardware" ? "h264_videotoolbox" : "libx264";
+      const requests: string[] = [];
+      const session = await startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "png",
+          inputSource: "grpc",
+          encoder,
+        },
+        {
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: {
+            ...integrationRuntime(client, encoders),
+            async resolveEncoder(requested, signal) {
+              expect(signal.aborted).toBe(false);
+              requests.push(requested);
+              return resolved;
+            },
           },
         },
-      },
-    );
-    try {
-      expect(requests).toEqual([encoder]);
-      expect(encoders[0]!.options.encoderName).toBe(resolved);
-      expect(session.diagnostics?.().grpcCapture?.encoderName).toBe(resolved);
-      client.streamImage!(integrationImage(0, 6, 4), "stream", Date.now());
-      await waitFor(() => encoders.length === 2);
-      expect(encoders[1]!.options.encoderName).toBe(resolved);
-      expect(requests).toHaveLength(1);
-    } finally {
-      await session.close();
-    }
-  });
+      );
+      try {
+        expect(requests).toEqual([encoder]);
+        expect(encoders[0]!.options.encoderName).toBe(resolved);
+        expect(session.diagnostics?.().grpcCapture?.encoderName).toBe(resolved);
+        client.streamImage!(integrationImage(0, 6, 4), "stream", Date.now());
+        await waitFor(() => encoders.length === 2);
+        expect(encoders[1]!.options.encoderName).toBe(resolved);
+        expect(requests).toHaveLength(1);
+      } finally {
+        await session.close();
+      }
+    },
+  );
 
   test("reports unexpected hardware encoder exits to invalidate availability", async () => {
     const client = new FakeGrpcClient(integrationImage());
@@ -1446,10 +1519,12 @@ describe("startGrpcSession integration", () => {
       session.onFatal((failure) => fatal.push(failure.message));
       encoders[0]!.options.onExit("ffmpeg hardware session exhausted");
       encoders[0]!.options.onExit("duplicate exit");
-      expect(failures).toEqual([{
-        encoderName: "h264_videotoolbox",
-        message: "ffmpeg hardware session exhausted",
-      }]);
+      expect(failures).toEqual([
+        {
+          encoderName: "h264_videotoolbox",
+          message: "ffmpeg hardware session exhausted",
+        },
+      ]);
       expect(fatal).toEqual(["ffmpeg hardware session exhausted"]);
     } finally {
       await session.close();
@@ -1541,21 +1616,29 @@ describe("startGrpcSession integration", () => {
   test("returns hardware probe failure before opening capture without trying software", async () => {
     const requested: string[] = [];
     let endpointCalls = 0;
-    await expect(startGrpcSession(
-      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "grpc", encoder: "hardware" },
-      {
-        runtime: {
-          async resolveEncoder(encoder) {
-            requested.push(encoder);
-            throw new Error("VideoToolbox hardware unavailable");
-          },
-          async ensureEndpoint() {
-            endpointCalls++;
-            throw new Error("must not open capture");
+    await expect(
+      startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "png",
+          inputSource: "grpc",
+          encoder: "hardware",
+        },
+        {
+          runtime: {
+            async resolveEncoder(encoder) {
+              requested.push(encoder);
+              throw new Error("VideoToolbox hardware unavailable");
+            },
+            async ensureEndpoint() {
+              endpointCalls++;
+              throw new Error("must not open capture");
+            },
           },
         },
-      },
-    )).rejects.toThrow("VideoToolbox hardware unavailable");
+      ),
+    ).rejects.toThrow("VideoToolbox hardware unavailable");
     expect(requested).toEqual(["hardware"]);
     expect(endpointCalls).toBe(0);
   });
@@ -1604,7 +1687,13 @@ describe("startGrpcSession integration", () => {
     let session: Awaited<ReturnType<typeof startGrpcSession>> | undefined;
     try {
       session = await startGrpcSession(
-        { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc", maxFps: 30 },
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+          maxFps: 30,
+        },
         {
           readDisplaySizeSignal: async () => "physical:192x192",
           runtime: {
@@ -1894,9 +1983,7 @@ describe("startGrpcSession integration", () => {
 
     expect(session.inputSource).toBe("scrcpy");
     expect(packets).toEqual(
-      compileGesture(gesture, { width: 4, height: 6 }).steps.map(
-        (step) => step.packet,
-      ),
+      compileGesture(gesture, { width: 4, height: 6 }).steps.map((step) => step.packet),
     );
     expect(client.keys).toEqual([]);
     await session.close();
@@ -1920,8 +2007,7 @@ describe("startGrpcSession integration", () => {
     );
 
     for (const type of ["back", "home", "recents", "power"] as const) {
-      await session.controls.enqueue({ type }, { width: 4, height: 6 })
-        .completion;
+      await session.controls.enqueue({ type }, { width: 4, height: 6 }).completion;
     }
 
     expect(client.keys).toEqual([
@@ -1977,8 +2063,12 @@ describe("startGrpcSession integration", () => {
     const encoders: FakeGrpcEncoder[] = [];
     const session = await startGrpcSession(
       {
-        serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888",
-        inputSource: "grpc", maxFps: 120, signal: AbortSignal.timeout(1_500),
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+        maxFps: 120,
+        signal: AbortSignal.timeout(1_500),
       },
       {
         readDisplaySizeSignal: async () => "physical:4x6",

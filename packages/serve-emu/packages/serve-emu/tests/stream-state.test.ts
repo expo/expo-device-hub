@@ -29,9 +29,7 @@ describe("browser stream state", () => {
       codec: "avc1.640028",
       rendered: true,
     };
-    expect(
-      applyWorkerEvent(sized, { type: "stats", stats }),
-    ).toEqual({
+    expect(applyWorkerEvent(sized, { type: "stats", stats })).toEqual({
       status: "streaming",
       fps: 60,
       deviceSize: { width: 1080, height: 2400 },
@@ -62,19 +60,21 @@ describe("browser stream state", () => {
   });
 
   test("health parsing rejects malformed network data", () => {
-    expect(parseStreamHealth({ size: { width: 1, height: 2 }, status: "streaming" }))
-      .toEqual({ size: { width: 1, height: 2 }, status: "streaming" });
-    expect(() => parseStreamHealth({ size: { width: "1", height: 2 } }))
-      .toThrow("finite dimensions");
-    expect(() => parseStreamHealth({ size: { width: 1, height: 2 }, status: "paused" }))
-      .toThrow("health status is invalid");
+    expect(parseStreamHealth({ size: { width: 1, height: 2 }, status: "streaming" })).toEqual({
+      size: { width: 1, height: 2 },
+      status: "streaming",
+    });
+    expect(() => parseStreamHealth({ size: { width: "1", height: 2 } })).toThrow(
+      "finite dimensions",
+    );
+    expect(() => parseStreamHealth({ size: { width: 1, height: 2 }, status: "paused" })).toThrow(
+      "health status is invalid",
+    );
   });
 
   test("worker parsing ignores unknown or malformed messages", () => {
     expect(parseStreamWorkerEvent({ type: "unknown" })).toBeNull();
-    expect(
-      parseStreamWorkerEvent({ type: "session", size: { width: "bad" } }),
-    ).toBeNull();
+    expect(parseStreamWorkerEvent({ type: "session", size: { width: "bad" } })).toBeNull();
     expect(
       parseStreamWorkerEvent({
         type: "stats",

@@ -20,10 +20,7 @@ describe("video dimension observer", () => {
     const video = new FakeVideo();
     let config: StreamConfig | null = null;
     const reported: Array<{ width: number; height: number }> = [];
-    const applyConfig = (
-      next: StreamConfig,
-      source: "external" | "reported",
-    ) => {
+    const applyConfig = (next: StreamConfig, source: "external" | "reported") => {
       const update = resolveScreenConfigUpdate(config, next, source);
       if (update) config = update.config;
     };

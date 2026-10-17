@@ -1,6 +1,6 @@
-import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../device-list-protocol';
-import { type HubDevice, type HubDeviceList, listDevices } from './devices';
-import { SERVER_PLATFORM_FILTER } from './platform-filter';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from "../device-list-protocol";
+import { type HubDevice, type HubDeviceList, listDevices } from "./devices";
+import { SERVER_PLATFORM_FILTER } from "./platform-filter";
 
 const POLL_INTERVAL_MS = 500;
 const HEARTBEAT_INTERVAL_MS = 2_000;
@@ -8,7 +8,7 @@ const HEARTBEAT_INTERVAL_MS = 2_000;
 export interface DeviceListSocket {
   send(data: string): void;
   close(code?: number, reason?: string): void;
-  on(event: 'close' | 'error', listener: () => void): unknown;
+  on(event: "close" | "error", listener: () => void): unknown;
 }
 
 interface DeviceListBroadcasterOptions {
@@ -22,10 +22,10 @@ interface DeviceListBroadcasterOptions {
   onError?: (error: unknown) => void;
 }
 
-type Schedule = NonNullable<DeviceListBroadcasterOptions['schedule']>;
-type CancelSchedule = NonNullable<DeviceListBroadcasterOptions['cancelSchedule']>;
-type ScheduleHeartbeat = NonNullable<DeviceListBroadcasterOptions['scheduleHeartbeat']>;
-type CancelHeartbeat = NonNullable<DeviceListBroadcasterOptions['cancelHeartbeat']>;
+type Schedule = NonNullable<DeviceListBroadcasterOptions["schedule"]>;
+type CancelSchedule = NonNullable<DeviceListBroadcasterOptions["cancelSchedule"]>;
+type ScheduleHeartbeat = NonNullable<DeviceListBroadcasterOptions["scheduleHeartbeat"]>;
+type CancelHeartbeat = NonNullable<DeviceListBroadcasterOptions["cancelHeartbeat"]>;
 
 /**
  * A single device-discovery loop shared by every dashboard connection.
@@ -59,7 +59,7 @@ export class DeviceListBroadcaster {
     this.#cancelHeartbeat = options.cancelHeartbeat ?? clearInterval;
     this.#onError =
       options.onError ??
-      ((error) => console.warn('[expo-device-hub] Failed to refresh device list:', error));
+      ((error) => console.warn("[expo-device-hub] Failed to refresh device list:", error));
   }
 
   subscribe(socket: DeviceListSocket): void {
@@ -72,8 +72,8 @@ export class DeviceListBroadcaster {
       active = false;
       this.#removeClient(socket);
     };
-    socket.on('close', unsubscribe);
-    socket.on('error', unsubscribe);
+    socket.on("close", unsubscribe);
+    socket.on("error", unsubscribe);
 
     // Confirm liveness immediately, even if the first device discovery pass is
     // slow. Changed device snapshots and periodic heartbeats both keep the
@@ -142,7 +142,7 @@ export class DeviceListBroadcaster {
   #send(socket: DeviceListSocket, snapshot: HubDeviceList): void {
     this.#sendMessage(
       socket,
-      JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: snapshot })
+      JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: snapshot }),
     );
   }
 
@@ -169,7 +169,7 @@ export class DeviceListBroadcaster {
     if (this.#heartbeatTimer !== null) return;
     this.#heartbeatTimer = this.#scheduleHeartbeat(
       () => this.#broadcastHeartbeat(),
-      this.#heartbeatIntervalMs
+      this.#heartbeatIntervalMs,
     );
   }
 

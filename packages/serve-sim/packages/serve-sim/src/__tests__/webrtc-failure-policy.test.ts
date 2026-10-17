@@ -14,13 +14,15 @@ describe("WebRTC failure policy", () => {
   test("keeps waiting when media is arriving but has not rendered yet", () => {
     // A large first keyframe can arrive inside the connection and still paint after the
     // deadline; downgrading the codec there throws away a working stream.
-    expect(webRtcFailureDisposition("first-frame-timeout", "connected", { mediaArriving: true }))
-      .toBe("wait");
+    expect(
+      webRtcFailureDisposition("first-frame-timeout", "connected", { mediaArriving: true }),
+    ).toBe("wait");
   });
 
   test("still blames the codec when nothing at all is arriving", () => {
-    expect(webRtcFailureDisposition("first-frame-timeout", "connected", { mediaArriving: false }))
-      .toBe("codec");
+    expect(
+      webRtcFailureDisposition("first-frame-timeout", "connected", { mediaArriving: false }),
+    ).toBe("codec");
   });
 
   test("retries transport when the peer never connected", () => {
@@ -35,19 +37,22 @@ describe("WebRTC failure policy", () => {
 
 describe("playback stall, after the stream has already painted", () => {
   test("blames the codec when media still arrives but nothing paints", () => {
-    expect(webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: true }))
-      .toBe("codec");
+    expect(webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: true })).toBe(
+      "codec",
+    );
   });
 
   test("blames the transport when media stopped arriving too", () => {
-    expect(webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: false }))
-      .toBe("transport");
+    expect(webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: false })).toBe(
+      "transport",
+    );
   });
 
   test("never waits, because a decoder that already choked will not recover on its own", () => {
     for (const arriving of [true, false]) {
-      expect(webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: arriving }))
-        .not.toBe("wait");
+      expect(
+        webRtcFailureDisposition("playback-stall", "connected", { mediaArriving: arriving }),
+      ).not.toBe("wait");
     }
   });
 
@@ -59,8 +64,9 @@ describe("playback stall, after the stream has already painted", () => {
 
   test("defers to the transport whenever the connection is not up", () => {
     for (const state of ["connecting", "disconnected", "failed", "closed", "new"] as const) {
-      expect(webRtcFailureDisposition("playback-stall", state, { mediaArriving: true }))
-        .toBe("transport");
+      expect(webRtcFailureDisposition("playback-stall", state, { mediaArriving: true })).toBe(
+        "transport",
+      );
     }
   });
 });
@@ -86,17 +92,21 @@ describe("who to blame when nothing arrives before the first frame", () => {
   });
 
   test("arriving media still outranks the sender's opinion", () => {
-    expect(webRtcFailureDisposition("first-frame-timeout", "connected", {
-      mediaArriving: true,
-      senderEncoding: false,
-    })).toBe("wait");
+    expect(
+      webRtcFailureDisposition("first-frame-timeout", "connected", {
+        mediaArriving: true,
+        senderEncoding: false,
+      }),
+    ).toBe("wait");
   });
 
   test("a connection that is not up is the transport's problem regardless", () => {
-    expect(webRtcFailureDisposition("first-frame-timeout", "failed", {
-      mediaArriving: false,
-      senderEncoding: false,
-    })).toBe("transport");
+    expect(
+      webRtcFailureDisposition("first-frame-timeout", "failed", {
+        mediaArriving: false,
+        senderEncoding: false,
+      }),
+    ).toBe("transport");
   });
 });
 

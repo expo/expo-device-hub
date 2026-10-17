@@ -41,7 +41,9 @@ export function useSimStream({ device: deviceProp }: UseSimStreamOptions): UseSi
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   // Auto-connect/switch when deviceProp changes.
@@ -86,36 +88,43 @@ export function useSimStream({ device: deviceProp }: UseSimStreamOptions): UseSi
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [deviceProp]);
 
-  const connect = useCallback(async (device?: string, port?: number): Promise<boolean> => {
-    setLoading(true);
-    setError(null);
-    const t0 = performance.now();
-    console.log(`[serve-sim] connect: starting`);
-    try {
-      const target = device ?? deviceProp ?? undefined;
-      const result = await runHostAction("server.detach", {
-        udid: target,
-        port: port ? String(port) : undefined,
-      });
-      console.log(`[serve-sim] connect: exec returned (+${(performance.now() - t0).toFixed(0)}ms, exit ${result.exitCode})`);
-      if (result.exitCode !== 0) {
-        throw new Error(result.stderr || `serve-sim --detach failed (exit ${result.exitCode})`);
+  const connect = useCallback(
+    async (device?: string, port?: number): Promise<boolean> => {
+      setLoading(true);
+      setError(null);
+      const t0 = performance.now();
+      console.log(`[serve-sim] connect: starting`);
+      try {
+        const target = device ?? deviceProp ?? undefined;
+        const result = await runHostAction("server.detach", {
+          udid: target,
+          port: port ? String(port) : undefined,
+        });
+        console.log(
+          `[serve-sim] connect: exec returned (+${(performance.now() - t0).toFixed(0)}ms, exit ${result.exitCode})`,
+        );
+        if (result.exitCode !== 0) {
+          throw new Error(result.stderr || `serve-sim --detach failed (exit ${result.exitCode})`);
+        }
+        const parsed = JSON.parse(result.stdout.trim()) as SimStreamInfo;
+        if (mountedRef.current) setInfo(parsed);
+        return true;
+      } catch (err) {
+        if (mountedRef.current) {
+          setError(err instanceof Error ? err.message : "Failed to connect");
+        }
+        return false;
+      } finally {
+        if (mountedRef.current) setLoading(false);
       }
-      const parsed = JSON.parse(result.stdout.trim()) as SimStreamInfo;
-      if (mountedRef.current) setInfo(parsed);
-      return true;
-    } catch (err) {
-      if (mountedRef.current) {
-        setError(err instanceof Error ? err.message : "Failed to connect");
-      }
-      return false;
-    } finally {
-      if (mountedRef.current) setLoading(false);
-    }
-  }, [deviceProp]);
+    },
+    [deviceProp],
+  );
 
   const disconnect = useCallback(async () => {
     setLoading(true);

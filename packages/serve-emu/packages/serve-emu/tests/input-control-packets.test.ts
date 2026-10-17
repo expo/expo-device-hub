@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  compileGesture,
-  type Gesture,
-  type Screen,
-} from "../src/input.ts";
+import { compileGesture, type Gesture, type Screen } from "../src/input.ts";
 
 const SCREEN: Screen = { width: 1080, height: 1920 };
 
@@ -41,17 +37,7 @@ describe("scrcpy control packet golden bytes", () => {
     const compiled = compileGesture(gesture, SCREEN);
 
     expect(compiled.gesture).toEqual(gesture);
-    expect(compiled.steps.map((step) => step.delayMs)).toEqual([
-      0,
-      10,
-      10,
-      10,
-      10,
-      10,
-      10,
-      10,
-      10,
-    ]);
+    expect(compiled.steps.map((step) => step.delayMs)).toEqual([0, 10, 10, 10, 10, 10, 10, 10, 10]);
     expect(compiled.steps.map((step) => step.packet.toString("hex"))).toEqual([
       "02000000000000000000000000000000000004380780ffff0000000100000001",
       "0202000000000000000000000087000000f004380780ffff0000000100000001",
@@ -105,24 +91,15 @@ describe("scrcpy control packet golden bytes", () => {
     { name: "back", packets: ["0400", "0401"] },
     {
       name: "home",
-      packets: [
-        "0000000000030000000000000000",
-        "0001000000030000000000000000",
-      ],
+      packets: ["0000000000030000000000000000", "0001000000030000000000000000"],
     },
     {
       name: "recents",
-      packets: [
-        "0000000000bb0000000000000000",
-        "0001000000bb0000000000000000",
-      ],
+      packets: ["0000000000bb0000000000000000", "0001000000bb0000000000000000"],
     },
     {
       name: "power",
-      packets: [
-        "00000000001a0000000000000000",
-        "00010000001a0000000000000000",
-      ],
+      packets: ["00000000001a0000000000000000", "00010000001a0000000000000000"],
     },
   ];
 
@@ -134,9 +111,7 @@ describe("scrcpy control packet golden bytes", () => {
       expect(compiled.gesture).toEqual(gesture);
       expect(compiled.steps.map((step) => step.delayMs)).toEqual([0, 0]);
       expect(packetHex(gesture)).toEqual(packets);
-      expect(compiled.bytes).toBe(
-        packets.reduce((total, packet) => total + packet.length / 2, 0),
-      );
+      expect(compiled.bytes).toBe(packets.reduce((total, packet) => total + packet.length / 2, 0));
     });
   }
 });
@@ -162,24 +137,17 @@ describe("text normalization", () => {
     expect(compiled.gesture).toEqual({ type: "text", text: expected });
     expect(compiled.steps).toHaveLength(1);
     expect(compiled.steps[0]!.packet.readUInt32BE(1)).toBe(299);
-    expect(compiled.steps[0]!.packet.subarray(5).toString("utf8")).toBe(
-      expected,
-    );
+    expect(compiled.steps[0]!.packet.subarray(5).toString("utf8")).toBe(expected);
     expect(compiled.bytes).toBe(304);
   });
 
   test("keeps exactly 75 four-byte characters", () => {
     const expected = "😀".repeat(75);
-    const compiled = compileGesture(
-      { type: "text", text: `${expected}😀` },
-      SCREEN,
-    );
+    const compiled = compileGesture({ type: "text", text: `${expected}😀` }, SCREEN);
 
     expect(Buffer.byteLength(expected, "utf8")).toBe(300);
     expect(compiled.gesture).toEqual({ type: "text", text: expected });
     expect(compiled.steps[0]!.packet.readUInt32BE(1)).toBe(300);
-    expect(compiled.steps[0]!.packet.subarray(5).toString("utf8")).toBe(
-      expected,
-    );
+    expect(compiled.steps[0]!.packet.subarray(5).toString("utf8")).toBe(expected);
   });
 });

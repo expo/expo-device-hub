@@ -161,10 +161,15 @@ test("screen, status, and error changes reach the screen subscriber", async () =
 
 test("device settings subscribers ignore video, FPS, metrics, and log updates", async () => {
   const store = createDeviceClientStore();
-  store.publish({ ...NOOP_DEVICE_CLIENT, deviceSettingsStatus: "ready", deviceSettings: { appearance: "dark" } });
+  store.publish({
+    ...NOOP_DEVICE_CLIENT,
+    deviceSettingsStatus: "ready",
+    deviceSettings: { appearance: "dark" },
+  });
   const renders = { tracked: 0, selected: 0 };
   function Tracked() {
-    const { deviceSettingsStatus, deviceSettings, deviceSettingsPending, setDeviceSetting } = useDeviceClient();
+    const { deviceSettingsStatus, deviceSettings, deviceSettingsPending, setDeviceSetting } =
+      useDeviceClient();
     expect(deviceSettingsStatus).toBe("ready");
     expect(deviceSettings?.appearance).toBe("dark");
     expect(deviceSettingsPending.size).toBe(0);
@@ -177,14 +182,24 @@ test("device settings subscribers ignore video, FPS, metrics, and log updates", 
     renders.selected++;
     return null;
   }
-  await mount(<DeviceClientStoreContext.Provider value={store}><Tracked /><Selected /></DeviceClientStoreContext.Provider>);
+  await mount(
+    <DeviceClientStoreContext.Provider value={store}>
+      <Tracked />
+      <Selected />
+    </DeviceClientStoreContext.Provider>,
+  );
   const before = { ...renders };
   for (const status of ["streaming", "reconnecting", "error", "streaming"] as const) {
-    await act(async () => store.publish({
-      ...store.getSnapshot(), status, fps: 30, error: "Video interrupted",
-      logs: [{ id: "test", source: "syslog", message: "Log update" }],
-      activity: { samples: [], hostCores: null, stale: false, errored: false },
-    }));
+    await act(async () =>
+      store.publish({
+        ...store.getSnapshot(),
+        status,
+        fps: 30,
+        error: "Video interrupted",
+        logs: [{ id: "test", source: "syslog", message: "Log update" }],
+        activity: { samples: [], hostCores: null, stale: false, errored: false },
+      }),
+    );
     expect(renders).toEqual(before);
   }
 });

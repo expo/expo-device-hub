@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ServerResponse } from "http";
-import {
-  connectToFetch,
-  type ConnectMiddleware,
-} from "../connect-to-fetch";
+import { connectToFetch, type ConnectMiddleware } from "../connect-to-fetch";
 
 describe("fetch middleware response lifecycle", () => {
   test("copies chunks before enqueueing them into the Fetch response", async () => {
@@ -193,6 +190,8 @@ describe("fetch middleware response lifecycle", () => {
       throw new Error("boom");
     }) as ConnectMiddleware;
 
-    await expect(connectToFetch(handler, new Request("http://localhost/fail"))).rejects.toThrow("boom");
+    await expect(connectToFetch(handler, new Request("http://localhost/fail"))).rejects.toThrow(
+      "boom",
+    );
   });
 });

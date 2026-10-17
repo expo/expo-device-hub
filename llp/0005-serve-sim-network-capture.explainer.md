@@ -105,12 +105,12 @@ reason. URL query values are redacted unless `query` is enabled.
 
 Use `--network-capture-field` to opt into additional fields:
 
-| Field | Contents |
-| --- | --- |
-| `header` | Request and response headers, with values redacted for credential-bearing names |
-| `query` | Query-string values |
-| `request-body` | Request bodies, without redaction |
-| `response-body` | Response bodies, without redaction |
+| Field           | Contents                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| `header`        | Request and response headers, with values redacted for credential-bearing names |
+| `query`         | Query-string values                                                             |
+| `request-body`  | Request bodies, without redaction                                               |
+| `response-body` | Response bodies, without redaction                                              |
 
 For example:
 
@@ -169,11 +169,11 @@ Use test accounts or a staging environment when capturing sensitive workflows.
 Each captured device writes to `$TMPDIR/serve-sim/capture-<udid>/`, or beneath `SERVE_SIM_STATE_DIR` when
 that override is set:
 
-| File | Contents |
-| --- | --- |
-| `network-capture.json` | Newline-delimited session and capture events, including started, finished, metadata, and clear events |
-| `capture.entries.ndjson` | One HAR entry per completed exchange |
-| `capture.har` | A HAR document rebuilt on download and at most once a minute, with entries in request start order |
+| File                     | Contents                                                                                              |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `network-capture.json`   | Newline-delimited session and capture events, including started, finished, metadata, and clear events |
+| `capture.entries.ndjson` | One HAR entry per completed exchange                                                                  |
+| `capture.har`            | A HAR document rebuilt on download and at most once a minute, with entries in request start order     |
 
 The event log grows throughout the session. The HAR entry log is periodically compacted to the newest
 10,000 entries, and the rebuilt HAR contains those entries. These are entry-count limits, not disk-byte

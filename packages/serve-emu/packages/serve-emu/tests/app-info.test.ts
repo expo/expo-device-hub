@@ -34,9 +34,7 @@ describe("getForegroundApp", () => {
       calls.push({ args, timeout: options?.timeout });
       switch (shellCommand(args)) {
         case "dumpsys window":
-          return textResult(
-            "mCurrentFocus=Window{42 u0 com.example.app/.MainActivity}",
-          );
+          return textResult("mCurrentFocus=Window{42 u0 com.example.app/.MainActivity}");
         case "dumpsys package com.example.app":
           return textResult(`
             versionCode=42 minSdk=23 targetSdk=35
@@ -62,12 +60,15 @@ describe("getForegroundApp", () => {
       debuggable: true,
     });
     expect(calls).toHaveLength(3);
-    expect(calls.every(({ args }) => args.slice(0, 3).join(" ") === "-s emulator-5554 shell")).toBe(true);
+    expect(calls.every(({ args }) => args.slice(0, 3).join(" ") === "-s emulator-5554 shell")).toBe(
+      true,
+    );
     expect(calls.find(({ args }) => shellCommand(args).startsWith("pidof"))?.timeout).toBe(2_000);
-    expect(calls.filter(({ args }) => shellCommand(args).startsWith("dumpsys")).map(({ timeout }) => timeout)).toEqual([
-      5_000,
-      5_000,
-    ]);
+    expect(
+      calls
+        .filter(({ args }) => shellCommand(args).startsWith("dumpsys"))
+        .map(({ timeout }) => timeout),
+    ).toEqual([5_000, 5_000]);
   });
 
   test("falls back to resumed activities and non-localized labels", async () => {
@@ -103,10 +104,7 @@ describe("getForegroundApp", () => {
       minSdk: null,
       debuggable: false,
     });
-    expect(commands.slice(0, 2)).toEqual([
-      "dumpsys window",
-      "dumpsys activity activities",
-    ]);
+    expect(commands.slice(0, 2)).toEqual(["dumpsys window", "dumpsys activity activities"]);
   });
 
   test("returns an empty snapshot when neither window nor activity dumps identify an app", async () => {
@@ -126,19 +124,14 @@ describe("getForegroundApp", () => {
       minSdk: null,
       debuggable: null,
     });
-    expect(commands).toEqual([
-      "dumpsys window",
-      "dumpsys activity activities",
-    ]);
+    expect(commands).toEqual(["dumpsys window", "dumpsys activity activities"]);
   });
 
   test("keeps foreground identity when optional package and pid probes fail", async () => {
     const runExec = (async (_command, args) => {
       const command = shellCommand(args);
       if (command === "dumpsys window") {
-        return textResult(
-          "mInputMethodTarget=Window{77 u0 com.example/.KeyboardActivity}",
-        );
+        return textResult("mInputMethodTarget=Window{77 u0 com.example/.KeyboardActivity}");
       }
       return textResult("", {
         status: 1,
@@ -179,9 +172,7 @@ describe("getForegroundApp", () => {
         throw new Error(`unexpected command: ${command}`);
       }) as typeof execText;
 
-      expect((await getForegroundApp("device-1", runExec)).packageName).toBe(
-        expectedPackage,
-      );
+      expect((await getForegroundApp("device-1", runExec)).packageName).toBe(expectedPackage);
     }
   });
 

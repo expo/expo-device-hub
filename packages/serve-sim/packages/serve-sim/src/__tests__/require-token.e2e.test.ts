@@ -18,7 +18,6 @@ import { freePortAsync } from "./helpers";
 const PKG_DIR = join(import.meta.dir, "../..");
 const CLI = join(PKG_DIR, "dist/serve-sim.js");
 
-
 async function waitFor(check: () => Promise<boolean>, budgetMs: number): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
@@ -41,18 +40,22 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
   beforeAll(async () => {
     const port = await freePortAsync();
     baseUrl = `http://127.0.0.1:${port}`;
-    server = spawn("node", [
-      CLI,
-      "--require-token",
-      "--quiet",
-      "--frame-ancestor",
-      "https://expo.test",
-      "--port",
-      String(port),
-      udid!,
-    ], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    server = spawn(
+      "node",
+      [
+        CLI,
+        "--require-token",
+        "--quiet",
+        "--frame-ancestor",
+        "https://expo.test",
+        "--port",
+        String(port),
+        udid!,
+      ],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
     server.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString();
     });
@@ -66,7 +69,10 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
       for (const line of output.split("\n")) {
         if (!line.trim().startsWith("{")) continue;
         try {
-          const parsed = JSON.parse(line) as { token?: string; devices?: Array<{ token?: string }> };
+          const parsed = JSON.parse(line) as {
+            token?: string;
+            devices?: Array<{ token?: string }>;
+          };
           const found = parsed.token ?? parsed.devices?.[0]?.token;
           if (typeof found === "string" && found.length > 0) {
             token = found;
@@ -320,7 +326,8 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
         );
       });
       socket.on("data", (chunk) => {
-        if (chunk.toString().startsWith("HTTP/1.1 101")) socket.write(Buffer.from([0x81, 0x02, 0x68, 0x69]));
+        if (chunk.toString().startsWith("HTTP/1.1 101"))
+          socket.write(Buffer.from([0x81, 0x02, 0x68, 0x69]));
       });
       socket.on("error", () => {});
       setTimeout(() => {

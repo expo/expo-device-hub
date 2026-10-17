@@ -2,9 +2,7 @@ import type { WebRtcStreamCodec } from "../state";
 
 export type WebRtcCodec = WebRtcStreamCodec;
 
-export type WebRtcFailureReason =
-  | { kind: "permanent" }
-  | { kind: "codec"; codec: WebRtcCodec };
+export type WebRtcFailureReason = { kind: "permanent" } | { kind: "codec"; codec: WebRtcCodec };
 
 export type WebRtcStreamFailure = WebRtcFailureReason & { sessionId: string };
 
@@ -67,7 +65,8 @@ export function createLadderBackoff(): LadderBackoff {
       if (lastFailureAt !== null && now - lastFailureAt >= LADDER_SETTLED_MS) attempt = 0;
       lastFailureAt = now;
     },
-    takeRestartDelayMs() { return ladderRestartDelayMs(attempt++); },
+    takeRestartDelayMs() {
+      return ladderRestartDelayMs(attempt++);
+    },
   };
 }
-

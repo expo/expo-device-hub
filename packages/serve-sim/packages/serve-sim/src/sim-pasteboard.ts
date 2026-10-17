@@ -16,7 +16,9 @@ export const MAX_PASTEBOARD_TEXT_BYTES = 4 * 1024 * 1024;
 export class PasteboardTooLargeError extends Error {}
 
 export class PasteboardBusyError extends Error {
-  constructor() { super("Simulator clipboard is busy. Try again."); }
+  constructor() {
+    super("Simulator clipboard is busy. Try again.");
+  }
 }
 
 export function locatePasteboardTool(): string | null {
@@ -41,7 +43,9 @@ export async function buildSimpbArtifact(source: string, artifact: string): Prom
   if (!build) {
     const buildScript = join(__dirname, "..", "Sources", source, "build.sh");
     if (!existsSync(buildScript)) {
-      throw new Error(`${source} source not found. Reinstall from a build that includes clipboard support.`);
+      throw new Error(
+        `${source} source not found. Reinstall from a build that includes clipboard support.`,
+      );
     }
     console.error(`[serve-sim] building ${source}…`);
     build = execFileAsync("bash", [buildScript]).finally(() => buildsInFlight.delete(source));
@@ -53,14 +57,13 @@ export async function buildSimpbArtifact(source: string, artifact: string): Prom
   return output;
 }
 
-export function withSimPasteboardLock<T>(udid: string, run: () => Promise<T>, timeoutMs = PASTEBOARD_LOCK_TIMEOUT_MS): Promise<T> {
+export function withSimPasteboardLock<T>(
+  udid: string,
+  run: () => Promise<T>,
+  timeoutMs = PASTEBOARD_LOCK_TIMEOUT_MS,
+): Promise<T> {
   const path = join(tmpdir(), "serve-sim-pasteboard-locks", `${udid}.lock`);
-  return withStateLock(
-    path,
-    timeoutMs,
-    () => new PasteboardBusyError(),
-    run,
-  );
+  return withStateLock(path, timeoutMs, () => new PasteboardBusyError(), run);
 }
 
 export function writeSimPasteboard(udid: string, text: string): Promise<void> {
@@ -68,7 +71,8 @@ export function writeSimPasteboard(udid: string, text: string): Promise<void> {
 }
 
 export async function writeSimPasteboardUnlocked(udid: string, text: string): Promise<void> {
-  const tool = locatePasteboardTool() ?? await buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard");
+  const tool =
+    locatePasteboardTool() ?? (await buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard"));
   return new Promise((resolveWrite, rejectWrite) => {
     const child = spawn("xcrun", ["simctl", "spawn", udid, tool, "--write"], {
       stdio: ["pipe", "ignore", "pipe"],
@@ -77,18 +81,28 @@ export async function writeSimPasteboardUnlocked(udid: string, text: string): Pr
     let timedOut = false;
     let pipeError: Error | null = null;
     child.stderr.setEncoding("utf-8");
-    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
     const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, 30_000);
-    child.once("error", (error) => { clearTimeout(timeout); rejectWrite(error); });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectWrite(error);
+    });
     child.once("close", (code) => {
       clearTimeout(timeout);
       if (timedOut) rejectWrite(new Error("simctl pasteboard write timed out"));
       else if (code === 0 && !pipeError) resolveWrite();
       // simctl's own reason (such as an unknown device) explains a closed stdin better than EPIPE.
-      else rejectWrite(new Error(stderr.trim() || pipeError?.message || `simctl pasteboard write exited ${code}`));
+      else
+        rejectWrite(
+          new Error(
+            stderr.trim() || pipeError?.message || `simctl pasteboard write exited ${code}`,
+          ),
+        );
     });
     child.stdin.once("error", (error) => {
       pipeError = error;
@@ -103,12 +117,19 @@ export interface PasteboardReadResult {
   cleanupWarning?: string;
 }
 
-export async function readPasteboardText(args: string[], options: SimctlOptions = {}): Promise<string> {
+export async function readPasteboardText(
+  args: string[],
+  options: SimctlOptions = {},
+): Promise<string> {
   try {
     return await simctlRaw(args, { ...options, maxBuffer: MAX_PASTEBOARD_TEXT_BYTES });
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" &&
-      error.message.startsWith("stdout ")) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" &&
+      error.message.startsWith("stdout ")
+    ) {
       throw new PasteboardTooLargeError("Simulator clipboard text is too large");
     }
     throw error;

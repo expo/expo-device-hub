@@ -4,7 +4,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { managedStartupDylibs } from "../../capability-config";
-import { createCaptureRuntime, CaptureEnableError, discardCaptureArtifactsForExit, type CaptureRuntimeOptions } from "../../capture/runtime";
+import {
+  createCaptureRuntime,
+  CaptureEnableError,
+  discardCaptureArtifactsForExit,
+  type CaptureRuntimeOptions,
+} from "../../capture/runtime";
 import { CaptureStore } from "../../capture/store";
 import { type CaptureProxy, type MitmProxyDeps } from "../../capture/mitm-engine";
 import { installShims, useTempStateDir } from "../helpers";
@@ -48,10 +53,13 @@ function harness(
       overrides.trustCa ??
       (async (_udid, pem) => void calls.push(`trusted:${pem === CA_PEM ? "ok" : "wrong-pem"}`)),
     dylib: () => "/fake/libSimNetProxy.dylib",
-    configure: overrides.configure ?? capabilityHarness({
-      publish: overrides.inject ?? (async (_udid, portFile) => void calls.push(`injected:${portFile}`)),
-      remove: overrides.clearInjection ?? (async () => void calls.push("injection-cleared")),
-    }),
+    configure:
+      overrides.configure ??
+      capabilityHarness({
+        publish:
+          overrides.inject ?? (async (_udid, portFile) => void calls.push(`injected:${portFile}`)),
+        remove: overrides.clearInjection ?? (async () => void calls.push("injection-cleared")),
+      }),
     isInjected: overrides.isInjected ?? (async () => true),
     checkIntervalMs: overrides.checkIntervalMs ?? 0,
     // Default off in unit tests — dedicated disk tests opt in with a temp dir.
@@ -77,7 +85,9 @@ function harnessWithoutDylib() {
 
 function gate() {
   let release = () => {};
-  const promise = new Promise<void>((resolve) => { release = resolve; });
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   return { promise, release };
 }
 
@@ -116,8 +126,11 @@ describe("capture runtime", () => {
       startProxy: async () => {
         starts++;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
-          setFields: (fields) => void applied.push([...fields]), close: async () => {},
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push([...fields]),
+          close: async () => {},
         };
       },
     });
@@ -141,13 +154,18 @@ describe("capture runtime", () => {
       startProxy: async () => {
         starts++;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
-          setFields: (fields) => void applied.push([...fields]), close: async () => {},
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push([...fields]),
+          close: async () => {},
         };
       },
     });
     await runtime.enableForDevice(UDID, ["header"]);
-    expect((await runtime.enableForDevice(UDID, ["response-body"])).fields).toEqual(["response-body"]);
+    expect((await runtime.enableForDevice(UDID, ["response-body"])).fields).toEqual([
+      "response-body",
+    ]);
     expect((await runtime.enableForDevice(UDID)).fields).toEqual(["response-body"]);
     expect(applied).toEqual([["response-body"]]);
     expect(starts).toBe(1);
@@ -171,8 +189,13 @@ describe("capture runtime", () => {
       startProxy: async () => {
         starts++;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
-          setFields: () => { throw new Error("ENOSPC"); }, close: async () => {},
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: () => {
+            throw new Error("ENOSPC");
+          },
+          close: async () => {},
         };
       },
     });
@@ -193,7 +216,10 @@ describe("capture runtime", () => {
       let publications = 0;
       const { runtime, calls } = harness({
         inject: async () => {
-          if (++publications === 2) { publishing.release(); await publish.promise; }
+          if (++publications === 2) {
+            publishing.release();
+            await publish.promise;
+          }
         },
       });
       await runtime.enableForDevice(UDID, ["header"]);
@@ -217,7 +243,10 @@ describe("capture runtime", () => {
       let configurations = 0;
       const { runtime, calls } = harness({
         configure: async (...args) => {
-          if (++configurations === 2) { configuring.release(); await configure.promise; }
+          if (++configurations === 2) {
+            configuring.release();
+            await configure.promise;
+          }
           await runConfigure(...args);
         },
       });
@@ -240,13 +269,21 @@ describe("capture runtime", () => {
     let starts = 0;
     const { runtime } = harness({
       inject: async () => {
-        if (++publications === 2) { publishing.release(); await publish.promise; }
+        if (++publications === 2) {
+          publishing.release();
+          await publish.promise;
+        }
       },
       startProxy: async () => {
         starts++;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
-          setFields: (fields) => { if (fields.includes("query")) throw new Error("ENOSPC"); }, close: async () => {},
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: (fields) => {
+            if (fields.includes("query")) throw new Error("ENOSPC");
+          },
+          close: async () => {},
         };
       },
     });
@@ -263,19 +300,25 @@ describe("capture runtime", () => {
   });
 
   /** A runtime whose proxy records each field write, and what it held when apps were pointed at it. */
-  function startupHarness(opts: { proxyGate?: Promise<void>; trust?: Promise<void>; failOn?: string } = {}) {
+  function startupHarness(
+    opts: { proxyGate?: Promise<void>; trust?: Promise<void>; failOn?: string } = {},
+  ) {
     const applied: (readonly string[])[] = [];
     const proxyEntered = gate();
     let atPublish: readonly string[] | null = null;
     const { runtime } = harness({
       trustCa: () => opts.trust ?? Promise.resolve(),
-      inject: async () => { atPublish = applied.at(-1) ?? null; },
+      inject: async () => {
+        atPublish = applied.at(-1) ?? null;
+      },
       startProxy: async (_store, deps) => {
         applied.push([...(deps.fields ?? [])]);
         proxyEntered.release();
         await opts.proxyGate;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
           setFields: (fields) => {
             if (opts.failOn && fields.length === 0) throw new Error(opts.failOn);
             applied.push([...fields]);
@@ -307,7 +350,9 @@ describe("capture runtime", () => {
 
   test("a field change while the proxy is up reaches it at once", async () => {
     const trust = gate();
-    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({ trust: trust.promise });
+    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({
+      trust: trust.promise,
+    });
     const enabling = runtime.enableForDevice(UDID);
     await proxyEntered.promise;
     await Promise.resolve();
@@ -321,7 +366,9 @@ describe("capture runtime", () => {
 
   test("an enable that joins a start reaches its proxy before apps are pointed at it", async () => {
     const trust = gate();
-    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({ trust: trust.promise });
+    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({
+      trust: trust.promise,
+    });
     const first = runtime.enableForDevice(UDID);
     await proxyEntered.promise;
     await Promise.resolve();
@@ -349,10 +396,15 @@ describe("capture runtime", () => {
   test("differing field choices do not retry a failed pending startup", async () => {
     const trust = gate();
     const { runtime, calls } = harness({
-      trustCa: async () => { await trust.promise; throw new Error("trust failed"); },
+      trustCa: async () => {
+        await trust.promise;
+        throw new Error("trust failed");
+      },
     });
     const first = runtime.enableForDevice(UDID, ["header"]).catch((error: unknown) => error);
-    const second = runtime.enableForDevice(UDID, ["response-body"]).catch((error: unknown) => error);
+    const second = runtime
+      .enableForDevice(UDID, ["response-body"])
+      .catch((error: unknown) => error);
     trust.release();
     expect(await first).toBeInstanceOf(CaptureEnableError);
     expect(await second).toBeInstanceOf(CaptureEnableError);
@@ -365,7 +417,9 @@ describe("capture runtime", () => {
     const trust = gate();
     const { runtime, calls } = harness({ trustCa: () => trust.promise });
     const first = runtime.enableForDevice(UDID, ["header"]).catch((error: unknown) => error);
-    const second = runtime.enableForDevice(UDID, ["response-body"]).catch((error: unknown) => error);
+    const second = runtime
+      .enableForDevice(UDID, ["response-body"])
+      .catch((error: unknown) => error);
     const shutdown = runtime.disableAll();
     trust.release();
     await shutdown;
@@ -382,7 +436,9 @@ describe("capture runtime", () => {
     let clears = 0;
     let armed = false;
     const { runtime, calls } = harness({
-      trustCa: async () => { if (++trusts === 1) throw new Error("first trust failed"); },
+      trustCa: async () => {
+        if (++trusts === 1) throw new Error("first trust failed");
+      },
       closeProxy: async () => {
         if (++clears === 1) {
           clearing.release();
@@ -390,7 +446,9 @@ describe("capture runtime", () => {
         }
         armed = false;
       },
-      inject: async () => { armed = true; },
+      inject: async () => {
+        armed = true;
+      },
     });
     const first = runtime.enableForDevice(UDID).catch((error: unknown) => error);
     await clearing.promise;
@@ -408,8 +466,13 @@ describe("capture runtime", () => {
     const clearing = gate();
     const clear = gate();
     const { runtime, calls } = harness({
-      trustCa: async () => { throw new Error("trust failed"); },
-      closeProxy: async () => { clearing.release(); await clear.promise; },
+      trustCa: async () => {
+        throw new Error("trust failed");
+      },
+      closeProxy: async () => {
+        clearing.release();
+        await clear.promise;
+      },
     });
     const first = runtime.enableForDevice(UDID).catch((error: unknown) => error);
     await clearing.promise;
@@ -435,16 +498,27 @@ describe("capture runtime", () => {
       startProxy: async (_store, deps) => {
         starts++;
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+        return {
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: () => {},
+          close: async () => {},
+        };
       },
-      clearInjection: async () => { clearing.release(); await clear.promise; },
+      clearInjection: async () => {
+        clearing.release();
+        await clear.promise;
+      },
     });
     await runtime.enableForDevice(UDID);
     killProxy("proxy stopped");
     const retry = runtime.enableForDevice(UDID);
     await clearing.promise;
     const again = runtime.enableForDevice(UDID);
-    const results = Promise.all([retry, again].map((promise) => promise.catch((error: unknown) => error)));
+    const results = Promise.all(
+      [retry, again].map((promise) => promise.catch((error: unknown) => error)),
+    );
     const shutdown = runtime.disableAll();
     clear.release();
     await shutdown;
@@ -479,7 +553,10 @@ describe("capture runtime", () => {
       const clearing = gate();
       const clear = gate();
       const { runtime, calls } = harness({
-        clearInjection: async () => { clearing.release(); await clear.promise; },
+        clearInjection: async () => {
+          clearing.release();
+          await clear.promise;
+        },
       });
       await runtime.enableForDevice(UDID, ["header"]);
       const stopping = runtime.disableForDevice(UDID);
@@ -519,7 +596,13 @@ describe("capture runtime", () => {
     const { runtime } = harness({
       startProxy: async (_store, deps) => {
         started = deps.fields ?? [];
-        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+        return {
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: () => {},
+          close: async () => {},
+        };
       },
     });
     const meta = await runtime.enableForDevice(UDID, ["header", "request-body"]);
@@ -534,8 +617,11 @@ describe("capture runtime", () => {
       startProxy: async () => {
         starts++;
         return {
-          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
-          setFields: (fields) => void applied.push(fields), close: async () => {},
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push(fields),
+          close: async () => {},
         };
       },
     });
@@ -647,9 +733,15 @@ describe("capture runtime", () => {
     unsubscribe();
 
     expect(seen).toEqual([
-      "cleared", "meta:starting", "meta:capturing", "started",
+      "cleared",
+      "meta:starting",
+      "meta:capturing",
+      "started",
       "meta:not-enabled",
-      "cleared", "meta:starting", "meta:capturing", "started",
+      "cleared",
+      "meta:starting",
+      "meta:capturing",
+      "started",
     ]);
   });
 
@@ -695,7 +787,9 @@ describe("capture runtime", () => {
 
     const error = await runtime.disableAll().catch((e) => e);
     expect(error).toBeInstanceOf(AggregateError);
-    expect((error as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["device already shut down"]);
+    expect((error as AggregateError).errors.map((e) => (e as Error).message)).toEqual([
+      "device already shut down",
+    ]);
     expect(runtime.storeFor(OTHER)).toBeNull();
   });
 
@@ -725,7 +819,12 @@ describe("capture runtime", () => {
     expect(runtime.storeFor(UDID)).toBeNull();
 
     runtime.refuseCapture(null);
-    const prepared = await runtime.capability.setEnabled({ udid: UDID, enabled: true, bundleId: null, options: {} });
+    const prepared = await runtime.capability.setEnabled({
+      udid: UDID,
+      enabled: true,
+      bundleId: null,
+      options: {},
+    });
     expect(prepared).not.toBeNull();
     await runtime.disableAll();
   });
@@ -816,7 +915,9 @@ describe("capture runtime", () => {
     releaseClear();
     await Promise.all([stopping, starting]);
 
-    expect(calls.indexOf("injection-cleared")).toBeLessThan(calls.lastIndexOf(`injected:${PORT_FILE}`));
+    expect(calls.indexOf("injection-cleared")).toBeLessThan(
+      calls.lastIndexOf(`injected:${PORT_FILE}`),
+    );
     expect(runtime.metaFor(UDID).attachment).toBe("capturing");
 
     // And the session that survived is the one shutdown has to find.
@@ -873,7 +974,13 @@ describe("capture runtime", () => {
     const { runtime } = harness({
       startProxy: async (_store, deps) => {
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+        return {
+          address: "127.0.0.1:9123",
+          portFile: "/tmp/fake-confdir/proxy-port",
+          caPem: async () => CA_PEM,
+          setFields: () => {},
+          close: async () => {},
+        };
       },
     });
     await runtime.enableForDevice(UDID);
@@ -987,7 +1094,10 @@ describe("capture runtime", () => {
     const capturingStore = capturing.runtime.storeFor(UDID);
     if (!capturingStore) throw new Error("expected capture store");
     capturingStore.noteTraffic(1500, 200);
-    expect(capturing.runtime.throughputFor(UDID)).toEqual({ netInBytesPerSec: 1500, netOutBytesPerSec: 200 });
+    expect(capturing.runtime.throughputFor(UDID)).toEqual({
+      netInBytesPerSec: 1500,
+      netOutBytesPerSec: 200,
+    });
   });
 
   test("reads as starting, not as failed, while it is still coming up", async () => {
@@ -998,7 +1108,13 @@ describe("capture runtime", () => {
     const { runtime } = harness({
       startProxy: async () => {
         await gate;
-        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+        return {
+          address: "127.0.0.1:9123",
+          portFile: "/tmp/fake-confdir/proxy-port",
+          caPem: async () => CA_PEM,
+          setFields: () => {},
+          close: async () => {},
+        };
       },
     });
 
@@ -1010,7 +1126,6 @@ describe("capture runtime", () => {
     release();
     expect((await pending).attachment).toBe("capturing");
   });
-
 
   test("reports a device that quietly stopped capturing after consecutive misses", async () => {
     const { runtime } = harness({ isInjected: async () => false, checkIntervalMs: 0 });
@@ -1034,7 +1149,13 @@ describe("capture runtime", () => {
       checkIntervalMs: 0,
       startProxy: async (_store, deps) => {
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+        return {
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          setFields: () => {},
+          close: async () => {},
+        };
       },
       isInjected: async () => {
         // The second probe is still waiting when the proxy exits.
@@ -1223,8 +1344,13 @@ describe("capture runtime", () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-owner-"));
     const clear = gate();
     const clearing = gate();
-    const first = harness({ writeDiskArtifacts: true, captureDirFor: () => dir,
-      clearInjection: async () => { clearing.release(); await clear.promise; },
+    const first = harness({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      clearInjection: async () => {
+        clearing.release();
+        await clear.promise;
+      },
     });
     const second = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
     await first.runtime.enableForDevice(UDID);
@@ -1427,7 +1553,8 @@ describe("capture runtime with the real capability transaction", () => {
     writeFileSync(dylib, "");
     writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
     // While the failure file exists, the first write to DYLD_INSERT_LIBRARIES fails and consumes it.
-    shims = installShims({ xcrun: `#!/usr/bin/env node
+    shims = installShims({
+      xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
@@ -1441,7 +1568,8 @@ if (command === 'getenv') process.stdout.write(env[name] || '');
 if (command === 'setenv') env[name] = value;
 if (command === 'unsetenv') delete env[name];
 fs.writeFileSync(path, JSON.stringify(env));
-` });
+`,
+    });
   });
 
   afterEach(() => {

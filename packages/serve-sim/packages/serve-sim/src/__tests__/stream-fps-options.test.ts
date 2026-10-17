@@ -13,7 +13,16 @@ describe("streamFpsOptions", () => {
   });
 
   test("keeps a custom value at or below the limit selectable", () => {
-    expect(values(streamFpsOptions(24, 120))).toEqual(["24", "120", "60", "30", "20", "15", "10", "5"]);
+    expect(values(streamFpsOptions(24, 120))).toEqual([
+      "24",
+      "120",
+      "60",
+      "30",
+      "20",
+      "15",
+      "10",
+      "5",
+    ]);
     expect(values(streamFpsOptions(24))).toEqual(["24", "60", "30", "20", "15", "10", "5"]);
   });
 

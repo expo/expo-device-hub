@@ -31,8 +31,7 @@ export type UploadManagerClock = {
 export const SYSTEM_UPLOAD_MANAGER_CLOCK: UploadManagerClock = {
   now: Date.now,
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (timer) =>
-    clearTimeout(timer as ReturnType<typeof setTimeout>),
+  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
 };
 
 export type UploadManagerOptions = {
@@ -147,10 +146,7 @@ function isUploadCleanupFailure(error: unknown): boolean {
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return false;
   }
-  return (
-    error.code === "upload-cleanup-failed" ||
-    error.code === "adb-cleanup-failed"
-  );
+  return error.code === "upload-cleanup-failed" || error.code === "adb-cleanup-failed";
 }
 
 /**
@@ -182,22 +178,14 @@ export class UploadManager {
   #closePromise: Promise<void> | null = null;
 
   constructor(options: UploadManagerOptions = {}) {
-    this.#maxActive = positiveInteger(
-      options.maxActive ?? DEFAULT_MAX_ACTIVE,
-      "maxActive",
-    );
-    this.#maxQueued = nonNegativeInteger(
-      options.maxQueued ?? DEFAULT_MAX_QUEUED,
-      "maxQueued",
-    );
+    this.#maxActive = positiveInteger(options.maxActive ?? DEFAULT_MAX_ACTIVE, "maxActive");
+    this.#maxQueued = nonNegativeInteger(options.maxQueued ?? DEFAULT_MAX_QUEUED, "maxQueued");
     this.#queueTimeoutMs = nonNegativeInteger(
       options.queueTimeoutMs ?? DEFAULT_QUEUE_TIMEOUT_MS,
       "queueTimeoutMs",
     );
     if (this.#queueTimeoutMs > MAX_UPLOAD_QUEUE_TIMEOUT_MS) {
-      throw new TypeError(
-        `queueTimeoutMs must be at most ${MAX_UPLOAD_QUEUE_TIMEOUT_MS}`,
-      );
+      throw new TypeError(`queueTimeoutMs must be at most ${MAX_UPLOAD_QUEUE_TIMEOUT_MS}`);
     }
     this.#clock = options.clock ?? SYSTEM_UPLOAD_MANAGER_CLOCK;
   }
@@ -211,32 +199,19 @@ export class UploadManager {
       return this.#rejectImmediately<T>(contextError("closed", context));
     }
     if (this.#cancelledGenerations.has(context.generation)) {
-      return this.#rejectImmediately<T>(
-        contextError("device-session-changed", context),
-      );
+      return this.#rejectImmediately<T>(contextError("device-session-changed", context));
     }
     if (options.sessionSignal?.aborted) {
       return this.#rejectImmediately<T>(
-        contextError(
-          "device-session-changed",
-          context,
-          options.sessionSignal.reason,
-        ),
+        contextError("device-session-changed", context, options.sessionSignal.reason),
       );
     }
     if (options.requestSignal?.aborted) {
       return this.#rejectImmediately<T>(
-        contextError(
-          "upload-cancelled",
-          context,
-          options.requestSignal.reason,
-        ),
+        contextError("upload-cancelled", context, options.requestSignal.reason),
       );
     }
-    if (
-      this.#active.size >= this.#maxActive &&
-      this.#queue.length >= this.#maxQueued
-    ) {
+    if (this.#active.size >= this.#maxActive && this.#queue.length >= this.#maxQueued) {
       return this.#rejectImmediately<T>(contextError("queue-full", context));
     }
 
@@ -254,16 +229,8 @@ export class UploadManager {
       cleanup: null,
     };
     this.#totals.accepted++;
-    this.#listenForAbort(
-      job,
-      options.requestSignal,
-      "upload-cancelled",
-    );
-    this.#listenForAbort(
-      job,
-      options.sessionSignal,
-      "device-session-changed",
-    );
+    this.#listenForAbort(job, options.requestSignal, "upload-cancelled");
+    this.#listenForAbort(job, options.sessionSignal, "device-session-changed");
 
     if (job.cancellation) {
       this.#finishQueuedCancellation(job);
@@ -275,10 +242,7 @@ export class UploadManager {
       this.#queue.push(job as UploadJob<unknown>);
       const timer = this.#clock.setTimeout(() => {
         if (job.state !== "queued") return;
-        this.#cancel(
-          job,
-          contextError("queue-timeout", job.context),
-        );
+        this.#cancel(job, contextError("queue-timeout", job.context));
       }, this.#queueTimeoutMs);
       if (job.state === "queued") job.queueTimer = timer;
       else this.#clock.clearTimeout(timer);
@@ -286,27 +250,18 @@ export class UploadManager {
     return job.deferred.promise;
   }
 
-  async cancelGeneration(
-    generation: number,
-    cause?: unknown,
-  ): Promise<void> {
+  async cancelGeneration(generation: number, cause?: unknown): Promise<void> {
     nonNegativeInteger(generation, "generation");
     this.#cancelledGenerations.add(generation);
     const cleanups: Promise<void>[] = [];
 
     for (const job of [...this.#queue]) {
       if (job.context.generation !== generation) continue;
-      this.#cancel(
-        job,
-        contextError("device-session-changed", job.context, cause),
-      );
+      this.#cancel(job, contextError("device-session-changed", job.context, cause));
     }
     for (const job of this.#active.values()) {
       if (job.context.generation !== generation) continue;
-      this.#cancel(
-        job,
-        contextError("device-session-changed", job.context, cause),
-      );
+      this.#cancel(job, contextError("device-session-changed", job.context, cause));
       if (job.cleanup) cleanups.push(job.cleanup);
     }
 
@@ -341,9 +296,7 @@ export class UploadManager {
       active: this.#active.size,
       queued: this.#queue.length,
       oldestQueuedAgeMs:
-        this.#queue.length === 0
-          ? null
-          : Math.max(0, now - this.#queue[0]!.enqueuedMs),
+        this.#queue.length === 0 ? null : Math.max(0, now - this.#queue[0]!.enqueuedMs),
       limits: {
         active: this.#maxActive,
         queued: this.#maxQueued,
@@ -376,9 +329,7 @@ export class UploadManager {
       this.#cancel(job, contextError(code, job.context, signal.reason));
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    job.listenerCleanup.push(() =>
-      signal.removeEventListener("abort", onAbort),
-    );
+    job.listenerCleanup.push(() => signal.removeEventListener("abort", onAbort));
     if (signal.aborted) onAbort();
   }
 

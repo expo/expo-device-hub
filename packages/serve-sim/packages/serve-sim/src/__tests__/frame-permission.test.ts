@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { requestFramePermission, shouldAskFrameForClipboardRead, takeFramePermissionGrant } from "../client/utils/frame-permission";
+import {
+  requestFramePermission,
+  shouldAskFrameForClipboardRead,
+  takeFramePermissionGrant,
+} from "../client/utils/frame-permission";
 
 type Frame = {
   posted: Array<{ message: unknown; targetOrigin: string }>;
@@ -8,7 +12,9 @@ type Frame = {
 };
 
 function withGlobals(values: Record<string, unknown>, run: () => void): void {
-  const previous = new Map(Object.keys(values).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  const previous = new Map(
+    Object.keys(values).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
+  );
   for (const [name, value] of Object.entries(values)) {
     Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
   }
@@ -22,13 +28,22 @@ function withGlobals(values: Record<string, unknown>, run: () => void): void {
   }
 }
 
-function withFrame(policy: "permissionsPolicy" | "featurePolicy" | null, allowed: string[], run: (frame: Frame) => void) {
+function withFrame(
+  policy: "permissionsPolicy" | "featurePolicy" | null,
+  allowed: string[],
+  run: (frame: Frame) => void,
+) {
   const posted: Frame["posted"] = [];
   const stored = new Map<string, string>();
   let features = allowed;
-  const doc = policy ? { [policy]: { allowsFeature: (feature: string) => features.includes(feature) } } : {};
+  const doc = policy
+    ? { [policy]: { allowsFeature: (feature: string) => features.includes(feature) } }
+    : {};
   const win = {
-    parent: { postMessage: (message: unknown, targetOrigin: string) => posted.push({ message, targetOrigin }) },
+    parent: {
+      postMessage: (message: unknown, targetOrigin: string) =>
+        posted.push({ message, targetOrigin }),
+    },
     sessionStorage: {
       getItem: (key: string) => stored.get(key) ?? null,
       setItem: (key: string, value: string) => stored.set(key, value),
@@ -37,11 +52,17 @@ function withFrame(policy: "permissionsPolicy" | "featurePolicy" | null, allowed
   };
   const parent = win.parent;
   const nav = { clipboard: { readText: async () => "" } };
-  withGlobals({ window: win, document: doc, navigator: nav }, () => run({
-    posted,
-    allow: (next) => { features = next; },
-    setFramed: (framed) => { (win as { parent: unknown }).parent = framed ? parent : win; },
-  }));
+  withGlobals({ window: win, document: doc, navigator: nav }, () =>
+    run({
+      posted,
+      allow: (next) => {
+        features = next;
+      },
+      setFramed: (framed) => {
+        (win as { parent: unknown }).parent = framed ? parent : win;
+      },
+    }),
+  );
 }
 
 describe("shouldAskFrameForClipboardRead", () => {

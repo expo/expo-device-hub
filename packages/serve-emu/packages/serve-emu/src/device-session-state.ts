@@ -2,10 +2,7 @@ import type { Gesture } from "./input.ts";
 import type { GeoFix } from "./location.ts";
 import { LogcatHub } from "./logcat.ts";
 import { MetricsSampler } from "./metrics.ts";
-import {
-  RoutePlayback,
-  type RoutePlaybackClock,
-} from "./route-playback.ts";
+import { RoutePlayback, type RoutePlaybackClock } from "./route-playback.ts";
 import {
   SessionRecorder,
   SessionReplayConflictError,
@@ -16,19 +13,12 @@ type DeviceStateOwner = object;
 
 type ReplayInputTarget = {
   finish?(signal: AbortSignal): Promise<void> | void;
-  dispatchGesture(
-    gesture: Gesture,
-    signal: AbortSignal,
-  ): Promise<void> | void;
+  dispatchGesture(gesture: Gesture, signal: AbortSignal): Promise<void> | void;
 };
 
 type DeviceSessionStateOptions = {
   serial: string;
-  applyLocation(
-    serial: string,
-    fix: GeoFix,
-    signal: AbortSignal,
-  ): Promise<void>;
+  applyLocation(serial: string, fix: GeoFix, signal: AbortSignal): Promise<void>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -36,9 +26,7 @@ type DeviceSessionStateOptions = {
 };
 
 function abortReason(signal: AbortSignal, fallback: string): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException(fallback, "AbortError");
+  return signal.reason instanceof Error ? signal.reason : new DOMException(fallback, "AbortError");
 }
 
 /**
@@ -99,9 +87,7 @@ export class DeviceSessionState {
           ? this.#inputTargets.get(this.#activeInputOwner)
           : undefined;
         if (!target) {
-          throw new SessionReplayConflictError(
-            "device stream changed during session replay",
-          );
+          throw new SessionReplayConflictError("device stream changed during session replay");
         }
         await target.dispatchGesture(gesture, signal);
       },
@@ -133,9 +119,7 @@ export class DeviceSessionState {
 
   activate(owner: DeviceStateOwner, target: ReplayInputTarget): void {
     if (!this.#owners.has(owner) || this.#disposeTask) {
-      throw new SessionReplayConflictError(
-        "cannot activate an unowned device session state",
-      );
+      throw new SessionReplayConflictError("cannot activate an unowned device session state");
     }
     this.#inputTargets.set(owner, target);
     this.#activeInputOwner = owner;
@@ -154,8 +138,7 @@ export class DeviceSessionState {
     }
     this.#inputTargets.delete(owner);
     if (this.#activeInputOwner === owner) {
-      this.#activeInputOwner =
-        Array.from(this.#inputTargets.keys()).at(-1) ?? null;
+      this.#activeInputOwner = Array.from(this.#inputTargets.keys()).at(-1) ?? null;
     }
     if (this.#owners.size > 0) return Promise.resolve();
     return this.#dispose(reason);
@@ -170,10 +153,7 @@ export class DeviceSessionState {
       throw abortReason(this.signal, "device session state is closed");
     }
     if (signal.aborted) throw abortReason(signal, "location update aborted");
-    const combined =
-      signal === this.signal
-        ? signal
-        : AbortSignal.any([signal, this.signal]);
+    const combined = signal === this.signal ? signal : AbortSignal.any([signal, this.signal]);
     await this.#applyLocation(this.serial, fix, combined);
     if (combined.aborted) {
       throw abortReason(combined, "location update aborted");

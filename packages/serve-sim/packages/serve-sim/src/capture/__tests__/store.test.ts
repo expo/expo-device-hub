@@ -199,7 +199,7 @@ describe("clampBody", () => {
   });
 
   test("passes a small body through untouched", () => {
-    expect(clampBody([Buffer.from("hello ") , Buffer.from("world")])).toEqual({
+    expect(clampBody([Buffer.from("hello "), Buffer.from("world")])).toEqual({
       text: "hello world",
       truncated: false,
     });

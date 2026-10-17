@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  setEmulatorLocationAsync,
-  type LocationChildProcess,
-} from "../src/location.ts";
+import { setEmulatorLocationAsync, type LocationChildProcess } from "../src/location.ts";
 
 class FakeLocationChild implements LocationChildProcess {
   stdout = {
@@ -46,17 +43,11 @@ class TrackingAbortSignal {
   reason: unknown;
   listeners = new Set<EventListenerOrEventListenerObject>();
 
-  addEventListener(
-    _type: string,
-    listener: EventListenerOrEventListenerObject,
-  ): void {
+  addEventListener(_type: string, listener: EventListenerOrEventListenerObject): void {
     this.listeners.add(listener);
   }
 
-  removeEventListener(
-    _type: string,
-    listener: EventListenerOrEventListenerObject,
-  ): void {
+  removeEventListener(_type: string, listener: EventListenerOrEventListenerObject): void {
     this.listeners.delete(listener);
   }
 

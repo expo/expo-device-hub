@@ -12,12 +12,12 @@
  * it in `global.css`). Import once per DOM component subtree via
  * `import '@expo/hub-components/theme.css'`.
  */
-@import '@expo/styleguide/dist/expo-theme.css';
+@import "@expo/styleguide/dist/expo-theme.css";
 
 :root {
   /* Fonts — match website (styles/globals.css) exactly. */
-  --expo-font-sans: 'Inter', -apple-system, 'system-ui', sans-serif;
-  --expo-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --expo-font-sans: "Inter", -apple-system, "system-ui", sans-serif;
+  --expo-font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   /* Radii — Tailwind preset borderRadius scale */
   --expo-radius-xs: 2px;
@@ -50,6 +50,6 @@
 }
 
 /* React's inline-style serialization does not yet expose this new CSS property. */
-[data-device-frame-screen='true'] {
+[data-device-frame-screen="true"] {
   corner-shape: var(--expo-device-frame-corner-shape, round);
 }

@@ -32,9 +32,7 @@ describe("StreamModePanel", () => {
     expect(markup).toContain('value="webrtc"');
     expect(markup).toContain("Loading viewer transports…");
     expect(markup).toContain("Download stats");
-    expect(markup).toContain(
-      "Download a redacted JSON snapshot of viewer and server statistics.",
-    );
+    expect(markup).toContain("Download a redacted JSON snapshot of viewer and server statistics.");
     expect(markup).not.toContain("gRPC image mode");
   });
 
@@ -48,9 +46,7 @@ describe("StreamModePanel", () => {
       />,
     );
     expect(idleMarkup).toContain('type="button"');
-    expect(idleMarkup).toContain(
-      'aria-describedby="stream-stats-download-feedback"',
-    );
+    expect(idleMarkup).toContain('aria-describedby="stream-stats-download-feedback"');
     expect(idleMarkup).toContain('role="status"');
     expect(idleMarkup).toContain("Download stats");
 
@@ -125,11 +121,7 @@ describe("StreamModePanel", () => {
 
   test("renders an accessible explicit PNG/MMAP/RGB888 selector for the gRPC source", () => {
     const markup = renderToStaticMarkup(
-      <GrpcImageModeSelector
-        value="mmap"
-        disabled={false}
-        onChange={() => {}}
-      />,
+      <GrpcImageModeSelector value="mmap" disabled={false} onChange={() => {}} />,
     );
 
     expect(markup).toContain("<legend>gRPC image mode</legend>");
@@ -142,25 +134,17 @@ describe("StreamModePanel", () => {
     expect(markup).not.toContain("disabled");
 
     const disabledMarkup = renderToStaticMarkup(
-      <GrpcImageModeSelector
-        value="png"
-        disabled
-        onChange={() => {}}
-      />,
+      <GrpcImageModeSelector value="png" disabled onChange={() => {}} />,
     );
     expect(disabledMarkup).toContain("<fieldset");
-    expect(disabledMarkup).toContain("disabled=\"\"");
+    expect(disabledMarkup).toContain('disabled=""');
   });
 });
 
 test("renders RGB888 applied and disabled during a pending change", () => {
   for (const disabled of [false, true]) {
     const markup = renderToStaticMarkup(
-      <GrpcImageModeSelector
-        value="rgb888"
-        disabled={disabled}
-        onChange={() => {}}
-      />,
+      <GrpcImageModeSelector value="rgb888" disabled={disabled} onChange={() => {}} />,
     );
     expect(markup).toContain('checked="" value="rgb888"');
     expect(markup).toContain("Raw pixels over gRPC");
@@ -183,17 +167,30 @@ test("renders RGB888 applied and disabled during a pending change", () => {
 
 test("renders the active hardware encoder and disables an unavailable hardware option", () => {
   const hardware = renderToStaticMarkup(
-    <GrpcEncoderSelector value="hardware" available={["software", "hardware"]} disabled={false} encoderName="h264_videotoolbox" onChange={() => {}} />,
+    <GrpcEncoderSelector
+      value="hardware"
+      available={["software", "hardware"]}
+      disabled={false}
+      encoderName="h264_videotoolbox"
+      onChange={() => {}}
+    />,
   );
   expect(hardware).toContain('aria-label="Encoder"');
   expect(hardware).toContain('aria-describedby="grpc-encoder-status"');
   expect(hardware).toContain('<option value="hardware" selected="">Hardware</option>');
-  expect(hardware).toContain('Active encoder: h264_videotoolbox');
+  expect(hardware).toContain("Active encoder: h264_videotoolbox");
   const unavailable = renderToStaticMarkup(
-    <GrpcEncoderSelector value="software" available={["software"]} disabled encoderName="libx264" hardwareEncoderError="Hardware encoder unavailable" onChange={() => {}} />,
+    <GrpcEncoderSelector
+      value="software"
+      available={["software"]}
+      disabled
+      encoderName="libx264"
+      hardwareEncoderError="Hardware encoder unavailable"
+      onChange={() => {}}
+    />,
   );
   expect(unavailable).toContain('<fieldset class="stream-mode-fieldset" disabled="">');
   expect(unavailable).toContain('<option value="hardware" disabled="">Hardware</option>');
   expect(unavailable).toContain('role="alert"');
-  expect(unavailable).toContain('Hardware encoder unavailable');
+  expect(unavailable).toContain("Hardware encoder unavailable");
 });

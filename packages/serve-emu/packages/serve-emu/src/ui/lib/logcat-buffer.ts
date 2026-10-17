@@ -65,14 +65,8 @@ export class LogcatRingBuffer {
       typeof optionsOrMaxLines === "number"
         ? { maxLines: optionsOrMaxLines, maxBytes: positionalMaxBytes }
         : optionsOrMaxLines;
-    this.maxLines = positiveInteger(
-      options.maxLines ?? DEFAULT_LOGCAT_MAX_LINES,
-      "maxLines",
-    );
-    this.maxBytes = positiveInteger(
-      options.maxBytes ?? DEFAULT_LOGCAT_MAX_BYTES,
-      "maxBytes",
-    );
+    this.maxLines = positiveInteger(options.maxLines ?? DEFAULT_LOGCAT_MAX_LINES, "maxLines");
+    this.maxBytes = positiveInteger(options.maxBytes ?? DEFAULT_LOGCAT_MAX_BYTES, "maxBytes");
     this.#entries = new Array(this.maxLines);
   }
 
@@ -82,8 +76,7 @@ export class LogcatRingBuffer {
 
     for (const entry of entries) {
       const entryBytes =
-        textEncoder.encode(entry.line).byteLength +
-        textEncoder.encode(entry.at).byteLength;
+        textEncoder.encode(entry.line).byteLength + textEncoder.encode(entry.at).byteLength;
 
       // A line that cannot fit by itself must not evict useful existing lines.
       if (entryBytes > this.maxBytes) {
@@ -94,8 +87,7 @@ export class LogcatRingBuffer {
 
       while (
         this.#count > 0 &&
-        (this.#count >= this.maxLines ||
-          this.#bytes + NEWLINE_BYTES + entryBytes > this.maxBytes)
+        (this.#count >= this.maxLines || this.#bytes + NEWLINE_BYTES + entryBytes > this.maxBytes)
       ) {
         this.#dropOldest();
         dropped++;
@@ -165,9 +157,7 @@ export class LogcatRingBuffer {
   }
 }
 
-export type LogcatPublishScheduler<Handle = number> = (
-  callback: () => void,
-) => Handle;
+export type LogcatPublishScheduler<Handle = number> = (callback: () => void) => Handle;
 export type LogcatPublishCanceler<Handle = number> = (handle: Handle) => void;
 
 /** Coalesces any number of appends into at most one scheduled publication. */
@@ -185,8 +175,7 @@ export class LogcatBatchPublisher<Handle = number> {
     publish: (snapshot: LogcatBufferSnapshot) => void,
     schedule: LogcatPublishScheduler<Handle> = (callback) =>
       requestAnimationFrame(callback) as Handle,
-    cancel: LogcatPublishCanceler<Handle> = (handle) =>
-      cancelAnimationFrame(handle as number),
+    cancel: LogcatPublishCanceler<Handle> = (handle) => cancelAnimationFrame(handle as number),
   ) {
     this.buffer = buffer;
     this.#publish = publish;

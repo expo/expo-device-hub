@@ -27,7 +27,7 @@ Do not flag those by hand. Flag behavior, safety, and evidence.
   so and shows a tap, drag, and scroll on a non-affected device.
 - **The first MJPEG frame after connect is a cached seed, not the live
   screen.** After switching a simulator to dark mode, `simctl ui <udid>
-  appearance` read back `dark` while the first frame from a fresh
+appearance` read back `dark` while the first frame from a fresh
   `stream.mjpeg` connection was still the earlier light frame, byte for
   byte. Evidence built from the first frame proves nothing. Use a later
   frame, or `simctl io <udid> screenshot` on your own device.

@@ -1,6 +1,12 @@
 import WebSocket from "ws";
 import type { ServeSimDeviceState } from "../state";
-import { HINGE_POSES, hingePoseOrientation, type HingeControlCommand, type HingeControlState, type HingePose } from "../hinge-control";
+import {
+  HINGE_POSES,
+  hingePoseOrientation,
+  type HingeControlCommand,
+  type HingeControlState,
+  type HingePose,
+} from "../hinge-control";
 import type { StreamConfig } from "../client/types";
 import { previewScreenConfig } from "../client/simulator/screen-config-state";
 
@@ -16,13 +22,19 @@ export async function selectHingeControl(state: ServeSimDeviceState, command: Hi
       settled = true;
       clearTimeout(timeout);
       socket.close();
-      if (error) reject(error); else resolve();
+      if (error) reject(error);
+      else resolve();
     }
     socket.on("error", finish);
     socket.on("close", () => finish(new Error("Hinge connection closed before acknowledgement")));
-    socket.on("open", () => socket.send(Buffer.concat([
-      Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command })),
-    ])));
+    socket.on("open", () =>
+      socket.send(
+        Buffer.concat([
+          Buffer.from([0x10]),
+          Buffer.from(JSON.stringify({ requestId: 1, command })),
+        ]),
+      ),
+    );
     socket.on("message", (data) => {
       const frame = Buffer.from(data as Buffer);
       if (frame[0] !== 0x90) return;
@@ -36,7 +48,11 @@ export function selectPose(state: ServeSimDeviceState, value: HingePose) {
   return selectHingeControl(state, { control: "pose", value });
 }
 
-export async function waitForHingeConfig(state: ServeSimDeviceState, expected: Partial<StreamConfig>, timeoutMs = 5000): Promise<StreamConfig> {
+export async function waitForHingeConfig(
+  state: ServeSimDeviceState,
+  expected: Partial<StreamConfig>,
+  timeoutMs = 5000,
+): Promise<StreamConfig> {
   const url = state.streamUrl.replace(/\/stream\.[^/]+$/, "/config");
   const deadline = Date.now() + timeoutMs;
   let config: StreamConfig | undefined;
@@ -46,13 +62,20 @@ export async function waitForHingeConfig(state: ServeSimDeviceState, expected: P
       signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
     });
     if (!response.ok) throw new Error(`Hinge config failed: ${response.status}`);
-    config = previewScreenConfig(await response.json() as StreamConfig);
-    if (Object.entries(expected).every(([key, value]) => key === "hingeAngle" && typeof value === "number"
-      ? config!.hingeAngle !== undefined && Math.abs(config!.hingeAngle - value) <= 1
-      : config![key as keyof StreamConfig] === value)) return config;
+    config = previewScreenConfig((await response.json()) as StreamConfig);
+    if (
+      Object.entries(expected).every(([key, value]) =>
+        key === "hingeAngle" && typeof value === "number"
+          ? config!.hingeAngle !== undefined && Math.abs(config!.hingeAngle - value) <= 1
+          : config![key as keyof StreamConfig] === value,
+      )
+    )
+      return config;
     await Bun.sleep(50);
   } while (Date.now() < deadline);
-  throw new Error(`hinge did not settle to ${JSON.stringify(expected)}; last ${JSON.stringify(config)}`);
+  throw new Error(
+    `hinge did not settle to ${JSON.stringify(expected)}; last ${JSON.stringify(config)}`,
+  );
 }
 
 export async function restoreHingeState(state: ServeSimDeviceState, original: HingeControlState) {
@@ -60,7 +83,9 @@ export async function restoreHingeState(state: ServeSimDeviceState, original: Hi
   if (preset) {
     await selectPose(state, preset.id);
     await waitForHingeConfig(state, {
-      hingeAngle: preset.angle, physicalOrientation: hingePoseOrientation(preset.id), tableMode: preset.id === "tent",
+      hingeAngle: preset.angle,
+      physicalOrientation: hingePoseOrientation(preset.id),
+      tableMode: preset.id === "tent",
     });
   }
   if (original.hingeAngle !== undefined && original.hingeAngle !== preset?.angle) {

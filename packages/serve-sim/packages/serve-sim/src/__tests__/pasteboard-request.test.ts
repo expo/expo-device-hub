@@ -1,10 +1,26 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, promises as fs, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  promises as fs,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { PasteboardTooLargeError, writeSimPasteboard } from "../sim-pasteboard";
-import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard } from "../sim-pasteboard-reader";
-import { PasteboardCopyTimeoutError, copyFromSim, waitForPasteboardChange } from "../sim-pasteboard-copy";
+import {
+  clipboardCapability,
+  pasteboardTarget,
+  requestInjectedPasteboard,
+} from "../sim-pasteboard-reader";
+import {
+  PasteboardCopyTimeoutError,
+  copyFromSim,
+  waitForPasteboardChange,
+} from "../sim-pasteboard-copy";
 import { withShimsAsync } from "./helpers";
 
 function container(): string {
@@ -13,7 +29,11 @@ function container(): string {
 
 function paths(root: string) {
   const dir = join(root, "tmp");
-  return { dir, done: join(dir, "serve-sim-pasteboard.txt.done"), request: join(dir, "serve-sim-pasteboard.request") };
+  return {
+    dir,
+    done: join(dir, "serve-sim-pasteboard.txt.done"),
+    request: join(dir, "serve-sim-pasteboard.request"),
+  };
 }
 
 test("clipboard is a default all-apps capability with no load delay", () => {
@@ -121,7 +141,7 @@ describe("requestInjectedPasteboard", () => {
     expect(newNonce).not.toBe(oldNonce);
     await fs.writeFile(`${done}.pending`, `${oldNonce}\n${"x".repeat(5 * 1024 * 1024)}`);
     await fs.rename(`${done}.pending`, done);
-    for (let attempt = 0; attempt < 200 && await fs.stat(done).catch(() => null); attempt++) {
+    for (let attempt = 0; attempt < 200 && (await fs.stat(done).catch(() => null)); attempt++) {
       await Bun.sleep(5);
     }
     expect(await fs.stat(done).catch(() => null)).toBeNull();
@@ -133,7 +153,9 @@ describe("requestInjectedPasteboard", () => {
   test("rejects an oversized answer carrying our nonce", async () => {
     const root = container();
     const answered = answerOnce(root, "x".repeat(5 * 1024 * 1024));
-    await expect(requestInjectedPasteboard(root, 3000)).rejects.toBeInstanceOf(PasteboardTooLargeError);
+    await expect(requestInjectedPasteboard(root, 3000)).rejects.toBeInstanceOf(
+      PasteboardTooLargeError,
+    );
     expect(await answered).toBe(true);
   });
 
@@ -143,28 +165,43 @@ describe("requestInjectedPasteboard", () => {
     const open = fs.open.bind(fs);
     let release!: () => void;
     let staleOpened!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
-    const opened = new Promise<void>((resolve) => { staleOpened = resolve; });
-    let held = false;
-    const openSpy = spyOn(fs, "open").mockImplementation(async (...args: Parameters<typeof fs.open>) => {
-      const file = await open(...args);
-      if (!held && (args[0] === done || args[0] === `${done}.reading`)) {
-        held = true;
-        staleOpened();
-        await gate;
-      }
-      return file;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
+    const opened = new Promise<void>((resolve) => {
+      staleOpened = resolve;
+    });
+    let held = false;
+    const openSpy = spyOn(fs, "open").mockImplementation(
+      async (...args: Parameters<typeof fs.open>) => {
+        const file = await open(...args);
+        if (!held && (args[0] === done || args[0] === `${done}.reading`)) {
+          held = true;
+          staleOpened();
+          await gate;
+        }
+        return file;
+      },
+    );
     const reading = requestInjectedPasteboard(root, 1000);
     void reading.catch(() => {});
     try {
-      for (let attempt = 0; attempt < 200 && !(await fs.stat(request).catch(() => null)); attempt++) {
+      for (
+        let attempt = 0;
+        attempt < 200 && !(await fs.stat(request).catch(() => null));
+        attempt++
+      ) {
         await Bun.sleep(5);
       }
       expect(await fs.stat(request).catch(() => null)).not.toBeNull();
       await fs.writeFile(`${done}.pending`, "expired-nonce\nstale");
       await fs.rename(`${done}.pending`, done);
-      await Promise.race([opened, Bun.sleep(1000).then(() => { throw new Error("Reader did not open the stale answer"); })]);
+      await Promise.race([
+        opened,
+        Bun.sleep(1000).then(() => {
+          throw new Error("Reader did not open the stale answer");
+        }),
+      ]);
       expect(await answerOnce(root, "fresh")).toBe(true);
       release();
       expect(await reading).toBe("fresh");
@@ -194,7 +231,9 @@ describe("requestInjectedPasteboard", () => {
 
 describe("pasteboardTarget", () => {
   test("asks the frontmost app", () => {
-    expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toBe("dev.expo.App");
+    expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toBe(
+      "dev.expo.App",
+    );
   });
 
   test("falls back to the app this session launched when nothing is frontmost", () => {
@@ -202,7 +241,9 @@ describe("pasteboardTarget", () => {
   });
 
   test("asks the launched app over the Home screen", () => {
-    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, "host.exp.Exponent")).toBe("host.exp.Exponent");
+    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, "host.exp.Exponent")).toBe(
+      "host.exp.Exponent",
+    );
   });
 
   test("has nothing to ask when no app is known", () => {
@@ -215,7 +256,9 @@ describe("copyFromSim", () => {
   test("waits for an app's delayed clipboard update and times out without one", async () => {
     let count = 5;
     const delayed = waitForPasteboardChange(async () => count, count, 1000);
-    setTimeout(() => { count = 6; }, 300);
+    setTimeout(() => {
+      count = 6;
+    }, 300);
     await delayed;
     await expect(waitForPasteboardChange(async () => count, count, 100)).rejects.toBeInstanceOf(
       PasteboardCopyTimeoutError,
@@ -225,7 +268,9 @@ describe("copyFromSim", () => {
   test("checks once more when a copy finishes during the final wait", async () => {
     let count = 5;
     const waiting = waitForPasteboardChange(async () => count, count, 100);
-    setTimeout(() => { count = 6; }, 90);
+    setTimeout(() => {
+      count = 6;
+    }, 90);
     await waiting;
   });
 
@@ -244,9 +289,13 @@ else cat > ${quoted}; count=$(cat ${quotedCount} 2>/dev/null || printf 0); print
 fi
 `;
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let shortcutStarted!: () => void;
-    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    const shortcut = new Promise<void>((resolve) => {
+      shortcutStarted = resolve;
+    });
     try {
       await withShimsAsync({ xcrun }, async () => {
         const udid = `COPY-LOCK-TEST-${process.pid}`;
@@ -290,9 +339,11 @@ fi
     try {
       await withShimsAsync({ xcrun }, async () => {
         let pressed = false;
-        await expect(copyFromSim(`COPY-BASELINE-TEST-${process.pid}`, async () => {
-          pressed = true;
-        })).rejects.toThrow("change count unavailable");
+        await expect(
+          copyFromSim(`COPY-BASELINE-TEST-${process.pid}`, async () => {
+            pressed = true;
+          }),
+        ).rejects.toThrow("change count unavailable");
         expect(pressed).toBe(false);
         expect(readFileSync(board, "utf8")).toBe("previous text");
       });
@@ -317,10 +368,12 @@ fi
 `;
     try {
       await withShimsAsync({ xcrun }, async () => {
-        await expect(copyFromSim(`COPY-SIZE-TEST-${process.pid}`, async () => {
-          writeFileSync(board, "x".repeat(4 * 1024 * 1024 + 1));
-          writeFileSync(count, "2");
-        })).rejects.toBeInstanceOf(PasteboardTooLargeError);
+        await expect(
+          copyFromSim(`COPY-SIZE-TEST-${process.pid}`, async () => {
+            writeFileSync(board, "x".repeat(4 * 1024 * 1024 + 1));
+            writeFileSync(count, "2");
+          }),
+        ).rejects.toBeInstanceOf(PasteboardTooLargeError);
         expect(readFileSync(board).length).toBe(4 * 1024 * 1024 + 1);
       });
     } finally {
@@ -355,10 +408,11 @@ fi
     try {
       await withShimsAsync({ xcrun }, async () => {
         const udid = `COPY-INSTALL-TEST-${process.pid}`;
-        const copy = () => copyFromSim(udid, async () => {
-          writeFileSync(board, "copied");
-          writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
-        });
+        const copy = () =>
+          copyFromSim(udid, async () => {
+            writeFileSync(board, "copied");
+            writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
+          });
         await copy();
         await copy();
         expect(readFileSync(installs, "utf8")).toBe("install\n");
@@ -408,9 +462,10 @@ fi
     try {
       await withShimsAsync({ xcrun }, async () => {
         const udid = `COPY-REPLACE-TEST-${process.pid}`;
-        const copy = () => copyFromSim(udid, async () => {
-          writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
-        });
+        const copy = () =>
+          copyFromSim(udid, async () => {
+            writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
+          });
         await Promise.all([copy(), copy()]);
         expect(readFileSync(installs, "utf8")).toBe("uninstall\ninstall\n");
         expect(readFileSync(join(installed, "serve-sim-pasteboard"), "utf8")).toBe("shipped");

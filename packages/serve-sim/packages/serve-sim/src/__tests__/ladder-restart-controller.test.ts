@@ -7,11 +7,26 @@ function harness() {
   const armed = new Map<number, () => void>();
   let next = 0;
   let runs = 0;
-  const ladder = createLadderRestart(() => { runs += 1; }, {
-    setTimeout: (handler, ms) => { delays.push(ms); armed.set(++next, handler); return next; },
-    clearTimeout: (id) => { if (id !== undefined) armed.delete(id); },
-  });
-  const fire = () => { const [id, handler] = [...armed.entries()][0]!; armed.delete(id); handler(); };
+  const ladder = createLadderRestart(
+    () => {
+      runs += 1;
+    },
+    {
+      setTimeout: (handler, ms) => {
+        delays.push(ms);
+        armed.set(++next, handler);
+        return next;
+      },
+      clearTimeout: (id) => {
+        if (id !== undefined) armed.delete(id);
+      },
+    },
+  );
+  const fire = () => {
+    const [id, handler] = [...armed.entries()][0]!;
+    armed.delete(id);
+    handler();
+  };
   return { ladder, delays, armed, fire, runs: () => runs };
 }
 

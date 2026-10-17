@@ -13,9 +13,7 @@ type ExecCall = {
   opts: ExecOpts;
 };
 
-function result(
-  overrides: Partial<ExecResult<string>> = {},
-): ExecResult<string> {
+function result(overrides: Partial<ExecResult<string>> = {}): ExecResult<string> {
   return {
     status: 0,
     signal: null,
@@ -27,9 +25,7 @@ function result(
   };
 }
 
-function upload(
-  overrides: Partial<LocalUploadFile> = {},
-): LocalUploadFile {
+function upload(overrides: Partial<LocalUploadFile> = {}): LocalUploadFile {
   return {
     path: "/private/tmp/serve-emu-upload/upload",
     filename: "sample.apk",
@@ -56,13 +52,7 @@ describe("staged app management uploads", () => {
     expect(calls).toEqual([
       {
         cmd: "adb",
-        args: [
-          "-s",
-          "device-a",
-          "install",
-          "-r",
-          "/private/tmp/serve-emu-upload/upload",
-        ],
+        args: ["-s", "device-a", "install", "-r", "/private/tmp/serve-emu-upload/upload"],
         opts: {
           timeout: 120_000,
           signal: controller.signal,
@@ -101,8 +91,7 @@ describe("staged app management uploads", () => {
       uploadId: () => "fixed",
     });
 
-    const partial =
-      "/sdcard/Pictures/.serve-emu-fixed-My-photo.jpg.part";
+    const partial = "/sdcard/Pictures/.serve-emu-fixed-My-photo.jpg.part";
     const final = "/sdcard/Pictures/My-photo.jpg";
     expect(imported).toEqual({
       ok: true,
@@ -190,24 +179,19 @@ describe("staged app management uploads", () => {
   test("reports a remote partial cleanup failure with the primary failure", async () => {
     const pushError = new Error("push process failed");
     let calls = 0;
-    const importing = importMediaFile(
-      "device-a",
-      upload({ filename: "large.bin" }),
-      undefined,
-      {
-        uploadId: () => "cleanup",
-        execText: async () => {
-          calls++;
-          if (calls === 2) {
-            return result({ status: null, error: pushError });
-          }
-          if (calls === 3) {
-            return result({ status: 1, stderr: "rm failed" });
-          }
-          return result();
-        },
+    const importing = importMediaFile("device-a", upload({ filename: "large.bin" }), undefined, {
+      uploadId: () => "cleanup",
+      execText: async () => {
+        calls++;
+        if (calls === 2) {
+          return result({ status: null, error: pushError });
+        }
+        if (calls === 3) {
+          return result({ status: 1, stderr: "rm failed" });
+        }
+        return result();
       },
-    );
+    });
 
     let error: unknown;
     try {
@@ -218,8 +202,7 @@ describe("staged app management uploads", () => {
     expect(error).toBeInstanceOf(AppManagementError);
     expect(error).toMatchObject({
       code: "adb-cleanup-failed",
-      message:
-        "failed to remove partial upload /sdcard/Download/.serve-emu-cleanup-large.bin.part",
+      message: "failed to remove partial upload /sdcard/Download/.serve-emu-cleanup-large.bin.part",
     });
     expect(error).toHaveProperty("cause");
     expect((error as Error).cause).toBeInstanceOf(AggregateError);

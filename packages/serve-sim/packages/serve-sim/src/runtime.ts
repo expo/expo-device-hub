@@ -83,8 +83,8 @@ function parseHttpRequestHead(buffer: Buffer): {
 function isWebSocketUpgrade(headers: Record<string, string | string[]>): boolean {
   const upgrade = headers.upgrade;
   const connection = headers.connection;
-  const upgradeValue = Array.isArray(upgrade) ? upgrade.join(",") : upgrade ?? "";
-  const connectionValue = Array.isArray(connection) ? connection.join(",") : connection ?? "";
+  const upgradeValue = Array.isArray(upgrade) ? upgrade.join(",") : (upgrade ?? "");
+  const connectionValue = Array.isArray(connection) ? connection.join(",") : (connection ?? "");
   return /websocket/i.test(upgradeValue) && /upgrade/i.test(connectionValue);
 }
 
@@ -109,10 +109,7 @@ function proxyTcpToHttpServer(socket: Socket, firstChunk: Buffer, port: number):
   });
 }
 
-function createPreviewFrontServer(
-  middleware: PreviewMiddleware,
-  internalPort: number,
-): NetServer {
+function createPreviewFrontServer(middleware: PreviewMiddleware, internalPort: number): NetServer {
   return createNetServer((socket) => {
     let buffered = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
@@ -127,7 +124,11 @@ function createPreviewFrontServer(
         return;
       }
       socket.removeListener("data", onData);
-      if (middleware.handleUpgrade && isWebSocketUpgrade(parsed.headers) && !isExecWebSocketPath(parsed.url)) {
+      if (
+        middleware.handleUpgrade &&
+        isWebSocketUpgrade(parsed.headers) &&
+        !isExecWebSocketPath(parsed.url)
+      ) {
         const head = buffered.subarray(parsed.headEnd);
         const req = {
           method: parsed.method,
