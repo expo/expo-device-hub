@@ -96,7 +96,9 @@ an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev
 covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
 sends the token. The Hub's own routes, such as `/healthz` and `/api/devices`, follow serve-sim's
 rule: a loopback page or an origin named here may read them, and the Hub answers their preflight
-before the token check.
+before the token check. The same rules decide which pages may open the Hub's WebSockets, with or
+without `--require-token`; a page on the Hub's own origin always may, and a client that sends no
+`Origin`, such as a CLI, is not affected.
 
 ### Record an Android session
 

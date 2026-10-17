@@ -39,9 +39,9 @@ Options:
                              in the startup link. Use it whenever the Hub is reachable from the network.
       --frame-ancestor <origin> Allow this origin to embed the Hub in a frame (repeatable). Accepts a
                              subdomain wildcard, e.g. https://*.expo.dev. Only applies with --require-token.
-      --cors-origin <origin> Allow a page on this origin to use the Hub's routes and the iOS and Android
-                             backends with @expo/hub-client (repeatable). Accepts a subdomain wildcard,
-                             e.g. https://*.expo.dev, as serve-sim does.
+      --cors-origin <origin> Allow a page on this origin to use the Hub's routes and sockets and the iOS
+                             and Android backends with @expo/hub-client (repeatable). Accepts a subdomain
+                             wildcard, e.g. https://*.expo.dev, as serve-sim does.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
       --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(', ')} (default: ${DEFAULT_WEBRTC_CODEC})
