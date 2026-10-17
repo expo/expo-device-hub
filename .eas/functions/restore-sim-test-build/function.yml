@@ -12,10 +12,11 @@ runs:
         artifact_id: ${{ inputs.artifact_id }}
     - name: Restore built binaries and test fixtures
       env:
-        BUILD_ARCHIVE: ${{ steps.download_build.outputs.artifact_path }}
+        BUILD_DIRECTORY: ${{ steps.download_build.outputs.artifact_path }}
       run: |
-        shasum -a 256 "$BUILD_ARCHIVE"
-        tar -xzf "$BUILD_ARCHIVE" -C packages/serve-sim/packages/serve-sim
+        # eas/download_artifact already extracts .tar.gz files.
+        test -f "$BUILD_DIRECTORY/dist/native/serve-sim-native.node"
+        cp -a "$BUILD_DIRECTORY/dist" packages/serve-sim/packages/serve-sim/
 
     - name: Install mitmproxy
       run: |
