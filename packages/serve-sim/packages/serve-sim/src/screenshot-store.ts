@@ -62,7 +62,8 @@ async function isEmptyFileAsync(path: string): Promise<boolean> {
 export async function captureScreenshotAsync(p: {
   udid: string;
   fileName: string;
-}): Promise<HostActionResult> {
+  display: number;
+}, readActiveDisplay?: () => Promise<number>): Promise<HostActionResult> {
   const hours = MAX_SCREENSHOT_AGE_MS / 3_600_000;
   const staged = join(SCREENSHOT_DIR, p.fileName);
   // Only the count and the reservation are serialized: holding the queue across simctl would let one
@@ -91,10 +92,19 @@ export async function captureScreenshotAsync(p: {
       exitCode: 1,
     };
   }
-  const shot = await runInvocation({
-    file: "xcrun",
-    args: ["simctl", "io", p.udid, "screenshot", staged],
-  });
+  let display = p.display;
+  let shot: HostActionResult = { stdout: "", stderr: "", exitCode: 1 };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    shot = await runInvocation({
+      file: "xcrun",
+      args: ["simctl", "io", p.udid, "screenshot", `--display=${display}`, staged],
+    });
+    if (!readActiveDisplay) break;
+    const current = await readActiveDisplay();
+    if (current === display) break;
+    display = current;
+    shot = { stdout: "", stderr: "The active display kept changing. Retry the screenshot once the fold has finished.", exitCode: 1 };
+  }
   // Or the reservation holds a ceiling slot until the prune. Only while still empty: a second capture
   // of the same name may have written a real screenshot there since.
   if (shot.exitCode !== 0) {

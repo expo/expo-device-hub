@@ -452,6 +452,10 @@ actor CaptureEngine {
             ?? CapturedScreenInfo(width: screenSize.width, height: screenSize.height)
     }
 
+    func activeScreenID() async throws -> UInt32 {
+        try await frameCapture.activeScreenID()
+    }
+
     func subscribeScreenChanges(_ callback: @escaping @Sendable () -> Void) async -> @Sendable () async -> Void {
         await frameCapture.subscribeScreenChanges(callback)
     }

@@ -74,7 +74,7 @@ describe("what a preview link may spend on the host", () => {
     "refuses to write a screenshot named %s",
     async (fileName) => {
       await expect(
-        runHostActionAsync({ action: "screenshot.capture", params: { udid: UDID, fileName } }, BIN),
+        runHostActionAsync({ action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } }, BIN),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
     },
   );
@@ -186,7 +186,7 @@ describe("what a preview link may spend on the host", () => {
 
       await withShimsAsync({ xcrun: EXIT_0_SHIM, cp: EXIT_0_SHIM }, async () => {
         const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName: basename(captured) } },
+          { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName: basename(captured) } },
           BIN,
         );
         expect(result.exitCode).toBe(0);

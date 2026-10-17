@@ -18,7 +18,7 @@ const MAX_SCREENSHOT_AGE_MS = 6 * 60 * 60 * 1000;
 // for six hours. Two minutes is far longer than this file runs, so the prune at the start of a
 // capture cannot remove a filler a test is still counting on.
 const FIXTURE_MTIME_MS = Date.now() - MAX_SCREENSHOT_AGE_MS + 2 * 60 * 1000;
-const params = { udid: UDID, fileName: "serve-sim-screenshot-next.png" };
+const params = { display: 1, udid: UDID, fileName: "serve-sim-screenshot-next.png" };
 
 let shims: ReturnType<typeof installShims>;
 
