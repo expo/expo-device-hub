@@ -3,7 +3,7 @@ import { simctlSync } from "../simctl";
 import { existsSync } from "fs";
 import { join } from "path";
 import type { KeyEvent } from "../text-to-keys";
-import { foregroundTracker } from "../foreground-tracker";
+import { foregroundTracker, frontmostAppFromRecentLogs } from "../foreground-tracker";
 import {
   clearLaunchState,
   enableCapabilities,
@@ -108,6 +108,20 @@ export function ensureFixtureInstalled(udid: string): string {
   return FIXTURE_BUNDLE;
 }
 
+// The tracker misses an app that comes forward before its log stream is attached.
+async function subscribeToForeground(udid: string): Promise<{ unsubscribe: () => void }> {
+  const subscription = foregroundTracker.subscribe(udid);
+  const attached = await Promise.race([
+    foregroundTracker.whenStreaming(udid).then(() => true),
+    Bun.sleep(15_000).then(() => false),
+  ]);
+  if (!attached) {
+    subscription.unsubscribe();
+    throw new Error(`the foreground log stream for ${udid} did not start within 15 s`);
+  }
+  return subscription;
+}
+
 async function waitForLaunch(udid: string, bundleId: string, pid: number | null): Promise<number> {
   if (pid == null) throw new Error(`${bundleId} did not report a pid when it launched`);
   const deadline = Date.now() + 15_000;
@@ -119,8 +133,10 @@ async function waitForLaunch(udid: string, bundleId: string, pid: number | null)
     }
     await Bun.sleep(100);
   }
+  const history = await frontmostAppFromRecentLogs(udid).catch(() => null);
   throw new Error(
-    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it (peek=${JSON.stringify(foregroundTracker.peek(udid))})`,
+    `${bundleId} launched (pid ${pid}) but the foreground tracker never saw it ` +
+      `(peek=${JSON.stringify(foregroundTracker.peek(udid))}, SpringBoard log history=${JSON.stringify(history)})`,
   );
 }
 
@@ -145,7 +161,7 @@ export async function launchWithoutReader(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
   await resetLaunchState(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -154,7 +170,7 @@ export async function launchTrackedApp(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
   killSimApp(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -184,7 +200,7 @@ export async function openAppForPasteboard(
 ): Promise<{ unsubscribe: () => void; pid: number }> {
   const dylib = locatePasteboardReaderDylib();
   if (!dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
-  const subscription = foregroundTracker.subscribe(udid);
+  const subscription = await subscribeToForeground(udid);
 
   const cleanup = () => {
     subscription.unsubscribe();
