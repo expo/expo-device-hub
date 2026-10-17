@@ -15,6 +15,7 @@ import {
   duoFaceDownFraming,
   duoInitialView,
   duoObservedView,
+  duoPhysicalView,
   duoPresetView,
   duoRotateView,
   type DuoFaceDownFraming,
@@ -338,6 +339,12 @@ export function useDuoFraming(
       return;
     }
     const turns = nativeRotationRef.current.observe(orientation);
+    const baseline = nativeRotationRef.current.takeBaseline();
+    if (baseline) {
+      setDuoView(pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline));
+      duoViewLocalIntentRef.current = false;
+      return;
+    }
     if (!turns) return;
     // Native presets take their canonical framing. Other external turns rotate
     // the visible camera, independently of delayed app geometry.
