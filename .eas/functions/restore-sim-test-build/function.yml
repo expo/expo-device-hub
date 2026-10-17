@@ -19,12 +19,9 @@ runs:
         cp -a "$BUILD_DIRECTORY/dist" packages/serve-sim/packages/serve-sim/
 
     - name: Install mitmproxy
+      # The same Homebrew cask that eas/install_mitmproxy installs for device sessions.
       run: |
-        # Install the Python package without a quarantined macOS app bundle.
-        brew install python@3.14
-        "$(brew --prefix python@3.14)/bin/python3.14" -m venv /tmp/serve-sim-ci-mitmproxy
-        /tmp/serve-sim-ci-mitmproxy/bin/pip install mitmproxy==12.2.3
-        export SERVE_SIM_MITMDUMP=/tmp/serve-sim-ci-mitmproxy/bin/mitmdump
-        set-env SERVE_SIM_MITMDUMP "$SERVE_SIM_MITMDUMP"
+        brew install --cask mitmproxy
+        # Check the exact binary capture will select, including SERVE_SIM_MITMDUMP.
         cd packages/serve-sim
         bun packages/serve-sim/scripts/test/check-mitmproxy.ts
