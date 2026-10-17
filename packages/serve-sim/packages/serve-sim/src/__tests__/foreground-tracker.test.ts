@@ -229,6 +229,40 @@ describe("createForegroundTrackerCache", () => {
     expect(children).toHaveLength(1); // no respawn once stopped
   });
 
+  test("reports the log stream live only after it prints its header", async () => {
+    const { cache, children } = trackerWithFakeStream(0);
+    const sub = cache.subscribe("UDID");
+    let live = false;
+    void cache.whenStreaming("UDID").then(() => (live = true));
+    await tick();
+    expect(live).toBe(false); // `log stream` misses lines logged before it attaches
+
+    children[0]!.stdout.emit("data", Buffer.from('Filtering the log data using "process == SpringBoard"\n'));
+    await tick();
+    expect(live).toBe(true);
+
+    children[0]!.emit("exit");
+    await tick();
+    live = false;
+    void cache.whenStreaming("UDID").then(() => (live = true));
+    await tick();
+    expect(live).toBe(false); // the respawned stream has to attach again
+
+    children[1]!.stdout.emit("data", Buffer.from("Filtering the log data\n"));
+    await tick();
+    expect(live).toBe(true);
+    sub.unsubscribe();
+  });
+
+  test("releases a caller waiting for the stream when the last subscriber leaves", async () => {
+    const { cache } = trackerWithFakeStream();
+    const sub = cache.subscribe("UDID");
+    const waiting = cache.whenStreaming("UDID");
+    sub.unsubscribe();
+    await waiting;
+    await cache.whenStreaming("UDID"); // nothing tracks it now
+  });
+
   test("ref-counts duplicate callbacks independently", () => {
     const { cache, children } = trackerWithFakeStream();
     const callback = () => {};
