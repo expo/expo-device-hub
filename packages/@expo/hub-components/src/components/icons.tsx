@@ -236,6 +236,58 @@ export function TrashIcon({ size = 16, color = 'currentColor', strokeWidth = 1.6
   );
 }
 
+/** Lucide `clipboard-paste` — the toolbar's Paste from Device button. */
+export function ClipboardPasteIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path
+        d="M11 14h10M16 4h2a2 2 0 0 1 2 2v1.344M17 18l4-4-4-4M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <rect
+        x="8"
+        y="2"
+        width="8"
+        height="4"
+        rx="1"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Lucide `copy` — the toolbar's Copy from Simulator button. */
+export function CopyIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect
+        x="8"
+        y="8"
+        width="14"
+        height="14"
+        rx="2"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `smartphone` — the device glyph in the add-device picker's recent rows. */
 export function SmartphoneIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
   return (

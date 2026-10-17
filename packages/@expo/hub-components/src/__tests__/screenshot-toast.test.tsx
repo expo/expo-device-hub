@@ -58,7 +58,7 @@ describe('ScreenshotToast', () => {
 
   test('announces the toasts through a polite live region', () => {
     const markup = renderToStaticMarkup(<ScreenshotToaster />);
-    expect(markup).toContain('aria-label="Screenshot notifications');
+    expect(markup).toContain('aria-label="Device notifications');
     expect(markup).toContain('aria-live="polite"');
   });
 });

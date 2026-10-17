@@ -55,7 +55,7 @@ const FRAME_ASSETS: DeviceFrameAssets = {
   },
 };
 
-const STREAMING_CLIENT = { status: 'streaming' } as DeviceClient;
+const STREAMING_CLIENT = { status: 'streaming', capabilities: { clipboard: false } } as DeviceClient;
 const LANDSCAPE_CLIENT = {
   status: 'streaming',
   screen: { width: 2400, height: 1080, orientation: 'landscape_left' },
