@@ -84,6 +84,7 @@ import { useDeviceSettingsReadStatus } from './useDeviceSettingsReadStatus';
 import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
+import { resolveDeviceStreamMode } from './stream-mode';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
@@ -105,6 +106,7 @@ import {
   type DeviceStreamEncoderSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamSettingCapabilities,
+  type DeviceStreamMode,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
   type ForegroundApp,
@@ -192,7 +194,43 @@ type ServeEmuApiInfo = {
   screenRecording?: unknown;
   size?: { width?: unknown; height?: unknown };
   stream?: unknown;
+  viewerTransports?: unknown;
 };
+
+type ServeEmuViewerTransport = 'websocket' | 'webrtc';
+
+/**
+ * Read the video transports serve-emu's `/api` lists in `viewerTransports.available`.
+ * Returns null when an older serve-emu omits the list, or when it lists no known transport.
+ */
+export function parseServeEmuViewerTransports(
+  value: unknown,
+): readonly ServeEmuViewerTransport[] | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const available = (value as Record<string, unknown>).available;
+  if (!Array.isArray(available)) return null;
+  const known = (['websocket', 'webrtc'] as const).filter((transport) =>
+    available.includes(transport),
+  );
+  return known.length > 0 ? known : null;
+}
+
+/**
+ * Viewer stream modes for serve-emu's stream contract. H.264 travels over the video WebSocket,
+ * which `--transport webrtc` refuses. WebRTC needs the host's own WebRTC settings for ICE.
+ * Without a `viewerTransports` list (older serve-emu), the WebSocket always carries video.
+ */
+export function androidModeAvailability(
+  settings: ServeEmuStreamSettings | null,
+  viewerTransports: readonly ServeEmuViewerTransport[] | null,
+): Record<DeviceStreamMode, boolean> {
+  return {
+    mjpeg: false,
+    h264: viewerTransports?.includes('websocket') ?? true,
+    webrtc:
+      settings?.transport === 'webrtc' && (viewerTransports?.includes('webrtc') ?? true),
+  };
+}
 
 function isIceServer(value: unknown): value is WebRtcIceServer {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -269,6 +307,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const activityLastSampleAtRef = useRef(0);
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
+  const [serverViewerTransports, setServerViewerTransports] =
+    useState<readonly ServeEmuViewerTransport[] | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -881,6 +921,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // and so the peer uses the host's ICE servers/policy rather than client input.
   useEffect(() => {
     setServerStreamSettings(null);
+    setServerViewerTransports(null);
     if (!active || !baseUrl) return;
 
     let cancelled = false;
@@ -898,6 +939,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+        const nextViewerTransports = parseServeEmuViewerTransports(info.viewerTransports);
         const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
         setRecordingSnapshot((current) =>
           current.scope === deviceScope && current.status === recordingStatus
@@ -906,6 +948,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+        setServerViewerTransports((current) =>
+          JSON.stringify(current) === JSON.stringify(nextViewerTransports)
+            ? current
+            : nextViewerTransports,
         );
         const width = Number(info.size?.width);
         const height = Number(info.size?.height);
@@ -931,10 +978,24 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
 
-  const webRtcRequested = streamMode === 'webrtc';
-  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
+  const { h264: h264Available, webrtc: webRtcAvailable } = androidModeAvailability(
+    serverStreamSettings,
+    serverViewerTransports,
+  );
+  // Keyed on the flags, so an ICE-only change does not notify capability subscribers.
+  const modeAvailability = useMemo<Record<DeviceStreamMode, boolean>>(
+    () => ({ mjpeg: false, h264: h264Available, webrtc: webRtcAvailable }),
+    [h264Available, webRtcAvailable],
+  );
+  // Until `/api` answers, the transport is unknown: a `--transport webrtc` host refuses a video
+  // WebSocket, so no video starts before then. After that, preserve a supported viewer choice and
+  // map an unavailable one to a mode the host offers.
+  const waitingForStreamMetadata = serverStreamSettings === null;
+  const resolvedStreamMode = waitingForStreamMetadata
+    ? streamMode
+    : resolveDeviceStreamMode(streamMode, modeAvailability);
   const useWebRtc =
-    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
+    resolvedStreamMode === 'webrtc' && serverStreamSettings?.transport === 'webrtc';
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
@@ -1208,7 +1269,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus('idle');
       return;
     }
-    if (waitingForWebRtcMetadata) {
+    if (waitingForStreamMetadata) {
       setStatus('connecting');
       setError(null);
       return;
@@ -1540,7 +1601,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Reconnect only when the target device or server changes — not on every
     // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc, socketProtocols]);
+  }, [active, baseUrl, targetDevice, waitingForStreamMetadata, useWebRtc, socketProtocols]);
 
   // ── WebRTC input WebSocket ──
   // Video travels over the peer connection, but low-latency JSON input and
@@ -2060,14 +2121,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, resetRead, settleRead]);
 
-  const webRtcAvailable = serverStreamSettings?.transport === 'webrtc';
   const streamCapabilities = useMemo<DeviceStreamCapabilities>(
     () => ({
-      modeAvailability: { mjpeg: false, h264: true, webrtc: webRtcAvailable },
+      modeAvailability,
       httpCodecs: ANDROID_STREAM_CODECS,
       webRtcCodecs: ANDROID_STREAM_CODECS,
     }),
-    [webRtcAvailable],
+    [modeAvailability],
   );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;

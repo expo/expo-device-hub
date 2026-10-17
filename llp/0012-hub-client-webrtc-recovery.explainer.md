@@ -5,7 +5,7 @@
 **Systems:** HubClient
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-14 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-16 (Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -44,6 +44,8 @@ serve-sim locks a WebRTC server to WebRTC and refuses its HTTP streams with `409
 - Choosing a codec again resets the backoff [observed: `setWebRtcCodec` in `useIosDevice.ts`].
 
 serve-sim's client restarts the ladder with the same backoff, and it also counts every codec failure [observed: `hooks/use-ladder-restart.ts`, `client.tsx`].
+
+serve-emu's `--transport webrtc` also refuses a video WebSocket with `stream_transport_locked`, and its `/api` then lists only `webrtc` in `viewerTransports.available`. The Android client offers H.264 only when that list has `websocket`. It starts no video before `/api` answers, so an H.264 choice on a locked host falls back to WebRTC. An older serve-emu without the list keeps the WebSocket video [observed: `androidModeAvailability` in `useAndroidDevice.ts`].
 
 ## Bounded stats reads
 

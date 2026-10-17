@@ -130,7 +130,7 @@ serve-emu --running-avds
 | `--max-size` | `1280` | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot` |
 | `--key-frame-interval` | `10` | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts |
 | `--repeat-frame-ms` | `0` | Re-encode the previous frame after N ms without screen changes (`16` ≈ steady 60fps on static screens, at extra CPU/bandwidth cost); `0` keeps the source default: 100ms for scrcpy and 500ms for `grpc-screenshot` |
-| `--transport` | `websocket` | Initial browser video transport: `websocket` or `webrtc`. Each tab can switch independently in the UI |
+| `--transport` | `websocket` | Browser video transport: `websocket` or `webrtc`. With `websocket`, each tab can switch to WebRTC in the UI; `webrtc` allows only WebRTC video |
 | `--stun-url` | public STUN defaults | Comma-separated STUN URL(s) for WebRTC ICE |
 | `--turn-url` | none | Comma-separated TURN URL(s); requires both TURN credential flags |
 | `--turn-username` | none | TURN username |
@@ -691,9 +691,12 @@ release failure is reported in `lastError`, including when replay was cancelled.
 
 Use `/ws?frame-meta=1` to receive a 24-byte `SEMU` v2 frame metadata header before each H.264 access unit: magic `SEMU` (4B), version=2 (1B), flags (1B, bit 0 = keyframe), reserved (2B), PTS (8B BE, µs), and the server send time (8B BE, epoch µs). Same-host clients can compare the send time against their own clock to measure transit and glass-to-glass latency. The bundled UI uses this mode to avoid per-frame NAL scans and to track PTS/keyframe/latency state.
 
-For H.264 sources, each browser tab can independently select WebSocket or
-WebRTC; `--transport` chooses only the initial selection for tabs without a
-saved preference. The server starts its WebRTC publisher lazily on the first
+For H.264 sources with the default `--transport websocket`, each browser tab
+can independently select WebSocket or WebRTC. `--transport webrtc` makes WebRTC
+the only video transport, as serve-sim's `--transport webrtc` does: a video
+WebSocket (`/ws` without `video=0`) is refused with `stream_transport_locked`
+(HTTP 409 on the standalone server, close code 1008 through `createRouter`), and
+`/api` lists only `webrtc` as available. The server starts its WebRTC publisher lazily on the first
 authenticated, same-origin `POST /webrtc/offer`, and releases a viewer through
 `POST /webrtc/close`. A WebRTC viewer keeps `/ws?video=0` open as a control-only
 socket, so input still travels through the active low-latency source control
