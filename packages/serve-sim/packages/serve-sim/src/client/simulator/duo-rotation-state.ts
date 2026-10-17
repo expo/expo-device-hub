@@ -13,14 +13,20 @@ export function createDuoRotationState() {
       pendingUntil = 0;
     },
     request(turns: number, now = Date.now()) {
+      pendingUntil = now + 1500;
       if (displayed === undefined) return;
       displayed = ((displayed + turns) % 4 + 4) % 4;
-      pendingUntil = now + 1500;
     },
     observe(orientation: HingePhysicalOrientation | undefined, now = Date.now()) {
       const index = orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
       if (index < 0) return 0;
-      if (displayed === undefined) { displayed = index; return 0; }
+      // With no pre-request physical baseline, a buffered first sample cannot
+      // tell us whether the optimistic turn has happened. Wait for the grace
+      // timer to seed a settled baseline without turning that camera again.
+      if (displayed === undefined) {
+        if (now < pendingUntil) return 0;
+        displayed = index; pendingUntil = 0; return 0;
+      }
       if (pendingUntil > now && index !== displayed) return 0;
       const turns = ((index - displayed + 6) % 4) - 2;
       displayed = index;

@@ -304,7 +304,7 @@ export function useDuoFraming(
       setDuoView(pose ? duoPresetView(pose) : null);
       if (pose) faceDownFramingRef.current = { saved: null, held: pose === "tent" };
       duoViewLocalIntentRef.current = false;
-    } else if (pose) {
+    } else if (pose && !(duoViewLocalIntentRef.current && physicalPose === null)) {
       if (pose !== previous.pose || physicalPose === undefined) {
         if (faceDownFramingRef.current.saved) {
           faceDownFramingRef.current = { saved: null, held: pose === "tent" };
@@ -331,27 +331,21 @@ export function useDuoFraming(
 
   useEffect(() => {
     const orientation = streamConfig?.physicalOrientation;
-    // Presets choose their own camera and may turn the device out of its plane.
-    // Keep their existing reconciliation instead of adding a second camera turn.
+    // Local hinge controls and out-of-plane poses own their camera baseline.
     const pose = streamConfig?.hingePose;
-    if (
-      hingeOwned ||
-      pose === "book" ||
-      pose === "laptop" ||
-      pose === "tent" ||
-      orientation === "faceup" ||
-      orientation === "facedown"
-    ) {
+    if (hingeOwned || orientation === "faceup" || orientation === "facedown") {
       nativeRotationRef.current.rebase(orientation);
       return;
     }
     const turns = nativeRotationRef.current.observe(orientation);
     if (!turns) return;
-    // The pose effect can clear a remembered preset in the same commit. Rotate
-    // the view that was visible before this observation, not stale app geometry.
+    // Native presets take their canonical framing. Other external turns rotate
+    // the visible camera, independently of delayed app geometry.
     const current = duoControlStateRef.current;
-    setDuoView(duoRotateView(current.duoView ?? current.initialDuoView, turns));
-    duoViewLocalIntentRef.current = true;
+    setDuoView(
+      pose ? duoPresetView(pose) : duoRotateView(current.duoView ?? current.initialDuoView, turns),
+    );
+    duoViewLocalIntentRef.current = false;
   }, [hingeOwned, streamConfig?.hingePose, streamConfig?.physicalOrientation, rotationReadback]);
 
   useEffect(() => {
