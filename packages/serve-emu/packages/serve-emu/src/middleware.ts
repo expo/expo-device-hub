@@ -3234,9 +3234,20 @@ export function createRouter(
     return app.handleRequest(req);
   };
 
+  // A route that throws gets a 500 here, so it keeps the policy below too. The message stays in
+  // the log: it can name internal paths.
+  const routeOrInternalError = async (req: Request): Promise<Response> => {
+    try {
+      return await routeRequest(req);
+    } catch (err) {
+      console.error("[serve-emu] route error:", err);
+      return Response.json({ ok: false, error: "Internal Server Error" }, { status: 500 });
+    }
+  };
+
   // @ref LLP 0003#cors — every route answers with the policy, as serve-sim's do
   const handleRequest = async (req: Request): Promise<Response> =>
-    withCorsPolicy(req, await routeRequest(req), defaults);
+    withCorsPolicy(req, await routeOrInternalError(req), defaults);
 
   // Upgrades never reach `handleRequest`, so the transport checks each one
   // here before `ensure` starts its device. Always true without a token.

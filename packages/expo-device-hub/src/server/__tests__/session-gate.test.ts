@@ -48,6 +48,7 @@ mock.module('../../../vendor/serve-sim/dist/middleware.js', () => ({
       async (request: Request) => {
         simRequests.push(request);
         if (request.method === 'OPTIONS') return preflight(request);
+        if (new URL(request.url).pathname.endsWith('/throws')) throw new Error('sim failed');
         // serve-sim names its own frame policy on its pages.
         if (new URL(request.url).pathname.endsWith('/framed')) {
           return new Response('sim', { headers: { 'Content-Security-Policy': "frame-ancestors 'self' https://a.dev" } });
@@ -77,6 +78,7 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
       handleRequest: async (request: Request) => {
         emuRequests.push(request);
         if (request.method === 'OPTIONS') return preflight.handleRequest(request);
+        if (new URL(request.url).pathname === '/throws') throw new Error('emu failed');
         // A redirect's headers are immutable.
         if (new URL(request.url).pathname === '/moved') return Response.redirect('http://emu.test/', 302);
         return new Response('emu');
@@ -227,6 +229,22 @@ describe('the Hub under a session token', () => {
     }
     expect(simRequests).toEqual([]);
     expect(emuRequests).toEqual([]);
+  });
+
+  // The backends answer their own route errors; this covers one that escapes them.
+  test('answers a backend failure with a 500 that a --cors-origin page can read', async () => {
+    const authorized = { Origin: PAGE, Authorization: `Bearer ${TOKEN}` };
+    for (const path of ['/vendor/serve-sim/throws', '/vendor/serve-emu/throws']) {
+      const allowed = await request(path, { headers: authorized });
+      const other = await request(path, {
+        headers: { Origin: 'https://elsewhere.example', Authorization: `Bearer ${TOKEN}` },
+      });
+      expect([path, allowed?.status]).toEqual([path, 500]);
+      expect([path, allowed?.headers.get('access-control-allow-origin')]).toEqual([path, PAGE]);
+      expect(await allowed?.json()).toEqual({ ok: false, error: 'Internal Server Error' });
+      expect([path, allowed?.headers.get('content-security-policy')]).toEqual([path, FRAME_POLICY]);
+      expect([path, other?.headers.get('access-control-allow-origin')]).toEqual([path, null]);
+    }
   });
 
   test('names no other origin on a refusal, and none on its own routes', async () => {

@@ -321,6 +321,22 @@ describe("createRouter CORS policy", () => {
     }
   });
 
+  test("answers a route that throws with a 500 that keeps the policy and names no detail", async () => {
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], () => {
+      throw new Error("/private/emulator.ini: EACCES");
+    });
+
+    const allowed = await request(`/api/foreground?device=${SERIAL}`, { headers: { Origin: ALLOWED_ORIGIN } });
+    const other = await request(`/api/foreground?device=${SERIAL}`, { headers: { Origin: "https://elsewhere.example" } });
+
+    expect(allowed.status).toBe(500);
+    expect(allowed.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+    expect(await allowed.json()).toEqual({ ok: false, error: "Internal Server Error" });
+    expect(other.status).toBe(500);
+    expect(other.headers.get("access-control-allow-origin")).toBeNull();
+    expect(other.headers.get("vary")).toBe("Origin");
+  });
+
   // The policy wraps the response, so the events must still arrive one by one and stop with the page.
   test("streams events through the policy and stops when the page cancels", async () => {
     let cancelled = false;

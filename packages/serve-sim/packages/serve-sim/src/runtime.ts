@@ -189,7 +189,8 @@ export async function servePreview(opts: {
           return;
         }
         res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(error instanceof Error ? error.message : "Internal Server Error");
+        // The message stays in the log: it can name internal paths.
+        res.end("Internal Server Error");
       });
     },
   );
