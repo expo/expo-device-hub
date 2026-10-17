@@ -42,6 +42,8 @@ export interface PlaybackStallWatchdog {
   stop: () => void;
   /** Reset samples whose counters are no longer comparable. */
   invalidate: () => void;
+  /** Apply a new source cadence without replacing the peer. */
+  setExpectContinuousFrames: (value: boolean) => void;
 }
 
 // @ref LLP 0012#playback-watchdog — one shared poll; idle change-driven streams are not stalls
@@ -120,7 +122,11 @@ export function startPlaybackStallWatchdog({
     pinned = { id: selected.id, framesReceived: selected.framesReceived };
     // Idle samples reset the budget; new undecoded frames retain the frozen-run baseline.
     if (!expectContinuousFrames && selected.framesReceived <= state.received) {
-      state = { decoded: selected.framesDecoded, received: selected.framesReceived, stalledPolls: 0 };
+      state = {
+        decoded: selected.framesDecoded,
+        received: selected.framesReceived,
+        stalledPolls: 0,
+      };
       return;
     }
     const next = nextPlaybackStallState(state, {
@@ -160,10 +166,16 @@ export function startPlaybackStallWatchdog({
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", invalidate);
   return {
     stop() {
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", invalidate);
+      if (typeof document !== "undefined")
+        document.removeEventListener("visibilitychange", invalidate);
       invalidate();
       stopPolling();
     },
     invalidate,
+    setExpectContinuousFrames(value) {
+      if (value === expectContinuousFrames) return;
+      expectContinuousFrames = value;
+      invalidate();
+    },
   };
 }
