@@ -9,11 +9,12 @@ import { execText } from "./exec.ts";
 // @ref LLP 0008#video-packets — Canonical scrcpy wire layouts and upgrade checklist
 const DEVICE_JAR_CACHE_PATH = `/data/local/tmp/serve-emu-scrcpy-server-v${SCRCPY_VERSION}.jar`;
 
-// Some Samsung devices abort app_process when /proc/<pid>/cmdline exceeds
-// about 255 bytes, because a codec plugin copies it into a fixed stack buffer
+// Some Samsung devices abort app_process in libsfplugin_ccodec.so when
+// /proc/<pid>/cmdline exceeds about 255 bytes, likely a fixed-size copy of it
 // (https://github.com/Genymobile/scrcpy/issues/6900). Omit server options that
 // hold the scrcpy server default (`Options.java` at SCRCPY_VERSION). Keep
 // `log_level=info`: the server defaults to debug.
+// @ref LLP 0008#scrcpy-upgrade-checklist — Revalidate this list on a server bump
 const SCRCPY_SERVER_DEFAULT_ARGS = new Set([
   "video=true",
   "video_bit_rate=8000000",

@@ -5,7 +5,7 @@
 **Systems:** ServeEmu
 **Author:** Imported from expo/serve-emu in #78 (original authors are in that repo)
 **Date:** 2026-09-09
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated)
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated); 2026-10-17 (upgrade checklist revalidates the omitted server-default arguments)
 **Related:** LLP 0009
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
@@ -199,6 +199,8 @@ notes do not call one out.
 1. Change `SCRCPY_VERSION` in `scripts/fetch-scrcpy.ts` and fetch the new server.
 2. Compare upstream `DesktopConnection`, `Streamer`, `ControlMessage`,
    `ControlMessageReader`, and server-option parsing with the pinned version.
+   Revalidate `SCRCPY_SERVER_DEFAULT_ARGS` in `src/scrcpy.ts` against the new
+   `Options.java` defaults.
 3. Revalidate socket order and dummy-byte behavior; the device-name and stream
    preambles; v3/v4 session, configuration, and key-frame flags; PTS masking;
    payload bounds; and every encoder in `src/input.ts`.
