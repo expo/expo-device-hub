@@ -2952,11 +2952,12 @@ export function peekDeviceSession(udid: string): DeviceSession | undefined {
 export function getDeviceSession(
   udid: string,
   initialStreamSettings?: StreamSettings,
+  retainExisting = true,
 ): DeviceSession {
   let session = sessions.get(udid);
   if (session) {
     const owner = screenshotOwners.get(session);
-    if (owner) owner.retained = true;
+    if (owner && retainExisting) owner.retained = true;
   }
   if (!session) {
     const createdSession = new DeviceSession(udid, initialStreamSettings);
@@ -2979,12 +2980,19 @@ export function getDeviceSession(
 }
 
 /** Share screenshot startup, releasing capture unless another consumer claims it. */
-export async function withScreenshotDeviceSession<T>(udid: string, settings: StreamSettings | undefined,
-  capture: (session: DeviceSession) => Promise<T>): Promise<T> {
+export async function withScreenshotDeviceSession<T>(
+  udid: string,
+  settings: StreamSettings | undefined,
+  capture: (session: DeviceSession) => Promise<T>,
+): Promise<T> {
   const existing = peekDeviceSession(udid);
   const session = existing ?? getDeviceSession(udid, settings);
-  const owner = screenshotOwners.get(session) ?? (!existing ? { count: 0, retained: false } : undefined);
-  if (owner) { owner.count++; screenshotOwners.set(session, owner); }
+  const owner =
+    screenshotOwners.get(session) ?? (!existing ? { count: 0, retained: false } : undefined);
+  if (owner) {
+    owner.count++;
+    screenshotOwners.set(session, owner);
+  }
   try {
     await session.start();
     return await capture(session);

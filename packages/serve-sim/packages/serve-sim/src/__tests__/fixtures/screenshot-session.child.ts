@@ -40,3 +40,19 @@ test("overlapping screenshots share startup and a newly joined stream retains ca
   expect(peekDeviceSession(UDID)).toBe(shared);expect(stops).toBe(beforeStops);
   closeDeviceSession(UDID);await stopped(beforeStops+1);
 });
+
+test("unknown and health helper requests do not retain temporary screenshot capture",async()=>{
+  const {simMiddleware}=await import("../../middleware");
+  const middleware=simMiddleware({basePath:"/sim"});
+  for(const path of ["unknown","health","config"]){
+    let entered!:()=>void,release!:()=>void;
+    const ready=new Promise<void>(r=>{entered=r;}),gate=new Promise<void>(r=>{release=r;});
+    const beforeStops=stops;
+    const shot=withScreenshotDeviceSession(UDID,undefined,async()=>{entered();await gate;});
+    await ready;
+    await middleware(new Request(`http://localhost/sim/helper/${UDID}/${path}`));
+    release();await shot;await stopped(beforeStops+1);
+    expect(peekDeviceSession(UDID)).toBeUndefined();
+  }
+  await middleware.dispose();
+});
