@@ -5,7 +5,7 @@
 **Systems:** HubClient
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-14 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-15 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -28,11 +28,11 @@ HubClient must recover from WebRTC failures the same way as the serve-sim browse
 ## Signaling deadlines
 
 - A close request (`POST /webrtc/close`) stops waiting after 2 s. A close that never answers must not block the next codec attempt. Page-unload closes use `sendBeacon` or `keepalive` and have no deadline [observed: `closeWebRtcSession` in `webrtc-negotiation.ts`].
-- A `409` from `/webrtc/offer` is retried only when it means that offer setup is busy: `webrtc_session_busy` in `code` or `error`, or a `409` with no named error from an older server. Every other named `409` goes back to the caller at once, because retrying cannot clear it [observed: `isSignalingBusy` in `webrtc-negotiation.ts`].
-- serve-sim names the busy state in `error`, and serve-emu names it in `code`. Both are accepted [observed: `device-session.ts` in serve-sim, `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
+- A `409` from `/webrtc/offer` retries when `code` or `error` names temporary offer contention (`webrtc_session_busy`), capture changing during publisher setup (`webrtc_stream_changed`), or a device-session generation change (`session_changed`). Older unnamed conflicts retain the legacy retry behavior. Other named conflicts return unchanged to the caller. Retries share the existing finite budget and teardown cancellation [observed: `isRetryableOfferConflict` and `postWebRtcOffer` in `webrtc-negotiation.ts`].
+- serve-sim and the serve-emu middleware mounted by Device Hub put the busy name in `error`; standalone serve-emu uses `code` alongside a human-readable `error`. Both fields are accepted [observed: `device-session.ts` in serve-sim, `middleware.ts` and `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
 - Reading the `409` body stays inside the offer deadline, because a body can stall after its headers arrive [observed: `postWebRtcOffer`].
 
-serve-sim's client uses the same 2 s close deadline and the same busy rule [observed: `webrtc-negotiation.ts`].
+serve-sim's client uses the same 2 s close deadline, but its conflict classifier checks only `error` and retries only `webrtc_session_busy` or unnamed errors. HubClient also reads `code`, so an unknown named code without an `error` is final here, and it accepts the two temporary Android restart codes above [observed: `webrtc-negotiation.ts` in both clients].
 
 ## Locked transport
 

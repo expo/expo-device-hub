@@ -1,6 +1,11 @@
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 type SendBeaconLike = (url: string | URL, data?: BodyInit | null) => boolean;
 const CLOSE_TIMEOUT_MS = 2_000;
+const RETRYABLE_OFFER_CONFLICTS = new Set([
+  "webrtc_session_busy",
+  "webrtc_stream_changed",
+  "session_changed",
+]);
 
 export class WebRtcSignalingBusyError extends Error {
   constructor() {
@@ -63,7 +68,7 @@ export async function closeWebRtcSession({
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so unload does not rely on a preflight.
-      if (beacon(beaconUrl, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
+      if (beacon(beaconUrl, new Blob([body], { type: "text/plain;charset=UTF-8" }))) return;
     } catch {}
   }
   await fetchImpl(url, {
@@ -78,8 +83,8 @@ export async function closeWebRtcSession({
   );
 }
 
-// @ref LLP 0012#signaling-deadlines — only offer contention retries; a named 409 is final
-async function isSignalingBusy(response: Response): Promise<boolean> {
+// @ref LLP 0012#signaling-deadlines — retry contention and capture restarts, not permanent conflicts
+async function isRetryableOfferConflict(response: Response): Promise<boolean> {
   const text = await response.clone().text();
   let error: unknown;
   let code: unknown;
@@ -88,11 +93,14 @@ async function isSignalingBusy(response: Response): Promise<boolean> {
     error = body?.error;
     code = body?.code;
   } catch {}
-  return code === "webrtc_session_busy" || error === "webrtc_session_busy" ||
-    (code === undefined && error === undefined);
+  return (
+    (typeof code === "string" && RETRYABLE_OFFER_CONFLICTS.has(code)) ||
+    (typeof error === "string" && RETRYABLE_OFFER_CONFLICTS.has(error)) ||
+    (code === undefined && error === undefined)
+  );
 }
 
-/** Post an SDP offer, retrying while native offer setup is serialized. */
+/** Post an SDP offer, retrying temporary contention or a capture restart during setup. */
 export async function postWebRtcOffer({
   url,
   body,
@@ -123,7 +131,7 @@ export async function postWebRtcOffer({
     }, requestTimeoutMs);
 
     let response: Response;
-    let busy: boolean;
+    let retryable: boolean;
     try {
       response = await fetchImpl(url, {
         method: "POST",
@@ -132,7 +140,7 @@ export async function postWebRtcOffer({
         body,
       });
       // A 409 body can stall after headers arrive; keep its read under this deadline.
-      busy = response.status === 409 && (await isSignalingBusy(response));
+      retryable = response.status === 409 && (await isRetryableOfferConflict(response));
     } catch (error) {
       if (timedOut && !signal?.aborted) throw new WebRtcSignalingTimeoutError();
       throw error;
@@ -141,7 +149,7 @@ export async function postWebRtcOffer({
       signal?.removeEventListener("abort", abortRequest);
     }
 
-    if (!busy) return response;
+    if (!retryable) return response;
     await response.body?.cancel();
     if (attempt === busyRetryCount) throw new WebRtcSignalingBusyError();
     await waitForRetry(busyRetryIntervalMs, signal);
