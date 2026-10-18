@@ -25,9 +25,12 @@ export function isUserFacingBundle(bundleId: string): boolean {
   return !NON_UI_BUNDLE_RE.test(bundleId);
 }
 
-/** Parse a SpringBoard visibility line, e.g. `[app<com.apple.mobilesafari>:43117] Setting process visibility to: Foreground`. */
+/**
+ * Parse a SpringBoard visibility line, e.g. `[app<com.apple.mobilesafari>:43117] Setting process visibility to: Foreground`.
+ * On a cold launch the pid can be -1: SpringBoard shows the scene before the process exists.
+ */
 function parseVisibilityLogMessage(message: string): { app: ForegroundApp; foreground: boolean } | null {
-  const match = /\[app<([^>]+)>:(\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(message);
+  const match = /\[app<([^>]+)>:(-1|\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(message);
   if (!match) return null;
   return { app: { bundleId: match[1]!, pid: parseInt(match[2]!, 10) }, foreground: match[3] === "Foreground" };
 }
@@ -35,23 +38,53 @@ function parseVisibilityLogMessage(message: string): { app: ForegroundApp; foreg
 /** The app a SpringBoard line brings to the foreground, or null for any other line. */
 export function parseForegroundAppLogMessage(message: string): ForegroundApp | null {
   const change = parseVisibilityLogMessage(message);
-  return change?.foreground ? change.app : null;
+  return change?.foreground && change.app.pid !== -1 ? change.app : null;
 }
 
-/** The visible user app after one `log --style ndjson` line; a Background or Unknown line clears it. */
-function visibilityAfterLogLine(visible: ForegroundApp | null, line: string): ForegroundApp | null {
+/** Parse `[app<bundle>:pid] Bootstrap success!`, which SpringBoard logs once a launched process exists. */
+function parseBootstrapLogMessage(message: string): ForegroundApp | null {
+  const match = /\[app<([^>]+)>:(\d+)\] Bootstrap success!/.exec(message);
+  return match ? { bundleId: match[1]!, pid: parseInt(match[2]!, 10) } : null;
+}
+
+/** What the visibility log has said so far. `pending` is an app shown before its process existed (pid -1). */
+interface VisibilityState {
+  visible: ForegroundApp | null;
+  pending: string | null;
+}
+
+const NO_VISIBILITY: VisibilityState = { visible: null, pending: null };
+
+/** The state after one `log --style ndjson` line; a Background or Unknown line clears the app. */
+function visibilityAfterLogLine(state: VisibilityState, line: string): VisibilityState {
   let message: string;
   try {
     message = (JSON.parse(line) as { eventMessage?: string }).eventMessage ?? "";
   } catch {
-    return visible;
+    return state;
+  }
+  const started = parseBootstrapLogMessage(message);
+  if (started) {
+    // SpringBoard does not repeat the visibility line with the real pid, so this line completes it.
+    return started.bundleId === state.pending ? { visible: started, pending: null } : state;
   }
   const change = parseVisibilityLogMessage(message);
-  if (!change || !isUserFacingBundle(change.app.bundleId)) return visible;
-  if (change.foreground) return change.app;
+  if (!change || !isUserFacingBundle(change.app.bundleId)) return state;
+  if (change.app.pid === -1) {
+    if (!change.foreground) {
+      return change.app.bundleId === state.pending ? { ...state, pending: null } : state;
+    }
+    return { ...state, pending: change.app.bundleId };
+  }
+  if (change.foreground) return { visible: change.app, pending: null };
   // SpringBoard may background an old process after its replacement becomes foreground.
-  return visible?.bundleId === change.app.bundleId && visible.pid === change.app.pid ? null : visible;
+  const cleared = state.visible?.bundleId === change.app.bundleId && state.visible.pid === change.app.pid;
+  return cleared ? { ...state, visible: null } : state;
 }
+
+// Visibility lines, plus the line that gives the pid of an app shown before its process started.
+const VISIBILITY_PREDICATE =
+  'process == "SpringBoard" AND (eventMessage CONTAINS "Setting process visibility to:" OR eventMessage CONTAINS "Bootstrap success!")';
 
 const LINE_BUFFER_LIMIT = 1024 * 1024; // drop a pathological unbroken line rather than grow forever
 const RESTART_DELAY_MS = 1000; // bound the respawn rate when the log stream keeps dying (e.g. sim gone)
@@ -65,7 +98,7 @@ function spawnForegroundLogStream(udid: string): ChildProcess {
       "--style", "ndjson",
       "--level", "info",
       "--predicate",
-      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
+      VISIBILITY_PREDICATE,
     ],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
@@ -101,6 +134,7 @@ class ForegroundTracker {
   private child: ChildProcess | null = null;
   private buf = "";
   private latest: ForegroundApp | null = null;
+  private pending: string | null = null;
   private heardFromLog = false;
   // `log stream` prints a "Filtering the log data" header line once it is attached. A line
   // logged before that is lost, so a caller that launches an app waits for it.
@@ -214,7 +248,9 @@ class ForegroundTracker {
         this.releaseStreamingWaiters();
       }
       if (!line) continue;
-      const visible = visibilityAfterLogLine(this.latest, line);
+      const next = visibilityAfterLogLine({ visible: this.latest, pending: this.pending }, line);
+      this.pending = next.pending;
+      const visible = next.visible;
       if (visible === this.latest) continue;
       this.heardFromLog = true;
       // Listeners hear only about apps coming forward; peek reports the cleared state.
@@ -306,9 +342,9 @@ export async function frontmostAppFromRecentLogs(udid: string): Promise<Foregrou
   return new Promise((resolve) => {
     const child = spawn("xcrun", [
       "simctl", "spawn", udid, "log", "show", "--last", "boot", "--style", "ndjson", "--predicate",
-      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
+      VISIBILITY_PREDICATE,
     ], { stdio: ["ignore", "pipe", "ignore"] });
-    let visible: ForegroundApp | null = null;
+    let state = NO_VISIBILITY;
     let buffer = "";
     let settled = false;
     const finish = (result: ForegroundApp | null) => {
@@ -326,15 +362,15 @@ export async function frontmostAppFromRecentLogs(udid: string): Promise<Foregrou
       buffer += chunk;
       let end: number;
       while ((end = buffer.indexOf("\n")) >= 0) {
-        visible = visibilityAfterLogLine(visible, buffer.slice(0, end));
+        state = visibilityAfterLogLine(state, buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
       }
       if (buffer.length > LINE_BUFFER_LIMIT) buffer = "";
     });
     child.once("error", () => finish(null));
     child.once("close", (code) => {
-      if (buffer) visible = visibilityAfterLogLine(visible, buffer);
-      finish(code === 0 ? visible : null);
+      if (buffer) state = visibilityAfterLogLine(state, buffer);
+      finish(code === 0 ? state.visible : null);
     });
   });
 }

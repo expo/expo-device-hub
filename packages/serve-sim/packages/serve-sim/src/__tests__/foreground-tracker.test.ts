@@ -62,6 +62,11 @@ function logChunk(bundleId: string, pid: number, visibility = "Foreground"): Buf
   return Buffer.from(JSON.stringify({ eventMessage }) + "\n");
 }
 
+function bootstrapChunk(bundleId: string, pid: number): Buffer {
+  const eventMessage = `[app<${bundleId}>:${pid}] Bootstrap success!`;
+  return Buffer.from(JSON.stringify({ eventMessage }) + "\n");
+}
+
 function trackerWithFakeStream(restartDelayMs = 1000) {
   const children: ReturnType<typeof fakeChild>[] = [];
   const cache = createForegroundTrackerCache({
@@ -168,6 +173,34 @@ describe("createForegroundTrackerCache", () => {
     child.stdout.emit("data", logChunk("dev.expo.B", 44));
     child.stdout.emit("data", logChunk("dev.expo.B", 22, "Background"));
     expect(cache.peek("UDID")).toEqual({ bundleId: "dev.expo.B", pid: 44 });
+    sub.unsubscribe();
+  });
+
+  test("tracks an app that iOS shows before its process starts", () => {
+    const { cache, children } = trackerWithFakeStream();
+    const seen: ForegroundApp[] = [];
+    const sub = cache.subscribe("UDID", (app) => seen.push(app));
+
+    // On a cold launch, SpringBoard can log the visibility line with pid -1 and never repeat it.
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", -1));
+    expect(cache.peek("UDID")).toBeNull();
+    children[0]!.stdout.emit("data", bootstrapChunk("dev.expo.A", 3796));
+
+    expect(cache.peek("UDID")).toEqual({ bundleId: "dev.expo.A", pid: 3796 });
+    expect(seen).toEqual([{ bundleId: "dev.expo.A", pid: 3796 }]);
+    sub.unsubscribe();
+  });
+
+  test("does not track a pending app that leaves the foreground before its process starts", () => {
+    const { cache, children } = trackerWithFakeStream();
+    const sub = cache.subscribe("UDID");
+
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", -1));
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", -1, "Background"));
+    children[0]!.stdout.emit("data", bootstrapChunk("dev.expo.A", 3796));
+    children[0]!.stdout.emit("data", bootstrapChunk("dev.expo.B", 4000)); // never shown
+
+    expect(cache.peek("UDID")).toBeNull();
     sub.unsubscribe();
   });
 
