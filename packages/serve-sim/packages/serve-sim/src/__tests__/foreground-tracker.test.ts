@@ -44,6 +44,18 @@ for (const state of ["Foreground", "Background"]) {
   );
 });
 
+test.each([false, true])("history drops the old app during a pending launch (bootstrapped: %s)", async (bootstrapped) => {
+  const lines = [logChunk("dev.expo.A", 42), logChunk("dev.expo.B", -1)];
+  if (bootstrapped) lines.push(bootstrapChunk("dev.expo.B", 43));
+  await withShimsAsync({
+    xcrun: `#!/bin/sh\nprintf '%s' '${Buffer.concat(lines).toString()}'\n`,
+  }, async () => {
+    expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toEqual(
+      bootstrapped ? { bundleId: "dev.expo.B", pid: 43 } : null,
+    );
+  });
+});
+
 test("a helper app from AX falls back to the latest visible app in recent history", async () => {
   const app = await frontmostAppOf("FAKE-DEVICE", {
     viaAx: async () => ({ bundleId: "com.apple.iMessageAppsViewService", pid: 7 }),
@@ -200,6 +212,17 @@ describe("createForegroundTrackerCache", () => {
     sub.unsubscribe();
   });
 
+  test.each(["dev.expo.A", "dev.expo.B"])("drops the old pid while %s starts", (bundleId) => {
+    const { cache, children } = trackerWithFakeStream();
+    const sub = cache.subscribe("UDID");
+    children[0]!.stdout.emit("data", logChunk("dev.expo.A", 42));
+    children[0]!.stdout.emit("data", logChunk(bundleId, -1));
+    expect(cache.peek("UDID")).toBeNull();
+    children[0]!.stdout.emit("data", bootstrapChunk(bundleId, 43));
+    expect(cache.peek("UDID")).toEqual({ bundleId, pid: 43 });
+    sub.unsubscribe();
+  });
+
   test("does not track a pending app that leaves the foreground before its process starts", () => {
     const { cache, children } = trackerWithFakeStream();
     const sub = cache.subscribe("UDID");
@@ -253,6 +276,24 @@ describe("createForegroundTrackerCache", () => {
     await tick();
 
     expect(cache.peek("UDID")).toBeNull();
+    sub.unsubscribe();
+  });
+
+  test.each([false, true])("a slow AX seed cannot overwrite a pending launch (cancelled: %s)", async (cancelled) => {
+    let seed!: (app: ForegroundApp | null) => void;
+    const child = fakeChild();
+    const cache = createForegroundTrackerCache({
+      spawnLogStream: () => child as unknown as ChildProcess,
+      frontmostApp: () => new Promise((resolve) => { seed = resolve; }),
+    });
+    const seen: ForegroundApp[] = [];
+    const sub = cache.subscribe("UDID", (app) => seen.push(app));
+    child.stdout.emit("data", logChunk("dev.expo.A", -1));
+    if (cancelled) child.stdout.emit("data", logChunk("dev.expo.A", -1, "Background"));
+    seed({ bundleId: "dev.expo.A", pid: 42 });
+    await tick();
+    expect(cache.peek("UDID")).toBeNull();
+    expect(seen).toEqual([]);
     sub.unsubscribe();
   });
 

@@ -82,7 +82,7 @@ function visibilityAfterLogLine(state: VisibilityState, line: string): Visibilit
     if (!change.foreground) {
       return change.app.bundleId === state.pending ? { ...state, pending: null } : state;
     }
-    return { ...state, pending: change.app.bundleId };
+    return { visible: null, pending: change.app.bundleId };
   }
   if (change.foreground) return { visible: change.app, pending: null };
   // SpringBoard may background an old process after its replacement becomes foreground.
@@ -240,11 +240,14 @@ class ForegroundTracker {
       const line = this.buf.slice(0, nl).trim();
       this.buf = this.buf.slice(nl + 1);
       if (!line) continue;
-      const next = visibilityAfterLogLine({ visible: this.latest, pending: this.pending }, line);
+      const previous = { visible: this.latest, pending: this.pending };
+      const next = visibilityAfterLogLine(previous, line);
+      if (next === previous) continue;
+      // Pending-only transitions also supersede the AX seed that started before the log stream.
+      this.heardFromLog = true;
       this.pending = next.pending;
       const visible = next.visible;
       if (visible === this.latest) continue;
-      this.heardFromLog = true;
       // Listeners hear only about apps coming forward; peek reports the cleared state.
       if (visible) this.set(visible);
       else this.latest = null;
