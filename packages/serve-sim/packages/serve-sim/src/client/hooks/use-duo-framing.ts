@@ -8,7 +8,7 @@ import {
   type HingePose,
 } from "../../hinge-control";
 import type { SimulatorOrientation, StreamConfig } from "../types";
-import { createDuoRotationState } from "../simulator/duo-rotation-state";
+import { createDuoRotationState, DUO_ROTATION_READBACK_GRACE_MS } from "../simulator/duo-rotation-state";
 import { duoPhysicalPoseChanged } from "../simulator/duo-pose";
 import {
   DUO_FACE_DOWN_HELD,
@@ -326,7 +326,7 @@ export function useDuoFraming(
 
   useEffect(() => {
     if (!rotationRequest) return;
-    const timer = setTimeout(() => setRotationReadback((revision) => revision + 1), 1500);
+    const timer = setTimeout(() => setRotationReadback((revision) => revision + 1), DUO_ROTATION_READBACK_GRACE_MS);
     return () => clearTimeout(timer);
   }, [deviceKey, rotationRequest]);
 
