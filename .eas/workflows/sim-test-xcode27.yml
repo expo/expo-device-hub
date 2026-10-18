@@ -1,0 +1,83 @@
+name: serve-sim Xcode 27 build
+
+# For users who build serve-sim from source with Xcode 27. Releases use the Xcode 26 build,
+# which sim-test.yml tests on the Xcode 26 and 27 images. This build runs every night on
+# main, and on a PR with the xcode-27 label: adding the label starts a run, and later
+# pushes run again. See LLP 0014.
+on:
+  schedule:
+    - cron: '17 6 * * *' # 06:17 GMT; EAS is busiest at the top of the hour
+  pull_request:
+    if: ${{ contains(toJSON(github.event.pull_request.labels), 'xcode-27') }}
+  pull_request_labeled:
+    labels: [xcode-27]
+
+concurrency:
+  cancel_in_progress: true
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+jobs:
+  build27:
+    name: Build serve-sim with Xcode 27
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
+    outputs:
+      artifact_id: ${{ steps.upload_build.outputs.artifact_id }}
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Build serve-sim
+        working_directory: packages/serve-sim/packages/serve-sim
+        run: bun run build.ts
+
+      - name: Build native test fixtures
+        run: bash Sources/build-test-fixtures.sh
+        working_directory: packages/serve-sim/packages/serve-sim
+
+      - name: Archive the built package and fixtures
+        working_directory: packages/serve-sim/packages/serve-sim
+        run: |
+          tar -czf /tmp/serve-sim-e2e.tar.gz dist
+          shasum -a 256 /tmp/serve-sim-e2e.tar.gz
+
+      - name: Upload E2E build
+        id: upload_build
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: serve-sim-e2e-build-xcode27
+          path: /tmp/serve-sim-e2e.tar.gz
+
+  # The same two-way split as sim-test.yml; see test-sim-runtime.
+  sim-test-27-build-27:
+    name: Xcode 27 build on Xcode 27 runtime (1/2)
+    needs: [build27]
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build27.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: slow
+
+  sim-test-27-build-27-rest:
+    name: Xcode 27 build on Xcode 27 runtime (2/2)
+    needs: [build27]
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build27.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: rest

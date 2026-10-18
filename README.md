@@ -143,6 +143,24 @@ registers the plugin against itself, so the standalone app still gets the real
 > [`src/server`](packages/expo-device-hub/src/server), rebuild it with
 > `bun run build:server`.
 
+### CI and Xcode support
+
+The published packages build serve-sim's native code with Xcode 26, so they work for
+users on Xcode 26 and Xcode 27. [LLP 0014](llp/0014-serve-sim-xcode-support-and-ci.decision.md)
+has the full support statement.
+
+| When | What runs |
+|---|---|
+| Every push to a PR | Checks: lint and typecheck |
+| Every push to a PR that is ready for review | serve-sim tests: the Xcode 26 build on the iOS 26 and iOS 27 Simulators |
+| Every push to a draft PR with the `ci-ready` label | serve-sim tests, as above |
+| Every push to a PR with the `xcode-27` label | Also an Xcode 27 build, tested on the iOS 27 Simulator |
+| Every night on `main` | The Xcode 27 build, tested on the iOS 27 Simulator |
+
+The serve-sim tests run only when a PR changes serve-sim or its CI files, and they use
+several macOS machines. Open a PR as a draft while you iterate, and add `ci-ready`
+only when you want a run.
+
 ## hub-client
 
 [`@expo/hub-client`](packages/@expo/hub-client) is the **device-client layer**. The
