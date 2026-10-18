@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { appendFile, copyFile, mkdtemp, readdir, rm, stat, writeFile } from "fs/promises";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { tmpdir } from "os";
 import { z } from "zod";
 
@@ -82,6 +82,11 @@ async function pruneStagingAsync(): Promise<number> {
 
 export function stagedUploadPath(uploadId: string): string {
   return join(UPLOAD_DIR, uploadId);
+}
+
+/** Recognize only this server's flat staging files, whose mutations this queue owns. */
+export function getStagedUploadId(path: string): string | undefined {
+  return dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
 }
 
 /** Hold the staging queue while a reader captures bytes, excluding reset, prune and removal. */
