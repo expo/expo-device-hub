@@ -183,8 +183,13 @@ async function captureLaunchDiagnostics(udid: string, bundleId: string, pid: num
   const launchd = xcrun("launchctl list", ["simctl", "spawn", udid, "launchctl", "list"], "launchctl.txt");
   let labels: string[] = [];
   try {
-    const { axDescribeAsync } = await import("../native");
-    const ax = await axDescribeAsync(udid);
+    // Isolate native AX work so a stalled traversal can be killed with the diagnostic process.
+    const ax = execFileSync(process.execPath, [
+      "-e",
+      "const { axDescribeAsync } = await import(process.argv[1]); console.log(await axDescribeAsync(process.argv[2])); process.exit(0);",
+      join(import.meta.dir, "..", "native.ts"),
+      udid,
+    ], { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024 });
     writeFileSync(join(dir, "ax.json"), ax);
     labels = [...new Set([...ax.matchAll(/"(?:AXLabel|AXValue)"\s*:\s*"([^"]{1,80})"/g)].map((match) => match[1]!))];
   } catch (error: unknown) {

@@ -333,12 +333,12 @@ function run(file: string, args: string[], timeout = 0): Promise<string> {
 function simctlUi(udid: string, subcommand: string, value?: string): Promise<string> {
   const args = ["simctl", "ui", udid, subcommand];
   if (value !== undefined) args.push(value);
-  return run("xcrun", args);
+  return run("xcrun", args, SIMCTL_TIMEOUT_MS);
 }
 
 async function axRun(udid: string, ...args: string[]): Promise<string> {
   const tool = await axSettingsTool();
-  return run("xcrun", ["simctl", "spawn", udid, tool, ...args]);
+  return run("xcrun", ["simctl", "spawn", udid, tool, ...args], SIMCTL_TIMEOUT_MS);
 }
 
 function toToggle(simctlValue: string): string {
