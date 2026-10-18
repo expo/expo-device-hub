@@ -1108,7 +1108,7 @@ export class DeviceSession {
     this.sendJson(res, 200, { status: "ok" });
   }
 
-  async handleStreamSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async handleStreamSettings(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
     if (req.method === "GET") {
       await this.streamSettingsUpdate;
       if (!res.writableEnded && !res.destroyed) {
@@ -1118,15 +1118,15 @@ export class DeviceSession {
           streamEncoderSettingsForTransport(this.encoderSettings, this.transport),
         );
       }
-      return;
+      return false;
     }
     if (req.method !== "PATCH") {
       this.sendJson(res, 405, { error: "method_not_allowed" });
-      return;
+      return false;
     }
     if (!isJsonRequest(req)) {
       this.sendJson(res, 415, { error: "unsupported_media_type" });
-      return;
+      return false;
     }
 
     try {
@@ -1146,11 +1146,13 @@ export class DeviceSession {
       if (!res.writableEnded && !res.destroyed) {
         this.sendJson(res, 200, streamEncoderSettingsForTransport(settings, this.transport));
       }
+      return true;
     } catch (error) {
-      if (res.writableEnded || res.destroyed) return;
+      if (res.writableEnded || res.destroyed) return false;
       const status = error instanceof WebRtcSignalingError ? error.status : 500;
       const code = error instanceof WebRtcSignalingError ? error.code : "stream_settings_failed";
       this.sendJson(res, status, { error: code });
+      return false;
     }
   }
 
