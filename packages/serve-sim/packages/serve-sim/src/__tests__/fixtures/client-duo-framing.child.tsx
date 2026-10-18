@@ -768,3 +768,19 @@ test("an early confirmed UI turn followed by another native turn updates the cam
   const expected = duoRotateView(rotated, 1);
   expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
 });
+
+
+test("first physical readback preserves a locally edited Laptop anchor and follows the next turn", async () => {
+  await mount();
+  const config = {width:2007,height:2853,screenId:3,orientation:"landscape_left" as const,supportsHingeAngle:true,observedDeviceState:{}};
+  await observe(config);
+  await request({control:"pose",value:"laptop"}); await frame(0x90, {requestId:requests.at(-1)!.requestId, ok:true});
+  await request({control:"angle",value:100}); await frame(0x90, {requestId:requests.at(-1)!.requestId, ok:true});
+  await act(async () => { renderer!.root.findByProps({"aria-label":"Simulator status"}).props.onRotate("portrait","right"); });
+  await observe({...config, observedDeviceState:{hingeAngle:100,physicalOrientation:"landscape-left",tableMode:false}});
+  expectView("laptop");
+  await observe({...config, observedDeviceState:{hingeAngle:100,physicalOrientation:"pud",tableMode:false}});
+  const expected = duoRotateView(duoPresetView("laptop"),1);
+  expect(model().view.fixedLeftFold).toBe(expected.fixedLeftFold);
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0,6);
+});

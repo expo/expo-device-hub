@@ -341,7 +341,8 @@ export function useDuoFraming(
     const turns = nativeRotationRef.current.observe(orientation);
     const baseline = nativeRotationRef.current.takeBaseline();
     if (baseline) {
-      setDuoView(pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline));
+      const anchor = duoViewLocalIntentRef.current ? duoControlStateRef.current.duoView ?? undefined : undefined;
+      setDuoView(pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline, anchor));
       duoViewLocalIntentRef.current = false;
       return;
     }

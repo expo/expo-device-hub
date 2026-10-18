@@ -36,8 +36,12 @@ export function duoPresetView(pose: HingePose): DuoView {
 }
 
 /** Seed a previously unknown physical baseline, independent of stale app geometry. */
-export function duoPhysicalView(angle: number | undefined, orientation: HingePhysicalOrientation): DuoView {
+export function duoPhysicalView(angle: number | undefined, orientation: HingePhysicalOrientation, anchor?: DuoView): DuoView {
   const turns = physicalOrientationQuarterTurns(orientation);
+  if (anchor?.fixedLeftFold !== undefined) {
+    const laptop = { ...duoPresetView("laptop"), fixedLeftFold: anchor.fixedLeftFold };
+    return duoRotateView(laptop, turns - physicalOrientationQuarterTurns("landscape-left"));
+  }
   return captureView(duoPose(angle, null, undefined, undefined, Math.max(0, turns) * Math.PI / 2));
 }
 
