@@ -1,6 +1,12 @@
 import type { HingePhysicalOrientation } from "../../hinge-control";
 
+export const DUO_ROTATION_READBACK_GRACE_MS = 1500;
+
 const ORIENTATIONS: HingePhysicalOrientation[] = ["portrait", "landscape-left", "pud", "landscape-right"];
+
+export function physicalOrientationQuarterTurns(orientation: HingePhysicalOrientation | undefined): number {
+  return orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
+}
 
 /** Track physical rotation independently of delayed or orientation-locked app geometry. */
 export function createDuoRotationState() {
@@ -10,18 +16,18 @@ export function createDuoRotationState() {
   return {
     takeBaseline() { const value = baseline; baseline = undefined; return value; },
     rebase(orientation: HingePhysicalOrientation | undefined) {
-      const index = orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
+      const index = physicalOrientationQuarterTurns(orientation);
       displayed = index < 0 ? undefined : index;
       pendingUntil = 0;
       baseline = undefined;
     },
     request(turns: number, now = Date.now()) {
-      pendingUntil = now + 1500;
+      pendingUntil = now + DUO_ROTATION_READBACK_GRACE_MS;
       if (displayed === undefined) return;
       displayed = ((displayed + turns) % 4 + 4) % 4;
     },
     observe(orientation: HingePhysicalOrientation | undefined, now = Date.now()) {
-      const index = orientation === undefined ? -1 : ORIENTATIONS.indexOf(orientation);
+      const index = physicalOrientationQuarterTurns(orientation);
       if (index < 0) return 0;
       // No physical baseline means the optimistic camera was only a guess.
       // Reframe from the first actual sample, then follow subsequent turns;

@@ -2,6 +2,7 @@ import { Euler, Quaternion, Vector3 } from "three";
 import { HINGE_POSES, type HingePose, type HingePhysicalOrientation } from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { duoFacingYaw, duoPose } from "./duo-pose";
+import { physicalOrientationQuarterTurns } from "./duo-rotation-state";
 
 /** Saved orientation controls; ordinary folding adds a hinge-dependent facing turn. */
 export type DuoView = {
@@ -36,7 +37,7 @@ export function duoPresetView(pose: HingePose): DuoView {
 
 /** Seed a previously unknown physical baseline, independent of stale app geometry. */
 export function duoPhysicalView(angle: number | undefined, orientation: HingePhysicalOrientation): DuoView {
-  const turns = ["portrait", "landscape-left", "pud", "landscape-right"].indexOf(orientation);
+  const turns = physicalOrientationQuarterTurns(orientation);
   return captureView(duoPose(angle, null, undefined, undefined, Math.max(0, turns) * Math.PI / 2));
 }
 
