@@ -1,7 +1,11 @@
 name: serve-sim tests
 
 on:
+  # The Simulator jobs take several macOS machines. They run on a PR that is ready for
+  # review, and on a draft only with the ci-ready label; adding the label starts a run.
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
     paths:
       - packages/serve-sim/**
       - .eas/workflows/sim-test.yml
@@ -12,7 +16,7 @@ on:
       - .github/workflows/release.yml
       - turbo.json
   pull_request_labeled:
-    labels: [eas-approved]
+    labels: [ci-ready, eas-approved]
 
 # Cancel superseded runs so pushing twice to the same PR does not consume two
 # macOS workers in parallel.

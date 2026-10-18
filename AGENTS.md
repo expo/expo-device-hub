@@ -4,6 +4,8 @@ Complete the PR template's Authorship and LLM use section factually. Distinguish
 
 Open a PR as a draft. In this repo, a ready PR means "ready for human review". Devin Review skips drafts and runs automatically only when a PR becomes ready, or when commits are pushed to a ready PR. So before you mark a PR ready, comment `/devin review` on the draft. The comment must start with `/devin review`. Wait for the review, address its findings, and push the fixes. If a push changes the code, comment `/devin review` again. Mark the PR ready only when Devin has reviewed the current head.
 
+The serve-sim Simulator tests run on every push to a PR that is ready for review. A draft runs them only with the `ci-ready` label, so iterate on a draft and add the label when you want a run.
+
 Write PR descriptions for reviewers, not as chat transcripts. Summarize meaningful rounds in order: who set or changed the direction, what the LLM made, what review found, and what changed next. Skip minor wording exchanges and distinguish review of an earlier draft from review of the final diff.
 
 # Linked Literate Programming (LLP)

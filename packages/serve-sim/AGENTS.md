@@ -27,7 +27,9 @@ Xcode 26, and the Simulator jobs use that archive without rebuilding. The e2e fi
 are split over two Simulator jobs: one runs the four slowest files listed in
 `.eas/functions/test-sim-runtime`, the other runs the rest. Test jobs pass
 `--retry=1`, so a failed test runs once more; a failed `beforeAll` and a file that
-fails to load stay red. Local checks do not replace the CI run.
+fails to load stay red. Local checks do not replace the CI run. The serve-sim
+workflow runs on a PR that is ready for review; a draft runs it only with the
+`ci-ready` label.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
