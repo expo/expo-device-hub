@@ -27,11 +27,19 @@ requireE2E("hardware keyboard shift", ready);
 const describeWithSim = ready ? describe : describe.skip;
 
 function cli(...args: string[]): string {
-  return execFileSync("node", [CLI_PATH, ...args], {
+  const result = spawnSync("node", [CLI_PATH, ...args], {
     env: { ...process.env },
     encoding: "utf8",
     timeout: 15_000,
   });
+  if (result.status === 0) return result.stdout;
+  // Keep the CLI's own output: CI otherwise shows only "Command failed".
+  const reason = result.error
+    ? result.error.message
+    : `status ${result.status}, signal ${result.signal}`;
+  throw new Error(
+    `serve-sim ${args.join(" ")} failed (${reason}):\n${result.stderr}${result.stdout}`,
+  );
 }
 
 function simctl(...args: string[]): string {
