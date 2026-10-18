@@ -636,7 +636,7 @@ test("private upload snapshots survive source removal, clean failures, and enfor
   await expect(
     withStagedUploadSnapshotAsync(uploadId, async (path) => {
       snapshotPath = path;
-      expect(path.startsWith(join(UPLOAD_DIR, "install-snapshot-"))).toBe(true);
+      expect(path.startsWith(join(UPLOAD_DIR, ".install-snapshot-"))).toBe(true);
       await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, "unused");
       expect(await readFile(path, "utf8")).toBe("stable source");
       throw new Error("consumer failed");
@@ -644,15 +644,19 @@ test("private upload snapshots survive source removal, clean failures, and enfor
   ).rejects.toThrow("consumer failed");
   expect(snapshotPath).toBeDefined();
   expect(existsSync(snapshotPath!)).toBe(false);
-  const oversized = join(UPLOAD_DIR, "snapshot-too-large");
-  await writeFile(oversized, "");
-  try {
-    await truncate(oversized, 2 * 1024 ** 3 + 1);
-    await expect(
-      withStagedUploadSnapshotAsync("snapshot-too-large", async () => {}),
-    ).rejects.toThrow("staging is full");
-  } finally {
-    await rm(oversized, { force: true });
+  for (const uploadId of ["snapshot-too-large", "Sparse.app"]) {
+    const oversized = join(UPLOAD_DIR, uploadId);
+    const sparseFile = uploadId.endsWith(".app") ? join(oversized, "App") : oversized;
+    if (uploadId.endsWith(".app")) await mkdir(oversized);
+    await writeFile(sparseFile, "");
+    try {
+      await truncate(sparseFile, 2 * 1024 ** 3 + 1);
+      await expect(
+        withStagedUploadSnapshotAsync(uploadId, async () => {}),
+      ).rejects.toThrow("staging is full");
+    } finally {
+      await rm(oversized, { recursive: true, force: true });
+    }
   }
 });
 
@@ -702,9 +706,13 @@ test("expired queued installs do not create a source snapshot", async () => {
 test("owner-scoped snapshots are reclaimed for dead servers and preserved for live servers", async () => {
   const dead = join(UPLOAD_ROOT, "2147483647-deadbeef"),
     live = join(UPLOAD_ROOT, `${process.pid}-deadbeef`);
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
   for (const directory of [dead, live]) {
-    await mkdir(join(directory, "install-snapshot-test"), { recursive: true });
-    await writeFile(join(directory, "install-snapshot-test", "source"), "app source");
+    await mkdir(join(directory, ".install-snapshot-test"), { recursive: true });
+    await writeFile(join(directory, ".install-snapshot-test", "source"), "app source");
+    await utimes(join(directory, ".install-snapshot-test"), old, old);
+    await writeFile(join(directory, "install-snapshot-upload"), "old upload");
+    await utimes(join(directory, "install-snapshot-upload"), old, old);
   }
   try {
     await runHostActionAsync(
@@ -719,7 +727,8 @@ test("owner-scoped snapshots are reclaimed for dead servers and preserved for li
       "unused",
     );
     expect(existsSync(dead)).toBe(false);
-    expect(existsSync(live)).toBe(true);
+    expect(existsSync(join(live, ".install-snapshot-test", "source"))).toBe(true);
+    expect(existsSync(join(live, "install-snapshot-upload"))).toBe(false);
   } finally {
     await rm(dead, { recursive: true, force: true });
     await rm(live, { recursive: true, force: true });

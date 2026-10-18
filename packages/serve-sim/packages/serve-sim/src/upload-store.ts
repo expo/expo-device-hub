@@ -19,6 +19,8 @@ import { UPLOAD_DIR, UPLOAD_ROOT } from "./host-paths";
 const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_UPLOAD_AGE_MS = 6 * 60 * 60 * 1000;
 const MAX_SNAPSHOT_ENTRIES = 100_000;
+// UploadId refuses leading dots, so clients cannot exempt their uploads from age pruning.
+const SNAPSHOT_PREFIX = ".install-snapshot-";
 // Serialized so the budget check and the write cannot interleave: concurrent callers would
 // otherwise all read the same pre-write total and sail past the ceiling.
 const queueUploadAsync = createSerialQueue();
@@ -50,6 +52,7 @@ function isRunning(pid: number): boolean {
  * Removes the folders of servers that exited and every upload past its age, in any server's folder,
  * then reports the bytes all servers still hold. Deleting is safe across servers: a copy that already
  * opened its source keeps reading the unlinked file, and a later open fails instead of mixing bytes.
+ * Private snapshots belong to live install tasks until finally cleans them, even past the upload age.
  */
 async function pruneStagingAsync(): Promise<number> {
   let entries: string[];
@@ -68,7 +71,7 @@ async function pruneStagingAsync(): Promise<number> {
       continue;
     }
     held += await pruneStaleEntriesAsync(full, MAX_UPLOAD_AGE_MS, (entry) => {
-      const deadline = /^\.install-extract-(\d+)-/.exec(entry)?.[1];
+      const deadline = /^\.install-(?:extract|snapshot)-(\d+)-/.exec(entry)?.[1];
       return deadline === undefined || Number(deadline) <= Date.now();
     });
   }
@@ -139,7 +142,7 @@ export async function withStagedUploadSnapshotAsync<T>(
     snapshotBytes += size;
     let directory: string | undefined;
     try {
-      directory = await mkdtemp(join(UPLOAD_DIR, "install-snapshot-"));
+      directory = await mkdtemp(join(UPLOAD_DIR, SNAPSHOT_PREFIX));
       const path = join(directory, info.isDirectory() ? "source.app" : "source");
       const copied = await runInvocation({
         file: "cp",

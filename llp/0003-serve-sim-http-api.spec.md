@@ -578,7 +578,9 @@ App installation snapshots staged archive sources before waiting for extraction
 or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
 upload staging ceiling; source removal/reset is blocked only while copying.
 Private snapshots are removed after success or failure and live under the server-owned
-upload folder so dead-server and stale-entry pruning also reclaim abandoned copies.
+upload folder, where dead-server pruning reclaims abandoned copies. They use a reserved
+private prefix and do not expire by age while their server is alive, so long installs
+outlive ordinary upload retention without losing their source.
 Copying regular files and app directories shares the original action deadline.
 
 ### Uploading an app fixture
