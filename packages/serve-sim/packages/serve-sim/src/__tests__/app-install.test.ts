@@ -812,3 +812,87 @@ test("snapshot copying is bounded by the remaining action deadline", async () =>
     await rm(join(UPLOAD_DIR, uploadId));
   }
 });
+
+test("a staged app with relative framework links survives source pruning during install", async () => {
+  const uploadId = "FrameworkLinks.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  const started = join(root, "links-install-started"), gate = join(root, "links-install-release");
+  const trigger = "prune-framework-source";
+  await mkdir(join(source, "Versions", "A"), { recursive: true });
+  await writeFile(join(source, "Info.plist"), "test app");
+  await writeFile(join(source, "Versions", "A", "Executable"), "executable");
+  await chmod(join(source, "Versions", "A", "Executable"), 0o755);
+  await symlink("A", join(source, "Versions", "Current"));
+  await symlink("Versions/Current/Executable", join(source, "App"));
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+  await utimes(source, old, old);
+  process.env.SERVE_SIM_INSTALL_STARTED = started;
+  process.env.SERVE_SIM_INSTALL_GATE = gate;
+  let pending: ReturnType<typeof install> | undefined;
+  try {
+    pending = install(source);
+    for (let n = 0; n < 200 && !existsSync(started); n++) await Bun.sleep(10);
+    expect(existsSync(started)).toBe(true);
+    expect((await runHostActionAsync({ action: "upload.append", params: {
+      uploadId: trigger, first: true, data: Buffer.from("unrelated upload").toString("base64"),
+    } }, "unused")).exitCode).toBe(0);
+    expect(existsSync(source)).toBe(false);
+    await writeFile(gate, "release");
+    const result = await pending;
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("test app");
+    expect(existsSync(installedPath(result.stdout))).toBe(false);
+  } finally {
+    await writeFile(gate, "release");
+    if (pending) await pending;
+    delete process.env.SERVE_SIM_INSTALL_STARTED;
+    delete process.env.SERVE_SIM_INSTALL_GATE;
+    await rm(source, { recursive: true, force: true });
+    await rm(join(UPLOAD_DIR, trigger), { force: true });
+  }
+});
+
+test.each(["absolute-internal", "absolute-external", "relative-escape", "directory-alias-escape", "casefold-alias-escape", "unicode-alias-escape", "dangling", "file-as-directory", "cycle"])(
+  "rejects unsafe staged app links before accepting a snapshot: %s",
+  async kind => {
+    const uploadId = `Unsafe-${kind}.app`, source = join(UPLOAD_DIR, uploadId);
+    await mkdir(source);
+    await writeFile(join(source, "Executable"), "original bytes");
+    const before = (await readdir(UPLOAD_DIR)).filter(name => name.startsWith(".install-snapshot-"));
+    const target = kind === "absolute-internal" ? join(source, "Executable")
+      : kind === "absolute-external" ? join(root, "outside")
+      : kind === "relative-escape" ? "../outside"
+      : kind === "directory-alias-escape" ? "Root/../outside"
+      : kind === "casefold-alias-escape" ? "ROOT/../outside"
+      : kind === "unicode-alias-escape" ? "Ro\u0301o\u0301t/../outside"
+      : kind === "dangling" ? "missing"
+      : kind === "file-as-directory" ? "Executable/../Executable" : "App";
+    if (["directory-alias-escape", "casefold-alias-escape"].includes(kind)) await symlink(".", join(source, "Root"));
+    if (kind === "unicode-alias-escape") await symlink(".", join(source, "Róót"));
+    await symlink(target, join(source, "App"));
+    let accepted = false;
+    try {
+      await expect(withStagedUploadSnapshotAsync(uploadId, async () => { accepted = true; }))
+        .rejects.toThrow("symlinks must be relative and stay inside the app bundle");
+      expect(accepted).toBe(false);
+      expect((await readdir(UPLOAD_DIR)).filter(name => name.startsWith(".install-snapshot-"))).toEqual(before);
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
+  },
+);
+
+test("relative parent links that remain inside a staged app are preserved", async () => {
+  const uploadId = "RelativeParent.app", source = join(UPLOAD_DIR, uploadId);
+  await mkdir(join(source, "Nested"), { recursive: true });
+  await writeFile(join(source, "Info.plist"), "bundle metadata");
+  await symlink("../Info.plist", join(source, "Nested", "Metadata"));
+  try {
+    await withStagedUploadSnapshotAsync(uploadId, async path => {
+      await rm(source, { recursive: true });
+      expect(await readFile(join(path, "Nested", "Metadata"), "utf8")).toBe("bundle metadata");
+    });
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});

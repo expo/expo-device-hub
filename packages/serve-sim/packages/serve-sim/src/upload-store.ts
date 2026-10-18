@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
-import { appendFile, lstat, mkdtemp, opendir, readdir, rm, writeFile } from "fs/promises";
-import { basename, dirname, join } from "path";
+import { appendFile, lstat, mkdtemp, opendir, readdir, readlink, rm, writeFile } from "fs/promises";
+import { basename, dirname, isAbsolute, join, relative, sep } from "path";
 import type { Stats } from "fs";
 import { z } from "zod";
 
@@ -124,9 +124,13 @@ export async function withStagedUploadSnapshotAsync<T>(
       throw new Error("App uploads must be regular files or app directories.");
     let size = 0,
       entries = 0;
+    const links = new Map<string, string>();
+    const paths = new Map<string, boolean>();
+    const invalidLink = () => new Error("App source symlinks must be relative and stay inside the app bundle using exact entry names.");
     const measure = async (path: string, info: Stats): Promise<void> => {
       remaining();
       size += info.size;
+      paths.set(relative(source, path), info.isDirectory());
       if (++entries > MAX_SNAPSHOT_ENTRIES)
         throw new Error("App installation source has too many entries.");
       if (snapshotBytes + size > MAX_UPLOAD_DIR_BYTES)
@@ -136,10 +140,41 @@ export async function withStagedUploadSnapshotAsync<T>(
           const child = join(path, entry.name);
           await measure(child, await lstat(child));
         }
-      } else if (!info.isFile() && !info.isSymbolicLink())
+      } else if (info.isSymbolicLink()) {
+        const target = await readlink(path);
+        if (isAbsolute(target)) throw invalidLink();
+        links.set(relative(source, path), target);
+      } else if (!info.isFile())
         throw new Error("App installation source contains an unsupported entry.");
     };
     await measure(source, info);
+    // Resolve against measured metadata, never the host filesystem. In particular,
+    // following a directory link before `..` differs from lexical path normalization.
+    for (const link of links.keys()) {
+      const pending = link.split(sep), resolved: string[] = [];
+      let hops = 0;
+      while (pending.length) {
+        remaining();
+        const component = pending.shift()!;
+        if (!component || component === ".") continue;
+        if (component === "..") {
+          if (!resolved.length) throw invalidLink();
+          resolved.pop();
+          continue;
+        }
+        const entry = [...resolved, component].join(sep);
+        const target = links.get(entry);
+        if (target === undefined) {
+          const directory = paths.get(entry);
+          // Exact measured names avoid case/Unicode aliases hiding a directory link.
+          if (directory === undefined || (pending.length > 0 && !directory)) throw invalidLink();
+          resolved.push(component);
+        } else {
+          if (++hops > 40) throw invalidLink();
+          pending.unshift(...target.split(sep));
+        }
+      }
+    }
     snapshotBytes += size;
     let directory: string | undefined;
     try {

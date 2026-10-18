@@ -584,6 +584,11 @@ deadline, so long installs outlive ordinary upload retention without losing thei
 After the deadline, ordinary age pruning applies even if the owner's PID has been
 reused by another process.
 Copying regular files and app directories shares the original action deadline.
+Staged app directories accept relative links that remain inside the bundle; absolute
+links, escaping link chains and cycles are rejected before copying. Targets must
+use exact measured entry names, so filesystem case or Unicode aliases cannot hide
+a link. Link validation
+uses the measured directory metadata, so it never follows a link into the host filesystem.
 
 ### Uploading an app fixture
 
