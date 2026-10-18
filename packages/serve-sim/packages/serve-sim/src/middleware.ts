@@ -811,8 +811,7 @@ function serveHelperInProcess(
       return true;
     case "/stream-settings":
       void withDeviceSessionTask(session, async () => {
-        await session.handleStreamSettings(req, res);
-        if (req.method === "PATCH" && res.statusCode === 200) retainDeviceSession(session);
+        if (await session.handleStreamSettings(req, res)) retainDeviceSession(session);
       });
       return true;
     case "/config":

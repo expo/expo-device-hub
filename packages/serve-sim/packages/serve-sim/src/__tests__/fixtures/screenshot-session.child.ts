@@ -128,3 +128,23 @@ test("an invalid settings PATCH does not retain screenshot capture", async () =>
     release.resolve(); await shot; await middleware.dispose();
   }
 });
+
+
+test("an aborted settings body never reports an accepted update despite default HTTP 200", async () => {
+  const {IncomingMessage, ServerResponse} = await import("node:http");
+  const {Socket} = await import("node:net");
+  await withScreenshotDeviceSession(UDID, undefined, async session => {
+    const socket = new Socket();
+    const req = new IncomingMessage(socket);
+    req.method = "PATCH";
+    req.headers = {"content-type":"application/json"};
+    const res = new ServerResponse(req);
+    res.destroy();
+    const pending = session.handleStreamSettings(req, res);
+    req.emit("aborted");
+    expect(res.statusCode).toBe(200);
+    expect(await pending).toBe(false);
+    socket.destroy();
+  });
+  expect(peekDeviceSession(UDID)).toBeUndefined();
+});
