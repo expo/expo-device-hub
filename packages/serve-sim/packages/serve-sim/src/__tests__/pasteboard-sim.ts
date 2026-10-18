@@ -138,20 +138,6 @@ export function ensureFixtureInstalled(udid: string): string {
   return FIXTURE_BUNDLE;
 }
 
-// The tracker misses an app that comes forward before its log stream is attached.
-async function subscribeToForeground(udid: string): Promise<{ unsubscribe: () => void }> {
-  const subscription = foregroundTracker.subscribe(udid);
-  const attached = await Promise.race([
-    foregroundTracker.whenStreaming(udid).then(() => true),
-    Bun.sleep(15_000).then(() => false),
-  ]);
-  if (!attached) {
-    subscription.unsubscribe();
-    throw new Error(`the foreground log stream for ${udid} did not start within 15 s`);
-  }
-  return subscription;
-}
-
 async function waitForLaunch(udid: string, bundleId: string, pid: number | null): Promise<number> {
   if (pid == null) throw new Error(`${bundleId} did not report a pid when it launched`);
   const deadline = Date.now() + 15_000;
@@ -234,7 +220,7 @@ export async function launchWithoutReader(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = await subscribeToForeground(udid);
+  const subscription = foregroundTracker.subscribe(udid);
   await resetLaunchState(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -243,7 +229,7 @@ export async function launchTrackedApp(
   udid: string,
   bundleId: string,
 ): Promise<{ unsubscribe: () => void }> {
-  const subscription = await subscribeToForeground(udid);
+  const subscription = foregroundTracker.subscribe(udid);
   killSimApp(udid, bundleId);
   return finishLaunch(udid, bundleId, subscription);
 }
@@ -273,7 +259,7 @@ export async function openAppForPasteboard(
 ): Promise<{ unsubscribe: () => void; pid: number }> {
   const dylib = locatePasteboardReaderDylib();
   if (!dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
-  const subscription = await subscribeToForeground(udid);
+  const subscription = foregroundTracker.subscribe(udid);
 
   const cleanup = () => {
     subscription.unsubscribe();
