@@ -144,6 +144,46 @@ describe("ADB screenshot and shell commands", () => {
     ]);
   });
 
+  test("captures the display in use when a foldable has several", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const warning = Buffer.from(
+      "[Warning] Multiple displays were found, but no display id was specified! Defaulting to the first display found.\n",
+    );
+    // A folded Pixel Fold emulator: logical display 0 is the cover screen, the
+    // second physical display. screencap would pick the first, which is off.
+    const displays = `  Logical Displays: size=2
+  Display 0:
+    mDisplayId=0
+    mPrimaryDisplayDevice=Built-in Screen(local:4619827551948147201)
+  Display 1:
+    mDisplayId=1
+    mPrimaryDisplayDevice=Built-in Screen(local:4619827259835644672)
+`;
+    const calls: string[][] = [];
+    const runExec = (async (_command, args) => {
+      calls.push(args);
+      if (args.includes("dumpsys")) return result(Buffer.from(displays));
+      return result(args.includes("-d") ? png : Buffer.concat([warning, png]));
+    }) as typeof execBuffer;
+
+    await expect(screencapPng("device-1", runExec)).resolves.toEqual(png);
+    expect(calls.at(-1)).toEqual([
+      "-s",
+      "device-1",
+      "exec-out",
+      "screencap",
+      "-d",
+      "4619827551948147201",
+      "-p",
+    ]);
+
+    const unmapped = (async (_command, args) =>
+      result(
+        args.includes("dumpsys") ? Buffer.from("") : Buffer.concat([warning, png]),
+      )) as typeof execBuffer;
+    await expect(screencapPng("device-1", unmapped)).resolves.toEqual(png);
+  });
+
   test("reports screenshot and shell failures", async () => {
     const failedBuffer = (async () =>
       result(Buffer.from("binary diagnostic"), { status: 1 })) as typeof execBuffer;
