@@ -1,0 +1,32 @@
+name: Test the prebuilt serve-sim package on an iOS Simulator
+inputs:
+  # Each runtime splits the e2e files over two machines: "slow" runs the files in SLOW below,
+  # "rest" runs every other e2e file, so a new file lands in "rest".
+  - name: group
+    allowed_values: [slow, rest]
+    required: true
+runs:
+  steps:
+    - name: Install Chrome for Testing
+      run: bunx @puppeteer/browsers@3.2.3 install chrome@154.0.8037.57 --path "$HOME/.cache/chrome-for-testing" --format '{{path}}' > /tmp/chrome-path
+
+    - name: Start iOS Simulator
+      uses: eas/start_ios_simulator
+
+    - name: Run sequential simulator tests
+      # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
+      env:
+        SERVE_SIM_E2E_REQUIRED: "1"
+      working_directory: packages/serve-sim
+      run: |
+        export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
+        # These five files took about half of the e2e time on both runtimes (October 2026).
+        SLOW="network-request-fixture capture-reboot-recovery hardware-keyboard-shift wheel-touch-handoff simnet-injection"
+        args=()
+        if [ "${{ inputs.group }}" = slow ]; then
+          for file in $SLOW; do args+=("$file.e2e.test.ts"); done
+        else
+          for file in $SLOW; do args+=("--path-ignore-patterns=**/$file.e2e.test.ts"); done
+          args+=(".e2e.")
+        fi
+        bun test --max-concurrency=1 --retry=1 "${args[@]}"

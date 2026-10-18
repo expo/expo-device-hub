@@ -21,10 +21,13 @@
 Run these from the repo root. CI runs the same underlying steps: `bun run
 lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and in
 `.eas/workflows/sim-test.yml` `bun run test` in two parallel shards that
-ignore `*.e2e.test.*` files, before the simulator boots, then the `*.e2e.test.*`
-files with `SERVE_SIM_E2E_REQUIRED=1`. Both pass `--retry=1`, so a failed test
-runs once more; a failed `beforeAll` and a file that fails to load stay red.
-A green local run predicts a green PR.
+ignore `*.e2e.test.*` files, plus separate Simulator jobs with
+`SERVE_SIM_E2E_REQUIRED=1`. The package and fixtures are built once with pinned
+Xcode 26, and the Simulator jobs use that archive without rebuilding. The e2e files
+are split over two Simulator jobs: one runs the five slowest files listed in
+`.eas/functions/test-sim-runtime`, the other runs the rest. Test jobs pass
+`--retry=1`, so a failed test runs once more; a failed `beforeAll` and a file that
+fails to load stay red. Local checks do not replace the CI run.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
@@ -56,7 +59,8 @@ A green local run predicts a green PR.
   it is left alone. Example: `SERVE_SIM_TEST_UDID=<udid> bun run test:e2e --
   packages/serve-sim/src/__tests__/permissions.e2e.test.ts`.
 - The full `test:e2e` run checks mitmdump before building fixtures. CI checks
-  it before the native build. The shared probe uses capture's binary selection
+  it before each unit or Simulator test job. The shared probe uses capture's
+  binary selection
   (including `SERVE_SIM_MITMDUMP`), fails immediately if it is missing, and
   bounds `--version` to 60 seconds. Focused runs retain their own prerequisites.
   It runs `--version` with the runtime's subprocess timeout and inherited output,
