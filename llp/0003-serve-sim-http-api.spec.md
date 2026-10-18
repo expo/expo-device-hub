@@ -574,6 +574,11 @@ later writes. Entries through link paths and conflicting entries are rejected.
 Directories remain owner-only, and executable owner bits are preserved. The
 uploaded source remains until the client removes it with `upload.remove`.
 
+App installation snapshots staged archive sources before waiting for extraction
+or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
+upload staging ceiling; source removal/reset is blocked only while copying.
+Private snapshots are removed after success or failure.
+
 ### Uploading an app fixture
 
 `app.file.upload`: `{udid, bundleId, uploadId, relativePath, overwrite?}` copies a

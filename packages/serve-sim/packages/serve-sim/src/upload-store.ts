@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
-import { appendFile, readdir, rm, writeFile } from "fs/promises";
+import { appendFile, copyFile, mkdtemp, readdir, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
+import { tmpdir } from "os";
 import { z } from "zod";
 
 import {
@@ -18,6 +19,7 @@ const MAX_UPLOAD_AGE_MS = 6 * 60 * 60 * 1000;
 // Serialized so the budget check and the write cannot interleave: concurrent callers would
 // otherwise all read the same pre-write total and sail past the ceiling.
 const queueUploadAsync = createSerialQueue();
+let snapshotBytes = 0;
 
 export const UploadId = z
   .string()
@@ -89,6 +91,36 @@ export function readStagedUploadAsync<T>(
   read: (path: string) => Promise<T>,
 ): Promise<T> {
   return queueUploadAsync(() => read(stagedUploadPath(uploadId)));
+}
+
+/** Snapshot accepted installs without holding the shared staging queue through simctl. */
+export async function withStagedUploadSnapshotAsync<T>(uploadId: string, read: (path: string) => Promise<T>): Promise<T> {
+  const snapshot = await queueUploadAsync(async () => {
+    const source = stagedUploadPath(uploadId);
+    const info = await stat(source);
+    // Upload mutations cannot overwrite or remove a direct app directory.
+    if (info.isDirectory()) return { path: source, size: 0, directory: undefined };
+    if (!info.isFile()) throw new Error("App uploads must be regular files.");
+    if (snapshotBytes + info.size > MAX_UPLOAD_DIR_BYTES) throw new Error("App installation staging is full. Retry after another install finishes.");
+    snapshotBytes += info.size;
+    let directory: string | undefined;
+    try {
+      directory = await mkdtemp(join(tmpdir(), "serve-sim-upload-snapshot-"));
+      const path = join(directory, "source");
+      await copyFile(source, path);
+      return { path, size: info.size, directory };
+    } catch (error) {
+      if (directory) await rm(directory, { recursive: true, force: true });
+      snapshotBytes -= info.size;
+      throw error;
+    }
+  });
+  try {
+    return await read(snapshot.path);
+  } finally {
+    if (snapshot.directory) await rm(snapshot.directory, { recursive: true, force: true });
+    snapshotBytes -= snapshot.size;
+  }
 }
 
 export async function appendUploadChunkAsync(p: {

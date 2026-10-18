@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, truncate, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { gzipSync } from "node:zlib";
 import { create, Header, Pax } from "tar";
 import { runHostActionAsync } from "../host-actions";
 import { UPLOAD_DIR } from "../host-paths";
+import { withStagedUploadSnapshotAsync } from "../upload-store";
 import { UDID, installShims, withActionTimeoutAsync } from "./helpers";
 const BIN = fileURLToPath(new URL("../../dist/serve-sim.js", import.meta.url));
 let root: string;
@@ -17,7 +18,7 @@ beforeAll(async () => {
   root = await mkdtemp(join(UPLOAD_DIR, "install-test-"));
   shims = installShims({
     xcrun:
-      '#!/bin/sh\n[ -z "$SERVE_SIM_INSTALL_STARTED" ] || touch "$SERVE_SIM_INSTALL_STARTED"\nprintf "%s\\n" "$3"\n[ -z "$SERVE_SIM_INSTALL_SLEEP" ] || sleep "$SERVE_SIM_INSTALL_SLEEP"\ncat "$4/Info.plist"\nprintf "\\n%s\\n" "$4"\n[ -x "$4/App" ] || exit 9\nexit "${SERVE_SIM_INSTALL_EXIT:-0}"\n',
+      '#!/bin/sh\nprintf "%s\\n" "$3"\n[ -z "$SERVE_SIM_INSTALL_SLEEP" ] || sleep "$SERVE_SIM_INSTALL_SLEEP"\n[ -z "$SERVE_SIM_INSTALL_STARTED" ] || touch "$SERVE_SIM_INSTALL_STARTED"\nif [ -n "$SERVE_SIM_INSTALL_GATE" ]; then while [ ! -f "$SERVE_SIM_INSTALL_GATE" ]; do sleep 0.01; done; fi\ncat "$4/Info.plist"\nprintf "\\n%s\\n" "$4"\n[ -x "$4/App" ] || exit 9\nexit "${SERVE_SIM_INSTALL_EXIT:-0}"\n',
   });
 });
 afterAll(async () => {
@@ -549,5 +550,57 @@ test("a valid TAR with a corrupt gzip trailer is rejected before installation", 
     expect(existsSync(started)).toBe(false);
   } finally {
     delete process.env.SERVE_SIM_INSTALL_STARTED;
+  }
+});
+
+test("a slow staged install does not block unrelated uploads or removals", async () => {
+  await app();
+  const uploadId = "install-snapshot-progress";
+  const bytes = await readFile(await archive("snapshot-progress.tgz", ["My App.app"]));
+  await runHostActionAsync({action:"upload.append", params:{uploadId, first:true, data:bytes.toString("base64")}}, "unused");
+  const started = join(root, "snapshot-started"), gate = join(root, "snapshot-release");
+  process.env.SERVE_SIM_INSTALL_STARTED = started;
+  process.env.SERVE_SIM_INSTALL_GATE = gate;
+  const pending = runHostActionAsync({action:"app.install", params:{udid:UDID, uploadId}}, "unused");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    for (let n = 0; n < 500 && !existsSync(started); n++) await Bun.sleep(10);
+    expect(existsSync(started)).toBe(true);
+    const progress = (async () => {
+      const appended = await runHostActionAsync({action:"upload.append", params:{uploadId:"unrelated-upload", first:true, data:Buffer.from("other app").toString("base64")}}, "unused");
+      const removed = await runHostActionAsync({action:"upload.remove", params:{uploadId}}, "unused");
+      return appended.exitCode === 0 && removed.exitCode === 0;
+    })();
+    expect(await Promise.race([progress, new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 2000); })])).toBe(true);
+  } finally {
+    if (timer) clearTimeout(timer);
+    await writeFile(gate, "release");
+    delete process.env.SERVE_SIM_INSTALL_STARTED;
+    delete process.env.SERVE_SIM_INSTALL_GATE;
+    expect((await pending).exitCode).toBe(0);
+    await runHostActionAsync({action:"upload.remove", params:{uploadId:"unrelated-upload"}}, "unused");
+  }
+});
+
+
+test("private upload snapshots survive source removal, clean failures, and enforce their byte ceiling", async () => {
+  const uploadId = "snapshot-cleanup";
+  await runHostActionAsync({action:"upload.append", params:{uploadId, first:true, data:Buffer.from("stable source").toString("base64")}}, "unused");
+  let snapshotPath: string | undefined;
+  await expect(withStagedUploadSnapshotAsync(uploadId, async path => {
+    snapshotPath = path;
+    await runHostActionAsync({action:"upload.remove", params:{uploadId}}, "unused");
+    expect(await readFile(path, "utf8")).toBe("stable source");
+    throw new Error("consumer failed");
+  })).rejects.toThrow("consumer failed");
+  expect(snapshotPath).toBeDefined();
+  expect(existsSync(snapshotPath!)).toBe(false);
+  const oversized = join(UPLOAD_DIR, "snapshot-too-large");
+  await writeFile(oversized, "");
+  try {
+    await truncate(oversized, 2 * 1024 ** 3 + 1);
+    await expect(withStagedUploadSnapshotAsync("snapshot-too-large", async () => {})).rejects.toThrow("staging is full");
+  } finally {
+    await rm(oversized, {force:true});
   }
 });

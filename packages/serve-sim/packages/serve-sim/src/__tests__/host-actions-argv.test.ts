@@ -14,6 +14,7 @@ import { homedir, tmpdir } from "os";
 import { dirname, join } from "path";
 
 import { runHostActionAsync } from "../host-actions";
+import { stagedUploadPath } from "../upload-store";
 import { UDID, installShims, withActionTimeoutAsync, withShimsAsync } from "./helpers";
 
 // Every CLI-backed action builds an argument vector by hand, and a wrong flag or a swapped
@@ -199,10 +200,20 @@ describe("simctl-backed actions", () => {
     ]);
   });
 
-  it("resolves a staged upload into the install path", async () => {
-    const out = await argv("app.install", { udid: UDID, uploadId: "staged.app" });
-    expect(out.slice(0, 4)).toEqual(["xcrun", "simctl", "install", UDID]);
-    expect(out[4]).toMatch(/serve-sim-uploads\/\d+-[0-9a-f]{8}\/staged\.app$/);
+  it("installs from a private staged-source snapshot and removes it afterward", async () => {
+    const uploadId = "staged-build";
+    await runHostActionAsync({ action: "upload.append", params: {
+      uploadId, first: true, data: Buffer.from("argv fixture").toString("base64"),
+    } }, "unused");
+    try {
+      const out = await argv("app.install", { udid: UDID, uploadId });
+      expect(out.slice(0, 4)).toEqual(["xcrun", "simctl", "install", UDID]);
+      expect(out[4]).toMatch(/serve-sim-upload-snapshot-[^/]+\/source$/);
+      expect(existsSync(out[4]!)).toBe(false);
+      expect(existsSync(stagedUploadPath(uploadId))).toBe(true);
+    } finally {
+      await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, "unused");
+    }
   });
 });
 
