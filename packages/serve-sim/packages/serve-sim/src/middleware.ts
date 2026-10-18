@@ -46,7 +46,13 @@ import {
   type ForegroundTrackerCache,
 } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
-import { closeDeviceSession, getDeviceSession, peekDeviceSession } from "./device-session";
+import {
+  closeDeviceSession,
+  getDeviceSession,
+  peekDeviceSession,
+  retainDeviceSession,
+  withDeviceSessionTask,
+} from "./device-session";
 import {
   assertBearerAccess,
   assertCaptureAccess,
@@ -767,9 +773,24 @@ function serveHelperInProcess(
     return true;
   }
   // Unknown and one-shot helper reads must not claim screenshot-owned capture.
-  if (!panelRoute && !["/stream.mjpeg", "/stream.avcc", "/stream-settings", "/config", "/health",
-    "/webrtc/offer", "/webrtc/close", "/recording/video", "/ax", "/foreground"].includes(endpoint ?? "")) return false;
-  const retainsCapture = Boolean(panelRoute) ||
+  if (
+    !panelRoute &&
+    ![
+      "/stream.mjpeg",
+      "/stream.avcc",
+      "/stream-settings",
+      "/config",
+      "/health",
+      "/webrtc/offer",
+      "/webrtc/close",
+      "/recording/video",
+      "/ax",
+      "/foreground",
+    ].includes(endpoint ?? "")
+  )
+    return false;
+  const retainsCapture =
+    Boolean(panelRoute) ||
     ((endpoint === "/stream.mjpeg" || endpoint === "/stream.avcc") && req.method === "GET") ||
     ((endpoint === "/webrtc/offer" || endpoint === "/recording/video") && req.method === "POST");
   try {
@@ -789,7 +810,10 @@ function serveHelperInProcess(
       session.handleAvcc(req, res);
       return true;
     case "/stream-settings":
-      void session.handleStreamSettings(req, res);
+      void withDeviceSessionTask(session, async () => {
+        await session.handleStreamSettings(req, res);
+        if (req.method === "PATCH" && res.statusCode === 200) retainDeviceSession(session);
+      });
       return true;
     case "/config":
       session.handleConfig(req, res);
