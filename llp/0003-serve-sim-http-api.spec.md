@@ -579,8 +579,10 @@ or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
 upload staging ceiling; source removal/reset is blocked only while copying.
 Private snapshots are removed after success or failure and live under the server-owned
 upload folder, where dead-server pruning reclaims abandoned copies. They use a reserved
-private prefix and do not expire by age while their server is alive, so long installs
-outlive ordinary upload retention without losing their source.
+private prefix encoding the action deadline and do not expire by age before that
+deadline, so long installs outlive ordinary upload retention without losing their source.
+After the deadline, ordinary age pruning applies even if the owner's PID has been
+reused by another process.
 Copying regular files and app directories shares the original action deadline.
 
 ### Uploading an app fixture

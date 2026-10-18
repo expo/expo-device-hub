@@ -707,10 +707,14 @@ test("owner-scoped snapshots are reclaimed for dead servers and preserved for li
   const dead = join(UPLOAD_ROOT, "2147483647-deadbeef"),
     live = join(UPLOAD_ROOT, `${process.pid}-deadbeef`);
   const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+  const active = `.install-snapshot-${Date.now() + 8 * 60 * 60 * 1000}-active`;
+  const expired = `.install-snapshot-${Date.now() - 1000}-expired`;
   for (const directory of [dead, live]) {
-    await mkdir(join(directory, ".install-snapshot-test"), { recursive: true });
-    await writeFile(join(directory, ".install-snapshot-test", "source"), "app source");
-    await utimes(join(directory, ".install-snapshot-test"), old, old);
+    for (const name of [active, expired]) {
+      await mkdir(join(directory, name), { recursive: true });
+      await writeFile(join(directory, name, "source"), "app source");
+      await utimes(join(directory, name), old, old);
+    }
     await writeFile(join(directory, "install-snapshot-upload"), "old upload");
     await utimes(join(directory, "install-snapshot-upload"), old, old);
   }
@@ -727,7 +731,9 @@ test("owner-scoped snapshots are reclaimed for dead servers and preserved for li
       "unused",
     );
     expect(existsSync(dead)).toBe(false);
-    expect(existsSync(join(live, ".install-snapshot-test", "source"))).toBe(true);
+    expect(existsSync(join(live, active, "source"))).toBe(true);
+    // A live PID may belong to a different process after the snapshot owner died.
+    expect(existsSync(join(live, expired))).toBe(false);
     expect(existsSync(join(live, "install-snapshot-upload"))).toBe(false);
   } finally {
     await rm(dead, { recursive: true, force: true });
