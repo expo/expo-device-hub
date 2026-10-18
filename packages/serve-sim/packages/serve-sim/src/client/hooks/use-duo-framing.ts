@@ -354,7 +354,7 @@ export function useDuoFraming(
       pose ? duoPresetView(pose) : duoRotateView(current.duoView ?? current.initialDuoView, turns),
     );
     duoViewLocalIntentRef.current = false;
-  }, [hingeOwned, streamConfig?.hingePose, streamConfig?.physicalOrientation, rotationReadback]);
+  }, [hingeOwned, streamConfig?.hingeAngle, streamConfig?.hingePose, streamConfig?.physicalOrientation, rotationReadback]);
 
   useEffect(() => {
     // Another client can turn a half-open device face down without a preset.
