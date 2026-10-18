@@ -15,8 +15,10 @@ on:
       - .eas/workflows/build-release-cache.yml
       - .github/workflows/release.yml
       - turbo.json
+  # The same rule for labels: ci-ready starts a draft, and eas-approved starts only a ready PR.
   pull_request_labeled:
     labels: [ci-ready, eas-approved]
+    if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
 
 # Cancel superseded runs so pushing twice to the same PR does not consume two
 # macOS workers in parallel.
