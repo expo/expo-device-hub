@@ -20,8 +20,8 @@ runs:
       working_directory: packages/serve-sim
       run: |
         export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
-        # These five files took about half of the e2e time on both runtimes (October 2026).
-        SLOW="network-request-fixture capture-reboot-recovery hardware-keyboard-shift wheel-touch-handoff simnet-injection"
+        # These four files took about half of the e2e time on both runtimes (October 2026).
+        SLOW="network-request-fixture capture-reboot-recovery hardware-keyboard-shift wheel-touch-handoff"
         args=()
         if [ "${{ inputs.group }}" = slow ]; then
           for file in $SLOW; do args+=("$file.e2e.test.ts"); done

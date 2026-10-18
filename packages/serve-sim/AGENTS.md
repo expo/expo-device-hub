@@ -24,7 +24,7 @@ lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and in
 ignore `*.e2e.test.*` files, plus separate Simulator jobs with
 `SERVE_SIM_E2E_REQUIRED=1`. The package and fixtures are built once with pinned
 Xcode 26, and the Simulator jobs use that archive without rebuilding. The e2e files
-are split over two Simulator jobs: one runs the five slowest files listed in
+are split over two Simulator jobs: one runs the four slowest files listed in
 `.eas/functions/test-sim-runtime`, the other runs the rest. Test jobs pass
 `--retry=1`, so a failed test runs once more; a failed `beforeAll` and a file that
 fails to load stay red. Local checks do not replace the CI run.
