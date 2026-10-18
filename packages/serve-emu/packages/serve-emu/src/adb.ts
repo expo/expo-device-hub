@@ -115,16 +115,47 @@ export async function pickDevice(
   return devices[0].serial;
 }
 
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+
 export async function screencapPng(
   serial: string,
   runExec: typeof execBuffer = execBuffer,
 ): Promise<Buffer> {
-  const r = await runExec("adb", ["-s", serial, "exec-out", "screencap", "-p"], {
-    maxBuffer: 64 * 1024 * 1024,
-    timeout: ADB_SCREENSHOT_TIMEOUT_MS,
+  const capture = async (display: string[]) => {
+    const r = await runExec(
+      "adb",
+      ["-s", serial, "exec-out", "screencap", ...display, "-p"],
+      { maxBuffer: 64 * 1024 * 1024, timeout: ADB_SCREENSHOT_TIMEOUT_MS },
+    );
+    if (execFailed(r)) throw new Error(`screencap failed: ${execFailure(r)}`);
+    return r.stdout;
+  };
+  const shot = await capture([]);
+  if (shot.subarray(0, PNG_MAGIC.length).equals(PNG_MAGIC)) return shot;
+  // With several physical displays, as on a foldable, screencap prints a
+  // warning before the PNG and captures the first display, which is off while
+  // the device is folded. Capture the display behind logical display 0.
+  const display = await activePhysicalDisplay(serial, runExec);
+  if (display) return capture(["-d", display]);
+  const start = shot.indexOf(PNG_MAGIC);
+  return start === -1 ? shot : shot.subarray(start);
+}
+
+async function activePhysicalDisplay(
+  serial: string,
+  runExec: typeof execBuffer,
+): Promise<string | null> {
+  const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "display"], {
+    timeout: ADB_QUERY_TIMEOUT_MS,
   });
-  if (execFailed(r)) throw new Error(`screencap failed: ${execFailure(r)}`);
-  return r.stdout;
+  if (execFailed(r)) return null;
+  const dump = r.stdout.toString("utf8");
+  const header = /^[ \t]*Display 0:[ \t]*$/m.exec(dump);
+  if (!header) return null;
+  const rest = dump.slice(header.index + header[0].length);
+  const next = rest.search(/^[ \t]*Display \d+:[ \t]*$/m);
+  const section = next === -1 ? rest : rest.slice(0, next);
+  return section.match(/mPrimaryDisplayDevice=.*\(local:(\d+)\)/)?.[1] ?? null;
 }
 
 export async function shell(
