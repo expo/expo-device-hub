@@ -784,3 +784,31 @@ test("first physical readback preserves a locally edited Laptop anchor and follo
   expect(model().view.fixedLeftFold).toBe(expected.fixedLeftFold);
   expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0,6);
 });
+
+
+test("an angle-only native update reconciles an expired optimistic rotation before its timer runs", async () => {
+  await mount();
+  const custom = { width: 2007, height: 2853, screenId: 3, orientation: "portrait" as const,
+    supportsHingeAngle: true,
+    observedDeviceState: { hingeAngle: 100, physicalOrientation: "portrait" as const, tableMode: false } };
+  await observe(custom);
+  const before = structuredClone(model().view as DuoView);
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    await act(async () => {
+      renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("landscape_left", "right");
+    });
+    const optimistic = model().view as DuoView;
+    expect(new Quaternion(...optimistic.rotation).angleTo(new Quaternion(...before.rotation)) * 180 / Math.PI).toBeCloseTo(90, 6);
+    // A busy browser may receive this config after the deadline while the
+    // scheduled timer callback is still queued. The native pose is custom
+    // both times: only the hinge angle changes, not orientation or app geometry.
+    now += 1501;
+    await observe({ ...custom, observedDeviceState: { ...custom.observedDeviceState, hingeAngle: 110 } });
+    expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)) * 180 / Math.PI).toBeCloseTo(0, 6);
+  } finally {
+    Date.now = realNow;
+  }
+});
