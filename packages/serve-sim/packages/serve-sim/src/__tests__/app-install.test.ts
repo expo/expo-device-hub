@@ -896,3 +896,27 @@ test("relative parent links that remain inside a staged app are preserved", asyn
     await rm(source, { recursive: true, force: true });
   }
 });
+
+test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", async hops => {
+  const uploadId = `Chain-${hops}.app`, source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Executable"), "bundle bytes");
+  for (let n = 0; n < hops; n++) {
+    await symlink(n + 1 === hops ? "Executable" : `Link${n + 1}`, join(source, `Link${n}`));
+  }
+  let accepted = false;
+  const snapshot = () => withStagedUploadSnapshotAsync(uploadId, async path => {
+    accepted = true;
+    await rm(source, { recursive: true });
+    expect(await readFile(join(path, "Link0"), "utf8")).toBe("bundle bytes");
+  });
+  try {
+    if (hops === 32) await snapshot();
+    else {
+      await expect(snapshot()).rejects.toThrow("symlinks must be relative and stay inside the app bundle");
+      expect(accepted).toBe(false);
+    }
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});

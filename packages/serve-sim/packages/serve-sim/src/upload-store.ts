@@ -13,7 +13,7 @@ import {
   ok,
   pruneStaleEntriesAsync,
 } from "./host-actions-utils";
-import { UPLOAD_DIR, UPLOAD_ROOT } from "./host-paths";
+import { MAX_SYMLINK_HOPS, UPLOAD_DIR, UPLOAD_ROOT } from "./host-paths";
 
 // Without a ceiling a caller could fill the disk, and a closed tab never cleans up after itself.
 const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
@@ -170,7 +170,7 @@ export async function withStagedUploadSnapshotAsync<T>(
           if (directory === undefined || (pending.length > 0 && !directory)) throw invalidLink();
           resolved.push(component);
         } else {
-          if (++hops > 40) throw invalidLink();
+          if (++hops > MAX_SYMLINK_HOPS) throw invalidLink();
           pending.unshift(...target.split(sep));
         }
       }
