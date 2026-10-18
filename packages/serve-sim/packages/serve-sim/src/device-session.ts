@@ -134,6 +134,7 @@ const TOUCH_TAP_MAX_DISTANCE = 0.004;
 const MAX_HID_SOCKETS = 8;
 const MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET = 1024;
 const INVALID_RECORDING_ID_CHAR = /[^A-Za-z0-9_-]/;
+const RECORDING_CANCELLATION_MS = 120_000;
 
 class RecordingStartCancelled extends Error {}
 class RecordingStartRebooting extends RecordingStartCancelled {}
@@ -363,7 +364,6 @@ export class DeviceSession {
   private recordingFinishingId?: string;
   private lastFinishedRecording?: { id: string; manifest: string };
   private lastFailedRecording?: { id: string; error: Error };
-  private readonly cancelledBeforeStart = new Map<string, number>();
   private recordingFailure?: Error;
   private inputQueueDraining = false;
   private scrollOwner?: HidSocket;
@@ -611,7 +611,9 @@ export class DeviceSession {
           });
           return;
         }
-        const cancelledUntil = this.cancelledBeforeStart.get(body.recordingId);
+        const cancelledUntil = recordingStartCancellations
+          .get(this.udid)
+          ?.ids.get(body.recordingId);
         if (cancelledUntil && cancelledUntil > Date.now()) {
           this.sendJson(res, 409, { error: "recording_start_cancelled" });
           return;
@@ -730,17 +732,23 @@ export class DeviceSession {
           recordingId !== this.recordingLease?.id
         ) {
           const now = Date.now();
-          for (const [id, until] of this.cancelledBeforeStart) {
-            if (until <= now) this.cancelledBeforeStart.delete(id);
+          const previous = recordingStartCancellations.get(this.udid);
+          const ids = previous?.ids ?? new Map<string, number>();
+          for (const [id, until] of ids) {
+            if (until <= now) ids.delete(id);
           }
-          if (
-            !this.cancelledBeforeStart.has(recordingId) &&
-            this.cancelledBeforeStart.size >= 512
-          ) {
+          if (!ids.has(recordingId) && ids.size >= 512) {
             this.sendJson(res, 503, { error: "recording_cancellation_limit" });
             return;
           }
-          this.cancelledBeforeStart.set(recordingId, now + 120_000);
+          ids.set(recordingId, now + RECORDING_CANCELLATION_MS);
+          if (previous) clearTimeout(previous.timer);
+          const timer = setTimeout(
+            () => recordingStartCancellations.delete(this.udid),
+            RECORDING_CANCELLATION_MS,
+          );
+          timer.unref();
+          recordingStartCancellations.set(this.udid, { ids, timer });
           this.sendJson(res, 202, { cancelled: true });
           return;
         }
@@ -2923,6 +2931,14 @@ export class DeviceSession {
 // ── Registry ─────────────────────────────────────────────────────────────
 
 const sessions = new Map<string, DeviceSession>();
+// Cancellation outlives capture, but expires without retaining a native session.
+const recordingStartCancellations = new Map<
+  string,
+  {
+    ids: Map<string, number>;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
 const screenshotOwners = new Map<DeviceSession, { count: number; retained: boolean }>();
 const closedSessionStops = new Set<Promise<void>>();
 const closedSessionStopErrors: unknown[] = [];
@@ -2956,8 +2972,7 @@ export function getDeviceSession(
 ): DeviceSession {
   let session = sessions.get(udid);
   if (session) {
-    const owner = screenshotOwners.get(session);
-    if (owner && retainExisting) owner.retained = true;
+    if (retainExisting) retainDeviceSession(session);
   }
   if (!session) {
     const createdSession = new DeviceSession(udid, initialStreamSettings);
@@ -2979,6 +2994,30 @@ export function getDeviceSession(
   return session;
 }
 
+/** Claim session state for a persistent consumer, such as an accepted settings update. */
+export function retainDeviceSession(session: DeviceSession): void {
+  const owner = screenshotOwners.get(session);
+  if (owner) owner.retained = true;
+}
+
+/** Prevent screenshot cleanup from closing a session while a finite helper task uses it. */
+export async function withDeviceSessionTask<T>(
+  session: DeviceSession,
+  work: () => Promise<T>,
+): Promise<T> {
+  const owner = screenshotOwners.get(session);
+  if (owner) owner.count++;
+  try {
+    return await work();
+  } finally {
+    if (owner && --owner.count === 0) {
+      screenshotOwners.delete(session);
+      if (!owner.retained && sessions.get(session.udid) === session)
+        closeDeviceSession(session.udid);
+    }
+  }
+}
+
 /** Share screenshot startup, releasing capture unless another consumer claims it. */
 export async function withScreenshotDeviceSession<T>(
   udid: string,
@@ -2987,21 +3026,11 @@ export async function withScreenshotDeviceSession<T>(
 ): Promise<T> {
   const existing = peekDeviceSession(udid);
   const session = existing ?? getDeviceSession(udid, settings);
-  const owner =
-    screenshotOwners.get(session) ?? (!existing ? { count: 0, retained: false } : undefined);
-  if (owner) {
-    owner.count++;
-    screenshotOwners.set(session, owner);
-  }
-  try {
+  if (!existing) screenshotOwners.set(session, { count: 0, retained: false });
+  return await withDeviceSessionTask(session, async () => {
     await session.start();
     return await capture(session);
-  } finally {
-    if (owner && --owner.count === 0) {
-      screenshotOwners.delete(session);
-      if (!owner.retained && sessions.get(udid) === session) closeDeviceSession(udid);
-    }
-  }
+  });
 }
 
 export async function suspendDeviceSessionForReboot(udid: string): Promise<void> {
