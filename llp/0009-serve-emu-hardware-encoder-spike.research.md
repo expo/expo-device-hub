@@ -5,7 +5,7 @@
 **Systems:** ServeEmu
 **Author:** Krystof Woldrich
 **Date:** 2026-09-10
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/hardware-encoder-spike.md`; links and paths updated)
+**Revised:** 2026-10-12 (software color stability)
 **Related:** LLP 0008
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
@@ -71,6 +71,17 @@ bun test packages/serve-emu/packages/serve-emu/tests/h264-encoder.test.ts
 The hardware test skips when the host probe cannot provide hardware encoding.
 A companion test requires an actionable error on such hosts. Software command
 regression tests compare the entire argument array, including the PNG variant.
+
+## Software color stability
+
+The software encoder uses `-crf 18` with the existing `-maxrate` and `-bufsize`
+limits. Bitrate-only libx264 rate control changed a static dark background's
+decoded color while quality ramped up after an encoder restart. Constant quality
+keeps that background steady across IDRs and following frames without removing
+the configured VBV bitrate bound [observed: `src/h264-encoder.ts` and the real
+ffmpeg static-color regression in `tests/h264-encoder.test.ts`]. The regression
+uses generated text-like detail and checks repeated keyframes and process starts;
+it does not require a private screenshot or an emulator.
 
 ## Other hosts
 

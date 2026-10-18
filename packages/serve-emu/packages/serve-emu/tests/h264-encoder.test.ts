@@ -218,7 +218,7 @@ describe("ffmpeg backend arguments", () => {
     keyFrameInterval: 2, quarterTurn: 1 as const,
   };
 
-  test("preserves the complete existing software command exactly", () => {
+  test("uses constant software quality within the configured bitrate cap", () => {
     const expected = [
       "-hide_banner", "-loglevel", "error",
       "-f", "rawvideo", "-pix_fmt", "rgb24", "-video_size", "360x641",
@@ -226,6 +226,7 @@ describe("ffmpeg backend arguments", () => {
       "crop=trunc(iw/2)*2:trunc(ih/2)*2,transpose=cclock",
       "-pix_fmt", "yuv420p", "-c:v", "libx264",
       "-preset", "ultrafast", "-tune", "zerolatency", "-profile:v", "baseline",
+      "-crf", "18",
       "-b:v", "8000000", "-maxrate", "8000000", "-bufsize", "8000000",
       "-x264-params", "keyint=60:min-keyint=60:scenecut=0:repeat-headers=1:aud=1",
       "-f", "h264", "-flush_packets", "1", "pipe:1",
@@ -901,6 +902,68 @@ describe("H264Encoder validation", () => {
       await encoder.close();
       expect(frames.some((frame) => frame.isConfig)).toBe(true);
       expect(frames.some((frame) => frame.isKey)).toBe(true);
+    },
+  );
+
+  realFfmpegTest(
+    "keeps static dark colors stable across keyframes and encoder restarts",
+    () => {
+      const width = 576;
+      const height = 1280;
+      const frameCount = 24;
+      const rgb = Buffer.alloc(width * height * 3);
+      let seed = 17;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          // Dense, deterministic text-like detail makes ABR's startup quality
+          // ramp visible in the otherwise unchanged dark background.
+          seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+          const light = y >= 128 && x % 8 < 3 && y % 16 < 8 && (seed >>> 31);
+          const value = light ? 230 : 40;
+          rgb.set([value, value + 2, value + 7], (y * width + x) * 3);
+        }
+      }
+      const input = Buffer.concat(Array.from({ length: frameCount }, () => rgb));
+      let previous: number[] | undefined;
+      for (let restart = 0; restart < 2; restart++) {
+        const encoded = spawnSync(
+          resolveFfmpeg(),
+          ffmpegEncoderArgs({
+            width, height, fps: 60, bitRate: 8_000_000, keyFrameInterval: 0.1,
+          }),
+          { input, timeout: 2_000, maxBuffer: 4 * 1024 * 1024 },
+        );
+        expect(encoded.error).toBeUndefined();
+        expect(encoded.status).toBe(0);
+        const frames: VideoFrame[] = [];
+        const parser = new H264OutputParser({ fps: 60, onFrame: (frame) => frames.push(frame) });
+        parser.push(encoded.stdout);
+        parser.push(aud());
+        expect(frames.filter((frame) => !frame.isConfig)).toHaveLength(frameCount);
+        expect(frames.filter((frame) => frame.isKey)).toHaveLength(4);
+
+        const decoded = spawnSync(
+          resolveFfmpeg(),
+          [
+            "-hide_banner", "-loglevel", "error", "-f", "h264", "-i", "pipe:0",
+            "-vf", "format=rgb24,crop=1:1:150:65:exact=1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1",
+          ],
+          { input: encoded.stdout, timeout: 2_000, maxBuffer: frameCount * 3 },
+        );
+        expect(decoded.error).toBeUndefined();
+        expect(decoded.status).toBe(0);
+        expect(decoded.stdout).toHaveLength(frameCount * 3);
+        const first = [...decoded.stdout.subarray(0, 3)];
+        for (const [channel, value] of first.entries()) {
+          expect(Math.abs(value - [40, 42, 47][channel]!)).toBeLessThanOrEqual(3);
+        }
+        for (let frame = 1; frame < frameCount; frame++) {
+          expect([...decoded.stdout.subarray(frame * 3, frame * 3 + 3)]).toEqual(first);
+        }
+        if (previous) expect(first).toEqual(previous);
+        previous = first;
+      }
     },
   );
 

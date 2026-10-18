@@ -262,11 +262,11 @@ export function ffmpegEncoderArgs(
   );
   switch (encoderName) {
     case "libx264":
-      // Preserve this command line byte for byte for existing software users.
+      // @ref LLP 0009#software-color-stability — Keep static UI colors steady within the bitrate cap.
       args.push(
         "-pix_fmt", "yuv420p", "-c:v", "libx264",
         "-preset", "ultrafast", "-tune", "zerolatency",
-        "-profile:v", "baseline", ...rate,
+        "-profile:v", "baseline", "-crf", "18", ...rate,
         "-x264-params",
         `keyint=${keyint}:min-keyint=${keyint}:scenecut=0:repeat-headers=1:aud=1`,
       );
