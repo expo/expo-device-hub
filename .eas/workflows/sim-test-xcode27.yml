@@ -6,7 +6,7 @@ name: serve-sim Xcode 27 build
 # pushes run again. See LLP 0014.
 on:
   schedule:
-    - cron: '17 6 * * *' # 06:17 GMT; EAS is busiest at the top of the hour
+    - cron: '17 6 * * *' # 06:17 GMT
   pull_request:
     if: ${{ contains(toJSON(github.event.pull_request.labels), 'xcode-27') }}
   pull_request_labeled:
