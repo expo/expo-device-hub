@@ -208,7 +208,7 @@ describe("simctl-backed actions", () => {
     try {
       const out = await argv("app.install", { udid: UDID, uploadId });
       expect(out.slice(0, 4)).toEqual(["xcrun", "simctl", "install", UDID]);
-      expect(out[4]).toMatch(/serve-sim-upload-snapshot-[^/]+\/source$/);
+      expect(out[4]).toMatch(/install-snapshot-[^/]+\/source$/);
       expect(existsSync(out[4]!)).toBe(false);
       expect(existsSync(stagedUploadPath(uploadId))).toBe(true);
     } finally {

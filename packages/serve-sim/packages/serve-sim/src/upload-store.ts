@@ -1,12 +1,14 @@
 import { randomUUID } from "crypto";
-import { appendFile, copyFile, mkdtemp, readdir, rm, stat, writeFile } from "fs/promises";
+import { appendFile, lstat, mkdtemp, opendir, readdir, rm, writeFile } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { tmpdir } from "os";
+import type { Stats } from "fs";
 import { z } from "zod";
 
 import {
   type HostActionResult,
   createSerialQueue,
+  actionTimeoutMs,
+  runInvocation,
   ensurePrivateDirAsync,
   ok,
   pruneStaleEntriesAsync,
@@ -16,6 +18,7 @@ import { UPLOAD_DIR, UPLOAD_ROOT } from "./host-paths";
 // Without a ceiling a caller could fill the disk, and a closed tab never cleans up after itself.
 const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_UPLOAD_AGE_MS = 6 * 60 * 60 * 1000;
+const MAX_SNAPSHOT_ENTRIES = 100_000;
 // Serialized so the budget check and the write cannot interleave: concurrent callers would
 // otherwise all read the same pre-write total and sail past the ceiling.
 const queueUploadAsync = createSerialQueue();
@@ -99,24 +102,57 @@ export function readStagedUploadAsync<T>(
 }
 
 /** Snapshot accepted installs without holding the shared staging queue through simctl. */
-export async function withStagedUploadSnapshotAsync<T>(uploadId: string, read: (path: string) => Promise<T>): Promise<T> {
+export async function withStagedUploadSnapshotAsync<T>(
+  uploadId: string,
+  read: (path: string) => Promise<T>,
+  deadline = Date.now() + actionTimeoutMs(),
+): Promise<T> {
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error("App installation timed out.");
+    return ms;
+  };
   const snapshot = await queueUploadAsync(async () => {
+    remaining();
     const source = stagedUploadPath(uploadId);
-    const info = await stat(source);
-    // Upload mutations cannot overwrite or remove a direct app directory.
-    if (info.isDirectory()) return { path: source, size: 0, directory: undefined };
-    if (!info.isFile()) throw new Error("App uploads must be regular files.");
-    if (snapshotBytes + info.size > MAX_UPLOAD_DIR_BYTES) throw new Error("App installation staging is full. Retry after another install finishes.");
-    snapshotBytes += info.size;
+    const info = await lstat(source);
+    if (!info.isFile() && !info.isDirectory())
+      throw new Error("App uploads must be regular files or app directories.");
+    let size = 0,
+      entries = 0;
+    const measure = async (path: string, info: Stats): Promise<void> => {
+      remaining();
+      size += info.size;
+      if (++entries > MAX_SNAPSHOT_ENTRIES)
+        throw new Error("App installation source has too many entries.");
+      if (snapshotBytes + size > MAX_UPLOAD_DIR_BYTES)
+        throw new Error("App installation staging is full. Retry after another install finishes.");
+      if (info.isDirectory()) {
+        for await (const entry of await opendir(path)) {
+          const child = join(path, entry.name);
+          await measure(child, await lstat(child));
+        }
+      } else if (!info.isFile() && !info.isSymbolicLink())
+        throw new Error("App installation source contains an unsupported entry.");
+    };
+    await measure(source, info);
+    snapshotBytes += size;
     let directory: string | undefined;
     try {
-      directory = await mkdtemp(join(tmpdir(), "serve-sim-upload-snapshot-"));
-      const path = join(directory, "source");
-      await copyFile(source, path);
-      return { path, size: info.size, directory };
+      directory = await mkdtemp(join(UPLOAD_DIR, "install-snapshot-"));
+      const path = join(directory, info.isDirectory() ? "source.app" : "source");
+      const copied = await runInvocation({
+        file: "cp",
+        args: ["-R", "-P", source, path],
+        timeoutMs: remaining(),
+      });
+      if (copied.timedOut) throw new Error("App installation timed out.");
+      if (copied.exitCode !== 0)
+        throw new Error(copied.stderr || "Could not snapshot app installation source.");
+      return { path, size, directory };
     } catch (error) {
       if (directory) await rm(directory, { recursive: true, force: true });
-      snapshotBytes -= info.size;
+      snapshotBytes -= size;
       throw error;
     }
   });
