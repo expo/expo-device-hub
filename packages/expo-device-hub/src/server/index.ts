@@ -151,10 +151,11 @@ function isSimRecordingControl(pathname: string): boolean {
 }
 
 /**
- * A backend's refusal carries its CORS headers, so a page that may read the backend can read why
- * the token was refused, not only a network error. The Hub's own routes allow no other origin.
+ * A backend's refusal or failure carries its CORS headers, so a page that may read the backend can
+ * read why the token was refused or the request failed, not only a network error. The Hub's own
+ * routes allow no other origin.
  */
-function refusalCorsHeaders(request: Request, pathname: string): Record<string, string> {
+function backendCorsHeaders(request: Request, pathname: string): Record<string, string> {
   if (isSimPath(pathname)) return corsHeadersFor(request, simAllowsOrigin);
   if (isEmuPath(pathname)) return corsHeadersFor(request, emuAllowsOrigin);
   return {};
@@ -174,7 +175,7 @@ function gateRequest(request: Request, pathname: string): Request | Response {
     mountPath: MOUNT_PATH,
     htmlHeaders: FRAME_POLICY_HEADERS,
     allowQueryToken: !pathname.startsWith(SIM_CAPTURE_PREFIX),
-    corsHeaders: refusalCorsHeaders(request, pathname),
+    corsHeaders: backendCorsHeaders(request, pathname),
   });
   if (refused) return refused;
   return isSimRecordingControl(pathname) ? request : withBearerToken(request, SESSION_TOKEN);
@@ -196,9 +197,23 @@ function withFramePolicy(response: Response | null): Response | null {
 }
 
 export default async function handler(request: Request): Promise<Response | null> {
-  const gated = gateRequest(request, new URL(request.url).pathname);
+  const pathname = new URL(request.url).pathname;
+  const gated = gateRequest(request, pathname);
   if (gated instanceof Response) return gated;
-  return withFramePolicy(await routeRequest(gated));
+  try {
+    return withFramePolicy(await routeRequest(gated));
+  } catch (error) {
+    // The Hub's own routes keep the CLI's plain 500.
+    if (!isSimPath(pathname) && !isEmuPath(pathname)) throw error;
+    // Each backend answers its own route errors; this covers a failure around them.
+    console.error(error);
+    return withFramePolicy(
+      Response.json(
+        { ok: false, error: 'Internal Server Error' },
+        { status: 500, headers: backendCorsHeaders(request, pathname) },
+      ),
+    );
+  }
 }
 
 async function routeRequest(request: Request): Promise<Response | null> {

@@ -70,7 +70,7 @@ import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket
 import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { readRequestBodyAsync, RequestBodyTooLargeError, type WebMiddleware } from "./runtime-utils";
-import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import { answerThrownErrors, connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
 import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
 import { createClipboardSession } from "./clipboard-session";
@@ -1989,7 +1989,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // Capture routes always require authentication, including future subroutes.
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
-  const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
+  const connectMiddleware = answerThrownErrors((async (req: SimReq, res: SimRes, next?: SimNext) => {
     const rawUrl: string = req.url ?? "";
     const qIndex = rawUrl.indexOf("?");
     const url = qIndex === -1 ? rawUrl : rawUrl.slice(0, qIndex);
@@ -3106,7 +3106,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
     // Not ours — pass through
     if (next) return next();
-  }) as ConnectMiddleware;
+  }) as ConnectMiddleware);
   connectMiddleware.handleUpgrade = (req: SimReq, socket: Socket, head: Buffer) => {
     // Upgrades skip the HTTP request path, and the HID and devtools sockets carry no token of
     // their own, so gate them here too.

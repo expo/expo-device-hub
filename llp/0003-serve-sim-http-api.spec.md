@@ -230,7 +230,12 @@ exception: it may read the preview without a flag, but it may not open the
 control socket unless it is named.
 
 A gated request still answers 401 with the CORS headers attached, so the browser
-can read the status rather than reporting an opaque network error.
+can read the status rather than reporting an opaque network error. A route that
+throws before it sends its headers answers 500 with the same headers and a fixed
+body; the error goes to the log, since its message can name internal paths. A
+route that throws after it started a response, such as a stream, has its
+connection closed, because the status is already sent [observed:
+`answerThrownErrors` in `src/connect-to-fetch.ts`].
 
 ## Framing
 

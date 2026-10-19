@@ -20,6 +20,27 @@ function headersFromRequest(request: Request): Record<string, string> {
 }
 
 /** Adapt the package's Connect-style implementation to its public Fetch handler. */
+/**
+ * Answers a route that throws with a 500 that keeps the headers the middleware already set, such as
+ * its CORS policy, as an error the route writes itself does. Otherwise the error escapes the adapter
+ * and the host answers without them. The message stays in the log, not in the response.
+ */
+export function answerThrownErrors(handler: ConnectMiddleware): ConnectMiddleware {
+  return async (req, res, next) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      console.error("serve-sim route error:", error);
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : undefined);
+        return;
+      }
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      res.end("Internal Server Error");
+    }
+  };
+}
+
 export function connectToFetch(
   handler: ConnectMiddleware,
   request: Request,
