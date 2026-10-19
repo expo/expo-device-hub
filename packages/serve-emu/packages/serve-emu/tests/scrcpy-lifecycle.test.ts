@@ -480,10 +480,7 @@ describe("scrcpy async lifecycle", () => {
       "scid=01234560",
     ]);
     // The kernel ends every argument in /proc/<pid>/cmdline with a NUL byte.
-    const cmdlineBytes = cmdline.reduce(
-      (bytes, arg) => bytes + Buffer.byteLength(arg) + 1,
-      0,
-    );
+    const cmdlineBytes = cmdline.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0);
     expect(cmdlineBytes).toBeLessThan(255);
 
     await session.close();
@@ -492,13 +489,11 @@ describe("scrcpy async lifecycle", () => {
   test("omits scrcpy server defaults and passes every other option", async () => {
     const harness = createHarness();
     const defaults = await startWith(harness);
-    const customBitRate = await startScrcpy(
-      { serial: SERIAL, bitRate: 4_000_000 },
-      harness.deps,
-    );
+    const customBitRate = await startScrcpy({ serial: SERIAL, bitRate: 4_000_000 }, harness.deps);
     const control = await startScrcpyControl({ serial: SERIAL }, harness.deps);
-    const [defaultArgs, customBitRateArgs, controlArgs] =
-      harness.state.spawnCalls.map((call) => call.args);
+    const [defaultArgs, customBitRateArgs, controlArgs] = harness.state.spawnCalls.map(
+      (call) => call.args,
+    );
 
     for (const args of [defaultArgs, customBitRateArgs, controlArgs]) {
       for (const serverDefault of [

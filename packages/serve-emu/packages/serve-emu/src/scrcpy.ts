@@ -994,34 +994,37 @@ async function startScrcpyTransport(
     );
     throwIfAborted(startupController.signal, "scrcpy startup aborted");
 
-    proc = runtime.spawnAdb(serial, [
-      "shell",
-      `CLASSPATH=${jarPaths.working}`,
-      "app_process",
-      "/",
-      "com.genymobile.scrcpy.Server",
-      SCRCPY_VERSION,
-      `scid=${scid}`,
-      "log_level=info",
-      "audio=false",
-      `video=${video}`,
-      "tunnel_forward=true",
-      "control=true",
-      `send_dummy_byte=${video}`,
-      `send_stream_meta=${video}`,
-      `send_frame_meta=${video}`,
-      `send_device_meta=${video}`,
-      ...(video
-        ? [
-            `max_size=${maxSize}`,
-            `video_bit_rate=${bitRate}`,
-            `max_fps=${maxFps}`,
-            ...(codecOptions.length > 0 ? [`video_codec_options=${codecOptions.join(",")}`] : []),
-          ]
-        : []),
-      "clipboard_autosync=false",
-      "cleanup=true",
-    ].filter((arg) => !SCRCPY_SERVER_DEFAULT_ARGS.has(arg)));
+    proc = runtime.spawnAdb(
+      serial,
+      [
+        "shell",
+        `CLASSPATH=${jarPaths.working}`,
+        "app_process",
+        "/",
+        "com.genymobile.scrcpy.Server",
+        SCRCPY_VERSION,
+        `scid=${scid}`,
+        "log_level=info",
+        "audio=false",
+        `video=${video}`,
+        "tunnel_forward=true",
+        "control=true",
+        `send_dummy_byte=${video}`,
+        `send_stream_meta=${video}`,
+        `send_frame_meta=${video}`,
+        `send_device_meta=${video}`,
+        ...(video
+          ? [
+              `max_size=${maxSize}`,
+              `video_bit_rate=${bitRate}`,
+              `max_fps=${maxFps}`,
+              ...(codecOptions.length > 0 ? [`video_codec_options=${codecOptions.join(",")}`] : []),
+            ]
+          : []),
+        "clipboard_autosync=false",
+        "cleanup=true",
+      ].filter((arg) => !SCRCPY_SERVER_DEFAULT_ARGS.has(arg)),
+    );
     childSettled = false;
     let stderrTail = "";
     childDone = new Promise<void>((resolve) => {
