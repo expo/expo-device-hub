@@ -157,7 +157,10 @@ const addon = {
       if (softwareKeyboardGateAtCall === undefined || inputCalls.filter((call) => call === "softwareKeyboard").length >= softwareKeyboardGateAtCall) {
         await softwareKeyboardGate;
       }
-      if (trackSoftwareKeyboardVisibility) axTree = axTree === VISIBLE_KEYBOARD_TREE ? "{}" : VISIBLE_KEYBOARD_TREE;
+      if (trackSoftwareKeyboardVisibility) {
+        axTree = axTree === VISIBLE_KEYBOARD_TREE ? "{}" : VISIBLE_KEYBOARD_TREE;
+        softwareKeyboardVisible = axTree === VISIBLE_KEYBOARD_TREE;
+      }
     }
     async caDebug() { inputCalls.push("caDebug"); return true; }
     async hingeState() { return { ...nativeHingeState }; }
