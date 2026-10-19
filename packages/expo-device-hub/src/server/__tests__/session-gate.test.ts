@@ -445,6 +445,68 @@ describe('the Hub under a session token', () => {
     expect(emuUpgrades).toEqual([]);
   });
 
+  // The origin check runs before the token check, so a page that is not allowed cannot use a token
+  // it holds, and a Hub without a token refuses it the same way.
+  test('closes a socket from a page it does not allow, even with the token', () => {
+    const credentials = {
+      cookie,
+      'sec-websocket-protocol': `serve-emu.token.${TOKEN}`,
+      origin: 'https://elsewhere.example',
+    };
+    for (const route of Object.keys(server.webSocketHandlers)) {
+      expect([route, openSocket(route, credentials).closed]).toEqual([
+        route,
+        { code: 1008, reason: 'Origin not allowed' },
+      ]);
+    }
+    // Another scheme on the Hub's own host is not its page.
+    const host = new URL(ORIGIN).host;
+    for (const origin of [`ws://${host}`, `file://${host}`]) {
+      expect([origin, openSocket('/vendor/serve-emu/ws', { ...credentials, origin }).closed]).toEqual([
+        origin,
+        { code: 1008, reason: 'Origin not allowed' },
+      ]);
+    }
+    expect(simSockets).toEqual([]);
+    expect(emuUpgrades).toEqual([]);
+    expect(emuAttached).toEqual([]);
+  });
+
+  // A Hub without --require-token has no token check, so the origin check is all that stands
+  // between another site's page and device input.
+  test('checks the origin on every socket of a Hub without a token too', () => {
+    const ungated = server.webSocketHandlersFor(undefined) as Record<
+      string,
+      (socket: unknown, request: Request) => void
+    >;
+    const open = (route: string, origin?: string) => {
+      const socket = fakeSocket();
+      ungated[route]!(socket, new Request(`${ORIGIN}${route}`, { headers: origin ? { origin } : {} }));
+      return socket.closed;
+    };
+
+    for (const route of Object.keys(ungated)) {
+      expect([route, open(route, 'https://elsewhere.example')]).toEqual([
+        route,
+        { code: 1008, reason: 'Origin not allowed' },
+      ]);
+    }
+    expect(simSockets).toEqual([]);
+    expect(emuAttached).toEqual([]);
+    for (const origin of [ORIGIN, PAGE, undefined]) {
+      expect([origin, open('/vendor/serve-emu/ws', origin)]).toEqual([origin, null]);
+    }
+  });
+
+  test("opens a socket from the Hub's own page, a --cors-origin page, or a client without Origin", () => {
+    const token = { 'sec-websocket-protocol': `serve-emu.token.${TOKEN}` };
+    for (const origin of [ORIGIN, PAGE, undefined]) {
+      const headers = origin ? { ...token, origin } : token;
+      expect([origin, openSocket('/vendor/serve-emu/ws', headers).closed]).toEqual([origin, null]);
+      expect([origin, openSocket('/api/devices/ws', { ...headers, cookie }).closed]).toEqual([origin, null]);
+    }
+  });
+
   // `ws` emits `error` when a peer breaks the protocol, even while the socket closes, and an error
   // with no listener throws. Without one, any client could stop the Hub, token or not.
   test('handles a socket error on a refused socket and on an accepted serve-emu socket', () => {

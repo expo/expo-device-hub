@@ -258,10 +258,17 @@ policy beyond that.
 With `--require-token`, all of these need the token, but not identically.
 `/exec-ws` also checks the `Origin` a browser sends: it accepts the preview's
 own origin and any origin named by `--cors-origin`, and closes anything else
-even with a valid token. Loopback is not implicit here. The HID and CDP sockets
-do not check the `Origin` for a bearer token or a token subprotocol, so any
-origin holding the token can drive them. The access cookie passes only on a
-same-origin request. `frame-ancestors` does not constrain a WebSocket.
+even with a valid token. Loopback is not implicit here. "Own origin" means the
+same host: the check accepts an `http` or `https` origin whose host equals
+`Host`, without comparing the scheme [observed: `isAllowedExecOrigin` in
+`src/socket/server-control.ts`]. A plain-`http` page on the same host therefore
+passes. That is safe on loopback and on a name the browser only loads over
+HTTPS, but not on a public name that also answers, or can be forged, over plain
+HTTP; see [LLP 0000](0000-expo-device-hub.explainer.md#own-host-trust). The HID
+and CDP sockets do not check the `Origin` for a bearer token or a token
+subprotocol, so any origin holding the token can drive them. The access cookie
+passes only on a same-origin request. `frame-ancestors` does not constrain a
+WebSocket.
 
 Without `--require-token`, the HID and CDP sockets need neither the token nor an
 allowed `Origin`. Only the `Host` check in [Allowed hosts](#allowed-hosts)
