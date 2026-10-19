@@ -81,6 +81,7 @@ import {
   type StreamSettings,
   type WebRtcStreamSettings,
 } from "./stream-settings.ts";
+import { isAllowedHost, refusedHostMessage } from "./host-allowlist.ts";
 import {
   corsHeadersForRequest,
   isAllowedBrowserOrigin,
@@ -2268,6 +2269,12 @@ export type RouterDefaults = Partial<AppOptions> & {
    * carry it. Unset keeps the router open.
    */
   sessionToken?: string;
+  /**
+   * Without a session token, the router answers only for `localhost`, `*.localhost`, and IP
+   * addresses, as serve-sim does, so a DNS-rebinding page cannot use it. Set this to answer for any
+   * host name without a token. Insecure.
+   */
+  allowAnyHostWhenInsecure?: boolean;
 };
 
 export type RouterDependencies = {
@@ -2299,7 +2306,7 @@ export type RouterDependencies = {
  * which refuses a socket without the token.
  */
 export function createRouter(
-  { sessionToken, ...defaults }: RouterDefaults = {},
+  { sessionToken, allowAnyHostWhenInsecure = false, ...defaults }: RouterDefaults = {},
   dependencies: RouterDependencies = {},
 ) {
   // An empty token would read as "no token" below and leave the router open.
@@ -2921,8 +2928,21 @@ export function createRouter(
     return streamingApps[0] ?? null;
   };
 
+  // Without a token, a page on another name that resolves here (DNS rebinding) would be same-origin.
+  const hostAllowed = (req: Request): boolean =>
+    !!sessionToken || allowAnyHostWhenInsecure || isAllowedHost(req.headers.get("host") ?? new URL(req.url).host);
+
   const routeRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
+    // Before the preflight answer, as in serve-sim, and after the CORS policy, which every answer
+    // gets, so an allowed page can read why its host was refused.
+    if (!hostAllowed(req)) {
+      const host = req.headers.get("host") ?? url.host;
+      return new Response(refusedHostMessage(host), {
+        status: 403,
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
     // A browser cannot attach the token to a preflight, so preflights skip the
     // gate, as serve-sim's do. They return no live state. Every route but
     // `/webrtc/stats`, which answers its own, is answered here, before `ensure`.
@@ -3250,22 +3270,26 @@ export function createRouter(
     withCorsPolicy(req, await routeOrInternalError(req), defaults);
 
   // Upgrades never reach `handleRequest`, so the transport checks each one
-  // here before `ensure` starts its device. Always true without a token.
+  // here before `ensure` starts its device. Without a token, only the host.
   const authorizeUpgrade = (req: Request): boolean =>
-    !sessionToken || upgradeHasSessionToken(req, sessionToken);
+    sessionToken ? upgradeHasSessionToken(req, sessionToken) : hostAllowed(req);
 
   // Attach a video/gesture socket to an already-resolved, already-started
   // device. The transport ensures the serial before upgrading and passes it
   // here, so the app should exist; close defensively if it raced away.
-  // With a token, `request` is the upgrade the socket came from, and a socket
-  // without the token is closed, so a transport that skips `authorizeUpgrade`
-  // fails closed.
+  // `request` is the upgrade the socket came from. A socket without the token,
+  // or without a token from a host that is not allowed, is closed, so a
+  // transport that skips `authorizeUpgrade` or omits `request` fails closed.
   const attachWebSocket = (
     socket: StreamSocket,
     opts: { serial: string; frameMeta: boolean; video?: boolean; request?: Request },
   ): void => {
     if (sessionToken && !(opts.request && upgradeHasSessionToken(opts.request, sessionToken))) {
       socket.close(1008, "Unauthorized");
+      return;
+    }
+    if (!sessionToken && !allowAnyHostWhenInsecure && !(opts.request && hostAllowed(opts.request))) {
+      socket.close(1008, "Host not allowed");
       return;
     }
     const app = apps.get(opts.serial);

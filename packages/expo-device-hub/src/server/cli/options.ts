@@ -37,6 +37,9 @@ Options:
       --host <host>          Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
       --require-token        Require the session token to open the Hub or call its API, and print it
                              in the startup link. Use it whenever the Hub is reachable from the network.
+      --allow-any-host-when-insecure Without --require-token, answer for any host name, not only
+                             localhost and IP addresses. Insecure: a page on another domain that
+                             resolves here (DNS rebinding) can then use the Hub.
       --frame-ancestor <origin> Allow this origin to embed the Hub in a frame (repeatable). Accepts a
                              subdomain wildcard, e.g. https://*.expo.dev. Only applies with --require-token.
       --cors-origin <origin> Allow a page on this origin to use the Hub's routes and sockets and the iOS
@@ -88,6 +91,8 @@ export type CliOptions = {
   hideBootDevice?: boolean;
   /** serve-sim's flag: the CLI mints a session token and the server gates every route with it. */
   requireToken?: boolean;
+  /** Without a token, answer for any host name, as serve-sim's flag of the same name. */
+  allowAnyHostWhenInsecure?: boolean;
   /** Origins allowed to frame the Hub; serve-sim ignores them without `--require-token`, too. */
   frameAncestors?: string[];
   /** Origins, or `*.` subdomain wildcards, whose pages may call serve-sim and serve-emu. */
@@ -194,6 +199,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'share-url'?: string;
     'disable-share': boolean;
     'require-token': boolean;
+    'allow-any-host-when-insecure': boolean;
     'frame-ancestor': string[];
     'cors-origin': string[];
     'android-recording-directory'?: string;
@@ -231,6 +237,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'share-url': { type: 'string' },
         'disable-share': { type: 'boolean', default: false },
         'require-token': { type: 'boolean', default: false },
+        'allow-any-host-when-insecure': { type: 'boolean', default: false },
         'frame-ancestor': { type: 'string', multiple: true, default: [] },
         'cors-origin': { type: 'string', multiple: true, default: [] },
         'android-recording-directory': { type: 'string' },
@@ -376,6 +383,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     hideSidebar: values['hide-sidebar'],
     hideBootDevice: values['hide-boot-device'],
     requireToken: values['require-token'],
+    allowAnyHostWhenInsecure: values['allow-any-host-when-insecure'],
     frameAncestors: values['frame-ancestor'],
     corsOrigins,
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),

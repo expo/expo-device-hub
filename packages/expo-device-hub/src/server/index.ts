@@ -31,6 +31,7 @@ import {
   HEALTH_ROUTE,
   READY_ROUTE,
 } from './eas-endpoints';
+import { hostAllowed, refusedHostMessage } from './host-check';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import {
@@ -276,6 +277,17 @@ function withFramePolicy(response: Response | null): Response | null {
 export default async function handler(request: Request): Promise<Response | null> {
   const pathname = new URL(request.url).pathname;
   const isBackend = isSimPath(pathname) || isEmuPath(pathname);
+  // First, as in serve-sim: without a token, a page on another name that resolves here (DNS
+  // rebinding) would be same-origin. The CORS headers let an allowed page read why.
+  const host = request.headers.get('host') ?? new URL(request.url).host;
+  if (!hostAllowed(host, SESSION_TOKEN)) {
+    return withFramePolicy(
+      Response.json(
+        { ok: false, error: refusedHostMessage(host) },
+        { status: 403, headers: corsHeadersForPath(request, pathname) },
+      ),
+    );
+  }
   // A preflight carries no token. Each backend answers its own; the Hub answers for its routes.
   if (request.method === 'OPTIONS' && !isBackend) {
     return new Response(null, {
@@ -430,6 +442,10 @@ function gatedSocket<Socket extends GatedSocket>(
     // `ws` emits `error` when a peer breaks the protocol, even while the socket closes, and an
     // error with no listener throws. Without this, a refused client could stop the Hub.
     socket.on('error', () => socket.close());
+    if (!hostAllowed(request.headers.get('host') ?? new URL(request.url).host, token)) {
+      socket.close(1008, 'Host not allowed');
+      return;
+    }
     if (!socketOriginAllowed(request)) {
       socket.close(1008, 'Origin not allowed');
       return;

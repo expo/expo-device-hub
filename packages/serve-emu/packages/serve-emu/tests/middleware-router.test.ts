@@ -8,7 +8,7 @@ import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
 import {
   createApp,
-  createRouter,
+  createRouter as createRouterWithHostCheck,
   type AppOptions,
   type EmuApp,
   type RouterDependencies,
@@ -20,6 +20,12 @@ import type {
   StreamMode,
 } from "../src/shared/api-contracts.ts";
 import type { EmuSession } from "../src/stream-session.ts";
+
+// These tests use names such as `router.test` as hosts. Without a token the router answers only
+// for localhost and IP addresses, which `middleware-router-session-token.test.ts` covers, so they
+// turn it off.
+const createRouter: typeof createRouterWithHostCheck = (defaults = {}, dependencies) =>
+  createRouterWithHostCheck({ allowAnyHostWhenInsecure: true, ...defaults }, dependencies);
 
 type JsonObject = Record<string, unknown>;
 

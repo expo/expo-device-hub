@@ -8,6 +8,7 @@ import {
   type WsWebSocketLike,
 } from '../../vendor/serve-emu/dist/middleware.js';
 
+import { ALLOW_ANY_HOST } from './allow-any-host';
 import { type EmulatorCameraFeeds } from './device-actions';
 import { AndroidSession, type RecordingFinish, type RecordingStart } from './android-session';
 import { recordingLimitsFromEnv } from './recording-limits';
@@ -29,6 +30,8 @@ type EmuSocket = WsWebSocketLike & { on(event: 'error', listener: () => void): u
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
 const router = createRouter({
   ...serveEmuOptions,
+  // The Hub's host rule, so serve-emu answers the same hosts.
+  allowAnyHostWhenInsecure: ALLOW_ANY_HOST,
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN ? { sessionToken: SESSION_TOKEN } : {}),
 });

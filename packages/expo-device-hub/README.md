@@ -82,6 +82,16 @@ the token can control the devices, so share a link only with people who may.
 Only the Hub itself may frame a gated page. To let another site embed it, pass
 `--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
 
+### Open the Hub on another host name
+
+Without `--require-token`, the Hub, and both device servers behind it, answer only for `localhost`,
+`*.localhost`, and IP addresses. A page on another domain that resolves to your machine (DNS
+rebinding) counts as the Hub's own page in the browser, so it could otherwise read the Hub and
+control your devices. To open the Hub on another name without a token, such as a `.local` name or
+a tunnel, pass `--allow-any-host-when-insecure`. Under Expo CLI, set
+`EXPO_DEVICE_HUB_ALLOW_ANY_HOST=1` instead. With `--require-token`, the token stops such a page,
+so the check is off.
+
 ### Allow another origin
 
 A page on another origin can show devices with `@expo/hub-client`. To let it read the Hub's

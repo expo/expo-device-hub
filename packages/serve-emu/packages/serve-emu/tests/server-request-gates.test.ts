@@ -264,6 +264,7 @@ async function createHarness(
       port: options.port ?? server.port,
       host: options.host,
       token: options.token,
+      allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure,
     },
     {
       openScrcpy: async () => session,
@@ -388,6 +389,19 @@ describe("server request gates", () => {
       serial: "emulator-5554",
       status: "streaming",
     });
+  });
+
+  // A page on another name that resolves here (DNS rebinding) carries that name in Host.
+  test("without a token, answers only localhost and IP addresses, before routing and upgrades", async () => {
+    const harness = await createHarness();
+    for (const path of ["/api", "/ws"]) {
+      const refused = await response(harness.request(path, { headers: { host: "rebound.example:33040" } }));
+      expect([path, refused.status]).toEqual([path, 403]);
+    }
+    expect((await response(harness.request("/api", { headers: { host: "localhost:33040" } }))).status).toBe(200);
+
+    const open = await createHarness({ allowAnyHostWhenInsecure: true });
+    expect((await response(open.request("/api", { headers: { host: "rebound.example:33040" } }))).status).toBe(200);
   });
 
   test("rejects cross-origin mutations and upgrades before routing", async () => {
