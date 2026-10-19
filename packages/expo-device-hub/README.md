@@ -100,6 +100,10 @@ before the token check. The same rules decide which pages may open the Hub's Web
 without `--require-token`; a page on the Hub's own origin always may, and a client that sends no
 `Origin`, such as a CLI, is not affected.
 
+A page may change devices, for example boot, shut down, or tap, only from the Hub's own origin or
+an origin named with `--cors-origin`. A loopback page may read the Hub, but not change anything,
+unless it is named. Any other page gets 403, with or without `--require-token`.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.

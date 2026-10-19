@@ -415,6 +415,20 @@ describe("server request gates", () => {
     );
     expect(malformedOrigin.status).toBe(403);
 
+    // Only a web page's origin counts as this server's page; the browser's own mark also counts.
+    const otherScheme = await response(
+      harness.request("/api/tap", { method: "POST", headers: { origin: "ws://127.0.0.1:33040" }, body: "{" }),
+    );
+    expect(otherScheme.status).toBe(403);
+    const markedSameOrigin = await response(
+      harness.request("/api/tap", {
+        method: "POST",
+        headers: { origin: "https://127.0.0.1:33040", "sec-fetch-site": "same-origin" },
+        body: "{",
+      }),
+    );
+    expect(markedSameOrigin.status).not.toBe(403);
+
     const sameOriginPost = await response(
       harness.request("/api/tap", {
         method: "POST",

@@ -198,6 +198,67 @@ describe('the Hub under a session token', () => {
     }
   });
 
+  // Another site's page can send a form-like POST without a preflight, so the token alone does not
+  // stop it. Each device action checks the page's origin before it runs, with or without a token.
+  test('refuses a device action from a page it does not allow', async () => {
+    const post = (path: string, origin?: string, extra: Record<string, string> = {}) =>
+      request(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain',
+          Authorization: `Bearer ${TOKEN}`,
+          ...(origin ? { Origin: origin } : {}),
+          ...extra,
+        },
+        // An unknown platform makes a Hub action answer 400 before it touches a device, so this test
+        // can never shut down a real simulator, even if the check it tests breaks.
+        body: '{"platform":"none","id":"all"}',
+      });
+
+    const actions = ['/api/devices/shutdown', '/api/devices/remove', '/api/devices/boot', '/api/devices/create'];
+    for (const path of actions) {
+      for (const origin of ['https://elsewhere.example', 'http://localhost:5173']) {
+        const refused = await post(path, origin);
+        expect([path, origin, refused?.status]).toEqual([path, origin, 403]);
+      }
+    }
+
+    // A --cors-origin page, the Hub's own page, the browser's same-origin mark, and a CLI reach the
+    // route, which refuses the unknown platform.
+    const allowed: Array<[string | undefined, Record<string, string>]> = [
+      [PAGE, {}],
+      [ORIGIN, {}],
+      ['https://192.168.1.20:3400', { 'Sec-Fetch-Site': 'same-origin' }],
+      [undefined, {}],
+    ];
+    for (const [origin, extra] of allowed) {
+      expect([origin, (await post('/api/devices/shutdown', origin, extra))?.status]).toEqual([origin, 400]);
+    }
+  });
+
+  // serve-sim and serve-emu refuse such a page on their own routes, so the Hub passes its origin on.
+  test("passes a page's origin on to the backend that checks it", async () => {
+    for (const path of ['/vendor/serve-sim/grid/api/shutdown', '/vendor/serve-emu/api/network']) {
+      await request(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', Authorization: `Bearer ${TOKEN}`, Origin: 'https://elsewhere.example' },
+        body: '{}',
+      });
+    }
+    expect(simRequests.at(-1)?.headers.get('origin')).toBe('https://elsewhere.example');
+    expect(emuRequests.at(-1)?.headers.get('origin')).toBe('https://elsewhere.example');
+  });
+
+  // A host that embeds the Hub may have its own routes behind it, which answer for themselves.
+  test('leaves a state change on a path the Hub does not own to its host', async () => {
+    const response = await request('/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain', Authorization: `Bearer ${TOKEN}`, Origin: 'https://elsewhere.example' },
+      body: '{}',
+    });
+    expect(response).toBeNull();
+  });
+
   // A browser sends the preflight first, then the request with the token it has.
   test('lets a --cors-origin page read every kind of token refusal after its preflight', async () => {
     // Each backend's real preflight lets the page send the token header at all.

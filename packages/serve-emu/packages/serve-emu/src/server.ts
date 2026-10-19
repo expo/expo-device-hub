@@ -618,13 +618,16 @@ export async function startServer(
   const originAllowed = (req: Request): boolean => {
     const origin = req.headers.get("origin");
     if (!origin) return true;
-    let originHost: string;
+    if (req.headers.get("sec-fetch-site") === "same-origin") return true;
+    let parsed: URL;
     try {
-      originHost = new URL(origin).host;
+      parsed = new URL(origin);
     } catch {
       return false;
     }
-    return originHost === req.headers.get("host");
+    // Only a web page's origin; `ws:` or `file:` on the same host is not this server's page.
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    return parsed.host === req.headers.get("host");
   };
 
   const createContext = (

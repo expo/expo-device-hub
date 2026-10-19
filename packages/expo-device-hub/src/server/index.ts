@@ -45,6 +45,7 @@ import {
 import {
   SIM_PREFIX,
   SIM_TOKEN_SUBPROTOCOL_PREFIX,
+  corsOriginNamed,
   handleSimRequest,
   simAllowsOrigin,
   simWebSocketHandler,
@@ -186,6 +187,44 @@ function socketOriginAllowed(request: Request): boolean {
   return originRuleFor(target.pathname)(origin, request);
 }
 
+/**
+ * Whether a page may run a device action. A browser page needs the Hub's own origin or a
+ * `--cors-origin` origin, as serve-emu's router and serve-sim require for theirs: a loopback page
+ * may read, but not act. A request without `Origin`, such as a CLI or EAS, is not affected. This
+ * holds with or without a token, because a cross-site page can send a form-like POST that needs no
+ * preflight.
+ */
+function stateChangeAllowed(request: Request): boolean {
+  const header = request.headers.get('origin');
+  if (header === null) return true;
+  if (request.headers.get('sec-fetch-site') === 'same-origin') return true;
+  let origin: URL;
+  try {
+    origin = new URL(header);
+  } catch {
+    return false;
+  }
+  if (origin.protocol !== 'http:' && origin.protocol !== 'https:') return false;
+  return origin.origin === new URL(request.url).origin || corsOriginNamed(origin);
+}
+
+/** The response that refuses a device action, or null to run it. */
+function refuseDeviceAction(request: Request): Response | null {
+  if (request.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
+  }
+  if (!stateChangeAllowed(request)) {
+    return jsonResponse(
+      {
+        ok: false,
+        error: 'This page may not change devices through the Hub. Start the Hub with --cors-origin for its origin.',
+      },
+      403,
+    );
+  }
+  return null;
+}
+
 /** What a preflight for one of the Hub's own routes may ask for, as serve-sim's answer names. */
 const HUB_PREFLIGHT_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
@@ -305,9 +344,8 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === SHUTDOWN_DEVICE_ROUTE || pathname === REMOVE_DEVICE_ROUTE) {
-    if (request.method !== 'POST') {
-      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
-    }
+    const refused = refuseDeviceAction(request);
+    if (refused) return refused;
 
     const action = await parseDeviceAction(request);
     if (!action) {
@@ -327,9 +365,8 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === BOOT_DEVICE_ROUTE) {
-    if (request.method !== 'POST') {
-      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
-    }
+    const refused = refuseDeviceAction(request);
+    if (refused) return refused;
 
     const action = await parseDeviceAction(request);
     if (!action) {
@@ -346,9 +383,8 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === CREATE_DEVICE_ROUTE) {
-    if (request.method !== 'POST') {
-      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
-    }
+    const refused = refuseDeviceAction(request);
+    if (refused) return refused;
 
     const action = await parseCreateDeviceAction(request);
     if (!action) {

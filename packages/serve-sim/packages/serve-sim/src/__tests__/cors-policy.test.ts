@@ -88,6 +88,28 @@ describe("CORS policy", () => {
     expect(other?.headers.get("vary")).toBe("Origin");
   });
 
+  // Another site's page can send a form-like POST without a preflight. A loopback page may read the
+  // preview, but not act, as on the control socket and in serve-emu.
+  test("refuses a state change from a page that is not the preview's or named, before the route runs", async () => {
+    const middleware = simMiddleware({ basePath: "/.sim", corsOrigins: ["https://expo.dev"] });
+    // An invalid udid makes the route answer 400 without touching a simulator.
+    const shutdown = (origin?: string) =>
+      middleware(
+        new Request("http://localhost/.sim/grid/api/shutdown", {
+          method: "POST",
+          headers: { "content-type": "text/plain", ...(origin ? { origin } : {}) },
+          body: '{"udid":"not-a-udid"}',
+        }),
+      );
+
+    for (const origin of ["https://elsewhere.example", "http://localhost:5173", "ws://localhost"]) {
+      expect([origin, (await shutdown(origin))?.status]).toEqual([origin, 403]);
+    }
+    for (const origin of ["https://expo.dev", "http://localhost", undefined]) {
+      expect([origin, (await shutdown(origin))?.status]).toEqual([origin, 400]);
+    }
+  });
+
   test("keeps the headers on a gated 401, so the browser can read the status", async () => {
     const middleware = simMiddleware({
       basePath: "/.sim",
