@@ -139,6 +139,12 @@ On the tested iOS 26.4 and 27.0 runtimes, the first delivered HID key can hide t
 
 The Paste reply acknowledges the pasteboard write and HID dispatch, not insertion by the focused app. The write happens before the shortcut, so text can reach the simulator pasteboard while a lost shortcut leaves the field unchanged. The native app-paste test enables the clipboard capability, sets Hardware Keyboard OFF before launching a plain UIKit text view, sends one Paste with no preceding shortcut, checks the field's exact Unicode editing-change event rather than accepting the reply alone, and repeats after an app relaunch without another keyboard toggle. Only the initial launch requires software-keyboard visibility: an earlier HID key can leave it hidden across app relaunches, while each launch must still become active and insert its exact first Paste [observed: `src/sim-pasteboard-paste.ts`, Paste reply in `src/device-session.ts`, `src/__tests__/sim-clipboard.e2e.test.ts`].
 
+### Paste soon after an app read
+
+On iOS 27, a Command+V sent soon after the app read clipboard text that another app wrote can be lost. A Paste is such a read, and so is a read through the injected reader. The field does not change, but Paste still reports success. On an owned iPhone 17 Simulator with iOS 27.0, a Paste 0 s or 1 s after a reader read was lost in 4 of 4 cases, and of two Pastes sent back to back, the second was lost. A Paste about 2.5 s after the read was lost in 4 of 4 runs of the clipboard host-action test, and a Paste 4 s after it landed in 3 of 3 runs [observed: owned iPhone 17 Simulator, iOS 27.0, Xcode 26.4 build, 2026-10-19; probe e2e runs]. The app's scene stays active through the read and the Paste, so the reader does not register Paste again [observed: fixture selection marker unchanged, 2 of 2 runs].
+
+The cause is not known. serve-sim does not wait: a wait in the shared input queue would delay other viewers' touches, and a read during the write could still lose the Paste. The clipboard host-action test waits 4 s after each read and each Paste instead [observed: `src/__tests__/host-actions-clipboard.e2e.test.ts`].
+
 ## Copy
 
 Toolbar Copy reads the text that the simulator app copies and puts it on the browser clipboard.

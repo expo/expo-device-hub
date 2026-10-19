@@ -15,9 +15,11 @@ import {
   pasteboardDylib,
   pasteboardFixture,
   pasteboardTool,
+  waitForFixtureSelection,
   withSkipPbpaste,
 } from "./pasteboard-sim";
 
+const PASTE_AFTER_APP_READ_MS = 4000;
 const stateDir = useTempStateDir();
 const udid = e2eDevice();
 const ready = !!(
@@ -44,6 +46,8 @@ afterAll(() => stateDir.restore());
     try {
       ensureFixtureInstalled(udid!);
       app = await launchWithoutReader(udid!, FIXTURE_BUNDLE);
+      // On iOS 27 the fixture focuses and selects its text seconds after launch.
+      await waitForFixtureSelection(udid!);
       expect(peekDeviceSession(udid!)).toBeUndefined();
       expect((await run("clipboard.copy")).text).toBe(COPY_FIXTURE_TEXT);
     } finally {
@@ -61,22 +65,32 @@ afterAll(() => stateDir.restore());
     try {
       ensureFixtureInstalled(udid!);
       app = await openAppForPasteboard(udid!, FIXTURE_BUNDLE);
+      // Paste goes to the focused field, which on iOS 27 has focus only seconds after launch.
+      await waitForFixtureSelection(udid!);
       expect(peekDeviceSession(udid!)).toBeUndefined();
       await withSkipPbpaste(async () => {
         const text = ' \n🦆 {"text":true}\n ';
         await run("clipboard.write", { text });
         expect((await run("clipboard.read")).text).toBe(text);
+        // Check the field after each Paste, so a failure names the Paste that was lost.
+        const expectField = async (expected: string) => {
+          const pastedText = JSON.stringify(expected).slice(1, -1);
+          const deadline = Date.now() + 5000;
+          let tree = "";
+          do {
+            tree = await axDescribeAsync(udid!);
+            if (tree.includes(pastedText)) break;
+            await Bun.sleep(100);
+          } while (Date.now() < deadline);
+          expect(tree).toContain(pastedText);
+        };
+        // @ref LLP 0010#paste-soon-after-an-app-read — iOS 27 can drop a Paste sent soon after one.
+        await Bun.sleep(PASTE_AFTER_APP_READ_MS);
         await run("clipboard.paste");
+        await expectField(text);
+        await Bun.sleep(PASTE_AFTER_APP_READ_MS);
         await run("clipboard.paste", { text: "direct paste" });
-        const pastedText = JSON.stringify(`${text}direct paste`).slice(1, -1);
-        const deadline = Date.now() + 5000;
-        let tree = "";
-        do {
-          tree = await axDescribeAsync(udid!);
-          if (tree.includes(pastedText)) break;
-          await Bun.sleep(100);
-        } while (Date.now() < deadline);
-        expect(tree).toContain(pastedText);
+        await expectField(`${text}direct paste`);
         await run("clipboard.write", { text: "" });
         expect((await run("clipboard.read")).text).toBe("");
       });
