@@ -94,7 +94,9 @@ npx expo-device-hub --require-token --cors-origin https://example.com
 The flag applies to iOS and Android, and takes the same values as serve-sim's `--cors-origin`:
 an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev`. A wildcard
 covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
-sends the token.
+sends the token. The Hub's own routes, such as `/healthz` and `/api/devices`, follow serve-sim's
+rule: a loopback page or an origin named here may read them, and the Hub answers their preflight
+before the token check.
 
 ### Record an Android session
 

@@ -62,6 +62,8 @@ import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
 export { startAndroidScreenRecording, shutdownAndroid } from './serve-emu';
 
+/** Every Hub API route lives under this prefix; the rest of a path is a static file. */
+const HUB_API_PREFIX = '/api/';
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
 const REMOVE_DEVICE_ROUTE = '/api/devices/remove';
@@ -151,14 +153,27 @@ function isSimRecordingControl(pathname: string): boolean {
 }
 
 /**
- * A backend's refusal or failure carries its CORS headers, so a page that may read the backend can
- * read why the token was refused or the request failed, not only a network error. The Hub's own
- * routes allow no other origin.
+ * The CORS headers for a path: each backend's own rule, and serve-sim's for the Hub's own routes,
+ * because `--cors-origin` is serve-sim's flag. A refusal or failure carries them too, so a page
+ * that may read a route can read why the token was refused or the request failed, not only a
+ * network error.
  */
-function backendCorsHeaders(request: Request, pathname: string): Record<string, string> {
-  if (isSimPath(pathname)) return corsHeadersFor(request, simAllowsOrigin);
+function corsHeadersForPath(request: Request, pathname: string): Record<string, string> {
   if (isEmuPath(pathname)) return corsHeadersFor(request, emuAllowsOrigin);
-  return {};
+  return corsHeadersFor(request, simAllowsOrigin);
+}
+
+/** What a preflight for one of the Hub's own routes may ask for, as serve-sim's answer names. */
+const HUB_PREFLIGHT_HEADERS = {
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+};
+
+/** A copy with the Hub's CORS headers, because a route's response headers may be immutable. */
+function withCorsHeaders(response: Response, headers: Record<string, string>): Response {
+  const copy = new Response(response.body, response);
+  for (const [name, value] of Object.entries(headers)) copy.headers.set(name, value);
+  return copy;
 }
 
 /**
@@ -175,7 +190,7 @@ function gateRequest(request: Request, pathname: string): Request | Response {
     mountPath: MOUNT_PATH,
     htmlHeaders: FRAME_POLICY_HEADERS,
     allowQueryToken: !pathname.startsWith(SIM_CAPTURE_PREFIX),
-    corsHeaders: backendCorsHeaders(request, pathname),
+    corsHeaders: corsHeadersForPath(request, pathname),
   });
   if (refused) return refused;
   return isSimRecordingControl(pathname) ? request : withBearerToken(request, SESSION_TOKEN);
@@ -198,19 +213,41 @@ function withFramePolicy(response: Response | null): Response | null {
 
 export default async function handler(request: Request): Promise<Response | null> {
   const pathname = new URL(request.url).pathname;
+  const isBackend = isSimPath(pathname) || isEmuPath(pathname);
+  // A preflight carries no token. Each backend answers its own; the Hub answers for its routes.
+  if (request.method === 'OPTIONS' && !isBackend) {
+    return new Response(null, {
+      status: 204,
+      headers: { ...HUB_PREFLIGHT_HEADERS, ...corsHeadersForPath(request, pathname) },
+    });
+  }
   const gated = gateRequest(request, pathname);
   if (gated instanceof Response) return gated;
   try {
-    return withFramePolicy(await routeRequest(gated));
+    const response = withFramePolicy(await routeRequest(gated));
+    if (!response) {
+      // A path the Hub or a backend owns but does not route still answers here, with its CORS
+      // headers, so an allowed page can tell a missing route from a network error. Other paths
+      // fall through to the host, which serves the Hub's static files.
+      return isBackend || pathname.startsWith(HUB_API_PREFIX)
+        ? withFramePolicy(
+            Response.json(
+              { ok: false, error: 'Not Found' },
+              { status: 404, headers: corsHeadersForPath(request, pathname) },
+            ),
+          )
+        : null;
+    }
+    // The backends name their own policy; the Hub's routes get serve-sim's.
+    return isBackend ? response : withCorsHeaders(response, corsHeadersForPath(request, pathname));
   } catch (error) {
-    // The Hub's own routes keep the CLI's plain 500.
-    if (!isSimPath(pathname) && !isEmuPath(pathname)) throw error;
-    // Each backend answers its own route errors; this covers a failure around them.
+    // Each backend answers its own route errors; this covers a failure around them and the Hub's
+    // own routes, with the same headers.
     console.error(error);
     return withFramePolicy(
       Response.json(
         { ok: false, error: 'Internal Server Error' },
-        { status: 500, headers: backendCorsHeaders(request, pathname) },
+        { status: 500, headers: corsHeadersForPath(request, pathname) },
       ),
     );
   }
