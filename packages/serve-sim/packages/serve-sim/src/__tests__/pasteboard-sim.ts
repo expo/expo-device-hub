@@ -11,7 +11,11 @@ import {
   removeCapabilityLoader,
   removeCapabilityLoaderSync,
 } from "../launch-manager";
-import { locateSimpbArtifact, locatePasteboardTool } from "../sim-pasteboard";
+import {
+  locateSimpbArtifact,
+  locatePasteboardTool,
+  readPasteboardViaSimctl,
+} from "../sim-pasteboard";
 import {
   CLIPBOARD_CAPABILITY,
   locatePasteboardReaderDylib,
@@ -70,6 +74,35 @@ export async function waitForFixtureSelection(udid: string): Promise<void> {
       throw new Error(`${FIXTURE_BUNDLE} (pid ${pid}) did not select its text within 15 s`);
     await Bun.sleep(100);
   }
+}
+
+/**
+ * After a write, `simctl pbpaste` can return empty text for a while on a freshly booted simulator,
+ * although apps in the simulator already read the new text. Call this between a write and a read
+ * that can go through `pbpaste`. Without a GUI login `pbpaste` fails, so the wait ends at once.
+ */
+export async function waitForHostPasteboard(
+  udid: string,
+  text: string,
+  timeoutMs = 5_000,
+): Promise<void> {
+  // @ref LLP 0010#simctl-pbpaste-can-lag-a-write — serve-sim reads do not wait; only the tests do
+  if (process.env.SERVE_SIM_SKIP_PBPASTE === "1") return;
+  const deadline = Date.now() + timeoutMs;
+  let seen: string;
+  while (true) {
+    try {
+      seen = (await readPasteboardViaSimctl(udid)).text;
+    } catch {
+      return;
+    }
+    if (seen === text) return;
+    if (Date.now() > deadline) break;
+    await Bun.sleep(100);
+  }
+  throw new Error(
+    `simctl pbpaste did not return the written text within ${timeoutMs} ms (last read: ${JSON.stringify(seen.slice(0, 40))})`,
+  );
 }
 
 export function runningPid(udid: string, bundleId: string): number | null {

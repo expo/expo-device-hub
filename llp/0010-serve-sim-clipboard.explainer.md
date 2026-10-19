@@ -5,6 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-19
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,6 +24,12 @@ A first implementation was rolled back because it did not work as planned on the
 - **Writes use a small tool that runs inside the simulator,** `Sources/SimPasteboard`, started with `simctl spawn` and `--write`. Unlike `simctl pbcopy`, it works without a GUI login session, which headless workers such as EAS do not have [observed: `Sources/SimPasteboard/sim-pasteboard.m`]. The same tool can also report the pasteboard change count and read text. Its `--snapshot` mode prints an item snapshot for the E2E tests only [observed: `src/__tests__/pasteboard-tool.e2e.test.ts`, `src/__tests__/pasteboard-copy.e2e.test.ts`].
 - **One lock per simulator** serializes writes, so two writes cannot interleave. A plain read does not take the lock [observed: `withSimPasteboardLock` and `readPasteboardViaSimctl` in `src/sim-pasteboard.ts`].
 - **Text is limited to 4 MiB** in both directions. Larger text returns a JSON 413 [observed: `src/middleware.ts`, and the read limit in `readPasteboardText` in `src/sim-pasteboard.ts`]. A `PUT` body can be up to 8 MiB, because JSON escaping can double the text. The route answers a larger body with the same JSON 413 [observed: `src/middleware.ts`]. The standalone server refuses a body over 8 MiB before the route runs, with the plain-text 413 that it sends for every route [observed: `servePreview` in `src/runtime.ts`].
+
+### `simctl pbpaste` can lag a write
+
+On a freshly booted Simulator, `simctl pbpaste` can return empty text right after a write, while apps in the Simulator already read the new text. The write is not lost. On an owned iPhone 17 Simulator with iOS 27.0 (Xcode 27.1 build, erased before each boot), `pbpaste` right after a write returned empty text in 5 of 42 pairs in the first 25 s after boot. In 1 of the 5, it was still empty 1.5 s later. In all 5, a read through `ServeSimPasteboard.app` right after `pbpaste` returned the new text. Every stale result was empty, not the previous text. A read through the app right after the write, before any `pbpaste`, returned the new text in 12 of 12 pairs [observed: owned iPhone 17 Simulator, iOS 27.0, 2026-10-19; probe scripts]. The cause is not known.
+
+serve-sim reads do not wait for `pbpaste` to catch up [confirmed: Gabe Debes, 2026-10-19]. The E2E tests that write and then read through `pbpaste` wait until `pbpaste` returns the written text. Before that wait, the endpoint E2E file got empty text at least once in 4 of 9 runs on a freshly erased Simulator [observed: `waitForHostPasteboard` in `src/__tests__/pasteboard-sim.ts`; owned iPhone 17 Simulator, iOS 27.0, 2026-10-19]. Without a GUI login, `pbpaste` fails and reads use the app reader, so the wait ends at once on headless workers.
 
 ## Who may use the pasteboard API
 

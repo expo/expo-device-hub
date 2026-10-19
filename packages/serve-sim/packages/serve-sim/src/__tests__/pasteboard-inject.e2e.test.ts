@@ -17,6 +17,7 @@ import {
   pasteboardTool,
   runningPid,
   terminatePasteboardApps,
+  waitForHostPasteboard,
   withSkipPbpaste,
   writeTestPasteboard,
 } from "./pasteboard-sim";
@@ -70,6 +71,7 @@ for (const app of PASTEBOARD_TEST_APPS) {
     test("readSimPasteboardResult returns writer text via pbpaste or inject", async () => {
       const probe = `serve-sim-product-read-${app.label.replace(/\s+/g, "-")}`;
       writeTestPasteboard(udid!, probe);
+      await waitForHostPasteboard(udid!, probe);
       expect((await readSimPasteboardResult(udid!)).text).toBe(probe);
     }, 20_000);
 

@@ -18,6 +18,8 @@ import {
   pasteboardFixture,
   pasteboardTool,
   SAFARI_BUNDLE,
+  waitForHostPasteboard,
+  withSkipPbpaste,
   writeTestPasteboard,
 } from "./pasteboard-sim";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
@@ -449,6 +451,7 @@ for (const app of PASTEBOARD_TEST_APPS) {
     test("returns JSON text for an explicit device", async () => {
       const probe = `serve-sim-pasteboard-probe-${app.label.replace(/\s+/g, "-")}`;
       writeTestPasteboard(bootedUdid!, probe);
+      await waitForHostPasteboard(bootedUdid!, probe);
       const res = await middleware(pasteboardRequest(`?device=${encodeURIComponent(bootedUdid!)}`));
       expect(res?.status).toBe(200);
       expect(res?.headers.get("content-type")).toBe("application/json");
@@ -467,10 +470,27 @@ for (const app of PASTEBOARD_TEST_APPS) {
         );
         expect(write?.status).toBe(200);
         expect(await write!.json()).toEqual({ ok: true });
+        await waitForHostPasteboard(bootedUdid!, probe);
 
         const read = await middleware(pasteboardRequest(query));
         expect(read?.status).toBe(200);
         expect(await read!.json()).toMatchObject({ ok: true, text: probe });
+      }, 45_000);
+
+      // The test above waits for `simctl pbpaste` to catch up; this one reads right after the write.
+      // @ref LLP 0010#simctl-pbpaste-can-lag-a-write — the app reader has no such lag
+      test("POST through the app reader right after PUT returns the new text", async () => {
+        const probe = `serve-sim-immediate-read-${Date.now()}`;
+        const query = `?device=${encodeURIComponent(bootedUdid!)}`;
+        await withSkipPbpaste(async () => {
+          const write = await middleware(
+            pasteboardRequest(query, "PUT", JSON.stringify({ text: probe })),
+          );
+          expect(write?.status).toBe(200);
+          const read = await middleware(pasteboardRequest(query));
+          expect(read?.status).toBe(200);
+          expect(await read!.json()).toMatchObject({ ok: true, text: probe });
+        });
       }, 45_000);
 
       test("falls back to a booted simulator when no device is given", async () => {
