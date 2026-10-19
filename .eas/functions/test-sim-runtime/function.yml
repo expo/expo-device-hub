@@ -1,6 +1,6 @@
 name: Test the prebuilt serve-sim package on an iOS Simulator
 inputs:
-  # Each runtime splits the e2e files over two machines: "slow" runs the files in SLOW below,
+  # Each runtime splits the e2e files over two machines: "slow" runs *.slow.e2e.test.ts,
   # "rest" runs every other e2e file, so a new file lands in "rest".
   - name: group
     allowed_values: [slow, rest]
@@ -20,13 +20,8 @@ runs:
       working_directory: packages/serve-sim
       run: |
         export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
-        # These four files took about half of the e2e time on both runtimes (October 2026).
-        SLOW="network-request-fixture capture-reboot-recovery hardware-keyboard-shift wheel-touch-handoff"
-        args=()
         if [ "${{ inputs.group }}" = slow ]; then
-          for file in $SLOW; do args+=("$file.e2e.test.ts"); done
+          bun test --max-concurrency=1 --retry=1 .slow.e2e.
         else
-          for file in $SLOW; do args+=("--path-ignore-patterns=**/$file.e2e.test.ts"); done
-          args+=(".e2e.")
+          bun test --max-concurrency=1 --retry=1 '--path-ignore-patterns=**/*.slow.e2e.test.*' .e2e.
         fi
-        bun test --max-concurrency=1 --retry=1 "${args[@]}"

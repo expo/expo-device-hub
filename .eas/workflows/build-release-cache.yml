@@ -32,8 +32,6 @@ jobs:
     environment: production
     env:
       TURBO_CACHE: local:rw,remote:rw
-      # Must match the reader in release.yml; this is part of the cache key.
-      EXPO_DEVICE_HUB_BUILD_IMAGE: macos-tahoe-26.5-xcode-26.6
     steps:
       - uses: eas/checkout
 
@@ -60,4 +58,5 @@ jobs:
         run: ./scripts/summarize-versions.ts
 
       - name: Build packages
-        run: bun run build
+        # Always rebuild on the pinned image before the Ubuntu reader uses this cache.
+        run: bun run build --force

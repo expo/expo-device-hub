@@ -12,9 +12,6 @@ on:
       - .eas/functions/restore-sim-test-build/**
       - .eas/functions/test-sim-runtime/**
       - .eas/functions/install-mitmproxy/**
-      - .eas/workflows/build-release-cache.yml
-      - .github/workflows/release.yml
-      - turbo.json
   # The same rule for labels: ci-ready starts a draft, and eas-approved starts only a ready PR.
   pull_request_labeled:
     labels: [ci-ready, eas-approved]
