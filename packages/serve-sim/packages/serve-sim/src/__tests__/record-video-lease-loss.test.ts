@@ -45,10 +45,9 @@ for (const mode of [
         )
           expect(result.deletes).toBeGreaterThanOrEqual(1);
         else expect(result.deletes).toBe(1);
-        if (mode === "transient" || mode === "transport") {
-          expect(result.firstDeleteDelayMs).toBeGreaterThanOrEqual(15_000);
-          expect(result.firstDeleteDelayMs).toBeLessThan(20_000);
-        } else expect(result.firstDeleteDelayMs).toBeLessThan(5_000);
+        // The stop follows its cause (SIGINT or a definitive status) within one heartbeat interval.
+        expect(result.deletedBeforeStopCause).toBe(false);
+        expect(result.stopTimerWaitMs).toBeLessThan(5_000);
       }
       if (mode.startsWith("definitive"))
         expect(result.error).toContain("Recording ended before a stop was requested");
