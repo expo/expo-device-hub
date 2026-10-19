@@ -209,6 +209,18 @@ describe("capture counts", () => {
 });
 
 describe("frame flow counts", () => {
+  test("keeps native shared encoder timing separate from libwebrtc encode time", () => {
+    const stats = readSenderStats({ sessions: [], sharedEncoderFlow: {
+      submitted: 60, coalesced: 30, completed: 59, failed: 0, encodeSumMs: 900,
+      queueWaitSumMs: 150, taskDispatchSumMs: 5, completionDispatchSumMs: "invalid",
+    } });
+    expect(stats.sharedEncoderFlow?.submitted).toBe(60);
+    expect(stats.sharedEncoderFlow?.coalesced).toBe(30);
+    expect(stats.sharedEncoderFlow?.encodeSumMs).toBe(900);
+    expect(stats.sharedEncoderFlow?.completionDispatchSumMs).toBeNull();
+    expect(readSenderStats({ sessions: [] }).sharedEncoderFlow).toBeNull();
+  });
+
   test("keeps capture deliveries and paced submissions as distinct stages", () => {
     const stats = readSenderStats({
       sessions: [],

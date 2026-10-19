@@ -553,3 +553,18 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 called.
 
 `screenshot.capture` makes a file name when `fileName` is missing.
+
+
+## Guest profiling
+
+The authenticated control action `profile.capture` accepts `{seconds: 1..30}`
+(default 15), and returns raw NDJSON in `stdout`. It runs only on detected VMs,
+allows one capture per preview process across all sockets, and rejects a response
+over 16 MiB. The server chooses a private temporary output and removes it after
+reading; clients cannot choose a path or command. Expected VM, busy-slot and
+response-size refusals return a nonzero action result with a fixed diagnostic;
+unexpected internal errors stay private. Disconnecting does not cancel the bounded
+capture. A preview token holder can see guest process executable
+paths and resource counters; arguments and environment variables are not recorded.
+GPU allocations are not GPU utilization, and short-lived tasks can be missed
+[observed: `src/guest-profile-capture.ts`, `src/guest-metrics.ts`, `src/host-actions.ts`].

@@ -105,6 +105,8 @@ export interface SenderStats {
   sharedCanvas?: SharedCanvas | null;
   /** Per-proxy shared encoder counters, passed through as reported. */
   sharedEncoderPeers?: Record<string, unknown>[] | null;
+  /** Native cumulative queue/encode timings in milliseconds; asynchronous wall time, not CPU. */
+  sharedEncoderFlow?: Record<string, number | null> | null;
 }
 
 export function senderSessionForViewer(
@@ -198,6 +200,7 @@ function readEncoderIdentity(raw: unknown): EncoderIdentity | null {
 
 export function readSenderStats(raw: unknown): SenderStats {
   if (!isRecord(raw) || !Array.isArray(raw.sessions)) return { sessions: [] };
+  const sharedEncoderFlow = raw.sharedEncoderFlow;
   return {
     sessions: raw.sessions.filter(isRecord).map(readSenderSession),
     capture: readCaptureCounts(raw.capture),
@@ -205,6 +208,12 @@ export function readSenderStats(raw: unknown): SenderStats {
     viewerResize: isRecord(raw.viewerResize) ? raw.viewerResize : null,
     sharedCanvas: readSharedCanvas(raw.sharedCanvas),
     sharedEncoderPeers: Array.isArray(raw.sharedEncoderPeers) ? raw.sharedEncoderPeers.filter(isRecord) : null,
+    sharedEncoderFlow: isRecord(sharedEncoderFlow)
+      ? Object.fromEntries([
+        "submitted", "coalesced", "completed", "failed", "queueWaitSumMs", "taskDispatchSumMs",
+        "encodeSumMs", "encodeMaxMs", "completionDispatchSumMs", "deliverySumMs",
+      ].map((key) => [key, maybeNumber(sharedEncoderFlow[key])]))
+      : null,
   };
 }
 

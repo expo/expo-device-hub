@@ -151,6 +151,7 @@ struct WebRTCSenderStatsReport: Codable {
     let viewerResize: ViewerResizeCounters?
     let sharedCanvas: WebRTCSharedCanvas?
     let sharedEncoderPeers: [SharedEncoderPeerStats]?
+    let sharedEncoderFlow: SharedEncoderFlowStats?
 }
 
 private final class WebRTCSignalingCompletion: @unchecked Sendable {
@@ -642,6 +643,8 @@ final class WebRTCPublisher: @unchecked Sendable {
     func sharedEncoderPeerStats() -> [SharedEncoderPeerStats] {
         sharedEncoderFactory.peerStats()
     }
+
+    func sharedEncoderFlowStats() -> SharedEncoderFlowStats { sharedEncoderFactory.flowStats() }
 
     func sharedCanvasStatus() -> WebRTCSharedCanvas {
         let canvas = queue.sync { encodeCanvas }

@@ -441,7 +441,8 @@ actor CaptureEngine {
             ),
             viewerResize: webRTCPublisher?.viewerResizeCounters(),
             sharedCanvas: webRTCPublisher?.sharedCanvasStatus(),
-            sharedEncoderPeers: webRTCPublisher?.sharedEncoderPeerStats()
+            sharedEncoderPeers: webRTCPublisher?.sharedEncoderPeerStats(),
+            sharedEncoderFlow: webRTCPublisher?.sharedEncoderFlowStats()
         ))
         return String(decoding: data, as: UTF8.self)
     }

@@ -28,6 +28,31 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 - Apple Watch, iPad, and iOS support.
 - Network capture: decrypt and inspect a simulator's HTTPS traffic (see [Network capture](#network-capture)).
 
+## Guest resource profiling
+
+Run `serve-sim profile ./guest.ndjson --duration 60` on the Mac hosting the
+Simulator. This independent diagnostic command can start before Simulator boot;
+it neither starts nor controls a device. Stop early with Ctrl-C or SIGTERM.
+It creates a private file and refuses to overwrite an existing one.
+
+Samples contain guest CPU core equivalents (1 = one fully busy vCPU), process
+CPU deltas and parentage, RSS, memory pressure/compression/swap, and available GPU
+registry allocations. RSS includes shared pages; GPU allocations use system RAM
+and do not measure physical GPU or video-engine utilization. Command arguments
+and arbitrary environment values are not recorded; EAS job IDs are included when
+available. The file is capped at approximately 128 MiB.
+
+Inspect the final health record, command errors and sample gaps before comparing
+phases. OS stalls can exceed requested probe timeouts. Process polling misses
+tasks that exit between samples; residual CPU remains unattributed. Record the
+artifact hash, actual CPU/RAM, app versions and phase timestamps with each run.
+
+Hosted previews expose `profile.capture` through their authenticated action channel:
+`{action: "profile.capture", params: {seconds: 15}}` returns guest NDJSON in `stdout`.
+It is VM-only, accepts 1–30 seconds, allows one capture at a time, and caps the
+response at 16 MiB. The server owns and cleans the temporary file. This exposes
+process executable paths and guest counters to the preview token holder.
+
 ## Log scopes
 
 `/logs` (or the middleware's `/.sim/logs`) keeps its all-process default.

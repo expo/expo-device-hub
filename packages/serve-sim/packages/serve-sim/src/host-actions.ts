@@ -100,6 +100,8 @@ const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.leng
 );
 
 const ACTION_SCHEMAS = {
+  "profile.capture": z.object({ seconds: z.number().int().min(1).max(30).default(15) }).strict()
+    .meta({ description: "Collect whole-guest CPU, processes, memory and GPU allocations as NDJSON (VM only, max 30 seconds)." }),
   "clipboard.read": z.object({ udid: ClipboardDevice }).meta({ description: "Read simulator clipboard text." }),
   "clipboard.write": z.object({ udid: ClipboardDevice, text: ClipboardText }).meta({ description: "Write simulator clipboard text without pasting." }),
   "clipboard.copy": z.object({ udid: ClipboardDevice }).meta({ description: "Copy the current selection and read its text." }),
@@ -360,6 +362,7 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "profile.capture",
   "actions.describe",
   "clipboard.read",
   "clipboard.write",
@@ -644,6 +647,17 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown, streamSettings?: StreamSettings): Promise<HostActionResult> {
   switch (action) {
+    case "profile.capture": {
+      const { seconds } = parseParams(action, raw);
+      // @ref LLP 0003#guest-profiling — bounded VM diagnostics through the authenticated action channel.
+      const { guestProfileCapture, GuestProfileCaptureError } = await import("./guest-profile-capture");
+      try { return ok(await guestProfileCapture.capture(seconds)); }
+      catch (error) {
+        // Only fixed operational refusals cross the action channel; unexpected errors stay private.
+        if (!(error instanceof GuestProfileCaptureError)) throw error;
+        return { stdout: "", stderr: error.message, exitCode: 1 };
+      }
+    }
     case "clipboard.read":
     case "clipboard.write":
     case "clipboard.copy":

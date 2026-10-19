@@ -56,6 +56,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
+import { GuestMetricsRecorder } from "./guest-metrics";
 import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
@@ -2678,6 +2679,33 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     process.off("SIGTERM", onSignal);
   }
 }
+
+program
+  .command("profile <output>")
+  .description("Record macOS guest CPU, processes, memory pressure and GPU allocation to NDJSON")
+  .option(
+    "--duration <seconds>", "Stop after this many seconds (1-3600)",
+    (value) => parseNumberInRange(value, "--duration", 1, 3600), 60,
+  )
+  .action(async (output: string, opts: { duration: number }) => {
+    const recorder = await GuestMetricsRecorder.startAsync(resolve(output));
+    console.error(`Recording guest metrics to ${recorder.filePath}. RSS includes shared pages; GPU allocation is not GPU utilization.`);
+    let stop: () => void;
+    const stopped = new Promise<void>((resolveStop) => { stop = resolveStop; });
+    const onStop = () => stop();
+    const timer = setTimeout(onStop, opts.duration * 1000);
+    process.once("SIGINT", onStop);
+    process.once("SIGTERM", onStop);
+    try {
+      await stopped;
+      await recorder.finishAsync();
+      console.error(`Guest metrics finished: ${recorder.filePath}`);
+    } finally {
+      clearTimeout(timer);
+      process.removeListener("SIGINT", onStop);
+      process.removeListener("SIGTERM", onStop);
+    }
+  });
 
 program
   .command("record-video")

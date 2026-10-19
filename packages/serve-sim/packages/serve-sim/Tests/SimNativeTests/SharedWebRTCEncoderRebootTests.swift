@@ -35,7 +35,7 @@ private final class ControlledRebootEncode: @unchecked Sendable {
         return submissions
     }
 
-    func finish(_ index: Int) {
+    func finish(_ index: Int, malformed: Bool = false, missing: Bool = false) {
         lock.lock()
         guard let continuation = pending.removeValue(forKey: index) else {
             lock.unlock()
@@ -44,10 +44,11 @@ private final class ControlledRebootEncode: @unchecked Sendable {
         }
         let forceIDR = submissions[index].forceIDR
         lock.unlock()
+        if missing { continuation.resume(returning: nil); return }
         // Structurally valid AVCC for the real Annex-B fan-out; no decoder is used.
         continuation.resume(returning: .init(
             description: nil, kind: forceIDR ? .keyframe : .delta,
-            avcc: Data([0, 0, 0, 1, forceIDR ? 0x65 : 0x41]),
+            avcc: Data([0, 0, 0, malformed ? 5 : 1, forceIDR ? 0x65 : 0x41]),
             parameterSets: [Data([0x67, 0x42, 0, 0x1f]), Data([0x68, 0xce, 0x06, 0xe2])]
         ))
     }
@@ -62,6 +63,76 @@ private final class ControlledRebootEncode: @unchecked Sendable {
 }
 
 final class SharedWebRTCEncoderRebootTests: XCTestCase {
+    func testFlowCountersDistinguishCoalescingFromEncodeFailure() throws {
+        let firstStarted = expectation(description: "first encode")
+        let latestStarted = expectation(description: "latest queued encode")
+        let control = ControlledRebootEncode(started: [firstStarted, latestStarted])
+        let factory = SharedWebRTCEncoderFactory(bitrate: 1_000_000, fps: 60, h264Allowed: { true },
+                                                encodeFrame: { buffer, forceIDR, _, _ in
+                                                    await control.encode(buffer, forceIDR: forceIDR)
+                                                })
+        defer { factory.stop(); control.cancel() }
+        let sender = try proxy(factory)
+        let deliveries = expectation(description: "two deliveries")
+        deliveries.expectedFulfillmentCount = 2
+        sender.setCallback { _, _ in deliveries.fulfill(); return true }
+        XCTAssertEqual(sender.encode(try frame(1, marker: 1, factory: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstStarted], timeout: 2)
+        for marker: UInt8 in [2, 3, 4] {
+            XCTAssertEqual(sender.encode(try frame(Int64(marker), marker: marker, factory: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        }
+        XCTAssertEqual(factory.flowStats().submitted, 1)
+        XCTAssertEqual(factory.flowStats().coalesced, 2)
+        control.finish(0)
+        wait(for: [latestStarted], timeout: 2)
+        XCTAssertEqual(control.snapshot().map(\.marker), [1, 4])
+        control.finish(1)
+        wait(for: [deliveries], timeout: 2)
+        let flow = factory.flowStats()
+        XCTAssertEqual(flow.submitted, 2)
+        XCTAssertEqual(flow.completed, 2)
+        XCTAssertEqual(flow.failed, 0)
+        XCTAssertGreaterThan(flow.encodeSumMs, 0)
+        XCTAssertGreaterThan(flow.queueWaitSumMs, 0)
+    }
+
+    func testFlowCountsUndeliverableAvccAndRecoversWithKeyframe() throws {
+        try assertFailedResultRecovery(missing: false)
+    }
+
+    func testFlowCountsNilResultOnceAndRecoversWithKeyframe() throws {
+        try assertFailedResultRecovery(missing: true)
+    }
+
+    private func assertFailedResultRecovery(missing: Bool) throws {
+        let firstStarted = expectation(description: "malformed encode")
+        let recoveryStarted = expectation(description: "recovery encode")
+        let control = ControlledRebootEncode(started: [firstStarted, recoveryStarted])
+        let factory = SharedWebRTCEncoderFactory(bitrate: 1_000_000, fps: 60, h264Allowed: { true },
+                                                encodeFrame: { buffer, forceIDR, _, _ in
+                                                    await control.encode(buffer, forceIDR: forceIDR)
+                                                })
+        defer { factory.stop(); control.cancel() }
+        let sender = try proxy(factory)
+        let delivered = expectation(description: "only recovery delivered")
+        sender.setCallback { image, _ in
+            XCTAssertEqual(image.captureTimeMs, 2)
+            XCTAssertEqual(image.frameType, .videoFrameKey)
+            delivered.fulfill()
+            return true
+        }
+        XCTAssertEqual(sender.encode(try frame(1, marker: 1, factory: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstStarted], timeout: 2)
+        XCTAssertEqual(sender.encode(try frame(2, marker: 2, factory: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        control.finish(0, malformed: true, missing: missing)
+        wait(for: [recoveryStarted], timeout: 2)
+        XCTAssertTrue(control.snapshot()[1].forceIDR)
+        control.finish(1)
+        wait(for: [delivered], timeout: 2)
+        XCTAssertEqual(factory.flowStats().completed, 2)
+        XCTAssertEqual(factory.flowStats().failed, 1)
+    }
+
     private func frame(_ timestampMs: Int64, marker: UInt8, factory: SharedWebRTCEncoderFactory,
                        accepted: Bool = true) throws -> LKRTCVideoFrame {
         var buffer: CVPixelBuffer?

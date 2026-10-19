@@ -134,6 +134,14 @@ The recording uses a separate hardware H.264 session at native resolution. See
 [Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for why this encode is
 independent of viewer settings.
 
+`/webrtc/stats` also exposes cumulative `sharedEncoderFlow` counters: submitted,
+coalesced pending frames, completed encodes and failed encode/conversion results, plus wall-clock milliseconds
+spent waiting in the latest-frame slot, dispatching the encode task, awaiting the
+encoder, dispatching completion, and delivering the result. These separate the
+shared encoder from libwebrtc's per-peer `totalEncodeTime`, which includes waiting
+for a queued frame. They measure elapsed time, not CPU utilization. [observed:
+`Sources/SimNative/SharedWebRTCEncoder.swift`, `startEncoding(_:)`]
+
 The pump is hardened against hostile host timing, because a production trace
 showed it silently degrading to sends on capture arrivals only, with no
 repeats, on a virtualized macOS VM (forwarded ≈ offered instead of ~60/s):
