@@ -157,9 +157,13 @@ The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A comman
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
 
-Run `serve-sim hinge` without a position to print the server's confirmed hinge
-state as JSON: angle, pose, physical orientation, Table Mode, and whether Table
-Mode is available. It does not move the device. Unknown fields are left out.
+Run `serve-sim hinge` without a position to read the observed angle, pose, and
+physical orientation as JSON. `tableMode` is the acknowledged setting;
+`tableModeActive` is the observed native sensor activity, which can differ from
+that setting. The response also reports whether Table Mode is available. It
+does not move the device. Unknown fields are left out; a failed native read
+returns an error instead of a successful partial state. [observed:
+`DeviceSession` command `0x13`, `NativeHid.hingeControlEligibility`]
 
 ## Hinge state at startup
 

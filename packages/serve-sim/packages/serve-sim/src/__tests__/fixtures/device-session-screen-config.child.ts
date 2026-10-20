@@ -714,6 +714,18 @@ describe("native device state", () => {
         physicalOrientation: "portrait",
         observedDeviceState: { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false },
       });
+      const readback = new Promise<unknown>((resolve) => {
+        ws!.on("message", function onReadback(data) {
+          const frame = Buffer.from(data as Buffer);
+          if (frame[0] !== 0x93) return;
+          ws!.off("message", onReadback);
+          resolve(JSON.parse(frame.subarray(1).toString()));
+        });
+      });
+      ws!.send(Buffer.from([0x13]));
+      expect(await readback).toMatchObject(
+        result === "unknown" ? { ok: true } : { ok: false, error: "Hinge state is unavailable" },
+      );
     });
   }
 

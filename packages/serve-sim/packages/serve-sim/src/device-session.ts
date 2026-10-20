@@ -1764,8 +1764,11 @@ export class DeviceSession {
           if (this.supportsHingeAngle !== true || !this.canRunInputControl(generation))
             throw new Error("Hinge state is unavailable");
           const observed = this.observedDeviceState;
+          const eligibility =
+            observed === undefined ? undefined : await this.hid.hingeControlEligibility();
+          if (eligibility === null) throw new Error("Hinge state is unavailable");
           const state =
-            observed === undefined
+            eligibility === undefined
               ? {
                   hingeAngle: this.hingeAngle,
                   physicalOrientation: this.hingePhysicalOrientation,
@@ -1776,7 +1779,7 @@ export class DeviceSession {
                     this.hingePhysicalOrientation,
                   ),
                 }
-              : observedHingeState(await this.hid.hingeControlEligibility());
+              : observedHingeState(eligibility);
           if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
           ws.send(
             Buffer.concat([
@@ -2003,7 +2006,7 @@ export class DeviceSession {
       // @ref LLP 0004#live-pose-observation — eligibility orders native samples against successful sends
       const eligibility =
         needsPose && this.observedDeviceState !== undefined
-          ? await this.hid.hingeControlEligibility()
+          ? ((await this.hid.hingeControlEligibility()) ?? {})
           : { hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation };
       if (!this.canRunInputControl(generation)) return false;
       if (

@@ -289,13 +289,14 @@ export class NativeHid {
     return this.guard("hingeState", () => this.handle.hingeState(), {});
   }
 
-  async hingeControlEligibility(): Promise<NativeHingeState> {
+  async hingeControlEligibility(): Promise<NativeHingeState | null> {
+    // An empty sample has unknown fields; null means the read failed.
     return (
-      (await this.guard(
+      (await this.guard<NativeHingeState | null>(
         "hingeControlEligibility",
         () => this.handle.hingeControlEligibility(),
-        {},
-      )) ?? {}
+        null,
+      )) ?? null
     );
   }
 
