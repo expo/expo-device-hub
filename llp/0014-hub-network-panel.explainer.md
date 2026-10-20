@@ -44,7 +44,7 @@ So `http://localhost:8081` passes the first check and is then closed by the seco
 
 ### A second debugger
 
-The Hub's connection does not disconnect React Native DevTools when the app's page reports the `supportsMultipleDebuggers` capability; otherwise the proxy closes the previous debugger of that page [observed: `handleDebuggerConnection` in `@react-native/dev-middleware` `Device.js`]. The organizer app on React Native 0.88 reported it on iOS and Android [observed: `/json/list`, 2026-10-20].
+The Hub's connection does not disconnect React Native DevTools when the app's page reports the `supportsMultipleDebuggers` capability; otherwise the proxy closes the previous debugger of that page [observed: `handleDebuggerConnection` in `@react-native/dev-middleware` `Device.js`]. A development build on React Native 0.88 reported it on iOS and Android [observed: `/json/list`, 2026-10-20].
 
 ### Matching a device
 
