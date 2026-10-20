@@ -19,7 +19,10 @@ export type WebRtcStreamSettings = {
 export type StreamSettings = { transport: "websocket" } | WebRtcStreamSettings;
 
 export type ViewerTransports = {
-  /** Initial transport selected by clients that have no viewer-local preference. */
+  /**
+   * Transport selected by clients that have no viewer-local preference. With `--transport webrtc`
+   * it is also the only video transport.
+   */
   default: StreamTransport;
   /** Video transports supported by the currently active encoded source. */
   available: StreamTransport[];
