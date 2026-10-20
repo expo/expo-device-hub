@@ -374,7 +374,7 @@ export function RequestDetails({
       </DetailBlock>
       {request.requestBody ? (
         <DetailBlock {...block("Request body")}>
-          <JsonBody body={request.requestBody} />
+          <JsonBody key={request.id} body={request.requestBody} />
         </DetailBlock>
       ) : null}
       <DetailBlock {...block("Response headers")} count={responseHeaders.length}>
@@ -387,7 +387,7 @@ export function RequestDetails({
           ) : (
             <>
               {shortBodyNote(responseBody.body, request.responseHeaders)}
-              <JsonBody body={responseBody.body} />
+              <JsonBody key={request.id} body={responseBody.body} />
             </>
           )
         ) : responseBody?.state === "error" ? (
@@ -586,6 +586,8 @@ function shortBodyNote(body: string, headers: Record<string, string> | undefined
 /** Above this size a JSON body opens only its first levels, so a large one stays quick to show. */
 const JSON_OPEN_ALL_CHARS = 20_000;
 const JSON_OPEN_DEPTH = 2;
+/** Children a JSON object or array renders before offering more. */
+const JSON_PAGE = 100;
 
 /** A body as a JSON tree whose objects and arrays fold, or as text when it is not JSON. */
 export function JsonBody({ body }: { body: string }) {
@@ -626,6 +628,7 @@ function JsonNode({
 }) {
   const [open, setOpen] = useState(depth < openDepth);
   const [focused, setFocused] = useState(false);
+  const [shown, setShown] = useState(JSON_PAGE);
   const comma = last ? "" : ",";
   const key =
     name === undefined ? null : (
@@ -648,11 +651,10 @@ function JsonNode({
   }
 
   const array = Array.isArray(value);
-  const entries: Array<[string | undefined, unknown]> = array
-    ? value.map((item) => [undefined, item])
-    : Object.entries(value);
+  const keys = array ? null : Object.keys(value);
+  const size = array ? value.length : keys!.length;
   const [opening, closing] = array ? ["[", "]"] : ["{", "}"];
-  if (entries.length === 0) {
+  if (size === 0) {
     return (
       <div role="treeitem" style={{ ...indent, ...jsonLine }}>
         <span style={{ display: "inline-block", width: JSON_TOGGLE }} />
@@ -664,8 +666,25 @@ function JsonNode({
     );
   }
   const summary = array
-    ? `${entries.length} ${entries.length === 1 ? "item" : "items"}`
-    : `${entries.length} ${entries.length === 1 ? "key" : "keys"}`;
+    ? `${size} ${size === 1 ? "item" : "items"}`
+    : `${size} ${size === 1 ? "key" : "keys"}`;
+  // Width is bounded like depth: a container renders a page of children at a time, so a wide
+  // array or object costs no more than its first page until the user asks for more.
+  const visible = open ? Math.min(shown, size) : 0;
+  const children: ReactNode[] = [];
+  for (let index = 0; index < visible; index++) {
+    const childName = keys ? keys[index]! : undefined;
+    children.push(
+      <JsonNode
+        key={childName ?? index}
+        name={childName}
+        value={keys ? (value as Record<string, unknown>)[childName!] : (value as unknown[])[index]}
+        depth={depth + 1}
+        last={index === size - 1}
+        openDepth={openDepth}
+      />,
+    );
+  }
   return (
     <div role="treeitem" aria-expanded={open}>
       <button
@@ -718,16 +737,14 @@ function JsonNode({
       </button>
       {open ? (
         <>
-          {entries.map(([childName, child], index) => (
-            <JsonNode
-              key={childName ?? index}
-              name={childName}
-              value={child}
-              depth={depth + 1}
-              last={index === entries.length - 1}
-              openDepth={openDepth}
-            />
-          ))}
+          {children}
+          {visible < size ? (
+            <div style={{ ...indent, paddingLeft: (depth + 1) * JSON_INDENT + JSON_TOGGLE }}>
+              <SidebarActionButton onClick={() => setShown(shown + JSON_PAGE)}>
+                {`Show ${Math.min(JSON_PAGE, size - visible)} more of ${size - visible}`}
+              </SidebarActionButton>
+            </div>
+          ) : null}
           <div style={{ ...indent, ...jsonLine }}>
             <span style={{ display: "inline-block", width: JSON_TOGGLE }} />
             {closing}

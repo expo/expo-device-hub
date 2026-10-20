@@ -23,7 +23,7 @@ The server half is `src/server/network-inspector.ts` and `src/server/network-tar
 2. The server finds the Metro server ([Metro](#metro)), reads its inspector targets from `/json/list`, and picks the one that runs on the device ([Matching a device](#matching-a-device)).
 3. It connects to the target's `/inspector/debug` socket as a second debugger ([Origin](#origin)) and sends `Network.enable`.
 4. It folds `Network.requestWillBeSent`, `requestWillBeSentExtraInfo`, `responseReceived`, `loadingFinished`, and `loadingFailed` into one record per request, redacts header values ([Redaction](#redaction)), and streams each change to every dashboard watching that device. CDP does not order `requestWillBeSentExtraInfo` relative to `requestWillBeSent`, so extra headers that arrive first are held until their request does [observed: `#bufferExtraHeaders`].
-5. A response body is fetched only for the selected request, once its response is complete and while its Response body block is open, with `Network.getResponseBody`, and only the asking dashboard receives it. A JSON body shows as a tree whose objects and arrays fold [observed: `RequestDetails` and `JsonBody` in `NetworkSection.tsx`]. The dashboard gives up after 10 seconds, or at once when its socket is reconnecting, and offers to try again [observed: `useNetworkInspector`].
+5. A response body is fetched only for the selected request, once its response is complete and while its Response body block is open, with `Network.getResponseBody`, and only the asking dashboard receives it. A JSON body shows as a tree whose objects and arrays fold. Its size is bounded both ways: a large body opens only its first two levels, and each object or array renders 100 children at a time [observed: `RequestDetails` and `JsonBody` in `NetworkSection.tsx`]. The dashboard gives up after 10 seconds, or at once when its socket is reconnecting, and offers to try again [observed: `useNetworkInspector`].
 
 One server session per device is shared by all its dashboards. It polls `/json/list` every 2 seconds while anyone watches, follows the app to a new page after it reconnects, and is disposed 30 seconds after its last dashboard leaves [observed: `NetworkSession` in `network-inspector.ts`].
 
@@ -65,7 +65,7 @@ Each target names its device, and the names differ by platform:
 
 When a device runs several connected apps, the one Metro listed last wins [observed: `matchTarget`].
 
-A name is all the Hub can match on, and two simulators or emulators of one model can share it. Each target also reports React Native's `logicalDeviceId`, which differs between devices. When apps on more than one device answer to a name, the section attaches to neither and asks the user to rename one device, rather than show another device's traffic [observed: `matchTarget`].
+A name is all the Hub can match on, and two simulators or emulators of one model can share it. Each target also reports React Native's `logicalDeviceId`, which differs between devices. When apps on more than one device answer to a name, or when several apps do and any of them reports no `logicalDeviceId` (so it could be on any device), the section attaches to none and asks the user to rename one device, rather than risk showing another device's traffic [observed: `matchTarget`].
 
 ## Redaction
 

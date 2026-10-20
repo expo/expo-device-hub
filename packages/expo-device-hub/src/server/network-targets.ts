@@ -168,9 +168,12 @@ export function matchTarget(
   for (const name of deviceNames) {
     const matches = targets.filter((target) => target.deviceName === name);
     if (matches.length === 0) continue;
-    // Only ids Metro reports count: without one, several apps on one device look alike.
-    const devices = new Set(matches.flatMap((target) => target.logicalDeviceId ?? []));
-    if (devices.size > 1) return { kind: "ambiguous", deviceName: name };
+    // Several apps answer to one name only safely when each reports the same device. A target
+    // without an id could be on any device, so it makes a shared name ambiguous too.
+    const devices = new Set(matches.map((target) => target.logicalDeviceId));
+    if (devices.size > 1 || (matches.length > 1 && devices.has(undefined))) {
+      return { kind: "ambiguous", deviceName: name };
+    }
     return { kind: "match", target: matches.at(-1)! };
   }
   return { kind: "none" };

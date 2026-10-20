@@ -109,6 +109,14 @@ describe("NetworkSection", () => {
     expect(html).toContain("1 key");
   });
 
+  test("renders a wide array a page at a time", () => {
+    const html = renderToStaticMarkup(
+      <JsonBody body={JSON.stringify(Array.from({ length: 250 }, (_, i) => i))} />,
+    );
+    expect(html.match(/role="treeitem"/g)).toHaveLength(101);
+    expect(html).toContain("Show 100 more of 150");
+  });
+
   test("shows a body that is not JSON as text", () => {
     const html = renderToStaticMarkup(<JsonBody body='{"cut": "short' />);
     expect(html).not.toContain('role="tree"');

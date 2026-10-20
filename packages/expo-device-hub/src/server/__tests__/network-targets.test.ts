@@ -103,9 +103,9 @@ describe("device names", () => {
 describe("matchTarget", () => {
   test("matches the device name exactly and prefers the most recent app", () => {
     const targets = [
-      target("1", "iPhone Duo (iOS 27.1)", "com.first"),
+      target("1", "iPhone Duo (iOS 27.1)", "com.first", "duo"),
       target("2", "Pixel - 17 - API 37"),
-      target("3", "iPhone Duo (iOS 27.1)", "com.second"),
+      target("3", "iPhone Duo (iOS 27.1)", "com.second", "duo"),
     ];
     expect(appIdOf(matchTarget(targets, ["iPhone Duo (iOS 27.1)"]))).toBe("com.second");
     expect(matchTarget(targets, ["iPhone Duo (iOS 27.0)"])).toEqual({ kind: "none" });
@@ -120,6 +120,15 @@ describe("matchTarget", () => {
       kind: "ambiguous",
       deviceName: "Pixel - 17 - API 37",
     });
+  });
+
+  test("refuses a shared name when any of its apps reports no device", () => {
+    const mixed = [
+      target("1", "Pixel - 17 - API 37", "com.a", "device-a"),
+      target("2", "Pixel - 17 - API 37", "com.b"),
+    ];
+    expect(matchTarget(mixed, ["Pixel - 17 - API 37"]).kind).toBe("ambiguous");
+    expect(matchTarget([mixed[1]!], ["Pixel - 17 - API 37"]).kind).toBe("match");
   });
 
   test("allows several apps on one device", () => {
