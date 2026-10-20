@@ -59,11 +59,14 @@ async function isEmptyFileAsync(path: string): Promise<boolean> {
   }
 }
 
-export async function captureScreenshotAsync(p: {
-  udid: string;
-  fileName: string;
-  display: number;
-}, readActiveDisplay?: () => Promise<number>): Promise<HostActionResult> {
+export async function captureScreenshotAsync(
+  p: {
+    udid: string;
+    fileName: string;
+    display: number;
+  },
+  readActiveDisplay?: () => Promise<number>,
+): Promise<HostActionResult> {
   const hours = MAX_SCREENSHOT_AGE_MS / 3_600_000;
   const staged = join(SCREENSHOT_DIR, p.fileName);
   // Only the count and the reservation are serialized: holding the queue across simctl would let one
@@ -104,7 +107,12 @@ export async function captureScreenshotAsync(p: {
       const current = await readActiveDisplay();
       if (current === display) break;
       display = current;
-      shot = { stdout: "", stderr: "The active display kept changing. Retry the screenshot once the fold has finished.", exitCode: 1 };
+      shot = {
+        stdout: "",
+        stderr:
+          "The active display kept changing. Retry the screenshot once the fold has finished.",
+        exitCode: 1,
+      };
     }
   } catch (error) {
     if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
