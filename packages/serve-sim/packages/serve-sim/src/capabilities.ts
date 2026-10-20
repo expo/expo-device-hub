@@ -31,6 +31,8 @@ export interface CapabilityDefinition {
   /** Delay before loading on the app main queue; defaults to zero. */
   loadDelayMs?: number;
   loadPhase?: CapabilityLoadPhase;
+  /** The dylib path if it is already built, without building it; null when enabling would build it. */
+  prebuiltDylib?(): string | null;
   /** Starts/stops host resources. Return null to decline enabling. */
   setEnabled(ctx: CapabilityContext): Promise<PreparedCapability | null>;
 }

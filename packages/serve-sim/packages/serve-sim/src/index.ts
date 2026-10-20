@@ -46,7 +46,12 @@ import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
-import { assertKnownCapabilities, missingCapabilities, registerCapability } from "./capabilities";
+import {
+  assertKnownCapabilities,
+  capabilitiesToApply,
+  missingCapabilities,
+  registerCapability,
+} from "./capabilities";
 import {
   applyDefaultCapabilities,
   armCapabilityLoader,
@@ -68,7 +73,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
-import { clipboardCapability, locatePasteboardReaderDylib } from "./sim-pasteboard-reader";
+import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -1878,12 +1883,14 @@ let captureStarter: ReturnType<(typeof import("./capture"))["createCaptureStarte
 
 /**
  * Whether startup can publish the default capabilities and arm the loader in one step: no
- * overrides, and both dylibs already built. Building the reader on demand must not delay arming.
+ * overrides, and the loader and every default capability dylib already built. Building a dylib on
+ * demand must not delay arming.
  */
 // @ref LLP 0011#startup-order — plain previews publish defaults and idle-session ownership together.
 function canPublishDefaultsWithLoader(overrides: { enable: string[]; disable: string[] }): boolean {
   if (overrides.enable.length > 0 || overrides.disable.length > 0) return false;
-  return existsSync(capabilityLoaderPath()) && locatePasteboardReaderDylib() !== null;
+  if (!existsSync(capabilityLoaderPath())) return false;
+  return capabilitiesToApply(overrides).every((definition) => definition.prebuiltDylib?.() != null);
 }
 
 /** Why capture is refused on this host, or null: a public preview without the token gate. */
