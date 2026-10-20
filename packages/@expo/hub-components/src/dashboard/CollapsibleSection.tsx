@@ -12,7 +12,8 @@ import {
 /** Horizontal inset shared by every right-sidebar section. */
 export const SIDEBAR_SECTION_INSET = 16;
 
-const TRANSITION_MS = 200;
+/** How long a section takes to open or close. */
+export const SECTION_TRANSITION_MS = 200;
 const TRANSITION_EASING = "cubic-bezier(0.16, 1, 0.3, 1)";
 
 /**
@@ -30,7 +31,7 @@ function useCollapsePresence(open: boolean, reducedMotion: boolean) {
 
   useEffect(() => {
     if (!closing) return;
-    const timeout = window.setTimeout(() => setClosing(false), TRANSITION_MS);
+    const timeout = window.setTimeout(() => setClosing(false), SECTION_TRANSITION_MS);
     return () => window.clearTimeout(timeout);
   }, [closing]);
 
@@ -104,7 +105,7 @@ export function CollapsibleSection({
             transform: open ? "rotate(0deg)" : "rotate(-90deg)",
             transition: reducedMotion
               ? undefined
-              : `transform ${TRANSITION_MS}ms ${TRANSITION_EASING}`,
+              : `transform ${SECTION_TRANSITION_MS}ms ${TRANSITION_EASING}`,
           }}
         />
       </button>
@@ -114,7 +115,7 @@ export function CollapsibleSection({
           gridTemplateRows: open ? "1fr" : "0fr",
           transition: reducedMotion
             ? undefined
-            : `grid-template-rows ${TRANSITION_MS}ms ${TRANSITION_EASING}`,
+            : `grid-template-rows ${SECTION_TRANSITION_MS}ms ${TRANSITION_EASING}`,
         }}
       >
         <div
@@ -126,7 +127,7 @@ export function CollapsibleSection({
             overflow: "clip",
             overflowClipMargin: 4,
             opacity: open ? 1 : 0,
-            transition: reducedMotion ? undefined : `opacity ${TRANSITION_MS}ms ease`,
+            transition: reducedMotion ? undefined : `opacity ${SECTION_TRANSITION_MS}ms ease`,
           }}
         >
           {present && <div style={{ minWidth: 0, paddingBottom: 12 }}>{children}</div>}

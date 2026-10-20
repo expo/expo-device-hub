@@ -39,6 +39,14 @@ const middleware = simMiddleware({
 /** Whether serve-sim lets a page on `origin` read its responses. */
 export const simAllowsOrigin = (origin: URL): boolean =>
   serveSimAllowsOrigin(standaloneOptions.corsOrigins ?? [], origin);
+/**
+ * Waits for a clipboard setup that serve-sim's preview may still be running, then releases what it
+ * set up on the devices it opened.
+ * @ref LLP 0013#hub-shutdown
+ */
+export function shutdownServeSim(): Promise<void> {
+  return middleware.dispose();
+}
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), "serve-sim");
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;

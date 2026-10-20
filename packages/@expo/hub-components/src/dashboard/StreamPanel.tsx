@@ -1,4 +1,4 @@
-import { type ComponentType } from "react";
+import { type ComponentType, useLayoutEffect, useRef, useState } from "react";
 
 import {
   type AgentInteraction,
@@ -9,6 +9,7 @@ import {
 import { bg, border } from "../primitives";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
+import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
@@ -38,6 +39,7 @@ export function StreamPanel({
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  onClipboardFallback,
 }: {
   device: Device;
   client: DeviceClient;
@@ -55,7 +57,20 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
+  onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
+  useLayoutEffect(() => {
+    const element = controlsRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setControlsHeight(element.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const captureScreenshot = useScreenshotToast(client, device.name);
   const setting = client.deviceSettings?.appearance;
   const appearance = setting === "dark" || setting === "light" ? setting : null;
@@ -63,6 +78,9 @@ export function StreamPanel({
     appearance === null ||
     client.deviceSettingsStatus !== "ready" ||
     client.deviceSettingsPending.has("appearance");
+  const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
+  // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
+  const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
   return (
     <section
@@ -89,7 +107,7 @@ export function StreamPanel({
           boxSizing: "border-box",
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
           containerType: "size",
           display: "flex",
           alignItems: "center",
@@ -102,8 +120,11 @@ export function StreamPanel({
         >
           <PhoneFrame
             device={device}
-            client={client}
+            client={screenClient}
             agentInteraction={agentInteraction}
+            onCopy={async () => {
+              if (!client.clipboardPending) await clipboard.copyFromSimulator();
+            }}
             DeviceScreen={DeviceScreen}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
@@ -131,11 +152,13 @@ export function StreamPanel({
             />
           </div>
           <div
+            ref={controlsRef}
             style={{
               position: "absolute",
               left: "50%",
               top: `calc(100% + ${CONTROLS_GAP}px)`,
               width: "max-content",
+              maxWidth: "100cqw",
               transform: "translateX(-50%)",
             }}
           >
@@ -152,8 +175,13 @@ export function StreamPanel({
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
+              clipboard={client.capabilities.clipboard}
+              clipboardPending={client.clipboardPending}
+              onPaste={() => void clipboard.pasteFromDevice()}
+              onCopy={() => void clipboard.copyFromSimulator()}
             />
           </div>
+          <ClipboardToaster />
         </div>
       </div>
       <ScreenshotToaster />

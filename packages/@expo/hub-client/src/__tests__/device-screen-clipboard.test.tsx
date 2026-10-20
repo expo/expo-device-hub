@@ -14,7 +14,10 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-async function setup(clipboard: DeviceClipboardCapabilities = { paste: true, copy: true }) {
+async function setup(
+  clipboard: DeviceClipboardCapabilities = { paste: true, copy: true },
+  onCopy?: () => Promise<void>,
+) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
@@ -34,7 +37,9 @@ async function setup(clipboard: DeviceClipboardCapabilities = { paste: true, cop
   };
   const surface = { focus() {}, addEventListener() {}, removeEventListener() {} };
   await act(async () => {
-    renderer = create(<DeviceScreen client={client} />, { createNodeMock: () => surface });
+    renderer = create(<DeviceScreen client={client} onCopy={onCopy} />, {
+      createNodeMock: () => surface,
+    });
   });
   const overlay = renderer!.root.findByProps({ role: "application" });
   const keyEvent = (
@@ -170,4 +175,49 @@ test("holding Cmd+V after its paste event does not paste again", async () => {
   await s.paste(s.pasteEvent("twice"));
   await s.up(s.keyEvent("KeyV", "v", { metaKey: true }));
   expect(s.pastes).toEqual(["once", "twice"]);
+});
+
+test("host Copy handles Cmd+C once without sending a second native C chord", async () => {
+  let copies = 0;
+  const s = await setup(undefined, async () => {
+    copies++;
+  });
+  await s.down(s.keyEvent("MetaLeft", "Meta", { metaKey: true }));
+  const copy = s.keyEvent("KeyC", "c", { metaKey: true });
+  await s.down(copy);
+  expect(copy.defaultPrevented).toBe(true);
+  const repeat = s.keyEvent("KeyC", "c", { metaKey: true, repeat: true });
+  await s.down(repeat);
+  expect(repeat.defaultPrevented).toBe(true);
+  await s.up(s.keyEvent("KeyC", "c", { metaKey: true }));
+  await s.up(s.keyEvent("MetaLeft", "Meta"));
+  expect(copies).toBe(1);
+  expect(s.keys.map((key) => `${key.phase} ${key.code}`)).toEqual(["down MetaLeft", "up MetaLeft"]);
+  await s.down(s.keyEvent("KeyC", "c", { ctrlKey: true }));
+  await s.up(s.keyEvent("KeyC", "c", { ctrlKey: true }));
+  expect(copies).toBe(2);
+});
+
+test("host Copy leaves unsupported Copy and ordinary typing as native keys", async () => {
+  let copies = 0;
+  const s = await setup({ paste: true, copy: false }, async () => {
+    copies++;
+  });
+  await s.down(s.keyEvent("KeyC", "c", { metaKey: true }));
+  await s.up(s.keyEvent("KeyC", "c", { metaKey: true }));
+  expect(copies).toBe(0);
+  expect(s.keys.map((key) => `${key.phase} ${key.code}`)).toEqual(["down KeyC", "up KeyC"]);
+});
+
+test("a lost Copy keyup does not swallow the next plain C or its repeat", async () => {
+  const s = await setup(undefined, async () => {});
+  await s.down(s.keyEvent("KeyC", "c", { metaKey: true }));
+  await s.down(s.keyEvent("KeyC", "c"));
+  await s.down(s.keyEvent("KeyC", "c", { repeat: true }));
+  await s.up(s.keyEvent("KeyC", "c"));
+  expect(s.keys.map((key) => `${key.phase} ${key.code}`)).toEqual([
+    "down KeyC",
+    "down KeyC",
+    "up KeyC",
+  ]);
 });

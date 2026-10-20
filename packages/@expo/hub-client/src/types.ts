@@ -905,6 +905,8 @@ export type DeviceScreenClient = Pick<
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
   client: DeviceClient;
+  /** Host-owned browser clipboard Copy. Without it, Command+C stays native keys. */
+  onCopy?: () => Promise<void>;
   /** Last active Argent gesture for the streamed device; removed after its idle timeout. */
   agentInteraction?: AgentInteraction | null;
   /** Corner radius for the video surface (matches the PhoneFrame placeholder). */
