@@ -120,6 +120,8 @@ const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
+// How long an H.264 viewer waits for `/api` before it opens the video WebSocket anyway.
+const STREAM_METADATA_FALLBACK_MS = 3000;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 5000;
 // Match serve-sim's UI request deadline so an unreachable endpoint cannot hold the initial read.
@@ -306,6 +308,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [serverViewerTransports, setServerViewerTransports] = useState<
     readonly ServeEmuViewerTransport[] | null
   >(null);
+  // Set when `/api` fails or does not answer in time, so H.264 video does not wait forever.
+  const [streamMetadataFailed, setStreamMetadataFailed] = useState(false);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -918,12 +922,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     setServerStreamSettings(null);
     setServerViewerTransports(null);
+    setStreamMetadataFailed(false);
     if (!active || !baseUrl) return;
 
     let cancelled = false;
     let polling = false;
     let controller: AbortController | null = null;
     const url = deviceApiUrl(baseUrl, "/api", targetDevice);
+    const markFailed = () => {
+      if (!cancelled) setStreamMetadataFailed(true);
+    };
+    const fallbackTimer = setTimeout(markFailed, STREAM_METADATA_FALLBACK_MS);
 
     const refresh = async () => {
       if (cancelled || polling) return;
@@ -931,7 +940,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       controller = new AbortController();
       try {
         const response = await sessionFetch(url, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) return;
+        if (!response.ok) {
+          markFailed();
+          return;
+        }
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: "websocket" };
@@ -959,6 +971,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
       } catch {
         // Device startup and temporary disconnects are expected; keep polling.
+        markFailed();
       } finally {
         polling = false;
         controller = null;
@@ -969,6 +982,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const timer = setInterval(refresh, STREAM_METADATA_POLL_MS);
     return () => {
       cancelled = true;
+      clearTimeout(fallbackTimer);
       clearInterval(timer);
       controller?.abort();
     };
@@ -985,9 +999,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   );
   // Until `/api` answers, the transport is unknown: a `--transport webrtc` host refuses a video
   // WebSocket, so no video starts before then. After that, preserve a supported viewer choice and
-  // map an unavailable one to a mode the host offers.
-  const waitingForStreamMetadata = serverStreamSettings === null;
-  const resolvedStreamMode = waitingForStreamMetadata
+  // map an unavailable one to a mode the host offers. If `/api` fails or does not answer in time,
+  // H.264 opens the video WebSocket as it did before the list existed. WebRTC keeps waiting,
+  // because it needs the host's ICE settings from `/api`.
+  const streamMetadataMissing = serverStreamSettings === null;
+  const waitingForStreamMetadata =
+    streamMetadataMissing && (streamMode === "webrtc" || !streamMetadataFailed);
+  const resolvedStreamMode = streamMetadataMissing
     ? streamMode
     : resolveDeviceStreamMode(streamMode, modeAvailability);
   const useWebRtc = resolvedStreamMode === "webrtc" && serverStreamSettings?.transport === "webrtc";

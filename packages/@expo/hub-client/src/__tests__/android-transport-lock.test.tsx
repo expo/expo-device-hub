@@ -57,7 +57,7 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-function stubBrowser(api: object) {
+function stubBrowser(api: object, apiStatus = 200) {
   const sockets: string[] = [];
   const requests: string[] = [];
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -103,7 +103,7 @@ function stubBrowser(api: object) {
   stubGlobal("fetch", async (url: string) => {
     requests.push(String(url));
     const path = new URL(url).pathname;
-    if (path === "/api") return Response.json(api);
+    if (path === "/api") return Response.json(api, { status: apiStatus });
     if (path === "/webrtc/offer") return Response.json({ type: "answer", sdp: "answer" });
     return Response.json({}, { status: 404 });
   });
@@ -155,6 +155,16 @@ test("an H.264 viewer of an older WebRTC host keeps the video WebSocket", async 
     webrtc: true,
   });
   expect(sockets.map((url) => new URL(url).searchParams.get("frame-meta"))).toEqual(["1"]);
+  expect(requests.some((url) => url.includes("/webrtc/offer"))).toBe(false);
+  expect(client.videoKind).toBe("canvas");
+});
+
+test("an H.264 viewer still gets WebSocket video when /api fails", async () => {
+  const { sockets, requests } = stubBrowser({ error: "unavailable" }, 503);
+  const client = await renderAndroid();
+  expect(requests.some((url) => new URL(url).pathname === "/api")).toBe(true);
+  expect(sockets.map((url) => new URL(url).searchParams.get("frame-meta"))).toEqual(["1"]);
+  expect(sockets.every((url) => new URL(url).searchParams.get("video") !== "0")).toBe(true);
   expect(requests.some((url) => url.includes("/webrtc/offer"))).toBe(false);
   expect(client.videoKind).toBe("canvas");
 });
