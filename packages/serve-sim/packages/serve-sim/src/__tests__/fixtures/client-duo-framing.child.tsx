@@ -715,6 +715,21 @@ test("unconfirmed UI rotation yields to native after grace without another confi
   expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
 });
 
+test("a pending hinge and expired grace do not apply a delayed UI rotation twice", async () => {
+  await mount();
+  const config = { ...opened("portrait", "landscape_left"),
+    observedDeviceState: { hingeAngle: 100, physicalOrientation: "portrait" as const, tableMode: false } };
+  await observe(config);
+  await request({ control: "angle", value: 110 });
+  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  const rotated = structuredClone(model().view as DuoView);
+  await act(async () => { await Bun.sleep(1600); });
+  expect(model().view).toEqual(rotated);
+  await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: true });
+  await observe({ ...config, observedDeviceState: { hingeAngle: 110, physicalOrientation: "landscape-left", tableMode: false } });
+  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation))).toBeCloseTo(0, 6);
+});
+
 test("external Laptop to Open uses the canonical front-on camera", async () => {
   await mount(); await observe(native("laptop", "landscape_left"));
   await observe({width:2007,height:2853,screenId:3,orientation:"portrait",supportsHingeAngle:true,

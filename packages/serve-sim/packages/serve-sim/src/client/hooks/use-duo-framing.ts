@@ -334,6 +334,9 @@ export function useDuoFraming(
     const orientation = streamConfig?.physicalOrientation;
     // Local hinge controls and out-of-plane poses own their camera baseline.
     const pose = streamConfig?.hingePose;
+    // The camera already includes this UI turn. Reconcile its readback only
+    // after the pending hinge command releases the view.
+    if (hingeOwned && nativeRotationRef.current.pending) return;
     if (hingeOwned || orientation === "faceup" || orientation === "facedown") {
       nativeRotationRef.current.rebase(orientation);
       return;

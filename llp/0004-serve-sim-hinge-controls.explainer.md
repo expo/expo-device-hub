@@ -85,7 +85,10 @@ transition. Closed presents the cover straight toward the viewer, and Open
 presents the inner display straight toward the viewer. The view initializes from display geometry, then follows native physical
 orientation for external rotations. UI rotation previews immediately and ignores
 stale native readback for up to 1500 ms, so acknowledgement does not turn the
-model twice. If no physical baseline existed when the UI rotated, its first
+model twice. A pending hinge command retains that UI turn through the grace
+timer; readback reconciles it after the hinge releases the view. [observed:
+`useDuoFraming`, `createDuoRotationState`]
+If no physical baseline existed when the UI rotated, its first
 native sample establishes absolute camera framing; subsequent turns apply
 immediately. That first sample may briefly correct an optimistic guess. Pose presets choose their own physical camera framing. In Closed, Book (Partially open), and Open, hinge edits
 smoothly turn the cover or inner screens toward the viewer while retaining the
