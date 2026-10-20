@@ -6,7 +6,11 @@
 
 /** One request the app made, in the shape the panel renders. Header values are redacted. */
 export interface NetworkRequest {
-  /** The inspector's request id, unique within one inspector connection. */
+  /**
+   * Unique for the session: the inspector's request id, prefixed with the inspector connection it
+   * came from, plus a hop suffix for each redirect. The inspector's own ids repeat across
+   * connections and across the hops of a redirect.
+   */
   id: string;
   method: string;
   url: string;
@@ -56,7 +60,8 @@ export interface NetworkInspectorStatus {
 export type NetworkServerMessage =
   | { type: "status"; status: NetworkInspectorStatus }
   | { type: "snapshot"; requests: NetworkRequest[] }
-  | { type: "request"; request: NetworkRequest }
+  /** `evicted` names requests the server dropped to stay within `NETWORK_MAX_REQUESTS`. */
+  | { type: "request"; request: NetworkRequest; evicted?: string[] }
   | { type: "cleared" }
   | { type: "response-body"; id: string; body: NetworkResponseBody | null; error?: string };
 

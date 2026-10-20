@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { type NetworkRequest } from "../../network-protocol";
+import { NETWORK_MAX_REQUESTS, type NetworkRequest } from "../../network-protocol";
 import {
   applyNetworkMessage,
   INITIAL_NETWORK_STATE,
@@ -44,6 +44,30 @@ describe("applyNetworkMessage", () => {
     expect(state.responseBodies).toEqual({});
   });
 
+  test("drops what the server evicted, with its body", () => {
+    let state = applyNetworkMessage(INITIAL_NETWORK_STATE, {
+      type: "snapshot",
+      requests: [request("a"), request("b")],
+    });
+    state = applyNetworkMessage(state, {
+      type: "response-body",
+      id: "a",
+      body: { body: "{}", base64Encoded: false },
+    });
+    state = applyNetworkMessage(state, { type: "request", request: request("c"), evicted: ["a"] });
+    expect(state.requests.map((r) => r.id)).toEqual(["b", "c"]);
+    expect(state.responseBodies).toEqual({});
+  });
+
+  test(`never holds more than ${NETWORK_MAX_REQUESTS} requests`, () => {
+    let state = INITIAL_NETWORK_STATE;
+    for (let i = 0; i <= NETWORK_MAX_REQUESTS; i++) {
+      state = applyNetworkMessage(state, { type: "request", request: request(`r${i}`) });
+    }
+    expect(state.requests).toHaveLength(NETWORK_MAX_REQUESTS);
+    expect(state.requests[0]!.id).toBe("r1");
+  });
+
   test("records a body or why it is missing", () => {
     let state = applyNetworkMessage(INITIAL_NETWORK_STATE, {
       type: "response-body",
@@ -81,6 +105,7 @@ describe("subscribeToNetwork", () => {
       url: "ws://hub/api/network/ws",
       createSocket: () => {
         const socket = {
+          readyState: 1,
           sent: [] as string[],
           send(d: string) {
             this.sent.push(d);
@@ -100,8 +125,11 @@ describe("subscribeToNetwork", () => {
     });
 
     sockets[0].onmessage({ data: JSON.stringify({ type: "cleared" }) });
-    subscription.send({ type: "clear" });
+    expect(subscription.send({ type: "clear" })).toBe(true);
+    sockets[0].readyState = 0;
+    expect(subscription.send({ type: "clear" })).toBe(false);
     subscription.close();
+    expect(subscription.send({ type: "clear" })).toBe(false);
 
     expect(received).toEqual([{ type: "cleared" }]);
     expect(sockets[0].sent).toEqual([JSON.stringify({ type: "clear" })]);

@@ -1,6 +1,6 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { bg, border, font, radius, text, textSize } from "../primitives";
+import { bg, border, font, isFocusVisible, radius, text, textSize } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SectionNote } from "./SectionNote";
 import { SidebarActionButton } from "./SidebarActionButton";
@@ -224,6 +224,10 @@ function RequestRow({
   onSelect: () => void;
 }) {
   const { path, host } = splitUrl(request.url);
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  // A grid row, so not `Button`; the states follow `DeviceListItem`, the repo's other list row.
   return (
     <button
       type="button"
@@ -231,6 +235,15 @@ function RequestRow({
       aria-pressed={selected}
       title={request.url}
       onClick={onSelect}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onFocus={(event) => setFocused(isFocusVisible(event))}
+      onBlur={() => setFocused(false)}
       style={{
         all: "unset",
         boxSizing: "border-box",
@@ -241,8 +254,11 @@ function RequestRow({
         width: "100%",
         padding: "6px 10px",
         cursor: "pointer",
-        backgroundColor: selected ? bg.selected : "transparent",
+        backgroundColor: selected ? bg.hover : hovered ? bg.element : "transparent",
         borderBottom: `1px solid ${border.default}`,
+        boxShadow: focused ? `inset 0 0 0 2px ${border.secondary}` : "none",
+        transition: "background-color 150ms ease, transform 100ms ease",
+        transform: pressed ? "scale(0.98)" : undefined,
       }}
     >
       <span style={{ ...monoXs, color: text.secondary }}>{request.method}</span>
@@ -269,7 +285,8 @@ function StatusText({ request }: { request: NetworkPanelRequest }) {
   return <span style={{ ...monoXs, color, fontWeight: 600 }}>{label}</span>;
 }
 
-function RequestDetails({
+/** The selected request's headers and bodies. Exported for tests. */
+export function RequestDetails({
   request,
   responseBody,
   onRequestResponseBody,
@@ -341,7 +358,14 @@ function RequestDetails({
             </>
           )
         ) : responseBody?.state === "error" ? (
-          <SectionNote role="alert">{responseBody.message}</SectionNote>
+          <div
+            style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}
+          >
+            <SectionNote role="alert">{responseBody.message}</SectionNote>
+            <SidebarActionButton disabled={!done} onClick={onRequestResponseBody}>
+              Try again
+            </SidebarActionButton>
+          </div>
         ) : (
           <div>
             <SidebarActionButton

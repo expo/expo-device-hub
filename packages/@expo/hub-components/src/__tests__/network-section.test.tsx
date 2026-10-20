@@ -5,6 +5,7 @@ import {
   formatDuration,
   formatSize,
   NetworkSection,
+  RequestDetails,
   splitUrl,
   statusLook,
 } from "../dashboard/NetworkSection";
@@ -50,5 +51,18 @@ describe("NetworkSection", () => {
       host: "api.example.com",
     });
     expect(splitUrl("not a url")).toEqual({ path: "not a url", host: "" });
+  });
+
+  test("offers to try a body again after it failed", () => {
+    const html = renderToStaticMarkup(
+      <RequestDetails
+        request={{ id: "1.r1", method: "GET", url: "https://x/", startedAt: 0, finishedAt: 5 }}
+        responseBody={{ state: "error", message: "The Hub did not answer. Try again." }}
+        onRequestResponseBody={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(html).toContain("The Hub did not answer.");
+    expect(html).toContain(">Try again</button>");
   });
 });

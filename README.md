@@ -60,7 +60,7 @@ npx expo-device-hub
 ```
 
 The Network section reads your app's requests from a Metro server. Inside `expo start` the Hub
-uses its own; standalone, point it at one:
+uses its own; standalone, point it at one on this machine:
 
 ```sh
 EXPO_DEVICE_HUB_METRO_URL=http://127.0.0.1:8081 npx expo-device-hub

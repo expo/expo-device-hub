@@ -11,7 +11,15 @@ export interface InspectorTarget {
   /** Bundle id or package name. */
   appId: string;
   webSocketDebuggerUrl: string;
+  /**
+   * React Native's stable id for the physical or virtual device, shared by every app on it. Two
+   * devices with the same name have different ids.
+   */
+  logicalDeviceId?: string;
 }
+
+/** Why a Metro URL was not used. */
+export class MetroUrlError extends Error {}
 
 /** The Hub device the panel shows, as the dashboard names it. */
 export interface NetworkDeviceRef {
@@ -23,6 +31,8 @@ export interface NetworkDeviceRef {
   version: string;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
 /**
  * The Metro server to read the app from.
  *
@@ -30,6 +40,8 @@ export interface NetworkDeviceRef {
  * Metro's port. The standalone CLI serves the Hub from its own port, so it needs
  * `EXPO_DEVICE_HUB_METRO_URL`. Without it, the request's port has no Metro, and the panel reports
  * that it cannot find one.
+ *
+ * Throws `MetroUrlError` for a configured URL that is unusable or not on loopback.
  */
 export function metroOriginFor(
   requestUrl: string,
@@ -37,11 +49,20 @@ export function metroOriginFor(
 ): string | null {
   const configured = env.EXPO_DEVICE_HUB_METRO_URL?.trim();
   if (configured) {
+    let url: URL;
     try {
-      return new URL(configured).origin;
+      url = new URL(configured);
     } catch {
-      return null;
+      throw new MetroUrlError(`EXPO_DEVICE_HUB_METRO_URL is not a URL: ${configured}`);
     }
+    // @ref LLP 0014#metro — the inspector session carries the app's traffic, so it never leaves
+    // the host, and Expo CLI serves the inspector to loopback sockets only anyway.
+    if (!LOOPBACK_HOSTS.has(url.hostname)) {
+      throw new MetroUrlError(
+        "EXPO_DEVICE_HUB_METRO_URL must name a Metro server on this machine (127.0.0.1, localhost, or [::1]).",
+      );
+    }
+    return url.origin;
   }
   try {
     const url = new URL(requestUrl);
@@ -81,14 +102,22 @@ export async function listInspectorTargets(
   if (!Array.isArray(pages)) throw new Error("Metro's /json/list is not a list");
   return pages.flatMap((page): InspectorTarget[] => {
     if (!page || typeof page !== "object") return [];
-    const { id, deviceName, appId, webSocketDebuggerUrl } = page as Record<string, unknown>;
+    const { id, deviceName, appId, webSocketDebuggerUrl, reactNative } = page as Record<
+      string,
+      unknown
+    >;
     if (typeof id !== "string" || typeof webSocketDebuggerUrl !== "string") return [];
+    const logicalDeviceId =
+      reactNative && typeof reactNative === "object"
+        ? (reactNative as Record<string, unknown>).logicalDeviceId
+        : undefined;
     return [
       {
         id,
         deviceName: typeof deviceName === "string" ? deviceName : "",
         appId: typeof appId === "string" ? appId : "",
         webSocketDebuggerUrl,
+        ...(typeof logicalDeviceId === "string" && logicalDeviceId ? { logicalDeviceId } : {}),
       },
     ];
   });
@@ -118,19 +147,33 @@ export function androidInspectorDeviceName(props: Record<string, string>): strin
   return `${model} - ${release} - API ${sdk}`;
 }
 
+export type TargetMatch =
+  | { kind: "match"; target: InspectorTarget }
+  | { kind: "none" }
+  /** Apps on more than one device answer to the device's name. */
+  | { kind: "ambiguous"; deviceName: string };
+
 /**
  * The target that runs on the device, trying each of its names in order. When one device runs
  * several connected apps, the one Metro listed last (the most recently connected) wins.
+ *
+ * @ref LLP 0014#matching-a-device — a name is all the Hub can match on, so when apps on two
+ * devices share it (two simulators or emulators of one model), the Hub cannot tell which is this
+ * device's and attaches to neither.
  */
-export function pickTarget(
+export function matchTarget(
   targets: InspectorTarget[],
   deviceNames: readonly string[],
-): InspectorTarget | null {
+): TargetMatch {
   for (const name of deviceNames) {
-    const match = targets.filter((target) => target.deviceName === name).at(-1);
-    if (match) return match;
+    const matches = targets.filter((target) => target.deviceName === name);
+    if (matches.length === 0) continue;
+    // Only ids Metro reports count: without one, several apps on one device look alike.
+    const devices = new Set(matches.flatMap((target) => target.logicalDeviceId ?? []));
+    if (devices.size > 1) return { kind: "ambiguous", deviceName: name };
+    return { kind: "match", target: matches.at(-1)! };
   }
-  return null;
+  return { kind: "none" };
 }
 
 /**

@@ -25,14 +25,17 @@ import {
   inspectorOrigins,
   iosInspectorDeviceNames,
   listInspectorTargets,
+  matchTarget,
+  MetroUrlError,
   metroOriginFor,
   type NetworkDeviceRef,
-  pickTarget,
 } from "./network-targets";
 
 const TARGET_POLL_MS = 2_000;
 const ATTACH_TIMEOUT_MS = 3_000;
 const BODY_TIMEOUT_MS = 5_000;
+/** Extra-info headers kept for requests whose `requestWillBeSent` has not arrived yet. */
+const MAX_PENDING_EXTRA_HEADERS = 200;
 /** How long a session outlives its last dashboard, so switching devices back keeps the list. */
 const IDLE_DISPOSE_MS = 30_000;
 
@@ -70,15 +73,51 @@ const defaultDeps: NetworkSessionDeps = {
     const name = props.value ? androidInspectorDeviceName(props.value) : null;
     return name ? [name] : null;
   },
-  connect: (url, origin) => new WebSocket(url, { headers: { Origin: origin } }),
+  connect: connectInspector,
   now: Date.now,
   setTimeout,
   clearTimeout,
 };
 
-/** Internal per-request state: the panel's view plus the CDP monotonic start time. */
+/**
+ * Open an inspector connection with an `Origin` header.
+ *
+ * @ref LLP 0014#origin — under Bun the bundled `ws` client never gets a working connection, so use
+ * Bun's own `WebSocket`, which takes headers too. Node keeps `ws`.
+ */
+function connectInspector(url: string, origin: string): CdpSocket {
+  const runtime = globalThis as { Bun?: unknown; WebSocket?: typeof globalThis.WebSocket };
+  if (runtime.Bun !== undefined && runtime.WebSocket) {
+    const BunWebSocket = runtime.WebSocket as unknown as new (
+      url: string,
+      options: { headers: Record<string, string> },
+    ) => globalThis.WebSocket;
+    return adaptWebSocket(new BunWebSocket(url, { headers: { Origin: origin } }));
+  }
+  return new WebSocket(url, { headers: { Origin: origin } });
+}
+
+/** A browser-style WebSocket behind the `ws`-style `on` interface the session uses. */
+export function adaptWebSocket(socket: globalThis.WebSocket): CdpSocket {
+  const adapted: CdpSocket = {
+    send: (data) => socket.send(data),
+    close: () => socket.close(),
+    on: (event: "open" | "message" | "close" | "error", listener: (data?: unknown) => void) => {
+      socket.addEventListener(event, (e) =>
+        event === "message" ? listener((e as MessageEvent).data) : listener(),
+      );
+      return adapted;
+    },
+  };
+  return adapted;
+}
+
+/** Internal per-request state: the panel's view plus what maps it back to the inspector. */
 interface TrackedRequest {
   view: NetworkRequest;
+  /** The inspector's own request id, valid only on the connection numbered `generation`. */
+  cdpId: string;
+  generation: number;
   /** CDP `timestamp` (monotonic seconds) of `requestWillBeSent`. */
   startTimestamp?: number;
 }
@@ -99,6 +138,13 @@ export class NetworkSession {
   readonly #clients = new Set<NetworkSocket>();
   readonly #requests = new Map<string, TrackedRequest>();
   readonly #pendingReplies = new Map<number, (reply: CdpReply) => void>();
+  /** Inspector request id → the session id of its current hop, for the current connection. */
+  readonly #keys = new Map<string, string>();
+  /** Inspector request id → how many redirects it has followed, for the current connection. */
+  readonly #hops = new Map<string, number>();
+  readonly #pendingExtraHeaders = new Map<string, Record<string, string>>();
+  /** Counts inspector connections, so request ids from different connections never collide. */
+  #generation = 0;
 
   #status: NetworkInspectorStatus = { state: "searching" };
   #deviceNames: string[] | null = null;
@@ -203,8 +249,16 @@ export class NetworkSession {
         });
         return;
       }
-      const target = pickTarget(targets, this.#deviceNames);
-      if (!target) {
+      const match = matchTarget(targets, this.#deviceNames);
+      if (match.kind === "ambiguous") {
+        this.#detach();
+        this.#setStatus({
+          state: "searching",
+          message: `More than one device is named "${match.deviceName}", so the Hub cannot tell which app runs on this one. Rename one of them.`,
+        });
+        return;
+      }
+      if (match.kind === "none") {
         this.#detach();
         this.#setStatus({
           state: "searching",
@@ -213,6 +267,7 @@ export class NetworkSession {
         });
         return;
       }
+      const { target } = match;
       if (this.#cdp && this.#target?.webSocketDebuggerUrl === target.webSocketDebuggerUrl) return;
       this.#detach();
       await this.#attach(target);
@@ -239,6 +294,12 @@ export class NetworkSession {
       }
       this.#cdp = socket;
       this.#target = target;
+      // @ref LLP 0014#how-it-works — the inspector numbers requests per connection, so a new
+      // connection starts a new id space; requests already listed keep theirs.
+      this.#generation += 1;
+      this.#keys.clear();
+      this.#hops.clear();
+      this.#pendingExtraHeaders.clear();
       socket.on("close", () => {
         if (this.#cdp !== socket) return;
         this.#cdp = null;
@@ -299,6 +360,7 @@ export class NetworkSession {
     const socket = this.#cdp;
     this.#cdp = null;
     this.#target = null;
+    this.#pendingExtraHeaders.clear();
     this.#rejectPendingReplies();
     if (socket) {
       try {
@@ -321,67 +383,44 @@ export class NetworkSession {
 
   #onNetworkEvent({ method, params }: CdpEvent): void {
     if (!params || typeof params.requestId !== "string") return;
-    const id: string = params.requestId;
-    const existing = this.#requests.get(id);
+    const cdpId: string = params.requestId;
 
+    if (method === "Network.requestWillBeSent") {
+      this.#onRequestWillBeSent(cdpId, params);
+      return;
+    }
+
+    const key = this.#keys.get(cdpId);
+    const existing = key ? this.#requests.get(key) : undefined;
+
+    if (method === "Network.requestWillBeSentExtraInfo") {
+      if (!params.headers || typeof params.headers !== "object") return;
+      const headers = redactHeaders(params.headers);
+      // CDP does not order extra-info before or after the request it describes.
+      if (!key || !existing) {
+        this.#bufferExtraHeaders(cdpId, headers);
+        return;
+      }
+      this.#upsert(key, {
+        ...existing,
+        view: { ...existing.view, requestHeaders: { ...existing.view.requestHeaders, ...headers } },
+      });
+      return;
+    }
+
+    if (!key || !existing) return;
     switch (method) {
-      case "Network.requestWillBeSent": {
-        const request = params.request ?? {};
-        const startedAt =
-          typeof params.wallTime === "number"
-            ? Math.round(params.wallTime * 1000)
-            : this.#deps.now();
-        this.#upsert(id, {
-          view: {
-            ...existing?.view,
-            id,
-            method: String(request.method ?? "GET"),
-            url: String(request.url ?? ""),
-            startedAt: existing?.view.startedAt ?? startedAt,
-            resourceType:
-              typeof params.type === "string" ? params.type : existing?.view.resourceType,
-            requestHeaders:
-              request.headers && typeof request.headers === "object"
-                ? redactHeaders(request.headers)
-                : existing?.view.requestHeaders,
-            requestBody:
-              typeof request.postData === "string" ? request.postData : existing?.view.requestBody,
-          },
-          startTimestamp: existing?.startTimestamp ?? numberOrUndefined(params.timestamp),
-        });
-        return;
-      }
-      case "Network.requestWillBeSentExtraInfo": {
-        if (!existing || !params.headers || typeof params.headers !== "object") return;
-        this.#upsert(id, {
-          ...existing,
-          view: { ...existing.view, requestHeaders: redactHeaders(params.headers) },
-        });
-        return;
-      }
       case "Network.responseReceived": {
-        if (!existing) return;
-        const response = params.response ?? {};
-        this.#upsert(id, {
+        this.#upsert(key, {
           ...existing,
-          view: {
-            ...existing.view,
-            status: numberOrUndefined(response.status),
-            statusText: typeof response.statusText === "string" ? response.statusText : undefined,
-            mimeType: typeof response.mimeType === "string" ? response.mimeType : undefined,
-            responseHeaders:
-              response.headers && typeof response.headers === "object"
-                ? redactHeaders(response.headers)
-                : existing.view.responseHeaders,
-          },
+          view: { ...existing.view, ...responseFields(params.response, existing.view) },
         });
         return;
       }
       case "Network.loadingFinished":
       case "Network.loadingFailed": {
-        if (!existing) return;
         const finishedAt = this.#finishedAt(existing, numberOrUndefined(params.timestamp));
-        this.#upsert(id, {
+        this.#upsert(key, {
           ...existing,
           view: {
             ...existing.view,
@@ -401,6 +440,73 @@ export class NetworkSession {
     }
   }
 
+  /**
+   * Start a request, or its next hop. A redirect reuses the inspector's id and carries the
+   * previous hop's response, so that hop is finished and the new one gets an id of its own.
+   */
+  #onRequestWillBeSent(cdpId: string, params: Record<string, any>): void {
+    const request = params.request ?? {};
+    let key = this.#keys.get(cdpId);
+    const previous = key ? this.#requests.get(key) : undefined;
+    const redirected = previous !== undefined && params.redirectResponse !== undefined;
+
+    if (key && previous && redirected) {
+      this.#upsert(key, {
+        ...previous,
+        view: {
+          ...previous.view,
+          ...responseFields(params.redirectResponse, previous.view),
+          finishedAt: this.#finishedAt(previous, numberOrUndefined(params.timestamp)),
+        },
+      });
+      const hop = (this.#hops.get(cdpId) ?? 0) + 1;
+      this.#hops.set(cdpId, hop);
+      key = `${this.#generation}.${cdpId}~${hop}`;
+      this.#keys.set(cdpId, key);
+    } else if (!key) {
+      key = `${this.#generation}.${cdpId}`;
+      this.#keys.set(cdpId, key);
+    }
+
+    const existing = redirected ? undefined : previous;
+    const startedAt =
+      typeof params.wallTime === "number" ? Math.round(params.wallTime * 1000) : this.#deps.now();
+    const headers =
+      request.headers && typeof request.headers === "object"
+        ? redactHeaders(request.headers)
+        : existing?.view.requestHeaders;
+    const extra = this.#pendingExtraHeaders.get(cdpId);
+    this.#pendingExtraHeaders.delete(cdpId);
+
+    this.#upsert(key, {
+      cdpId,
+      generation: this.#generation,
+      view: {
+        ...existing?.view,
+        id: key,
+        method: String(request.method ?? "GET"),
+        url: String(request.url ?? ""),
+        startedAt: existing?.view.startedAt ?? startedAt,
+        resourceType: typeof params.type === "string" ? params.type : existing?.view.resourceType,
+        requestHeaders: extra ? { ...headers, ...extra } : headers,
+        requestBody:
+          typeof request.postData === "string" ? request.postData : existing?.view.requestBody,
+      },
+      startTimestamp: existing?.startTimestamp ?? numberOrUndefined(params.timestamp),
+    });
+  }
+
+  #bufferExtraHeaders(cdpId: string, headers: Record<string, string>): void {
+    if (
+      !this.#pendingExtraHeaders.has(cdpId) &&
+      this.#pendingExtraHeaders.size >= MAX_PENDING_EXTRA_HEADERS
+    ) {
+      const oldest = this.#pendingExtraHeaders.keys().next().value;
+      if (oldest !== undefined) this.#pendingExtraHeaders.delete(oldest);
+    }
+    this.#pendingExtraHeaders.set(cdpId, { ...this.#pendingExtraHeaders.get(cdpId), ...headers });
+  }
+
   /** CDP timestamps are monotonic seconds; place the end relative to the wall-clock start. */
   #finishedAt(request: TrackedRequest, timestamp: number | undefined): number {
     if (timestamp !== undefined && request.startTimestamp !== undefined) {
@@ -413,12 +519,21 @@ export class NetworkSession {
   }
 
   #upsert(id: string, request: TrackedRequest): void {
+    const evicted: string[] = [];
     if (!this.#requests.has(id) && this.#requests.size >= NETWORK_MAX_REQUESTS) {
       const oldest = this.#requests.keys().next().value;
-      if (oldest !== undefined) this.#requests.delete(oldest);
+      if (oldest !== undefined) {
+        this.#requests.delete(oldest);
+        evicted.push(oldest);
+      }
     }
     this.#requests.set(id, request);
-    this.#broadcast({ type: "request", request: request.view });
+    // Dashboards drop what the server dropped, so a long-open panel stays as bounded as a new one.
+    this.#broadcast(
+      evicted.length > 0
+        ? { type: "request", request: request.view, evicted }
+        : { type: "request", request: request.view },
+    );
   }
 
   #onClientMessage(socket: NetworkSocket, data: unknown): void {
@@ -433,7 +548,19 @@ export class NetworkSession {
   }
 
   async #sendResponseBody(socket: NetworkSocket, id: string): Promise<void> {
-    const reply = await this.#call("Network.getResponseBody", { requestId: id });
+    const tracked = this.#requests.get(id);
+    if (!tracked || tracked.generation !== this.#generation || !this.#cdp) {
+      this.#sendTo(socket, {
+        type: "response-body",
+        id,
+        body: null,
+        error: tracked
+          ? "This request came from an earlier connection to the app, which no longer has its body."
+          : "The Hub no longer keeps this request.",
+      });
+      return;
+    }
+    const reply = await this.#call("Network.getResponseBody", { requestId: tracked.cdpId });
     if (!reply || reply.error || !reply.result) {
       this.#sendTo(socket, {
         type: "response-body",
@@ -512,6 +639,23 @@ function parseJson(data: unknown): any {
   }
 }
 
+/** The panel fields of a CDP `Response`, keeping what `current` has where the response is silent. */
+function responseFields(
+  response: Record<string, any> | undefined,
+  current: NetworkRequest,
+): Partial<NetworkRequest> {
+  const value = response ?? {};
+  return {
+    status: numberOrUndefined(value.status),
+    statusText: typeof value.statusText === "string" ? value.statusText : undefined,
+    mimeType: typeof value.mimeType === "string" ? value.mimeType : undefined,
+    responseHeaders:
+      value.headers && typeof value.headers === "object"
+        ? redactHeaders(value.headers)
+        : current.responseHeaders,
+  };
+}
+
 function numberOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -539,9 +683,25 @@ const sessions = new Map<string, NetworkSession>();
 /** `/api/network/ws?platform=&id=&name=&version=`: stream one device's app traffic. */
 export function networkWebSocketHandler(socket: NetworkSocket, request: Request): void {
   const device = parseNetworkDeviceRef(request.url);
-  const metroOrigin = metroOriginFor(request.url);
-  if (!device || !metroOrigin) {
+  if (!device) {
     socket.close(1008, "Expected ?platform=&id=&name=&version=");
+    return;
+  }
+  let metroOrigin: string | null;
+  try {
+    metroOrigin = metroOriginFor(request.url);
+  } catch (error) {
+    if (!(error instanceof MetroUrlError)) throw error;
+    // Say why and keep the socket open, so the dashboard shows the reason instead of reconnecting.
+    const message: NetworkServerMessage = {
+      type: "status",
+      status: { state: "unavailable", message: error.message },
+    };
+    socket.send(JSON.stringify(message));
+    return;
+  }
+  if (!metroOrigin) {
+    socket.close(1008, "Could not read the request URL");
     return;
   }
   const key = `${metroOrigin}|${device.platform}|${device.id}`;

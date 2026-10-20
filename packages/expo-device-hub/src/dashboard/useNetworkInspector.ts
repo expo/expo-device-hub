@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type Device,
@@ -8,6 +8,7 @@ import {
 } from "@expo/hub-components";
 
 import {
+  NETWORK_MAX_REQUESTS,
   type NetworkClientMessage,
   type NetworkRequest,
   type NetworkServerMessage,
@@ -16,6 +17,8 @@ import { basePath } from "./basePath";
 
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 10_000;
+/** Longer than the server's own body timeout, so the server's answer usually wins. */
+const BODY_TIMEOUT_MS = 10_000;
 
 /** The Hub's Network socket for one device. */
 export function networkWebSocketUrl(device: Device, locationHref = window.location.href): string {
@@ -51,12 +54,20 @@ export function applyNetworkMessage(
     case "snapshot":
       return { ...state, requests: message.requests };
     case "request": {
+      const evicted = new Set(message.evicted);
       const index = state.requests.findIndex((request) => request.id === message.request.id);
-      const requests =
+      let requests =
         index === -1
           ? [...state.requests, message.request]
           : state.requests.map((request, i) => (i === index ? message.request : request));
-      return { ...state, requests };
+      if (evicted.size > 0) requests = requests.filter((request) => !evicted.has(request.id));
+      // The server's cap, in case an eviction was missed while the socket reconnected.
+      if (requests.length > NETWORK_MAX_REQUESTS) {
+        const dropped = requests.slice(0, requests.length - NETWORK_MAX_REQUESTS);
+        for (const request of dropped) evicted.add(request.id);
+        requests = requests.slice(-NETWORK_MAX_REQUESTS);
+      }
+      return { ...state, requests, responseBodies: withoutBodies(state.responseBodies, evicted) };
     }
     case "cleared":
       return { ...state, requests: [], responseBodies: {} };
@@ -77,7 +88,16 @@ export function applyNetworkMessage(
   }
 }
 
+function withoutBodies(
+  bodies: Record<string, NetworkPanelBody>,
+  ids: ReadonlySet<string>,
+): Record<string, NetworkPanelBody> {
+  if (![...ids].some((id) => id in bodies)) return bodies;
+  return Object.fromEntries(Object.entries(bodies).filter(([id]) => !ids.has(id)));
+}
+
 type NetworkSocket = {
+  readyState: number;
   send(data: string): void;
   close(): void;
   onmessage: ((event: { data: unknown }) => void) | null;
@@ -87,7 +107,7 @@ type NetworkSocket = {
 
 /**
  * Keep a Network socket open for `device` until the returned function is called, reconnecting with
- * backoff. `send` reaches the current socket.
+ * backoff. `send` reaches the current socket, and returns false when no socket is open to take it.
  */
 export function subscribeToNetwork({
   url,
@@ -99,7 +119,7 @@ export function subscribeToNetwork({
   createSocket?: (url: string) => NetworkSocket;
   onMessage: (message: NetworkServerMessage) => void;
   onDisconnected: () => void;
-}): { send: (message: NetworkClientMessage) => void; close: () => void } {
+}): { send: (message: NetworkClientMessage) => boolean; close: () => void } {
   let cancelled = false;
   let socket: NetworkSocket | null = null;
   let delay = RECONNECT_MIN_MS;
@@ -129,9 +149,13 @@ export function subscribeToNetwork({
 
   return {
     send: (message) => {
+      if (socket?.readyState !== 1) return false;
       try {
-        socket?.send(JSON.stringify(message));
-      } catch {}
+        socket.send(JSON.stringify(message));
+        return true;
+      } catch {
+        return false;
+      }
     },
     close: () => {
       cancelled = true;
@@ -152,6 +176,7 @@ export function useNetworkInspector(device: Device | undefined): NetworkSectionP
   const [state, setState] = useState<NetworkPanelState>(INITIAL_NETWORK_STATE);
   const [connection, setConnection] = useState<ReturnType<typeof subscribeToNetwork> | null>(null);
   const url = device ? networkWebSocketUrl(device) : null;
+  const bodyTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
     setState(INITIAL_NETWORK_STATE);
@@ -166,7 +191,12 @@ export function useNetworkInspector(device: Device | undefined): NetworkSectionP
         setState((current) => ({ ...current, status: { state: "connecting" } })),
     });
     setConnection(subscription);
-    return () => subscription.close();
+    const timers = bodyTimers.current;
+    return () => {
+      subscription.close();
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
   }, [open, url]);
 
   return useMemo<NetworkSectionProps>(
@@ -177,11 +207,37 @@ export function useNetworkInspector(device: Device | undefined): NetworkSectionP
       onOpenChange: setOpen,
       onClear: () => connection?.send({ type: "clear" }),
       onRequestResponseBody: (id) => {
-        setState((current) => ({
-          ...current,
-          responseBodies: { ...current.responseBodies, [id]: { state: "loading" } },
-        }));
-        connection?.send({ type: "get-response-body", id });
+        const setBody = (body: NetworkPanelBody) =>
+          setState((current) => ({
+            ...current,
+            responseBodies: { ...current.responseBodies, [id]: body },
+          }));
+        const timers = bodyTimers.current;
+        clearTimeout(timers.get(id));
+        timers.delete(id);
+        if (!connection?.send({ type: "get-response-body", id })) {
+          setBody({ state: "error", message: "The Hub is reconnecting. Try again in a moment." });
+          return;
+        }
+        setBody({ state: "loading" });
+        // A reply lost to a dropped socket would otherwise leave the body loading for good.
+        timers.set(
+          id,
+          setTimeout(() => {
+            timers.delete(id);
+            setState((current) =>
+              current.responseBodies[id]?.state === "loading"
+                ? {
+                    ...current,
+                    responseBodies: {
+                      ...current.responseBodies,
+                      [id]: { state: "error", message: "The Hub did not answer. Try again." },
+                    },
+                  }
+                : current,
+            );
+          }, BODY_TIMEOUT_MS),
+        );
       },
     }),
     [state, connection],

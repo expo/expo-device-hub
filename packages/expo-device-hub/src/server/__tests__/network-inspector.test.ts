@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { NETWORK_MAX_REQUESTS, type NetworkServerMessage } from "../../network-protocol";
 import {
+  adaptWebSocket,
   type CdpSocket,
   NetworkSession,
   type NetworkSessionDeps,
   type NetworkSocket,
+  networkWebSocketHandler,
   parseNetworkDeviceRef,
 } from "../network-inspector";
 import { type InspectorTarget } from "../network-targets";
@@ -62,10 +64,12 @@ class FakeCdp extends Emitter implements CdpSocket {
 
 class FakeClient extends Emitter implements NetworkSocket {
   messages: NetworkServerMessage[] = [];
+  closedWith: number | undefined;
   send(data: string) {
     this.messages.push(JSON.parse(data));
   }
-  close() {
+  close(code?: number) {
+    this.closedWith = code;
     this.emit("close");
   }
   last<T extends NetworkServerMessage["type"]>(type: T) {
@@ -181,7 +185,7 @@ describe("NetworkSession", () => {
     });
 
     expect(client.last("request")?.request).toEqual({
-      id: "r1",
+      id: "1.r1",
       method: "POST",
       url: "https://api.example.com/items",
       startedAt: 1_700_000_000_000,
@@ -218,10 +222,109 @@ describe("NetworkSession", () => {
     const requests = client.messages
       .filter((m) => m.type === "request")
       .map((m) => (m as any).request);
-    expect(requests.find((r) => r.id === "a" && r.failed)?.failed).toBe(
+    expect(requests.find((r) => r.id === "1.a" && r.failed)?.failed).toBe(
       "net::ERR_NAME_NOT_RESOLVED",
     );
-    expect(requests.find((r) => r.id === "b" && r.failed)?.failed).toBe("Canceled");
+    expect(requests.find((r) => r.id === "1.b" && r.failed)?.failed).toBe("Canceled");
+  });
+
+  test("applies headers that arrive before their request", async () => {
+    const { session, sockets } = setup();
+    const client = new FakeClient();
+    session.subscribe(client);
+    await settle();
+    const cdp = sockets[0]!;
+    cdp.event("Network.requestWillBeSentExtraInfo", {
+      requestId: "r1",
+      headers: { Cookie: "s=1", Accept: "*/*" },
+    });
+    cdp.event("Network.requestWillBeSent", {
+      requestId: "r1",
+      request: { url: "https://x", method: "GET", headers: { Accept: "text/html" } },
+    });
+    expect(client.last("request")?.request.requestHeaders).toEqual({
+      Accept: "*/*",
+      Cookie: "[REDACTED]",
+    });
+  });
+
+  test("lists each redirect hop as its own request", async () => {
+    const { session, sockets } = setup();
+    const client = new FakeClient();
+    session.subscribe(client);
+    await settle();
+    const cdp = sockets[0]!;
+    cdp.event("Network.requestWillBeSent", {
+      requestId: "r1",
+      timestamp: 10,
+      wallTime: 1_700_000_000,
+      request: { url: "http://x/old", method: "GET" },
+    });
+    cdp.event("Network.requestWillBeSent", {
+      requestId: "r1",
+      timestamp: 10.1,
+      wallTime: 1_700_000_000.1,
+      request: { url: "https://x/new", method: "GET" },
+      redirectResponse: { status: 301, statusText: "Moved Permanently", headers: {} },
+    });
+    cdp.event("Network.responseReceived", { requestId: "r1", response: { status: 200 } });
+
+    const late = new FakeClient();
+    session.subscribe(late);
+    const snapshot = late.last("snapshot")!.requests;
+    expect(snapshot.map((r) => [r.id, r.url, r.status])).toEqual([
+      ["1.r1", "http://x/old", 301],
+      ["1.r1~1", "https://x/new", 200],
+    ]);
+    expect(snapshot[0]!.finishedAt).toBe(1_700_000_000_100);
+  });
+
+  test("keeps ids from an earlier connection distinct and their bodies unasked", async () => {
+    const { session, sockets, runPoll } = setup();
+    const client = new FakeClient();
+    session.subscribe(client);
+    await settle();
+    sockets[0]!.event("Network.requestWillBeSent", {
+      requestId: "r1",
+      request: { url: "https://x/first" },
+    });
+    sockets[0]!.close();
+    await runPoll();
+    const second = sockets.at(-1)!;
+    expect(second).not.toBe(sockets[0]);
+    second.event("Network.requestWillBeSent", {
+      requestId: "r1",
+      request: { url: "https://x/second" },
+    });
+
+    const late = new FakeClient();
+    session.subscribe(late);
+    expect(late.last("snapshot")!.requests.map((r) => [r.id, r.url])).toEqual([
+      ["1.r1", "https://x/first"],
+      ["2.r1", "https://x/second"],
+    ]);
+
+    client.emit("message", JSON.stringify({ type: "get-response-body", id: "1.r1" }));
+    await settle();
+    expect(second.sent.some((m) => m.method === "Network.getResponseBody")).toBe(false);
+    expect(client.last("response-body")?.error).toContain("earlier connection");
+  });
+
+  test("does not attach when two devices share the name", async () => {
+    const { session, sockets } = setup({
+      targets: [
+        { ...TARGET, id: "1", logicalDeviceId: "device-a" },
+        { ...TARGET, id: "2", logicalDeviceId: "device-b" },
+      ],
+    });
+    const client = new FakeClient();
+    session.subscribe(client);
+    await settle();
+    expect(sockets).toHaveLength(0);
+    expect(client.last("status")?.status).toEqual({
+      state: "searching",
+      message: expect.stringContaining("Rename one of them"),
+    });
   });
 
   test("answers a body request to the asking dashboard only", async () => {
@@ -233,7 +336,8 @@ describe("NetworkSession", () => {
     await settle();
     const cdp = sockets[0]!;
 
-    asker.emit("message", JSON.stringify({ type: "get-response-body", id: "r1" }));
+    cdp.event("Network.requestWillBeSent", { requestId: "r1", request: { url: "https://x" } });
+    asker.emit("message", JSON.stringify({ type: "get-response-body", id: "1.r1" }));
     await settle();
     const call = cdp.sent.find((m) => m.method === "Network.getResponseBody");
     expect(call.params).toEqual({ requestId: "r1" });
@@ -242,7 +346,7 @@ describe("NetworkSession", () => {
 
     expect(asker.last("response-body")).toEqual({
       type: "response-body",
-      id: "r1",
+      id: "1.r1",
       body: { body: '{"ok":true}', base64Encoded: false },
     });
     expect(other.last("response-body")).toBeUndefined();
@@ -269,7 +373,8 @@ describe("NetworkSession", () => {
 
   test(`keeps at most ${NETWORK_MAX_REQUESTS} requests, dropping the oldest`, async () => {
     const { session, sockets } = setup();
-    session.subscribe(new FakeClient());
+    const client = new FakeClient();
+    session.subscribe(client);
     await settle();
     for (let i = 0; i <= NETWORK_MAX_REQUESTS; i++) {
       sockets[0]!.event("Network.requestWillBeSent", {
@@ -281,7 +386,10 @@ describe("NetworkSession", () => {
     session.subscribe(late);
     const snapshot = late.last("snapshot")!.requests;
     expect(snapshot).toHaveLength(NETWORK_MAX_REQUESTS);
-    expect(snapshot[0]!.id).toBe("r1");
+    expect(snapshot[0]!.id).toBe("1.r1");
+    expect(client.last("request")).toMatchObject({ evicted: ["1.r0"] });
+    const withEvictions = client.messages.filter((m) => m.type === "request" && m.evicted);
+    expect(withEvictions).toHaveLength(1);
   });
 
   test("searches again when the app disconnects, and reattaches when it returns", async () => {
@@ -334,6 +442,46 @@ describe("NetworkSession", () => {
     idle.callback();
     expect(sockets[0]!.closed).toBe(true);
     expect(idled()).toBe(true);
+  });
+});
+
+describe("networkWebSocketHandler", () => {
+  const URL_FOR_IOS = "http://127.0.0.1:4040/api/network/ws?platform=ios&id=U&name=a&version=b";
+
+  test("explains a remote EXPO_DEVICE_HUB_METRO_URL without closing the socket", () => {
+    const previous = process.env.EXPO_DEVICE_HUB_METRO_URL;
+    process.env.EXPO_DEVICE_HUB_METRO_URL = "http://192.168.1.2:8081";
+    try {
+      const client = new FakeClient();
+      networkWebSocketHandler(client, new Request(URL_FOR_IOS));
+      expect(client.closedWith).toBeUndefined();
+      expect(client.last("status")?.status).toEqual({
+        state: "unavailable",
+        message: expect.stringContaining("on this machine"),
+      });
+    } finally {
+      if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_METRO_URL;
+      else process.env.EXPO_DEVICE_HUB_METRO_URL = previous;
+    }
+  });
+
+  test("closes the socket for a request without a device", () => {
+    const client = new FakeClient();
+    networkWebSocketHandler(client, new Request("http://127.0.0.1:4040/api/network/ws"));
+    expect(client.closedWith).toBe(1008);
+  });
+});
+
+describe("adaptWebSocket", () => {
+  test("gives a browser-style socket the listener interface the session uses", () => {
+    const target = new EventTarget() as EventTarget & { send(): void; close(): void };
+    const seen: unknown[] = [];
+    const socket = adaptWebSocket(target as unknown as WebSocket);
+    socket.on("open", () => seen.push("open"));
+    socket.on("message", (data: unknown) => seen.push(data));
+    target.dispatchEvent(new Event("open"));
+    target.dispatchEvent(new MessageEvent("message", { data: "{}" }));
+    expect(seen).toEqual(["open", "{}"]);
   });
 });
 

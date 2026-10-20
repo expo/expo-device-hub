@@ -6,17 +6,27 @@ import {
   inspectorOrigins,
   iosInspectorDeviceNames,
   listInspectorTargets,
+  matchTarget,
+  MetroUrlError,
   metroOriginFor,
-  pickTarget,
   type InspectorTarget,
+  type TargetMatch,
 } from "../network-targets";
 
-const target = (id: string, deviceName: string, appId = "com.example"): InspectorTarget => ({
+const target = (
+  id: string,
+  deviceName: string,
+  appId = "com.example",
+  logicalDeviceId?: string,
+): InspectorTarget => ({
   id,
   deviceName,
   appId,
   webSocketDebuggerUrl: `ws://localhost:8081/inspector/debug?device=d${id}&page=1`,
+  ...(logicalDeviceId ? { logicalDeviceId } : {}),
 });
+
+const appIdOf = (match: TargetMatch) => (match.kind === "match" ? match.target.appId : match.kind);
 
 describe("metroOriginFor", () => {
   test("uses the request's port on loopback, because the plugin runs inside Metro", () => {
@@ -34,10 +44,25 @@ describe("metroOriginFor", () => {
     ).toBe("http://127.0.0.1:8081");
   });
 
-  test("returns null for an unusable configured URL", () => {
-    expect(
+  test("throws for an unusable configured URL", () => {
+    expect(() =>
       metroOriginFor("http://localhost:4040/x", { EXPO_DEVICE_HUB_METRO_URL: "not a url" }),
-    ).toBeNull();
+    ).toThrow(MetroUrlError);
+  });
+
+  test("accepts only a Metro server on this machine", () => {
+    for (const host of ["127.0.0.1", "localhost", "[::1]"]) {
+      expect(
+        metroOriginFor("http://localhost:4040/x", {
+          EXPO_DEVICE_HUB_METRO_URL: `http://${host}:8081`,
+        }),
+      ).toBe(`http://${host}:8081`);
+    }
+    for (const url of ["http://192.168.1.2:8081", "https://metro.example.com"]) {
+      expect(() =>
+        metroOriginFor("http://localhost:4040/x", { EXPO_DEVICE_HUB_METRO_URL: url }),
+      ).toThrow(/on this machine/);
+    }
   });
 });
 
@@ -75,15 +100,34 @@ describe("device names", () => {
   });
 });
 
-describe("pickTarget", () => {
+describe("matchTarget", () => {
   test("matches the device name exactly and prefers the most recent app", () => {
     const targets = [
       target("1", "iPhone Duo (iOS 27.1)", "com.first"),
       target("2", "Pixel - 17 - API 37"),
       target("3", "iPhone Duo (iOS 27.1)", "com.second"),
     ];
-    expect(pickTarget(targets, ["iPhone Duo (iOS 27.1)"])?.appId).toBe("com.second");
-    expect(pickTarget(targets, ["iPhone Duo (iOS 27.0)"])).toBeNull();
+    expect(appIdOf(matchTarget(targets, ["iPhone Duo (iOS 27.1)"]))).toBe("com.second");
+    expect(matchTarget(targets, ["iPhone Duo (iOS 27.0)"])).toEqual({ kind: "none" });
+  });
+
+  test("refuses a name that apps on two devices share", () => {
+    const targets = [
+      target("1", "Pixel - 17 - API 37", "com.a", "device-a"),
+      target("2", "Pixel - 17 - API 37", "com.b", "device-b"),
+    ];
+    expect(matchTarget(targets, ["Pixel - 17 - API 37"])).toEqual({
+      kind: "ambiguous",
+      deviceName: "Pixel - 17 - API 37",
+    });
+  });
+
+  test("allows several apps on one device", () => {
+    const targets = [
+      target("1", "Pixel - 17 - API 37", "com.a", "device-a"),
+      target("2", "Pixel - 17 - API 37", "com.b", "device-a"),
+    ];
+    expect(appIdOf(matchTarget(targets, ["Pixel - 17 - API 37"]))).toBe("com.b");
   });
 
   test("tries the device's names in order", () => {
@@ -91,11 +135,11 @@ describe("pickTarget", () => {
       target("1", "iPhone 17 Pro (iOS 27.1)", "com.versioned"),
       target("2", "iPhone 17 Pro", "com.plain"),
     ];
-    expect(pickTarget(targets, ["iPhone 17 Pro", "iPhone 17 Pro (iOS 27.1)"])?.appId).toBe(
+    expect(appIdOf(matchTarget(targets, ["iPhone 17 Pro", "iPhone 17 Pro (iOS 27.1)"]))).toBe(
       "com.plain",
     );
     expect(
-      pickTarget(targets.slice(0, 1), ["iPhone 17 Pro", "iPhone 17 Pro (iOS 27.1)"])?.appId,
+      appIdOf(matchTarget(targets.slice(0, 1), ["iPhone 17 Pro", "iPhone 17 Pro (iOS 27.1)"])),
     ).toBe("com.versioned");
   });
 });
@@ -106,12 +150,26 @@ describe("listInspectorTargets", () => {
       new Response(
         JSON.stringify([
           { id: "1", deviceName: "iPhone", appId: "com.a", webSocketDebuggerUrl: "ws://h/x" },
+          {
+            id: "3",
+            deviceName: "Pixel",
+            appId: "com.b",
+            webSocketDebuggerUrl: "ws://h/y",
+            reactNative: { logicalDeviceId: "device-b" },
+          },
           { id: 2 },
           null,
         ]),
       )) as unknown as typeof fetch;
     expect(await listInspectorTargets("http://127.0.0.1:8081", fetchImpl)).toEqual([
       { id: "1", deviceName: "iPhone", appId: "com.a", webSocketDebuggerUrl: "ws://h/x" },
+      {
+        id: "3",
+        deviceName: "Pixel",
+        appId: "com.b",
+        webSocketDebuggerUrl: "ws://h/y",
+        logicalDeviceId: "device-b",
+      },
     ]);
   });
 
