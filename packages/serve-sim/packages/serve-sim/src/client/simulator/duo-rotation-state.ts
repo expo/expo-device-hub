@@ -14,6 +14,7 @@ export function createDuoRotationState() {
   let pendingUntil = 0;
   let baseline: HingePhysicalOrientation | undefined;
   return {
+    get pending() { return pendingUntil > 0; },
     takeBaseline() { const value = baseline; baseline = undefined; return value; },
     rebase(orientation: HingePhysicalOrientation | undefined) {
       const index = physicalOrientationQuarterTurns(orientation);

@@ -2,4 +2,4 @@
 "@expo/serve-sim": patch
 ---
 
-Follow external Duo rotation in the preview using native physical orientation, without applying UI rotation readback twice.
+Follow external Duo rotation in the preview using native physical orientation, without applying UI rotation readback twice, including while a hinge command is pending.
