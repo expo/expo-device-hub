@@ -149,13 +149,13 @@ The published packages build serve-sim's native code with Xcode 26, so they work
 users on Xcode 26 and Xcode 27. [LLP 0014](llp/0014-serve-sim-xcode-support-and-ci.decision.md)
 has the full support statement.
 
-| When | What runs |
-|---|---|
-| Every push to a PR | Checks: lint and typecheck |
-| Every push to a PR that is ready for review | serve-sim tests: the Xcode 26 build on the iOS 26 and iOS 27 Simulators |
-| Every push to a draft PR with the `ci-ready` label | serve-sim tests, as above |
-| Every push to a PR with the `xcode-27` label | Also an Xcode 27 build, tested on the iOS 27 Simulator |
-| Every night on `main` | The Xcode 27 build, tested on the iOS 27 Simulator |
+| When                                               | What runs                                                               |
+| -------------------------------------------------- | ----------------------------------------------------------------------- |
+| Every push to a PR                                 | Checks: lint and typecheck                                              |
+| Every push to a PR that is ready for review        | serve-sim tests: the Xcode 26 build on the iOS 26 and iOS 27 Simulators |
+| Every push to a draft PR with the `ci-ready` label | serve-sim tests, as above                                               |
+| Every push to a PR with the `xcode-27` label       | Also an Xcode 27 build, tested on the iOS 27 Simulator                  |
+| Every night on `main`                              | The Xcode 27 build, tested on the iOS 27 Simulator                      |
 
 The serve-sim tests run only when a PR changes serve-sim or its CI files, and they use
 several macOS machines. Open a PR as a draft while you iterate, and add `ci-ready`

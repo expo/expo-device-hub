@@ -13,10 +13,10 @@ serve-sim is published from an Xcode 26 build and supports Xcode 26 and Xcode 27
 
 ## Support statement
 
-| Build | Built with | Tested on | When |
-|---|---|---|---|
+| Build                                            | Built with                                      | Tested on                                                                                                 | When                                                                                 |
+| ------------------------------------------------ | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Published package (`latest` and `canary` on npm) | Xcode 26.6, image `macos-tahoe-26.5-xcode-26.6` | iOS 26.5 Simulator (Xcode 26 image) and iOS 27.0 Simulator (Xcode 27 image `macos-tahoe-26.6-xcode-27.1`) | Every push to a PR that is ready for review, or to a draft with the `ci-ready` label |
-| Source build | Xcode 27.1, image `macos-tahoe-26.6-xcode-27.1` | iOS 27.0 Simulator | Every night on `main`, and every push to a PR with the `xcode-27` label |
+| Source build                                     | Xcode 27.1, image `macos-tahoe-26.6-xcode-27.1` | iOS 27.0 Simulator                                                                                        | Every night on `main`, and every push to a PR with the `xcode-27` label              |
 
 - Releases are built with Xcode 26, so that the published package runs for users on Xcode 26 [confirmed: Gabe Debes, 2026-10-17].
 - Xcode 27 is supported too: the published package must pass on the iOS 27 Simulator, and the source must build and pass with Xcode 27 [confirmed: Gabe Debes, 2026-10-17].
