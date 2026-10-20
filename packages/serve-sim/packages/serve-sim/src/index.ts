@@ -50,6 +50,8 @@ import { assertKnownCapabilities, missingCapabilities, registerCapability } from
 import {
   applyDefaultCapabilities,
   armCapabilityLoader,
+  CapabilityRollbackError,
+  capabilityLoaderPath,
   devicesArmedHere,
   disarmStaleCapabilityLoader,
   releaseSessionSync,
@@ -57,6 +59,7 @@ import {
   stopLaunchSession,
   waitForLaunchUpdates,
 } from "./launch-manager";
+import { LaunchStateLockTimeoutError } from "./launch-state-lock";
 import { parseCaptureFields } from "./capture/fields";
 import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
@@ -65,7 +68,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
-import { clipboardCapability } from "./sim-pasteboard-reader";
+import { clipboardCapability, locatePasteboardReaderDylib } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -2613,6 +2616,18 @@ Examples:
       }
     }
     let targets = devices;
+    const defaultsInitialized = new Set<string>();
+    // @ref LLP 0011#startup-order — plain previews publish defaults and idle-session ownership together.
+    const combineInitialDefaults =
+      !isStreamHelper &&
+      opts.preview !== false &&
+      !opts.networkCapture &&
+      !installAppPath &&
+      !bundleId &&
+      capabilities.enable.length === 0 &&
+      capabilities.disable.length === 0 &&
+      existsSync(capabilityLoaderPath()) &&
+      locatePasteboardReaderDylib() !== null;
     let captureStopping: Promise<void> | null = null;
     const stopNetworkCapture = (): Promise<void> => {
       captureStopping ??= (async () => {
@@ -2659,7 +2674,26 @@ Examples:
         }
         if (!isStreamHelper) {
           for (const udid of targets) {
-            await armCapabilityLoader(udid);
+            if (combineInitialDefaults) {
+              try {
+                await applyDefaultCapabilities(udid, null, capabilities, { armSession: true });
+                defaultsInitialized.add(udid);
+              } catch (error) {
+                if (sessionStopping) return;
+                if (
+                  error instanceof CapabilityRollbackError ||
+                  error instanceof LaunchStateLockTimeoutError
+                )
+                  throw error;
+                console.error(
+                  `Could not initialize default capabilities with the loader on ${udid}; ` +
+                    `retrying separately: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                await armCapabilityLoader(udid);
+              }
+            } else {
+              await armCapabilityLoader(udid);
+            }
             if (sessionStopping) return;
           }
         }
@@ -2687,7 +2721,7 @@ Examples:
           }
           if (bundleId) {
             await launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities });
-          } else {
+          } else if (!defaultsInitialized.has(udid)) {
             const applied = await applyDefaultCapabilities(udid, null, capabilities);
             const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {
