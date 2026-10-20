@@ -1,6 +1,24 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { bg, border, font, isFocusVisible, radius, text, textSize } from "../primitives";
+import {
+  bg,
+  border,
+  ChevronDownIcon,
+  font,
+  icon,
+  isFocusVisible,
+  radius,
+  text,
+  textSize,
+} from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { SectionNote } from "./SectionNote";
 import { SidebarActionButton } from "./SidebarActionButton";
@@ -298,6 +316,27 @@ export function RequestDetails({
   onClose: () => void;
 }) {
   const done = request.finishedAt !== undefined && !request.failed;
+  // Kept across selections, so a block opened or closed for one request stays that way for the
+  // next. Only the bodies start open; the rest is a click away.
+  const [opened, setOpened] = useState<Readonly<Record<string, boolean>>>({});
+  const block = (title: string) => ({
+    title,
+    open: opened[title] ?? title.endsWith("body"),
+    onOpenChange: (open: boolean) => setOpened((current) => ({ ...current, [title]: open })),
+  });
+  const requestHeaders = Object.entries(request.requestHeaders ?? {});
+  const responseHeaders = Object.entries(request.responseHeaders ?? {});
+  const responseBodyBlock = block("Response body");
+  // An open body block is the ask: load the body once the response is complete. A failed load
+  // waits for Try again rather than retrying on its own.
+  const loadBody = done && responseBodyBlock.open && responseBody === undefined;
+  const requestBodyRef = useRef(onRequestResponseBody);
+  useEffect(() => {
+    requestBodyRef.current = onRequestResponseBody;
+  });
+  useEffect(() => {
+    if (loadBody) requestBodyRef.current();
+  }, [loadBody, request.id]);
   return (
     <div
       aria-label="Request details"
@@ -319,7 +358,7 @@ export function RequestDetails({
         </span>
         <SidebarActionButton onClick={onClose}>Close</SidebarActionButton>
       </div>
-      <DetailBlock title="General">
+      <DetailBlock {...block("General")}>
         <KeyValues
           entries={[
             ["URL", request.url],
@@ -330,31 +369,25 @@ export function RequestDetails({
           ]}
         />
       </DetailBlock>
-      <DetailBlock title="Request headers">
-        <KeyValues
-          entries={Object.entries(request.requestHeaders ?? {})}
-          empty="No headers reported."
-        />
+      <DetailBlock {...block("Request headers")} count={requestHeaders.length}>
+        <KeyValues entries={requestHeaders} empty="No headers reported." />
       </DetailBlock>
       {request.requestBody ? (
-        <DetailBlock title="Request body">
-          <BodyText>{request.requestBody}</BodyText>
+        <DetailBlock {...block("Request body")}>
+          <JsonBody body={request.requestBody} />
         </DetailBlock>
       ) : null}
-      <DetailBlock title="Response headers">
-        <KeyValues
-          entries={Object.entries(request.responseHeaders ?? {})}
-          empty="No response yet."
-        />
+      <DetailBlock {...block("Response headers")} count={responseHeaders.length}>
+        <KeyValues entries={responseHeaders} empty="No response yet." />
       </DetailBlock>
-      <DetailBlock title="Response body">
+      <DetailBlock {...responseBodyBlock}>
         {responseBody?.state === "loaded" ? (
           responseBody.base64Encoded ? (
             <SectionNote>{`Binary body, ${formatSize(Math.floor((responseBody.body.length * 3) / 4))} (base64).`}</SectionNote>
           ) : (
             <>
               {shortBodyNote(responseBody.body, request.responseHeaders)}
-              <BodyText>{prettyJson(responseBody.body)}</BodyText>
+              <JsonBody body={responseBody.body} />
             </>
           )
         ) : responseBody?.state === "error" ? (
@@ -367,34 +400,79 @@ export function RequestDetails({
             </SidebarActionButton>
           </div>
         ) : (
-          <div>
-            <SidebarActionButton
-              disabled={!done || responseBody?.state === "loading"}
-              onClick={onRequestResponseBody}
-            >
-              {responseBody?.state === "loading" ? "Loading…" : "Load body"}
-            </SidebarActionButton>
-          </div>
+          <SectionNote>
+            {request.failed
+              ? "The request failed, so there is no body."
+              : done
+                ? "Loading…"
+                : "The body loads when the response completes."}
+          </SectionNote>
         )}
       </DetailBlock>
     </div>
   );
 }
 
-function DetailBlock({ title, children }: { title: string; children: ReactNode }) {
+/** One part of the details, which the user can fold away. */
+function DetailBlock({
+  title,
+  count,
+  open,
+  onOpenChange,
+  children,
+}: {
+  title: string;
+  /** Shown beside the title, so a closed block still says how much it holds. */
+  count?: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  const contentId = useId();
+  const [focused, setFocused] = useState(false);
   return (
-    <section style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-      <span
+    <section
+      aria-label={title}
+      style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => onOpenChange(!open)}
+        onFocus={(event) => setFocused(isFocusVisible(event))}
+        onBlur={() => setFocused(false)}
         style={{
           ...textSize["2xs"],
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          alignSelf: "flex-start",
+          padding: "2px 4px 2px 0",
+          border: 0,
+          borderRadius: radius.sm,
+          outline: "none",
+          boxShadow: focused ? `0 0 0 2px ${border.secondary}` : "none",
+          backgroundColor: "transparent",
+          fontFamily: "inherit",
           fontWeight: 600,
           color: text.secondary,
           textTransform: "uppercase",
+          cursor: "pointer",
         }}
       >
+        <ChevronDownIcon
+          size={12}
+          strokeWidth={2}
+          color={icon.secondary}
+          style={{ flexShrink: 0, transform: open ? undefined : "rotate(-90deg)" }}
+        />
         {title}
-      </span>
-      {children}
+        {count !== undefined ? (
+          <span style={{ color: text.tertiary, fontWeight: 400 }}>{count}</span>
+        ) : null}
+      </button>
+      {open ? <div id={contentId}>{children}</div> : null}
     </section>
   );
 }
@@ -426,27 +504,24 @@ function KeyValues({
 }
 
 function BodyText({ children }: { children: string }) {
-  return (
-    <pre
-      style={{
-        ...monoXs,
-        margin: 0,
-        maxHeight: 220,
-        overflow: "auto",
-        padding: 8,
-        borderRadius: radius.sm,
-        backgroundColor: bg.default,
-        color: text.default,
-        whiteSpace: "pre-wrap",
-        overflowWrap: "anywhere",
-      }}
-    >
-      {children || "(empty)"}
-    </pre>
-  );
+  return <pre style={bodyBox}>{children || "(empty)"}</pre>;
 }
 
 const monoXs: CSSProperties = { ...textSize["2xs"], fontFamily: font.mono, fontWeight: 400 };
+const bodyBox: CSSProperties = {
+  ...monoXs,
+  margin: 0,
+  maxHeight: 320,
+  overflow: "auto",
+  padding: 8,
+  borderRadius: radius.sm,
+  backgroundColor: bg.default,
+  color: text.default,
+  whiteSpace: "pre-wrap",
+  overflowWrap: "anywhere",
+};
+/** A JSON line: long strings wrap under their own line rather than past the panel. */
+const jsonLine: CSSProperties = { ...monoXs, overflowWrap: "anywhere", whiteSpace: "pre-wrap" };
 const ellipsis: CSSProperties = {
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -508,10 +583,169 @@ function shortBodyNote(body: string, headers: Record<string, string> | undefined
   );
 }
 
-function prettyJson(body: string): string {
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2);
-  } catch {
-    return body;
-  }
+/** Above this size a JSON body opens only its first levels, so a large one stays quick to show. */
+const JSON_OPEN_ALL_CHARS = 20_000;
+const JSON_OPEN_DEPTH = 2;
+
+/** A body as a JSON tree whose objects and arrays fold, or as text when it is not JSON. */
+export function JsonBody({ body }: { body: string }) {
+  const parsed = useMemo(() => {
+    try {
+      const value: unknown = JSON.parse(body);
+      return typeof value === "object" && value !== null ? { value } : null;
+    } catch {
+      return null;
+    }
+  }, [body]);
+  if (!parsed) return <BodyText>{body}</BodyText>;
+  return (
+    <div role="tree" aria-label="JSON body" style={{ ...bodyBox, whiteSpace: undefined }}>
+      <JsonNode
+        value={parsed.value}
+        depth={0}
+        last
+        openDepth={body.length > JSON_OPEN_ALL_CHARS ? JSON_OPEN_DEPTH : Infinity}
+      />
+    </div>
+  );
 }
+
+function JsonNode({
+  name,
+  value,
+  depth,
+  last,
+  openDepth,
+}: {
+  /** The key in the parent object; array items have none. */
+  name?: string;
+  value: unknown;
+  depth: number;
+  last: boolean;
+  openDepth: number;
+}) {
+  const [open, setOpen] = useState(depth < openDepth);
+  const [focused, setFocused] = useState(false);
+  const comma = last ? "" : ",";
+  const key =
+    name === undefined ? null : (
+      <>
+        <span style={{ color: text.secondary }}>{JSON.stringify(name)}</span>
+        {": "}
+      </>
+    );
+  const indent = { paddingLeft: depth * JSON_INDENT };
+
+  if (typeof value !== "object" || value === null) {
+    return (
+      <div role="treeitem" style={{ ...indent, ...jsonLine }}>
+        <span style={{ display: "inline-block", width: JSON_TOGGLE }} />
+        {key}
+        <JsonValue value={value} />
+        {comma}
+      </div>
+    );
+  }
+
+  const array = Array.isArray(value);
+  const entries: Array<[string | undefined, unknown]> = array
+    ? value.map((item) => [undefined, item])
+    : Object.entries(value);
+  const [opening, closing] = array ? ["[", "]"] : ["{", "}"];
+  if (entries.length === 0) {
+    return (
+      <div role="treeitem" style={{ ...indent, ...jsonLine }}>
+        <span style={{ display: "inline-block", width: JSON_TOGGLE }} />
+        {key}
+        {opening}
+        {closing}
+        {comma}
+      </div>
+    );
+  }
+  const summary = array
+    ? `${entries.length} ${entries.length === 1 ? "item" : "items"}`
+    : `${entries.length} ${entries.length === 1 ? "key" : "keys"}`;
+  return (
+    <div role="treeitem" aria-expanded={open}>
+      <button
+        type="button"
+        aria-label={`${open ? "Collapse" : "Expand"} ${name ?? (array ? "array" : "object")}`}
+        onClick={() => setOpen(!open)}
+        onFocus={(event) => setFocused(isFocusVisible(event))}
+        onBlur={() => setFocused(false)}
+        style={{
+          ...monoXs,
+          ...indent,
+          ...jsonLine,
+          display: "block",
+          width: "100%",
+          boxSizing: "border-box",
+          margin: 0,
+          paddingTop: 0,
+          paddingBottom: 0,
+          paddingRight: 0,
+          border: 0,
+          borderRadius: radius.xs,
+          outline: "none",
+          boxShadow: focused ? `inset 0 0 0 2px ${border.secondary}` : "none",
+          backgroundColor: "transparent",
+          color: text.default,
+          textAlign: "left",
+          cursor: "pointer",
+        }}
+      >
+        <ChevronDownIcon
+          size={JSON_TOGGLE - 2}
+          strokeWidth={2}
+          color={icon.secondary}
+          style={{
+            display: "inline-block",
+            marginRight: 2,
+            verticalAlign: "middle",
+            transform: open ? undefined : "rotate(-90deg)",
+          }}
+        />
+        {key}
+        {opening}
+        {open ? null : (
+          <>
+            <span style={{ color: text.tertiary }}>{` ${summary} `}</span>
+            {closing}
+            {comma}
+          </>
+        )}
+      </button>
+      {open ? (
+        <>
+          {entries.map(([childName, child], index) => (
+            <JsonNode
+              key={childName ?? index}
+              name={childName}
+              value={child}
+              depth={depth + 1}
+              last={index === entries.length - 1}
+              openDepth={openDepth}
+            />
+          ))}
+          <div style={{ ...indent, ...jsonLine }}>
+            <span style={{ display: "inline-block", width: JSON_TOGGLE }} />
+            {closing}
+            {comma}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function JsonValue({ value }: { value: unknown }) {
+  if (typeof value === "string") {
+    return <span style={{ color: text.success }}>{JSON.stringify(value)}</span>;
+  }
+  if (value === null) return <span style={{ color: text.tertiary }}>null</span>;
+  return <span style={{ color: text.info }}>{String(value)}</span>;
+}
+
+const JSON_INDENT = 12;
+const JSON_TOGGLE = 12;

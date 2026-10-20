@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   formatDuration,
   formatSize,
+  JsonBody,
   NetworkSection,
   RequestDetails,
   splitUrl,
@@ -64,5 +65,53 @@ describe("NetworkSection", () => {
     );
     expect(html).toContain("The Hub did not answer.");
     expect(html).toContain(">Try again</button>");
+  });
+
+  test("opens only the bodies, and counts headers in a closed block", () => {
+    const html = renderToStaticMarkup(
+      <RequestDetails
+        request={{
+          id: "1.r1",
+          method: "POST",
+          url: "https://x/",
+          startedAt: 0,
+          requestHeaders: { Accept: "*/*", Authorization: "[REDACTED]" },
+          requestBody: "{}",
+        }}
+        responseBody={undefined}
+        onRequestResponseBody={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(html.match(/<button[^>]*aria-expanded="true"/g)).toHaveLength(2);
+    expect(html.match(/<button[^>]*aria-expanded="false"/g)).toHaveLength(3);
+    expect(html).toContain(">2</span>");
+    expect(html).not.toContain("[REDACTED]");
+    expect(html).toContain("The body loads when the response completes.");
+  });
+
+  test("shows a JSON body as a tree whose objects and arrays fold", () => {
+    const html = renderToStaticMarkup(
+      <JsonBody body='{"ok":true,"data":{"items":[1,"two",null]},"empty":{}}' />,
+    );
+    expect(html).toContain('role="tree"');
+    expect(html).toContain('aria-label="Collapse data"');
+    expect(html).toContain('aria-label="Collapse items"');
+    expect(html.match(/<button/g)).toHaveLength(3);
+    expect(html).toContain("&quot;two&quot;");
+  });
+
+  test("opens only the first levels of a large JSON body", () => {
+    const deep = JSON.stringify({ a: { b: { c: { d: 1 } } }, pad: "x".repeat(25_000) });
+    const html = renderToStaticMarkup(<JsonBody body={deep} />);
+    expect(html).toContain('aria-label="Collapse a"');
+    expect(html).toContain('aria-label="Expand b"');
+    expect(html).toContain("1 key");
+  });
+
+  test("shows a body that is not JSON as text", () => {
+    const html = renderToStaticMarkup(<JsonBody body='{"cut": "short' />);
+    expect(html).not.toContain('role="tree"');
+    expect(html).toContain("<pre");
   });
 });
