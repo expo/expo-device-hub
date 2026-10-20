@@ -1876,6 +1876,16 @@ function resolveTargetDevices(devices: string[]): string[] {
 // preview's second call does not repeat a failed start (see createCaptureStarter).
 let captureStarter: ReturnType<(typeof import("./capture"))["createCaptureStarter"]> | undefined;
 
+/**
+ * Whether startup can publish the default capabilities and arm the loader in one step: no
+ * overrides, and both dylibs already built. Building the reader on demand must not delay arming.
+ */
+// @ref LLP 0011#startup-order — plain previews publish defaults and idle-session ownership together.
+function canPublishDefaultsWithLoader(overrides: { enable: string[]; disable: string[] }): boolean {
+  if (overrides.enable.length > 0 || overrides.disable.length > 0) return false;
+  return existsSync(capabilityLoaderPath()) && locatePasteboardReaderDylib() !== null;
+}
+
 /** Why capture is refused on this host, or null: a public preview without the token gate. */
 function publicCaptureRefusal(host: string, requireToken: boolean): string | null {
   return !isLoopbackHost(host) && !requireToken
@@ -2617,17 +2627,14 @@ Examples:
     }
     let targets = devices;
     const defaultsInitialized = new Set<string>();
-    // @ref LLP 0011#startup-order — plain previews publish defaults and idle-session ownership together.
-    const combineInitialDefaults =
+    // A preview with no app startup or capture; those keep arming and defaults separate.
+    const plainPreview =
       !isStreamHelper &&
       opts.preview !== false &&
       !opts.networkCapture &&
       !installAppPath &&
-      !bundleId &&
-      capabilities.enable.length === 0 &&
-      capabilities.disable.length === 0 &&
-      existsSync(capabilityLoaderPath()) &&
-      locatePasteboardReaderDylib() !== null;
+      !bundleId;
+    const combineInitialDefaults = plainPreview && canPublishDefaultsWithLoader(capabilities);
     let captureStopping: Promise<void> | null = null;
     const stopNetworkCapture = (): Promise<void> => {
       captureStopping ??= (async () => {
