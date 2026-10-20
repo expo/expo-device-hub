@@ -253,27 +253,46 @@ async function fail(message = "Native pose failed") {
   await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: false, error: message });
 }
 
-function opened(physicalOrientation: "portrait" | "pud" | "landscape-left" | "landscape-right", orientation: SimulatorOrientation): StreamConfig {
-  return { width: 2007, height: 2853, screenId: 3, orientation, supportsHingeAngle: true,
-    observedDeviceState: { hingeAngle: 180, physicalOrientation, tableMode: false } };
+function opened(
+  physicalOrientation: "portrait" | "pud" | "landscape-left" | "landscape-right",
+  orientation: SimulatorOrientation,
+): StreamConfig {
+  return {
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation,
+    supportsHingeAngle: true,
+    observedDeviceState: { hingeAngle: 180, physicalOrientation, tableMode: false },
+  };
 }
 
 test("external rotation turns the opened Duo view before display geometry catches up", async () => {
-  await mount(); await observe(opened("portrait", "landscape_left"));
+  await mount();
+  await observe(opened("portrait", "landscape_left"));
   const before = structuredClone(model().view as DuoView);
   await observe(opened("pud", "landscape_left"));
   const expected = duoRotateView(before, 2);
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
   await observe(opened("pud", "landscape_right"));
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
   await observe(opened("portrait", "landscape_right"));
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 
 test("UI rotation readback is not applied twice and later external rotation still turns the view", async () => {
-  await mount(); await observe(opened("portrait", "landscape_left"));
+  await mount();
+  await observe(opened("portrait", "landscape_left"));
   await act(async () => {
-    renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right");
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
   });
   const rotated = structuredClone(model().view as DuoView);
   await observe(opened("portrait", "landscape_left"));
@@ -282,7 +301,9 @@ test("UI rotation readback is not applied twice and later external rotation stil
   expect(model().view).toEqual(rotated);
   await observe(opened("pud", "landscape_right"));
   const expected = duoRotateView(rotated, 1);
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 
 for (const orientation of ["portrait", "landscape_right"] as const) {
@@ -694,46 +715,95 @@ test("unknown and late face-down readback preserve an explicit rotation", async 
 });
 
 test("external rotation returning to Book restores the physical Book camera", async () => {
-  await mount(); await observe(native("book", "portrait"));
-  const before = structuredClone(model().view as DuoView);
-  await observe({ ...native("book", "portrait"), observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false } });
+  await mount();
   await observe(native("book", "portrait"));
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+  const before = structuredClone(model().view as DuoView);
+  await observe({
+    ...native("book", "portrait"),
+    observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false },
+  });
+  await observe(native("book", "portrait"));
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 test("external Laptop after an external quarter turn restores the tabletop camera", async () => {
-  await mount(); await observe(native("laptop", "landscape_left"));
-  const before = structuredClone(model().view as DuoView);
-  await observe({ ...native("laptop", "landscape_left"), observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false } });
+  await mount();
   await observe(native("laptop", "landscape_left"));
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+  const before = structuredClone(model().view as DuoView);
+  await observe({
+    ...native("laptop", "landscape_left"),
+    observedDeviceState: { hingeAngle: 90, physicalOrientation: "pud", tableMode: false },
+  });
+  await observe(native("laptop", "landscape_left"));
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 test("unconfirmed UI rotation yields to native after grace without another config", async () => {
-  await mount(); await observe(opened("portrait", "landscape_left"));
+  await mount();
+  await observe(opened("portrait", "landscape_left"));
   const before = structuredClone(model().view as DuoView);
-  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
-  await act(async () => { await Bun.sleep(1600); });
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation))).toBeCloseTo(0, 6);
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
+  });
+  await act(async () => {
+    await Bun.sleep(1600);
+  });
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 
 test("a pending hinge and expired grace do not apply a delayed UI rotation twice", async () => {
   await mount();
-  const config = { ...opened("portrait", "landscape_left"),
-    observedDeviceState: { hingeAngle: 100, physicalOrientation: "portrait" as const, tableMode: false } };
+  const config = {
+    ...opened("portrait", "landscape_left"),
+    observedDeviceState: {
+      hingeAngle: 100,
+      physicalOrientation: "portrait" as const,
+      tableMode: false,
+    },
+  };
   await observe(config);
   await request({ control: "angle", value: 110 });
-  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
+  });
   const rotated = structuredClone(model().view as DuoView);
-  await act(async () => { await Bun.sleep(1600); });
+  await act(async () => {
+    await Bun.sleep(1600);
+  });
   expect(model().view).toEqual(rotated);
   await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: true });
-  await observe({ ...config, observedDeviceState: { hingeAngle: 110, physicalOrientation: "landscape-left", tableMode: false } });
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation))).toBeCloseTo(0, 6);
+  await observe({
+    ...config,
+    observedDeviceState: {
+      hingeAngle: 110,
+      physicalOrientation: "landscape-left",
+      tableMode: false,
+    },
+  });
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 
 test("external Laptop to Open uses the canonical front-on camera", async () => {
-  await mount(); await observe(native("laptop", "landscape_left"));
-  await observe({width:2007,height:2853,screenId:3,orientation:"portrait",supportsHingeAngle:true,
-    observedDeviceState:{hingeAngle:180,physicalOrientation:"portrait",tableMode:false}});
+  await mount();
+  await observe(native("laptop", "landscape_left"));
+  await observe({
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation: "portrait",
+    supportsHingeAngle: true,
+    observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false },
+  });
   expectView("open");
 });
 
@@ -744,68 +814,143 @@ const observedPresets = [
   { pose: "laptop", angle: 90, physical: "landscape-left", table: false },
   { pose: "tent", angle: 80, physical: "facedown", table: true },
 ] as const;
-function externalPreset(preset: typeof observedPresets[number]): StreamConfig {
-  return { width: 2007, height: 2853, screenId: preset.angle === 0 || preset.table ? 1 : 3,
-    orientation: "landscape_right", supportsHingeAngle: true,
-    observedDeviceState: { hingeAngle: preset.angle, physicalOrientation: preset.physical, tableMode: preset.table } };
+function externalPreset(preset: (typeof observedPresets)[number]): StreamConfig {
+  return {
+    width: 2007,
+    height: 2853,
+    screenId: preset.angle === 0 || preset.table ? 1 : 3,
+    orientation: "landscape_right",
+    supportsHingeAngle: true,
+    observedDeviceState: {
+      hingeAngle: preset.angle,
+      physicalOrientation: preset.physical,
+      tableMode: preset.table,
+    },
+  };
 }
-for (const from of observedPresets) for (const to of observedPresets) {
-  if (from === to) continue;
-  test(`external ${from.pose} → ${to.pose} frames the physical preset with stale app geometry`, async () => {
-    await mount(); await observe(externalPreset(from)); await observe(externalPreset(to)); expectView(to.pose);
-  });
-}
+for (const from of observedPresets)
+  for (const to of observedPresets) {
+    if (from === to) continue;
+    test(`external ${from.pose} → ${to.pose} frames the physical preset with stale app geometry`, async () => {
+      await mount();
+      await observe(externalPreset(from));
+      await observe(externalPreset(to));
+      expectView(to.pose);
+    });
+  }
 
 test("an early UI turn is not doubled by old then current native samples", async () => {
   await mount();
-  await observe({width:2007,height:2853,screenId:3,orientation:"landscape_left",supportsHingeAngle:true,observedDeviceState:{}});
-  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  await observe({
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation: "landscape_left",
+    supportsHingeAngle: true,
+    observedDeviceState: {},
+  });
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
+  });
   const rotated = structuredClone(model().view as DuoView);
   await observe(opened("portrait", "landscape_left"));
   expectView("open");
   await observe(opened("landscape-left", "portrait"));
   expect(model().view).toEqual(rotated);
-  await act(async () => { await Bun.sleep(1600); });
+  await act(async () => {
+    await Bun.sleep(1600);
+  });
   expect(model().view).toEqual(rotated);
   await observe(opened("pud", "landscape_right"));
   const expected = duoRotateView(rotated, 1);
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
 });
 
 test("an early confirmed UI turn followed by another native turn updates the camera before grace expires", async () => {
   await mount();
-  await observe({width:2007,height:2853,screenId:3,orientation:"landscape_left",supportsHingeAngle:true,observedDeviceState:{}});
-  await act(async () => { renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("portrait", "right"); });
+  await observe({
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation: "landscape_left",
+    supportsHingeAngle: true,
+    observedDeviceState: {},
+  });
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
+  });
   const rotated = structuredClone(model().view as DuoView);
   await observe(opened("landscape-left", "portrait"));
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...rotated.rotation)),
+  ).toBeCloseTo(0, 6);
   await observe(opened("pud", "portrait"));
   const expected = duoRotateView(rotated, 1);
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0, 6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
 });
-
 
 test("first physical readback preserves a locally edited Laptop anchor and follows the next turn", async () => {
   await mount();
-  const config = {width:2007,height:2853,screenId:3,orientation:"landscape_left" as const,supportsHingeAngle:true,observedDeviceState:{}};
+  const config = {
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation: "landscape_left" as const,
+    supportsHingeAngle: true,
+    observedDeviceState: {},
+  };
   await observe(config);
-  await request({control:"pose",value:"laptop"}); await frame(0x90, {requestId:requests.at(-1)!.requestId, ok:true});
-  await request({control:"angle",value:100}); await frame(0x90, {requestId:requests.at(-1)!.requestId, ok:true});
-  await act(async () => { renderer!.root.findByProps({"aria-label":"Simulator status"}).props.onRotate("portrait","right"); });
-  await observe({...config, observedDeviceState:{hingeAngle:100,physicalOrientation:"landscape-left",tableMode:false}});
+  await request({ control: "pose", value: "laptop" });
+  await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: true });
+  await request({ control: "angle", value: 100 });
+  await frame(0x90, { requestId: requests.at(-1)!.requestId, ok: true });
+  await act(async () => {
+    renderer!.root
+      .findByProps({ "aria-label": "Simulator status" })
+      .props.onRotate("portrait", "right");
+  });
+  await observe({
+    ...config,
+    observedDeviceState: {
+      hingeAngle: 100,
+      physicalOrientation: "landscape-left",
+      tableMode: false,
+    },
+  });
   expectView("laptop");
-  await observe({...config, observedDeviceState:{hingeAngle:100,physicalOrientation:"pud",tableMode:false}});
-  const expected = duoRotateView(duoPresetView("laptop"),1);
+  await observe({
+    ...config,
+    observedDeviceState: { hingeAngle: 100, physicalOrientation: "pud", tableMode: false },
+  });
+  const expected = duoRotateView(duoPresetView("laptop"), 1);
   expect(model().view.fixedLeftFold).toBe(expected.fixedLeftFold);
-  expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation))).toBeCloseTo(0,6);
+  expect(
+    new Quaternion(...model().view.rotation).angleTo(new Quaternion(...expected.rotation)),
+  ).toBeCloseTo(0, 6);
 });
-
 
 test("an angle-only native update reconciles an expired optimistic rotation before its timer runs", async () => {
   await mount();
-  const custom = { width: 2007, height: 2853, screenId: 3, orientation: "portrait" as const,
+  const custom = {
+    width: 2007,
+    height: 2853,
+    screenId: 3,
+    orientation: "portrait" as const,
     supportsHingeAngle: true,
-    observedDeviceState: { hingeAngle: 100, physicalOrientation: "portrait" as const, tableMode: false } };
+    observedDeviceState: {
+      hingeAngle: 100,
+      physicalOrientation: "portrait" as const,
+      tableMode: false,
+    },
+  };
   await observe(custom);
   const before = structuredClone(model().view as DuoView);
   const realNow = Date.now;
@@ -813,16 +958,27 @@ test("an angle-only native update reconciles an expired optimistic rotation befo
   Date.now = () => now;
   try {
     await act(async () => {
-      renderer!.root.findByProps({ "aria-label": "Simulator status" }).props.onRotate("landscape_left", "right");
+      renderer!.root
+        .findByProps({ "aria-label": "Simulator status" })
+        .props.onRotate("landscape_left", "right");
     });
     const optimistic = model().view as DuoView;
-    expect(new Quaternion(...optimistic.rotation).angleTo(new Quaternion(...before.rotation)) * 180 / Math.PI).toBeCloseTo(90, 6);
+    expect(
+      (new Quaternion(...optimistic.rotation).angleTo(new Quaternion(...before.rotation)) * 180) /
+        Math.PI,
+    ).toBeCloseTo(90, 6);
     // A busy browser may receive this config after the deadline while the
     // scheduled timer callback is still queued. The native pose is custom
     // both times: only the hinge angle changes, not orientation or app geometry.
     now += 1501;
-    await observe({ ...custom, observedDeviceState: { ...custom.observedDeviceState, hingeAngle: 110 } });
-    expect(new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)) * 180 / Math.PI).toBeCloseTo(0, 6);
+    await observe({
+      ...custom,
+      observedDeviceState: { ...custom.observedDeviceState, hingeAngle: 110 },
+    });
+    expect(
+      (new Quaternion(...model().view.rotation).angleTo(new Quaternion(...before.rotation)) * 180) /
+        Math.PI,
+    ).toBeCloseTo(0, 6);
   } finally {
     Date.now = realNow;
   }

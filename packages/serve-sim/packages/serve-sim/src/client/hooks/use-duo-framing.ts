@@ -8,7 +8,10 @@ import {
   type HingePose,
 } from "../../hinge-control";
 import type { SimulatorOrientation, StreamConfig } from "../types";
-import { createDuoRotationState, DUO_ROTATION_READBACK_GRACE_MS } from "../simulator/duo-rotation-state";
+import {
+  createDuoRotationState,
+  DUO_ROTATION_READBACK_GRACE_MS,
+} from "../simulator/duo-rotation-state";
 import { duoPhysicalPoseChanged } from "../simulator/duo-pose";
 import {
   DUO_FACE_DOWN_HELD,
@@ -326,7 +329,10 @@ export function useDuoFraming(
 
   useEffect(() => {
     if (!rotationRequest) return;
-    const timer = setTimeout(() => setRotationReadback((revision) => revision + 1), DUO_ROTATION_READBACK_GRACE_MS);
+    const timer = setTimeout(
+      () => setRotationReadback((revision) => revision + 1),
+      DUO_ROTATION_READBACK_GRACE_MS,
+    );
     return () => clearTimeout(timer);
   }, [deviceKey, rotationRequest]);
 
@@ -344,8 +350,12 @@ export function useDuoFraming(
     const turns = nativeRotationRef.current.observe(orientation);
     const baseline = nativeRotationRef.current.takeBaseline();
     if (baseline) {
-      const anchor = duoViewLocalIntentRef.current ? duoControlStateRef.current.duoView ?? undefined : undefined;
-      setDuoView(pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline, anchor));
+      const anchor = duoViewLocalIntentRef.current
+        ? (duoControlStateRef.current.duoView ?? undefined)
+        : undefined;
+      setDuoView(
+        pose ? duoPresetView(pose) : duoPhysicalView(streamConfig?.hingeAngle, baseline, anchor),
+      );
       duoViewLocalIntentRef.current = false;
       return;
     }
@@ -357,7 +367,13 @@ export function useDuoFraming(
       pose ? duoPresetView(pose) : duoRotateView(current.duoView ?? current.initialDuoView, turns),
     );
     duoViewLocalIntentRef.current = false;
-  }, [hingeOwned, streamConfig?.hingeAngle, streamConfig?.hingePose, streamConfig?.physicalOrientation, rotationReadback]);
+  }, [
+    hingeOwned,
+    streamConfig?.hingeAngle,
+    streamConfig?.hingePose,
+    streamConfig?.physicalOrientation,
+    rotationReadback,
+  ]);
 
   useEffect(() => {
     // Another client can turn a half-open device face down without a preset.
