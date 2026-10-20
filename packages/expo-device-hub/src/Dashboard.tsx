@@ -48,6 +48,7 @@ import {
   floatingSidebarToggleInset,
 } from "./dashboard/FloatingSidebarToggle";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
+import { useNetworkInspector } from "./dashboard/useNetworkInspector";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
 import { useSidebarLayout } from "./dashboard/useSidebarLayout";
@@ -302,6 +303,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       : null,
     basePath(),
   );
+  // The app's traffic, read through the React Native inspector in the Metro server the Hub runs in.
+  const network = useNetworkInspector(selected);
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
   const agentDeviceIds = Object.keys(agentInteractions);
@@ -434,6 +437,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onClipboardRequestHandled={() => setClipboardFallback(null)}
           onToggle={sidebars.closeRight}
           width={logsWidth}
+          network={network}
         />
       </AnimatedDockedSidebar>
 
@@ -484,6 +488,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onClipboardRequestHandled={() => setClipboardFallback(null)}
           onToggle={sidebars.closeRight}
           width={logsWidth}
+          network={network}
         />
       </SidebarOverlay>
 

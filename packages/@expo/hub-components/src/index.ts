@@ -88,6 +88,13 @@ export { LocationSection } from "./dashboard/LocationSection";
 export { PermissionsSection } from "./dashboard/PermissionsSection";
 export { EventsSection } from "./dashboard/EventsSection";
 export { LogsSection } from "./dashboard/LogsSection";
+export {
+  NetworkSection,
+  type NetworkPanelBody,
+  type NetworkPanelRequest,
+  type NetworkPanelStatus,
+  type NetworkSectionProps,
+} from "./dashboard/NetworkSection";
 export { CollapsibleSection } from "./dashboard/CollapsibleSection";
 export { KeyboardSection } from "./dashboard/KeyboardSection";
 export { PhoneFrame } from "./dashboard/PhoneFrame";

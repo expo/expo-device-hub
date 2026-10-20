@@ -22,6 +22,7 @@ with it, and manage which devices are running from one place.
 - Boot, shut down, and add devices without opening Xcode or Android Studio.
 - Follows your system light/dark theme, and can flip the device's appearance too.
 - Feed an Android emulator's camera a PNG from the inspector's Camera section.
+- See your app's network requests in the inspector's Network section: status, timing, headers, and bodies, on iOS and Android.
 
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).
@@ -56,6 +57,13 @@ the device dashboard without a running Expo project:
 
 ```sh
 npx expo-device-hub
+```
+
+The Network section reads your app's requests from a Metro server. Inside `expo start` the Hub
+uses its own; standalone, point it at one:
+
+```sh
+EXPO_DEVICE_HUB_METRO_URL=http://127.0.0.1:8081 npx expo-device-hub
 ```
 
 ### Screenshots in EAS sessions
