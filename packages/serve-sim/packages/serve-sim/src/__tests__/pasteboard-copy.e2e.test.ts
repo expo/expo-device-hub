@@ -180,7 +180,9 @@ describeCopy(`toolbar Copy (booted sim ${udid ?? "<skipped>"})`, () => {
       let body: Awaited<ReturnType<typeof copyFromSim>> | undefined;
       for (let attempt = 0; attempt < 3 && body?.text !== COPY_FIXTURE_TEXT; attempt++) {
         body = await copyFromSim();
-        console.log(`[pasteboard-copy] user app Copy attempt ${attempt + 1}: status ${body.status}`);
+        console.log(
+          `[pasteboard-copy] user app Copy attempt ${attempt + 1}: status ${body.status}`,
+        );
       }
       expect(body?.status).toBe(200);
       expect(body?.ok).toBe(true);
