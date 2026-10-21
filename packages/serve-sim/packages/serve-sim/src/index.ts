@@ -380,6 +380,8 @@ function pickDefaultDevice(): { udid: string; name: string } | null {
   return null;
 }
 
+const startupDeviceNames = new Map<string, string>();
+
 function getDeviceName(udid: string): string | null {
   return readDeviceNamesByUdid().get(udid) ?? null;
 }
@@ -394,6 +396,7 @@ function readDeviceNamesByUdid(): Map<string, string> {
     for (const runtime of Object.values(data.devices)) {
       for (const device of runtime) {
         names.set(device.udid, device.name);
+        startupDeviceNames.set(device.udid, device.name);
       }
     }
   } catch {}
@@ -404,11 +407,14 @@ function isDeviceBooted(udid: string): boolean {
   try {
     const output = execSync("xcrun simctl list devices -j", { encoding: "utf-8" });
     const data = JSON.parse(output) as {
-      devices: Record<string, Array<{ udid: string; state: string }>>;
+      devices: Record<string, Array<{ udid: string; name?: string; state: string }>>;
     };
     for (const runtime of Object.values(data.devices)) {
       for (const device of runtime) {
-        if (device.udid === udid) return device.state === "Booted";
+        if (device.udid === udid) {
+          if (device.name) startupDeviceNames.set(udid, device.name);
+          return device.state === "Booted";
+        }
       }
     }
   } catch {}
@@ -2745,6 +2751,10 @@ Examples:
               "app-install",
               () => runInvocation(installAppInvocation(udid, installAppPath)),
               udid,
+              {
+                deviceName: startupDeviceNames.get(udid),
+                isSuccessful: (result) => result.exitCode === 0,
+              },
             );
             if (result.exitCode !== 0) {
               throw new Error(
@@ -2758,6 +2768,7 @@ Examples:
               "app-launch",
               () => launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities }),
               udid,
+              { deviceName: startupDeviceNames.get(udid) },
             );
           } else if (!defaultsInitialized.has(udid)) {
             const applied = await timeStartup(

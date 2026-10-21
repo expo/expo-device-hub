@@ -487,7 +487,7 @@ const PROCEDURE_ACTIONS = [
 ] as const satisfies readonly HostActionName[];
 
 type ProcedureAction = (typeof PROCEDURE_ACTIONS)[number];
-type InvocationAction = Exclude<HostActionName, ProcedureAction>;
+type InvocationAction = Exclude<HostActionName, ProcedureAction | "app.install">;
 
 function isProcedureAction(action: HostActionName): action is ProcedureAction {
   return PROCEDURE_ACTIONS.some((procedure) => procedure === action);
@@ -722,10 +722,6 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const p = parseParams(action, raw);
       return { file: "plutil", args: ["-convert", "json", "-o", "-", p.path] };
     }
-    case "app.install": {
-      const p = parseParams(action, raw);
-      return installAppInvocation(p.udid, fileSourcePath(p));
-    }
     case "media.add": {
       const p = parseParams(action, raw);
       return simctl(["addmedia", p.udid, fileSourcePath(p)]);
@@ -754,6 +750,7 @@ async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
   streamSettings?: StreamSettings,
+  deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -813,16 +810,23 @@ async function runProcedureAsync(
     }
     case "app.launch": {
       const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
-      try {
-        await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
-        return ok();
-      } catch (error) {
-        return {
-          stdout: "",
-          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
-          exitCode: 1,
-        };
-      }
+      return timeStartup(
+        action,
+        async () => {
+          try {
+            await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
+            return ok();
+          } catch (error) {
+            return {
+              stdout: "",
+              stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+              exitCode: 1,
+            };
+          }
+        },
+        udid,
+        { deviceName: deviceName?.(udid), isSuccessful: (result) => result.exitCode === 0 },
+      );
     }
     case "upload.append": {
       const p = parseParams(action, raw);
@@ -1002,19 +1006,26 @@ export async function runHostActionAsync(
   msg: HostActionRequest,
   binPath: string,
   streamSettings?: StreamSettings,
+  deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
-  const run = () =>
-    isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings)
-      : runInvocation(buildInvocation(action, params, binPath));
-  const result =
-    action === "app.install" || action === "app.launch"
-      ? await timeStartup(action, run)
-      : await run();
+  let result: HostActionResult;
+  if (action === "app.install") {
+    const p = parseParams(action, params);
+    result = await timeStartup(
+      action,
+      () => runInvocation(installAppInvocation(p.udid, fileSourcePath(p))),
+      p.udid,
+      { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
+    );
+  } else {
+    result = await (isProcedureAction(action)
+      ? runProcedureAsync(action, params, streamSettings, deviceName)
+      : runInvocation(buildInvocation(action, params, binPath)));
+  }
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;

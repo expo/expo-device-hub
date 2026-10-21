@@ -50,7 +50,7 @@ describe("readiness endpoints", () => {
       .filter((line) => line.startsWith("[readyz] "))
       .map((line) => JSON.parse(line.slice("[readyz] ".length)));
     expect(entries).toEqual([
-      { status: "unavailable", reason: "session-not-found", device: expect.any(String) },
+      { status: "unavailable", reason: "session-unavailable", device: expect.any(String) },
       {
         status: "unavailable",
         reason: "capture-start-failed",

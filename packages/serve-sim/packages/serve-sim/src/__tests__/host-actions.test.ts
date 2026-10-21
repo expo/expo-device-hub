@@ -530,3 +530,37 @@ describe("action catalog", () => {
     expect(JSON.parse(result.stdout)).toEqual(catalog);
   });
 });
+
+it("logs failed app actions with the validated device and cached name", async () => {
+  const log = spyOn(process.stderr, "write").mockImplementation(() => true);
+  const name = (udid: string) => (udid === UDID ? "Test iPhone" : undefined);
+  try {
+    for (const request of [
+      { action: "app.install", params: { udid: UDID, path: join(UPLOAD_DIR, "missing.app") } },
+      { action: "app.launch", params: { udid: UDID, bundleId: "dev.expo.missing" } },
+    ]) {
+      const result = await runHostActionAsync(request, BIN, undefined, name);
+      expect(result.exitCode).toBe(1);
+      expect(Object.keys(result).sort()).toEqual(["exitCode", "stderr", "stdout"]);
+      const entries = log.mock.calls
+        .map(([line]) => String(line))
+        .filter((line) => line.startsWith("[startup] "))
+        .map((line) => JSON.parse(line.slice("[startup] ".length)))
+        .filter((entry) => entry.phase === request.action);
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({
+        device: UDID,
+        deviceName: "Test iPhone",
+        status: "started",
+      });
+      expect(entries[1]).toMatchObject({
+        device: UDID,
+        deviceName: "Test iPhone",
+        status: "failed",
+      });
+      log.mockClear();
+    }
+  } finally {
+    log.mockRestore();
+  }
+});

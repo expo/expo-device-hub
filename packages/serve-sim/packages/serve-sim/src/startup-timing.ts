@@ -3,18 +3,20 @@ export async function timeStartup<T>(
   phase: string,
   run: () => T | Promise<T>,
   device?: string,
+  options: { deviceName?: string; isSuccessful?: (result: T) => boolean } = {},
 ): Promise<T> {
   const start = performance.now();
-  process.stderr.write(`[startup] ${JSON.stringify({ phase, device, status: "started" })}\n`);
+  const identity = { phase, device, deviceName: options.deviceName };
+  process.stderr.write(`[startup] ${JSON.stringify({ ...identity, status: "started" })}\n`);
   try {
     const result = await run();
     process.stderr.write(
-      `[startup] ${JSON.stringify({ phase, device, status: "complete", durationMs: Math.round(performance.now() - start) })}\n`,
+      `[startup] ${JSON.stringify({ ...identity, status: options.isSuccessful?.(result) === false ? "failed" : "complete", durationMs: Math.round(performance.now() - start) })}\n`,
     );
     return result;
   } catch (error) {
     process.stderr.write(
-      `[startup] ${JSON.stringify({ phase, device, status: "failed", durationMs: Math.round(performance.now() - start) })}\n`,
+      `[startup] ${JSON.stringify({ ...identity, status: "failed", durationMs: Math.round(performance.now() - start) })}\n`,
     );
     throw error;
   }
@@ -22,7 +24,7 @@ export async function timeStartup<T>(
 
 // One reporter per middleware, so repeated readiness polls do not flood worker logs.
 export function createReadinessReporter() {
-  let previous: string | undefined;
+  const previous = new Map<string | undefined, string>();
   return (status: "ready" | "unavailable", reason?: string, device?: string, error?: unknown) => {
     const entry = JSON.stringify({
       status,
@@ -31,8 +33,12 @@ export function createReadinessReporter() {
       error:
         error instanceof Error ? error.message : error === undefined ? undefined : String(error),
     });
-    if (entry === previous) return;
-    previous = entry;
+    if (entry === previous.get(device)) return;
+    // Bound diagnostics for arbitrary /readyz?device= selectors.
+    if (!previous.has(device) && previous.size >= 256) {
+      previous.delete(previous.keys().next().value);
+    }
+    previous.set(device, entry);
     process.stderr.write(`[readyz] ${entry}\n`);
   };
 }

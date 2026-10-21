@@ -74,6 +74,7 @@ interface ExecChannelOptions {
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
+  deviceName?: (udid: string) => string | undefined;
   /** Trusted initial settings from the owning middleware, never from action parameters. */
   streamSettings?: StreamSettings;
 }
@@ -255,7 +256,12 @@ function wireExecSocket(
     }
     if (!reserveAction(id)) return;
     const params = msg.params as Record<string, unknown> | undefined;
-    runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim", opts.streamSettings)
+    runHostActionAsync(
+      msg,
+      opts.serveSimBinPath ?? "serve-sim",
+      opts.streamSettings,
+      opts.deviceName,
+    )
       .then((result) => {
         try {
           opts.onActionResult?.(action, params, result);

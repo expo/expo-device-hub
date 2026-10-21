@@ -3,18 +3,23 @@ import * as sessions from "../../device-session";
 import { inProcessServeSimState, writeServeSimState } from "../../state";
 import { useTempStateDir, UDID } from "../helpers";
 
-let failure = true;
+function createSession(fail: boolean) {
+  let started: Promise<void> | undefined;
+  return {
+    start: () =>
+      (started ??= fail
+        ? Promise.reject(new Error("capture initialization failed"))
+        : Promise.resolve()),
+  };
+}
+let session = createSession(true);
 mock.module("../../device-session", () => ({
   ...sessions,
-  getDeviceSession: () => ({
-    start: async () => {
-      if (failure) throw new Error("capture initialization failed");
-    },
-  }),
+  getDeviceSession: () => session,
 }));
 const { simMiddleware } = await import("../../middleware");
 
-test("readiness logs missing state, capture failure and recovery once per transition", async () => {
+test("readiness logs missing state, capture failure and replacement-session recovery once per transition", async () => {
   const state = useTempStateDir();
   const middleware = simMiddleware({ basePath: "/", device: UDID });
   const request = () => middleware(new Request("http://127.0.0.1:3200/readyz"));
@@ -22,7 +27,9 @@ test("readiness logs missing state, capture failure and recovery once per transi
     for (let i = 0; i < 2; i++) expect((await request())?.status).toBe(503);
     writeServeSimState(inProcessServeSimState(UDID, 3200));
     for (let i = 0; i < 2; i++) expect((await request())?.status).toBe(503);
-    failure = false;
+    // A rejected start stays cached. Recovery requires a replacement session.
+    expect((await request())?.status).toBe(503);
+    session = createSession(false);
     for (let i = 0; i < 2; i++) {
       const response = await request();
       expect(response?.status).toBe(200);
