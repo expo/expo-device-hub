@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create } from "react-test-renderer";
 import {
   DeviceKitChrome,
   deviceKitChromeForScreen,
   deviceKitChromeGeometry,
+  deviceKitGlyphEdges,
   deviceKitScreenRadius,
   snapChromeRect,
 } from "../client/components/device-chrome-frame";
@@ -171,6 +173,342 @@ describe("oriented DeviceKitChrome", () => {
     expect(markup).toContain("left:4%;top:4%;width:30%;height:35%");
     expect(markup).not.toContain("rotate(");
     expect(markup).not.toContain('role="button"');
+  });
+});
+
+describe("hardware button glyphs", () => {
+  // Body spans x 10..990 and y 20..1980 in a 1000x2000 frame.
+  const button = (
+    name: string,
+    frame: { x: number; y: number; width: number; height: number },
+    usage: number | null = 1,
+  ): DeviceKitChromeDescriptor["buttons"][number] => ({
+    name,
+    image: name,
+    imageDown: null,
+    onTop: false,
+    frame,
+    hover: { x: 0, y: 0 },
+    usagePage: usage === null ? null : 12,
+    usage,
+  });
+  const volumeUp = button("volume-up", { x: 0, y: 400, width: 14, height: 100 });
+  const power = button("power", { x: 986, y: 500, width: 14, height: 200 });
+  const action = button("action", { x: 986, y: 900, width: 14, height: 100 });
+  // A face button inside the bezel, like iPhone SE's Home button.
+  const home = button("home", { x: 450, y: 1850, width: 100, height: 100 });
+
+  type Renderer = ReturnType<typeof create>;
+  async function render(props: Parameters<typeof DeviceKitChrome>[0]): Promise<Renderer> {
+    let renderer!: Renderer;
+    await act(async () => {
+      renderer = create(createElement(DeviceKitChrome, props), {
+        createNodeMock: () => ({ addEventListener() {}, removeEventListener() {} }),
+      });
+    });
+    return renderer;
+  }
+  const glyphs = (renderer: Renderer) =>
+    renderer.root
+      .findAll((node) => typeof node.type === "string" && "data-devicekit-glyph" in node.props)
+      .map((node) => node.props as Record<string, unknown> & { style: Record<string, unknown> });
+  const glyph = (renderer: Renderer, name: string) =>
+    glyphs(renderer).find((props) => props["data-devicekit-glyph"] === name);
+  // Hidden icons stay mounted so they can fade and slide in, like Device Hub's.
+  const glyphNames = (renderer: Renderer) =>
+    glyphs(renderer)
+      .filter((props) => props.style.opacity === 1)
+      .map((props) => props["data-devicekit-glyph"])
+      .sort();
+  type Handlers = {
+    onPointerEnter: () => void;
+    onPointerLeave: () => void;
+    onPointerDown: (event: unknown) => void;
+    onPointerUp: () => void;
+  };
+  // Each button's area outside the frame, where its icon sits.
+  const zone = (renderer: Renderer, name: string) =>
+    renderer.root.find(
+      (node) => typeof node.type === "string" && node.props["data-devicekit-zone"] === name,
+    ).props as Handlers;
+  const cap = (renderer: Renderer, label: string) =>
+    renderer.root.find(
+      (node) => typeof node.type === "string" && node.props["aria-label"] === label,
+    );
+  async function pointer(handler: () => void) {
+    await act(async () => handler());
+  }
+
+  test("hides every icon until the pointer reaches an edge, then shows only that edge", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [volumeUp, power, action] },
+      interactive: true,
+    });
+    expect(glyphNames(renderer)).toEqual([]);
+    await pointer(zone(renderer, "power").onPointerEnter);
+    expect(glyphNames(renderer)).toEqual(["action", "power"]);
+    // Moving to another button on the same edge keeps the edge shown.
+    await pointer(() => {
+      zone(renderer, "power").onPointerLeave();
+      zone(renderer, "action").onPointerEnter();
+    });
+    expect(glyphNames(renderer)).toEqual(["action", "power"]);
+    await pointer(zone(renderer, "action").onPointerLeave);
+    await pointer(zone(renderer, "volume-up").onPointerEnter);
+    expect(glyphNames(renderer)).toEqual(["volume-up"]);
+  });
+
+  test("hovering a button's area shows its edge and highlights only that icon", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [volumeUp, power, action] },
+      interactive: true,
+    });
+    await pointer(zone(renderer, "power").onPointerEnter);
+    expect(glyphNames(renderer)).toEqual(["action", "power"]);
+    expect(glyph(renderer, "power")!.className).toContain("text-accent");
+    expect(glyph(renderer, "action")!.className).not.toContain("text-accent");
+  });
+
+  test("the icon area and the cap are one button: hover slides the cap out, leave puts it back", async () => {
+    const slidingPower = { ...power, hover: { x: 0.3, y: 0 } };
+    const presses: string[] = [];
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [slidingPower] },
+      interactive: true,
+      onButton: ({ phase, button }) => presses.push(`${button.name}:${phase}`),
+    });
+    // Only the sprite slides; the hit area stays put, or a pointer at the edge would flicker.
+    const sprite = () =>
+      cap(renderer, "Power").find(
+        (node) => typeof node.type === "string" && "data-devicekit-cap-sprite" in node.props,
+      );
+    const capTransform = () => sprite().props.style.transform;
+    expect(capTransform()).toBeUndefined();
+    await pointer(zone(renderer, "power").onPointerEnter);
+    expect(capTransform()).toBe("translate(30%, 0%)");
+    expect(cap(renderer, "Power").props.style.transform).toBeUndefined();
+    expect(glyph(renderer, "power")!.className).toContain("text-accent");
+    // The area covers the cap too, so the pointer never crosses between two hit targets.
+    expect(cap(renderer, "Power").props.style.pointerEvents).toBe("none");
+    expect(cap(renderer, "Power").props.onPointerEnter).toBeUndefined();
+    expect(zone(renderer, "power")).toMatchObject({
+      style: expect.objectContaining({ left: "98.6%" }),
+    });
+    // The cap and the icon go back together, with no extra delay.
+    await pointer(zone(renderer, "power").onPointerLeave);
+    expect(capTransform()).toBeUndefined();
+    expect(glyphNames(renderer)).toEqual([]);
+    // A press in the area presses the button.
+    const area = zone(renderer, "power");
+    await pointer(() => {
+      area.onPointerEnter();
+      area.onPointerDown({
+        button: 0,
+        pointerType: "mouse",
+        pointerId: 1,
+        preventDefault() {},
+        stopPropagation() {},
+        currentTarget: { setPointerCapture() {} },
+      });
+    });
+    await pointer(zone(renderer, "power").onPointerUp);
+    expect(presses).toEqual(["power:down", "power:up"]);
+  });
+
+  test("icons fade and slide with the cap's timing and never take the pointer", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [power] },
+      interactive: true,
+    });
+    const style = glyph(renderer, "power")!.style;
+    expect(style.pointerEvents).toBe("none");
+    expect(String(style.transition)).toBe(
+      "color 0.12s ease, opacity 0.12s ease, transform 0.12s ease",
+    );
+    const capSprite = cap(renderer, "Power").find(
+      (node) => typeof node.type === "string" && "data-devicekit-cap-sprite" in node.props,
+    );
+    expect(capSprite.props.style.transition).toBe("transform 0.12s ease");
+  });
+
+  test("slides a hidden icon toward the bezel and out of pointer reach", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [volumeUp, power, home] },
+      interactive: true,
+    });
+    expect(glyph(renderer, "power")!.style).toMatchObject({ opacity: 0 });
+    expect(String(glyph(renderer, "power")!.style.transform)).toContain("translate(-6px, 0px)");
+    expect(String(glyph(renderer, "volume-up")!.style.transform)).toContain("translate(6px, 0px)");
+    expect(String(glyph(renderer, "home")!.style.transform)).toContain("translate(0px, -6px)");
+    await pointer(zone(renderer, "power").onPointerEnter);
+    expect(glyph(renderer, "power")!.style).toMatchObject({ opacity: 1 });
+    expect(String(glyph(renderer, "power")!.style.transform)).not.toContain("6px");
+  });
+
+  test("places each icon a fixed gap outside the frame edge its button is on", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [volumeUp, power, home] },
+      interactive: true,
+    });
+    await pointer(zone(renderer, "volume-up").onPointerEnter);
+    expect(glyph(renderer, "volume-up")!.style).toMatchObject({
+      right: "calc(100% + 10px)",
+      top: "22.5%",
+    });
+    await pointer(zone(renderer, "power").onPointerEnter);
+    expect(glyph(renderer, "power")!.style).toMatchObject({
+      left: "calc(100% + 10px)",
+      top: "30%",
+    });
+    await pointer(zone(renderer, "home").onPointerEnter);
+    expect(glyph(renderer, "home")!.style).toMatchObject({
+      top: "calc(100% + 10px)",
+      left: "50%",
+    });
+    // The bezel button carries the accessible name; the icon only repeats it visually.
+    expect(glyph(renderer, "home")).toMatchObject({ "aria-hidden": true, title: "Home" });
+    // An inset face button's area starts at the cap, so no gap lies between cap and icon.
+    expect(zone(renderer, "home")).toMatchObject({
+      style: expect.objectContaining({ top: "92.5%", height: "calc(7.5% + 38px)" }),
+    });
+  });
+
+  test("keeps icons upright while the artwork rotates", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [power] },
+      interactive: true,
+      orientation: "landscape_left",
+    });
+    await pointer(zone(renderer, "power").onPointerEnter);
+    // The slide animates; the counter-rotation must not, or a rotation would tilt the icon.
+    const outer = renderer.root.find(
+      (node) => typeof node.type === "string" && node.props["data-devicekit-glyph"] === "power",
+    );
+    expect(String(outer.props.style.transform)).not.toContain("rotate");
+    const upright = outer.find(
+      (node) => typeof node.type === "string" && "data-devicekit-glyph-upright" in node.props,
+    );
+    expect(upright.props.style).toEqual({ transform: "rotate(-90deg)" });
+  });
+
+  test("reports the edges that carry icons in the current orientation", () => {
+    const chrome = {
+      ...chromeFixture(),
+      buttons: [volumeUp, power, button("mystery", { x: 450, y: 1970, width: 100, height: 30 })],
+    };
+    const edges = (orientation: SimulatorOrientation) =>
+      [...deviceKitGlyphEdges(chrome, orientation)].sort();
+    expect(edges("portrait")).toEqual(["left", "right"]);
+    // Artwork rotates 90° clockwise for landscape_left: left goes to the top.
+    expect(edges("landscape_left")).toEqual(["bottom", "top"]);
+    expect(edges("portrait_upside_down")).toEqual(["left", "right"]);
+    expect([
+      ...deviceKitGlyphEdges(
+        { ...chrome, buttons: [button("home", { x: 450, y: 1970, width: 100, height: 30 })] },
+        "landscape_right",
+      ),
+    ]).toEqual(["right"]);
+  });
+
+  test("turning the wheel over the Digital Crown's icon area turns the crown", async () => {
+    const chrome = {
+      ...chromeFixture(),
+      buttons: [button("digital-crown", { x: 986, y: 500, width: 14, height: 200 })],
+    };
+    const wheel = new Map<string, (event: unknown) => void>();
+    const turns: number[] = [];
+    await act(async () => {
+      create(
+        createElement(DeviceKitChrome, {
+          chrome,
+          interactive: true,
+          onCrownWheel: (deltaY) => turns.push(deltaY),
+        }),
+        {
+          createNodeMock: (element) => {
+            const props = element.props as object;
+            const kind = "data-devicekit-zone" in props ? "zone" : "cap";
+            return {
+              addEventListener: (type: string, handler: (event: unknown) => void) =>
+                type === "wheel" && wheel.set(kind, handler),
+              removeEventListener: (type: string) => type === "wheel" && wheel.delete(kind),
+            };
+          },
+        },
+      );
+    });
+    // The icon area is part of the button, so the wheel there turns the crown too.
+    expect([...wheel.keys()].sort()).toEqual(["cap", "zone"]);
+    let prevented = 0;
+    wheel.get("zone")!({
+      deltaY: 3,
+      deltaMode: 0,
+      preventDefault: () => prevented++,
+      stopPropagation: () => {},
+    });
+    expect(turns).toEqual([3]);
+    expect(prevented).toBe(1);
+  });
+
+  test("the crown icon still turns the crown after presentation ends", async () => {
+    const chrome = {
+      ...chromeFixture(),
+      buttons: [button("digital-crown", { x: 986, y: 500, width: 14, height: 200 })],
+    };
+    const listening = new Set<string>();
+    const props = (showButtonGlyphs: boolean) => ({
+      chrome,
+      interactive: true,
+      showButtonGlyphs,
+      onCrownWheel: () => {},
+    });
+    let renderer!: Renderer;
+    await act(async () => {
+      renderer = create(createElement(DeviceKitChrome, props(false)), {
+        createNodeMock: (element) => {
+          const kind = "data-devicekit-zone" in (element.props as object) ? "zone" : "other";
+          return {
+            addEventListener: (type: string) => type === "wheel" && listening.add(kind),
+            removeEventListener: (type: string) => type === "wheel" && listening.delete(kind),
+          };
+        },
+      });
+    });
+    expect([...listening]).toEqual(["other"]);
+    await act(async () => renderer.update(createElement(DeviceKitChrome, props(true))));
+    expect([...listening].sort()).toEqual(["other", "zone"]);
+  });
+
+  test("shows no icons or button areas in full-screen presentation", async () => {
+    const renderer = await render({
+      chrome: { ...chromeFixture(), buttons: [power] },
+      interactive: true,
+      showButtonGlyphs: false,
+    });
+    expect(
+      renderer.root.findAll(
+        (node) => typeof node.type === "string" && "data-devicekit-zone" in node.props,
+      ),
+    ).toEqual([]);
+    expect(glyphs(renderer)).toEqual([]);
+  });
+
+  test("shows no button area for placeholders, inputs without a HID code, or unknown names", () => {
+    const chrome = {
+      ...chromeFixture(),
+      buttons: [
+        button("power", { x: 986, y: 500, width: 14, height: 200 }, null),
+        button("mystery", { x: 986, y: 800, width: 14, height: 200 }),
+      ],
+    };
+    expect(
+      renderToStaticMarkup(createElement(DeviceKitChrome, { chrome, interactive: true })),
+    ).not.toContain("data-devicekit-zone");
+    expect(
+      renderToStaticMarkup(
+        createElement(DeviceKitChrome, { chrome: { ...chrome, buttons: [power] } }),
+      ),
+    ).not.toContain("data-devicekit-zone");
   });
 });
 

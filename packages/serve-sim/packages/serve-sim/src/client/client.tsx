@@ -44,6 +44,8 @@ import {
   DeviceKitChrome,
   deviceKitChromeForScreen,
   deviceKitChromeGeometry,
+  deviceKitGlyphEdges,
+  GLYPH_REACH_PX,
   deviceKitScreenRadius,
   type ChromeButtonPress,
 } from "./components/device-chrome-frame";
@@ -980,6 +982,11 @@ function AppWithConfig({
   const chromeGeometry = chrome ? deviceKitChromeGeometry(chrome, clipOrientation) : null;
   const useChrome = !!chromeGeometry && chromeEnabled && !useDuoModel;
   const chromeScale = useChrome ? chromeGeometry!.frame.width / chromeGeometry!.screen.width : 1;
+  // Button icons sit outside the frame; keep the toolbar and action bar clear of them.
+  // Presentation fills the viewport with the frame, so it shows no icons.
+  const glyphEdges =
+    useChrome && !presentation ? deviceKitGlyphEdges(chrome!, clipOrientation) : null;
+  const glyphMargin = GLYPH_REACH_PX - 12;
   // The 3D stage keeps one footprint as the device folds and changes active
   // displays. Resizing it with each native screen configuration would apply a
   // second animation on top of the physical hinge motion and crop the model.
@@ -1831,6 +1838,8 @@ function AppWithConfig({
             style={{
               width: layoutWidth,
               height: layoutHeight > 0 ? layoutHeight : undefined,
+              marginTop: glyphEdges?.has("top") ? glyphMargin : undefined,
+              marginBottom: glyphEdges?.has("bottom") ? glyphMargin : undefined,
               transition: resizing ? SIMULATOR_RESIZE_DRAG_TRANSITION : undefined,
             }}
           >
@@ -1974,6 +1983,7 @@ function AppWithConfig({
                         ? { width: deviceRenderedWidth, height: deviceRenderedHeight }
                         : undefined
                     }
+                    showButtonGlyphs={!presentation}
                     onButton={handleChromeButton}
                     onCrownWheel={(deltaY, deltaMode) => {
                       const delta = digitalCrownDeltaFromWheel(
