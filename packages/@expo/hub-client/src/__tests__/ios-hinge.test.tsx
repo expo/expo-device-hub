@@ -700,6 +700,30 @@ for (const duo of [true, false]) {
   });
 }
 
+test("face down is unknown while Table Mode or the physical orientation is unknown", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null };
+  await act(async () =>
+    socket.push(0x82, { ...half, tableMode: true, physicalOrientation: "facedown" }),
+  );
+  expect(client().fold?.physical?.faceDown).toBe(true);
+  // A config without the orientation does not report a turn to face up.
+  await act(async () => socket.push(0x82, { ...half, tableMode: true }));
+  expect(client().fold?.physical?.faceDown).toBeUndefined();
+  await act(async () =>
+    socket.push(0x82, { ...half, physicalOrientation: "facedown", tableMode: undefined }),
+  );
+  expect(client().fold?.physical?.faceDown).toBeUndefined();
+  // Either known field can rule face down out.
+  await act(async () =>
+    socket.push(0x82, { ...half, tableMode: true, physicalOrientation: "portrait" }),
+  );
+  expect(client().fold?.physical?.faceDown).toBe(false);
+  await act(async () => socket.push(0x82, { ...half, tableMode: false }));
+  expect(client().fold?.physical?.faceDown).toBe(false);
+});
+
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();

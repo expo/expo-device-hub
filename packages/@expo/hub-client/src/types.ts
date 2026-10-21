@@ -158,8 +158,12 @@ export interface DeviceFoldPhysical {
    * for example after a rotation.
    */
   pose?: FoldPose | null;
-  /** Lying face down with Table Mode, which makes the cover display active. */
-  faceDown: boolean;
+  /**
+   * Lying face down with Table Mode, which makes the cover display active.
+   * Undefined while the backend has not reported enough to tell: a consumer
+   * then keeps what it last knew instead of treating the device as face up.
+   */
+  faceDown?: boolean;
 }
 
 /**
