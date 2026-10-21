@@ -3,11 +3,13 @@ import { type FoldPose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
+  duoCameraZoom,
   duoFitScale,
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
   duoStageZoom,
+  stepDuoFit,
 } from "../foldable/duo-layout";
 import { duoPose } from "../foldable/duo-pose";
 
@@ -15,7 +17,7 @@ const viewport = { width: 1680, height: 1100 };
 const stage = { width: 640, height: 640 };
 const canvas = { ...viewport, left: -420, top: -210 };
 
-function rig() {
+function rig(size: { width: number; height: number } = viewport) {
   const root = new Group();
   const left = new Group();
   const right = new Group();
@@ -26,9 +28,9 @@ function rig() {
   left.add(leftBody);
   right.add(rightBody);
   root.add(left, right);
-  const camera = new PerspectiveCamera(36, viewport.width / viewport.height, 0.1, 120);
+  const camera = new PerspectiveCamera(36, size.width / size.height, 0.1, 120);
   camera.position.set(0, 0, 31);
-  camera.zoom = stage.height / viewport.height;
+  camera.zoom = stage.height / size.height;
   camera.updateProjectionMatrix();
   const pose = (angle: number, kind: FoldPose = "book", roll = 0) => {
     const target = duoPose(angle, kind, undefined, undefined, roll);
@@ -135,7 +137,11 @@ const STAGES = [
 ];
 
 /** Smallest distance in CSS pixels from the projected model to the stage edges. */
-function stageMargins(model: ReturnType<typeof rig>, stageSize: { width: number; height: number }) {
+function stageMargins(
+  model: ReturnType<typeof rig>,
+  stageSize: { width: number; height: number },
+  size: { width: number; height: number } = viewport,
+) {
   let x = Infinity;
   let y = Infinity;
   model.root.traverse((child) => {
@@ -151,8 +157,8 @@ function stageMargins(model: ReturnType<typeof rig>, stageSize: { width: number;
       )
         .applyMatrix4(child.matrixWorld)
         .project(model.camera);
-      x = Math.min(x, stageSize.width / 2 - Math.abs((projected.x * viewport.width) / 2));
-      y = Math.min(y, stageSize.height / 2 - Math.abs((projected.y * viewport.height) / 2));
+      x = Math.min(x, stageSize.width / 2 - Math.abs((projected.x * size.width) / 2));
+      y = Math.min(y, stageSize.height / 2 - Math.abs((projected.y * size.height) / 2));
     }
   });
   return { x, y };
@@ -209,6 +215,67 @@ describe("Duo stage zoom", () => {
         expect(inStage.y - (stageSize.height - side) / 2).toBeCloseTo(inSquare.y, 7);
       }
     }
+  });
+});
+
+describe("Duo camera zoom", () => {
+  test("is the base zoom of the stage's short side times the fit factor", () => {
+    // A narrow stage, as in a 1280x800 window with both sidebars.
+    const window = { width: 1280, height: 800 };
+    expect(duoCameraZoom(window, { width: 398, height: 570 }, 1)).toBe(398 / 800);
+    expect(duoCameraZoom(window, { width: 398, height: 570 }, 1.25)).toBe((398 / 800) * 1.25);
+    // serve-sim's square stage keeps its stage.height / viewport.height zoom.
+    expect(duoCameraZoom(viewport, stage, 0.8)).toBe((stage.height / viewport.height) * 0.8);
+    expect(duoCameraZoom(viewport, { width: 0, height: 640 }, 0.8)).toBe(0.8);
+  });
+});
+
+describe("Duo fit while the stage resizes", () => {
+  // A 2560x1440 window: a sidebar that opens or a resize drag narrows the
+  // stage while its height, the short side, stays the same.
+  const window = { width: 2560, height: 1440 };
+
+  test("a resize snaps the fit, so every frame keeps the fill inset", () => {
+    for (const [from, to] of [
+      [1678, 1378],
+      [1678, 1258],
+      [1300, 1000],
+    ] as const) {
+      const model = rig(window);
+      model.pose(180, "open");
+      const stageAt = (width: number) => ({ width, height: 1210 });
+      let fit = {
+        scale: duoFitScale(model.root, model.camera, window, stageAt(from), 32),
+        velocity: 0,
+      };
+      // The sidebar animates for 200 ms; then a second of rest at 60 fps.
+      for (let frame = 1; frame <= 72; frame++) {
+        const width = frame <= 12 ? from + ((to - from) * frame) / 12 : to;
+        const resized = frame <= 12;
+        const target = duoFitScale(model.root, model.camera, window, stageAt(width), 32);
+        fit = stepDuoFit(fit, target, 1 / 60, resized);
+        model.camera.zoom = duoCameraZoom(window, stageAt(width), fit.scale);
+        model.camera.updateProjectionMatrix();
+        const margins = stageMargins(model, stageAt(width), window);
+        expect(Math.min(margins.x, margins.y)).toBeGreaterThanOrEqual(32 - 1e-6);
+      }
+    }
+  });
+
+  test("a pose change still springs toward its framing", () => {
+    const model = rig(window);
+    const stageSize = { width: 1678, height: 1210 };
+    model.pose(180, "open");
+    const open = duoFitScale(model.root, model.camera, window, stageSize, 32);
+    model.pose(0, "closed");
+    const closed = duoFitScale(model.root, model.camera, window, stageSize, 32);
+    const sprung = stepDuoFit({ scale: open, velocity: 0 }, closed, 1 / 60, false);
+    expect(sprung.scale).toBeGreaterThan(Math.min(open, closed));
+    expect(sprung.scale).toBeLessThan(Math.max(open, closed));
+    expect(stepDuoFit({ scale: open, velocity: 0.4 }, closed, 1 / 60, true)).toEqual({
+      scale: closed,
+      velocity: 0,
+    });
   });
 });
 
