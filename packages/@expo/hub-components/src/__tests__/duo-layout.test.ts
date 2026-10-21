@@ -3,6 +3,9 @@ import { type FoldPose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
+  DUO_FILL_INSET,
+  DUO_HANDLE_OFFSET,
+  DUO_INITIAL_ZOOM,
   duoCameraZoom,
   duoFitScale,
   duoHingeDragAngle,
@@ -10,8 +13,11 @@ import {
   duoProjectAnchor,
   duoStageZoom,
   stepDuoFit,
+  stepDuoZoom,
+  type DuoViewportSize,
+  type DuoZoomState,
 } from "../foldable/duo-layout";
-import { duoPose } from "../foldable/duo-pose";
+import { duoPose, stepDuoSpring } from "../foldable/duo-pose";
 
 const viewport = { width: 1680, height: 1100 };
 const stage = { width: 640, height: 640 };
@@ -230,7 +236,36 @@ describe("Duo camera zoom", () => {
   });
 });
 
-describe("Duo fit while the stage resizes", () => {
+/** One scene frame: measure, step the zoom, and apply it to the rig's camera. */
+function frame(
+  model: ReturnType<typeof rig>,
+  state: DuoZoomState,
+  stageSize: DuoViewportSize,
+  size: DuoViewportSize,
+  fill = true,
+) {
+  const step = stepDuoZoom(state, {
+    stage: stageSize,
+    viewport: size,
+    seconds: 1 / 60,
+    reducedMotion: false,
+    fitAt: fill
+      ? (measured, inset) => duoFitScale(model.root, model.camera, size, measured, inset)
+      : undefined,
+  });
+  model.camera.zoom = step.zoom;
+  model.camera.updateProjectionMatrix();
+  return step.state;
+}
+
+/** A settled zoom for this stage, as after the model has rested in its pose. */
+function settled(model: ReturnType<typeof rig>, stageSize: DuoViewportSize, size: DuoViewportSize) {
+  let state = frame(model, DUO_INITIAL_ZOOM, stageSize, size);
+  for (let i = 0; i < 120; i++) state = frame(model, state, stageSize, size);
+  return state;
+}
+
+describe("Duo zoom while the stage resizes", () => {
   // A 2560x1440 window: a sidebar that opens or a resize drag narrows the
   // stage while its height, the short side, stays the same.
   const window = { width: 2560, height: 1440 };
@@ -244,36 +279,103 @@ describe("Duo fit while the stage resizes", () => {
       const model = rig(window);
       model.pose(180, "open");
       const stageAt = (width: number) => ({ width, height: 1210 });
-      let fit = {
-        scale: duoFitScale(model.root, model.camera, window, stageAt(from), 32),
-        velocity: 0,
-      };
+      let state = settled(model, stageAt(from), window);
       // The sidebar animates for 200 ms; then a second of rest at 60 fps.
-      for (let frame = 1; frame <= 72; frame++) {
-        const width = frame <= 12 ? from + ((to - from) * frame) / 12 : to;
-        const resized = frame <= 12;
-        const target = duoFitScale(model.root, model.camera, window, stageAt(width), 32);
-        fit = stepDuoFit(fit, target, 1 / 60, resized);
-        model.camera.zoom = duoCameraZoom(window, stageAt(width), fit.scale);
-        model.camera.updateProjectionMatrix();
-        const margins = stageMargins(model, stageAt(width), window);
-        expect(Math.min(margins.x, margins.y)).toBeGreaterThanOrEqual(32 - 1e-6);
+      for (let i = 1; i <= 72; i++) {
+        const stageSize = stageAt(i <= 12 ? from + ((to - from) * i) / 12 : to);
+        state = frame(model, state, stageSize, window);
+        const margins = stageMargins(model, stageSize, window);
+        expect(Math.min(margins.x, margins.y)).toBeGreaterThanOrEqual(DUO_FILL_INSET - 1e-6);
       }
     }
   });
 
-  test("a pose change still springs toward its framing", () => {
+  test("a zero-size measurement keeps the last stage, and a window resize snaps", () => {
     const model = rig(window);
-    const stageSize = { width: 1678, height: 1210 };
     model.pose(180, "open");
-    const open = duoFitScale(model.root, model.camera, window, stageSize, 32);
-    model.pose(0, "closed");
-    const closed = duoFitScale(model.root, model.camera, window, stageSize, 32);
-    const sprung = stepDuoFit({ scale: open, velocity: 0 }, closed, 1 / 60, false);
-    expect(sprung.scale).toBeGreaterThan(Math.min(open, closed));
-    expect(sprung.scale).toBeLessThan(Math.max(open, closed));
-    expect(stepDuoFit({ scale: open, velocity: 0.4 }, closed, 1 / 60, true)).toEqual({
-      scale: closed,
+    const stageSize = { width: 1678, height: 1210 };
+    const state = settled(model, stageSize, window);
+    // Before layout, or while hidden, the stage measures 0 x 0.
+    expect(frame(model, state, { width: 0, height: 0 }, window)).toEqual(state);
+    const smaller = { width: 1920, height: 1080 };
+    model.camera.aspect = smaller.width / smaller.height;
+    const resized = frame(model, state, stageSize, smaller);
+    expect(resized.viewport).toEqual(smaller);
+    expect(resized.fit).toEqual({
+      scale: duoFitScale(model.root, model.camera, smaller, stageSize, DUO_FILL_INSET),
+      velocity: 0,
+    });
+  });
+
+  test("Keep same size frames the stage's inscribed square at any time", () => {
+    const model = rig(window);
+    model.pose(180, "open");
+    let state = settled(model, { width: 1678, height: 1210 }, window);
+    for (let i = 0; i < 90; i++)
+      state = frame(model, state, { width: 1678, height: 1210 }, window, false);
+    expect(model.camera.zoom).toBeCloseTo(duoStageZoom(window, { width: 1678, height: 1210 }), 3);
+  });
+});
+
+describe("Duo zoom while the device folds", () => {
+  // Like the scene, the fold springs toward the new angle and the model
+  // follows the folded geometry on every frame.
+  const cases = [
+    {
+      name: "serve-sim's square",
+      stage: { width: 580, height: 580 },
+      size: { width: 1920, height: 1080 },
+    },
+    { name: "1280x800", stage: { width: 398, height: 570 }, size: { width: 1280, height: 800 } },
+    { name: "1920x1080", stage: { width: 1038, height: 850 }, size: { width: 1920, height: 1080 } },
+    {
+      name: "2560x1440",
+      stage: { width: 1678, height: 1210 },
+      size: { width: 2560, height: 1440 },
+    },
+  ];
+
+  test.each(cases)(
+    "opening and closing never cross the handle clearance ($name)",
+    ({ stage: stageSize, size }) => {
+      for (const [from, to] of [
+        [0, 180],
+        [180, 0],
+      ] as const) {
+        const model = rig(size);
+        model.pose(from, "book");
+        let state = settled(model, stageSize, size);
+        let fold = ((180 - from) * Math.PI) / 360;
+        let velocity = 0;
+        let smallest = Infinity;
+        for (let i = 0; i < 120; i++) {
+          const step = stepDuoSpring(fold, velocity, ((180 - to) * Math.PI) / 360, 1 / 60);
+          fold = step.value;
+          velocity = step.velocity;
+          model.pose(180 - (fold * 360) / Math.PI, "book");
+          state = frame(model, state, stageSize, size);
+          const margins = stageMargins(model, stageSize, size);
+          smallest = Math.min(smallest, margins.x, margins.y);
+        }
+        // The handles sit DUO_HANDLE_OFFSET outside the model, so they stay on the stage too.
+        expect(smallest).toBeGreaterThanOrEqual(DUO_HANDLE_OFFSET - 1e-6);
+        // At rest the spring has brought the model back to the fill inset.
+        const margins = stageMargins(model, stageSize, size);
+        expect(Math.min(margins.x, margins.y)).toBeCloseTo(DUO_FILL_INSET, 0);
+      }
+    },
+  );
+
+  test("the spring stops at the limit, and a snap lands on the target", () => {
+    expect(stepDuoFit({ scale: 1, velocity: 0.5 }, 0.8, 1 / 60, false, 0.9)).toEqual({
+      scale: 0.9,
+      velocity: 0,
+    });
+    const sprung = stepDuoFit({ scale: 1, velocity: 0 }, 0.8, 1 / 60, false, 2);
+    expect(sprung.scale).toBeGreaterThan(0.8);
+    expect(sprung.scale).toBeLessThan(1);
+    expect(stepDuoFit({ scale: 1, velocity: 0.4 }, 0.8, 1 / 60, true, 2)).toEqual({
+      scale: 0.8,
       velocity: 0,
     });
   });

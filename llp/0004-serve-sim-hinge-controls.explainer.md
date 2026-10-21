@@ -549,15 +549,23 @@ intended.
   crosses the edges of a narrow stage. "Fill available space" fits the current
   pose in the whole stage with a 32 px inset on the limiting side [observed:
   `duoStageZoom` and `duoFitScale` in `duo-layout.ts`].
-- A new pose springs the fill factor, so the model eases into its framing. A
-  stage or window resize sets it at once. The base zoom follows a resize at
-  once, so a factor that lagged behind it would push the model past the stage
-  edge, where the 3D view clips it. This happens when a sidebar opens or is
-  dragged and the stage's short side is its height. For the same reason the
-  render loop reads the stage's size before each frame: a sidebar's width
-  transition has already moved the stage, and a `ResizeObserver` reports that
-  only after the frame is drawn [observed: `stepDuoFit` in `duo-layout.ts`,
-  `measureStage` and `fitSnapPending` in `duo-scene.ts`].
+- A new pose springs the fill factor, so the model eases into its framing.
+  The fill target follows the folded geometry on every frame, and opening a
+  pose widens the model faster than the spring shrinks the factor. So the
+  sprung factor never exceeds the fit with a 16 px inset, which is how far the
+  hinge handles sit outside the model; the model never crosses the stage edge,
+  and the handles stay clear of the title and the controls. serve-sim springs
+  without this limit [observed: `stepDuoSpring` for `fitScale` in serve-sim's
+  `src/client/simulator/duo-scene.ts`].
+- A stage or window resize sets the fill factor at once. The base zoom follows
+  a resize at once, so a factor that lagged behind it would push the model
+  past the stage edge, where the 3D view clips it. This happens when a sidebar
+  opens or is dragged and the stage's short side is its height. For the same
+  reason the render loop reads the stage's layout size before each frame: a
+  sidebar's width transition has already moved the stage, and a
+  `ResizeObserver` reports that only after the frame is drawn [observed:
+  `stepDuoZoom` and `stepDuoFit` in `duo-layout.ts`, the render loop in
+  `duo-scene.ts`].
 - Pointer raycasting and the hinge handles use the rectangles of the canvas and
   the stage, so they need no square [observed: `castRay` and `projectedHandle`
   in `duo-scene.ts`]. The agent overlay covers the whole stage, as it covered
