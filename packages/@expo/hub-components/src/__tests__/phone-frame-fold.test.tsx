@@ -23,6 +23,7 @@ function client(
 ): DeviceClient {
   return {
     status: "streaming",
+    framePresented: true,
     screen: { width: 1398, height: 2034, orientation: "portrait", display: "cover" },
     displayCorners,
     fold: fold && {

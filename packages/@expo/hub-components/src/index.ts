@@ -17,6 +17,11 @@
  */
 
 // ── Components ──
+export {
+  ActivityIndicator,
+  LOADING_LABEL,
+  type ActivityIndicatorProps,
+} from "./components/ActivityIndicator";
 export { Button, type ButtonProps, type ButtonTheme, type ButtonSize } from "./components/Button";
 export { ControlButton, type ControlButtonProps } from "./components/ControlButton";
 export { DeviceListItem, type DeviceListItemProps } from "./components/DeviceListItem";
@@ -104,6 +109,7 @@ export {
   type PhoneFrameFoldPreview,
 } from "./dashboard/PhoneFrame";
 export { MOBILE_CORNER_BUTTON_TOP, MOBILE_SIDEBAR_TOP_INSET } from "./dashboard/cornerButtons";
+export { DeviceScreenStatus, deviceScreenLoading } from "./dashboard/DeviceScreenStatus";
 export {
   deviceScreenClipPath,
   deviceScreenCornersClipPath,
