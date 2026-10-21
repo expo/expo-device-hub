@@ -202,9 +202,17 @@ describe("simctl-backed actions", () => {
 
   it("installs from a private staged-source snapshot and removes it afterward", async () => {
     const uploadId = "staged-build";
-    await runHostActionAsync({ action: "upload.append", params: {
-      uploadId, first: true, data: Buffer.from("argv fixture").toString("base64"),
-    } }, "unused");
+    await runHostActionAsync(
+      {
+        action: "upload.append",
+        params: {
+          uploadId,
+          first: true,
+          data: Buffer.from("argv fixture").toString("base64"),
+        },
+      },
+      "unused",
+    );
     try {
       const out = await argv("app.install", { udid: UDID, uploadId });
       expect(out.slice(0, 4)).toEqual(["xcrun", "simctl", "install", UDID]);

@@ -126,7 +126,10 @@ export async function withStagedUploadSnapshotAsync<T>(
       entries = 0;
     const links = new Map<string, string>();
     const paths = new Map<string, boolean>();
-    const invalidLink = () => new Error("App source symlinks must be relative and stay inside the app bundle using exact entry names.");
+    const invalidLink = () =>
+      new Error(
+        "App source symlinks must be relative and stay inside the app bundle using exact entry names.",
+      );
     const measure = async (path: string, info: Stats): Promise<void> => {
       remaining();
       size += info.size;
@@ -151,7 +154,8 @@ export async function withStagedUploadSnapshotAsync<T>(
     // Resolve against measured metadata, never the host filesystem. In particular,
     // following a directory link before `..` differs from lexical path normalization.
     for (const link of links.keys()) {
-      const pending = link.split(sep), resolved: string[] = [];
+      const pending = link.split(sep),
+        resolved: string[] = [];
       let hops = 0;
       while (pending.length) {
         remaining();
