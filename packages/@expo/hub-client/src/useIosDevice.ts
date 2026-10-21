@@ -183,6 +183,35 @@ const RECONNECT_MS = 1500;
 function freshStreamSrc(url: string): string {
   return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
 }
+
+/**
+ * Show `frame`'s picture behind `img` while `img` loads a new request: a
+ * browser clears an `<img>` when its `src` changes. Best effort.
+ */
+function bridgeMjpegFrame(img: HTMLImageElement, frame: HTMLImageElement): void {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = frame.naturalWidth;
+    canvas.height = frame.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.drawImage(frame, 0, 0);
+    const picture = canvas.toDataURL("image/jpeg");
+    if (!picture || picture === "data:,") return;
+    img.style.backgroundImage = `url("${picture}")`;
+    img.style.backgroundSize = "cover";
+    img.style.backgroundPosition = "center";
+  } catch {
+    // Without the bridge, the hand-over can show the empty surface briefly.
+  }
+}
+
+function clearMjpegBridge(img: HTMLImageElement | null): void {
+  if (!img?.style?.backgroundImage) return;
+  img.style.backgroundImage = "";
+  img.style.backgroundSize = "";
+  img.style.backgroundPosition = "";
+}
 const DEVICE_SETTINGS_POLL_MS = 5000;
 const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
 const ACTIVITY_STALE_MS = 8000;
@@ -1770,6 +1799,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let probe: HTMLImageElement | null = null;
     // After a failed request, the frame on screen is old until a new request paints.
     let failed = false;
+    // A retry's frame behind the visible <img>, until that <img> paints its own.
+    let bridging: { sawEmpty: boolean; until: number } | null = null;
     const session = screenSessionKeyRef.current;
     const img = imgRef.current;
 
@@ -1833,11 +1864,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
       if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
+      // The browser clears the visible <img> until its new request paints; the
+      // retry's frame stays behind it meanwhile.
+      bridgeMjpegFrame(visible, candidate);
+      bridging = { sawEmpty: false, until: Date.now() + 5_000 };
       stopProbe();
       failed = false;
-      // The visible <img> keeps its current picture until the new request paints.
       visible.src = next;
-      markStreaming();
+      // The retry painted, so the stream is back.
+      settled = true;
+      setStatus("streaming");
+      setError(null);
     };
     // The <img> retries by itself, so a failed request is a gap, not an error.
     const onError = () => {
@@ -1855,6 +1892,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const poll = setInterval(() => {
       const candidate = probe;
       if (candidate && img) handOver(candidate, img, candidate.src);
+      if (bridging && img) {
+        if (img.naturalWidth === 0) bridging.sawEmpty = true;
+        else if (bridging.sawEmpty || Date.now() > bridging.until) {
+          clearMjpegBridge(img);
+          bridging = null;
+        }
+      }
       markStreaming();
     }, 400);
 
@@ -1865,6 +1909,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       stopProbe();
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
+      clearMjpegBridge(img);
       // A helper restart for the same screen keeps the last frame. Another
       // screen session, or an unmount, stops the multipart request on the
       // element this effect started: a consumer that streams the displays may

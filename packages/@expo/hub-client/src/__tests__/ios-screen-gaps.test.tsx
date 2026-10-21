@@ -47,6 +47,7 @@ class FakeImage extends EventTarget {
   naturalHeight = 0;
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  style: Record<string, string> = {};
   srcs: string[] = [];
   #src = "";
   constructor() {
@@ -106,7 +107,15 @@ async function iosClient(options: Partial<DeviceConnectionOptions> = {}) {
     setTimeout: schedule,
     clearTimeout: cancel,
   });
-  stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal("document", {
+    hidden: false,
+    addEventListener() {},
+    removeEventListener() {},
+    createElement: () => ({
+      getContext: () => ({ drawImage() {} }),
+      toDataURL: () => "data:image/jpeg;base64,retry-frame",
+    }),
+  });
   stubGlobal("WebSocket", Socket);
   stubGlobal("Image", FakeImage);
   stubGlobal("RTCPeerConnection", undefined);
@@ -214,6 +223,15 @@ test("an MJPEG retry after the first frame loads off screen and keeps the last f
   expect(visible.srcs.at(-1)).toBe(working);
   expect(next.src).toBe("");
   expect(hub.client.status).toBe("streaming");
+  // The browser clears the visible <img> while its new request loads, so the
+  // retry's frame stays behind it until the <img> paints its own.
+  expect(visible.style.backgroundImage).toContain("retry-frame");
+  visible.naturalWidth = 0;
+  await hub.tick();
+  expect(visible.style.backgroundImage).toContain("retry-frame");
+  await act(async () => visible.paint());
+  await hub.tick();
+  expect(visible.style.backgroundImage).toBe("");
 });
 
 test("a helper restart keeps the MJPEG frame, the screen size, and the media element", async () => {
