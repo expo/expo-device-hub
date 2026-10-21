@@ -53,6 +53,9 @@ let buttonError: Error | undefined;
 let buttonGate: Promise<void> | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
+const buttonHidEvents: [number, number, string][] = [];
+// Per-call gates for buttonHid, used in order; a rejected gate fails that call.
+const buttonHidGates: Promise<void>[] = [];
 const pasteWrites: string[] = [];
 const pastedTexts: string[] = [];
 let clipboardText = "";
@@ -128,8 +131,11 @@ const addon = {
       await buttonGate;
       if (buttonError) throw buttonError;
     }
-    async buttonHid() {
+    async buttonHid(page: number, usage: number, phase: string) {
       inputCalls.push("buttonHid");
+      buttonHidEvents.push([page, usage, phase]);
+      const gate = buttonHidGates.shift();
+      if (gate) await gate;
       await buttonGate;
       if (buttonError) throw buttonError;
     }
@@ -411,6 +417,8 @@ beforeEach(() => {
   buttonGate = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
+  buttonHidEvents.length = 0;
+  buttonHidGates.length = 0;
   pasteWrites.length = 0;
   pastedTexts.length = 0;
   clipboardText = "";
@@ -1367,6 +1375,143 @@ describe("button input reporting", () => {
       }
     },
   );
+
+  test("a closed socket releases the buttons it still holds", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const viewer = await connect(url);
+    const hold = { button: "volume-up", page: 12, usage: 233 };
+    expect(await pressThenBarrier(viewer, { ...hold, phase: "down" })).toEqual([0x91, 1]);
+    expect(
+      await pressThenBarrier(viewer, { button: "lock", page: 12, usage: 48, phase: "down" }),
+    ).toEqual([0x91, 1]);
+    expect(
+      await pressThenBarrier(viewer, { button: "lock", page: 12, usage: 48, phase: "up" }),
+    ).toEqual([0x91, 1]);
+    expect(
+      await pressThenBarrier(viewer, { button: "action", page: 11, usage: 45, phase: "press" }),
+    ).toEqual([0x91, 1]);
+    viewer.terminate();
+    await waitUntil(() => buttonHidEvents.length === 5);
+    await Bun.sleep(20);
+    expect(buttonHidEvents).toEqual([
+      [12, 233, "down"],
+      [12, 48, "down"],
+      [12, 48, "up"],
+      [11, 45, "press"],
+      [12, 233, "up"],
+    ]);
+  });
+
+  test("a failed checked release is retried when the socket closes", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const cli = await connect(url);
+    const hold = { button: "volume-up", page: 12, usage: 233, checked: true };
+    expect(await pressThenBarrier(cli, { ...hold, phase: "down" })).toEqual([0x91, 1]);
+    buttonError = new Error("sendCustomButton failed");
+    expect(await pressThenBarrier(cli, { ...hold, phase: "up" })).toEqual([0x91, 0]);
+    buttonError = undefined;
+    cli.terminate();
+    await waitUntil(() => buttonHidEvents.length === 3);
+    expect(buttonHidEvents).toEqual([
+      [12, 233, "down"],
+      [12, 233, "up"],
+      [12, 233, "up"],
+    ]);
+  });
+
+  test("a new hold during a slow release is still released on close", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const viewer = await connect(url);
+    const hold = { button: "volume-up", page: 12, usage: 233 };
+    expect(await pressThenBarrier(viewer, { ...hold, phase: "down" })).toEqual([0x91, 1]);
+    let release!: () => void;
+    buttonGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const send = (phase: string) =>
+      viewer.send(
+        Buffer.concat([Buffer.from([0x04]), Buffer.from(JSON.stringify({ ...hold, phase }))]),
+      );
+    send("up");
+    send("down");
+    await waitUntil(() => buttonHidEvents.length === 3);
+    release();
+    buttonGate = undefined;
+    expect(await pressThenBarrier(viewer, { button: "lock" })).toEqual([0x91, 1]);
+    viewer.terminate();
+    await waitUntil(() => buttonHidEvents.length === 4);
+    expect(buttonHidEvents).toEqual([
+      [12, 233, "down"],
+      [12, 233, "up"],
+      [12, 233, "down"],
+      [12, 233, "up"],
+    ]);
+  });
+
+  test("a failed release that finishes after a later release does not revive the hold", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const cli = await connect(url);
+    const hold = { button: "volume-up", page: 12, usage: 233, checked: true };
+    expect(await pressThenBarrier(cli, { ...hold, phase: "down" })).toEqual([0x91, 1]);
+    let failFirst!: () => void;
+    let passSecond!: () => void;
+    buttonHidGates.push(
+      new Promise<void>((_, reject) => {
+        failFirst = () => reject(new Error("sendCustomButton failed"));
+      }),
+      new Promise<void>((resolve) => {
+        passSecond = resolve;
+      }),
+    );
+    const send = () =>
+      cli.send(
+        Buffer.concat([Buffer.from([0x04]), Buffer.from(JSON.stringify({ ...hold, phase: "up" }))]),
+      );
+    send();
+    send();
+    await waitUntil(() => buttonHidEvents.length === 3);
+    passSecond();
+    await Bun.sleep(10);
+    failFirst();
+    await Bun.sleep(10);
+    cli.terminate();
+    await Bun.sleep(100);
+    expect(buttonHidEvents).toEqual([
+      [12, 233, "down"],
+      [12, 233, "up"],
+      [12, 233, "up"],
+    ]);
+  });
+
+  test("two failed releases keep the hold for cleanup", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const cli = await connect(url);
+    const hold = { button: "volume-up", page: 12, usage: 233, checked: true };
+    expect(await pressThenBarrier(cli, { ...hold, phase: "down" })).toEqual([0x91, 1]);
+    const failures: Array<() => void> = [];
+    for (let i = 0; i < 2; i++) {
+      buttonHidGates.push(
+        new Promise<void>((_, reject) => {
+          failures.push(() => reject(new Error("sendCustomButton failed")));
+        }),
+      );
+    }
+    const send = () =>
+      cli.send(
+        Buffer.concat([Buffer.from([0x04]), Buffer.from(JSON.stringify({ ...hold, phase: "up" }))]),
+      );
+    send();
+    send();
+    await waitUntil(() => buttonHidEvents.length === 3);
+    for (const fail of failures) fail();
+    await Bun.sleep(10);
+    cli.terminate();
+    await waitUntil(() => buttonHidEvents.length === 4);
+    expect(buttonHidEvents.at(-1)).toEqual([12, 233, "up"]);
+  });
 
   test("the barrier waits for a checked button that is still being sent", async () => {
     const { url } = await start({ width: 1170, height: 2532 });

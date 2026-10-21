@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-20 (CoreDevice hardware buttons; checked CLI buttons); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-20 (CoreDevice hardware buttons; checked CLI buttons; held buttons released on detach); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -498,3 +498,15 @@ the barrier reports failure (LLP 0003 [Input actions](0003-serve-sim-http-api.sp
 unsupported CoreDevice touch retains the existing legacy button path [observed:
 `HIDInjector.sendButton`]. The shared keyboard-service setup gate and separate
 post-relaunch touch-loss follow-up are unchanged.
+
+A socket can hold a page/usage button: a `0x04` message with `phase: "down"`
+and no matching `up`, as a viewer sends while the pointer stays on a frame
+button. When that socket detaches, its input cleanup sends `up` for every
+button it still holds, after its ordered input and with its held keys and
+touches. A `press` and a released button need nothing.
+`0x04` messages run concurrently, so holds are recorded in message order. An
+`up` that fails (only a checked send can fail) restores the hold, and cleanup
+retries the release. A later message for the same button wins over that
+restore. Without the release on detach, a viewer that closed mid-hold left the button down in the guest [observed: `DeviceSession.queueInputCleanup`,
+`releaseHeldButtons`]. serve-emu releases a held `key` DOWN on socket close in
+the same way [observed: serve-emu `ClientTouchState.close`].

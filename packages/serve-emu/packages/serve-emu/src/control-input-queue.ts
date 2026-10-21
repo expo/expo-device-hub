@@ -58,7 +58,7 @@ export type ControlBinaryWriter = {
 
 /**
  * Backend-neutral control adapter. It lets non-scrcpy sources share the same
- * bounded FIFO, move coalescing, pointer-release reservations, and completion
+ * bounded FIFO, move coalescing, pointer- and held-key-release reservations, and completion
  * semantics as the binary scrcpy control socket.
  */
 export type ControlSemanticDispatcher = {
@@ -262,6 +262,20 @@ const SYSTEM_CLOCK: ControlInputClock = {
   sleep: (ms, signal) => sleep(ms, undefined, { signal }),
 };
 
+/**
+ * The release a DOWN owes: a touch pointer, or a key sent with an explicit action (for example a
+ * held hardware button). A key without an action is a complete press and owes nothing.
+ */
+function heldInputKey(gesture: Gesture | null | undefined): string | null {
+  if (gesture?.type === "touch") return `touch:${gesture.pointerId ?? 0}`;
+  if (gesture?.type === "key" && gesture.action) return `key:${gesture.keycode}`;
+  return null;
+}
+
+function heldInputAction(gesture: Gesture | null | undefined): string | undefined {
+  return gesture?.type === "touch" || gesture?.type === "key" ? gesture.action : undefined;
+}
+
 export class ControlInputQueue {
   readonly #writer: ControlBinaryWriter | null;
   readonly #dispatcher: ControlSemanticDispatcher | null;
@@ -305,22 +319,12 @@ export class ControlInputQueue {
       compiled.gesture.type === "touch" && compiled.gesture.action === "move"
         ? `touch:${compiled.gesture.pointerId ?? 0}`
         : null;
-    const pointerKey =
-      compiled.gesture.type === "touch" ? `touch:${compiled.gesture.pointerId ?? 0}` : null;
+    const pointerKey = heldInputKey(compiled.gesture);
+    const action = heldInputAction(compiled.gesture);
     let nextReservedReleases = this.#openPointers.size;
-    if (
-      pointerKey &&
-      compiled.gesture.type === "touch" &&
-      compiled.gesture.action === "down" &&
-      !this.#openPointers.has(pointerKey)
-    ) {
+    if (pointerKey && action === "down" && !this.#openPointers.has(pointerKey)) {
       nextReservedReleases++;
-    } else if (
-      pointerKey &&
-      compiled.gesture.type === "touch" &&
-      compiled.gesture.action === "up" &&
-      this.#openPointers.has(pointerKey)
-    ) {
+    } else if (pointerKey && action === "up" && this.#openPointers.has(pointerKey)) {
       nextReservedReleases--;
     }
     const waiter = this.#createWaiter();
@@ -339,10 +343,10 @@ export class ControlInputQueue {
     }
 
     this.#reserveNew(compiled.bytes, nextReservedReleases);
-    if (pointerKey && compiled.gesture.type === "touch") {
-      if (compiled.gesture.action === "down") {
+    if (pointerKey) {
+      if (action === "down") {
         this.#openPointers.add(pointerKey);
-      } else if (compiled.gesture.action === "up") {
+      } else if (action === "up") {
         this.#openPointers.delete(pointerKey);
       }
     }
@@ -549,10 +553,11 @@ export class ControlInputQueue {
           if (this.#controller.signal.aborted) {
             throw signalError(this.#controller.signal, "control input queue closed");
           }
-          if (entry.gesture?.type === "touch") {
-            const key = `touch:${entry.gesture.pointerId ?? 0}`;
-            if (entry.gesture.action === "down") this.#appliedPointers.add(key);
-            else if (entry.gesture.action === "up") this.#appliedPointers.delete(key);
+          const applied = heldInputKey(entry.gesture);
+          if (applied) {
+            const action = heldInputAction(entry.gesture);
+            if (action === "down") this.#appliedPointers.add(applied);
+            else if (action === "up") this.#appliedPointers.delete(applied);
           }
           for (const waiter of entry.waiters) {
             waiter.resolve({ status: waiter.status });
@@ -562,7 +567,7 @@ export class ControlInputQueue {
             this.#rejectEntry(entry, err);
             this.#release(entry);
             this.#active = null;
-            this.#reconcileRejectedTouch(entry, err);
+            this.#reconcileRejectedHold(entry, err);
             continue;
           }
           const failure = this.#controller.signal.aborted
@@ -590,29 +595,25 @@ export class ControlInputQueue {
     }
   }
 
-  #reconcileRejectedTouch(entry: QueueEntry, error: ControlInputRejectedError): void {
-    if (entry.gesture?.type !== "touch") return;
-    const pointerKey = `touch:${entry.gesture.pointerId ?? 0}`;
-    if (entry.gesture.action === "down" && !this.#appliedPointers.has(pointerKey)) {
+  #reconcileRejectedHold(entry: QueueEntry, error: ControlInputRejectedError): void {
+    const pointerKey = heldInputKey(entry.gesture);
+    if (!pointerKey) return;
+    const kind = entry.gesture?.type === "key" ? "key" : "touch";
+    if (heldInputAction(entry.gesture) === "down" && !this.#appliedPointers.has(pointerKey)) {
       // A rejected DOWN never reached the device. Its queued MOVE/UP must not
       // become orphan input. Stop at a later DOWN, including direct queue users
       // that reuse the same ID rather than allocating a fresh one per gesture.
       let dependent = true;
       this.#pending = this.#pending.filter((candidate) => {
         const gesture = candidate.gesture;
-        if (
-          !dependent ||
-          gesture?.type !== "touch" ||
-          `touch:${gesture.pointerId ?? 0}` !== pointerKey
-        )
-          return true;
-        if (gesture.action === "down") {
+        if (!dependent || heldInputKey(gesture) !== pointerKey) return true;
+        if (heldInputAction(gesture) === "down") {
           dependent = false;
           return true;
         }
         this.#rejectEntry(
           candidate,
-          new ControlInputRejectedError("touch DOWN was rejected", { cause: error }),
+          new ControlInputRejectedError(`${kind} DOWN was rejected`, { cause: error }),
         );
         this.#release(candidate);
         return false;
@@ -623,11 +624,11 @@ export class ControlInputQueue {
     // UP gives that slot back to its still-held pointer; a failed DOWN frees it.
     this.#openPointers = new Set(this.#appliedPointers);
     for (const pending of this.#pending) {
-      const gesture = pending.gesture;
-      if (gesture?.type !== "touch") continue;
-      const key = `touch:${gesture.pointerId ?? 0}`;
-      if (gesture.action === "down") this.#openPointers.add(key);
-      else if (gesture.action === "up") this.#openPointers.delete(key);
+      const key = heldInputKey(pending.gesture);
+      if (!key) continue;
+      const action = heldInputAction(pending.gesture);
+      if (action === "down") this.#openPointers.add(key);
+      else if (action === "up") this.#openPointers.delete(key);
     }
   }
 
