@@ -7,7 +7,9 @@ import {
   DUO_HANDLE_OFFSET,
   DUO_INITIAL_ZOOM,
   duoCameraZoom,
+  duoFitExtents,
   duoFitScale,
+  duoFitScaleFromExtents,
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
@@ -111,6 +113,18 @@ describe("Duo model fit", () => {
       model.root.quaternion.toArray(),
       model.left.rotation.toArray(),
     ]).toEqual(before);
+  });
+
+  test("one projection gives the same fit as duoFitScale for every inset", () => {
+    const model = rig();
+    model.pose(90, "laptop");
+    const extents = duoFitExtents(model.root, model.camera);
+    for (const inset of [0, 16, 24, 32]) {
+      expect(duoFitScaleFromExtents(extents, viewport, stage, inset)).toBe(
+        duoFitScale(model.root, model.camera, viewport, stage, inset),
+      );
+    }
+    expect(duoFitScaleFromExtents(null, viewport, stage, 32)).toBe(1);
   });
 
   test("empty, hidden, zero-size, and camera-crossing geometry keep normal framing", () => {
@@ -249,9 +263,7 @@ function frame(
     viewport: size,
     seconds: 1 / 60,
     reducedMotion: false,
-    fitAt: fill
-      ? (measured, inset) => duoFitScale(model.root, model.camera, size, measured, inset)
-      : undefined,
+    extents: fill ? duoFitExtents(model.root, model.camera) : undefined,
   });
   model.camera.zoom = step.zoom;
   model.camera.updateProjectionMatrix();
