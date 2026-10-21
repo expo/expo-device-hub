@@ -194,6 +194,23 @@ test("a rejected input socket reports inputError until a later socket is admitte
   expect(client().inputError).toBeNull();
 });
 
+test("the screen keeps serve-sim's active display id, even when only that id changes", async () => {
+  const { client, helperSockets } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => socket.onopen?.());
+  const send = (screenId: number) =>
+    act(async () =>
+      socket.onmessage?.({
+        data: configFrame({ width: 1000, height: 1000, orientation: "portrait", screenId }),
+      }),
+    );
+  await send(1);
+  expect(client().screen?.screenId).toBe(1);
+  await send(3);
+  expect(client().screen?.screenId).toBe(3);
+});
+
 test("serve-sim inputUnavailable in the screen config reports inputError", async () => {
   const { client, helperSockets } = await renderIosClient();
   const socket = helperSockets()[0]!;
@@ -384,6 +401,23 @@ async function admit(socket: FakeSocket) {
   expect(buttons(socket)).toEqual([]);
   await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
 }
+
+test("a held hardware button sends down and up with its HID code", async () => {
+  const { client, helperSockets } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  await admit(socket);
+  await act(async () => {
+    client().pressButton("volumeUp", "down");
+    client().pressButton("volumeUp", "up");
+  });
+  const sent = socket.sent
+    .filter((data) => new Uint8Array(data)[0] === 0x04)
+    .map((data) => JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))));
+  expect(sent).toEqual([
+    { button: "volume-up", page: 12, usage: 233, phase: "down" },
+    { button: "volume-up", page: 12, usage: 233, phase: "up" },
+  ]);
+});
 
 test("fresh controls entered before discovery wait for input admission", async () => {
   let release!: () => void;

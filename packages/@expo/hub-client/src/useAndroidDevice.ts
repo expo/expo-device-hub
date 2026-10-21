@@ -104,6 +104,7 @@ import {
   type DeviceStreamSourceStatus,
   type ForegroundApp,
   type HardwareButton,
+  type HardwareButtonPhase,
   type KeyboardInput,
   type MultiTouchSample,
   type RunningDevice,
@@ -156,9 +157,35 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
   recents: { type: "recents" },
   appSwitcher: { type: "recents" },
   power: { type: "power" },
+  volumeUp: { type: "key", keycode: 24 },
+  volumeDown: { type: "key", keycode: 25 },
+  // Android has neither; iOS sends them.
+  action: null,
+  ringer: null,
   // KEYCODE_ESCAPE dismisses the IME without the navigation a Back press would trigger.
   hideKeyboard: { type: "key", keycode: 111 },
 };
+
+// Keycodes that serve-emu can hold with a down/up key action.
+const BUTTON_KEYCODE: Partial<Record<HardwareButton, number>> = {
+  power: 26,
+  volumeUp: 24,
+  volumeDown: 25,
+};
+
+/** The serve-emu message for a button and phase, or null when Android lacks it. */
+export function androidButtonMessage(
+  button: HardwareButton,
+  phase: HardwareButtonPhase = "press",
+): Record<string, unknown> | null {
+  const message = BUTTON_MESSAGE[button];
+  if (!message) return null;
+  if (phase === "press") return message;
+  const keycode = BUTTON_KEYCODE[button];
+  if (keycode !== undefined) return { type: "key", keycode, action: phase };
+  // A button that cannot be held presses when released.
+  return phase === "up" ? message : null;
+}
 
 export function androidWsUrlFor(baseUrl: string, device: string | null, video: boolean): string {
   const u = new URL(apiUrl(baseUrl, "/ws"));
@@ -415,8 +442,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   );
 
   const pressButton = useCallback(
-    (button: HardwareButton) => {
-      const message = BUTTON_MESSAGE[button];
+    (button: HardwareButton, phase?: HardwareButtonPhase) => {
+      const message = androidButtonMessage(button, phase);
       if (message) send(message);
     },
     [send],
@@ -2152,6 +2179,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendMultiTouch,
     sendKey,
     pressButton,
+    deviceChrome: null,
     reload,
     rotate,
     screenshot,

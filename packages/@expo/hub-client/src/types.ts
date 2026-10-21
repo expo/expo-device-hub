@@ -51,6 +51,8 @@ export interface ScreenSize {
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim). */
   orientation?: DeviceOrientation;
+  /** serve-sim's active display, for a device with more than one (iPhone Duo). */
+  screenId?: number;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -436,8 +438,85 @@ export type HardwareButton =
   | "recents"
   | "power"
   | "appSwitcher"
+  | "volumeUp"
+  | "volumeDown"
+  /** The Action button of recent iPhones. */
+  | "action"
+  /** The Ring/Silent switch of older iPhones. */
+  | "ringer"
   /** Dismisses the on-screen keyboard. Not a physical button; grouped here because it presses one key. */
   | "hideKeyboard";
+
+/**
+ * `press` is a momentary down and up. `down` and `up` hold a button, for long
+ * presses such as the power menu. A button that can only be pressed acts on `up`.
+ */
+export type HardwareButtonPhase = "press" | "down" | "up";
+
+export interface DeviceChromeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One hardware button of a DeviceKit chrome, in the frame's portrait coordinates. */
+export interface DeviceChromeButton {
+  /** DeviceKit input name, e.g. `power`, `volume-up`, `action`, `home`. */
+  name: string;
+  image: string;
+  imageDown: string | null;
+  /** Drawn above the bezel (watch crowns); otherwise behind it. */
+  onTop: boolean;
+  frame: DeviceChromeRect;
+  /** Slide-out travel on hover, as a fraction of the button image. */
+  hover: { x: number; y: number };
+  usagePage: number | null;
+  usage: number | null;
+}
+
+/**
+ * Apple's DeviceKit chrome for an iOS simulator: the bezel artwork, the screen
+ * opening, and the hardware buttons, as serve-sim resolves it. Sizes are in the
+ * chrome's own portrait frame coordinates.
+ */
+export interface DeviceChrome {
+  identifier: string;
+  frame: { width: number; height: number };
+  body: DeviceChromeRect;
+  screen: DeviceChromeRect;
+  screenRadius: number;
+  screenCornerRadii?: {
+    topLeft: number;
+    topRight: number;
+    bottomRight: number;
+    bottomLeft: number;
+  };
+  compositeImage: string | null;
+  slice: {
+    topLeft: string;
+    top: string;
+    topRight: string;
+    right: string;
+    bottomRight: string;
+    bottom: string;
+    bottomLeft: string;
+    left: string;
+  } | null;
+  corner: { width: number; height: number } | null;
+  buttons: DeviceChromeButton[];
+  /** The display this chrome describes, on a device with more than one. */
+  screenId?: number;
+  /** The chrome of each other display, by serve-sim screen id; see `deviceChromeForScreen`. */
+  displayVariants?: Record<number, DeviceChrome>;
+  /** URL of one of this chrome's images, ready for an `<img>`. */
+  assetUrl: (image: string) => string;
+}
+
+/** {@link DeviceChrome} as serve-sim's `/api` sends it, before the client adds image URLs. */
+export type DeviceChromeDescriptor = Omit<DeviceChrome, "assetUrl" | "displayVariants"> & {
+  displayVariants?: Record<number, DeviceChromeDescriptor>;
+};
 
 /**
  * Device system appearance. Binary on purpose — the Hub exposes a plain
@@ -828,8 +907,10 @@ export interface DeviceClient {
    * drag). Present only on backends that support it (serve-sim).
    */
   sendScroll?: (sample: ScrollSample) => void;
-  /** Press a hardware button. */
-  pressButton: (button: HardwareButton) => void;
+  /** Press a hardware button. Without a phase this is a momentary press. */
+  pressButton: (button: HardwareButton, phase?: HardwareButtonPhase) => void;
+  /** The device's DeviceKit chrome (iOS, serve-sim); null when unknown or on Android. */
+  deviceChrome: DeviceChrome | null;
   /**
    * Reload the running React Native/Expo bundle. serve-sim injects ⌘R over the
    * helper's key channel; serve-emu injects a hardware "R" keypress over scrcpy.

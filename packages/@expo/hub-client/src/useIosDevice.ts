@@ -78,7 +78,10 @@ import {
   type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
   type ForegroundApp,
+  type DeviceChrome,
+  type DeviceChromeDescriptor,
   type HardwareButton,
+  type HardwareButtonPhase,
   type HidKeyEvent,
   type KeyboardInput,
   type MultiTouchSample,
@@ -206,15 +209,44 @@ export function iosStreamCapabilities(streamSettings: unknown): DeviceStreamCapa
   return transport === "webrtc" ? IOS_WEBRTC_STREAM_CAPABILITIES : IOS_HTTP_STREAM_CAPABILITIES;
 }
 
-// iOS only has a Home button + app switcher; the rest are no-ops.
+// Named serve-sim buttons for a momentary press; the rest are no-ops on iOS.
 const BUTTON_NAME: Record<HardwareButton, string | null> = {
   home: "home",
   appSwitcher: "app_switcher",
   power: "lock",
   back: null,
   recents: null,
+  volumeUp: null,
+  volumeDown: null,
+  action: null,
+  ringer: null,
   hideKeyboard: null,
 };
+
+// DeviceKit chrome.json `usagePage`/`usage`, as serve-sim's device-frame buttons send them.
+const BUTTON_HID: Partial<Record<HardwareButton, { button: string; page: number; usage: number }>> =
+  {
+    power: { button: "power", page: 12, usage: 48 },
+    volumeUp: { button: "volume-up", page: 12, usage: 233 },
+    volumeDown: { button: "volume-down", page: 12, usage: 234 },
+    action: { button: "action", page: 11, usage: 45 },
+    ringer: { button: "mute", page: 11, usage: 46 },
+  };
+
+// @ref LLP 0013#hardware-buttons — a plain press keeps the named path; a phase uses the HID code
+/** The serve-sim `0x04` payload for a button and phase, or null when iOS lacks it. */
+export function iosButtonMessage(
+  button: HardwareButton,
+  phase: HardwareButtonPhase = "press",
+): Record<string, unknown> | null {
+  const name = BUTTON_NAME[button];
+  // A plain press keeps serve-sim's named path, e.g. Lock for power.
+  if (name && phase === "press") return { button: name };
+  const hid = BUTTON_HID[button];
+  if (hid) return { ...hid, phase };
+  // A named-only button cannot be held: it presses when released.
+  return name && phase === "up" ? { button: name } : null;
+}
 
 const decoder = new TextDecoder();
 
@@ -262,6 +294,8 @@ interface ResolvedConfig {
   inputPaste: boolean;
   /** The helper answers `WS_MSG_INPUT_BARRIER` by request ID; an older one only without one. */
   inputCopy: boolean;
+  /** serve-sim's DeviceKit chrome for the device, when it resolved one. */
+  chrome: DeviceChromeDescriptor | null;
   device: string | null;
   pid: number | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
@@ -297,6 +331,7 @@ interface PreviewApi {
   inputAdmission?: boolean;
   inputPaste?: boolean;
   inputCopy?: boolean;
+  chrome?: DeviceChromeDescriptor | null;
   device?: string;
   pid?: number;
   basePath?: string;
@@ -822,9 +857,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [sendWs]);
 
   const pressButton = useCallback(
-    (button: HardwareButton) => {
-      const name = BUTTON_NAME[button];
-      if (name) sendWs(WS_MSG_BUTTON, { button: name });
+    (button: HardwareButton, phase?: HardwareButtonPhase) => {
+      const message = iosButtonMessage(button, phase);
+      if (message) sendWs(WS_MSG_BUTTON, message);
     },
     [sendWs],
   );
@@ -992,6 +1027,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         inputAdmission: c.inputAdmission === true,
         inputPaste: c.inputPaste === true,
         inputCopy: c.inputCopy === true,
+        chrome: c.chrome ?? null,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""}`,
@@ -1477,7 +1513,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             setScreen((prev) =>
               prev?.width === c.width &&
               prev.height === c.height &&
-              prev.orientation === c.orientation
+              prev.orientation === c.orientation &&
+              prev.screenId === c.screenId
                 ? prev
                 : c,
             );
@@ -1964,6 +2001,28 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;
+  const chromeDescriptor = config?.chrome ?? null;
+  const deviceChrome = useMemo<DeviceChrome | null>(() => {
+    if (!chromeDescriptor || !gridApiUrl) return null;
+    const withImages = (descriptor: DeviceChromeDescriptor): DeviceChrome => ({
+      ...descriptor,
+      displayVariants: descriptor.displayVariants
+        ? Object.fromEntries(
+            Object.entries(descriptor.displayVariants).map(([id, variant]) => [
+              id,
+              withImages(variant),
+            ]),
+          )
+        : undefined,
+      // serve-sim rasterizes the chrome's PDFs; v=2 matches its own client's cache key.
+      assetUrl: (image: string) =>
+        withSessionTokenQuery(
+          `${gridApiUrl}/devicekit-chrome?chrome=${encodeURIComponent(descriptor.identifier)}&image=${encodeURIComponent(image)}&v=2`,
+          token,
+        ),
+    });
+    return withImages(chromeDescriptor);
+  }, [chromeDescriptor, gridApiUrl, token]);
   useEffect(() => {
     if (!gridApiUrl) {
       setDevices(PLACEHOLDER_DEVICES);
@@ -2101,6 +2160,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendKeyEvents,
     sendScroll,
     pressButton,
+    deviceChrome,
     reload,
     rotate,
     screenshot,

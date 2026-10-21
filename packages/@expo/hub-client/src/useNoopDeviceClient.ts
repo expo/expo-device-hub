@@ -84,6 +84,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   sendTouch: () => {},
   sendKey: () => false,
   pressButton: () => {},
+  deviceChrome: null,
   reload: () => {},
   rotate: () => {},
   screenshot: async () => null,

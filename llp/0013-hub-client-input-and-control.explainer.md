@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-20 (hardware buttons and DeviceKit chrome)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -91,6 +92,16 @@ This differs from serve-sim's window-blur handler, which cancels paced keyboard 
 HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
 
 An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
+
+## Hardware buttons
+
+`pressButton(button, phase)` takes `press` (the default), `down`, or `up`, so a consumer can hold a button for a long press. Each platform ignores the buttons it lacks [observed: `iosButtonMessage` in `useIosDevice.ts`, `androidButtonMessage` in `useAndroidDevice.ts`].
+
+- iOS keeps serve-sim's named path for a plain press of Home, the app switcher, and power (Lock). Power, volume, Action, and the Ring/Silent switch with a phase send `0x04` with DeviceKit's `usagePage`/`usage` and the phase, which is what serve-sim's own device-frame buttons send [observed: `BUTTON_HID` in `useIosDevice.ts`; `handleChromeButton` in serve-sim `client.tsx`].
+- Android sends volume and a held power button as serve-emu `key` messages with an optional `down`/`up` action; a plain power press keeps `{ type: "power" }` [observed: `BUTTON_KEYCODE` in `useAndroidDevice.ts`; `case "key"` in serve-emu `input.ts`].
+- A button that cannot be held, such as Home, ignores `down` and presses on `up`, so one hold gesture works for every button on both platforms.
+
+`deviceChrome` exposes serve-sim's DeviceKit chrome from `/api` (the bezel, the screen opening, and each button's frame and HID code), with `assetUrl` for its images under the grid API, plus the session token when there is one. It is null on Android and when serve-sim has no chrome for the device [observed: `chrome` in serve-sim `middleware.ts` config; `deviceChrome` in `useIosDevice.ts`]. A device with more than one display (iPhone Duo) has one chrome per display in `displayVariants`, and `screen.screenId` names the active one; `deviceChromeForScreen` picks it, as serve-sim's `deviceKitChromeForScreen` does [observed: `device-chrome.ts`; serve-sim `device-chrome-frame.tsx`].
 
 ## Clipboard
 
