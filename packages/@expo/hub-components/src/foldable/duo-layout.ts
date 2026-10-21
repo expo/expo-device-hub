@@ -27,8 +27,21 @@ function visitBoxCorners(box: Box3, point: Vector3, visit: (point: Vector3) => v
 }
 
 /**
+ * The camera zoom for the scene's base view: its vertical field of view spans
+ * the largest centered square of the stage. On serve-sim's fixed 1:1 stage this
+ * is its stage.height / viewport.height zoom. The Hub's stage fills the stream
+ * area instead, so its short side limits the base view, and the physical size
+ * never crosses the edges of a stage that is narrower than it is tall.
+ */
+// @ref LLP 0004#stage-size — the Hub's stage has any aspect ratio; serve-sim's is square
+export function duoStageZoom(viewport: DuoViewportSize, stage: DuoViewportSize): number {
+  if (!validSize(viewport) || !validSize(stage)) return 1;
+  return Math.min(stage.width, stage.height) / viewport.height;
+}
+
+/**
  * Fit the current articulated geometry inside a centered logical stage.
- * The result multiplies the normal stage.height / viewport.height zoom.
+ * The result multiplies the {@link duoStageZoom} base zoom.
  * This uses the scene's centered perspective camera and never changes its
  * zoom or the model's transforms. Mesh bounds are cached by the geometry.
  */
@@ -68,7 +81,7 @@ export function duoFitScale(
   const availableX = Math.max(1, stage.width - 2 * padding) / viewport.width;
   const availableY = Math.max(1, stage.height - 2 * padding) / viewport.height;
   const zoom = Math.min(availableX / extentX, availableY / extentY);
-  const scale = zoom / (stage.height / viewport.height);
+  const scale = zoom / duoStageZoom(viewport, stage);
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 

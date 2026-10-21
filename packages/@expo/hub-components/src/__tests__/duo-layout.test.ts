@@ -7,6 +7,7 @@ import {
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
+  duoStageZoom,
 } from "../foldable/duo-layout";
 import { duoPose } from "../foldable/duo-pose";
 
@@ -113,6 +114,101 @@ describe("Duo model fit", () => {
     model.root.visible = true;
     model.root.position.z = 31;
     expect(duoFitScale(model.root, model.camera, viewport, stage)).toBe(1);
+  });
+});
+
+const POSES = [
+  [0, "closed", 0],
+  [90, "book", 0],
+  [180, "open", 0],
+  [180, "open", Math.PI / 2],
+  [90, "laptop", 0],
+  [80, "tent", 0],
+] as const;
+
+// The Hub's stage fills the stream area, so it can be wider or taller than
+// serve-sim's fixed 1:1 stage.
+const STAGES = [
+  { width: 640, height: 640 },
+  { width: 1600, height: 900 },
+  { width: 420, height: 900 },
+];
+
+/** Smallest distance in CSS pixels from the projected model to the stage edges. */
+function stageMargins(model: ReturnType<typeof rig>, stageSize: { width: number; height: number }) {
+  let x = Infinity;
+  let y = Infinity;
+  model.root.traverse((child) => {
+    if (!(child instanceof Mesh)) return;
+    const box =
+      child.geometry.boundingBox ??
+      (child.geometry.computeBoundingBox(), child.geometry.boundingBox!);
+    for (let corner = 0; corner < 8; corner++) {
+      const projected = new Vector3(
+        corner & 1 ? box.max.x : box.min.x,
+        corner & 2 ? box.max.y : box.min.y,
+        corner & 4 ? box.max.z : box.min.z,
+      )
+        .applyMatrix4(child.matrixWorld)
+        .project(model.camera);
+      x = Math.min(x, stageSize.width / 2 - Math.abs((projected.x * viewport.width) / 2));
+      y = Math.min(y, stageSize.height / 2 - Math.abs((projected.y * viewport.height) / 2));
+    }
+  });
+  return { x, y };
+}
+
+describe("Duo stage zoom", () => {
+  test("is serve-sim's stage.height / viewport.height zoom on its square stage", () => {
+    expect(duoStageZoom(viewport, stage)).toBe(stage.height / viewport.height);
+  });
+
+  test("frames the base view in the largest centered square of a wide or tall stage", () => {
+    expect(duoStageZoom(viewport, { width: 1600, height: 900 })).toBe(900 / viewport.height);
+    expect(duoStageZoom(viewport, { width: 420, height: 900 })).toBe(420 / viewport.height);
+  });
+
+  test("invalid sizes keep normal framing", () => {
+    expect(duoStageZoom(viewport, { width: 0, height: 640 })).toBe(1);
+    expect(duoStageZoom({ width: 1680, height: NaN }, stage)).toBe(1);
+  });
+
+  test("fill fits every pose inside any stage shape and reaches a limiting edge", () => {
+    const model = rig();
+    for (const stageSize of STAGES) {
+      for (const [angle, pose, roll] of POSES) {
+        model.pose(angle, pose, roll);
+        const factor = duoFitScale(model.root, model.camera, viewport, stageSize, 32);
+        model.camera.zoom = duoStageZoom(viewport, stageSize) * factor;
+        model.camera.updateProjectionMatrix();
+        const margins = stageMargins(model, stageSize);
+        expect(margins.x).toBeGreaterThanOrEqual(32 - 1e-8);
+        expect(margins.y).toBeGreaterThanOrEqual(32 - 1e-8);
+        expect(Math.min(margins.x, margins.y)).toBeCloseTo(32, 7);
+      }
+    }
+  });
+
+  test("physical size keeps every pose inside any stage shape at the size of its inscribed square", () => {
+    const model = rig();
+    for (const stageSize of STAGES) {
+      const side = Math.min(stageSize.width, stageSize.height);
+      const square = { width: side, height: side };
+      for (const [angle, pose, roll] of POSES) {
+        model.pose(angle, pose, roll);
+        model.camera.zoom = duoStageZoom(viewport, square);
+        model.camera.updateProjectionMatrix();
+        const inSquare = stageMargins(model, square);
+        model.camera.zoom = duoStageZoom(viewport, stageSize);
+        model.camera.updateProjectionMatrix();
+        const inStage = stageMargins(model, stageSize);
+        expect(inStage.x).toBeGreaterThan(0);
+        expect(inStage.y).toBeGreaterThan(0);
+        // Same projected size as on the square: the extra space is margin.
+        expect(inStage.x - (stageSize.width - side) / 2).toBeCloseTo(inSquare.x, 7);
+        expect(inStage.y - (stageSize.height - side) / 2).toBeCloseTo(inSquare.y, 7);
+      }
+    }
   });
 });
 

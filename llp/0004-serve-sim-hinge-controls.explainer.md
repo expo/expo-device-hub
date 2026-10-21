@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -526,3 +526,30 @@ shortcut on the model. It takes each preset's hinge angle from
 `capabilities.fold.poses` and keeps serve-sim's display IDs (1 and 3) for its
 own geometry only [observed: `useDuoFraming.ts`, `duo-displays.ts`, and
 `FoldableDeviceScreen.tsx` in `packages/@expo/hub-components/src/foldable`].
+
+### Stage size
+
+In the Hub, the 3D stage fills the stream area: the space that `StreamPanel`
+keeps clear of the device title above and the controls below, including the
+fold error line. On a large window the model is not limited to a small square
+[confirmed] (Krystof Woldrich, 2026-10-21, the direction for this change).
+serve-sim keeps its fixed 580 px 1:1 stage [observed:
+`DUO_STAGE_DEFAULT_WIDTH` in `src/client/client.tsx`]. This difference is
+intended.
+
+- Only the container sizes the stage. A native screen configuration never
+  does, so folding, rotating, and changing displays do not resize it; a resize
+  then would animate on top of the hinge motion. A window or sidebar resize
+  does resize it. While a fold error shows, the stage is one line shorter
+  [observed: `DUO_STAGE_STYLE` in `PhoneFrame.tsx`, the measured controls block
+  in `StreamPanel.tsx`].
+- The stage can be wider or taller than it is high. The base view spans the
+  largest centered square of the stage; on a square stage this is serve-sim's
+  zoom. "Keep same size" shows the model at the size of that square, so no pose
+  crosses the edges of a narrow stage. "Fill available space" fits the current
+  pose in the whole stage with a 32 px inset on the limiting side [observed:
+  `duoStageZoom` and `duoFitScale` in `duo-layout.ts`].
+- Pointer raycasting and the hinge handles use the rectangles of the canvas and
+  the stage, so they need no square [observed: `castRay` and `projectedHandle`
+  in `duo-scene.ts`]. The agent overlay covers the whole stage, as it covered
+  the square one [observed: `PhoneFrame.tsx`]. The stage has no maximum size.

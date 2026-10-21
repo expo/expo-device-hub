@@ -20,6 +20,7 @@ import {
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
+  duoStageZoom,
   type DuoScreenPoint as ProjectedPoint,
 } from "./duo-layout";
 import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
@@ -827,7 +828,11 @@ export function createDuoScene(
               32,
             )
           : 1;
-      camera.zoom = (stageHeight / viewportHeight) * scale;
+      camera.zoom =
+        duoStageZoom(
+          { width: viewportWidth, height: viewportHeight },
+          { width: stageWidth, height: stageHeight },
+        ) * scale;
       camera.updateProjectionMatrix();
       return projectedHandle(handle);
     } finally {
@@ -1011,7 +1016,12 @@ export function createDuoScene(
       const fit = stepDuoSpring(fitScale, fitVelocity, targetScale, dt);
       fitScale = reducedMotion.matches ? targetScale : fit.value;
       fitVelocity = reducedMotion.matches ? 0 : fit.velocity;
-      const zoom = (stageHeight > 0 ? stageHeight / viewportHeight : 1) * fitScale;
+      // The stage fills the panel's stream area, so it is not always square.
+      const zoom =
+        duoStageZoom(
+          { width: viewportWidth, height: viewportHeight },
+          { width: stageWidth, height: stageHeight },
+        ) * fitScale;
       if (camera.zoom !== zoom) {
         camera.zoom = zoom;
         camera.updateProjectionMatrix();
