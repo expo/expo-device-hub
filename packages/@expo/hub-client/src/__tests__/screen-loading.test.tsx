@@ -173,6 +173,56 @@ describe("useScreenPresentation", () => {
     expect(current).toMatchObject({ status: "connecting", framePresented: false });
   });
 
+  test("the load and drop limits count only while the tab is visible", async () => {
+    const timers = captureLoadTimers();
+    const listeners = new Set<() => void>();
+    const page = {
+      hidden: false,
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+    };
+    stubGlobal("document", page);
+    const setHidden = async (hidden: boolean) => {
+      page.hidden = hidden;
+      await act(async () => {
+        for (const listener of [...listeners]) listener();
+      });
+    };
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let current!: ReturnType<typeof useScreenPresentation>;
+    function Harness({ status }: { status: ConnectionStatus }) {
+      current = useScreenPresentation("device-a", status, null, {
+        dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
+      });
+      return null;
+    }
+    const render = async (status: ConnectionStatus) => {
+      await act(async () => {
+        if (renderer) renderer.update(<Harness status={status} />);
+        else renderer = create(<Harness status={status} />);
+      });
+    };
+
+    // The load limit stops in a hidden tab and starts again in a visible one.
+    await render("connecting");
+    expect(timers.count).toBe(1);
+    await setHidden(true);
+    expect(timers.count).toBe(0);
+    await setHidden(false);
+    expect(timers.count).toBe(1);
+
+    // The drop limit, after a frame, does the same.
+    await render("streaming");
+    expect(timers.count).toBe(0);
+    await render("connecting");
+    expect(timers.count).toBe(1);
+    await setHidden(true);
+    expect(timers.count).toBe(0);
+    await setHidden(false);
+    await timers.fire();
+    expect(current).toMatchObject({ status: "error", error: STREAM_DISCONNECTED_ERROR });
+  });
+
   test("no first frame in time becomes an error until a frame arrives", async () => {
     const timers = captureLoadTimers();
     const { render } = await presentation();

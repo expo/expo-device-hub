@@ -85,8 +85,8 @@ While a helper restarts, iOS keeps what the last config of the same connection s
 
 - the stream mode: a missing config does not fall back to the requested mode, which can need another element;
 - the Duo's identity and its 3D model URL, so the 3D preview stays mounted;
-- the screen config for the view: the frame keeps its shape, and the fold keeps its angle and its active display. Command handling still reads only the helper's own config. Another device never inherits it;
-- the H.264 to MJPEG fallback, which a new pid no longer resets.
+- the screen config for the view: the frame keeps its shape, and the fold keeps its angle and its active display. Pointer input maps back with the same config, so a tap lands where the user sees it, also while the new helper has not sent its config yet [observed: `viewScreenRef` in the input callbacks of `useIosDevice.ts`]. Command handling and the display check for 3D input still read only the helper's own config. Another device never inherits it;
+- the H.264 to MJPEG fallback, which a new pid no longer resets. This holds while the helper keeps its URL, as with the Hub's proxied helpers; a helper without the proxy that restarts on another port has a new URL, which resets the fallback [observed: `avccFallbackScope` in `useIosDevice.ts`].
 
 On iOS, a temporary drop stays `reconnecting` until the stream returns, the adapter reports a real error, or the drop lasts 30 s (see [Errors](#errors)). Android keeps its own reconnect grace: after 5 s without the stream, it reports `error` ("Disconnected — retrying…" or the WebRTC error), and a source switch can hold `reconnecting` longer [observed: `STREAM_RECONNECT_GRACE_MS` in `stream-reconnect.ts`, the WebRTC status effect in `useAndroidDevice.ts`].
 

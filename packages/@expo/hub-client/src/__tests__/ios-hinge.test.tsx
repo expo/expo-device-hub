@@ -3,6 +3,7 @@ import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type FoldControlCommand } from "../fold";
+import { rawPointForDisplayPoint, streamGeometry } from "../orientation";
 import {
   type DeviceClient,
   type DeviceConnectionOptions,
@@ -568,6 +569,31 @@ for (const strict of [false, true]) {
     expect(client().fold?.angle).toBe(0);
   });
 }
+
+test("while a new helper has not sent its config, touches map with the kept screen the view shows", async () => {
+  installBrowser({ duo: true });
+  const { client, socket, helperSockets, pushConfig } = await connectObserved();
+  const landscape = { ...COVER, orientation: "landscape_left" as const };
+  await act(async () => socket().push(0x82, landscape));
+  expect(client().screen?.orientation).toBe("landscape_left");
+
+  // A new helper at the same URL: its socket opens, but it has no config to send yet.
+  await pushConfig({ pid: 2 });
+  expect(helperSockets()).toHaveLength(2);
+  await act(async () => socket().open());
+  // The view keeps the landscape frame, so DeviceScreen measures taps in landscape.
+  expect(client().screen?.orientation).toBe("landscape_left");
+  await act(async () => {
+    client().sendTouch({ phase: "begin", x: 0.1, y: 0.1 });
+    client().sendTouch({ phase: "end", x: 0.1, y: 0.1 });
+  });
+  const begin = socket()
+    .frames()
+    .find((frame) => frame.payload.type === "begin");
+  const expected = rawPointForDisplayPoint(streamGeometry(landscape).inputOrientation, 0.1, 0.1);
+  expect(expected).not.toEqual({ x: 0.1, y: 0.1 });
+  expect(begin?.payload).toMatchObject(expected);
+});
 
 // A new helper restarts the panels inside the same screen session (LLP 0015, temporary drops).
 test("a replaced helper restarts the panels without loading the 3D preview again", async () => {

@@ -10,7 +10,10 @@ import { DeviceTitle } from "../dashboard/DeviceTitle";
 import { type Device } from "../dashboard/data";
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { StreamPanel } from "../dashboard/StreamPanel";
-import { type FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import {
+  FoldableDeviceScreen,
+  type FoldableDeviceScreenProps,
+} from "../foldable/FoldableDeviceScreen";
 import { bg } from "../theme/tokens";
 import { createGlobalStubs } from "./test-globals";
 
@@ -251,4 +254,25 @@ test("the status pill names the first load with the spinner's label", () => {
   );
   expect(markup).toContain(`>${LOADING_LABEL}<`);
   expect(markup).not.toContain("Starting<");
+});
+
+test("a loading 3D preview takes no keyboard focus and is not announced", () => {
+  // Server rendering runs no effects, so the model is still loading.
+  const markup = renderToStaticMarkup(
+    <FoldableDeviceScreen
+      client={client("streaming", true, {
+        fold: { pending: false, error: null, setControl() {} },
+        displays: [
+          { id: "cover", active: true, attachVideo() {} },
+          { id: "inner", active: false, attachVideo() {} },
+        ],
+        deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
+        capabilities: { clipboard: false, fold: false },
+        videoKind: "img",
+      } as unknown as Partial<DeviceClient>)}
+    />,
+  );
+  const host = markup.slice(markup.indexOf('role="application"'), markup.indexOf(">"));
+  expect(host).toContain('tabindex="-1"');
+  expect(host).toContain('aria-hidden="true"');
 });
