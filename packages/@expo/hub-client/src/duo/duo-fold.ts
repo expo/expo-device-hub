@@ -39,18 +39,24 @@ export function duoPhysicalPoseChanged(
   return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
 }
 
-/** Select the requested panel before native display metadata catches up. */
+/**
+ * Select the requested panel before native display metadata catches up.
+ * `faceDown` is null while Table Mode or the physical orientation is unknown;
+ * a half-open device then keeps the panel that native readback reports.
+ */
 export function duoIntendedScreen(
   angle: number | undefined,
   physicalPose: FoldPose | null | undefined,
   nativeScreenId?: number,
-  faceDown = false,
+  faceDown: boolean | null = false,
 ): DuoPanelId {
   if (angle === undefined) return nativeScreenId === 1 ? 1 : 3;
   if (angle <= 0) return 1;
   if (angle >= 180) return 3;
   // Face down with Table Mode elects the cover, as the native Tent pose does.
-  if (physicalPose === "tent" || faceDown) return 1;
+  if (physicalPose === "tent" || faceDown === true) return 1;
+  // @ref LLP 0016#iphone-duo — unknown face down: the 3D framing keeps its view, so election keeps the native panel
+  if (faceDown === null && (nativeScreenId === 1 || nativeScreenId === 3)) return nativeScreenId;
   // CoreSimulator keeps the cover active through 54° and activates the inner
   // display at 55°. Keep fractional angles between those boundaries on the
   // current panel, matching native display ownership during slider motion.

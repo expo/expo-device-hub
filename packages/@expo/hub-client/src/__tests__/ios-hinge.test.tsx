@@ -724,6 +724,28 @@ test("face down is unknown while Table Mode or the physical orientation is unkno
   expect(client().fold?.physical?.faceDown).toBe(false);
 });
 
+test("a half-open device whose face down becomes unknown keeps the panel that native readback reports", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  const half = { ...COVER, hingeAngle: 90, hingePose: null, screenId: 1 };
+  const active = () => client().displays?.find((display) => display.active)?.id;
+  await act(async () =>
+    socket.push(0x82, { ...half, tableMode: true, physicalOrientation: "facedown" }),
+  );
+  expect(client().fold?.physical?.faceDown).toBe(true);
+  expect(active()).toBe("cover");
+  // The orientation goes missing while the native display is still the cover:
+  // the 3D framing keeps the cover, so the active display does too.
+  await act(async () => socket.push(0x82, { ...half, tableMode: true }));
+  expect(client().fold?.physical?.faceDown).toBeUndefined();
+  expect(active()).toBe("cover");
+  // A known face-up state elects the inner display at 90 degrees again.
+  await act(async () =>
+    socket.push(0x82, { ...half, tableMode: true, physicalOrientation: "portrait" }),
+  );
+  expect(active()).toBe("inner");
+});
+
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();

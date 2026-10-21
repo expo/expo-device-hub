@@ -672,7 +672,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     previewHingeAngle,
     electedPose,
     screen?.screenId,
-    previewFaceDown,
+    knownFaceDown ? previewFaceDown : null,
   );
   // Control callbacks read the latest native state without re-registering
   // listeners on every config broadcast.
