@@ -10,6 +10,7 @@ import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen
 import { bg, border, text, textSize } from "../primitives";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
+import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
@@ -77,6 +78,8 @@ export function StreamPanel({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
+  // PhoneFrame also knows whether the 3D model is drawn; until then the pill says Loading too.
+  const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
   const setting = client.deviceSettings?.appearance;
   const appearance = setting === "dark" || setting === "light" ? setting : null;
@@ -137,6 +140,7 @@ export function StreamPanel({
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
+            onLoadingChange={setScreenLoading}
           />
           <div
             style={{
@@ -155,7 +159,7 @@ export function StreamPanel({
             <DeviceTitle
               key={device.id}
               device={device}
-              status={client.status}
+              status={screenLoading ? "connecting" : client.status}
               recording={client.screenRecording}
             />
           </div>

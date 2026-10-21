@@ -87,6 +87,7 @@ import {
   screenSizesEqual,
   simScreenSize,
 } from "./screen-config";
+import { useScreenPresentation } from "./screen-presentation";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -156,6 +157,7 @@ import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import { useWebRtcStream, type WebRtcIceServer } from "./useWebRtcStream";
 import { presentedVideoFrameDelta } from "./video-frame-metadata";
+import { preserveVideoFrame } from "./video-frame-poster";
 import {
   type WebRtcCodec,
   type WebRtcStreamFailure,
@@ -633,6 +635,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   >({ 1: null, 3: null });
   // The consumer streams the displays itself, so the flat stream parks meanwhile.
   const displayStreaming = isDuo && (panelElements[1] !== null || panelElements[3] !== null);
+  // @ref LLP 0015#screen-sessions — a new device, server, token, surface, or media element loads again
+  const screenSessionKey = connectionScope
+    ? JSON.stringify([
+        connectionScope,
+        displayStreaming ? "displays" : "flat",
+        useWebRtc ? "video" : useAvcc ? "canvas" : "img",
+      ])
+    : null;
+  const [statusSessionKey, setStatusSessionKey] = useState(screenSessionKey);
+  if (statusSessionKey !== screenSessionKey) {
+    // The previous session's `streaming` is still in state during this render.
+    setStatusSessionKey(screenSessionKey);
+    setStatus(screenSessionKey ? "connecting" : "idle");
+    setError(null);
+  }
+  const screenSessionKeyRef = useRef(screenSessionKey);
+  useLayoutEffect(() => {
+    screenSessionKeyRef.current = screenSessionKey;
+  }, [screenSessionKey]);
   const [hingePending, setHingePending] = useState(false);
   const [hingeError, setHingeError] = useState<string | null>(null);
   // The requested state, shown until its acknowledgement and matching config arrive.
@@ -1410,11 +1431,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setFps((previous) => (previous === next ? previous : next));
   }, []);
 
+  // The stream this hook attached to the flat video, and its screen session.
+  const webRtcAttachedRef = useRef<{
+    video: HTMLVideoElement;
+    stream: MediaStream;
+    session: string | null;
+  } | null>(null);
+  // @ref LLP 0015#temporary-drops — as on Android, a reconnect keeps the last frame as a poster
+  const preserveWebRtcFrame = useCallback(() => {
+    const video = videoRef.current;
+    const attached = webRtcAttachedRef.current;
+    // Another session's frame must never stay on this surface.
+    if (
+      !video ||
+      !video.srcObject ||
+      attached?.video !== video ||
+      attached.stream !== video.srcObject ||
+      attached.session !== screenSessionKeyRef.current
+    )
+      return;
+    if (preserveVideoFrame(video)) video.srcObject = null;
+  }, []);
+
   // ── WebRTC with codec retries, confined to the advertised transport. ──
   const {
     stream: webRtcStream,
     failure: webRtcFailure,
     error: webRtcError,
+    retrying: webRtcRetrying,
     markFrameDecoded: markWebRtcFrameDecoded,
     restart: restartWebRtc,
     streamStats: flatStreamStats,
@@ -1430,6 +1474,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     fetchImpl: videoFetch,
     transportLocked: streamTransportLocked,
     raiseH264Level: true,
+    onBeforeDisconnect: preserveWebRtcFrame,
   });
   // Statistics come from the stream on screen: the flat stream, or the active
   // display while the consumer streams the displays.
@@ -1506,7 +1551,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   useEffect(() => {
     if (!useWebRtc || displayStreaming) return;
-    if (webRtcError || webRtcCodecsExhausted) {
+    // A transport retry reconnects by itself, so it is not a failure to show.
+    if ((webRtcError && !webRtcRetrying) || webRtcCodecsExhausted) {
       setStatus("error");
       setError(
         webRtcError ??
@@ -1522,6 +1568,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     useWebRtc,
     displayStreaming,
     webRtcError,
+    webRtcRetrying,
     webRtcStream,
     webRtcCodecsExhausted,
     streamTransportLocked,
@@ -1531,7 +1578,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     if (!useWebRtc) return;
     const video = webRtcVideoElement;
-    if (!video) return;
+    // A pending negotiation leaves the last frame, or its poster, in place.
+    if (!video || !webRtcStream) return;
     let stopped = false;
     let firstFrame = true;
     let frameCallback = 0;
@@ -1551,6 +1599,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       markWebRtcFrameDecoded(presentedFrameDelta);
       if (firstFrame) {
         firstFrame = false;
+        video.removeAttribute("poster");
         setStatus("streaming");
         setError(null);
       }
@@ -1575,14 +1624,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
 
     video.srcObject = webRtcStream;
-    if (webRtcStream) {
-      const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
-      if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
-      else video.addEventListener("timeupdate", onTimeUpdate);
-      video.addEventListener("loadeddata", onLoadedData, { once: true });
-      document.addEventListener("visibilitychange", onVisibilityChange);
-      void video.play().catch(() => {});
-    }
+    webRtcAttachedRef.current = {
+      video,
+      stream: webRtcStream,
+      session: screenSessionKeyRef.current,
+    };
+    const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
+    if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+    else video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("loadeddata", onLoadedData, { once: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void video.play().catch(() => {});
 
     return () => {
       stopped = true;
@@ -1592,9 +1644,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
         video.cancelVideoFrameCallback(frameCallback);
       }
-      video.srcObject = null;
     };
   }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded, onAvccFrame]);
+
+  // Detach the media only when this surface stops showing WebRTC or a new
+  // screen session starts on it; a lost stream alone keeps its last frame.
+  useEffect(() => {
+    if (!useWebRtc) return;
+    const video = webRtcVideoElement;
+    if (!video) return;
+    return () => {
+      video.removeAttribute("poster");
+      video.srcObject = null;
+    };
+  }, [useWebRtc, webRtcVideoElement, screenSessionKey]);
 
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
@@ -1613,6 +1676,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     enabled: active && useAvcc && !!config && !displayStreaming,
     canvasRef,
     fetchImpl: videoFetch,
+    // Each read starts a gap until its first frame; the canvas keeps the last one.
+    onConnecting: () => setStatus("connecting"),
     onFirstFrame: () => {
       setStatus("streaming");
       setError(null);
@@ -1669,11 +1734,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         );
       }
     };
+    // The <img> retries by itself, so a failed request is a gap, not an error.
     const onError = () => {
       if (cancelled) return;
       settled = false;
-      setStatus("error");
-      setError("Stream unavailable — retrying…");
+      setStatus("connecting");
+      setError(null);
       retryTimer = setTimeout(() => {
         if (!cancelled) applyStreamSrc();
       }, RECONNECT_MS);
@@ -2555,10 +2621,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     ],
   );
 
+  const presentation = useScreenPresentation(screenSessionKey, status, error);
+
   return {
     platform: "ios",
-    status,
-    error,
+    status: presentation.status,
+    error: presentation.error,
+    framePresented: presentation.framePresented,
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
     screen: publicScreen,
     fold,

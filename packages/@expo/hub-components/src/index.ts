@@ -17,6 +17,11 @@
  */
 
 // ── Components ──
+export {
+  ActivityIndicator,
+  LOADING_LABEL,
+  type ActivityIndicatorProps,
+} from "./components/ActivityIndicator";
 export { Button, type ButtonProps, type ButtonTheme, type ButtonSize } from "./components/Button";
 export { ControlButton, type ControlButtonProps } from "./components/ControlButton";
 export { DeviceListItem, type DeviceListItemProps } from "./components/DeviceListItem";
@@ -98,6 +103,7 @@ export {
   type FoldPreviewMode,
   type PhoneFrameFoldPreview,
 } from "./dashboard/PhoneFrame";
+export { DeviceScreenStatus, deviceScreenLoading } from "./dashboard/DeviceScreenStatus";
 export {
   deviceScreenClipPath,
   deviceScreenCornersClipPath,

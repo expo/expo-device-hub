@@ -1,0 +1,7 @@
+---
+"@expo/hub-client": minor
+---
+
+Report the same device-screen loading states on iOS and Android. `status` is `'connecting'` only until the current screen session shows its first frame, and it becomes `'error'` after 30 seconds without a frame while the client keeps retrying. After the first frame, a lost stream is `'reconnecting'` on both platforms, and the last frame stays on screen; iOS WebRTC now keeps it as a poster, as Android does. A WebRTC transport retry, an iOS MJPEG retry, and an iOS H.264 re-read are no longer reported as errors. The new `framePresented` field on `DeviceClient` and `DeviceScreenClient` tells whether the session has shown a frame. A new device, server, token, transport, or display surface starts a new session.
+
+`DeviceScreen` no longer draws a black background, "Connecting…", "Not connected", or the error text. If you use `DeviceScreen` without the Hub's `PhoneFrame`, for example on the Expo website, draw the loading and error states yourself from `status`, `error`, and `framePresented`. Custom `DeviceClient` implementations and mocks must add `framePresented`.

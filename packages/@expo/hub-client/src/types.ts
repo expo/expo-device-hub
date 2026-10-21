@@ -27,16 +27,22 @@ export type DevicePlatform = "ios" | "android";
 export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
 
 /**
- * Lifecycle of a single connection:
+ * Lifecycle of one screen session. A session is one connection (server,
+ * device, token) with one surface (the flat screen, or the separate displays)
+ * and one media element kind; changing any of them starts a new session.
  *   idle         — nothing to connect to (no base URL / disabled)
- *   connecting   — socket opening, no frames yet
- *   reconnecting — a stream that was live lost its transport and is being
- *                  re-established; the last frame stays on screen meanwhile
- *                  (for example while serve-emu swaps the Android capture
- *                  source). Becomes `error` only when the outage outlives the
- *                  reconnect grace period. Android only.
+ *   connecting   — the session has not presented a frame yet. Consumers show
+ *                  loading UI. Becomes `error` after 30 s without a frame,
+ *                  while the client keeps retrying.
+ *   reconnecting — the session presented a frame and its stream is being
+ *                  re-established, for example after a WebRTC reconnect, a
+ *                  helper restart, or an Android capture-source switch. The
+ *                  last frame stays on screen meanwhile; consumers show no
+ *                  loading UI. Android reports `error` when the outage
+ *                  outlives its reconnect grace period; iOS stays here until
+ *                  the stream returns or fails for good.
  *   streaming    — frames are flowing
- *   error        — connection failed or dropped
+ *   error        — the connection failed, or its first frame did not come in time
  */
 export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "streaming" | "error";
 
@@ -786,6 +792,14 @@ export interface DeviceClient {
   status: ConnectionStatus;
   error: string | null;
   /**
+   * Whether the current screen session (see {@link ConnectionStatus}) has
+   * presented a frame. It stays true while the session reconnects, and it can
+   * be true with `error` after the stream failed. Until it is true, the media
+   * element shows nothing of this session; it can still hold a previous
+   * session's frame.
+   */
+  framePresented: boolean;
+  /**
    * An input-channel or hardware-keyboard setup error while video is available,
    * or null. Cleared when the input channel or setup recovers. iOS: serve-sim
    * refused the input socket (too many clients, or a full input queue) or its
@@ -1111,6 +1125,7 @@ export type DeviceScreenClient = Pick<
   | "screen"
   | "status"
   | "error"
+  | "framePresented"
   | "inputError"
 >;
 

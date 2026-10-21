@@ -3,14 +3,19 @@
  * serve-sim's `src/client/components/duo-model-view.tsx` (@expo/serve-sim 0.5.0).
  */
 
+import { SCREEN_LOAD_TIMEOUT_MS } from "@expo/hub-client";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { createDuoScene, type DuoSceneState } from "./duo-scene";
 import { DuoHingeHandle } from "./DuoHingeHandle";
 
+/** Xcode's model: still loading, drawn, or unavailable (missing, broken, or too slow). */
+export type DuoModelStatus = "loading" | "ready" | "unavailable";
+
 export interface DuoModelViewProps extends DuoSceneState {
   /** The displays' elements. They stay mounted while their frames texture the model. */
   children: ReactNode;
+  onStatusChange?: (status: DuoModelStatus) => void;
 }
 
 const STATUS_STYLE: CSSProperties = {
@@ -36,30 +41,45 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
   const oppositeHingeHandle = useRef<HTMLDivElement>(null);
   const latest = useRef<DuoSceneState>(props);
   latest.current = props;
-  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [status, setStatus] = useState<DuoModelStatus>("loading");
+  const onStatusChange = useRef(props.onStatusChange);
+  onStatusChange.current = props.onStatusChange;
+  useEffect(() => {
+    onStatusChange.current?.(status);
+  }, [status]);
 
   useEffect(() => {
     if (!host.current || !source.current) return;
-    let disposed = false;
+    let settled = false;
+    const unavailable = () => {
+      if (settled) return;
+      settled = true;
+      setStatus("unavailable");
+      latest.current.onUnavailable?.();
+    };
+    // @ref LLP 0015#errors — a model that never loads takes the 2D fallback instead of spinning
+    const timeout = setTimeout(unavailable, SCREEN_LOAD_TIMEOUT_MS);
     const scene = createDuoScene(
       host.current,
       source.current,
       () => latest.current,
       {
         ready: () => {
-          if (!disposed) setStatus("ready");
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          setStatus("ready");
         },
         error: () => {
-          if (!disposed) {
-            setStatus("unavailable");
-            latest.current.onUnavailable?.();
-          }
+          clearTimeout(timeout);
+          unavailable();
         },
       },
       { left: hingeHandle.current ?? undefined, right: oppositeHingeHandle.current ?? undefined },
     );
     return () => {
-      disposed = true;
+      settled = true;
+      clearTimeout(timeout);
       scene.dispose();
     };
   }, []);
@@ -112,29 +132,6 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
         angle={angle}
         onChange={onHingeAngleChange}
       />
-      {status === "loading" && (
-        <span
-          role="status"
-          style={{ ...STATUS_STYLE, left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
-        >
-          Loading iPhone Duo…
-        </span>
-      )}
-      {props.streamError && (
-        <span
-          role="alert"
-          style={{
-            ...STATUS_STYLE,
-            left: 16,
-            right: 16,
-            bottom: 16,
-            backgroundColor: "rgba(0, 0, 0, 0.9)",
-            color: "#fca5a5",
-          }}
-        >
-          {props.streamError}
-        </span>
-      )}
       {status === "unavailable" && (
         <span role="status" style={{ ...STATUS_STYLE, left: 16, right: 16, bottom: 8 }}>
           3D preview unavailable. Showing the live display.

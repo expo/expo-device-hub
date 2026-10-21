@@ -92,8 +92,13 @@ function Controls() {
 ```
 
 Status and control changes update this component. FPS, metrics, and log changes do not.
-Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also reports
-`'reconnecting'` while restoring a stream. Read `error` for the last failure message.
+Status can be `'idle'`, `'connecting'`, `'reconnecting'`, `'streaming'` or `'error'`.
+`'connecting'` means that the screen has not shown a frame yet: show loading UI. It becomes
+`'error'` after 30 seconds without a frame, and the client continues to retry. After the
+first frame, a lost stream is `'reconnecting'`: the last frame stays, so show no loading UI.
+`framePresented` tells whether the screen has shown a frame. A new device, server, token,
+transport, or display surface starts again at `'connecting'`. Read `error` for the last
+failure message.
 
 ### Read device settings
 
@@ -124,6 +129,8 @@ Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input cha
 without updating for metrics or logs.
 `DeviceScreen` fills its parent, so give the parent a size and `position: relative`.
 `displayScreen` gives you the screen size after accounting for rotation.
+`DeviceScreen` draws no background, loading state, or error: draw them yourself, over
+it, from `status`, `error`, and `framePresented`.
 
 ```tsx
 import { DeviceScreen, displayScreen, useDeviceScreenClient } from "@expo/hub-client";
@@ -132,10 +139,13 @@ function Screen() {
   const client = useDeviceScreenClient();
   const screen = displayScreen(client.screen);
   const aspectRatio = screen ? `${screen.width} / ${screen.height}` : "9 / 19.5";
+  const loading = client.status !== "error" && client.status !== "idle" && !client.framePresented;
 
   return (
-    <div style={{ position: "relative", width: 360, aspectRatio }}>
+    <div style={{ position: "relative", width: 360, aspectRatio, background: "#eee" }}>
       <DeviceScreen client={client} />
+      {loading && <Spinner />}
+      {client.status === "error" && <p role="alert">{client.error}</p>}
     </div>
   );
 }

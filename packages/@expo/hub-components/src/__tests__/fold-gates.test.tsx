@@ -16,6 +16,7 @@ const BASE_CLIENT: DeviceClient = {
   platform: "ios",
   status: "streaming",
   error: null,
+  framePresented: true,
   inputError: null,
   screenRecording: null,
   screen: { width: 1398, height: 2034, orientation: "portrait", display: "cover" },

@@ -30,45 +30,14 @@ export const DEVICE_SCREEN_SURFACE_LAYOUT_STYLE: CSSProperties = {
   overflow: "hidden",
 };
 
-export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  boxSizing: "border-box",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 24,
-  textAlign: "center",
-  pointerEvents: "none",
-  backgroundColor: "rgba(0, 0, 0, 0.55)",
-  fontSize: 13,
-  fontFamily: "var(--expo-font-mono)",
-};
-
+// @ref LLP 0015#where-each-part-lives — the consumer draws loading and errors; no session frame means no media
 /**
- * Whether the surface should present the media element as-is. While
- * `reconnecting`, the element still holds the last frame (a canvas keeps its
- * pixels, a video keeps the final frame of an ended track), so nothing must
- * cover or blank it — that is what keeps an Android capture-source switch or
- * a brief socket drop from flashing black.
+ * Keep media geometry tied to the same synchronous size container as the
+ * frame. Until the screen session presents a frame, the element stays
+ * transparent: it can still hold a previous session's frame. It stays laid
+ * out, so the browser keeps decoding into it.
  */
-export function deviceScreenPresentsMedia(
-  status: DeviceScreenInputProps["client"]["status"],
-): boolean {
-  return status === "streaming" || status === "reconnecting";
-}
-
-export function deviceScreenSurfaceStyle(
-  status: DeviceScreenInputProps["client"]["status"],
-): CSSProperties {
-  return {
-    ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
-    ...(deviceScreenPresentsMedia(status) ? {} : { backgroundColor: "#000" }),
-  };
-}
-
-/** Keep media geometry tied to the same synchronous size container as the frame. */
-export function deviceScreenMediaStyle(rotation: number): CSSProperties {
+export function deviceScreenMediaStyle(rotation: number, framePresented = true): CSSProperties {
   const rotatesSideways = Math.abs(rotation) === 90;
   const style: CSSProperties =
     rotation === 0
@@ -94,6 +63,7 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
 
   return {
     ...style,
+    ...(framePresented ? {} : { opacity: 0 }),
     userSelect: "none",
     WebkitUserSelect: "none",
     pointerEvents: "none",
@@ -105,7 +75,9 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
  * `<img>` inside {@link PhoneFrame}. On an iPhone Duo it shows the active
  * display. It paints whatever element the active implementation asks for
  * (`<canvas>` for H.264, `<img>` for MJPEG, or `<video>` for WebRTC) and
- * forwards normalized pointer input.
+ * forwards normalized pointer input. It draws no loading or error state and
+ * no background: the consumer draws them from `client.status`,
+ * `client.error`, and `client.framePresented`, as `PhoneFrame` does.
  *
  * Input is measured in *display* space (the hook remaps to the device's raw
  * frame for the current orientation). Single-finger drags go through
@@ -131,8 +103,7 @@ export function DeviceScreen({
     sendScroll,
     cancelInput,
     screen,
-    status,
-    error,
+    framePresented,
   } = client;
   const canMulti = !!sendMultiTouch;
 
@@ -413,12 +384,12 @@ export function DeviceScreen({
   const rotation = geometry.rotationDegrees;
 
   const surfaceStyle: CSSProperties = {
-    ...deviceScreenSurfaceStyle(status),
+    ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
     borderRadius,
     ...(squircle ? ({ cornerShape: "superellipse(1.3)" } as Record<string, unknown>) : {}),
   };
 
-  const mediaStyle = deviceScreenMediaStyle(rotation);
+  const mediaStyle = deviceScreenMediaStyle(rotation, framePresented);
 
   return (
     <div style={surfaceStyle}>
@@ -488,21 +459,6 @@ export function DeviceScreen({
       )}
 
       <AgentInteractionIndicator interaction={agentInteraction} />
-
-      {!deviceScreenPresentsMedia(status) && (
-        <div
-          style={{
-            ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
-            color: status === "error" ? "#fca5a5" : "rgba(255, 255, 255, 0.7)",
-          }}
-        >
-          {status === "error"
-            ? (error ?? "Disconnected")
-            : status === "connecting"
-              ? "Connecting…"
-              : "Not connected"}
-        </div>
-      )}
     </div>
   );
 }

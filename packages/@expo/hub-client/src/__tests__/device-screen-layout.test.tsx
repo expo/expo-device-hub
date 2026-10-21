@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
-  DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
-  deviceScreenMediaStyle,
-  deviceScreenPresentsMedia,
-  deviceScreenSurfaceStyle,
-} from "../DeviceScreen";
+import { DEVICE_SCREEN_SURFACE_LAYOUT_STYLE, deviceScreenMediaStyle } from "../DeviceScreen";
 
 describe("DeviceScreen layout", () => {
   for (const rotation of [-90, 90]) {
@@ -20,28 +14,19 @@ describe("DeviceScreen layout", () => {
     });
   }
 
-  test("keeps connection status layers inside the shared screen surface", () => {
+  test("draws no background, so the consumer's surface shows until the first frame", () => {
     expect(DEVICE_SCREEN_SURFACE_LAYOUT_STYLE.position).toBe("absolute");
     expect(DEVICE_SCREEN_SURFACE_LAYOUT_STYLE.inset).toBe(0);
-    expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.position).toBe("absolute");
-    expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.inset).toBe(0);
-    expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.boxSizing).toBe("border-box");
+    expect(DEVICE_SCREEN_SURFACE_LAYOUT_STYLE.backgroundColor).toBeUndefined();
   });
 
-  test("leaves only the live stream surface background transparent", () => {
-    expect(deviceScreenSurfaceStyle("streaming").backgroundColor).toBeUndefined();
-    expect(deviceScreenSurfaceStyle("connecting").backgroundColor).toBe("#000");
-    expect(deviceScreenSurfaceStyle("error").backgroundColor).toBe("#000");
-  });
-
-  test("keeps the last frame uncovered while a live stream reconnects", () => {
-    // A capture-source switch or a short socket drop must not flash black or
-    // cover the previous frame with a status message.
-    expect(deviceScreenSurfaceStyle("reconnecting").backgroundColor).toBeUndefined();
-    expect(deviceScreenPresentsMedia("reconnecting")).toBe(true);
-    expect(deviceScreenPresentsMedia("streaming")).toBe(true);
-    expect(deviceScreenPresentsMedia("connecting")).toBe(false);
-    expect(deviceScreenPresentsMedia("error")).toBe(false);
-    expect(deviceScreenPresentsMedia("idle")).toBe(false);
+  test("hides the media until the screen session presents a frame, but keeps it laid out", () => {
+    // A previous session's frame can still be in the element.
+    const waiting = deviceScreenMediaStyle(0, false);
+    expect(waiting.opacity).toBe(0);
+    expect(waiting.display).toBe("block");
+    expect(waiting.visibility).toBeUndefined();
+    // After the first frame, a reconnect keeps the last frame visible.
+    expect(deviceScreenMediaStyle(0, true).opacity).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-import { type ComponentType, type CSSProperties, useState } from "react";
+import { type ComponentType, type CSSProperties, useLayoutEffect, useState } from "react";
 
 import {
   type AgentInteraction,
@@ -7,9 +7,10 @@ import {
   type ScreenSize,
 } from "@expo/hub-client";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
-import { bg, text, textSize } from "../primitives";
+import { bg } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
+import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
 import {
   deviceFramePresentation,
   deviceViewportStyle,
@@ -63,7 +64,8 @@ const CONFIG: Record<
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
  * `DeviceScreen` — injected by the consumer from `@expo/hub-client` so this
  * library stays free of a runtime dependency on it; otherwise it shows an empty
- * idle surface.
+ * idle surface. It draws the screen's loading spinner and errors over both
+ * renderers, which draw neither.
  *
  * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
  * shrinking to the available height or panel width). Without artwork, the frame
@@ -82,6 +84,7 @@ export function PhoneFrame({
   displayScreen,
   showDeviceFrame = true,
   deviceFrameAssets,
+  onLoadingChange,
 }: {
   device: Device;
   client?: DeviceClient;
@@ -101,8 +104,12 @@ export function PhoneFrame({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork so this shared component remains asset-system agnostic. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  // The device whose 3D model is drawn; the 3D preview loads until it has one.
+  const [modelReadyDevice, setModelReadyDevice] = useState<string | null>(null);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
 
@@ -148,6 +155,27 @@ export function PhoneFrame({
         .join(" ")
     : `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== "idle";
+  // The folding model needs the client's fold state, separate display streams, and Xcode's model.
+  const foldable = !!(
+    live &&
+    foldPreview?.mode === "3d" &&
+    FoldableDeviceScreen &&
+    client.fold &&
+    client.displays &&
+    client.deviceModelUrl
+  );
+  const loading =
+    !!live && deviceScreenLoading(client, !foldable || modelReadyDevice === device.id);
+  useLayoutEffect(() => {
+    onLoadingChange?.(loading);
+  }, [onLoadingChange, loading]);
+  const screenStatus = live ? (
+    <DeviceScreenStatus
+      loading={loading}
+      error={client.status === "error" ? (client.error ?? "Disconnected") : null}
+      inputError={client.inputError}
+    />
+  ) : null;
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
@@ -174,16 +202,8 @@ export function PhoneFrame({
   );
 
   // The folding model draws its own device, so neither frame artwork nor the
-  // screen clip applies; the agent overlay still covers the stage. It needs
-  // the client's fold state, separate display streams, and Xcode's model.
-  if (
-    live &&
-    foldPreview?.mode === "3d" &&
-    FoldableDeviceScreen &&
-    client.fold &&
-    client.displays &&
-    client.deviceModelUrl
-  ) {
+  // screen clip applies; the status layer and the agent overlay still cover the stage.
+  if (foldable && client && FoldableDeviceScreen && foldPreview) {
     const { mode: _mode, ...modelOptions } = foldPreview;
     return (
       <div
@@ -200,7 +220,14 @@ export function PhoneFrame({
         onPointerLeave={() => setHovered(false)}
       >
         <div data-testid="device-screen-clip" style={{ position: "absolute", inset: 0 }}>
-          <FoldableDeviceScreen key={device.id} client={client} onCopy={onCopy} {...modelOptions} />
+          <FoldableDeviceScreen
+            key={device.id}
+            client={client}
+            onCopy={onCopy}
+            onModelReadyChange={(ready) => setModelReadyDevice(ready ? device.id : null)}
+            {...modelOptions}
+          />
+          {screenStatus}
           {takeoverOverlay}
         </div>
       </div>
@@ -222,6 +249,8 @@ export function PhoneFrame({
     : {
         position: "absolute",
         inset: 0,
+        // The surface until the stream presents a frame, as under frame artwork.
+        backgroundColor: bg.element,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
         clipPath: displayCorners
@@ -252,26 +281,7 @@ export function PhoneFrame({
         >
           {deviceSurface}
         </div>
-        {live && client.inputError && (
-          <div
-            role="status"
-            aria-live="polite"
-            style={{
-              ...textSize.xs,
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              zIndex: 1,
-              padding: 12,
-              backgroundColor: bg.danger,
-              color: text.danger,
-              pointerEvents: "none",
-            }}
-          >
-            {client.inputError}
-          </div>
-        )}
+        {screenStatus}
         {takeoverOverlay}
       </div>
       {deviceFrameAssets
