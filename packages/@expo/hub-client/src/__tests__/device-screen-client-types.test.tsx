@@ -15,5 +15,8 @@ test("custom screens keep the full client while the built-in screen accepts scre
   const InjectedScreen: ComponentType<DeviceScreenProps> = ExistingScreen;
   expect(renderToString(<InjectedScreen client={NOOP_DEVICE_CLIENT} />)).toBe("<span>ios</span>");
   const screenClient: DeviceScreenClient = NOOP_DEVICE_CLIENT;
-  expect(renderToString(<DeviceScreen client={screenClient} />)).toContain("Device screen");
+  const markup = renderToString(<DeviceScreen client={screenClient} />);
+  // The input surface names the screen; the media itself is decorative.
+  expect(markup).toContain("Interactive device screen");
+  expect(markup).toContain('alt=""');
 });

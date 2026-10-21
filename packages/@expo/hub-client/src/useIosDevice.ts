@@ -91,7 +91,7 @@ import {
   screenSizesEqual,
   simScreenSize,
 } from "./screen-config";
-import { useScreenPresentation } from "./screen-presentation";
+import { SCREEN_LOAD_TIMEOUT_MS, useScreenPresentation } from "./screen-presentation";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -191,6 +191,11 @@ import { WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+
+/** A new multipart request for the same MJPEG stream. */
+function freshStreamSrc(url: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+}
 const DEVICE_SETTINGS_POLL_MS = 5000;
 const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
 const ACTIVITY_STALE_MS = 8000;
@@ -466,6 +471,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } | null>(null);
   const connection = resolvedConfig?.key === connectionScope ? resolvedConfig : null;
   const config = connection?.config ?? null;
+  // @ref LLP 0015#temporary-drops — a helper restart keeps the stream mode and the device it showed
+  // While a helper restarts, `/api` has no config for the same connection. The
+  // last one still names the device, its transport, and its 3D model, so the
+  // screen keeps its surface and media element instead of loading again.
+  const lastConfigRef = useRef<{ scope: string | null; config: ResolvedConfig } | null>(null);
+  if (config) lastConfigRef.current = { scope: connectionScope, config };
+  const knownConfig =
+    config ??
+    (lastConfigRef.current?.scope === connectionScope ? lastConfigRef.current.config : null);
+  // The helper's screen config goes with it. The view keeps the device's last
+  // one until the replacement helper reports its own; a different device never
+  // inherits it, so its hinge state cannot classify the next simulator.
+  const screenOwner = JSON.stringify([connectionScope, knownConfig?.device ?? null]);
+  const lastScreenRef = useRef<{ owner: string; screen: SimScreenConfig } | null>(null);
+  const screenOwnerRef = useRef<{ owner: string; stale: SimScreenConfig | null }>({
+    owner: screenOwner,
+    stale: null,
+  });
+  if (screenOwnerRef.current.owner !== screenOwner) {
+    // This render still holds the previous owner's config, until the helper effect clears it.
+    screenOwnerRef.current = { owner: screenOwner, stale: screen };
+    lastScreenRef.current = null;
+  }
+  if (screen && screen !== screenOwnerRef.current.stale) {
+    lastScreenRef.current = { owner: screenOwner, screen };
+  }
+  const viewScreen =
+    screen ?? (lastScreenRef.current?.owner === screenOwner ? lastScreenRef.current.screen : null);
   const activityScope = active
     ? JSON.stringify([
         baseUrl,
@@ -484,9 +517,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
   const configUpdatesReadyRef = useRef(false);
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
+  const knownStreamCapabilities = knownConfig
+    ? iosStreamCapabilities(knownConfig.initialStreamSettings)
+    : null;
   // Preserve supported viewer choices; map unavailable ones to the server's transport.
-  const streamMode = streamCapabilities
-    ? resolveDeviceStreamMode(requestedStreamMode, streamCapabilities.modeAvailability)
+  const streamMode = knownStreamCapabilities
+    ? resolveDeviceStreamMode(requestedStreamMode, knownStreamCapabilities.modeAvailability)
     : requestedStreamMode;
   // @ref LLP 0013#shared-ios-control-channel — one channel per exec-ws identity, so a null config keeps it open
   // Exec-ws details outlive a null config, so its subscriptions can await a replacement helper.
@@ -618,11 +654,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Before native capability metadata arrives, recognize the Duo by Xcode's
   // DeviceKit chrome identifiers (phone15 is the cover profile and phone14 the
   // inner display variant) or by its name.
-  const currentDeviceId = config?.device ?? targetDevice;
+  const currentDeviceId = knownConfig?.device ?? targetDevice;
   const deviceName = devices.find((device) => device.id === currentDeviceId)?.name;
-  const chromeIdentifier = config?.chrome?.identifier;
+  const chromeIdentifier = knownConfig?.chrome?.identifier;
   const isDuo =
-    screen?.supportsHingeAngle === true ||
+    viewScreen?.supportsHingeAngle === true ||
     chromeIdentifier === "phone14" ||
     chromeIdentifier === "phone15" ||
     /\biphone\s+duo\b/i.test(deviceName ?? "");
@@ -630,21 +666,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // 3D model shows them head-on. Other devices keep the Hub's calibrated shape.
   const displayCorners = useMemo<DisplayCornerRadii | null>(
     () =>
-      isDuo && config?.chrome
+      isDuo && knownConfig?.chrome
         ? displayCornerRadii(
-            displayChromeForScreen(config.chrome, screen?.screenId),
-            displayClipOrientation(screen),
+            displayChromeForScreen(knownConfig.chrome, viewScreen?.screenId),
+            displayClipOrientation(viewScreen),
           )
         : null,
-    [isDuo, config?.chrome, screen],
+    [isDuo, knownConfig?.chrome, viewScreen],
   );
   // Consumers get the platform-neutral screen. serve-sim's hinge fields and
   // display IDs stay here, and a hinge move alone keeps the same object.
   const publicScreenRef = useRef<ScreenSize | null>(null);
   const publicScreen = useMemo(() => {
-    const next = screen ? simScreenSize(screen, isDuo) : null;
+    const next = viewScreen ? simScreenSize(viewScreen, isDuo) : null;
     return screenSizesEqual(publicScreenRef.current, next) ? publicScreenRef.current : next;
-  }, [screen, isDuo]);
+  }, [viewScreen, isDuo]);
   publicScreenRef.current = publicScreen;
   // Elements a consumer attached through `displays`, by the kind each was attached as.
   const [panelElements, setPanelElements] = useState<
@@ -711,7 +747,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, []);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   // @ref LLP 0004#live-pose-observation — the native observation wins over the last command, so a fold made in the Simulator shows
-  const hingeScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
+  const hingeScreen = useMemo(
+    () => (viewScreen ? observedScreenConfig(viewScreen) : null),
+    [viewScreen],
+  );
   const previewHingeAngle = hingePreview?.hingeAngle ?? hingeScreen?.hingeAngle;
   const previewHingePose = hingePreview ? hingePreview.hingePose : hingeScreen?.hingePose;
   // A pending angle or preset releases Table Mode, so the preview wins over a
@@ -729,11 +768,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const activeScreenId = duoIntendedScreen(
     previewHingeAngle,
     electedPose,
-    screen?.screenId,
+    viewScreen?.screenId,
     knownFaceDown ? previewFaceDown : null,
   );
   // Like serve-sim, fold controls show once the helper reports hinge support or an angle.
-  const hingeReported = screen?.supportsHingeAngle ?? screen?.hingeAngle !== undefined;
+  const hingeReported = viewScreen?.supportsHingeAngle ?? viewScreen?.hingeAngle !== undefined;
   const foldCapabilities = useMemo<DeviceFoldCapabilities>(
     () =>
       isDuo && hingeReported
@@ -767,7 +806,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const img = imgRef.current;
     const url = streamUrlRef.current;
     if (!img || !url) return;
-    img.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+    img.src = freshStreamSrc(url);
   }, []);
 
   const attachVideo = useCallback(
@@ -1793,10 +1832,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [useWebRtc, webRtcVideoElement, screenSessionKey]);
 
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
+  // The fallback is about this browser and this device's stream, so a
+  // replacement helper for the same device (a new pid) keeps it, as does the
+  // gap while that helper starts.
+  const avccFallbackScope = knownConfig
+    ? JSON.stringify([knownConfig.url, knownConfig.device])
+    : null;
   useEffect(() => {
     dispatchAvccFallback("reset");
     setFps(0);
-  }, [streamMode, videoSessionKey, config?.webRtcCodec]);
+  }, [streamMode, avccFallbackScope, knownConfig?.webRtcCodec]);
 
   useEffect(() => {
     if (!useAvcc || !config?.url || displayStreaming) return;
@@ -1835,6 +1880,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── MJPEG video (<img>) ──
   const streamUrl = useAvcc || useWebRtc || displayStreaming ? null : (config?.streamUrl ?? null);
+  // An unmount stops the visible request; a new config for the same screen may keep its frame.
+  const unmountedRef = useRef(false);
+  useLayoutEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
@@ -1847,10 +1900,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let cancelled = false;
     let settled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // A request that loads off screen while the visible <img> keeps its last frame.
+    let probe: HTMLImageElement | null = null;
+    const session = screenSessionKeyRef.current;
     const img = imgRef.current;
 
+    const stopProbe = () => {
+      if (!probe) return;
+      probe.onload = null;
+      probe.onerror = null;
+      probe.removeAttribute("src");
+      probe = null;
+    };
+
     const markStreaming = () => {
-      if (cancelled || settled) return;
+      // While a probe loads, the visible frame is the old one.
+      if (cancelled || settled || probe) return;
       const el = imgRef.current;
       if (!el || el.naturalWidth === 0 || el.naturalHeight === 0) return;
       settled = true;
@@ -1867,32 +1932,77 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         );
       }
     };
+    const scheduleRetry = () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!cancelled) load();
+      }, RECONNECT_MS);
+    };
+    // @ref LLP 0015#temporary-drops — a retry loads off screen, so a failed request never replaces the last frame
+    const load = () => {
+      const visible = imgRef.current;
+      const url = streamUrlRef.current;
+      if (!visible || !url) return;
+      // An <img> without a frame has nothing to keep; a detached image needs `Image`.
+      if (!(visible.complete && visible.naturalWidth > 0) || typeof Image === "undefined") {
+        applyStreamSrc();
+        return;
+      }
+      stopProbe();
+      const next = freshStreamSrc(url);
+      const candidate = new Image();
+      probe = candidate;
+      candidate.onload = () => handOver(candidate, visible, next);
+      candidate.onerror = () => {
+        if (cancelled || probe !== candidate) return;
+        stopProbe();
+        scheduleRetry();
+      };
+      candidate.src = next;
+    };
+    const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
+      if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
+      stopProbe();
+      // The visible <img> keeps its current picture until the new request paints.
+      visible.src = next;
+      markStreaming();
+    };
     // The <img> retries by itself, so a failed request is a gap, not an error.
     const onError = () => {
       if (cancelled) return;
       settled = false;
       setStatus("connecting");
       setError(null);
-      retryTimer = setTimeout(() => {
-        if (!cancelled) applyStreamSrc();
-      }, RECONNECT_MS);
+      scheduleRetry();
     };
     img?.addEventListener("load", markStreaming);
     img?.addEventListener("error", onError);
-    applyStreamSrc();
-    const poll = setInterval(markStreaming, 400);
+    load();
+    // A multipart stream need not fire `load` per frame, so poll both elements.
+    const poll = setInterval(() => {
+      const candidate = probe;
+      if (candidate && img) handOver(candidate, img, candidate.src);
+      markStreaming();
+    }, 400);
 
     return () => {
       cancelled = true;
       clearInterval(poll);
       if (retryTimer) clearTimeout(retryTimer);
+      stopProbe();
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
-      // A consumer that streams the displays may have unmounted the flat <img>
-      // already, which nulls the ref, so stop the multipart request on the
-      // element this effect started.
-      img?.removeAttribute("src");
-      imgRef.current?.removeAttribute("src");
+      // A helper restart for the same screen keeps the last frame. Another
+      // screen session, or an unmount, stops the multipart request on the
+      // element this effect started: a consumer that streams the displays may
+      // have unmounted the flat <img> already, which nulls the ref.
+      const keepFrame =
+        !unmountedRef.current && screenSessionKeyRef.current === session && imgRef.current === img;
+      if (!keepFrame) {
+        img?.removeAttribute("src");
+        imgRef.current?.removeAttribute("src");
+      }
       // The helper's pushed config outlives a transport switch.
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);
@@ -2110,12 +2220,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [hingePreview, hingePending, screen, emitHingeEvent]);
 
+  const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
   useEffect(() => {
     // Also learn poses applied outside this browser. An older queued reply
     // must not replace the orientation chosen by the latest local request.
     // Rotate clears the known native physical pose. Ignore an older
     // preset acknowledgement until native reports that its pose was cleared.
-    const pose = hingeScreen?.hingePose;
+    const pose = observedScreen?.hingePose;
     const previousPose = observedPoseRef.current;
     if (hingePending || !hingePreview) observedPoseRef.current = pose;
     if (orientationOverride || hingePreview || hingePending) return;
@@ -2124,7 +2235,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (pose === previousPose && physicalPose !== undefined) return;
       setPhysicalPose(pose);
       sentHingePoseRef.current = pose;
-    } else if (duoPhysicalPoseChanged(physicalPose, hingeScreen?.physicalOrientation)) {
+    } else if (duoPhysicalPoseChanged(physicalPose, observedScreen?.physicalOrientation)) {
       // Another client turned the device over without a preset.
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
@@ -2133,8 +2244,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientationOverride,
     hingePreview,
     hingePending,
-    hingeScreen?.hingePose,
-    hingeScreen?.physicalOrientation,
+    observedScreen?.hingePose,
+    observedScreen?.physicalOrientation,
     physicalPose,
   ]);
 
@@ -2754,7 +2865,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     ],
   );
 
-  const presentation = useScreenPresentation(screenSessionKey, status, error);
+  // iOS reconnects until a real error, so a loaded screen gets the first load's limit too.
+  const presentation = useScreenPresentation(screenSessionKey, status, error, {
+    dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
+  });
 
   return {
     platform: "ios",
@@ -2765,7 +2879,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     screen: publicScreen,
     fold,
     displays,
-    deviceModelUrl: isDuo ? (config?.deviceKitModelUrl ?? null) : null,
+    deviceModelUrl: isDuo ? (knownConfig?.deviceKitModelUrl ?? null) : null,
     displayCorners,
     fps,
     devices,

@@ -96,6 +96,7 @@ Status can be `'idle'`, `'connecting'`, `'reconnecting'`, `'streaming'` or `'err
 `'connecting'` means that the screen has not shown a frame yet: show loading UI. It becomes
 `'error'` after 30 seconds without a frame, and the client continues to retry. After the
 first frame, a lost stream is `'reconnecting'`: the last frame stays, so show no loading UI.
+On iOS, a reconnect that lasts 30 seconds becomes `'error'`, and the client continues to retry.
 `framePresented` tells whether the screen has shown a frame. A new device, server, token,
 transport, or display surface starts again at `'connecting'`. Read `error` for the last
 failure message.

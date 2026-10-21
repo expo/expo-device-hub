@@ -39,8 +39,8 @@ export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
  *                  helper restart, or an Android capture-source switch. The
  *                  last frame stays on screen meanwhile; consumers show no
  *                  loading UI. Android reports `error` when the outage
- *                  outlives its reconnect grace period; iOS stays here until
- *                  the stream returns or fails for good.
+ *                  outlives its reconnect grace period; iOS after 30 s. The
+ *                  client keeps retrying in both cases.
  *   streaming    — frames are flowing
  *   error        — the connection failed, or its first frame did not come in time
  */

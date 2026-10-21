@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
+**Revised:** 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
@@ -58,17 +59,17 @@ Each adapter resets its own status to `connecting` in the render that changes th
 - Before the first frame, an adapter's `connecting` or `reconnecting` is `connecting`.
 - After the first frame, an adapter's `connecting` or `reconnecting` is `reconnecting`. A session that showed a frame never returns to `connecting`.
 - `framePresented` stays true while the session reconnects or fails.
-- Until `framePresented` is true, `DeviceScreen` keeps its media element transparent. The element can still hold a previous session's frame, and an `<img>` without a frame can show its alt text. Opacity, not `visibility` or `display`, keeps the element laid out, so the browser keeps decoding into it [observed: `deviceScreenMediaStyle` in `DeviceScreen.tsx`].
+- Until `framePresented` is true, `DeviceScreen` keeps its media element transparent, because the element can still hold a previous session's frame [observed: `deviceScreenMediaStyle` in `DeviceScreen.tsx`]. Opacity, not `visibility` or `display`, keeps the element laid out, so the browser keeps decoding into it [inferred]. Its `<img>` has an empty `alt`, so a failed request never shows a broken-image text; the input surface names the screen [observed: `DeviceScreen.tsx`].
 
-The 3D preview loads until Xcode's model is drawn **and** the active display has a frame. Until then it is transparent, so it never shows a model with black displays, and the status pill says Loading even while the client already streams [observed: `hidden` in `foldable/FoldableDeviceScreen.tsx`, `modelReadyDevice` in `dashboard/PhoneFrame.tsx`, `screenLoading` in `dashboard/StreamPanel.tsx`].
+The 3D preview loads until Xcode's model is loaded into the scene **and** the active display has a frame. Until then it is transparent, so it never shows a model with black displays, and the status pill says Loading even while the client already streams [observed: `hidden` in `foldable/FoldableDeviceScreen.tsx`, `modelReadyDevice` in `dashboard/PhoneFrame.tsx`, `screenLoading` in `dashboard/StreamPanel.tsx`].
 
 ## Temporary drops
 
 After the first frame, these keep the last frame and show no spinner:
 
 - a WebRTC reconnect, a codec retry, or a stall recovery (LLP 0012);
-- an H.264 or MJPEG request that ends and retries;
-- a helper restart for the same device, and a config refresh;
+- an H.264 or MJPEG request that ends or fails and retries;
+- a helper restart for the same device, a new helper pid, and a config refresh, also while `/api` has no config;
 - a capture reboot, and a stream-settings change;
 - an Android capture-source switch;
 - an iPhone Duo panel handoff, and a presented panel that is silent for a few seconds.
@@ -77,23 +78,32 @@ How each element keeps its frame:
 
 - WebRTC: before the peer closes, both adapters copy the current frame into the video's `poster`. The poster stays until fresh video paints, and it never copies another session's frame. This was Android's rule; iOS now uses the same helper [observed: `preserveVideoFrame` in `video-frame-poster.ts`, `preserveWebRtcFrame` in both adapters].
 - H.264: the canvas keeps its pixels until the next frame [observed: `useAvccStream.ts`, `useAndroidDevice.ts`].
+- MJPEG: after the first frame, iOS loads a retry in a detached `Image` and gives the request to the visible `<img>` only after that image has a frame, so a failed retry never replaces the last frame. Within the same screen session, the visible `<img>` keeps its `src` while the config is missing; only another session or an unmount removes it [observed: `load`, `handOver`, and `keepFrame` in the MJPEG effect of `useIosDevice.ts`].
 - 3D preview: the scene keeps the last texture while a display has no frame [observed: `currentSource` and `uploadScreen` in `foldable/duo-scene.ts`].
 
-On iOS, a temporary drop stays `reconnecting` until the stream returns or the adapter reports a real error. Android keeps its own reconnect grace: after 5 s without the stream, it reports `error` ("Disconnected — retrying…" or the WebRTC error), and a source switch can hold `reconnecting` longer [observed: `STREAM_RECONNECT_GRACE_MS` in `stream-reconnect.ts`, the WebRTC status effect in `useAndroidDevice.ts`].
+While a helper restarts, iOS keeps what the last config of the same connection said, so the session, its element, and its surface stay [observed: `knownConfig` and `viewScreen` in `useIosDevice.ts`]:
+
+- the stream mode: a missing config does not fall back to the requested mode, which can need another element;
+- the Duo's identity and its 3D model URL, so the 3D preview stays mounted;
+- the screen config for the view: the frame keeps its shape, and the fold keeps its angle and its active display. Command handling still reads only the helper's own config. Another device never inherits it;
+- the H.264 to MJPEG fallback, which a new pid no longer resets.
+
+On iOS, a temporary drop stays `reconnecting` until the stream returns, the adapter reports a real error, or the drop lasts 30 s (see [Errors](#errors)). Android keeps its own reconnect grace: after 5 s without the stream, it reports `error` ("Disconnected — retrying…" or the WebRTC error), and a source switch can hold `reconnecting` longer [observed: `STREAM_RECONNECT_GRACE_MS` in `stream-reconnect.ts`, the WebRTC status effect in `useAndroidDevice.ts`].
 
 ## Errors
 
 - **First-load timeout.** A session without a frame after 30 s reports `error` with "The device screen did not load. Retrying…". The adapter keeps retrying, and a later frame turns the session to `streaming`. The timer stops while the tab is hidden and starts again when it is visible, like the WebRTC first-frame timeout [observed: `SCREEN_LOAD_TIMEOUT_MS` and `useScreenPresentation` in `screen-presentation.ts`].
+- **iOS drop limit.** A loaded iOS screen that stays `reconnecting` for 30 s reports `error` with "Disconnected — retrying…", the same text as Android. The notice covers the last frame, and the client keeps retrying; a new frame returns to `streaming`. The timer pauses in a hidden tab like the load timer. Android keeps its own 5 s grace and takes no extra limit [observed: `dropTimeoutMs` in `screen-presentation.ts` and its caller in `useIosDevice.ts`].
 - **Retries are not errors.** A WebRTC transport retry sets an error text without a failure; the hook reconnects by itself. Both adapters and the Duo panels treat it as a gap, not as an error [observed: `retrying` in `useWebRtcStream.ts`]. The iOS MJPEG `<img>` retry and an iOS H.264 re-read are gaps too [observed: `onError` and `onConnecting` in `useIosDevice.ts`].
 - **Real errors stay.** A refused offer, an unsupported browser, an exhausted codec ladder, and an Android outage past its grace report `error` at once, before or after the first frame.
-- **3D model.** A model that is missing, broken, or not drawn in 30 s makes the 3D preview unavailable, and the Hub shows the flat screen, as for a model failure before [observed: the timeout in `foldable/DuoModelView.tsx`].
+- **3D model.** A model that is missing, broken, or not loaded in 30 s makes the 3D preview unavailable, and the Hub shows the flat screen, as for a model failure before. The 30 s count only while the tab is visible. A slow host therefore falls back to 2D until the user selects 3D again or switches the device [observed: `useVisibleTimeout` in `foldable/DuoModelView.tsx`; `setDuoModelUnavailableFor` in `packages/expo-device-hub/src/Dashboard.tsx`].
 
 ## Where each part lives
 
 LLP 0004 [3D preview in the Hub](0004-serve-sim-hinge-controls.explainer.md#3d-preview-in-the-hub) and LLP 0013 [Input feedback](0013-hub-client-input-and-control.explainer.md#input-feedback) give the rule: hub-client supplies controls, streams, and state; product notices belong to consumers.
 
 - **hub-client** decides the state: `status`, `error`, and `framePresented` on `DeviceClient` and `DeviceScreenClient` [observed: `types.ts`, `useDeviceScreenClient.ts`]. `DeviceScreen` draws no background, spinner, or error; it only hides media without a session frame [observed: `DeviceScreen.tsx`]. A consumer that uses `DeviceScreen` without `PhoneFrame`, such as the Expo website, draws loading and errors itself.
-- **hub-components** draws them. `ActivityIndicator` is the spinner; its accessible name and the status pill share the label "Loading" [observed: `components/ActivityIndicator.tsx`, `dashboard/DeviceTitle.tsx`]. `DeviceScreenStatus` draws the spinner and one error notice, over the flat screen and over the 3D stage, with the input notice's tokens [observed: `dashboard/DeviceScreenStatus.tsx`, `dashboard/PhoneFrame.tsx`]. `PhoneFrame` puts `bg.element` under the live screen, so an empty screen is never black.
+- **hub-components** draws them. `ActivityIndicator` is the spinner; its status region holds the label "Loading" as visually hidden text, and the status pill uses the same label [observed: `components/ActivityIndicator.tsx`, `dashboard/DeviceTitle.tsx`]. `DeviceScreenStatus` draws the spinner and one error notice, over the flat screen and over the 3D stage, with the input notice's tokens [observed: `dashboard/DeviceScreenStatus.tsx`, `dashboard/PhoneFrame.tsx`]. `PhoneFrame` puts `bg.element` under the live screen, so an empty screen is never black.
 - **The Hub** renders `StreamPanel` and needs no code of its own for this.
 
 ## Decisions for review
@@ -101,15 +111,16 @@ LLP 0004 [3D preview in the Hub](0004-serve-sim-hinge-controls.explainer.md#3d-p
 The orchestrating agent decided these on 2026-10-21. A human has not reviewed them yet.
 
 1. One loading label, "Loading", for the status pill and as the spinner's accessible name.
-2. The first load reports an error after 30 s without a frame, and the client keeps retrying. On iOS, a drop does not take Android's 5 s limit: it stays `reconnecting` until a real error. Android's drop timing stays as it was.
-3. A transport switch counts as a first load.
-4. `DeviceScreen` loses its overlay; a consumer that uses it without `PhoneFrame` must draw loading and errors.
-5. The spinner's look is not compared with the website's `ActivityIndicator`, whose source is not in this repository.
-6. The status pill does not say Live while the 3D preview loads.
+2. The first load reports an error after 30 s without a frame, and the client keeps retrying. On iOS, a drop does not take Android's 5 s limit. Android's drop timing stays as it was.
+3. On iOS, a drop that lasts 30 s, the first load's limit, shows "Disconnected — retrying…" over the last frame, and the client keeps retrying (round-1 review, 2026-10-21).
+4. Xcode's model gets the same 30 s, counted in a visible tab, before the 3D preview falls back to 2D (round-1 review, 2026-10-21).
+5. A transport switch counts as a first load.
+6. `DeviceScreen` loses its overlay; a consumer that uses it without `PhoneFrame` must draw loading and errors.
+7. The spinner's look is not compared with the website's `ActivityIndicator`, whose source is not in this repository.
+8. The status pill does not say Live while the 3D preview loads.
 
 One consequence of 2 and the rule in [States](#states): on Android, after its grace and a source-switch timeout without an error, the adapter's `connecting` used to reach the screen as `connecting`. It is now `reconnecting`, because `connecting` means a first load.
 
 ## Open questions
 
-- An iOS MJPEG `<img>` whose request fails can lose its picture before the retry; this was not checked in a browser.
-- When the iOS config is briefly missing, the stream mode falls back to the requested mode. If that differs from the server's transport, the element changes and the spinner shows. By default, the Hub requests the transport that it started the server with, so it does not see this [observed: `streamMode` in `useIosDevice.ts`, `dashboardTransport` in `packages/expo-device-hub/src/transport.ts`].
+- A multipart MJPEG stream that ends without an error keeps its last frame and reports nothing, so a frozen MJPEG screen stays `streaming` until a new config or request arrives. This change does not detect it; WebRTC has the stall watchdog of LLP 0012 [observed: by the round-1 reviewer in headless Chromium; the MJPEG effect in `useIosDevice.ts` has no stall check].

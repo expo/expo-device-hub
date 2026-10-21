@@ -5,9 +5,11 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import {
   SCREEN_LOAD_TIMEOUT_ERROR,
   SCREEN_LOAD_TIMEOUT_MS,
+  STREAM_DISCONNECTED_ERROR,
   presentScreen,
   useScreenPresentation,
 } from "../screen-presentation";
+import { STREAM_RECONNECT_GRACE_MS } from "../stream-reconnect";
 import { type ConnectionStatus, type DeviceClient } from "../types";
 import { useAndroidDeviceClient } from "../useAndroidDevice";
 import { useIosDeviceClient } from "../useIosDevice";
@@ -22,14 +24,15 @@ afterEach(async () => {
   Peer.instances = [];
 });
 
-/** Capture only the screen load timer; every other timer runs for real. */
-function captureLoadTimers() {
+/** Capture only timers with these delays (the screen load timer by default); others run for real. */
+function captureLoadTimers(...delays: number[]) {
+  const captured = delays.length ? delays : [SCREEN_LOAD_TIMEOUT_MS];
   const realSetTimeout = globalThis.setTimeout;
   const realClearTimeout = globalThis.clearTimeout;
   const pending = new Map<number, () => void>();
   let id = 0;
   stubGlobal("setTimeout", (callback: () => void, delay?: number, ...args: unknown[]) => {
-    if (delay !== SCREEN_LOAD_TIMEOUT_MS) return realSetTimeout(callback, delay, ...args);
+    if (!captured.includes(delay ?? 0)) return realSetTimeout(callback, delay, ...args);
     pending.set(++id, callback);
     return -id;
   });
@@ -53,6 +56,16 @@ function captureLoadTimers() {
 }
 
 describe("presentScreen", () => {
+  test("a drop past its limit is an error over the last frame", () => {
+    expect(presentScreen("connecting", null, true, false, true)).toEqual({
+      status: "error",
+      error: STREAM_DISCONNECTED_ERROR,
+      framePresented: true,
+    });
+    // The limit applies only to a screen that showed a frame.
+    expect(presentScreen("connecting", null, false, false, true).status).toBe("connecting");
+  });
+
   test("a session without a frame is loading, and a frame turns every gap into a reconnect", () => {
     expect(presentScreen("connecting", null, false, false)).toEqual({
       status: "connecting",
@@ -228,7 +241,8 @@ class Video extends EventTarget {
   }
 }
 
-function mountedClient(platform: "ios" | "android", { offerStatus = 200 } = {}) {
+function mountedClient(platform: "ios" | "android", options: { offerStatus?: number } = {}) {
+  let offerStatus = options.offerStatus ?? 200;
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("document", {
     hidden: false,
@@ -279,8 +293,8 @@ function mountedClient(platform: "ios" | "android", { offerStatus = 200 } = {}) 
   });
   const useClient = platform === "ios" ? useIosDeviceClient : useAndroidDeviceClient;
   let client!: DeviceClient;
-  function Harness({ baseUrl, video }: { baseUrl: string; video: Video }) {
-    client = useClient({ baseUrl, streamMode: "webrtc" });
+  function Harness({ baseUrl, token, video }: { baseUrl: string; token?: string; video: Video }) {
+    client = useClient({ baseUrl, streamMode: "webrtc", token });
     const { attachVideo } = client;
     useLayoutEffect(() => {
       attachVideo(video as unknown as HTMLVideoElement);
@@ -294,10 +308,14 @@ function mountedClient(platform: "ios" | "android", { offerStatus = 200 } = {}) 
     get client() {
       return client;
     },
-    async render(baseUrl = "https://a.test") {
+    setOfferStatus(status: number) {
+      offerStatus = status;
+    },
+    async render(baseUrl = "https://a.test", token?: string) {
+      const element = <Harness baseUrl={baseUrl} token={token} video={video} />;
       await act(async () => {
-        if (renderer) renderer.update(<Harness baseUrl={baseUrl} video={video} />);
-        else renderer = create(<Harness baseUrl={baseUrl} video={video} />);
+        if (renderer) renderer.update(element);
+        else renderer = create(element);
       });
       // Let discovery and the offer settle.
       await act(async () => {
@@ -361,3 +379,62 @@ for (const platform of ["ios", "android"] as const) {
     });
   });
 }
+
+const waitForRetry = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+  });
+
+test("an iOS reconnect past the first load's limit shows the error over the last frame", async () => {
+  const timers = captureLoadTimers();
+  const hub = mountedClient("ios");
+  await hub.render();
+  await hub.paint();
+  await timers.fire();
+  expect(hub.client.status).toBe("streaming");
+
+  await act(async () => Peer.instances.at(-1)!.fail());
+  expect(hub.client.status).toBe("reconnecting");
+  expect(timers.count).toBe(1);
+  await timers.fire();
+  expect(hub.client.status).toBe("error");
+  expect(hub.client.error).toBe(STREAM_DISCONNECTED_ERROR);
+  // The notice covers nothing: the last frame stays on screen.
+  expect(hub.client.framePresented).toBe(true);
+
+  // The client keeps retrying; the next frame clears the error.
+  await waitForRetry();
+  await hub.paint();
+  expect(hub.client.status).toBe("streaming");
+  expect(hub.client.error).toBeNull();
+});
+
+test("an Android reconnect keeps its own grace and takes no extra limit", async () => {
+  const timers = captureLoadTimers();
+  const hub = mountedClient("android");
+  await hub.render();
+  await hub.paint();
+  await act(async () => Peer.instances.at(-1)!.fail());
+  expect(hub.client.status).toBe("reconnecting");
+  expect(timers.count).toBe(0);
+});
+
+test("after an Android token change, a transport retry is loading, not an error after the grace", async () => {
+  const timers = captureLoadTimers(STREAM_RECONNECT_GRACE_MS);
+  const hub = mountedClient("android");
+  await hub.render("https://a.test", "token-a");
+  await hub.paint();
+  expect(hub.client.status).toBe("streaming");
+
+  hub.setOfferStatus(503);
+  await hub.render("https://a.test", "token-b");
+  // The offer for the new token fails, and the hook waits before it retries.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(hub.client.framePresented).toBe(false);
+  // The previous token's live stream must not arm a grace that ends in an error.
+  await timers.fire();
+  expect(hub.client.status).toBe("connecting");
+  expect(hub.client.error).toBeNull();
+});
