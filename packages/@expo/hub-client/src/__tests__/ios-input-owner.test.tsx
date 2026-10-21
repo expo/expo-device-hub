@@ -51,6 +51,8 @@ test("provider harmless config refresh must preserve the active drag through rea
     releasePointerCapture() {},
     addEventListener() {},
     removeEventListener() {},
+    // The MJPEG cleanup stops the request on the element its effect started.
+    removeAttribute() {},
     getBoundingClientRect() {
       return { left: 0, top: 0, width: 100, height: 200 };
     },

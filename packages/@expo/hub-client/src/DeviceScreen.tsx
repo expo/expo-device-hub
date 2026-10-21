@@ -1,7 +1,5 @@
 import {
-  type ClipboardEvent as ReactClipboardEvent,
   type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -15,12 +13,10 @@ import { streamGeometry } from "./orientation";
 import { createFrameScrollSender, wheelDeltaToPixels } from "./scroll-wheel";
 import { AgentInteractionIndicator } from "./AgentInteractionIndicator";
 import { TouchIndicator } from "./TouchIndicator";
-import { type DeviceScreenInputProps, type KeyboardInput, type MultiTouchSample } from "./types";
+import { type DeviceScreenInputProps, type MultiTouchSample } from "./types";
+import { useDeviceKeyboard } from "./useDeviceKeyboard";
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
-
-const isClipboardShortcut = (event: ReactKeyboardEvent, code: "KeyC" | "KeyV") =>
-  event.code === code && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
 
 type Point = { x: number; y: number };
 
@@ -106,7 +102,8 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
 
 /**
  * Shared renderer for a live {@link DeviceClient}, used in place of the static
- * `<img>` inside {@link PhoneFrame}. It paints whatever element the active
+ * `<img>` inside {@link PhoneFrame}. An iPhone Duo in 3D renders through
+ * `FoldableDeviceScreen` instead; this flat view shows its active display. It paints whatever element the active
  * implementation asks for (`<canvas>` for H.264, `<img>` for MJPEG, or
  * `<video>` for WebRTC) and forwards normalized pointer input.
  *
@@ -132,135 +129,20 @@ export function DeviceScreen({
     sendTouch,
     sendMultiTouch,
     sendScroll,
-    sendKey,
-    pasteText,
-    capabilities,
     cancelInput,
     screen,
     status,
     error,
   } = client;
   const canMulti = !!sendMultiTouch;
-  const canPaste = capabilities.clipboard !== false && capabilities.clipboard.paste;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const scrollSenderRef = useRef<ReturnType<typeof createFrameScrollSender> | null>(null);
 
-  // A focused device surface owns physical keyboard input. Track held keys so
-  // modifiers never remain stuck in the simulator if focus/window visibility is
-  // lost before the browser delivers their keyup.
-  const pressedKeysRef = useRef(new Map<string, KeyboardInput>());
-  const releasePressedKeys = useCallback(() => {
-    for (const input of pressedKeysRef.current.values()) {
-      sendKey({ ...input, phase: "up", repeat: false });
-    }
-    pressedKeysRef.current.clear();
-  }, [sendKey]);
-
-  // @ref LLP 0013#clipboard — Cmd+V sends the browser's paste text; without text the device pastes its own clipboard
-  // Keep a handled shortcut held until V keyup so auto-repeat cannot paste twice.
-  const pasteShortcutRef = useRef<"pending" | "handled" | null>(null);
-  const copyShortcutRef = useRef(false);
-  const paste = (text?: string) => {
-    void pasteText(text).catch(() => {});
-  };
-
-  const keyboardInputFrom = (
-    event: ReactKeyboardEvent<HTMLDivElement>,
-    phase: KeyboardInput["phase"],
-  ): KeyboardInput => ({
-    phase,
-    code: event.code,
-    key: event.key,
-    repeat: event.repeat,
-    shiftKey: event.shiftKey,
-    metaKey: event.metaKey,
-    ctrlKey: event.ctrlKey,
-    altKey: event.altKey,
-  });
-
-  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    // Keep the remote surface escapable for keyboard-only users while leaving a
-    // plain Escape available to the simulator/emulator.
-    if (event.key === "Escape" && event.shiftKey) {
-      event.preventDefault();
-      releasePressedKeys();
-      event.currentTarget.blur();
-      return;
-    }
-    if (event.nativeEvent.isComposing) return;
-    if (event.code === "KeyC") {
-      if (copyShortcutRef.current && event.repeat) {
-        event.preventDefault();
-        return;
-      }
-      copyShortcutRef.current = false;
-      if (
-        onCopy &&
-        capabilities.clipboard &&
-        capabilities.clipboard.copy &&
-        isClipboardShortcut(event, "KeyC")
-      ) {
-        event.preventDefault();
-        copyShortcutRef.current = true;
-        if (!event.repeat) void onCopy().catch(() => {});
-        return;
-      }
-    }
-    if (canPaste && event.code === "KeyV") {
-      if (pasteShortcutRef.current) {
-        // An auto-repeat still belongs to the shortcut. A new press means its keyup was lost.
-        if (event.repeat) {
-          event.preventDefault();
-          return;
-        }
-        pasteShortcutRef.current = null;
-      }
-      if (isClipboardShortcut(event, "KeyV")) {
-        // Keep the default action, so that the browser fires `paste` with its clipboard text.
-        if (!event.repeat) pasteShortcutRef.current = "pending";
-        return;
-      }
-    }
-    const input = keyboardInputFrom(event, "down");
-    if (!sendKey(input)) return;
-    event.preventDefault();
-    pressedKeysRef.current.set(event.code || event.key, input);
-  };
-
-  const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const keyId = event.code || event.key;
-    if (event.code === "KeyC" && copyShortcutRef.current && !pressedKeysRef.current.has(keyId)) {
-      event.preventDefault();
-      copyShortcutRef.current = false;
-      return;
-    }
-    if (canPaste && event.code === "KeyV" && !pressedKeysRef.current.has(keyId)) {
-      event.preventDefault();
-      // No paste event came before the keyup, so the device pastes its own clipboard.
-      if (pasteShortcutRef.current === "pending") paste();
-      pasteShortcutRef.current = null;
-      return;
-    }
-    const wasPressed = pressedKeysRef.current.delete(keyId);
-    const handled = sendKey(keyboardInputFrom(event, "up"));
-    if (wasPressed || handled) event.preventDefault();
-  };
-
-  const onPaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
-    if (!canPaste) return;
-    const shortcut = pasteShortcutRef.current;
-    if (shortcut === "handled") {
-      event.preventDefault();
-      return;
-    }
-    if (shortcut) pasteShortcutRef.current = "handled";
-    // Reading the event's data needs no clipboard permission.
-    const text = event.clipboardData?.getData("text/plain") ?? "";
-    if (!text && !shortcut) return;
-    event.preventDefault();
-    paste(text || undefined);
-  };
+  const { onKeyDown, onKeyUp, onPaste, releasePressedKeys, resetShortcuts } = useDeviceKeyboard(
+    client,
+    { onCopy },
+  );
 
   // ── pointer state ──
   const pointersRef = useRef(new Map<number, Point>());
@@ -350,15 +232,14 @@ export function DeviceScreen({
     setFingers(null);
   }, [sendTouch, sendMultiTouch, altSecondFinger]);
   const cancelBrowserInput = useCallback(() => {
-    pasteShortcutRef.current = null;
-    copyShortcutRef.current = false;
+    resetShortcuts();
     // Retire unfinished queued gestures before their synthetic end can complete them.
     scrollSenderRef.current?.cancel();
     cancelInput?.();
     releasePressedKeys();
     cancelGestures();
     cancelInput?.();
-  }, [releasePressedKeys, cancelGestures, cancelInput]);
+  }, [resetShortcuts, releasePressedKeys, cancelGestures, cancelInput]);
   useLayoutEffect(() => {
     const stopListening = listenForInputCancellation(cancelBrowserInput);
     return () => {
