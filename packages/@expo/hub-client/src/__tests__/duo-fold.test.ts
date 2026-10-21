@@ -53,6 +53,23 @@ describe("iPhone Duo intended display during native handoff", () => {
     }
   });
 
+  test("an unknown face-down state keeps the native panel of a half-open device", () => {
+    for (const nativeScreen of [1, 3] as const) {
+      for (const angle of [30, 90, 150]) {
+        expect(duoIntendedScreen(angle, null, nativeScreen, null)).toBe(nativeScreen);
+      }
+    }
+    // The endpoints and Tent still decide by themselves.
+    expect(duoIntendedScreen(0, null, 3, null)).toBe(1);
+    expect(duoIntendedScreen(180, null, 1, null)).toBe(3);
+    expect(duoIntendedScreen(90, "tent", 3, null)).toBe(1);
+    // Without native readback, the angle decides as before.
+    expect(duoIntendedScreen(90, null, undefined, null)).toBe(3);
+    expect(duoIntendedScreen(30, null, undefined, null)).toBe(1);
+    // A known face-up state follows the angle, whatever native readback says.
+    expect(duoIntendedScreen(90, null, 1, false)).toBe(3);
+  });
+
   test("uses the native active panel until the hinge angle is known", () => {
     expect(duoIntendedScreen(undefined, "tent", 3)).toBe(3);
     expect(duoIntendedScreen(undefined, "open", 1)).toBe(1);

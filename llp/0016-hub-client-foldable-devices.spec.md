@@ -97,6 +97,8 @@ serve-sim's screen config also carries the hinge state and the display ID. The i
 
 [observed: `useIosDevice.ts`, `hinge-control.ts`, `screen-config.ts`]
 
+While `physical.faceDown` is undefined, a half-open iPhone Duo keeps the panel that native readback reports as the active display. The 3D model keeps its face-down framing in that state, so the presented panel and the framing agree. Commands still elect the display from their own state [observed: `duoIntendedScreen` in `duo/duo-fold.ts`].
+
 ### Android emulators
 
 hub-client does not map serve-emu's fold yet; `fold` is `null` and `capabilities.fold` is `false` on Android [observed: `useAndroidDevice.ts`]. #352 (draft, by jiunshinn) implements the adapter. This is the mapping that the contract allows without placeholders:
