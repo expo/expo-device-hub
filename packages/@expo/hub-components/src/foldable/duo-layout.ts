@@ -50,20 +50,84 @@ export function duoCameraZoom(
   return duoStageZoom(viewport, stage) * scale;
 }
 
+/** The fill inset at rest, as in serve-sim. */
+export const DUO_FILL_INSET = 32;
+
+/** How far each hinge handle's center sits outside the model's outer edge. */
+export const DUO_HANDLE_OFFSET = 16;
+
 export type DuoFit = { scale: number; velocity: number };
 
 /**
  * Move the fill factor toward its target. A new pose springs, so the model
- * eases into its framing. A stage or window resize snaps: the base zoom follows
- * a resize at once, and a factor that lagged behind it would push the model
- * past the stage edge, where the host clips it. This happens when a sidebar
- * narrows a stage whose short side is its height.
+ * eases into its framing, but never past `limit`. A stage or window resize
+ * snaps: the base zoom follows a resize at once, and a factor that lagged
+ * behind it would push the model past the stage edge, where the host clips it.
  */
-// @ref LLP 0004#stage-size — a stage or window resize snaps the fit; only a new pose springs it
-export function stepDuoFit(fit: DuoFit, target: number, seconds: number, snap: boolean): DuoFit {
-  if (snap) return { scale: target, velocity: 0 };
+// @ref LLP 0004#stage-size — a resize snaps the fit; a new pose springs it up to a limit
+export function stepDuoFit(
+  fit: DuoFit,
+  target: number,
+  seconds: number,
+  snap: boolean,
+  limit = Infinity,
+): DuoFit {
+  if (snap) return { scale: Math.min(target, limit), velocity: 0 };
   const step = stepDuoSpring(fit.scale, fit.velocity, target, seconds);
-  return { scale: step.value, velocity: step.velocity };
+  return step.value > limit
+    ? { scale: limit, velocity: 0 }
+    : { scale: step.value, velocity: step.velocity };
+}
+
+/** What the camera zoom keeps from one frame to the next. */
+export interface DuoZoomState {
+  stage: DuoViewportSize;
+  viewport: DuoViewportSize;
+  fit: DuoFit;
+}
+
+export const DUO_INITIAL_ZOOM: DuoZoomState = {
+  stage: { width: 0, height: 0 },
+  viewport: { width: 0, height: 0 },
+  fit: { scale: 1, velocity: 0 },
+};
+
+function sameSize(a: DuoViewportSize, b: DuoViewportSize) {
+  return a.width === b.width && a.height === b.height;
+}
+
+/**
+ * One frame of the camera zoom, from the stage and window sizes measured for
+ * this frame. A zero size, before layout or while hidden, keeps the last one.
+ * `fitAt` fits the current pose in a stage with an inset (`duoFitScale` with
+ * the scene's model and camera); without it the model keeps its physical size.
+ * The fill factor snaps after a resize, springs toward the fill inset after a
+ * new pose, and never lets the model come closer to the stage edge than its
+ * hinge handles need, even while a fold widens it faster than the spring.
+ */
+export function stepDuoZoom(
+  previous: DuoZoomState,
+  frame: {
+    stage: DuoViewportSize;
+    viewport: DuoViewportSize;
+    seconds: number;
+    reducedMotion: boolean;
+    fitAt?: (stage: DuoViewportSize, inset: number) => number;
+  },
+): { state: DuoZoomState; zoom: number } {
+  const stage = validSize(frame.stage) ? frame.stage : previous.stage;
+  const viewport = validSize(frame.viewport) ? frame.viewport : previous.viewport;
+  const resized = !sameSize(stage, previous.stage) || !sameSize(viewport, previous.viewport);
+  const fitting = frame.fitAt && validSize(stage);
+  const fit = stepDuoFit(
+    previous.fit,
+    fitting ? frame.fitAt!(stage, DUO_FILL_INSET) : 1,
+    frame.seconds,
+    resized || frame.reducedMotion,
+    fitting ? frame.fitAt!(stage, DUO_HANDLE_OFFSET) : Infinity,
+  );
+  const state = resized ? { stage, viewport, fit } : { ...previous, fit };
+  return { state, zoom: duoCameraZoom(viewport, stage, fit.scale) };
 }
 
 /**
