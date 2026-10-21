@@ -192,6 +192,9 @@ test("an MJPEG retry after the first frame loads off screen and keeps the last f
   await act(async () => visible.fail());
   expect(hub.client.status).toBe("reconnecting");
   expect(hub.client.framePresented).toBe(true);
+  // That frame is old: the frame poll must not read it as a live stream.
+  await hub.tick();
+  expect(hub.client.status).toBe("reconnecting");
   await hub.fireTimers(1500);
   const probe = FakeImage.instances.find((image) => image !== visible)!;
   expect(probe.src).toContain("/helper/device-1/stream.mjpeg");
