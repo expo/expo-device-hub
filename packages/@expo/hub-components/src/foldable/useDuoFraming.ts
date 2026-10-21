@@ -167,7 +167,7 @@ export function useDuoFraming(
   // before the cleared pose commits, and the next pose change consumes it.
   const physicalPose = fold?.physical?.pose;
   const pending = fold?.pending ?? false;
-  const faceDown = fold?.physical?.faceDown === true;
+  const faceDown = fold?.physical?.faceDown;
   const tentAngle = controls ? controls.poses.tent?.angle : undefined;
   const previousPoseRef = useRef(physicalPose);
   useEffect(() => {
@@ -196,7 +196,9 @@ export function useDuoFraming(
     // Another client can turn a half-open device face down without a preset.
     // Frame the elected cover as Tent does, and restore the previous view when
     // the device turns back. Local fold and rotation controls own the view.
+    // While face down is unknown, keep the framing, as serve-sim's client does.
     if (owned || pending || pose === "tent" || tentAngle === undefined) return;
+    if (faceDown === undefined) return;
     const { state, view: framed } = duoFaceDownFraming(
       faceDownRef.current,
       faceDown,

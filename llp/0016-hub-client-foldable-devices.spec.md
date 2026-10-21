@@ -23,18 +23,18 @@
 
 `DeviceClient.fold` is `null` for a device that does not fold. For a foldable it has [observed: `DeviceFold` in `types.ts`]:
 
-| Field        | Meaning                                                                                                                                                                                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `angle`      | Hinge angle in degrees, between the display sides of the two halves: 180 is flat, a smaller angle folds the displays inward (0 is shut), and a fold-out hinge goes past 180. Undefined until reported. |
-| `pose`       | The named pose in effect; `null` for a custom angle; undefined until reported.                                                                                                                         |
-| `pending`    | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                                                                                    |
-| `error`      | The last failed command. The next command clears it.                                                                                                                                                   |
-| `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                      |
-| `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it.                                                                           |
-| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, `tableMode`, or `faceDown`.                                                                                                                             |
-| `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `reset`, and `rotated`.                                                             |
+| Field        | Meaning                                                                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `angle`      | Hinge angle in degrees, between the display sides of the two halves: 180 is flat, a smaller angle folds the displays inward (0 is shut), and a fold-out hinge goes past 180. Undefined until reported.  |
+| `pose`       | The named pose in effect; `null` for a custom angle; undefined until reported.                                                                                                                          |
+| `pending`    | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                                                                                     |
+| `error`      | The last failed command. The next command clears it.                                                                                                                                                    |
+| `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                       |
+| `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it. `faceDown` is undefined while the backend has not reported enough to tell. |
+| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, `tableMode`, or `faceDown`.                                                                                                                              |
+| `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `reset`, and `rotated`.                                                              |
 
-An optional group is absent when the device does not have the feature. A device never fills a group with placeholder values. `tableMode` is present exactly when `capabilities.fold.tableMode` is true. The iOS adapter adds both groups together with `capabilities.fold`, so before the helper reports its hinge the iPhone Duo's `fold` has neither [observed: `fold` in `useIosDevice.ts`].
+An optional group is absent when the device does not have the feature. Inside a group, an unknown value stays undefined; it never becomes `false`. A consumer can then keep what it last knew. For example, the 3D model keeps its face-down framing while `physical.faceDown` is undefined, as serve-sim's client does when Table Mode or the physical orientation is unknown [observed: `useDuoFraming.ts`; `knownNotFaceDown` in serve-sim's `src/client/hooks/use-duo-framing.ts`]. A device never fills a group with placeholder values. `tableMode` is present exactly when `capabilities.fold.tableMode` is true. The iOS adapter adds both groups together with `capabilities.fold`, so before the helper reports its hinge the iPhone Duo's `fold` has neither [observed: `fold` in `useIosDevice.ts`].
 
 ## Capabilities
 
@@ -83,17 +83,17 @@ serve-sim's screen config also carries the hinge state and the display ID. The i
 
 ### iPhone Duo
 
-| Contract                          | serve-sim (0x82 screen config, 0x10 command, 0x90 reply)                                 |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `capabilities.fold`               | Set when `supportsHingeAngle` is true, or when it is absent and `hingeAngle` is reported |
-| `.angle` / `.poses`               | `{ 0, 180 }` / all five, at Device Hub's angles                                          |
-| `.tableMode` / `.faceDown`        | `true` / `supportsPhysicalOrientation`                                                   |
-| `fold.angle` / `fold.pose`        | `hingeAngle` / `hingePose`, with the pending request                                     |
-| `fold.tableMode`                  | `{ enabled: tableMode, available: tableModeAvailable }`                                  |
-| `fold.physical`                   | `{ pose: physicalPose, faceDown }` (face down with Table Mode)                           |
-| `screen.display`, `displays[].id` | `screenId` 1 → `cover`, 3 → `inner`                                                      |
-| `{ control: "tableMode" }`        | Wire `{ control: "table" }`                                                              |
-| `{ control: "faceDown", value }`  | Wire `{ control: "physical", value: "facedown" \| "faceup" }`                            |
+| Contract                          | serve-sim (0x82 screen config, 0x10 command, 0x90 reply)                                                                                                                |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities.fold`               | Set when `supportsHingeAngle` is true, or when it is absent and `hingeAngle` is reported                                                                                |
+| `.angle` / `.poses`               | `{ 0, 180 }` / all five, at Device Hub's angles                                                                                                                         |
+| `.tableMode` / `.faceDown`        | `true` / `supportsPhysicalOrientation`                                                                                                                                  |
+| `fold.angle` / `fold.pose`        | `hingeAngle` / `hingePose`, with the pending request                                                                                                                    |
+| `fold.tableMode`                  | `{ enabled: tableMode, available: tableModeAvailable }`                                                                                                                 |
+| `fold.physical`                   | `{ pose: physicalPose, faceDown }`: face down with Table Mode; undefined while `tableMode` or `physicalOrientation` is unknown and the other field does not rule it out |
+| `screen.display`, `displays[].id` | `screenId` 1 → `cover`, 3 → `inner`                                                                                                                                     |
+| `{ control: "tableMode" }`        | Wire `{ control: "table" }`                                                                                                                                             |
+| `{ control: "faceDown", value }`  | Wire `{ control: "physical", value: "facedown" \| "faceup" }`                                                                                                           |
 
 [observed: `useIosDevice.ts`, `hinge-control.ts`, `screen-config.ts`]
 

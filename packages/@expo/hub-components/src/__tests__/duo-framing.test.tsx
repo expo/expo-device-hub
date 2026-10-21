@@ -329,6 +329,18 @@ test("a rotation turns the view by its quarter turns", async () => {
   expect(view()).toEqual(duoRotateView(before, -1));
 });
 
+test("an unknown face-down state keeps the face-down framing until the device is known face up", async () => {
+  const { view, update } = await mount(HALF);
+  const before = view();
+  await update({ physical: { faceDown: true } });
+  expect(view()).toEqual(duoPreset("tent"));
+  // A config that omits the physical orientation says nothing about a turn.
+  await update({ physical: {} });
+  expect(view()).toEqual(duoPreset("tent"));
+  await update({ physical: { faceDown: false } });
+  expect(view()).toEqual(before);
+});
+
 test("local commands own the framing until the device confirms them", async () => {
   const { view, emit, update } = await mount(HALF);
   const before = view();
