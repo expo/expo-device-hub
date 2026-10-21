@@ -141,6 +141,42 @@ function Screen() {
 }
 ```
 
+### Show each display of a foldable
+
+On an iPhone Duo, `client.hinge` has the fold state and `setControl`, and
+`client.displays` lists the cover (`id` 1) and the inner display (`id` 3). Attach one
+element per display, of the kind `client.videoKind` names, to stream each display
+yourself. While any display has an element, the client parks the flat stream, and
+`status` follows the active display. Send input to a display with its `id`, in that
+display's coordinates. The client drops a gesture that begins on a display that the
+device does not present.
+
+```tsx
+import { useDeviceClient } from "@expo/hub-client";
+
+function Displays() {
+  const client = useDeviceClient();
+
+  return client.displays?.map((display) =>
+    client.videoKind === "video" ? (
+      <video key={display.id} ref={display.attachVideo} autoPlay muted playsInline />
+    ) : client.videoKind === "canvas" ? (
+      <canvas key={display.id} ref={display.attachVideo} />
+    ) : (
+      <img key={display.id} ref={display.attachVideo} alt="" />
+    ),
+  );
+}
+
+// A tap on the inner display:
+client.sendTouch({ phase: "begin", display: 3, x: 0.5, y: 0.5 });
+client.sendTouch({ phase: "end", display: 3, x: 0.5, y: 0.5 });
+```
+
+`hinge.observe` reports every hinge command from its request to its outcome, whichever
+control sent it. `deviceModelUrl` is Xcode's 3D model of the device; the Hub's 3D
+preview uses both.
+
 ### Show CPU usage
 
 Use `useDeviceClientSelector` when you need one value from a larger object. This component

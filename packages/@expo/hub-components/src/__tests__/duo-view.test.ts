@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { HINGE_POSES } from "@expo/hub-client";
 import { Quaternion, Vector3 } from "three";
 
 import {
@@ -9,8 +10,7 @@ import {
   duoRotateView,
   duoViewFolds,
   duoViewRotation,
-} from "../duo/duo-view";
-import { HINGE_POSES } from "../hinge-control";
+} from "../foldable/duo-view";
 
 test("hinge motion preserves the hinge angle and saved orientation controls for every preset", () => {
   for (const { id } of HINGE_POSES) {

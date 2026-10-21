@@ -28,6 +28,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
     hinge: null,
+    displays: null,
+    deviceModelUrl: null,
     displayCorners: null,
     fps: 60,
     devices: [],

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Euler, Vector2, Vector3 } from "three";
 
-import { duoPose, duoScreenMapping } from "../duo/duo-pose";
+import { duoPose, duoScreenMapping } from "../foldable/duo-pose";
 
 test("Open and Laptop fill the physical panel and keep native UI axes upright even with stale orientation metadata", () => {
   const config = { width: 2007, height: 2853, screenId: 3, orientation: "landscape_left" as const };
