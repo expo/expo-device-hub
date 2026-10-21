@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import { runHostActionAsync } from "../host-actions";
-import { EXIT_0_SHIM, UDID, installShims } from "./helpers";
+import { EXIT_0_SHIM, SCREENSHOT_SHIM, UDID, installShims } from "./helpers";
 
 const STAGING = join(tmpdir(), "serve-sim-screenshots");
 const SCREENSHOT_PREFIX = "serve-sim-screenshot-";
@@ -23,7 +23,7 @@ const params = { display: 1, udid: UDID, fileName: "serve-sim-screenshot-next.pn
 let shims: ReturnType<typeof installShims>;
 
 beforeAll(() => {
-  shims = installShims({ xcrun: EXIT_0_SHIM, cp: EXIT_0_SHIM });
+  shims = installShims({ xcrun: SCREENSHOT_SHIM, cp: EXIT_0_SHIM });
   mkdirSync(STAGING, { recursive: true });
 });
 

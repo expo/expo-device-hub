@@ -29,7 +29,7 @@ mock.module("../../device-session", () => ({
 const { runHostActionAsync } = await import("../../host-actions");
 const shims = installShims({
   xcrun:
-    '#!/bin/sh\nif [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_TEST_DEVICES_JSON"; exit 0; fi\nprintf \'%s\\n\' "$@" > "$SERVE_SIM_DISPLAY_ARGV"\n',
+    '#!/bin/sh\nif [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_TEST_DEVICES_JSON"; exit 0; fi\nprintf \'%s\\n\' "$@" > "$SERVE_SIM_DISPLAY_ARGV"\nprintf \'PNG:%s\' "$5" > "$6"\n',
   cp: "#!/bin/sh\nexit 0\n",
 });
 const log = join(shims.dir, "argv");
@@ -101,9 +101,21 @@ test("bounds retries if the active display keeps changing", async () => {
     stderr: expect.stringContaining("display kept changing"),
   });
   expect(sequence).toEqual([]);
+  expect(existsSync(join(tmpdir(), "serve-sim-screenshots", names.at(-1)!))).toBe(false);
 });
 
-test("releases an empty reservation when the post-capture display query fails", async () => {
+test("a failed recapture preserves the previously validated screenshot of the same name", async () => {
+  active = 1;
+  expect((await capture()).exitCode).toBe(0);
+  const fileName = names.at(-1)!;
+  const staged = join(tmpdir(), "serve-sim-screenshots", fileName);
+  const previous = readFileSync(staged, "utf8");
+  sequence = [3, 1, 3, 1];
+  expect((await capture({ fileName })).exitCode).toBe(1);
+  expect(readFileSync(staged, "utf8")).toBe(previous);
+});
+
+test("removes unconfirmed pixels and the reservation when the post-capture query fails", async () => {
   sequence = [1, new Error("Post-capture display query failed")];
   expect(await capture()).toMatchObject({
     exitCode: 1,
