@@ -1,8 +1,8 @@
 /**
  * Loads Xcode's iPhone Duo model and binds it to the viewer's hinge, ported from
  * serve-sim's `src/client/simulator/duo-model.ts` (@expo/serve-sim 0.5.0). The
- * Hub fetches the archive from the middleware's `grid/api/devicekit-model`
- * route through its own `/vendor/serve-sim` mount.
+ * URL is hub-client's `deviceModelUrl`, serve-sim's `grid/api/devicekit-model`
+ * route with the connection's session token.
  */
 
 import * as THREE from "three";

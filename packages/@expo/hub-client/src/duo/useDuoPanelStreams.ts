@@ -1,47 +1,82 @@
 /**
- * Keeps both iPhone Duo panel feeds decoding while the 3D model shows one of
- * them, following serve-sim's `src/client/components/duo-panel-streams.tsx`
- * (@expo/serve-sim 0.5.0). Each panel paints into a hidden element under
- * `[data-duo-panel]`, which the scene samples for its textures. Transport
- * handling reuses the Hub's AVCC and WebRTC hooks instead of serve-sim's
- * `SimulatorView`; only the 3D scene handles input.
+ * Streams the iPhone Duo's panels into the elements a consumer attached
+ * through `DeviceClient.displays`, following serve-sim's
+ * `src/client/components/duo-panel-streams.tsx` (@expo/serve-sim 0.5.0). Each
+ * panel keeps decoding while the other one is presented, so a fold can hand
+ * off without a reconnect. Transport handling reuses the Hub's AVCC and WebRTC
+ * hooks instead of serve-sim's `SimulatorView`.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
 import { sessionTokenFetch, withSessionTokenQuery } from "../session-token";
-import { type DuoPanelFeeds } from "../types";
+import { type DeviceStreamStats, type VideoSurfaceKind } from "../types";
 import { useAvccStream } from "../useAvccStream";
-import { useWebRtcStream } from "../useWebRtcStream";
+import { type WebRtcIceServer, useWebRtcStream } from "../useWebRtcStream";
+import { type WebRtcCodec, type WebRtcStreamFailure } from "../webrtc-fallback";
+import { type DuoPanelId } from "./duo-fold";
 import {
-  DUO_PANEL_CONFIG,
-  EMPTY_DUO_PANEL_STATUS,
+  type DuoPanelStatus,
+  type DuoPanelStreamMode,
   duoPanelStatus,
   duoPanelUrl,
-  type DuoPanelId,
-  type DuoPanelStatus,
 } from "./duo-panels";
 import { useMjpegPanel } from "./useMjpegPanel";
 
-function DuoPanelStream({
-  screenId,
-  feeds,
-  activeScreenId,
-  onStatusChange,
-}: {
-  screenId: DuoPanelId;
-  feeds: DuoPanelFeeds;
-  activeScreenId: DuoPanelId;
-  onStatusChange: (screenId: DuoPanelId, status: DuoPanelStatus) => void;
-}) {
-  const { mode, codec, iceServers, token = null } = feeds;
+/** What both panel streams share with the flat stream. */
+export interface DuoPanelFeeds {
+  /** Helper base URL; each panel streams from `${url}/panel/<1|3>/…`. */
+  url: string;
+  /** Session token for the same backend as the flat stream. */
+  token?: string | null;
+  mode: DuoPanelStreamMode;
+  codec: WebRtcCodec;
+  iceServers?: WebRtcIceServer[];
+  /** serve-sim locks this session to WebRTC, as for the flat stream. */
+  transportLocked?: boolean;
+  /** Collect statistics, for the presented panel only. */
+  statsEnabled?: boolean;
+  /** A frame of the presented panel was painted. */
+  onFrame?: () => void;
+  /** The H.264 decoder failed; the client falls back to MJPEG. */
+  onAvccError: () => void;
+  onWebRtcFailure: (failure: WebRtcStreamFailure) => void;
+  /** Each increment restarts the panels' WebRTC sessions, as the codec ladder does for the flat stream. */
+  restartGeneration?: number;
+}
+
+/** An element the consumer attached for one panel, with the kind it was attached as. */
+export type DuoPanelElement = {
+  kind: VideoSurfaceKind;
+  element: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement;
+};
+
+export const DUO_PANEL_KIND: Record<DuoPanelStreamMode, VideoSurfaceKind> = {
+  mjpeg: "img",
+  avcc: "canvas",
+  webrtc: "video",
+};
+
+type DuoPanelStreamState = DuoPanelStatus & { stats: DeviceStreamStats | null };
+
+function useDuoPanelStream(
+  screenId: DuoPanelId,
+  attached: DuoPanelElement | null,
+  feeds: DuoPanelFeeds | null,
+  activeScreenId: DuoPanelId,
+): DuoPanelStreamState {
+  const mode = feeds?.mode;
+  const token = feeds?.token ?? null;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
-  const url = duoPanelUrl(feeds.url, screenId);
-  const active = activeScreenId === screenId;
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const url = feeds ? duoPanelUrl(feeds.url, screenId) : "";
+  const element = mode && attached?.kind === DUO_PANEL_KIND[mode] ? attached.element : null;
+  const img = mode === "mjpeg" ? (element as HTMLImageElement | null) : null;
+  const canvas = mode === "avcc" ? (element as HTMLCanvasElement | null) : null;
+  const video = mode === "webrtc" ? (element as HTMLVideoElement | null) : null;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  canvasRef.current = canvas;
+  const active = activeScreenId === screenId;
   const [streaming, setStreaming] = useState(false);
   const decoded = useRef(false);
   const avccDecoded = useRef(false);
@@ -59,7 +94,7 @@ function DuoPanelStream({
       decoded.current = true;
       setStreaming(true);
     }
-    if (activeRef.current) feedsRef.current.onFrame?.();
+    if (activeRef.current) feedsRef.current?.onFrame?.();
   }, []);
 
   const resetStreaming = useCallback(() => {
@@ -70,17 +105,11 @@ function DuoPanelStream({
     setFeedGeneration((generation) => generation + 1);
   }, []);
 
-  useMjpegPanel(
-    mode === "mjpeg" ? `${url}/stream.mjpeg` : null,
-    imgRef,
-    onFrame,
-    sessionFetch,
-    resetStreaming,
-  );
+  useMjpegPanel(img ? `${url}/stream.mjpeg` : null, img, onFrame, sessionFetch, resetStreaming);
 
   useAvccStream({
     url,
-    enabled: mode === "avcc",
+    enabled: !!canvas,
     canvasRef,
     fetchImpl: sessionFetch,
     onFrame,
@@ -89,7 +118,7 @@ function DuoPanelStream({
     onDecodedFrame: () => {
       avccDecoded.current = true;
     },
-    onDecoderError: () => feedsRef.current.onAvccError(),
+    onDecoderError: () => feedsRef.current?.onAvccError(),
   });
 
   const {
@@ -105,11 +134,11 @@ function DuoPanelStream({
     closeUrl: `${url}/webrtc/close`,
     closeBeaconUrl: withSessionTokenQuery(`${url}/webrtc/close`, token),
     statsUrl: `${url}/webrtc/stats`,
-    enabled: mode === "webrtc",
-    codec,
-    iceServers,
+    enabled: !!video,
+    codec: feeds?.codec ?? "h264",
+    iceServers: feeds?.iceServers,
     fetchImpl: sessionFetch,
-    transportLocked: feeds.transportLocked ?? false,
+    transportLocked: feeds?.transportLocked ?? false,
     raiseH264Level: true,
     // iOS keeps the inactive panel silent until a handoff; only the shown
     // panel's missing frames mean a codec or transport problem.
@@ -117,7 +146,7 @@ function DuoPanelStream({
   });
 
   // A restart with an unchanged codec does not change the stream hook's inputs.
-  const restartGeneration = feeds.restartGeneration ?? 0;
+  const restartGeneration = feeds?.restartGeneration ?? 0;
   const restartedGeneration = useRef(restartGeneration);
   useEffect(() => {
     if (restartedGeneration.current === restartGeneration) return;
@@ -125,18 +154,12 @@ function DuoPanelStream({
     if (mode === "webrtc") restartWebRtc();
   }, [restartGeneration, mode, restartWebRtc]);
 
-  const statsEnabled = active && (feeds.statsEnabled ?? false);
+  const statsEnabled = active && (feeds?.statsEnabled ?? false);
   useEffect(() => {
     setStreamStatsEnabled(statsEnabled);
   }, [setStreamStatsEnabled, statsEnabled]);
 
   useEffect(() => {
-    if (active) feedsRef.current.onStatsChange?.(mode === "webrtc" ? streamStats : null);
-  }, [active, mode, streamStats]);
-
-  useEffect(() => {
-    if (mode !== "webrtc") return;
-    const video = videoRef.current;
     if (!video) return;
     let stopped = false;
     let frameCallback = 0;
@@ -176,11 +199,11 @@ function DuoPanelStream({
       }
       video.srcObject = null;
     };
-  }, [mode, webRtcStream, markFrameDecoded, onFrame]);
+  }, [video, webRtcStream, markFrameDecoded, onFrame]);
 
   useEffect(() => {
     resetStreaming();
-  }, [url, mode, sessionFetch, webRtcStream, resetStreaming]);
+  }, [url, mode, element, sessionFetch, webRtcStream, resetStreaming]);
 
   useEffect(() => {
     const check = () => {
@@ -200,97 +223,42 @@ function DuoPanelStream({
   }, [mode]);
 
   useEffect(() => {
-    onStatusChange(screenId, { streaming, error: webRtcError, failure: webRtcFailure });
-  }, [screenId, streaming, webRtcError, webRtcFailure, onStatusChange]);
-  useEffect(() => {
     // Codec verdicts are only meaningful for the shown panel; permanent
     // failures of either panel still reach the shared codec policy.
-    if (mode !== "webrtc" || !webRtcFailure) return;
-    if (active || webRtcFailure.kind !== "codec") feedsRef.current.onWebRtcFailure(webRtcFailure);
-  }, [mode, webRtcFailure, active]);
+    if (!video || !webRtcFailure) return;
+    if (active || webRtcFailure.kind !== "codec") feedsRef.current?.onWebRtcFailure(webRtcFailure);
+  }, [video, webRtcFailure, active]);
 
   useEffect(() => {
     // An inactive panel may stay silent until iOS wakes it. Only the intended
     // display gets a startup deadline, and a previously decoded panel can idle
     // without permanently downgrading a working session to MJPEG.
-    if (mode !== "avcc" || !active || avccDecoded.current) return;
+    if (!canvas || !active || avccDecoded.current) return;
     const timer = setTimeout(() => {
-      if (!avccDecoded.current) feedsRef.current.onAvccError();
+      if (!avccDecoded.current) feedsRef.current?.onAvccError();
     }, AVCC_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [url, mode, active, sessionFetch, feedGeneration]);
+  }, [url, canvas, active, sessionFetch, feedGeneration]);
 
-  const config = DUO_PANEL_CONFIG[screenId];
-  const mediaStyle = {
-    display: "block",
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-  } as const;
-  return (
-    <div
-      data-duo-panel={screenId}
-      style={{
-        position: "absolute",
-        inset: 0,
-        visibility: active ? "visible" : "hidden",
-        aspectRatio: `${config.width} / ${config.height}`,
-      }}
-    >
-      {mode === "avcc" ? (
-        <canvas ref={canvasRef} style={mediaStyle} />
-      ) : mode === "webrtc" ? (
-        <video ref={videoRef} autoPlay muted playsInline style={mediaStyle} />
-      ) : (
-        <img ref={imgRef} alt="" draggable={false} style={mediaStyle} />
-      )}
-    </div>
-  );
+  return {
+    streaming,
+    error: video ? webRtcError : null,
+    failure: video ? webRtcFailure : null,
+    stats: video ? streamStats : null,
+  };
 }
 
-/** Both decoders stay mounted while the hinge moves; only the 3D scene handles input. */
-export function DuoPanelStreams({
-  feeds,
-  activeScreenId,
-}: {
-  feeds: DuoPanelFeeds;
-  activeScreenId: DuoPanelId;
-}) {
-  const [statuses, setStatuses] = useState<Record<DuoPanelId, DuoPanelStatus>>({
-    1: EMPTY_DUO_PANEL_STATUS,
-    3: EMPTY_DUO_PANEL_STATUS,
-  });
-  const onStatusChange = useCallback((screenId: DuoPanelId, status: DuoPanelStatus) => {
-    setStatuses((previous) => ({ ...previous, [screenId]: status }));
-  }, []);
-  const feedsRef = useRef(feeds);
-  feedsRef.current = feeds;
-  const status = duoPanelStatus(feeds.mode, activeScreenId, statuses);
-  useEffect(() => {
-    feedsRef.current.onStreamingChange(status.streaming);
-  }, [status.streaming]);
-  useEffect(() => {
-    feedsRef.current.onStreamError(status.error);
-  }, [status.error]);
-  useEffect(
-    () => () => {
-      feedsRef.current.onStreamingChange(false);
-      feedsRef.current.onStreamError(null);
-      feedsRef.current.onStatsChange?.(null);
-    },
-    [],
-  );
-  return (
-    <>
-      {([1, 3] as const).map((screenId) => (
-        <DuoPanelStream
-          key={screenId}
-          screenId={screenId}
-          feeds={feeds}
-          activeScreenId={activeScreenId}
-          onStatusChange={onStatusChange}
-        />
-      ))}
-    </>
-  );
+/**
+ * Both panels decode while the hinge moves. The presented panel's health and
+ * statistics stand for the connection; the other panel can stay silent.
+ */
+export function useDuoPanelStreams(
+  feeds: DuoPanelFeeds | null,
+  elements: Readonly<Record<DuoPanelId, DuoPanelElement | null>>,
+  activeScreenId: DuoPanelId,
+): { streaming: boolean; error: string | null; stats: DeviceStreamStats | null } {
+  const cover = useDuoPanelStream(1, elements[1], feeds, activeScreenId);
+  const inner = useDuoPanelStream(3, elements[3], feeds, activeScreenId);
+  const status = duoPanelStatus(feeds?.mode ?? "mjpeg", activeScreenId, { 1: cover, 3: inner });
+  return { ...status, stats: (activeScreenId === 1 ? cover : inner).stats };
 }

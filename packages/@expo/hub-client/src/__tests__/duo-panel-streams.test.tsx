@@ -1,12 +1,63 @@
 import { afterEach, expect, test } from "bun:test";
-import { useRef } from "react";
+import { useMemo, useState } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
-import { DuoPanelStreams } from "../duo/DuoPanelStreams";
+import { type DuoPanelId } from "../duo/duo-fold";
+import {
+  DUO_PANEL_KIND,
+  type DuoPanelElement,
+  type DuoPanelFeeds,
+  useDuoPanelStreams,
+} from "../duo/useDuoPanelStreams";
 import { useMjpegPanel } from "../duo/useMjpegPanel";
-import { type DuoPanelFeeds } from "../types";
+import { type DeviceStreamStats } from "../types";
 import { createGlobalStubs } from "./test-globals";
+
+/** What the client reads back from both panels. */
+type PanelSink = { streaming: boolean; error: string | null; stats: DeviceStreamStats | null };
+
+/** A consumer of `DeviceClient.displays`: one element per panel, attached by ref. */
+function DuoPanelStreams({
+  feeds,
+  activeScreenId,
+  sink = { streaming: false, error: null, stats: null },
+}: {
+  feeds: DuoPanelFeeds;
+  activeScreenId: DuoPanelId;
+  sink?: PanelSink;
+}) {
+  const [elements, setElements] = useState<Record<DuoPanelId, DuoPanelElement | null>>({
+    1: null,
+    3: null,
+  });
+  const kind = DUO_PANEL_KIND[feeds.mode];
+  const attach = useMemo(
+    () =>
+      Object.fromEntries(
+        ([1, 3] as const).map((id) => [
+          id,
+          (element: DuoPanelElement["element"] | null) =>
+            setElements((previous) => ({ ...previous, [id]: element && { kind, element } })),
+        ]),
+      ) as Record<DuoPanelId, (element: DuoPanelElement["element"] | null) => void>,
+    [kind],
+  );
+  Object.assign(sink, useDuoPanelStreams(feeds, elements, activeScreenId));
+  return (
+    <>
+      {([1, 3] as const).map((id) =>
+        kind === "canvas" ? (
+          <canvas key={id} ref={attach[id]} />
+        ) : kind === "video" ? (
+          <video key={id} ref={attach[id]} />
+        ) : (
+          <img key={id} ref={attach[id]} alt="" />
+        ),
+      )}
+    </>
+  );
+}
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 let renderer: ReactTestRenderer | undefined;
@@ -74,22 +125,18 @@ async function connect(token?: string) {
       }),
     );
   });
-  const events = { frames: 0, fallbacks: 0, streaming: false };
+  const events = { frames: 0, fallbacks: 0, streaming: false, error: null, stats: null };
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
     token,
     mode: "avcc",
     codec: "h264",
     onFrame: () => events.frames++,
-    onStreamingChange: (streaming) => {
-      events.streaming = streaming;
-    },
-    onStreamError() {},
     onAvccError: () => events.fallbacks++,
     onWebRtcFailure() {},
   };
   await act(async () => {
-    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} sink={events} />, {
       createNodeMock: (element) =>
         element.type === "canvas"
           ? {
@@ -128,6 +175,7 @@ async function connect(token?: string) {
           <DuoPanelStreams
             activeScreenId={activeScreenId}
             feeds={{ ...feeds, url, token: nextToken }}
+            sink={events}
           />,
         );
       }),
@@ -185,8 +233,6 @@ test("both MJPEG panels authenticate and reconnect when the token changes", asyn
     token: "first-token",
     mode: "mjpeg",
     codec: "h264",
-    onStreamingChange() {},
-    onStreamError() {},
     onAvccError() {},
     onWebRtcFailure() {},
   };
@@ -322,24 +368,19 @@ test("WebRTC statistics follow the shown panel and stop when collection is disab
     }
     return Response.json({ type: "answer", sdp: "answer" });
   });
-  let stats: import("../types").DeviceStreamStats | null = null;
+  const sink: PanelSink = { streaming: false, error: null, stats: null };
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
     token: "stats-token",
     mode: "webrtc",
     codec: "h264",
     statsEnabled: true,
-    onStreamingChange() {},
-    onStreamError() {},
     onAvccError() {},
     onWebRtcFailure() {},
-    onStatsChange: (value) => {
-      stats = value;
-    },
   };
   Peer.instances = [];
   await act(async () => {
-    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} sink={sink} />, {
       createNodeMock: (element) => (element.type === "video" ? new FakeVideo() : null),
     });
   });
@@ -348,26 +389,28 @@ test("WebRTC statistics follow the shown panel and stop when collection is disab
   // Client samples come from the stall watchdog's shared one-second poll.
   const waitForServerFps = async (fps: number) => {
     const deadline = Date.now() + 3000;
-    while (stats?.samples.at(-1)?.serverFps !== fps && Date.now() < deadline) {
+    while (sink.stats?.samples.at(-1)?.serverFps !== fps && Date.now() < deadline) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
     }
   };
   await waitForServerFps(1);
-  expect(stats!.samples.at(-1)?.serverFps).toBe(1);
-  await act(async () => renderer!.update(<DuoPanelStreams activeScreenId={3} feeds={feeds} />));
+  expect(sink.stats!.samples.at(-1)?.serverFps).toBe(1);
+  await act(async () =>
+    renderer!.update(<DuoPanelStreams activeScreenId={3} feeds={feeds} sink={sink} />),
+  );
   await act(async () => {});
   expect(requests.at(-1)?.panel).toBe(3);
   await waitForServerFps(3);
-  expect(stats!.samples.at(-1)?.serverFps).toBe(3);
+  expect(sink.stats!.samples.at(-1)?.serverFps).toBe(3);
   expect(Peer.instances).toHaveLength(2);
   await act(async () =>
     renderer!.update(
-      <DuoPanelStreams activeScreenId={3} feeds={{ ...feeds, statsEnabled: false }} />,
+      <DuoPanelStreams activeScreenId={3} feeds={{ ...feeds, statsEnabled: false }} sink={sink} />,
     ),
   );
-  expect(stats).toBeNull();
+  expect(sink.stats).toBeNull();
 }, 10_000);
 
 test("a WebRTC panel's first loaded frame counts without frame callbacks, as in serve-sim", async () => {
@@ -391,22 +434,18 @@ test("a WebRTC panel's first loaded frame counts without frame callbacks, as in 
   });
   Peer.instances = [];
   const videos: FakeVideo[] = [];
-  const events = { frames: 0, streaming: false };
+  const events = { frames: 0, streaming: false, error: null, stats: null };
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
     mode: "webrtc",
     token: "duo-token",
     codec: "h264",
     onFrame: () => events.frames++,
-    onStreamingChange: (streaming) => {
-      events.streaming = streaming;
-    },
-    onStreamError() {},
     onAvccError() {},
     onWebRtcFailure() {},
   };
   await act(async () => {
-    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} sink={events} />, {
       createNodeMock: (element) => {
         if (element.type !== "video") return null;
         const video = new FakeVideo();
@@ -481,8 +520,7 @@ test("stopping an MJPEG panel mid-decode revokes the frame it was decoding", asy
     },
   };
   function Harness({ url }: { url: string | null }) {
-    const ref = useRef(img as unknown as HTMLImageElement);
-    useMjpegPanel(url, ref);
+    useMjpegPanel(url, img as unknown as HTMLImageElement);
     return null;
   }
   await act(async () => {

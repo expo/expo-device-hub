@@ -19,15 +19,12 @@
 
 import { type CSSProperties } from "react";
 
-import { type DuoHingeCommands } from "./duo/duo-hinge-commands";
-import { type DuoView } from "./duo/duo-view";
 import {
   type HingeControlCommand,
   type HingeControlState,
   type HingePhysicalOrientation,
   type HingePose,
 } from "./hinge-control";
-import { type WebRtcStreamFailure } from "./webrtc-fallback";
 
 export type DevicePlatform = "ios" | "android";
 
@@ -90,73 +87,32 @@ export interface DisplayCornerRadii {
   bottomLeft: number;
 }
 
-/** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
-export type DuoPreviewMode = "2d" | "3d";
-
-/** Transport of the per-panel feeds behind the 3D model. */
-export type DuoPanelStreamMode = "mjpeg" | "avcc" | "webrtc";
-
-export interface DeviceIceServer {
-  urls: string[];
-  username?: string;
-  credential?: string;
-}
-
 /**
- * Both physical panels' feeds, served by the client while the 3D model is shown.
- * `FoldableDeviceScreen` decodes them and reports their health back here.
+ * One step of a hinge command, or a rotation, as the client handles it. Each
+ * event carries the command object that `setControl` queued, so a listener can
+ * follow one command from its request to its outcome.
  */
-export interface DuoPanelFeeds {
-  /** Helper base URL; each panel streams from `${url}/panel/<1|3>/…`. */
-  url: string;
-  /** Session token for the same backend as the flat stream. */
-  token?: string | null;
-  mode: DuoPanelStreamMode;
-  codec: DeviceWebRtcCodec;
-  iceServers?: DeviceIceServer[];
-  /** serve-sim locks this session to WebRTC, as for the flat stream. */
-  transportLocked?: boolean;
-  /** A frame of the presented panel was decoded. */
-  onFrame?: () => void;
-  onStreamingChange: (streaming: boolean) => void;
-  onStreamError: (error: string | null) => void;
-  /** Collect statistics only for the panel currently presented by the model. */
-  statsEnabled?: boolean;
-  onStatsChange?: (stats: DeviceStreamStats | null) => void;
-  /** The H.264 decoder failed; the client falls back to MJPEG. */
-  onAvccError: () => void;
-  onWebRtcFailure: (failure: WebRtcStreamFailure) => void;
-  /** Each increment restarts the panels' WebRTC sessions, as the codec ladder does for the flat stream. */
-  restartGeneration?: number;
-}
-
-/** Raw-framebuffer touch the 3D model already mapped; sent on the helper's touch channel unchanged. */
-export interface DuoModelTouch {
-  type: "begin" | "move" | "end";
-  x: number;
-  y: number;
-  edge?: number;
-}
-
-export interface DuoModelMultiTouch {
-  type: "begin" | "move" | "end";
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-export interface DuoModelScroll {
-  dx: number;
-  dy: number;
-  x: number;
-  y: number;
-}
+export type HingeCommandEvent =
+  /** `setControl` queued the command; `angle`, `pose`, and `tableMode` already preview it. */
+  | { type: "requested"; command: HingeControlCommand }
+  /**
+   * The command went to the device. `display` is the display that the command
+   * makes active, when the command alone decides it.
+   */
+  | { type: "sent"; command: HingeControlCommand; display?: number }
+  /** The device answered the command. A rejection is followed by `failed`. */
+  | { type: "acknowledged"; command: HingeControlCommand; ok: boolean }
+  /** The device reports the requested state, so the preview ends. */
+  | { type: "confirmed" }
+  /** The client dropped every unconfirmed command, and `error` says why. */
+  | { type: "failed"; error: string }
+  /** The viewer rotated the device, which clears its named pose. */
+  | { type: "rotated" };
 
 /**
- * iPhone Duo hinge state and controls, mirroring serve-sim's web client. Angles
- * and poses show the pending request while a command awaits acknowledgement,
- * then the helper's confirmed values.
+ * Fold state and controls of a device with a hinge, such as the iPhone Duo.
+ * Angles and poses show the pending request while a command awaits
+ * acknowledgement, then the device's confirmed values.
  */
 export interface DeviceHinge {
   /**
@@ -176,27 +132,41 @@ export interface DeviceHinge {
   tableModeAvailable?: boolean;
   /** Face down with Table Mode, which elects the cover of a half-open device. */
   faceDown: boolean;
-  /** The panel the viewer should present: 1 is the cover, 3 the inner display. */
-  activeScreenId: 1 | 3;
-  /** A hinge command awaits the helper's acknowledgement. */
+  /** A hinge command awaits the device's acknowledgement. */
   pending: boolean;
   /** The last failed hinge command, cleared when the next one starts. */
   error: string | null;
-  /** Confirmed native submissions, which the model uses to track panel handoffs. */
-  commands: DuoHingeCommands;
-  /** Saved orientation controls for the 3D model. */
-  view: DuoView;
-  /** Whether the consumer renders the 3D model; the client then feeds both panels and parks the flat stream. */
-  modelActive: boolean;
-  /** Middleware route serving Xcode's `V68.usdz`; null until the connection resolves. */
-  modelUrl: string | null;
-  /** Panel feeds, present while `modelActive`. */
-  panels: DuoPanelFeeds | null;
   /** Send a hinge command: an angle, a preset, Table Mode, or face up/down. */
   setControl: (command: HingeControlCommand) => void;
-  sendModelTouch: (sample: DuoModelTouch) => void;
-  sendModelMultiTouch: (sample: DuoModelMultiTouch) => void;
-  sendModelScroll: (sample: DuoModelScroll) => void;
+  /**
+   * Follow every hinge command and rotation of this client, whichever control
+   * started it, as {@link HingeCommandEvent}s. Returns a function that stops
+   * the listener. Absent when the backend reports no command lifecycle.
+   */
+  observe?: (listener: (event: HingeCommandEvent) => void) => () => void;
+}
+
+/**
+ * One display of a device that streams each display on its own, such as the
+ * iPhone Duo's cover and inner display.
+ */
+export interface DeviceDisplay {
+  /** Simulator display ID: 1 is the iPhone Duo's cover, 3 its inner display. */
+  id: number;
+  /**
+   * The display that the device presents. The hinge state elects it, so it
+   * follows a requested fold at once. `screen.screenId` is the display that
+   * native readback confirmed, and input addressed to a display waits for it.
+   */
+  active: boolean;
+  /**
+   * Ref callback for this display's paint target, an element of the client's
+   * {@link DeviceClient.videoKind}, as for {@link DeviceClient.attachVideo}.
+   * While any display has an element, the client streams each attached display
+   * and parks the flat stream; `status`, `error`, `fps`, and `streamStats` then
+   * follow the active display. Detaching every display resumes the flat stream.
+   */
+  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -597,6 +567,12 @@ export type DeviceAppearance = "light" | "dark";
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
   phase: "begin" | "move" | "end";
+  /**
+   * The {@link DeviceDisplay} whose coordinates `x` and `y` use. Without it, the
+   * sample addresses the flat stream. A gesture that begins on a display other
+   * than `screen.screenId` is dropped until its end.
+   */
+  display?: number;
   /** An end that abandons unsent touch intent, e.g. conversion to a two-finger gesture. */
   cancelled?: boolean;
   /** 0..1 across the screen width. */
@@ -610,6 +586,8 @@ export interface TouchSample {
 /** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
 export interface MultiTouchSample {
   phase: "begin" | "move" | "end";
+  /** The display both points address, as for {@link TouchSample.display}. */
+  display?: number;
   a: { x: number; y: number };
   b: { x: number; y: number };
 }
@@ -643,6 +621,8 @@ export type HidKeyEvent = { type: "down" | "up"; usage: number };
  * device pans the view beneath it (e.g. a sheet rather than the map behind it).
  */
 export interface ScrollSample {
+  /** The display the pan addresses. A scroll on a display other than `screen.screenId` is dropped. */
+  display?: number;
   dx: number;
   dy: number;
   x: number;
@@ -698,12 +678,6 @@ export interface DeviceConnectionOptions {
    * Each backend adapter maps unavailable choices to one of its supported modes.
    */
   streamMode: DeviceStreamMode;
-  /**
-   * How an iPhone Duo is rendered. `'3d'` makes the client feed both physical
-   * panels to `FoldableDeviceScreen` and park the flat stream, so pass it only
-   * while that component is rendered. Defaults to `'2d'`.
-   */
-  duoPreview?: DuoPreviewMode;
   /**
    * Session token of a Hub or serve-sim started with `--require-token`, such as an
    * EAS Simulator Preview session, for a page on another origin. The
@@ -772,6 +746,17 @@ export interface DeviceClient {
   screen: ScreenSize | null;
   /** iPhone Duo hinge state and controls; null for devices without a hinge. */
   hinge: DeviceHinge | null;
+  /**
+   * The displays of a device that streams each display on its own, in the
+   * device's order; null for a device with one stream.
+   */
+  displays: readonly DeviceDisplay[] | null;
+  /**
+   * URL of Xcode's 3D model of this device (DeviceKit's USDZ), served by the
+   * backend from the host's Xcode, with this connection's session token. Null
+   * when the backend has no model for the device.
+   */
+  deviceModelUrl: string | null;
   /**
    * The active display's own glass corners for the flat view, oriented with
    * the device; null keeps the presentation's generic shape for the platform.

@@ -12,18 +12,9 @@ function hinge(overrides: Partial<DeviceHinge> = {}): DeviceHinge {
   return {
     supported: true,
     faceDown: false,
-    activeScreenId: 1,
     pending: false,
     error: null,
-    commands: { pending: false, coverDepartures: 0, innerDepartures: 0 },
-    view: { rotation: [0, 0, 0, 1] },
-    modelActive: true,
-    modelUrl: "http://hub.test/vendor/serve-sim/grid/api/devicekit-model",
-    panels: null,
     setControl: () => {},
-    sendModelTouch: () => {},
-    sendModelMultiTouch: () => {},
-    sendModelScroll: () => {},
     ...overrides,
   };
 }
@@ -78,14 +69,14 @@ describe("FoldSettings", () => {
 
   test("2D keeps the native fold controls and hides options that only affect the model", () => {
     const markup = renderToStaticMarkup(
-      <FoldSettings hinge={hinge({ modelActive: false })} preview={preview({ mode: "2d" })} />,
+      <FoldSettings hinge={hinge()} preview={preview({ mode: "2d" })} />,
     );
     expect(rowLabels(markup)).toEqual(["Fold pose", "Hinge angle", "Table Mode", "Preview mode"]);
     expect(markup).toContain(">2D<");
   });
 
   test("omits the preview rows when the consumer offers no 3D model", () => {
-    const markup = renderToStaticMarkup(<FoldSettings hinge={hinge({ modelActive: false })} />);
+    const markup = renderToStaticMarkup(<FoldSettings hinge={hinge()} />);
     expect(rowLabels(markup)).toEqual(["Fold pose", "Hinge angle", "Table Mode"]);
   });
 
@@ -176,10 +167,7 @@ describe("FoldSettings", () => {
 
   test("explains an unavailable model next to the preview choice", () => {
     const markup = renderToStaticMarkup(
-      <FoldSettings
-        hinge={hinge({ modelActive: false })}
-        preview={preview({ unavailable: true })}
-      />,
+      <FoldSettings hinge={hinge()} preview={preview({ unavailable: true })} />,
     );
     expect(markup).toContain(MODEL_UNAVAILABLE_DESCRIPTION);
     expect(markup).toContain(">2D<");

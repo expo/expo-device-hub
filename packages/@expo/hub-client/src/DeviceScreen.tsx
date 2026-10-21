@@ -102,10 +102,10 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
 
 /**
  * Shared renderer for a live {@link DeviceClient}, used in place of the static
- * `<img>` inside {@link PhoneFrame}. An iPhone Duo in 3D renders through
- * `FoldableDeviceScreen` instead; this flat view shows its active display. It paints whatever element the active
- * implementation asks for (`<canvas>` for H.264, `<img>` for MJPEG, or
- * `<video>` for WebRTC) and forwards normalized pointer input.
+ * `<img>` inside {@link PhoneFrame}. On an iPhone Duo it shows the active
+ * display. It paints whatever element the active implementation asks for
+ * (`<canvas>` for H.264, `<img>` for MJPEG, or `<video>` for WebRTC) and
+ * forwards normalized pointer input.
  *
  * Input is measured in *display* space (the hook remaps to the device's raw
  * frame for the current orientation). Single-finger drags go through

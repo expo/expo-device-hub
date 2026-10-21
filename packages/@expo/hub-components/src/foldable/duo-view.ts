@@ -3,10 +3,9 @@
  * `src/client/simulator/duo-view.ts` (@expo/serve-sim 0.5.0).
  */
 
+import { HINGE_POSES, type HingePose, type ScreenSize } from "@expo/hub-client";
 import { Euler, Quaternion, Vector3 } from "three";
 
-import { HINGE_POSES, type HingePose } from "../hinge-control";
-import { type ScreenSize } from "../types";
 import { duoFacingYaw, duoPose } from "./duo-pose";
 
 /** Saved orientation controls; ordinary folding adds a hinge-dependent facing turn. */

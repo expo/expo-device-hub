@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { type HingePose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
@@ -6,9 +7,8 @@ import {
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
-} from "../duo/duo-layout";
-import { duoPose } from "../duo/duo-pose";
-import { type HingePose } from "../hinge-control";
+} from "../foldable/duo-layout";
+import { duoPose } from "../foldable/duo-pose";
 
 const viewport = { width: 1680, height: 1100 };
 const stage = { width: 640, height: 640 };

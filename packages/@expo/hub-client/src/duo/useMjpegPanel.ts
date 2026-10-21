@@ -1,12 +1,12 @@
 /**
  * Paints one panel's MJPEG feed into an `<img>` as per-frame blob URLs,
  * following serve-sim's `use-mjpeg-stream.ts` and the `SimulatorView` painter
- * (@expo/serve-sim 0.5.0). A fresh object URL per frame lets the 3D scene
- * detect new frames by `img.src`, which a long-lived multipart `<img>` would
- * never change.
+ * (@expo/serve-sim 0.5.0). A fresh object URL per frame lets a consumer that
+ * samples the element, such as a 3D renderer, detect new frames by `img.src`,
+ * which a long-lived multipart `<img>` would never change.
  */
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef } from "react";
 
 import { type SessionFetch } from "../session-token";
 import { createMjpegFrameParser } from "./mjpeg-frame-parser";
@@ -15,7 +15,7 @@ const RETRY_MS = 1_000;
 
 export function useMjpegPanel(
   streamUrl: string | null,
-  imgRef: RefObject<HTMLImageElement | null>,
+  img: HTMLImageElement | null,
   onFrame?: () => void,
   fetchImpl: SessionFetch = fetch,
   onConnecting?: () => void,
@@ -23,10 +23,7 @@ export function useMjpegPanel(
   const onConnectingRef = useRef(onConnecting);
   onConnectingRef.current = onConnecting;
   useEffect(() => {
-    if (!streamUrl) return;
-    // The element belongs to the same render as this effect; hold it for cleanup.
-    const img = imgRef.current;
-    if (!img) return;
+    if (!streamUrl || !img) return;
     const controller = new AbortController();
     let stopped = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,5 +110,5 @@ export function useMjpegPanel(
       if (decoding) URL.revokeObjectURL(decoding);
       if (painted) URL.revokeObjectURL(painted);
     };
-  }, [streamUrl, imgRef, onFrame, fetchImpl]);
+  }, [streamUrl, img, onFrame, fetchImpl]);
 }
