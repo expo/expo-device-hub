@@ -545,17 +545,22 @@ intended.
   `PhoneFrame.tsx`, the measured controls block in `StreamPanel.tsx`].
 - The stage can be wider or taller than it is high. The base view spans the
   largest centered square of the stage; on a square stage this is serve-sim's
-  zoom. "Keep same size" shows the model at the size of that square, so no pose
-  crosses the edges of a narrow stage. "Fill available space" fits the current
-  pose in the whole stage with a 32 px inset on the limiting side [observed:
-  `duoStageZoom` and `duoFitScale` in `duo-layout.ts`].
-- A new pose springs the fill factor, so the model eases into its framing.
-  The fill target follows the folded geometry on every frame, and opening a
-  pose widens the model faster than the spring shrinks the factor. So the
-  sprung factor never exceeds the fit with a 16 px inset, which is how far the
-  hinge handles sit outside the model; the model never crosses the stage edge,
-  and the handles stay clear of the title and the controls. serve-sim springs
-  without this limit [observed: `stepDuoSpring` for `fitScale` in serve-sim's
+  zoom. "Keep same size" shows the model at the size of that square, so at
+  rest no pose crosses the edges of a narrow stage. While the device folds or
+  rotates, its model can cross the edge for a few frames, as in serve-sim:
+  the limit below applies only to "Fill available space". That mode fits the
+  current pose in the whole stage with a 32 px inset on the limiting side
+  [observed: `duoStageZoom` and `duoFitScale` in `duo-layout.ts`].
+- In "Fill available space", a new pose springs the fill factor, so the model
+  eases into its framing. The fill target follows the folded geometry on every
+  frame, and opening a pose widens the model faster than the spring shrinks
+  the factor. So the sprung factor never exceeds the fit with a 16 px inset,
+  which is how far the hinge handles sit outside the model; the model never
+  crosses the stage edge, and the handles stay clear of the title and the
+  controls. While the limit holds, the zoom can change faster from frame to
+  frame than the spring alone would, but the model's limiting edge stays 16 px
+  from the stage edge, so it does not jump. serve-sim springs without this
+  limit [observed: `stepDuoSpring` for `fitScale` in serve-sim's
   `src/client/simulator/duo-scene.ts`].
 - A stage or window resize sets the fill factor at once. The base zoom follows
   a resize at once, so a factor that lagged behind it would push the model

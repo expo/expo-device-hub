@@ -20,6 +20,7 @@ import {
   DUO_HANDLE_OFFSET,
   DUO_INITIAL_ZOOM,
   duoCameraZoom,
+  duoFitExtents,
   duoFitScale,
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
@@ -1008,9 +1009,8 @@ export function createDuoScene(
         viewport,
         seconds: dt,
         reducedMotion: reducedMotion.matches,
-        fitAt: fitted
-          ? (stage, inset) => duoFitScale(fitted, camera, viewport, stage, inset)
-          : undefined,
+        // Projected once per frame; the fill target and its limit differ only in the inset.
+        extents: fitted ? duoFitExtents(fitted, camera) : undefined,
       });
       zoomState = step.state;
       stageWidth = zoomState.stage.width;
