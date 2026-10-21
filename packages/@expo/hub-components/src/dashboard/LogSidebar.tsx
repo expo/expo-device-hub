@@ -11,6 +11,7 @@ import { DeviceOptionsSection } from "./DeviceOptionsSection";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
+import { NetworkSection, type NetworkSectionProps } from "./NetworkSection";
 import { StreamOptionsSection } from "./StreamOptionsSection";
 import { type Device, isDeviceFrameProfileId } from "./data";
 import { type StreamModeAvailability } from "./StreamSection";
@@ -46,6 +47,11 @@ export type LogSidebarProps = {
   onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
+  /**
+   * The app's network traffic for the Network section. Hosts that can read the app's inspector
+   * (the Hub, inside the Metro server) pass it; without it the section is not shown.
+   */
+  network?: NetworkSectionProps;
 };
 
 /**
@@ -68,6 +74,7 @@ export function LogSidebar({
   clipboardRequest,
   onClipboardRequestHandled,
   width = 400,
+  network,
 }: LogSidebarProps) {
   const deviceFrame = device
     ? {
@@ -151,6 +158,7 @@ export function LogSidebar({
           />
         )}
         {client?.capabilities.events && <EventsSection client={client} />}
+        {network && <NetworkSection {...network} />}
         <LogsSection client={client} />
       </div>
     </aside>

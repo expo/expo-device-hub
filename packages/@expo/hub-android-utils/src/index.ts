@@ -5,6 +5,7 @@ export { freeEmulatorPort } from "./free-emulator-port";
 export { listDeviceProfiles } from "./list-device-profiles";
 export { listDevices } from "./list-devices";
 export { listSystemImages } from "./list-system-images";
+export { readDeviceProps } from "./read-device-props";
 export { removeDevice } from "./remove-device";
 export { shutdownDevice } from "./shutdown-device";
 export { waitForAdbOffline } from "./wait-for-adb-offline";
