@@ -86,11 +86,13 @@ const testIds = (root: ReactTestRenderer) =>
     .map((node) => node.props["data-testid"] as string);
 
 describe("ActivityIndicator", () => {
-  test("is named by the one loading label and turns unless motion is reduced", () => {
+  test("announces the one loading label and turns unless motion is reduced", () => {
     const markup = renderToStaticMarkup(<ActivityIndicator />);
     expect(LOADING_LABEL).toBe("Loading");
-    expect(markup).toContain('role="status"');
-    expect(markup).toContain(`aria-label="${LOADING_LABEL}"`);
+    // A status region announces its text, not an aria-label: the label is hidden text inside it.
+    const region = markup.slice(markup.indexOf('role="status"'), markup.indexOf("<svg"));
+    expect(region).toContain(`>${LOADING_LABEL}</span>`);
+    expect(markup).not.toContain("aria-label");
     expect(markup).toContain("animateTransform");
 
     stubGlobal("window", {
@@ -221,7 +223,7 @@ describe("the iPhone Duo 3D preview", () => {
     return { render, pill };
   }
 
-  test("spins and says Loading until the model is drawn and the active display has a frame", async () => {
+  test("spins and says Loading until the model is loaded and the active display has a frame", async () => {
     const { render, pill } = await panel(duo("connecting", false));
     expect(testIds(renderer!)).toContain("device-screen-loading");
     expect(pill()).toContain(LOADING_LABEL);

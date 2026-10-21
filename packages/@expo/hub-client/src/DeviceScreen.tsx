@@ -398,7 +398,8 @@ export function DeviceScreen({
       ) : videoKind === "video" ? (
         <video ref={attachVideo} autoPlay muted playsInline style={mediaStyle} />
       ) : (
-        <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
+        // The input surface names the screen; an empty alt hides a broken image's text.
+        <img ref={attachVideo} alt="" draggable={false} style={mediaStyle} />
       )}
 
       {/* Input overlay: display-aligned, captures all pointer events. */}

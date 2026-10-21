@@ -1,3 +1,4 @@
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { type CSSProperties } from "react";
 
 import { border, icon } from "../theme/tokens";
@@ -9,7 +10,7 @@ export const LOADING_LABEL = "Loading";
 export type ActivityIndicatorProps = {
   /** Width and height in pixels. */
   size?: number;
-  /** Accessible name; defaults to {@link LOADING_LABEL}. */
+  /** Text for assistive technology; defaults to {@link LOADING_LABEL}. */
   label?: string;
   style?: CSSProperties;
 };
@@ -18,7 +19,8 @@ export type ActivityIndicatorProps = {
  * Indeterminate spinner, standing in for the website's `ActivityIndicator`
  * (not ported: its source is not available here). It is an SVG animated by
  * SMIL, so it needs no stylesheet in an inline-styled DOM component. With
- * reduced motion, the arc stays still.
+ * reduced motion, the arc stays still. The status region holds the label as
+ * visually hidden text, so screen readers announce it when it appears.
  */
 export function ActivityIndicator({
   size = 24,
@@ -34,9 +36,9 @@ export function ActivityIndicator({
   return (
     <span
       role="status"
-      aria-label={label}
       style={{ display: "inline-flex", width: size, height: size, flexShrink: 0, ...style }}
     >
+      <VisuallyHidden>{label}</VisuallyHidden>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden focusable="false">
         <circle
           cx={center}

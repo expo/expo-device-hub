@@ -78,7 +78,7 @@ export function StreamPanel({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  // PhoneFrame also knows whether the 3D model is drawn; until then the pill says Loading too.
+  // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
   const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
   const setting = client.deviceSettings?.appearance;

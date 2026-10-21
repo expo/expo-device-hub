@@ -108,7 +108,7 @@ export function PhoneFrame({
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  // The device whose 3D model is drawn; the 3D preview loads until it has one.
+  // The device whose 3D model is loaded; the 3D preview loads until it has one.
   const [modelReadyDevice, setModelReadyDevice] = useState<string | null>(null);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];

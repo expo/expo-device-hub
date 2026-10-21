@@ -77,7 +77,7 @@ import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import { parseScreenRecordingStatus } from "./screen-recording";
-import { useScreenPresentation } from "./screen-presentation";
+import { STREAM_DISCONNECTED_ERROR, useScreenPresentation } from "./screen-presentation";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { type WebRtcIceServer, useWebRtcStream } from "./useWebRtcStream";
@@ -281,7 +281,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // a reconnect (last frame kept) rather than the initial connect.
   const [webRtcWasLive, setWebRtcWasLive] = useState(false);
   const [webRtcGraceExpired, setWebRtcGraceExpired] = useState(false);
-  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}`;
+  // A new token is a new connection: its stream has not been live yet either.
+  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}\0${token ?? ""}`;
   const [webRtcDeviceKey, setWebRtcDeviceKey] = useState(deviceKey);
   if (webRtcDeviceKey !== deviceKey) {
     // Reset per-device readiness during render: the previous device's flags
@@ -1470,7 +1471,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               graceTimer = null;
               if (cancelled || painted) return;
               setStatus("error");
-              setError((prev) => prev ?? "Disconnected — retrying…");
+              setError((prev) => prev ?? STREAM_DISCONNECTED_ERROR);
             }, STREAM_RECONNECT_GRACE_MS);
           }
         }

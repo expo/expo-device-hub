@@ -42,7 +42,7 @@ export interface FoldableDeviceScreenProps {
    */
   onUnavailable?: () => void;
   /**
-   * Whether Xcode's model is drawn. With `client.framePresented`, it tells
+   * Whether Xcode's model is loaded into the scene. With `client.framePresented`, it tells
    * when the preview has shown its first display frame; until then the
    * preview draws nothing, and the consumer shows loading UI.
    */
