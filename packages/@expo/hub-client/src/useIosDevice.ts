@@ -2026,21 +2026,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
   const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;
-    return {
+    const state: DeviceFold = {
       angle: previewHingeAngle,
       pose: previewHingePose,
       pending: hingePending,
       error: hingeError,
+      setControl: setHingeControl,
+      observe: observeHinge,
+    };
+    // @ref LLP 0016#fold-state-and-commands — the groups come with the capability that reports them
+    if (!foldCapabilities) return state;
+    return {
+      ...state,
       tableMode: {
         enabled: hingePreview?.tableMode ?? screen?.tableMode,
         available: screen?.tableModeAvailable,
       },
       physical: { pose: physicalPose, faceDown: previewFaceDown },
-      setControl: setHingeControl,
-      observe: observeHinge,
     };
   }, [
     isDuo,
+    foldCapabilities,
     physicalPose,
     previewHingePose,
     previewHingeAngle,

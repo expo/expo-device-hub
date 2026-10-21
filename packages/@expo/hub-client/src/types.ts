@@ -95,8 +95,8 @@ export type DeviceFoldCapabilities =
   | false
   | Readonly<{
       /**
-       * The hinge angles that the device accepts, in degrees: 0 is folded
-       * shut, 180 is flat. `false` when the device applies poses only.
+       * The hinge angles that the device accepts, in degrees, as for
+       * {@link DeviceFold.angle}. `false` when the device applies poses only.
        */
       angle: Readonly<{ min: number; max: number }> | false;
       /**
@@ -116,7 +116,7 @@ export type DeviceFoldCapabilities =
  * follow one command from its request to its outcome.
  */
 export type FoldCommandEvent =
-  /** `setControl` queued the command; `angle`, `pose`, and `tableMode` already preview it. */
+  /** `setControl` queued the command; `angle`, `pose`, and `tableMode.enabled` already preview it. */
   | { type: "requested"; command: FoldControlCommand }
   /**
    * The command went to the device. `display` is the display that the command
@@ -148,7 +148,8 @@ export interface DeviceFoldTableMode {
 
 /**
  * How the device is held, apart from its hinge angle. Present when the backend
- * reports it (iOS); Android emulators have no physical stance to report.
+ * reports it: the iOS adapter reports it together with `capabilities.fold`.
+ * Android emulators have no physical stance to report.
  */
 export interface DeviceFoldPhysical {
   /**
@@ -168,7 +169,11 @@ export interface DeviceFoldPhysical {
  * device accepts.
  */
 export interface DeviceFold {
-  /** Hinge angle in degrees: 0 is folded shut, 180 is flat. Undefined until reported. */
+  /**
+   * Hinge angle in degrees, between the display sides of the two halves: 180
+   * is flat, a smaller angle folds the displays inward (0 is shut), and a
+   * fold-out hinge goes past 180. Undefined until reported.
+   */
   angle?: number;
   /** Named pose in effect, null for a custom angle, undefined until reported. */
   pose?: FoldPose | null;
@@ -176,7 +181,7 @@ export interface DeviceFold {
   pending: boolean;
   /** The last failed fold command, cleared when the next one starts. */
   error: string | null;
-  /** Present when `capabilities.fold.tableMode` is true. */
+  /** Present exactly when `capabilities.fold.tableMode` is true. */
   tableMode?: DeviceFoldTableMode;
   /** Present when the backend reports how the device is held. */
   physical?: DeviceFoldPhysical;
