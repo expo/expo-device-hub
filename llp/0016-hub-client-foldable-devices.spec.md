@@ -23,24 +23,24 @@
 
 `DeviceClient.fold` is `null` for a device that does not fold. For a foldable it has [observed: `DeviceFold` in `types.ts`]:
 
-| Field        | Meaning                                                                                                                                    |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `angle`      | Hinge angle in degrees: 0 is folded shut, 180 is flat. Undefined until reported.                                                           |
-| `pose`       | The named pose in effect; `null` for a custom angle; undefined until reported.                                                             |
-| `pending`    | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                        |
-| `error`      | The last failed command. The next command clears it.                                                                                       |
-| `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                          |
-| `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it.               |
-| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, `tableMode`, or `faceDown`.                                                                 |
-| `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `reset`, and `rotated`. |
+| Field        | Meaning                                                                                                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `angle`      | Hinge angle in degrees, between the display sides of the two halves: 180 is flat, a smaller angle folds the displays inward (0 is shut), and a fold-out hinge goes past 180. Undefined until reported. |
+| `pose`       | The named pose in effect; `null` for a custom angle; undefined until reported.                                                                                                                         |
+| `pending`    | A command waits for the device's acknowledgement. `angle` and `pose` show the request until the device confirms it.                                                                                    |
+| `error`      | The last failed command. The next command clears it.                                                                                                                                                   |
+| `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                      |
+| `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it.                                                                           |
+| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, `tableMode`, or `faceDown`.                                                                                                                             |
+| `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `reset`, and `rotated`.                                                             |
 
-An optional group is absent when the device does not have the feature. A device never fills a group with placeholder values.
+An optional group is absent when the device does not have the feature. A device never fills a group with placeholder values. `tableMode` is present exactly when `capabilities.fold.tableMode` is true. The iOS adapter adds both groups together with `capabilities.fold`, so before the helper reports its hinge the iPhone Duo's `fold` has neither [observed: `fold` in `useIosDevice.ts`].
 
 ## Capabilities
 
 `DeviceClient.capabilities.fold` follows the other capability groups: `false`, or an object [observed: `DeviceFoldCapabilities` in `types.ts`]:
 
-- `angle`: `{ min, max }` in degrees, or `false` for a device that applies poses only.
+- `angle`: `{ min, max }` in degrees, measured as `fold.angle` is, or `false` for a device that applies poses only. The iPhone Duo and #352's Android emulators accept 0–180.
 - `poses`: the poses that the device can apply, each with the hinge angle that it sets.
 - `tableMode`: the device has Xcode's persistent table state.
 - `faceDown`: the device accepts the `faceDown` command.
@@ -133,3 +133,4 @@ These are Claude Code's choices while it implemented the direction above. Human 
 1. Are `cover` and `inner` the right role names? They came from the orchestrator's analysis (Claude Code), not from a maintainer. `main` instead of `inner` would also fit a fold-out device whose only display is on the outside. Neither name fits a dual-screen device.
 2. `deviceModelUrl` does not say which model it is. Only the iPhone Duo has one today. A second device with a model needs a kind, so that a consumer picks the right renderer.
 3. Should an Android adapter set `screen.display` from serve-emu's posture (`closed` → `cover`)? No consumer reads it on Android today.
+4. Is the `faceDown` command needed in the public API? It replaces #432's `physical` command, which serve-sim's protocol offers, but nothing in hub-components or the Hub sends it or reads `capabilities.fold.faceDown` [observed: `git grep` on this branch]. Keeping it costs one capability flag; removing it keeps the contract minimal.

@@ -155,6 +155,7 @@ function FoldButtons() {
   const { fold, capabilities } = useDeviceClient();
   const controls = capabilities.fold;
   if (!fold || !controls) return null;
+  const range = controls.angle;
 
   return (
     <>
@@ -164,9 +165,9 @@ function FoldButtons() {
       {controls.poses.book && (
         <button onClick={() => fold.setControl({ control: "pose", value: "book" })}>Book</button>
       )}
-      {controls.angle && (
-        <button onClick={() => fold.setControl({ control: "angle", value: controls.angle.max })}>
-          Flat
+      {range && (
+        <button onClick={() => fold.setControl({ control: "angle", value: range.max })}>
+          Most open
         </button>
       )}
       {controls.tableMode && fold.tableMode?.available && (

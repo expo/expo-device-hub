@@ -294,8 +294,17 @@ test("the Duo reports its fold state, displays, and model, and keeps the flat st
   // DeviceKit's cover chrome identifies the Duo before native capability metadata.
   expect(client().fold).not.toBeNull();
   expect(client().fold?.angle).toBeUndefined();
-  // The controls wait for the helper to report its hinge, as serve-sim's do.
+  // The controls wait for the helper to report its hinge, as serve-sim's do,
+  // and so do the groups that only that report fills.
   expect(client().capabilities.fold).toBe(false);
+  expect(Object.keys(client().fold!).sort()).toEqual([
+    "angle",
+    "error",
+    "observe",
+    "pending",
+    "pose",
+    "setControl",
+  ]);
   await act(async () => socket.push(0x82, COVER));
   const fold = client().fold!;
   // Fold controls and state only: no renderer state in the contract.
