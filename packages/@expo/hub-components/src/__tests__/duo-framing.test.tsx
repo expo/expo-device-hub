@@ -205,6 +205,23 @@ test("a preset from before a rotation, accepted later, keeps the turned recovery
   expect(view()).toEqual(rotatedView);
 });
 
+test("a reset drops the old connection's restore point and ownership, and frames as on connect", async () => {
+  const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null, tableMode: true };
+  const { view, emit, update } = await mount(half);
+  const initial = view();
+  await emit({ type: "requested", command: pose("laptop") });
+  expect(view()).toEqual(duoPresetView("laptop"));
+  await emit({ type: "reset" });
+  expect(view()).toEqual(initial);
+  // A later failure has nothing from the old connection to restore.
+  await emit({ type: "requested", command: angle(120) });
+  await emit({ type: "failed", error: "Rejected" });
+  expect(view()).toEqual(initial);
+  // Ownership ended too, so face-down framing follows another client again.
+  await update({}, { ...half, physicalOrientation: "facedown" });
+  expect(view()).toEqual(duoPresetView("tent"));
+});
+
 test("a confirmed preset becomes the baseline for the next burst", async () => {
   const { view, emit } = await mount(COVER);
   const open = pose("open");

@@ -493,8 +493,9 @@ The contract [observed: `DeviceHinge`, `DeviceDisplay`, and `DeviceClient` in
 - `DeviceClient.hinge` holds fold state and controls only: angle, pose,
   physical pose, Table Mode, face down, pending, error, `setControl`, and
   `observe`. `observe` reports each command's request, its submission with the
-  display it elects, its acknowledgement, its confirmation, a failure, and each
-  rotation. A backend without a command lifecycle leaves `observe` out, and the
+  display it elects, its acknowledgement, its confirmation, a failure, a change
+  of connection that drops pending commands, and each rotation. A backend
+  without a command lifecycle leaves `observe` out, and the
   contract requires no display or model fields, so a backend can offer fold
   controls without the 3D preview.
 - `DeviceClient.displays` lists the cover (1) and the inner display (3), each

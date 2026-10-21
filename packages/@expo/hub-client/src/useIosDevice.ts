@@ -1826,7 +1826,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   ]);
 
   // ── iPhone Duo: pose bookkeeping and the displays' own streams ──
+  const hingeConnectionRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const previous = hingeConnectionRef.current;
+    hingeConnectionRef.current = config?.url;
     setHingePending(false);
     setHingeError(null);
     setHingePreview(null);
@@ -1834,7 +1837,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
-  }, [config?.url]);
+    // Every command of the old connection gets a final event, so no listener
+    // waits for a reply or a confirmation that cannot come.
+    if (previous !== undefined) emitHingeEvent({ type: "reset" });
+  }, [config?.url, emitHingeEvent]);
 
   useEffect(() => {
     if (!hingePreview || hingePending || !screen) return;

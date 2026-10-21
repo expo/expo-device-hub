@@ -5,7 +5,8 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Related:** LLP 0000, LLP 0003
+**Revised:** 2026-10-21 (input addressed to a display; Claude Code, directed by Krystof Woldrich)
+**Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
 
@@ -83,6 +84,8 @@ Window blur, a hidden tab, page hide, unmount, or a real input-owner change canc
 - Unsent keys and scrolls are discarded from both the socket queue and any pre-discovery queue; they must not type or scroll later after the browser has left the interaction.
 - Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement and releases at the last forwarded single-touch point, while starting the pinch at the current two-finger positions.
 - Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
+
+Touch, multi-touch, and scroll samples addressed to one of `DeviceClient.displays` follow the same owner, queues, and cancellation. The helper routes input to the display that native readback reports, so a gesture that begins on another display is dropped through its end, and so is a scroll on another display. [LLP 0004](0004-serve-sim-hinge-controls.explainer.md#3d-preview-in-the-hub) describes the display contract [observed: `dropsDisplayInput` and `sendScroll` in `useIosDevice.ts`].
 
 This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
 

@@ -408,6 +408,24 @@ test("switching to another simulator forgets the previous screen config and disp
   expect(flat.src).toContain("https://hub.test/helper/device-2/stream.mjpeg");
 });
 
+test("a command still pending when the connection changes ends with a reset event", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe, update } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  observe();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  expect(client().hinge?.pending).toBe(true);
+  // A reply for the old connection's command never comes.
+  await update({ device: "device-2" });
+  await act(async () => {});
+  const open = { control: "pose", value: "open" } as const;
+  expect(events).toEqual<HingeCommandEvent[]>([
+    { type: "requested", command: open },
+    { type: "sent", command: open, display: 3 },
+    { type: "reset" },
+  ]);
+});
+
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
   test(`a queued preset ${failure} reports a failure after the accepted preset`, async () => {
     installBrowser({ duo: true });

@@ -182,6 +182,50 @@ async function connect(token?: string) {
   };
 }
 
+test("panels hold no timer or listener until an element is attached, as on every iOS client", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
+  const intervals: number[] = [];
+  const listeners: string[] = [];
+  const nativeInterval = setInterval;
+  stubGlobal("setInterval", (callback: () => void, ms: number) => {
+    intervals.push(ms);
+    return nativeInterval(callback, ms);
+  });
+  stubGlobal("document", {
+    visibilityState: "visible",
+    addEventListener: (type: string) => listeners.push(type),
+    removeEventListener() {},
+  });
+  stubGlobal("fetch", async () => new Response(new ReadableStream()));
+  const feeds: DuoPanelFeeds = {
+    url: "https://hub.test/helper/duo",
+    mode: "mjpeg",
+    codec: "h264",
+    onAvccError() {},
+    onWebRtcFailure() {},
+  };
+  function Idle({ value }: { value: DuoPanelFeeds | null }) {
+    useDuoPanelStreams(value, { 1: null, 3: null }, 1);
+    return null;
+  }
+  await act(async () => {
+    renderer = create(<Idle value={null} />);
+  });
+  await act(async () => renderer!.update(<Idle value={feeds} />));
+  expect(intervals).toEqual([]);
+  expect(listeners).toEqual([]);
+  await act(async () => renderer!.unmount());
+  // Attached elements start the stale-frame watch, one per panel.
+  await act(async () => {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+      createNodeMock: (element) => (element.type === "img" ? { removeAttribute() {} } : null),
+    });
+  });
+  expect(intervals).toEqual([1_000, 1_000]);
+  expect(listeners).toEqual(["visibilitychange", "visibilitychange"]);
+});
+
 test("both H.264 panel streams carry the connection session token", async () => {
   const { requests } = await connect("duo-token");
   expect(requests).toEqual([

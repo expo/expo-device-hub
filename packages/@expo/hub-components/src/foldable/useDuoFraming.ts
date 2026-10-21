@@ -115,6 +115,15 @@ export function useDuoFraming(hinge: DeviceHinge | null, screen: ScreenSize | nu
           setOwned(false);
           return;
         }
+        case "reset":
+          // A new connection: no view from the old one comes back, and the
+          // model is framed as on connect. Departure counts stay monotonic,
+          // because the scene compares them only with its own last reading.
+          restoreRef.current = null;
+          faceDownRef.current = { saved: null, held: false };
+          setView(() => null);
+          setOwned(false);
+          return;
         case "rotated":
           // The view turns at once, without waiting for a frame.
           restoreRef.current = null;
