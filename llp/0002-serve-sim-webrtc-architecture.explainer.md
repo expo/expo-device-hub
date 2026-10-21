@@ -437,3 +437,9 @@ The stable transport should be exercised against:
 The useful operational signals are negotiated codec, candidate-pair type, RTT,
 packet loss, actual bitrate, encoded/sent/dropped frames, encode duration, and
 the final close reason.
+
+## Browser playback permission
+
+Safari can reject autoplay because of its website preference or the viewer's Low Power Mode. The preview observes the owned video's play promise and pause/playing events, then presents a Start live view control above the Simulator input layer. Its click calls `video.play()` synchronously and never becomes a device touch. Connection errors take priority over the playback prompt. A rejected retry retains the control; a retired video's late promise cannot alter the new view [observed: `src/client/simulator/video-playback.ts`, `src/client/simulator/simulator-view.tsx`].
+
+Playback permission does not require changing Safari preferences, disabling Low Power Mode, or replacing the WebRTC peer [observed: the recovery control calls only the owned video's `play()`].

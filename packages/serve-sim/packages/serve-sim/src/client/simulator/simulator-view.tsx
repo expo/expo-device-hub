@@ -22,6 +22,7 @@ import { resolveSimulatorStreamRouting } from "./simulator-stream-routing.js";
 import { useAvccStream } from "./use-avcc-stream.js";
 import { roundToDevicePixel, snapContainBox } from "../utils/simulator-resize";
 import { observeVideoDimensions } from "./video-dimensions.js";
+import { observeVideoPlayback, type VideoPlaybackIssue } from "./video-playback.js";
 import { isAvccSupported } from "../avcc-codec.js";
 
 // Custom round cursor matching the finger dot indicator
@@ -159,6 +160,8 @@ export function SimulatorView({
   const imgRef = useRef<HTMLImageElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playbackRef = useRef<ReturnType<typeof observeVideoPlayback> | null>(null);
+  const [playbackIssue, setPlaybackIssue] = useState<VideoPlaybackIssue>(null);
   const relayImgRef = useRef<HTMLImageElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const inputLayerRef = useRef<HTMLDivElement | null>(null);
@@ -241,6 +244,7 @@ export function SimulatorView({
   const streamUrl = `${url}/stream.mjpeg`;
 
   useEffect(() => {
+    setPlaybackIssue(null);
     if (!useWebRtc) return;
     const video = videoRef.current;
     if (!video) return;
@@ -290,7 +294,8 @@ export function SimulatorView({
       } else {
         video.addEventListener("timeupdate", onTimeUpdate);
       }
-      void video.play().catch(() => {});
+      // @ref LLP 0002#browser-playback-permission — a blocked autoplay needs a viewer click, not a codec retry
+      playbackRef.current = observeVideoPlayback(video, setPlaybackIssue);
     } else {
       setConnected(false);
     }
@@ -309,6 +314,8 @@ export function SimulatorView({
       ) {
         video.cancelVideoFrameCallback(videoFrameCallback);
       }
+      playbackRef.current?.dispose();
+      playbackRef.current = null;
       video.srcObject = null;
     };
   }, [useWebRtc, webRtcStream, onWebRtcFrame, updateScreenConfig]);
@@ -1345,7 +1352,7 @@ export function SimulatorView({
               />
             </>
           )}
-          {!connected && !error && (
+          {!playbackIssue && !connected && !error && (
             <div style={{ ...overlayStyle, ...imageStyle }}>
               <span style={{ color: "#888", fontSize: 14 }}>Connecting...</span>
             </div>
@@ -1362,6 +1369,22 @@ export function SimulatorView({
               >
                 {error}
               </span>
+            </div>
+          )}
+          {useWebRtc && playbackIssue && !error && (
+            <div style={{ ...overlayStyle, zIndex: 3, flexDirection: "column", gap: 12 }}>
+              <span style={{ color: "#fff", fontSize: 14 }}>
+                {playbackIssue === "blocked"
+                  ? "Playback is paused in this browser."
+                  : "Live video could not start."}
+              </span>
+              <button
+                type="button"
+                className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-gray-200"
+                onClick={() => playbackRef.current?.play()}
+              >
+                {playbackIssue === "blocked" ? "Start live view" : "Retry live view"}
+              </button>
             </div>
           )}
           {showSlowOverlay && (
