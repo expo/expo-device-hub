@@ -6,15 +6,24 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
+  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import { bg, border, FloatingIconButton, FullScreenIcon, CloseIcon } from "../primitives";
+import {
+  bg,
+  border,
+  FloatingIconButton,
+  FullScreenIcon,
+  CloseIcon,
+  text,
+  textSize,
+} from "../primitives";
 import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { type DeviceFrameAssets } from "./deviceFrame";
-import { PhoneFrame } from "./PhoneFrame";
+import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 
@@ -38,6 +47,8 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
+  FoldableDeviceScreen,
+  foldPreview,
   displayScreen,
   framed = true,
   showDeviceFrame = true,
@@ -49,6 +60,9 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
   /**
@@ -180,6 +194,20 @@ export function StreamPanel({
       }
     />
   );
+  const hingeError = client.hinge?.error && (
+    <div
+      role="alert"
+      style={{
+        ...textSize.xs,
+        color: text.danger,
+        textAlign: "center",
+        maxWidth: "min(280px, 100cqw)",
+        margin: "8px auto 0",
+      }}
+    >
+      {client.hinge.error}
+    </div>
+  );
 
   return (
     <section
@@ -287,6 +315,8 @@ export function StreamPanel({
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
             }}
             DeviceScreen={DeviceScreen}
+            FoldableDeviceScreen={FoldableDeviceScreen}
+            foldPreview={foldPreview}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
@@ -327,6 +357,7 @@ export function StreamPanel({
               }}
             >
               {controls}
+              {hingeError}
             </div>
           )}
           <ClipboardToaster />
@@ -342,10 +373,12 @@ export function StreamPanel({
             // Full screen and a raised keyboard hide the bar to give the device room; the
             // phone's own keyboard controls dismiss the keyboard.
             display: presenting || typing ? "none" : "flex",
-            justifyContent: "center",
+            flexDirection: "column",
+            alignItems: "center",
           }}
         >
           {controls}
+          {hingeError}
         </div>
       )}
       <ScreenshotToaster />

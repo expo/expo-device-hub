@@ -50,6 +50,21 @@ export const DEVICE_ORIENTATIONS = [
   "landscape_right",
 ] as const satisfies readonly DeviceOrientation[];
 
+/** Xcode's Device Hub turns the iPhone Duo clockwise, and serve-sim does the same for it. */
+export const DUO_ROTATE_ORIENTATIONS = [
+  "portrait",
+  "landscape_right",
+  "portrait_upside_down",
+  "landscape_left",
+] as const satisfies readonly DeviceOrientation[];
+
+/** Quarter turns from one pose to another, clockwise positive, the shorter way for a half turn. */
+export function clockwiseQuarterTurns(from: DeviceOrientation, to: DeviceOrientation): number {
+  const steps =
+    (DUO_ROTATE_ORIENTATIONS.indexOf(to) - DUO_ROTATE_ORIENTATIONS.indexOf(from) + 4) % 4;
+  return steps === 3 ? -1 : steps;
+}
+
 /** The pose after `orientation` in `orientations`, or the first one when it is not listed. */
 export function nextOrientation(
   orientation: DeviceOrientation,
