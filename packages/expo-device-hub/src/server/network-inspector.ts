@@ -254,7 +254,10 @@ export class NetworkSession {
         this.#detach();
         this.#setStatus({
           state: "searching",
-          message: `More than one device is named "${match.deviceName}", so the Hub cannot tell which app runs on this one. Rename one of them.`,
+          message:
+            match.reason === "shared-name"
+              ? `More than one device is named "${match.deviceName}", so the Hub cannot tell which app runs on this one. Rename one of them.`
+              : `More than one app answers to "${match.deviceName}", and not all of them report which device they run on, so the Hub cannot tell which one to show. Close the other apps, or rename this device if another device shares its name.`,
         });
         return;
       }

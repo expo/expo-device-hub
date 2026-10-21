@@ -119,6 +119,7 @@ describe("matchTarget", () => {
     expect(matchTarget(targets, ["Pixel - 17 - API 37"])).toEqual({
       kind: "ambiguous",
       deviceName: "Pixel - 17 - API 37",
+      reason: "shared-name",
     });
   });
 
@@ -127,7 +128,10 @@ describe("matchTarget", () => {
       target("1", "Pixel - 17 - API 37", "com.a", "device-a"),
       target("2", "Pixel - 17 - API 37", "com.b"),
     ];
-    expect(matchTarget(mixed, ["Pixel - 17 - API 37"]).kind).toBe("ambiguous");
+    expect(matchTarget(mixed, ["Pixel - 17 - API 37"])).toMatchObject({
+      kind: "ambiguous",
+      reason: "unidentified",
+    });
     expect(matchTarget([mixed[1]!], ["Pixel - 17 - API 37"]).kind).toBe("match");
   });
 

@@ -65,7 +65,7 @@ Each target names its device, and the names differ by platform:
 
 When a device runs several connected apps, the one Metro listed last wins [observed: `matchTarget`].
 
-A name is all the Hub can match on, and two simulators or emulators of one model can share it. Each target also reports React Native's `logicalDeviceId`, which differs between devices. When apps on more than one device answer to a name, or when several apps do and any of them reports no `logicalDeviceId` (so it could be on any device), the section attaches to none and asks the user to rename one device, rather than risk showing another device's traffic [observed: `matchTarget`].
+A name is all the Hub can match on, and two simulators or emulators of one model can share it. Each target also reports React Native's `logicalDeviceId`, which differs between devices. When apps on more than one device answer to a name, or when several apps do and any of them reports no `logicalDeviceId` (so it could be on any device), the section attaches to none rather than risk showing another device's traffic [observed: `matchTarget`]. When the apps report different devices, it asks the user to rename one; when some report none, renaming may not help, so it asks the user to close the other apps first [observed: `NetworkSession`'s status messages].
 
 ## Redaction
 

@@ -150,8 +150,11 @@ export function androidInspectorDeviceName(props: Record<string, string>): strin
 export type TargetMatch =
   | { kind: "match"; target: InspectorTarget }
   | { kind: "none" }
-  /** Apps on more than one device answer to the device's name. */
-  | { kind: "ambiguous"; deviceName: string };
+  /**
+   * Several apps answer to the device's name, and the Hub cannot tell which runs on this device:
+   * they report different devices, or some report none.
+   */
+  | { kind: "ambiguous"; deviceName: string; reason: "shared-name" | "unidentified" };
 
 /**
  * The target that runs on the device, trying each of its names in order. When one device runs
@@ -171,8 +174,10 @@ export function matchTarget(
     // Several apps answer to one name only safely when each reports the same device. A target
     // without an id could be on any device, so it makes a shared name ambiguous too.
     const devices = new Set(matches.map((target) => target.logicalDeviceId));
-    if (devices.size > 1 || (matches.length > 1 && devices.has(undefined))) {
-      return { kind: "ambiguous", deviceName: name };
+    devices.delete(undefined);
+    if (devices.size > 1) return { kind: "ambiguous", deviceName: name, reason: "shared-name" };
+    if (matches.length > 1 && matches.some((target) => target.logicalDeviceId === undefined)) {
+      return { kind: "ambiguous", deviceName: name, reason: "unidentified" };
     }
     return { kind: "match", target: matches.at(-1)! };
   }

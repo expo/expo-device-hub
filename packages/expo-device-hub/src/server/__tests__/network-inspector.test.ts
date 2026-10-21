@@ -327,6 +327,23 @@ describe("NetworkSession", () => {
     });
   });
 
+  test("does not ask to rename the device when its apps report no device", async () => {
+    const { session, sockets } = setup({
+      targets: [
+        { ...TARGET, id: "1", logicalDeviceId: undefined },
+        { ...TARGET, id: "2", logicalDeviceId: undefined },
+      ],
+    });
+    const client = new FakeClient();
+    session.subscribe(client);
+    await settle();
+    expect(sockets).toHaveLength(0);
+    expect(client.last("status")?.status).toEqual({
+      state: "searching",
+      message: expect.stringContaining("Close the other apps"),
+    });
+  });
+
   test("answers a body request to the asking dashboard only", async () => {
     const { session, sockets } = setup();
     const asker = new FakeClient();
