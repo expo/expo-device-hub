@@ -1,7 +1,7 @@
 import { type CSSProperties } from "react";
-import { type DeviceOrientation } from "@expo/hub-client";
+import { type DeviceClient, type DeviceOrientation } from "@expo/hub-client";
 
-import { type DeviceFrameProfileId } from "./data";
+import { type Device, type DeviceFrameProfileId, isDeviceFrameProfileId } from "./data";
 
 export type DeviceFrameRect = {
   x: number;
@@ -62,7 +62,21 @@ function percent(value: number, total: number): string {
   return `${((value / total) * 100).toFixed(4)}%`;
 }
 
-function artworkStyle(asset: DeviceFrameAsset, layout: DeviceFrameLayout): CSSProperties {
+/** The geometry a frame layout needs; DeviceKit chromes provide it without a single image. */
+export type DeviceFrameGeometry = Pick<
+  DeviceFrameAsset,
+  "width" | "height" | "screen" | "screenRadius"
+>;
+
+/** A device can show a frame when it has bundled artwork or DeviceKit chrome. */
+export function deviceFrameAvailable(
+  device: Pick<Device, "deviceFrame">,
+  client: Pick<DeviceClient, "deviceChrome"> | undefined,
+): boolean {
+  return isDeviceFrameProfileId(device.deviceFrame) || !!client?.deviceChrome;
+}
+
+function artworkStyle(asset: DeviceFrameGeometry, layout: DeviceFrameLayout): CSSProperties {
   const centered: CSSProperties = {
     position: "absolute",
     left: "50%",
@@ -166,7 +180,7 @@ export function deviceFramePresentation({
   displayRatio,
   maxScreenShortSide,
 }: {
-  asset: DeviceFrameAsset;
+  asset: DeviceFrameGeometry;
   orientation: DeviceOrientation | null | undefined;
   displayRatio: number;
   maxScreenShortSide: number;

@@ -2,6 +2,7 @@ import { type ComponentType, type CSSProperties, useState } from "react";
 
 import {
   type AgentInteraction,
+  deviceChromeForScreen,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
@@ -15,6 +16,7 @@ import {
   type DeviceFrameAssets,
 } from "./deviceFrame";
 import { deviceScreenClipPath } from "./deviceScreenClipPath";
+import { DeviceKitArtwork, deviceKitFramePresentation } from "./deviceKitFrame";
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
   position: "absolute",
@@ -125,16 +127,40 @@ export function PhoneFrame({
     </div>
   );
 
-  const frameAsset =
-    showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
-  const framed = frameAsset
-    ? deviceFramePresentation({
-        asset: frameAsset,
+  // Apple's DeviceKit chrome, when serve-sim has one, frames every iOS model it knows; the
+  // bundled artwork remains the frame for the models it covers otherwise.
+  // A multi-display device (iPhone Duo) is framed by the chrome of the display that streams.
+  const deviceChrome =
+    showDeviceFrame && client?.deviceChrome
+      ? deviceChromeForScreen(client.deviceChrome, client.screen?.screenId)
+      : null;
+  const kitFramed = deviceChrome
+    ? deviceKitFramePresentation({
+        chrome: deviceChrome,
         orientation: client?.screen?.orientation,
         displayRatio: ratio,
         maxScreenShortSide: MAX_SHORT_SIDE,
       })
     : null;
+  const frameAsset =
+    !kitFramed && showDeviceFrame && device.deviceFrame
+      ? deviceFrameAssets?.[device.deviceFrame]
+      : undefined;
+  const framed =
+    kitFramed ??
+    (frameAsset
+      ? deviceFramePresentation({
+          asset: frameAsset,
+          orientation: client?.screen?.orientation,
+          displayRatio: ratio,
+          maxScreenShortSide: MAX_SHORT_SIDE,
+        })
+      : null);
+  const frameKind = deviceChrome
+    ? `devicekit:${deviceChrome.identifier}`
+    : frameAsset
+      ? device.deviceFrame
+      : "none";
   const screenStyle: CSSProperties = framed
     ? { ...framed.screenStyle, backgroundColor: bg.element }
     : {
@@ -148,7 +174,7 @@ export function PhoneFrame({
   return (
     <div
       data-testid="device-screen-frame"
-      data-device-frame-kind={framed ? device.deviceFrame : "none"}
+      data-device-frame-kind={frameKind}
       data-agent-active={agentInteraction ? "true" : "false"}
       style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
       onPointerEnter={(event) => {
@@ -189,10 +215,26 @@ export function PhoneFrame({
         )}
         {takeoverOverlay}
       </div>
+      {deviceChrome && kitFramed && (
+        <>
+          <DeviceKitArtwork
+            chrome={deviceChrome}
+            layers={["back", "bezel"]}
+            style={kitFramed.artworkStyle}
+            name="back"
+          />
+          <DeviceKitArtwork
+            chrome={deviceChrome}
+            layers={["front"]}
+            style={kitFramed.frontArtworkStyle}
+            name="front"
+          />
+        </>
+      )}
       {deviceFrameAssets
         ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
             const asset = deviceFrameAssets[kind];
-            const active = !!framed && device.deviceFrame === kind;
+            const active = !!frameAsset && !!framed && device.deviceFrame === kind;
 
             return (
               <img
