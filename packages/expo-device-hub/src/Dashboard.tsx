@@ -77,6 +77,13 @@ const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
     height: 4096,
     screen: { x: 95, y: 94, width: 1737, height: 3907 },
     screenRadius: 236,
+    // Measured on the artwork: where the right edge stands out from the body. The volume
+    // rocker is one key on the frame, split in half for up and down.
+    buttons: [
+      { button: "power", rect: { x: 1920, y: 1116, width: 15, height: 316 } },
+      { button: "volumeUp", rect: { x: 1920, y: 1619, width: 15, height: 289 } },
+      { button: "volumeDown", rect: { x: 1920, y: 1908, width: 15, height: 290 } },
+    ],
   },
   "android:pixel-10-pro": {
     src: String(pixelDeviceFrame),
@@ -84,6 +91,11 @@ const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
     height: 2631,
     screen: { x: 50, y: 48, width: 1138, height: 2532 },
     screenRadius: 150,
+    buttons: [
+      { button: "power", rect: { x: 1239, y: 716, width: 11, height: 191 } },
+      { button: "volumeUp", rect: { x: 1239, y: 1023, width: 11, height: 167 } },
+      { button: "volumeDown", rect: { x: 1239, y: 1190, width: 11, height: 168 } },
+    ],
   },
   "ios:iphone-17-pro": {
     src: String(iphoneDeviceFrame),

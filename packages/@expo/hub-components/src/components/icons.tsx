@@ -529,3 +529,114 @@ export function ChevronsUpDownIcon({
     </svg>
   );
 }
+
+// Hardware button icons. Paths from Lucide (https://lucide.dev), ISC License,
+// Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT);
+// all other copyright (c) for Lucide are held by Lucide Contributors 2022.
+
+export function LockIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.75,
+  style,
+}: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect x="3" y="11" width="18" height="11" rx="2" stroke={color} strokeWidth={strokeWidth} />
+      <path
+        d="M7 11V7a5 5 0 0 1 10 0v4"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+const SPEAKER_PATH =
+  "M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z";
+
+export function VolumeUpIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.75,
+  style,
+}: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path d={SPEAKER_PATH} stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <path
+        d="M16 9a5 5 0 0 1 0 6"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+      <path
+        d="M19.364 18.364a9 9 0 0 0 0-12.728"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function VolumeDownIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.75,
+  style,
+}: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path d={SPEAKER_PATH} stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <path
+        d="M16 9a5 5 0 0 1 0 6"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function CircleDotIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.75,
+  style,
+}: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <circle cx="12" cy="12" r="10" stroke={color} strokeWidth={strokeWidth} />
+      <circle cx="12" cy="12" r="1" stroke={color} strokeWidth={strokeWidth} />
+    </svg>
+  );
+}
+
+export function BellOffIcon({
+  size = 16,
+  color = "currentColor",
+  strokeWidth = 1.75,
+  style,
+}: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      {[
+        "M10.268 21a2 2 0 0 0 3.464 0",
+        "M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742",
+        "m2 2 20 20",
+        "M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05",
+      ].map((d) => (
+        <path
+          key={d}
+          d={d}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ))}
+    </svg>
+  );
+}

@@ -12,11 +12,19 @@ import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import {
   deviceFramePresentation,
+  deviceFrameRotation,
   deviceViewportStyle,
   type DeviceFrameAssets,
 } from "./deviceFrame";
 import { deviceScreenClipPath } from "./deviceScreenClipPath";
 import { DeviceKitArtwork, deviceKitFramePresentation } from "./deviceKitFrame";
+import {
+  deviceKitFrameButtons,
+  type FrameButton,
+  type FrameButtonActivity,
+  FrameButtonLayer,
+  NO_FRAME_BUTTON_ACTIVITY,
+} from "./hardwareButtons";
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
   position: "absolute",
@@ -79,6 +87,8 @@ export function PhoneFrame({
 }) {
   const [hovered, setHovered] = useState(false);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
+  const [buttonActivity, setButtonActivity] =
+    useState<FrameButtonActivity>(NO_FRAME_BUTTON_ACTIVITY);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
@@ -156,6 +166,14 @@ export function PhoneFrame({
           maxScreenShortSide: MAX_SHORT_SIDE,
         })
       : null);
+  // The frame's hardware buttons: DeviceKit inputs on iOS, measured artwork buttons otherwise.
+  const frameGeometry = deviceChrome?.frame ?? frameAsset;
+  const frameButtons: FrameButton[] = !live
+    ? []
+    : deviceChrome
+      ? deviceKitFrameButtons(deviceChrome)
+      : (frameAsset?.buttons ?? []).map((entry) => ({ key: entry.button, ...entry }));
+  const frameRotation = deviceFrameRotation(client?.screen?.orientation, ratio);
   const frameKind = deviceChrome
     ? `devicekit:${deviceChrome.identifier}`
     : frameAsset
@@ -222,6 +240,7 @@ export function PhoneFrame({
             layers={["back", "bezel"]}
             style={kitFramed.artworkStyle}
             name="back"
+            activity={buttonActivity}
           />
           <DeviceKitArtwork
             chrome={deviceChrome}
@@ -230,6 +249,19 @@ export function PhoneFrame({
             name="front"
           />
         </>
+      )}
+      {framed && frameGeometry && client && frameButtons.length > 0 && (
+        <FrameButtonLayer
+          frame={frameGeometry}
+          buttons={frameButtons}
+          platform={device.platform}
+          rotation={frameRotation}
+          style={{ ...framed.artworkStyle, zIndex: 4 }}
+          activity={buttonActivity}
+          onActivity={setButtonActivity}
+          owner={device.id}
+          onPress={(button, phase) => client.pressButton(button, phase)}
+        />
       )}
       {deviceFrameAssets
         ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {

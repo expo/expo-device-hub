@@ -12,6 +12,7 @@ import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame } from "./PhoneFrame";
+import { FRAME_BUTTON_REACH_PX } from "./hardwareButtons";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 
@@ -107,7 +108,8 @@ export function StreamPanel({
           boxSizing: "border-box",
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
+          // The sides keep room for hardware button icons beside the frame.
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px ${FRAME_BUTTON_REACH_PX}px ${controlsHeight + CONTROLS_GAP}px`,
           containerType: "size",
           display: "flex",
           alignItems: "center",

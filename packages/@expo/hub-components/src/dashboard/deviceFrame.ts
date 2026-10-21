@@ -1,5 +1,5 @@
 import { type CSSProperties } from "react";
-import { type DeviceClient, type DeviceOrientation } from "@expo/hub-client";
+import { type DeviceClient, type DeviceOrientation, type HardwareButton } from "@expo/hub-client";
 
 import { type Device, type DeviceFrameProfileId, isDeviceFrameProfileId } from "./data";
 
@@ -17,6 +17,8 @@ export type DeviceFrameAsset = {
   screen: DeviceFrameRect;
   /** Conservative circular clip radius, measured in source-image pixels. */
   screenRadius: number;
+  /** Hardware buttons measured on the artwork, in source-image pixels. */
+  buttons?: ReadonlyArray<{ button: HardwareButton; rect: DeviceFrameRect }>;
 };
 
 export type DeviceFrameAssets = Record<DeviceFrameProfileId, DeviceFrameAsset>;

@@ -1,6 +1,12 @@
 import { type CSSProperties } from "react";
-import { type DeviceChrome, type DeviceChromeRect, type DeviceOrientation } from "@expo/hub-client";
+import {
+  type DeviceChrome,
+  type DeviceChromeButton,
+  type DeviceChromeRect,
+  type DeviceOrientation,
+} from "@expo/hub-client";
 
+import { FRAME_BUTTON_TRANSITION, type FrameButtonActivity } from "./hardwareButtons";
 import {
   deviceFramePresentation,
   deviceFrameRotation,
@@ -19,6 +25,8 @@ export type DeviceKitArtworkPiece = {
   rect: DeviceChromeRect;
   /** `back` sits behind the bezel, `front` above the screen (watch crowns). */
   layer: "back" | "bezel" | "front";
+  /** The hardware button this sprite draws. */
+  button?: DeviceChromeButton;
 };
 
 /** Every image of a chrome in drawing order, in its portrait frame coordinates. */
@@ -31,6 +39,7 @@ export function deviceKitArtworkPieces(chrome: DeviceChrome): DeviceKitArtworkPi
         image: button.image,
         rect: button.frame,
         layer: onTop ? "front" : "back",
+        button,
       }));
   return [...buttons(false), ...bezelPieces(chrome), ...buttons(true)];
 }
@@ -141,11 +150,14 @@ export function DeviceKitArtwork({
   layers,
   style,
   name,
+  activity,
 }: {
   chrome: DeviceChrome;
   layers: ReadonlyArray<DeviceKitArtworkPiece["layer"]>;
   style: CSSProperties;
   name: string;
+  /** The hovered cap slides out by its rollover travel; the pressed one shows its down image. */
+  activity?: FrameButtonActivity;
 }) {
   const pieces = deviceKitArtworkPieces(chrome).filter((piece) => layers.includes(piece.layer));
   if (!pieces.length) return null;
@@ -162,6 +174,43 @@ export function DeviceKitArtwork({
         const sliced = piece.layer === "bezel" && piece.key !== "composite";
         // The edge slices are one pixel thick; smooth stretching fades their ends into seams.
         const stretched = sliced && STRETCHED_SLICES.has(piece.key);
+        if (piece.button) {
+          const { button } = piece;
+          const hovered = activity?.hovered === button.name || activity?.pressed === button.name;
+          const pressed = activity?.pressed === button.name;
+          return (
+            <div
+              key={piece.key}
+              style={{
+                position: "absolute",
+                left: percent(piece.rect.x, frame.width),
+                top: percent(piece.rect.y, frame.height),
+                width: percent(piece.rect.width, frame.width),
+                height: percent(piece.rect.height, frame.height),
+                transform: hovered
+                  ? `translate(${button.hover.x * 100}%, ${button.hover.y * 100}%)`
+                  : undefined,
+                transition: `transform ${FRAME_BUTTON_TRANSITION}`,
+              }}
+            >
+              <img
+                src={chrome.assetUrl(pressed && button.imageDown ? button.imageDown : piece.image)}
+                alt=""
+                draggable={false}
+                decoding="async"
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "fill",
+                  userSelect: "none",
+                  pointerEvents: "none",
+                }}
+              />
+            </div>
+          );
+        }
         return (
           <img
             key={piece.key}

@@ -191,7 +191,9 @@ test("nine-slice pieces overlap by a hair, so no seam shows between them", () =>
   expect(markup).toMatch(/src="\/chrome\?image=T"[^>]*image-rendering:pixelated/);
   expect(markup).not.toMatch(/src="\/chrome\?image=TL"[^>]*image-rendering/);
   // Buttons keep their exact rects.
-  expect(markup).toMatch(/src="\/chrome\?image=X_Power%20BTN"[^>]*style="[^"]*left:98\.6000%/);
+  expect(markup).toMatch(
+    /style="[^"]*left:98\.6000%[^"]*"><img src="\/chrome\?image=X_Power%20BTN"/,
+  );
 });
 
 test("a multi-display device draws the chrome of the active display", () => {
