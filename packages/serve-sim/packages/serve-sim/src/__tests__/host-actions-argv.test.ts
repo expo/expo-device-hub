@@ -23,6 +23,10 @@ const SHIM = `#!/bin/sh
   printf '%s\\n' "$(basename "$0")"
   for a in "$@"; do printf '%s\\n' "$a"; done
 } | tee -a "\${SERVE_SIM_ARGV_LOG:-/dev/null}"
+if [ "$1" = simctl ] && [ "$4" = screenshot ]; then
+  for output; do :; done
+  printf PNG > "$output"
+fi
 `;
 
 // The real sips writes its --out file, and the thumbnail test asserts that file is gone afterwards,
@@ -63,7 +67,6 @@ beforeAll(() => {
 afterAll(() => {
   delete process.env.SERVE_SIM_ARGV_LOG;
   shims.restore();
-  // The xcrun shim never writes, so the reservation the capture staged is what is left behind.
   rmSync(STAGED, { force: true });
 });
 
@@ -236,7 +239,7 @@ describe("procedures that shell out", () => {
       serveSimBin,
     );
     expect(result.exitCode).toBe(0);
-    // The page reads this back for the drag-and-drop URL, so it has to be the file simctl wrote.
+    // The page reads this path after the confirmed capture is published.
     expect(result.stdout.trim()).toBe(STAGED);
     const runs = loggedArgv();
     expect(runs.filter((r) => r[0] === "xcrun").at(-1)).toEqual([
@@ -246,7 +249,7 @@ describe("procedures that shell out", () => {
       UDID,
       "screenshot",
       "--display=1",
-      STAGED,
+      expect.stringMatching(/\/\.capture-[0-9a-f-]+\.png$/),
     ]);
     expect(runs.filter((r) => r[0] === "cp").at(-1)).toEqual([
       "cp",
@@ -271,7 +274,15 @@ describe("procedures that shell out", () => {
       loggedArgv()
         .filter((r) => r[0] === "xcrun")
         .at(-1),
-    ).toEqual(["xcrun", "simctl", "io", UDID, "screenshot", "--display=1", staged]);
+    ).toEqual([
+      "xcrun",
+      "simctl",
+      "io",
+      UDID,
+      "screenshot",
+      "--display=1",
+      expect.stringMatching(/\/\.capture-[0-9a-f-]+\.png$/),
+    ]);
   });
 
   // A copy that never returns is what a consent prompt looks like from the child's side. The client
@@ -350,17 +361,16 @@ describe("procedures that shell out", () => {
   });
 
   // The caller names the file, so two captures can name the same one. Only the reservation is
-  // serialized; both simctl runs then race, and the loser's cleanup must not take the winner's
-  // screenshot with it. The shim's mkdir is the tie-break: the first run writes and exits 0, the
-  // second waits until that write has landed and exits 1. The opening sleep lets both reservations
-  // land first, since the second one truncates the file.
+  // serialized; the loser's cleanup must not take the winner's screenshot with it.
+  // A shared lock makes the first invocation succeed and the second fail.
   it("keeps a screenshot another capture of the same name wrote when this one fails", async () => {
     const fileName = "serve-sim-screenshot-shared-name.png";
     const staged = join(dirname(STAGED), fileName);
     const lock = `${staged}.lock`;
     const shim =
-      '#!/bin/sh\nsleep 0.2\nif mkdir "$6.lock" 2>/dev/null; then printf PNG > "$6"; exit 0; fi\n' +
+      '#!/bin/sh\nsleep 0.2\nif mkdir "$SERVE_SIM_CAPTURE_TEST_LOCK" 2>/dev/null; then printf PNG > "$6"; exit 0; fi\n' +
       "sleep 0.5\nexit 1\n";
+    process.env.SERVE_SIM_CAPTURE_TEST_LOCK = lock;
     try {
       await withShimsAsync({ xcrun: shim }, async () => {
         const request = {
@@ -375,6 +385,7 @@ describe("procedures that shell out", () => {
       });
       expect(readFileSync(staged, "utf8")).toBe("PNG");
     } finally {
+      delete process.env.SERVE_SIM_CAPTURE_TEST_LOCK;
       rmSync(lock, { recursive: true, force: true });
       rmSync(staged, { force: true });
     }

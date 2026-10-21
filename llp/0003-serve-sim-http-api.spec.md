@@ -565,3 +565,8 @@ middleware's trusted settings, then selects the native active display. Temporary
 capture is closed after success or failure; existing streams remain open. If that display cannot be determined,
 the action fails instead of silently capturing a different panel. An inactive
 panel's screenshot may be black.
+
+Captures write to a separate temporary file and publish it to the staged name
+only after active-display validation succeeds. Failed captures remove their
+temporary pixels and empty reservations, preserving an existing successful
+screenshot of the same name. [observed: `captureScreenshotAsync`]

@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { readdir, rm, stat, writeFile } from "fs/promises";
+import { readdir, rename, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 
@@ -97,11 +97,14 @@ export async function captureScreenshotAsync(
   }
   let display = p.display;
   let shot: HostActionResult = { stdout: "", stderr: "", exitCode: 1 };
+  // Publish only a validated panel. Each capture owns its work file, so a
+  // failed retry cannot overwrite or remove another capture of the same name.
+  const temporary = join(SCREENSHOT_DIR, `.capture-${randomUUID()}.png`);
   try {
     for (let attempt = 0; attempt < 3; attempt++) {
       shot = await runInvocation({
         file: "xcrun",
-        args: ["simctl", "io", p.udid, "screenshot", `--display=${display}`, staged],
+        args: ["simctl", "io", p.udid, "screenshot", `--display=${display}`, temporary],
       });
       if (shot.exitCode !== 0 || !readActiveDisplay) break;
       const current = await readActiveDisplay();
@@ -114,9 +117,12 @@ export async function captureScreenshotAsync(
         exitCode: 1,
       };
     }
+    if (shot.exitCode === 0) await rename(temporary, staged);
   } catch (error) {
     if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
     throw error;
+  } finally {
+    await rm(temporary, { force: true });
   }
   // Or the reservation holds a ceiling slot until the prune. Only while still empty: a second capture
   // of the same name may have written a real screenshot there since.
