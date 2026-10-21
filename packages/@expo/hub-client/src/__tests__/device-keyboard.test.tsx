@@ -1,8 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { type HingeControlCommand } from "../hinge-control";
-import { type DeviceClient, type DeviceHinge, type KeyboardInput } from "../types";
+import { type FoldControlCommand, type FoldPose } from "../fold";
+import {
+  type DeviceClient,
+  type DeviceFold,
+  type DeviceFoldCapabilities,
+  type KeyboardInput,
+} from "../types";
 import { useDeviceKeyboard } from "../useDeviceKeyboard";
 import { createGlobalStubs } from "./test-globals";
 
@@ -35,7 +40,18 @@ function keyEvent(overrides: Partial<Record<string, unknown>>) {
   return event;
 }
 
-async function mount(hinge: DeviceHinge | null) {
+const ALL_POSES = { closed: {}, open: {}, laptop: {}, book: {}, tent: {} };
+
+function foldCapabilities(poses: Partial<Record<FoldPose, object>>): DeviceFoldCapabilities {
+  return {
+    angle: { min: 0, max: 180 },
+    poses: poses as Record<FoldPose, { angle: number }>,
+    tableMode: false,
+    faceDown: false,
+  };
+}
+
+async function mount(fold: DeviceFold | null, foldControls: DeviceFoldCapabilities = false) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
   stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
@@ -45,11 +61,11 @@ async function mount(hinge: DeviceHinge | null) {
       keys.push(input);
       return true;
     },
-    hinge,
+    fold,
     pasteText: async () => {},
     // Clipboard shortcuts are covered by DeviceScreen's tests.
-    capabilities: { clipboard: false },
-  } as unknown as Pick<DeviceClient, "sendKey" | "hinge" | "pasteText" | "capabilities">;
+    capabilities: { clipboard: false, fold: foldControls },
+  } as unknown as Pick<DeviceClient, "sendKey" | "fold" | "pasteText" | "capabilities">;
   function Harness() {
     const keyboard = useDeviceKeyboard(client);
     return <div onKeyDown={keyboard.onKeyDown as never} onKeyUp={keyboard.onKeyUp as never} />;
@@ -62,11 +78,14 @@ async function mount(hinge: DeviceHinge | null) {
 }
 
 test("Option+Shift+1–5 select the Duo poses in Xcode order and never reach the device as keys", async () => {
-  const commands: HingeControlCommand[] = [];
-  const setControl = (command: HingeControlCommand) => {
+  const commands: FoldControlCommand[] = [];
+  const setControl = (command: FoldControlCommand) => {
     commands.push(command);
   };
-  const { keys, surface } = await mount({ supported: true, setControl } as unknown as DeviceHinge);
+  const { keys, surface } = await mount(
+    { setControl } as unknown as DeviceFold,
+    foldCapabilities(ALL_POSES),
+  );
   for (const [digit, pose] of [
     ["Digit1", "closed"],
     ["Digit2", "open"],
@@ -104,19 +123,45 @@ test("Option+Shift+1–5 select the Duo poses in Xcode order and never reach the
   ).toEqual(["Digit1:down", "Digit1:up"]);
 });
 
-for (const [name, hinge] of [
-  ["without a hinge", null],
+test("a digit whose pose the device does not offer is consumed and does nothing", async () => {
+  const commands: FoldControlCommand[] = [];
+  const setControl = (command: FoldControlCommand) => {
+    commands.push(command);
+  };
+  // An Android emulator offers Fully folded, Partially open (book), and Fully open.
+  const { keys, surface } = await mount(
+    { setControl } as unknown as DeviceFold,
+    foldCapabilities({ closed: {}, book: {}, open: {} }),
+  );
+  for (const digit of ["Digit3", "Digit5"]) {
+    const event = keyEvent({ code: digit, altKey: true, shiftKey: true });
+    await act(async () => surface.props.onKeyDown(event));
+    expect(event.prevented).toBe(true);
+    const release = keyEvent({ code: digit });
+    await act(async () => surface.props.onKeyUp(release));
+    expect(release.prevented).toBe(true);
+  }
+  expect(commands).toHaveLength(0);
+  expect(keys).toHaveLength(0);
+  await act(async () =>
+    surface.props.onKeyDown(keyEvent({ code: "Digit4", altKey: true, shiftKey: true })),
+  );
+  expect(commands).toEqual([{ control: "pose", value: "book" }]);
+});
+
+for (const [name, fold, foldControls] of [
+  ["without a fold", null, false],
   // Like serve-sim, the shortcut waits for the simulator to report its hinge.
-  ["before the simulator reports its hinge", { supported: undefined }],
-  ["when the simulator reports no hinge", { supported: false }],
+  ["before the simulator reports its hinge", {}, false],
 ] as const) {
   test(`${name} the shortcut is an ordinary keystroke`, async () => {
-    const commands: HingeControlCommand[] = [];
-    const setControl = (command: HingeControlCommand) => {
+    const commands: FoldControlCommand[] = [];
+    const setControl = (command: FoldControlCommand) => {
       commands.push(command);
     };
     const { keys, surface } = await mount(
-      hinge && ({ ...hinge, setControl } as unknown as DeviceHinge),
+      fold && ({ ...fold, setControl } as unknown as DeviceFold),
+      foldControls,
     );
     const event = keyEvent({ code: "Digit2", altKey: true, shiftKey: true });
     await act(async () => surface.props.onKeyDown(event));

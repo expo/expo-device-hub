@@ -4,8 +4,13 @@ import {
   type AcknowledgedControlRequest,
   createAcknowledgedControlQueue,
 } from "../acknowledged-control-queue";
-import { duoCommandScreen, duoIntendedScreen, duoPhysicalPoseChanged } from "../duo/duo-fold";
-import { type HingeControlCommand } from "../hinge-control";
+import {
+  duoCommandScreen,
+  duoDisplayId,
+  duoIntendedScreen,
+  duoPhysicalPoseChanged,
+} from "../duo/duo-fold";
+import { type FoldControlCommand } from "../fold";
 
 describe("iPhone Duo intended display during native handoff", () => {
   test("closing rejects the inner panel's shutdown frames before native metadata changes", () => {
@@ -64,9 +69,9 @@ describe("iPhone Duo intended display during native handoff", () => {
 
 describe("the panel a submitted hinge command elects", () => {
   test("coalescing native angle requests never reports the discarded panel", () => {
-    const sent: AcknowledgedControlRequest<HingeControlCommand>[] = [];
+    const sent: AcknowledgedControlRequest<FoldControlCommand>[] = [];
     const elected: (1 | 3 | undefined)[] = [];
-    const queue = createAcknowledgedControlQueue<HingeControlCommand>({
+    const queue = createAcknowledgedControlQueue<FoldControlCommand>({
       send: (request) => {
         sent.push(request);
         elected.push(duoCommandScreen(request.command));
@@ -90,8 +95,15 @@ describe("the panel a submitted hinge command elects", () => {
     expect(duoCommandScreen({ control: "angle", value: 80 }, "tent")).toBe(1);
     expect(duoCommandScreen({ control: "pose", value: "open" }, "tent")).toBe(3);
     expect(duoCommandScreen({ control: "pose", value: "tent" })).toBe(1);
-    expect(duoCommandScreen({ control: "table", value: true })).toBeUndefined();
-    expect(duoCommandScreen({ control: "physical", value: "facedown" })).toBeUndefined();
+    expect(duoCommandScreen({ control: "tableMode", value: true })).toBeUndefined();
+    expect(duoCommandScreen({ control: "faceDown", value: true })).toBeUndefined();
     expect(duoCommandScreen({ control: "angle", value: 54.5 })).toBeUndefined();
   });
+});
+
+test("serve-sim's display IDs map to platform-neutral display roles", () => {
+  expect(duoDisplayId(1)).toBe("cover");
+  expect(duoDisplayId(3)).toBe("inner");
+  expect(duoDisplayId(2)).toBeUndefined();
+  expect(duoDisplayId(undefined)).toBeUndefined();
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DeviceClient, type DeviceHinge } from "@expo/hub-client";
+import { type DeviceClient, type DeviceFold } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhoneFrame } from "../dashboard/PhoneFrame";
@@ -17,31 +17,30 @@ const device: Device = {
 };
 
 function client(
-  hinge: Partial<DeviceHinge> | null,
+  fold: Partial<DeviceFold> | null,
   displayCorners: DeviceClient["displayCorners"] = null,
   { model = true }: { model?: boolean } = {},
 ): DeviceClient {
   return {
     status: "streaming",
-    screen: { width: 1398, height: 2034, orientation: "portrait", screenId: 1 },
+    screen: { width: 1398, height: 2034, orientation: "portrait", display: "cover" },
     displayCorners,
-    hinge: hinge && {
-      faceDown: false,
+    fold: fold && {
       pending: false,
       error: null,
       setControl: () => {},
-      ...hinge,
+      ...fold,
     },
     // A device without separate display streams or Xcode's model, such as an
-    // Android foldable, has a hinge but cannot feed the 3D model.
+    // Android foldable, has a fold but cannot feed the 3D model.
     displays:
-      hinge && model
+      fold && model
         ? [
-            { id: 1, active: true, attachVideo: () => {} },
-            { id: 3, active: false, attachVideo: () => {} },
+            { id: "cover", active: true, attachVideo: () => {} },
+            { id: "inner", active: false, attachVideo: () => {} },
           ]
         : null,
-    deviceModelUrl: hinge && model ? "https://hub.test/grid/api/devicekit-model" : null,
+    deviceModelUrl: fold && model ? "https://hub.test/grid/api/devicekit-model" : null,
   } as unknown as DeviceClient;
 }
 

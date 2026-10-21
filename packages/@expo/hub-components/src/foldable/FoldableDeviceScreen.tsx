@@ -12,8 +12,9 @@ import {
   listenForInputCancellation,
   useDeviceKeyboard,
 } from "@expo/hub-client";
-import { type CSSProperties, useCallback, useLayoutEffect, useRef } from "react";
+import { type CSSProperties, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
+import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
 import { DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
 
@@ -82,10 +83,11 @@ function DuoPanelSource({
   display: DeviceDisplay;
   videoKind: DeviceClient["videoKind"];
 }) {
-  const size = DUO_PANEL_SIZE[display.id];
+  const panel = DUO_PANEL_FOR_DISPLAY[display.id];
+  const size = DUO_PANEL_SIZE[panel];
   return (
     <div
-      data-duo-panel={display.id}
+      data-duo-panel={panel}
       style={{
         position: "absolute",
         inset: 0,
@@ -112,7 +114,8 @@ export function FoldableDeviceScreen({
   onCopy,
 }: FoldableDeviceScreenProps) {
   const {
-    hinge,
+    fold,
+    capabilities,
     displays,
     deviceModelUrl,
     screen,
@@ -124,7 +127,8 @@ export function FoldableDeviceScreen({
     sendScroll,
   } = client;
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const { view, commands } = useDuoFraming(hinge, screen);
+  const streamConfig = useMemo(() => duoStreamConfig(screen), [screen]);
+  const { view, commands } = useDuoFraming(fold, capabilities.fold, streamConfig);
   const { onKeyDown, onKeyUp, onPaste, releasePressedKeys, resetShortcuts } = useDeviceKeyboard(
     client,
     { onCopy },
@@ -143,11 +147,13 @@ export function FoldableDeviceScreen({
     };
   }, [cancelBrowserInput]);
   const setAngle = useCallback(
-    (value: number) => hinge?.setControl({ control: "angle", value }),
-    [hinge],
+    (value: number) => fold?.setControl({ control: "angle", value }),
+    [fold],
   );
-  if (!hinge || !displays || !deviceModelUrl) return null;
-  const activeScreenId = displays.find((display) => display.active)?.id === 1 ? 1 : 3;
+  if (!fold || !displays || !deviceModelUrl) return null;
+  const activeScreenId = displays.find((display) => display.active)?.id === "cover" ? 1 : 3;
+  // The model's hinge handles move a hinge that takes angles.
+  const canMoveHinge = !!capabilities.fold && !!capabilities.fold.angle;
 
   return (
     <div
@@ -165,18 +171,18 @@ export function FoldableDeviceScreen({
     >
       <DuoModelView
         modelUrl={deviceModelUrl}
-        angle={hinge.angle}
-        pose={hinge.pose}
-        physicalPose={hinge.physicalPose}
+        angle={fold.angle}
+        pose={fold.pose}
+        physicalPose={fold.physical?.pose}
         activeScreenId={activeScreenId}
         view={view}
-        streamConfig={screen}
+        streamConfig={streamConfig}
         hingeCommands={commands}
         onUnavailable={onUnavailable}
         streamError={status === "error" ? error : null}
         cacheScreenOnFold={cacheScreenOnFold}
         sizeMode={sizeMode}
-        onHingeAngleChange={(hinge.supported ?? hinge.angle !== undefined) ? setAngle : undefined}
+        onHingeAngleChange={canMoveHinge ? setAngle : undefined}
         onTouch={sendTouch}
         onMultiTouch={sendMultiTouch}
         onScroll={sendScroll}

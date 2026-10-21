@@ -21,16 +21,7 @@ export { areRecordingControlsLocked } from "./screen-recording";
 export { DeviceScreen } from "./DeviceScreen";
 export { useDeviceKeyboard } from "./useDeviceKeyboard";
 export { listenForInputCancellation } from "./input-cancellation";
-export {
-  HINGE_POSES,
-  hingeControlState,
-  isHingeControlCommand,
-  isTableModeAvailable,
-  type HingeControlCommand,
-  type HingeControlState,
-  type HingePhysicalOrientation,
-  type HingePose,
-} from "./hinge-control";
+export { FOLD_POSES, type FoldControlCommand, type FoldPose } from "./fold";
 export {
   DeviceClientProvider,
   useDeviceClientSelector,

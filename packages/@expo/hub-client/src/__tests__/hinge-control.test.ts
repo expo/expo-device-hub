@@ -1,15 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  HINGE_POSES,
-  hingeControlState,
-  isHingeControlCommand,
-  isTableModeAvailable,
-} from "../hinge-control";
+import { FOLD_POSES } from "../fold";
+import { DUO_POSE_ANGLES, hingeControlState, hingeWireCommand } from "../hinge-control";
 
 describe("Device Hub hinge controls", () => {
   test("keeps the five physical poses distinct, including the two 90 degree poses", () => {
-    expect(HINGE_POSES.map(({ id, angle }) => [id, angle])).toEqual([
+    expect(FOLD_POSES.map((pose) => [pose, DUO_POSE_ANGLES[pose]])).toEqual([
       ["closed", 0],
       ["open", 180],
       ["laptop", 90],
@@ -35,58 +31,43 @@ describe("Device Hub hinge controls", () => {
       tableMode: false,
     });
   });
-
-  test("accepts finite fine angles and known poses only", () => {
-    for (const value of [0, 45.5, 90, 180]) {
-      expect(isHingeControlCommand({ control: "angle", value })).toBe(true);
-    }
-    for (const { id } of HINGE_POSES) {
-      expect(isHingeControlCommand({ control: "pose", value: id })).toBe(true);
-    }
-    for (const command of [
-      null,
-      [],
-      {},
-      { control: "angle", value: "90" },
-      { control: "angle", value: NaN },
-      { control: "angle", value: 181 },
-      { control: "angle", value: -1 },
-      { control: "pose", value: "half" },
-      { control: "pose", value: 90 },
-      { control: "pitch", value: 0 },
-    ]) {
-      expect(isHingeControlCommand(command)).toBe(false);
-    }
-  });
 });
 
-test("Table Mode follows physical pose eligibility", () => {
-  expect(isTableModeAvailable(undefined, "portrait")).toBe(false);
-  expect(isTableModeAvailable(90, undefined)).toBe(false);
-  expect(isTableModeAvailable(0, "portrait")).toBe(false);
-  expect(isTableModeAvailable(0, "landscape-left")).toBe(true);
-  expect(isTableModeAvailable(180, "portrait")).toBe(true);
-  expect(isTableModeAvailable(180, "landscape-left")).toBe(false);
-  for (const orientation of ["portrait", "landscape-left", "facedown"] as const) {
-    expect(isTableModeAvailable(90, orientation)).toBe(true);
-  }
-  expect(isTableModeAvailable(90, "faceup")).toBe(false);
-  expect(hingeControlState({ control: "table", value: true })).toEqual({
+test("Table Mode clears the preset", () => {
+  expect(hingeControlState({ control: "tableMode", value: true })).toEqual({
     tableMode: true,
     hingePose: null,
   });
-  expect(isHingeControlCommand({ control: "table", value: "true" })).toBe(false);
 });
 
-test("physical display handoff preserves the hinge angle and elects the requested surface", () => {
-  for (const value of ["faceup", "facedown"] as const) {
-    expect(isHingeControlCommand({ control: "physical", value })).toBe(true);
-    expect(hingeControlState({ control: "physical", value })).toEqual({
+test("face down preserves the hinge angle and elects the requested surface", () => {
+  for (const value of [false, true]) {
+    expect(hingeControlState({ control: "faceDown", value })).toEqual({
       hingePose: null,
-      tableMode: value === "facedown",
+      tableMode: value,
     });
   }
-  for (const value of ["portrait", "other", 5, null]) {
-    expect(isHingeControlCommand({ control: "physical", value })).toBe(false);
-  }
+});
+
+test("maps fold commands to serve-sim's wire commands", () => {
+  expect(hingeWireCommand({ control: "angle", value: 45.5 })).toEqual({
+    control: "angle",
+    value: 45.5,
+  });
+  expect(hingeWireCommand({ control: "pose", value: "tent" })).toEqual({
+    control: "pose",
+    value: "tent",
+  });
+  expect(hingeWireCommand({ control: "tableMode", value: true })).toEqual({
+    control: "table",
+    value: true,
+  });
+  expect(hingeWireCommand({ control: "faceDown", value: true })).toEqual({
+    control: "physical",
+    value: "facedown",
+  });
+  expect(hingeWireCommand({ control: "faceDown", value: false })).toEqual({
+    control: "physical",
+    value: "faceup",
+  });
 });

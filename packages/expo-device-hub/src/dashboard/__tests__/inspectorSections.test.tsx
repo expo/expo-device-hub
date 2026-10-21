@@ -27,7 +27,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     recordingLock: null,
     recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
-    hinge: null,
+    fold: null,
     displays: null,
     deviceModelUrl: null,
     displayCorners: null,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DeviceHinge } from "@expo/hub-client";
+import { type DeviceFold, type DeviceFoldCapabilities } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import {
@@ -7,16 +7,37 @@ import {
   type FoldPreviewOption,
   MODEL_UNAVAILABLE_DESCRIPTION,
 } from "../dashboard/FoldSettings";
+import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
 
-function hinge(overrides: Partial<DeviceHinge> = {}): DeviceHinge {
+type FoldControls = Exclude<DeviceFoldCapabilities, false>;
+
+/** What #352's Android emulator offers: the hinge angle and three poses. */
+const ANDROID_FOLD_CONTROLS: FoldControls = {
+  angle: { min: 0, max: 180 },
+  poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
+  tableMode: false,
+  faceDown: false,
+};
+
+function fold(overrides: Partial<DeviceFold> = {}): DeviceFold {
   return {
-    supported: true,
-    faceDown: false,
     pending: false,
     error: null,
+    tableMode: {},
+    physical: { faceDown: false },
     setControl: () => {},
     ...overrides,
   };
+}
+
+function settings(
+  overrides: Partial<DeviceFold> = {},
+  preview?: FoldPreviewOption,
+  controls: FoldControls = DUO_FOLD_CONTROLS,
+) {
+  return renderToStaticMarkup(
+    <FoldSettings fold={fold(overrides)} controls={controls} preview={preview} />,
+  );
 }
 
 function preview(overrides: Partial<FoldPreviewOption> = {}): FoldPreviewOption {
@@ -38,19 +59,47 @@ function rowLabels(markup: string) {
 }
 
 describe("FoldSettings", () => {
-  test("renders nothing until the simulator reports a hinge or an angle, like serve-sim", () => {
-    expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: undefined })} />)).toBe("");
-    expect(
-      renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: false, angle: 90 })} />),
-    ).toBe("");
-    const angleOnly = renderToStaticMarkup(
-      <FoldSettings hinge={hinge({ supported: undefined, angle: 90 })} />,
+  test("shows only the controls that the device offers", () => {
+    const android = settings(
+      { angle: 90, pose: "book", tableMode: undefined, physical: undefined },
+      undefined,
+      ANDROID_FOLD_CONTROLS,
     );
-    expect(rowLabels(angleOnly)).toEqual(["Fold pose", "Hinge angle", "Table Mode"]);
+    expect(rowLabels(android)).toEqual(["Fold pose", "Hinge angle"]);
+    expect(android).toContain('data-test-options="Fully folded\nPartially open\nFully open"');
+    // serve-emu on main only folds and unfolds fully.
+    const postureOnly = settings({ angle: 0, pose: "closed" }, undefined, {
+      ...ANDROID_FOLD_CONTROLS,
+      angle: false,
+      poses: { closed: { angle: 0 }, open: { angle: 180 } },
+    });
+    expect(rowLabels(postureOnly)).toEqual(["Fold pose"]);
+    // A hinge that takes angles but no poses gets the slider alone.
+    const angleOnly = settings({ angle: 120 }, undefined, { ...ANDROID_FOLD_CONTROLS, poses: {} });
+    expect(rowLabels(angleOnly)).toEqual(["Hinge angle"]);
+  });
+
+  test("a pose that the device reports but does not offer shows as Custom", () => {
+    const markup = settings({ angle: 80, pose: "tent" }, undefined, ANDROID_FOLD_CONTROLS);
+    expect(markup).toContain(">Custom<");
+  });
+
+  test("the slider and the degree input follow the device's angle range", () => {
+    const markup = settings({ angle: 270 }, undefined, {
+      ...ANDROID_FOLD_CONTROLS,
+      angle: { min: 180, max: 360 },
+      poses: {},
+    });
+    const slider = markup.match(/<input[^>]*aria-label="Hinge angle"[^>]*>/)?.[0];
+    expect(slider).toContain('min="180"');
+    expect(slider).toContain('max="360"');
+    const degrees = markup.match(/<input[^>]*aria-label="Hinge angle in degrees"[^>]*>/)?.[0];
+    expect(degrees).toContain('min="180"');
+    expect(degrees).toContain('max="360"');
   });
 
   test("lists the fold rows in serve-sim order with the model options while 3D is shown", () => {
-    const markup = renderToStaticMarkup(<FoldSettings hinge={hinge()} preview={preview()} />);
+    const markup = settings({}, preview());
     expect(rowLabels(markup)).toEqual([
       "Fold pose",
       "Hinge angle",
@@ -68,15 +117,13 @@ describe("FoldSettings", () => {
   });
 
   test("2D keeps the native fold controls and hides options that only affect the model", () => {
-    const markup = renderToStaticMarkup(
-      <FoldSettings hinge={hinge()} preview={preview({ mode: "2d" })} />,
-    );
+    const markup = settings({}, preview({ mode: "2d" }));
     expect(rowLabels(markup)).toEqual(["Fold pose", "Hinge angle", "Table Mode", "Preview mode"]);
     expect(markup).toContain(">2D<");
   });
 
   test("omits the preview rows when the consumer offers no 3D model", () => {
-    const markup = renderToStaticMarkup(<FoldSettings hinge={hinge()} />);
+    const markup = settings();
     expect(rowLabels(markup)).toEqual(["Fold pose", "Hinge angle", "Table Mode"]);
   });
 
@@ -88,23 +135,17 @@ describe("FoldSettings", () => {
       ["laptop", "Laptop"],
       ["tent", "Tent"],
     ] as const) {
-      const markup = renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 90, pose })} />);
+      const markup = settings({ angle: 90, pose });
       expect(markup).toContain(`>${label}<`);
       expect(markup).not.toContain(">Custom<");
     }
-    expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 180 })} />)).toContain(
-      ">Fully open<",
-    );
-    expect(
-      renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 180, pose: null })} />),
-    ).toContain(">Custom<");
-    expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 42.5 })} />)).toContain(
-      ">Custom<",
-    );
+    expect(settings({ angle: 180 })).toContain(">Fully open<");
+    expect(settings({ angle: 180, pose: null })).toContain(">Custom<");
+    expect(settings({ angle: 42.5 })).toContain(">Custom<");
   });
 
   test("offers an accessible slider and a decimal degree input", () => {
-    const markup = renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 42.5 })} />);
+    const markup = settings({ angle: 42.5 });
     const slider = markup.match(/<input[^>]*aria-label="Hinge angle"[^>]*>/)?.[0];
     expect(slider).toBeDefined();
     for (const attribute of ['type="range"', 'min="0"', 'max="180"', 'step="1"', 'value="42.5"']) {
@@ -125,18 +166,16 @@ describe("FoldSettings", () => {
   });
 
   test("makes Table Mode available only when supported in the current pose, but always lets it turn off", () => {
-    const unavailable = renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 0 })} />);
+    const unavailable = settings({ angle: 0 });
     expect(unavailable).toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
-    const available = renderToStaticMarkup(
-      <FoldSettings
-        hinge={hinge({ angle: 80, pose: "tent", tableMode: true, tableModeAvailable: true })}
-      />,
-    );
+    const available = settings({
+      angle: 80,
+      pose: "tent",
+      tableMode: { enabled: true, available: true },
+    });
     expect(available).toMatch(/role="switch"[^>]*aria-checked="true"[^>]*aria-label="Table Mode"/);
     expect(available).not.toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
-    const stuckOn = renderToStaticMarkup(
-      <FoldSettings hinge={hinge({ tableMode: true, tableModeAvailable: false })} />,
-    );
+    const stuckOn = settings({ tableMode: { enabled: true, available: false } });
     expect(stuckOn).not.toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
     // The row is only its label and switch, with no description under it.
     for (const markup of [unavailable, available]) {
@@ -150,25 +189,19 @@ describe("FoldSettings", () => {
   });
 
   test("keeps controls enabled while a change is pending and announces errors", () => {
-    const pending = renderToStaticMarkup(
-      <FoldSettings
-        hinge={hinge({ angle: 90, pose: "laptop", tableModeAvailable: true, pending: true })}
-        preview={preview()}
-      />,
+    const pending = settings(
+      { angle: 90, pose: "laptop", tableMode: { available: true }, pending: true },
+      preview(),
     );
     expect(pending).toContain('aria-busy="true"');
     expect(pending).not.toMatch(/<(input|button)[^>]* disabled=""/);
-    const failed = renderToStaticMarkup(
-      <FoldSettings hinge={hinge({ error: "Simulator could not change the device pose." })} />,
-    );
+    const failed = settings({ error: "Simulator could not change the device pose." });
     expect(failed).toContain('role="alert"');
     expect(failed).toContain("Simulator could not change the device pose.");
   });
 
   test("explains an unavailable model next to the preview choice", () => {
-    const markup = renderToStaticMarkup(
-      <FoldSettings hinge={hinge()} preview={preview({ unavailable: true })} />,
-    );
+    const markup = settings({}, preview({ unavailable: true }));
     expect(markup).toContain(MODEL_UNAVAILABLE_DESCRIPTION);
     expect(markup).toContain(">2D<");
   });

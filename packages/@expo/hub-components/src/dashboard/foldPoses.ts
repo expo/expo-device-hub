@@ -1,8 +1,11 @@
-import { type HingePose } from "@expo/hub-client";
+import { type DeviceFoldCapabilities, type FoldPose } from "@expo/hub-client";
 
-/** serve-sim's labels for the iPhone Duo's five presets, listed by the inspector's Fold pose select. */
+/**
+ * serve-sim's labels for the five fold poses, listed by the inspector's Fold
+ * pose select. The shortcut is the pose's place in `FOLD_POSES`.
+ */
 export const FOLD_POSE_OPTIONS: ReadonlyArray<{
-  value: HingePose;
+  value: FoldPose;
   label: string;
   shortcut: string;
 }> = [
@@ -16,11 +19,14 @@ export const FOLD_POSE_OPTIONS: ReadonlyArray<{
 /**
  * The preset a fold control shows as selected. A reported pose wins, including
  * an explicit `null` for a custom angle; before any pose is reported the two
- * endpoints are inferred from the angle.
+ * endpoints that the device offers are inferred from the angle.
  */
 export function selectedFoldPose(
   angle: number | undefined,
-  pose: HingePose | null | undefined,
-): HingePose | null {
-  return pose !== undefined ? pose : angle === 0 ? "closed" : angle === 180 ? "open" : null;
+  pose: FoldPose | null | undefined,
+  poses: Exclude<DeviceFoldCapabilities, false>["poses"],
+): FoldPose | null {
+  if (pose !== undefined) return pose;
+  if (angle === undefined) return null;
+  return angle === poses.closed?.angle ? "closed" : angle === poses.open?.angle ? "open" : null;
 }

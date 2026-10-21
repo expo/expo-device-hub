@@ -4,12 +4,12 @@ import { type DeviceClient } from "@expo/hub-client";
 
 import { StreamPanel } from "../dashboard/StreamPanel";
 
-test("a hinge error is visible beside the stream without mounting the sidebar", () => {
+test("a fold error is visible beside the stream without mounting the sidebar", () => {
   const client = {
     platform: "ios",
     status: "streaming",
     screen: { width: 1398, height: 2034 },
-    hinge: { modelActive: false, error: "Simulator rejected this pose." },
+    fold: { error: "Simulator rejected this pose." },
     screenRecording: null,
     appearance: "light",
     displayCorners: null,
