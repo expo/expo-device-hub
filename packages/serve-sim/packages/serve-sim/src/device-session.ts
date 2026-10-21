@@ -1351,6 +1351,8 @@ export class DeviceSession {
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
       const isOrderedMessage =
         buffer[0] === 0x03 ||
+        // Unchecked buttons never reject, so only a checked button can fail a barrier.
+        buffer[0] === 0x04 ||
         buffer[0] === 0x05 ||
         buffer[0] === 0x06 ||
         buffer[0] === 0x0b ||
@@ -1469,17 +1471,23 @@ export class DeviceSession {
         break;
       }
       case 0x04: {
-        const m = json<{ button: string; page?: number; usage?: number; phase?: string }>();
+        const m = json<{
+          button: string;
+          page?: number;
+          usage?: number;
+          phase?: string;
+          checked?: boolean;
+        }>();
         if (!m) break;
-        this.recordHidEvent(tag, m);
+        const { checked, ...event } = m;
+        this.recordHidEvent(tag, event);
         if (m.page != null && m.usage != null) {
-          await this.hid.buttonHid(
-            m.page,
-            m.usage,
-            (m.phase as "down" | "up" | "press") ?? "press",
-          );
+          const phase = (m.phase as "down" | "up" | "press") ?? "press";
+          await (checked === true
+            ? this.hid.buttonHidChecked(m.page, m.usage, phase)
+            : this.hid.buttonHid(m.page, m.usage, phase));
         } else {
-          await this.hid.button(m.button);
+          await (checked === true ? this.hid.buttonChecked(m.button) : this.hid.button(m.button));
         }
         break;
       }

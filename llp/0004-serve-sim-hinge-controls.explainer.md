@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-20 (CoreDevice hardware buttons); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-20 (CoreDevice hardware buttons; checked CLI buttons); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -486,11 +486,15 @@ run, 2026-10-20]. A host barrier alone is not guest-delivery evidence.
 The opt-in `core-device-buttons.e2e.test.ts` checks UIKit scene deactivation for
 Lock/app switcher and actual UIKit touches with button encoding hidden.
 
-`NativeHid` logs a rejected button and does not return the error to the
-caller, as it does for every other button error. `serve-sim button`, device-frame
-buttons, and hub-client buttons therefore still report success for a button that
+For viewer input, `NativeHid` logs a rejected button and does not return the
+error to the caller, as it does for every other button error. Device-frame
+buttons and hub-client buttons therefore still report success for a button that
 CoreDevice could not send; the server log names the failure [observed:
-`NativeHid.button`, `NativeHid.guard`]. Home still foregrounds SpringBoard;
+`NativeHid.button`, `NativeHid.guard`]. `serve-sim button` marks its `0x04`
+message `checked`, so the server uses `buttonChecked`/`buttonHidChecked`, which
+log and reject. The CLI then sends the `0x11` barrier and exits non-zero when
+the barrier reports failure (LLP 0003 [Input actions](0003-serve-sim-http-api.spec.md#input-actions))
+[observed: `src/button-input.ts`, `DeviceSession.handleHidMessage`]. Home still foregrounds SpringBoard;
 unsupported CoreDevice touch retains the existing legacy button path [observed:
 `HIDInjector.sendButton`]. The shared keyboard-service setup gate and separate
 post-relaunch touch-loss follow-up are unchanged.

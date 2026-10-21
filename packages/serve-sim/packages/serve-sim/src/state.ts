@@ -37,6 +37,8 @@ export interface ServeSimDeviceState {
   inputPaste?: true;
   /** This helper acknowledges Copy's input barrier by request ID. Copy waits on an older one until it times out. */
   inputCopy?: true;
+  /** This helper fails the input barrier for a `checked` button that it could not send. */
+  checkedButtons?: true;
   streamSettings?: StreamSettings;
   /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
@@ -86,6 +88,7 @@ export function inProcessServeSimState(
     inputAdmission: true,
     inputPaste: true,
     inputCopy: true,
+    checkedButtons: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
 }

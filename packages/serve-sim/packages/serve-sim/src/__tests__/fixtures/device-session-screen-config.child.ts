@@ -49,6 +49,8 @@ let inputSetupError: Error | undefined;
 let keyboardAvailable = true;
 let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
+let buttonError: Error | undefined;
+let buttonGate: Promise<void> | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
 const pasteWrites: string[] = [];
@@ -123,9 +125,13 @@ const addon = {
     }
     async button() {
       inputCalls.push("button");
+      await buttonGate;
+      if (buttonError) throw buttonError;
     }
     async buttonHid() {
       inputCalls.push("buttonHid");
+      await buttonGate;
+      if (buttonError) throw buttonError;
     }
     async key(type: string, usage: number) {
       inputCalls.push("key");
@@ -401,6 +407,8 @@ beforeEach(() => {
   keyboardAvailable = true;
   failInputAfterPasteKeyUp = false;
   touchError = undefined;
+  buttonError = undefined;
+  buttonGate = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
   pasteWrites.length = 0;
@@ -1309,6 +1317,80 @@ describe("native input failure isolation", () => {
     expect(routedScreens).toEqual([1, 3]);
     expect(errorLog).toHaveBeenCalledTimes(1);
     expect(errorLog.mock.calls.flat().join(" ")).toContain("touch ignored bad input");
+  });
+});
+
+describe("button input reporting", () => {
+  const connect = async (url: string) => {
+    const client = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      client.once("open", resolve);
+      client.once("error", reject);
+    });
+    return client;
+  };
+  const pressThenBarrier = (socket: WebSocket, button: Record<string, unknown>) => {
+    const acknowledgement = new Promise<number[]>((resolve) => {
+      const onMessage = (data: WebSocket.RawData) => {
+        const frame = Buffer.from(data as Buffer);
+        if (frame[0] !== 0x91) return;
+        socket.off("message", onMessage);
+        resolve([...frame]);
+      };
+      socket.on("message", onMessage);
+    });
+    socket.send(Buffer.concat([Buffer.from([0x04]), Buffer.from(JSON.stringify(button))]));
+    socket.send(Buffer.from([0x11]));
+    return acknowledgement;
+  };
+
+  test.each([{ button: "lock" }, { button: "volume-up", page: 12, usage: 233, phase: "down" }])(
+    "a checked button failure fails its barrier; a viewer's stays logged only (%o)",
+    async (button) => {
+      const { url } = await start({ width: 1170, height: 2532 });
+      errorLog = spyOn(console, "error").mockImplementation(() => {});
+      buttonError = new Error("sendCustomButton failed");
+      const cli = await connect(url);
+      try {
+        expect(await pressThenBarrier(ws!, button)).toEqual([0x91, 1]);
+        expect(await pressThenBarrier(cli, { ...button, checked: true })).toEqual([0x91, 0]);
+        const operation = "page" in button ? "buttonHid" : "button";
+        expect(errorLog.mock.calls).toEqual([
+          [`[hid] ${operation} ignored bad input:`, "sendCustomButton failed"],
+          [`[hid] ${operation}Checked rejected:`, "sendCustomButton failed"],
+        ]);
+        buttonError = undefined;
+        // The viewer's failure did not latch its socket, so its next Copy can still succeed.
+        expect(await pressThenBarrier(ws!, button)).toEqual([0x91, 1]);
+      } finally {
+        cli.terminate();
+      }
+    },
+  );
+
+  test("the barrier waits for a checked button that is still being sent", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    buttonGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const cli = await connect(url);
+    try {
+      let acknowledged = false;
+      const acknowledgement = pressThenBarrier(cli, { button: "lock", checked: true }).then(
+        (frame) => {
+          acknowledged = true;
+          return frame;
+        },
+      );
+      await waitUntil(() => inputCalls.includes("button"));
+      await Bun.sleep(50);
+      expect(acknowledged).toBe(false);
+      release();
+      expect(await acknowledgement).toEqual([0x91, 1]);
+    } finally {
+      cli.terminate();
+    }
   });
 });
 

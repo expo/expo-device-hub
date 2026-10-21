@@ -323,6 +323,25 @@ export class NativeHid {
     return this.guard("buttonHid", () => this.handle.buttonHid(page, usage, phase), undefined);
   }
 
+  /** CLI buttons need a failed send to reach their barrier, as keyChecked does for shortcuts. */
+  buttonChecked(button: string): Promise<void> {
+    return this.rejectLogged("buttonChecked", () => this.handle.button(button));
+  }
+
+  buttonHidChecked(page: number, usage: number, phase: ButtonPhase = "press"): Promise<void> {
+    return this.rejectLogged("buttonHidChecked", () => this.handle.buttonHid(page, usage, phase));
+  }
+
+  private async rejectLogged(operation: string, send: () => PromiseLike<void>): Promise<void> {
+    try {
+      if (this.inputUnavailable) throw new Error("Simulator input is unavailable");
+      await send();
+    } catch (error) {
+      console.error(`[hid] ${operation} rejected:`, error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
   key(type: KeyType, usage: number): Promise<void> {
     if (this.keyboardUnavailable) return this.rejectUnavailableKeyboard("key");
     return this.guard("key", () => this.handle.key(type, usage), undefined);

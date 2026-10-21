@@ -9,7 +9,7 @@
 
 ## Valid button names
 
-These are the **only** values accepted by `npx @expo/serve-sim button <name>`. Anything else prints `[hid] Unknown button: <name>` and does nothing.
+`npx @expo/serve-sim button <name>` accepts these names and the device-frame names `power`, `volume-up`, `volume-down`, `action`, `side-button`, `digital-crown` and `left-side-button`. Any other name exits with an error and the list of valid names. The command also exits with an error when serve-sim could not send the button through CoreDevice (iOS 27 and later).
 
 | Name           | Effect                                                                                                                                                 |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
