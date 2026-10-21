@@ -2,12 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { type HingeControlCommand } from "../hinge-control";
+import { type FoldControlCommand } from "../fold";
 import {
   type DeviceClient,
   type DeviceConnectionOptions,
-  type DeviceHinge,
-  type HingeCommandEvent,
+  type DeviceFold,
+  type FoldCommandEvent,
 } from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
@@ -222,28 +222,30 @@ async function connect(options: Partial<DeviceConnectionOptions> = {}) {
   const socket = FakeSocket.instances.find((instance) => instance.url.includes("/helper/ws"));
   if (!socket) throw new Error("The hook did not open the helper input socket");
   await act(async () => socket.open());
-  const events: HingeCommandEvent[] = [];
+  const events: FoldCommandEvent[] = [];
   return {
     socket,
     client: () => client,
     /** Hinge events from the moment the Duo is recognized. */
     events,
-    observe: () => client.hinge!.observe!((event) => events.push(event)),
+    observe: () => client.fold!.observe!((event) => events.push(event)),
     update: (props: Partial<DeviceConnectionOptions>) =>
       act(async () => renderer!.update(<Harness {...options} {...props} />)),
   };
 }
 
-test("a device without a hinge exposes no hinge, no displays, no model, and rotates counterclockwise", async () => {
+test("a device without a hinge exposes no fold, no displays, no model, and rotates counterclockwise", async () => {
   installBrowser({ duo: false });
   const { socket, client } = await connect();
   await act(async () =>
     socket.push(0x82, { width: 1206, height: 2622, orientation: "portrait", screenId: 1 }),
   );
-  expect(client().hinge).toBeNull();
+  expect(client().fold).toBeNull();
+  expect(client().capabilities.fold).toBe(false);
   expect(client().displays).toBeNull();
   expect(client().deviceModelUrl).toBeNull();
-  expect(client().screen?.screenId).toBe(1);
+  // An ordinary iPhone's screen ID names no fold display.
+  expect(client().screen).toEqual({ width: 1206, height: 2622, orientation: "portrait" });
   // Only the Duo trades the generic iPhone shape for its own glass corners.
   expect(client().displayCorners).toBeNull();
   await act(async () => client().rotate());
@@ -290,36 +292,52 @@ test("the Duo reports its fold state, displays, and model, and keeps the flat st
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   // DeviceKit's cover chrome identifies the Duo before native capability metadata.
-  expect(client().hinge).not.toBeNull();
-  expect(client().hinge?.angle).toBeUndefined();
-  expect(client().hinge?.supported).toBeUndefined();
+  expect(client().fold).not.toBeNull();
+  expect(client().fold?.angle).toBeUndefined();
+  // The controls wait for the helper to report its hinge, as serve-sim's do.
+  expect(client().capabilities.fold).toBe(false);
   await act(async () => socket.push(0x82, COVER));
-  const hinge = client().hinge!;
+  const fold = client().fold!;
   // Fold controls and state only: no renderer state in the contract.
-  expect(Object.keys(hinge).sort()).toEqual([
+  expect(Object.keys(fold).sort()).toEqual([
     "angle",
     "error",
-    "faceDown",
     "observe",
     "pending",
-    "physicalPose",
+    "physical",
     "pose",
     "setControl",
-    "supported",
     "tableMode",
-    "tableModeAvailable",
   ]);
-  expect(hinge.supported).toBe(true);
-  expect(hinge.angle).toBe(0);
-  expect(hinge.pose).toBe("closed");
-  expect(hinge.tableMode).toBe(false);
-  expect(hinge.pending).toBe(false);
+  expect(fold.angle).toBe(0);
+  expect(fold.pose).toBe("closed");
+  expect(fold.tableMode).toEqual({ enabled: false, available: false });
+  expect(fold.physical).toEqual({ pose: "closed", faceDown: false });
+  expect(fold.pending).toBe(false);
+  expect(client().capabilities.fold).toEqual({
+    angle: { min: 0, max: 180 },
+    poses: {
+      closed: { angle: 0 },
+      open: { angle: 180 },
+      laptop: { angle: 90 },
+      book: { angle: 90 },
+      tent: { angle: 80 },
+    },
+    tableMode: true,
+    faceDown: false,
+  });
   expect(client().displays?.map(({ id, active }) => ({ id, active }))).toEqual([
-    { id: 1, active: true },
-    { id: 3, active: false },
+    { id: "cover", active: true },
+    { id: "inner", active: false },
   ]);
   expect(client().deviceModelUrl).toBe("https://hub.test/grid/api/devicekit-model");
-  expect(client().screen?.supportsHingeAngle).toBe(true);
+  // serve-sim's hinge fields and display IDs stay inside the adapter.
+  expect(client().screen).toEqual({
+    width: 1398,
+    height: 2034,
+    orientation: "portrait",
+    display: "cover",
+  });
   // Nothing attached a display, so the flat stream runs.
   const img = fakeImage();
   await act(async () => client().attachVideo(img as unknown as HTMLImageElement));
@@ -332,37 +350,37 @@ test("a pose command is reported from request to confirmation, and its display a
   const { socket, client, events, observe } = await connect();
   await act(async () => socket.push(0x82, COVER));
   observe();
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  await act(async () => client().fold!.setControl({ control: "pose", value: "open" }));
   expect(socket.frames().at(-1)).toEqual({
     tag: 0x10,
     payload: { requestId: 1, command: { control: "pose", value: "open" } },
   });
-  expect(client().hinge?.pending).toBe(true);
-  expect(client().hinge?.angle).toBe(180);
-  expect(client().hinge?.pose).toBe("open");
-  expect(client().displays?.find(({ active }) => active)?.id).toBe(3);
+  expect(client().fold?.pending).toBe(true);
+  expect(client().fold?.angle).toBe(180);
+  expect(client().fold?.pose).toBe("open");
+  expect(client().displays?.find(({ active }) => active)?.id).toBe("inner");
   const command = { control: "pose", value: "open" } as const;
-  expect(events).toEqual<HingeCommandEvent[]>([
+  expect(events).toEqual<FoldCommandEvent[]>([
     { type: "requested", command },
-    { type: "sent", command, display: 3 },
+    { type: "sent", command, display: "inner" },
   ]);
   // Listeners can follow one command object through its replies.
-  const commandOf = (event: HingeCommandEvent | undefined) =>
+  const commandOf = (event: FoldCommandEvent | undefined) =>
     event && "command" in event ? event.command : undefined;
   expect(commandOf(events[1])).toBe(commandOf(events[0]));
 
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
-  expect(client().hinge?.pending).toBe(false);
+  expect(client().fold?.pending).toBe(false);
   // The preview holds until the helper's config catches up, so nothing animates backwards.
-  expect(client().hinge?.angle).toBe(180);
-  expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "acknowledged", command, ok: true });
+  expect(client().fold?.angle).toBe(180);
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "acknowledged", command, ok: true });
   expect(commandOf(events.at(-1))).toBe(commandOf(events[0]));
   await act(async () => socket.push(0x82, INNER_OPEN));
-  expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "confirmed" });
-  expect(client().hinge?.angle).toBe(180);
-  expect(client().hinge?.pose).toBe("open");
-  expect(client().hinge?.tableModeAvailable).toBe(true);
-  expect(client().screen?.screenId).toBe(3);
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(client().fold?.angle).toBe(180);
+  expect(client().fold?.pose).toBe("open");
+  expect(client().fold?.tableMode?.available).toBe(true);
+  expect(client().screen?.display).toBe("inner");
 });
 
 test("a submitted command names the display it elects; Table Mode and the hysteresis band do not", async () => {
@@ -372,16 +390,16 @@ test("a submitted command names the display it elects; Table Mode and the hyster
   observe();
   for (const [index, command] of [
     { control: "angle", value: 40 },
-    { control: "table", value: true },
+    { control: "tableMode", value: true },
     { control: "angle", value: 54.5 },
     { control: "angle", value: 120 },
   ].entries()) {
-    await act(async () => client().hinge!.setControl(command as HingeControlCommand));
+    await act(async () => client().fold!.setControl(command as FoldControlCommand));
     await act(async () => socket.push(0x90, { requestId: index + 1, ok: true }));
   }
   expect(
     events.flatMap((event) => (event.type === "sent" ? [event.display ?? "none"] : [])),
-  ).toEqual([1, "none", "none", 3]);
+  ).toEqual(["cover", "none", "none", "inner"]);
 });
 
 test("switching to another simulator forgets the previous screen config and displays at once", async () => {
@@ -402,7 +420,7 @@ test("switching to another simulator forgets the previous screen config and disp
   // no hinge, no displays, no stale screen under the new name.
   expect(client().status).toBe("connecting");
   expect(client().screen).toBeNull();
-  expect(client().hinge).toBeNull();
+  expect(client().fold).toBeNull();
   expect(client().displays).toBeNull();
   gate.hold = false;
   await act(async () => gate.release?.());
@@ -410,7 +428,7 @@ test("switching to another simulator forgets the previous screen config and disp
   // The old Duo config must not classify the plain iPhone or park its stream
   // while its own helper has not pushed a config yet.
   expect(client().screen).toBeNull();
-  expect(client().hinge).toBeNull();
+  expect(client().fold).toBeNull();
   const next = FakeSocket.instances.find((instance) => instance.url.includes("device-2"));
   expect(next).toBeDefined();
   await act(async () => next!.open());
@@ -418,7 +436,7 @@ test("switching to another simulator forgets the previous screen config and disp
     next!.push(0x82, { width: 1206, height: 2622, orientation: "portrait", screenId: 1 }),
   );
   expect(client().screen?.width).toBe(1206);
-  expect(client().hinge).toBeNull();
+  expect(client().fold).toBeNull();
   expect(client().displays).toBeNull();
   const flat = fakeImage();
   await act(async () => client().attachVideo(flat as unknown as HTMLImageElement));
@@ -430,15 +448,15 @@ test("a command still pending when the connection changes ends with a reset even
   const { socket, client, events, observe, update } = await connect();
   await act(async () => socket.push(0x82, COVER));
   observe();
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  expect(client().hinge?.pending).toBe(true);
+  await act(async () => client().fold!.setControl({ control: "pose", value: "open" }));
+  expect(client().fold?.pending).toBe(true);
   // A reply for the old connection's command never comes.
   await update({ device: "device-2" });
   await act(async () => {});
   const open = { control: "pose", value: "open" } as const;
-  expect(events).toEqual<HingeCommandEvent[]>([
+  expect(events).toEqual<FoldCommandEvent[]>([
     { type: "requested", command: open },
-    { type: "sent", command: open, display: 3 },
+    { type: "sent", command: open, display: "inner" },
     { type: "reset" },
   ]);
 });
@@ -451,8 +469,8 @@ test("a command still pending when the connection changes ends with a reset even
 async function connectObserved({ strict = false } = {}) {
   apiExtra = { execToken: "exec-1", pid: 1 };
   let client!: DeviceClient;
-  const events: HingeCommandEvent[] = [];
-  function Observer({ observe }: { observe?: DeviceHinge["observe"] }) {
+  const events: FoldCommandEvent[] = [];
+  function Observer({ observe }: { observe?: DeviceFold["observe"] }) {
     useEffect(() => observe?.((event) => events.push(event)), [observe]);
     return null;
   }
@@ -463,7 +481,7 @@ async function connectObserved({ strict = false } = {}) {
       enabled: true,
       streamMode: "mjpeg",
     });
-    return <Observer observe={client.hinge?.observe} />;
+    return <Observer observe={client.fold?.observe} />;
   }
   await act(async () => {
     renderer = create(
@@ -518,27 +536,27 @@ for (const strict of [false, true]) {
     // Connecting emitted nothing.
     expect(events).toEqual([]);
     const open = { control: "pose", value: "open" } as const;
-    await act(async () => client().hinge!.setControl(open));
-    expect(client().hinge?.pending).toBe(true);
+    await act(async () => client().fold!.setControl(open));
+    expect(client().fold?.pending).toBe(true);
     // A refresh for the same helper session keeps the command pending.
     await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
     expect(helperSockets()).toHaveLength(1);
-    expect(client().hinge?.pending).toBe(true);
-    expect(events).toEqual<HingeCommandEvent[]>([
+    expect(client().fold?.pending).toBe(true);
+    expect(events).toEqual<FoldCommandEvent[]>([
       { type: "requested", command: open },
-      { type: "sent", command: open, display: 3 },
+      { type: "sent", command: open, display: "inner" },
     ]);
     // A new helper process at the same URL replaces the input socket and its queue.
     await pushConfig({ pid: 2 });
     expect(helperSockets()).toHaveLength(2);
-    expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "reset" });
+    expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "reset" });
     expect(events.filter(({ type }) => type === "reset")).toHaveLength(1);
-    expect(client().hinge?.pending).toBe(false);
+    expect(client().fold?.pending).toBe(false);
     // The preview of the dropped command ends, so it cannot stay forever.
     await act(async () => socket().open());
     await act(async () => socket().push(0x82, COVER));
-    expect(client().hinge?.pose).toBe("closed");
-    expect(client().hinge?.angle).toBe(0);
+    expect(client().fold?.pose).toBe("closed");
+    expect(client().fold?.angle).toBe(0);
   });
 }
 
@@ -588,8 +606,8 @@ for (const failure of ["rejection", "timeout", "disconnect"] as const) {
     const { socket, client, events, observe } = await connect();
     await act(async () => socket.push(0x82, COVER));
     observe();
-    await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-    await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+    await act(async () => client().fold!.setControl({ control: "pose", value: "open" }));
+    await act(async () => client().fold!.setControl({ control: "pose", value: "laptop" }));
     await act(async () => socket.push(0x82, INNER_OPEN));
     await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
     expect(socket.frames().at(-1)?.payload).toEqual({
@@ -602,21 +620,21 @@ for (const failure of ["rejection", "timeout", "disconnect"] as const) {
       else if (failure === "timeout") deadlines.at(-1)!();
       else socket.onclose?.({ code: 1006, reason: "" });
     });
-    expect(client().hinge?.pending).toBe(false);
-    expect(client().hinge?.error).toBeTruthy();
-    expect(client().hinge?.pose).toBe("open");
+    expect(client().fold?.pending).toBe(false);
+    expect(client().fold?.error).toBeTruthy();
+    expect(client().fold?.pose).toBe("open");
     const open = { control: "pose", value: "open" } as const;
     const laptop = { control: "pose", value: "laptop" } as const;
-    expect(events).toEqual<HingeCommandEvent[]>([
+    expect(events).toEqual<FoldCommandEvent[]>([
       { type: "requested", command: open },
-      { type: "sent", command: open, display: 3 },
+      { type: "sent", command: open, display: "inner" },
       { type: "requested", command: laptop },
       { type: "acknowledged", command: open, ok: true },
-      { type: "sent", command: laptop, display: 3 },
+      { type: "sent", command: laptop, display: "inner" },
       ...(failure === "rejection"
         ? [{ type: "acknowledged", command: laptop, ok: false } as const]
         : []),
-      { type: "failed", error: client().hinge!.error! },
+      { type: "failed", error: client().fold!.error! },
     ]);
   });
 }
@@ -625,9 +643,9 @@ test("a rejected hinge command surfaces its error and drops the preview", async 
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, INNER_OPEN));
-  await act(async () => client().hinge!.setControl({ control: "angle", value: 90 }));
-  expect(client().hinge?.angle).toBe(90);
-  expect(client().hinge?.pose).toBeNull();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 90 }));
+  expect(client().fold?.angle).toBe(90);
+  expect(client().fold?.pose).toBeNull();
   await act(async () =>
     socket.push(0x90, {
       requestId: 1,
@@ -635,13 +653,17 @@ test("a rejected hinge command surfaces its error and drops the preview", async 
       error: "Simulator could not change the device pose.",
     }),
   );
-  expect(client().hinge?.pending).toBe(false);
-  expect(client().hinge?.error).toBe("Simulator could not change the device pose.");
-  expect(client().hinge?.angle).toBe(180);
-  // The next command clears the error.
-  await act(async () => client().hinge!.setControl({ control: "table", value: true }));
-  expect(client().hinge?.error).toBeNull();
-  expect(client().hinge?.tableMode).toBe(true);
+  expect(client().fold?.pending).toBe(false);
+  expect(client().fold?.error).toBe("Simulator could not change the device pose.");
+  expect(client().fold?.angle).toBe(180);
+  // The next command clears the error, and goes out as serve-sim's wire command.
+  await act(async () => client().fold!.setControl({ control: "tableMode", value: true }));
+  expect(client().fold?.error).toBeNull();
+  expect(client().fold?.tableMode?.enabled).toBe(true);
+  expect(socket.frames().at(-1)).toEqual({
+    tag: 0x10,
+    payload: { requestId: 2, command: { control: "table", value: true } },
+  });
 });
 
 for (const duo of [true, false]) {
@@ -679,8 +701,8 @@ test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets
     tag: 0x07,
     payload: { orientation: "landscape_right" },
   });
-  expect(client().hinge?.physicalPose).toBeNull();
-  expect(events).toEqual<HingeCommandEvent[]>([{ type: "rotated" }]);
+  expect(client().fold?.physical?.pose).toBeNull();
+  expect(events).toEqual<FoldCommandEvent[]>([{ type: "rotated" }]);
 });
 
 test("attached displays stream through the helper mount, park the flat stream, and resume it when detached", async () => {
@@ -748,20 +770,22 @@ test("input addressed to a display maps like the flat stream and drops a gesture
   const before = sent().length;
   // The cover is not the display native readback reports, so its whole gesture is dropped.
   await act(async () => {
-    client().sendTouch({ phase: "begin", display: 1, x: 0.2, y: 0.2 });
-    client().sendTouch({ phase: "move", display: 1, x: 0.3, y: 0.3 });
-    client().sendTouch({ phase: "end", display: 1, x: 0.3, y: 0.3 });
-    client().sendScroll!({ display: 1, dx: 0.1, dy: 0.1, x: 0.5, y: 0.5 });
+    client().sendTouch({ phase: "begin", display: "cover", x: 0.2, y: 0.2 });
+    client().sendTouch({ phase: "move", display: "cover", x: 0.3, y: 0.3 });
+    client().sendTouch({ phase: "end", display: "cover", x: 0.3, y: 0.3 });
+    client().sendScroll!({ display: "cover", dx: 0.1, dy: 0.1, x: 0.5, y: 0.5 });
   });
   expect(sent()).toHaveLength(before);
   // The inner display gets the flat stream's display-to-raw mapping and home-indicator edge.
-  await act(async () => client().sendTouch({ phase: "begin", display: 3, x: 0.25, y: 0.95 }));
+  await act(async () => client().sendTouch({ phase: "begin", display: "inner", x: 0.25, y: 0.95 }));
   expect(sent().at(-1)).toEqual({
     tag: 0x03,
     payload: { type: "begin", x: 0.95, y: 0.75, edge: 4 },
   });
-  await act(async () => client().sendTouch({ phase: "end", display: 3, x: 0.25, y: 0.95 }));
-  await act(async () => client().sendScroll!({ display: 3, dx: 0.1, dy: -0.2, x: 0.5, y: 0.5 }));
+  await act(async () => client().sendTouch({ phase: "end", display: "inner", x: 0.25, y: 0.95 }));
+  await act(async () =>
+    client().sendScroll!({ display: "inner", dx: 0.1, dy: -0.2, x: 0.5, y: 0.5 }),
+  );
   expect(sent().at(-1)).toEqual({
     tag: 0x0b,
     payload: { dx: -0.2, dy: -0.1, x: 0.5, y: 0.5 },
@@ -769,7 +793,7 @@ test("input addressed to a display maps like the flat stream and drops a gesture
   await act(async () =>
     client().sendMultiTouch!({
       phase: "begin",
-      display: 3,
+      display: "inner",
       a: { x: 0.25, y: 0.5 },
       b: { x: 0.75, y: 0.5 },
     }),

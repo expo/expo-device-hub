@@ -141,15 +141,57 @@ function Screen() {
 }
 ```
 
+### Fold a foldable device
+
+`client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
+`null` for other devices. `client.capabilities.fold` lists the commands that the device
+accepts: an angle range, the named poses with their hinge angles, Table Mode, and face
+down. It is `false` when the device offers no fold commands. Send only what it lists.
+
+```tsx
+import { useDeviceClient } from "@expo/hub-client";
+
+function FoldButtons() {
+  const { fold, capabilities } = useDeviceClient();
+  const controls = capabilities.fold;
+  if (!fold || !controls) return null;
+
+  return (
+    <>
+      <span>
+        {fold.angle ?? "?"}° {fold.pose ?? "custom"} {fold.pending ? "(moving)" : ""}
+      </span>
+      {controls.poses.book && (
+        <button onClick={() => fold.setControl({ control: "pose", value: "book" })}>Book</button>
+      )}
+      {controls.angle && (
+        <button onClick={() => fold.setControl({ control: "angle", value: controls.angle.max })}>
+          Flat
+        </button>
+      )}
+      {controls.tableMode && fold.tableMode?.available && (
+        <button onClick={() => fold.setControl({ control: "tableMode", value: true })}>
+          Table Mode
+        </button>
+      )}
+    </>
+  );
+}
+```
+
+`fold.tableMode` and `fold.physical` are present only on a device that has them. The
+poses share one vocabulary, `FOLD_POSES`: `closed`, `open`, `laptop`, `book`, and
+`tent`. `fold.observe` reports every fold command from its request to its outcome,
+whichever control sent it.
+
 ### Show each display of a foldable
 
-On an iPhone Duo, `client.hinge` has the fold state and `setControl`, and
-`client.displays` lists the cover (`id` 1) and the inner display (`id` 3). Attach one
-element per display, of the kind `client.videoKind` names, to stream each display
+On an iPhone Duo, `client.displays` lists the `cover` and the `inner` display. Attach
+one element per display, of the kind `client.videoKind` names, to stream each display
 yourself. While any display has an element, the client parks the flat stream, and
 `status` follows the active display. Send input to a display with its `id`, in that
 display's coordinates. The client drops a gesture that begins on a display that the
-device does not present.
+device does not present (`client.screen.display`).
 
 ```tsx
 import { useDeviceClient } from "@expo/hub-client";
@@ -158,8 +200,8 @@ function Displays() {
   const client = useDeviceClient();
   // A tap in the middle of the inner display.
   const tapInner = () => {
-    client.sendTouch({ phase: "begin", display: 3, x: 0.5, y: 0.5 });
-    client.sendTouch({ phase: "end", display: 3, x: 0.5, y: 0.5 });
+    client.sendTouch({ phase: "begin", display: "inner", x: 0.5, y: 0.5 });
+    client.sendTouch({ phase: "end", display: "inner", x: 0.5, y: 0.5 });
   };
 
   return (
@@ -179,9 +221,8 @@ function Displays() {
 }
 ```
 
-`hinge.observe` reports every hinge command from its request to its outcome, whichever
-control sent it. `deviceModelUrl` is Xcode's 3D model of the device; the Hub's 3D
-preview uses both.
+`deviceModelUrl` is a 3D model of the device, Xcode's for the iPhone Duo. The Hub's 3D
+preview uses it with `displays` and `fold.observe`.
 
 ### Show CPU usage
 

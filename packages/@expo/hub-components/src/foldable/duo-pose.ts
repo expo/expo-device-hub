@@ -4,8 +4,10 @@
  * fold elects is fold state, so `@expo/hub-client` owns it.
  */
 
-import { streamGeometry, type HingePose, type ScreenSize } from "@expo/hub-client";
+import { streamGeometry, type FoldPose } from "@expo/hub-client";
 import { Euler, Quaternion } from "three";
+
+import { type DuoStreamConfig } from "./duo-displays";
 
 export interface DuoViewAngles {
   elevation: number;
@@ -18,7 +20,7 @@ export const DUO_DEFAULT_VIEW_ANGLES: Record<"laptop" | "tent", DuoViewAngles> =
 };
 
 /** Camera-axis roll that makes the active panel's native UI readable. */
-export function duoScreenRoll(config: ScreenSize) {
+export function duoScreenRoll(config: DuoStreamConfig) {
   const mount = config.screenId === 1 ? 0 : Math.PI / 2;
   return mount - (streamGeometry(config).rotationDegrees * Math.PI) / 180;
 }
@@ -31,9 +33,9 @@ export function duoFacingYaw(fold: number): number {
 /** Initial/preset framing. Live hinge edits articulate the saved view in duo-view.ts. */
 export function duoPose(
   angle: number | undefined,
-  pose: HingePose | null | undefined,
+  pose: FoldPose | null | undefined,
   screenId?: number,
-  config?: ScreenSize | null,
+  config?: DuoStreamConfig | null,
   presentationRoll?: number,
   viewAngles?: DuoViewAngles,
 ) {
@@ -95,7 +97,7 @@ export interface DuoScreenMapping {
 }
 
 /** Allow scaling's pixel rounding without accepting the other Duo display. */
-export function duoFrameMatchesDisplay(width: number, height: number, config: ScreenSize) {
+export function duoFrameMatchesDisplay(width: number, height: number, config: DuoStreamConfig) {
   if (
     ![width, height, config.width, config.height].every(
       (dimension) => Number.isFinite(dimension) && dimension > 0,
@@ -115,7 +117,7 @@ export function duoFrameMatchesDisplay(width: number, height: number, config: Sc
  * The painter and touch inverse share this single hardware transform.
  */
 export function duoScreenMapping(
-  config: ScreenSize,
+  config: DuoStreamConfig,
   width: number,
   height: number,
 ): DuoScreenMapping {
@@ -151,7 +153,7 @@ export function duoScreenPoint(x: number, y: number, mapping: DuoScreenMapping) 
  * as `DeviceScreen` sends them, and maps them back with the same orientation.
  * This is the inverse of hub-client's display-to-raw mapping.
  */
-export function duoDisplayPoint(config: ScreenSize | null | undefined, x: number, y: number) {
+export function duoDisplayPoint(config: DuoStreamConfig | null | undefined, x: number, y: number) {
   switch (streamGeometry(config).inputOrientation) {
     case "landscape_left":
       return { x: 1 - y, y: x };
@@ -165,7 +167,11 @@ export function duoDisplayPoint(config: ScreenSize | null | undefined, x: number
 }
 
 /** The linear part of {@link duoDisplayPoint}, for scroll deltas. */
-export function duoDisplayDelta(config: ScreenSize | null | undefined, dx: number, dy: number) {
+export function duoDisplayDelta(
+  config: DuoStreamConfig | null | undefined,
+  dx: number,
+  dy: number,
+) {
   switch (streamGeometry(config).inputOrientation) {
     case "landscape_left":
       return { dx: -dy, dy: dx };

@@ -1,32 +1,39 @@
 import { afterEach, expect, test } from "bun:test";
-import {
-  type DeviceHinge,
-  type HingeCommandEvent,
-  type HingeControlCommand,
-  type ScreenSize,
-} from "@expo/hub-client";
+import { type DeviceFold, type FoldCommandEvent, type FoldControlCommand } from "@expo/hub-client";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { duoInitialView, duoPresetView, duoRotateView } from "../foldable/duo-view";
+import { type DuoStreamConfig } from "../foldable/duo-displays";
+import { duoInitialView, duoRotateView } from "../foldable/duo-view";
 import { recordDuoDeparture, useDuoFraming } from "../foldable/useDuoFraming";
+import { DUO_FOLD_CONTROLS, duoPreset } from "./duo-fixtures";
 
-const COVER: ScreenSize = {
+const COVER_SCREEN: DuoStreamConfig = {
   width: 1398,
   height: 2034,
   orientation: "portrait",
   screenId: 1,
-  supportsHingeAngle: true,
-  hingeAngle: 0,
-  hingePose: "closed",
-  tableMode: false,
 };
-const INNER_OPEN: ScreenSize = {
-  ...COVER,
+const INNER_SCREEN: DuoStreamConfig = {
   width: 2007,
   height: 2853,
+  orientation: "portrait",
   screenId: 3,
-  hingeAngle: 180,
-  hingePose: "open",
+};
+
+/** The screen config and the confirmed fold state that hub-client reports together. */
+type Device = { screen: DuoStreamConfig | null; fold: Partial<DeviceFold> };
+const FACE_UP = { faceDown: false };
+const COVER: Device = {
+  screen: COVER_SCREEN,
+  fold: { angle: 0, pose: "closed", tableMode: { enabled: false }, physical: FACE_UP },
+};
+const INNER_OPEN: Device = {
+  screen: INNER_SCREEN,
+  fold: { angle: 180, pose: "open", tableMode: { enabled: false }, physical: FACE_UP },
+};
+const HALF: Device = {
+  screen: INNER_SCREEN,
+  fold: { angle: 90, pose: null, tableMode: { enabled: true }, physical: FACE_UP },
 };
 
 let renderer: ReactTestRenderer | undefined;
@@ -36,18 +43,16 @@ afterEach(async () => {
 });
 
 /**
- * hub-client's hinge as the model sees it: fold state plus the command events
+ * hub-client's fold as the model sees it: fold state plus the command events
  * that `ios-hinge.test.tsx` pins for each scenario.
  */
-async function mount(screen: ScreenSize | null = COVER) {
+async function mount(device: Device = COVER) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  const listeners = new Set<(event: HingeCommandEvent) => void>();
-  let state: Partial<DeviceHinge> = {};
-  let current = screen;
+  const listeners = new Set<(event: FoldCommandEvent) => void>();
+  let state: Partial<DeviceFold> = device.fold;
+  let current = device.screen;
   let framing!: ReturnType<typeof useDuoFraming>;
-  const hinge = (): DeviceHinge => ({
-    supported: true,
-    faceDown: false,
+  const fold = (): DeviceFold => ({
     pending: false,
     error: null,
     setControl: () => {},
@@ -58,31 +63,31 @@ async function mount(screen: ScreenSize | null = COVER) {
     ...state,
   });
   // Stable, as the client's is, so the listener survives fold state updates.
-  const observe = hinge().observe;
-  function Harness({ value, screen }: { value: DeviceHinge; screen: ScreenSize | null }) {
-    framing = useDuoFraming(value, screen);
+  const observe = fold().observe;
+  function Harness({ value, screen }: { value: DeviceFold; screen: DuoStreamConfig | null }) {
+    framing = useDuoFraming(value, DUO_FOLD_CONTROLS, screen);
     return null;
   }
-  const render = () => <Harness value={{ ...hinge(), observe }} screen={current} />;
+  const render = () => <Harness value={{ ...fold(), observe }} screen={current} />;
   await act(async () => {
     renderer = create(render());
   });
   return {
     view: () => framing.view,
     commands: () => framing.commands,
-    emit: (event: HingeCommandEvent) =>
+    emit: (event: FoldCommandEvent) =>
       act(async () => {
         for (const listener of [...listeners]) listener(event);
       }),
     /** A new client render: fold state and the confirmed screen config. */
-    update: (next: Partial<DeviceHinge>, screen = current) =>
+    update: (next: Partial<DeviceFold>, screen = current) =>
       act(async () => {
         state = { ...state, ...next };
         current = screen;
         renderer!.update(render());
       }),
     /** An event and the fold state it changes, in one task, as the client sends them. */
-    emitWith: (event: HingeCommandEvent, next: Partial<DeviceHinge>) =>
+    emitWith: (event: FoldCommandEvent, next: Partial<DeviceFold>) =>
       act(async () => {
         for (const listener of [...listeners]) listener(event);
         state = { ...state, ...next };
@@ -91,18 +96,18 @@ async function mount(screen: ScreenSize | null = COVER) {
   };
 }
 
-const pose = (value: "open" | "laptop" | "closed"): HingeControlCommand => ({
+const pose = (value: "open" | "laptop" | "closed"): FoldControlCommand => ({
   control: "pose",
   value,
 });
-const angle = (value: number): HingeControlCommand => ({ control: "angle", value });
+const angle = (value: number): FoldControlCommand => ({ control: "angle", value });
 
 test("native orientation frames the model once when connecting", async () => {
   const { view, update } = await mount(INNER_OPEN);
-  const initial = duoInitialView(180, "open", INNER_OPEN);
+  const initial = duoInitialView(180, "open", INNER_SCREEN);
   expect(view()).toEqual(initial);
   // Later configs do not reframe it.
-  await update({}, { ...INNER_OPEN, orientation: "landscape_left" });
+  await update({}, { ...INNER_SCREEN, orientation: "landscape_left" });
   expect(view()).toEqual(initial);
 });
 
@@ -114,7 +119,7 @@ test("a rejected preset restores the view it replaced, unless a rotation superse
   const laptop = pose("laptop");
   await emit({ type: "requested", command: laptop });
   expect(view().fixedLeftFold).toBeDefined();
-  await emit({ type: "sent", command: laptop, display: 3 });
+  await emit({ type: "sent", command: laptop, display: "inner" });
   await emit({ type: "acknowledged", command: laptop, ok: false });
   await emit({ type: "failed", error: "Simulator could not change the device pose." });
   expect(view()).toEqual(openView);
@@ -152,13 +157,13 @@ test("a queued preset failure restores the last accepted preset's view", async (
   const laptop = pose("laptop");
   // The sequence hub-client reports for a rejection, a timeout, or a lost connection.
   await emit({ type: "requested", command: open });
-  await emit({ type: "sent", command: open, display: 3 });
+  await emit({ type: "sent", command: open, display: "inner" });
   const acceptedView = view();
   await emit({ type: "requested", command: laptop });
   const laptopView = view();
   expect(laptopView).not.toEqual(acceptedView);
   await emit({ type: "acknowledged", command: open, ok: true });
-  await emit({ type: "sent", command: laptop, display: 3 });
+  await emit({ type: "sent", command: laptop, display: "inner" });
   // Acknowledging Open must not interrupt the optimistic Laptop view.
   expect(view()).toEqual(laptopView);
   await emit({ type: "failed", error: "Device control timed out." });
@@ -185,7 +190,7 @@ test("a preset rejected after a rotation restores the turned view", async () => 
   await emit({ type: "acknowledged", command: open, ok: true });
   await emit({ type: "rotated" });
   const rotatedView = view();
-  expect(rotatedView).toEqual(duoRotateView(duoPresetView("open"), 1));
+  expect(rotatedView).toEqual(duoRotateView(duoPreset("open"), 1));
   await emit({ type: "requested", command: pose("laptop") });
   expect(view()).not.toEqual(rotatedView);
   await emit({ type: "failed", error: "Rejected" });
@@ -206,11 +211,10 @@ test("a preset from before a rotation, accepted later, keeps the turned recovery
 });
 
 test("a reset drops the old connection's restore point and ownership, and frames as on connect", async () => {
-  const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null, tableMode: true };
-  const { view, emit, update } = await mount(half);
+  const { view, emit, update } = await mount(HALF);
   const initial = view();
   await emit({ type: "requested", command: pose("laptop") });
-  expect(view()).toEqual(duoPresetView("laptop"));
+  expect(view()).toEqual(duoPreset("laptop"));
   await emit({ type: "reset" });
   expect(view()).toEqual(initial);
   // A later failure has nothing from the old connection to restore.
@@ -218,8 +222,8 @@ test("a reset drops the old connection's restore point and ownership, and frames
   await emit({ type: "failed", error: "Rejected" });
   expect(view()).toEqual(initial);
   // Ownership ended too, so face-down framing follows another client again.
-  await update({}, { ...half, physicalOrientation: "facedown" });
-  expect(view()).toEqual(duoPresetView("tent"));
+  await update({ physical: { faceDown: true } });
+  expect(view()).toEqual(duoPreset("tent"));
 });
 
 test("a confirmed preset becomes the baseline for the next burst", async () => {
@@ -238,10 +242,10 @@ test("actual submissions count panel departures by the display they elect", asyn
   const { commands, emit, update } = await mount(COVER);
   expect(commands()).toEqual({ pending: false, coverDepartures: 0, innerDepartures: 0 });
   // An away and a return in one burst both count, even if no render shows the away.
-  await emit({ type: "sent", command: angle(55), display: 3 });
-  await emit({ type: "sent", command: angle(0), display: 1 });
+  await emit({ type: "sent", command: angle(55), display: "inner" });
+  await emit({ type: "sent", command: angle(0), display: "cover" });
   // Table Mode and the hysteresis band elect no display.
-  await emit({ type: "sent", command: { control: "table", value: true } });
+  await emit({ type: "sent", command: { control: "tableMode", value: true } });
   await update({ pending: true });
   expect(commands()).toEqual({ pending: true, coverDepartures: 1, innerDepartures: 1 });
   expect(recordDuoDeparture({ coverDepartures: 0, innerDepartures: 0 }, undefined)).toEqual({
@@ -254,38 +258,39 @@ test("a device turned over elsewhere is framed as on connect, but a local rotati
   const { view, emit, emitWith, update } = await mount(INNER_OPEN);
   const laptop = pose("laptop");
   await emit({ type: "requested", command: laptop });
-  await update({ physicalPose: "laptop" });
+  await update({ physical: { pose: "laptop", faceDown: false } });
   await emit({ type: "acknowledged", command: laptop, ok: true });
   await emit({ type: "confirmed" });
   const laptopView = view();
-  expect(laptopView).toEqual(duoPresetView("laptop"));
+  expect(laptopView).toEqual(duoPreset("laptop"));
   // The client forgets the pose when another client turns the device.
-  await update({ physicalPose: null }, { ...INNER_OPEN, hingePose: null });
-  expect(view()).toEqual(duoInitialView(180, null, { ...INNER_OPEN, hingePose: null }));
+  await update({ pose: null, physical: { pose: null, faceDown: false } });
+  expect(view()).toEqual(duoInitialView(180, null, INNER_SCREEN));
 
-  await emitWith({ type: "requested", command: pose("laptop") }, { physicalPose: "laptop" });
+  await emitWith(
+    { type: "requested", command: pose("laptop") },
+    { physical: { pose: "laptop", faceDown: false } },
+  );
   const presetView = view();
   // A rotation also forgets the pose, but it turns the view instead.
-  await emitWith({ type: "rotated" }, { physicalPose: null });
+  await emitWith({ type: "rotated" }, { physical: { pose: null, faceDown: false } });
   expect(view()).toEqual(duoRotateView(presetView, 1));
 });
 
 test("a device turned face down elsewhere frames its cover like Tent until it turns back", async () => {
-  const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null, tableMode: true };
-  const { view, update } = await mount(half);
+  const { view, update } = await mount(HALF);
   const before = view();
-  await update({}, { ...half, physicalOrientation: "facedown" });
-  expect(view()).toEqual(duoPresetView("tent"));
-  await update({}, { ...half, physicalOrientation: "portrait" });
+  await update({ physical: { faceDown: true } });
+  expect(view()).toEqual(duoPreset("tent"));
+  await update({ physical: { faceDown: false } });
   expect(view()).toEqual(before);
 });
 
 test("local commands own the framing until the device confirms them", async () => {
-  const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null, tableMode: true };
-  const { view, emit, update } = await mount(half);
+  const { view, emit, update } = await mount(HALF);
   const before = view();
-  await emit({ type: "requested", command: { control: "physical", value: "facedown" } });
-  await update({}, { ...half, physicalOrientation: "facedown" });
+  await emit({ type: "requested", command: { control: "faceDown", value: true } });
+  await update({ physical: { faceDown: true } });
   expect(view()).toEqual(before);
   await emit({ type: "confirmed" });
   expect(view()).toEqual(before);

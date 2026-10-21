@@ -121,7 +121,7 @@ export function LogSidebar({
       >
         <CurrentAppSection client={client} />
         {(client?.capabilities.deviceSettings ||
-          client?.hinge ||
+          client?.capabilities.fold ||
           client?.platform === "android" ||
           deviceFrame ||
           (client && (onShutdown || onRemoveDevice))) && (

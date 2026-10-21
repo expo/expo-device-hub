@@ -5,7 +5,7 @@ import {
   useRef,
 } from "react";
 
-import { HINGE_POSES } from "./hinge-control";
+import { FOLD_POSES } from "./fold";
 import { type DeviceClient, type KeyboardInput } from "./types";
 
 const isClipboardShortcut = (event: ReactKeyboardEvent, code: "KeyC" | "KeyV") =>
@@ -16,15 +16,17 @@ const isClipboardShortcut = (event: ReactKeyboardEvent, code: "KeyC" | "KeyV") =
  * device surface, such as the iPhone Duo's 3D model in `@expo/hub-components`.
  * Spread the returned handlers on the surface. A focused device surface owns
  * keyboard input. The caller releases held keys and resets shortcuts when
- * input is cancelled, so modifiers never stick in the device. Option+Shift+1–5
- * select the Duo's five poses, like serve-sim and Xcode's Device Hub, and never
- * reach the device as keystrokes. Command+C and Command+V copy and paste text.
+ * input is cancelled, so modifiers never stick in the device. On a foldable,
+ * Option+Shift+1–5 select `FOLD_POSES` in order, like serve-sim and Xcode's
+ * Device Hub, and never reach the device as keystrokes; a digit whose pose the
+ * device does not offer does nothing. Command+C and Command+V copy and paste
+ * text.
  */
 export function useDeviceKeyboard(
-  client: Pick<DeviceClient, "sendKey" | "hinge" | "pasteText" | "capabilities">,
+  client: Pick<DeviceClient, "sendKey" | "fold" | "pasteText" | "capabilities">,
   { onCopy }: { onCopy?: () => Promise<void> } = {},
 ) {
-  const { sendKey, hinge, pasteText, capabilities } = client;
+  const { sendKey, fold, pasteText, capabilities } = client;
   const canPaste = capabilities.clipboard !== false && capabilities.clipboard.paste;
   const pressedKeysRef = useRef(new Map<string, KeyboardInput>());
   // Keys whose keydown was consumed as a pose shortcut; their keyup must not
@@ -75,13 +77,24 @@ export function useDeviceKeyboard(
     }
     // Physical codes, so Option+Shift's layout-specific characters cannot
     // affect the pose lookup. Command+digits stay with the browser's tabs.
-    if (hinge?.supported && event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    const foldControls = capabilities.fold;
+    if (
+      fold &&
+      foldControls &&
+      event.altKey &&
+      event.shiftKey &&
+      !event.metaKey &&
+      !event.ctrlKey
+    ) {
       const digit = /^Digit([1-5])$/.exec(event.code);
       if (digit) {
+        // @ref LLP 0016#pose-shortcuts — each digit keeps its pose; one the device lacks does nothing
         event.preventDefault();
         swallowedKeysRef.current.add(event.code);
-        const pose = HINGE_POSES[Number(digit[1]) - 1];
-        if (pose && !event.repeat) hinge.setControl({ control: "pose", value: pose.id });
+        const pose = FOLD_POSES[Number(digit[1]) - 1];
+        if (pose && foldControls.poses[pose] && !event.repeat) {
+          fold.setControl({ control: "pose", value: pose });
+        }
         return;
       }
     }

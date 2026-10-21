@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type HingePose } from "@expo/hub-client";
+import { type FoldPose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
@@ -29,7 +29,7 @@ function rig() {
   camera.position.set(0, 0, 31);
   camera.zoom = stage.height / viewport.height;
   camera.updateProjectionMatrix();
-  const pose = (angle: number, kind: HingePose = "book", roll = 0) => {
+  const pose = (angle: number, kind: FoldPose = "book", roll = 0) => {
     const target = duoPose(angle, kind, undefined, undefined, roll);
     left.rotation.y = target.fold;
     right.rotation.y = -target.fold;

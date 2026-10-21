@@ -19,12 +19,7 @@
 
 import { type CSSProperties } from "react";
 
-import {
-  type HingeControlCommand,
-  type HingeControlState,
-  type HingePhysicalOrientation,
-  type HingePose,
-} from "./hinge-control";
+import { type FoldControlCommand, type FoldPose } from "./fold";
 
 export type DevicePlatform = "ios" | "android";
 
@@ -53,29 +48,33 @@ export type DeviceOrientation =
   | "landscape_right";
 
 /**
- * Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio.
- * serve-sim's screen config carries the active display and, on an iPhone Duo,
- * the hinge state alongside the size (its `StreamConfig`).
+ * A display of a foldable device, named by its role so that every platform
+ * uses the same identity: `cover` is the outside display that works while the
+ * device is closed, `inner` the main display that folds.
  */
-export interface ScreenSize extends HingeControlState {
+export type DeviceDisplayId = "cover" | "inner";
+
+/**
+ * Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio.
+ * The same object names the display that it describes, so a size, an
+ * orientation, and a display always change together.
+ */
+export interface ScreenSize {
   width: number;
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim). */
   orientation?: DeviceOrientation;
-  /** Active simulator display: 1 is the Duo's cover, 3 its inner display. */
-  screenId?: number;
   /** Native input setup failed; video can continue without touch or keyboard. */
   inputUnavailable?: boolean;
-  /** Whether this simulator exposes hinge angle control. */
-  supportsHingeAngle?: boolean;
-  /** Whether the active Duo surface can be selected without changing its hinge angle. */
-  supportsPhysicalOrientation?: boolean;
-  /** Last confirmed physical orientation, separate from the app's screen orientation. */
-  physicalOrientation?: HingePhysicalOrientation;
+  /**
+   * The display that this size and orientation describe, as native readback
+   * confirmed it. Set only for a foldable that reports it (the iPhone Duo).
+   */
+  display?: DeviceDisplayId;
 }
 
 /**
- * Corner radii of the active display's glass as the viewer sees it, clockwise
+ * Corner radii of the shown display's glass as the viewer sees it, clockwise
  * from top left, each a fraction of the displayed width. serve-sim reads them
  * from Xcode's DeviceKit profile; the iPhone Duo's cover, for example, is
  * nearly square at the hinge and round at the outer edge.
@@ -88,20 +87,44 @@ export interface DisplayCornerRadii {
 }
 
 /**
- * One step of a hinge command, or a rotation, as the client handles it. Each
+ * The fold controls a device offers; `false` for a device without them. A
+ * device without a hinge, a device whose hinge the backend cannot move, and
+ * a device whose fold state is not reported yet all report `false`.
+ */
+export type DeviceFoldCapabilities =
+  | false
+  | Readonly<{
+      /**
+       * The hinge angles that the device accepts, in degrees: 0 is folded
+       * shut, 180 is flat. `false` when the device applies poses only.
+       */
+      angle: Readonly<{ min: number; max: number }> | false;
+      /**
+       * The named poses that the device can apply, each with the hinge angle
+       * that it sets. A pose that is not listed is not offered.
+       */
+      poses: Readonly<Partial<Record<FoldPose, Readonly<{ angle: number }>>>>;
+      /** A persistent table state (Xcode's Table Mode); `DeviceFold.tableMode` is then present. */
+      tableMode: boolean;
+      /** The `faceDown` command, which lays the device face down without moving the hinge. */
+      faceDown: boolean;
+    }>;
+
+/**
+ * One step of a fold command, or a rotation, as the client handles it. Each
  * event carries the command object that `setControl` queued, so a listener can
  * follow one command from its request to its outcome.
  */
-export type HingeCommandEvent =
+export type FoldCommandEvent =
   /** `setControl` queued the command; `angle`, `pose`, and `tableMode` already preview it. */
-  | { type: "requested"; command: HingeControlCommand }
+  | { type: "requested"; command: FoldControlCommand }
   /**
    * The command went to the device. `display` is the display that the command
    * makes active, when the command alone decides it.
    */
-  | { type: "sent"; command: HingeControlCommand; display?: number }
+  | { type: "sent"; command: FoldControlCommand; display?: DeviceDisplayId }
   /** The device answered the command. A rejection is followed by `failed`. */
-  | { type: "acknowledged"; command: HingeControlCommand; ok: boolean }
+  | { type: "acknowledged"; command: FoldControlCommand; ok: boolean }
   /** The device reports the requested state, so the preview ends. */
   | { type: "confirmed" }
   /** A command failed, so the client dropped every unconfirmed command, and `error` says why. */
@@ -109,47 +132,62 @@ export type HingeCommandEvent =
   /**
    * The client left the helper session that owned the commands, for example
    * for another device or a replaced helper at the same URL. It dropped every
-   * unconfirmed command without an error, and forgot the physical pose.
+   * unconfirmed command without an error, and forgot `physical.pose`.
    */
   | { type: "reset" }
   /** The viewer rotated the device, which clears its named pose. */
   | { type: "rotated" };
 
+/** The persistent table state of {@link DeviceFold}, present when `capabilities.fold.tableMode`. */
+export interface DeviceFoldTableMode {
+  /** The acknowledged control setting; undefined until reported. */
+  enabled?: boolean;
+  /** Whether the current pose allows it to be turned on; undefined until reported. */
+  available?: boolean;
+}
+
 /**
- * Fold state and controls of a device with a hinge, such as the iPhone Duo.
- * Angles and poses show the pending request while a command awaits
- * acknowledgement, then the device's confirmed values.
+ * How the device is held, apart from its hinge angle. Present when the backend
+ * reports it (iOS); Android emulators have no physical stance to report.
  */
-export interface DeviceHinge {
+export interface DeviceFoldPhysical {
   /**
-   * Whether the simulator can move its hinge; undefined until the helper
-   * reports it. Like serve-sim, fold controls show once this or `angle` is
-   * known, and the pose shortcuts need it to be true.
+   * The pose whose stance the device holds, which a later angle change keeps
+   * (Laptop stays on the table). Undefined follows `pose`; null is unknown,
+   * for example after a rotation.
    */
-  supported?: boolean;
-  /** Hinge angle in degrees; undefined until the helper reports it. */
-  angle?: number;
-  /** Named preset in effect, null for a custom angle, undefined until reported. */
-  pose?: HingePose | null;
-  /** Physical pose for display election; undefined follows `pose`, null is unknown. */
-  physicalPose?: HingePose | null;
-  tableMode?: boolean;
-  /** Whether Table Mode can be turned on in the current pose. */
-  tableModeAvailable?: boolean;
-  /** Face down with Table Mode, which elects the cover of a half-open device. */
+  pose?: FoldPose | null;
+  /** Lying face down with Table Mode, which makes the cover display active. */
   faceDown: boolean;
-  /** A hinge command awaits the device's acknowledgement. */
+}
+
+/**
+ * Fold state and controls of a foldable device. Angles and poses show the
+ * pending request while a command awaits acknowledgement, then the device's
+ * confirmed values. `DeviceClient.capabilities.fold` says which commands the
+ * device accepts.
+ */
+export interface DeviceFold {
+  /** Hinge angle in degrees: 0 is folded shut, 180 is flat. Undefined until reported. */
+  angle?: number;
+  /** Named pose in effect, null for a custom angle, undefined until reported. */
+  pose?: FoldPose | null;
+  /** A fold command awaits the device's acknowledgement. */
   pending: boolean;
-  /** The last failed hinge command, cleared when the next one starts. */
+  /** The last failed fold command, cleared when the next one starts. */
   error: string | null;
-  /** Send a hinge command: an angle, a preset, Table Mode, or face up/down. */
-  setControl: (command: HingeControlCommand) => void;
+  /** Present when `capabilities.fold.tableMode` is true. */
+  tableMode?: DeviceFoldTableMode;
+  /** Present when the backend reports how the device is held. */
+  physical?: DeviceFoldPhysical;
+  /** Send a fold command that `capabilities.fold` offers. */
+  setControl: (command: FoldControlCommand) => void;
   /**
-   * Follow every hinge command and rotation of this client, whichever control
-   * started it, as {@link HingeCommandEvent}s. Returns a function that stops
+   * Follow every fold command and rotation of this client, whichever control
+   * started it, as {@link FoldCommandEvent}s. Returns a function that stops
    * the listener. Absent when the backend reports no command lifecycle.
    */
-  observe?: (listener: (event: HingeCommandEvent) => void) => () => void;
+  observe?: (listener: (event: FoldCommandEvent) => void) => () => void;
 }
 
 /**
@@ -157,11 +195,10 @@ export interface DeviceHinge {
  * iPhone Duo's cover and inner display.
  */
 export interface DeviceDisplay {
-  /** Simulator display ID: 1 is the iPhone Duo's cover, 3 its inner display. */
-  id: number;
+  id: DeviceDisplayId;
   /**
-   * The display that the device presents. The hinge state elects it, so it
-   * follows a requested fold at once. `screen.screenId` is the display that
+   * The display that the device presents. The fold state elects it, so it
+   * follows a requested fold at once. `screen.display` is the display that
    * native readback confirmed, and input addressed to a display waits for it.
    */
   active: boolean;
@@ -509,6 +546,8 @@ export interface DeviceCapabilities {
   permissions: boolean;
   /** Text clipboard actions, in order with keyboard input. */
   clipboard: DeviceClipboardCapabilities;
+  /** The fold commands that `DeviceClient.fold` accepts. */
+  fold: DeviceFoldCapabilities;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -576,9 +615,9 @@ export interface TouchSample {
   /**
    * The {@link DeviceDisplay} whose coordinates `x` and `y` use. Without it, the
    * sample addresses the flat stream. A gesture that begins on a display other
-   * than `screen.screenId` is dropped until its end.
+   * than `screen.display` is dropped until its end.
    */
-  display?: number;
+  display?: DeviceDisplayId;
   /** An end that abandons unsent touch intent, e.g. conversion to a two-finger gesture. */
   cancelled?: boolean;
   /** 0..1 across the screen width. */
@@ -593,7 +632,7 @@ export interface TouchSample {
 export interface MultiTouchSample {
   phase: "begin" | "move" | "end";
   /** The display both points address, as for {@link TouchSample.display}. */
-  display?: number;
+  display?: DeviceDisplayId;
   a: { x: number; y: number };
   b: { x: number; y: number };
 }
@@ -627,8 +666,8 @@ export type HidKeyEvent = { type: "down" | "up"; usage: number };
  * device pans the view beneath it (e.g. a sheet rather than the map behind it).
  */
 export interface ScrollSample {
-  /** The display the pan addresses. A scroll on a display other than `screen.screenId` is dropped. */
-  display?: number;
+  /** The display the pan addresses. A scroll on a display other than `screen.display` is dropped. */
+  display?: DeviceDisplayId;
   dx: number;
   dy: number;
   x: number;
@@ -750,23 +789,29 @@ export interface DeviceClient {
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
-  /** iPhone Duo hinge state and controls; null for devices without a hinge. */
-  hinge: DeviceHinge | null;
+  /**
+   * Fold state and controls of a foldable device, such as the iPhone Duo; null
+   * for a device that does not fold. `capabilities.fold` lists the commands
+   * that it accepts.
+   */
+  fold: DeviceFold | null;
   /**
    * The displays of a device that streams each display on its own, in the
    * device's order; null for a device with one stream.
    */
   displays: readonly DeviceDisplay[] | null;
   /**
-   * URL of Xcode's 3D model of this device (DeviceKit's USDZ), served by the
-   * backend from the host's Xcode, with this connection's session token. Null
-   * when the backend has no model for the device.
+   * URL of a 3D model of this device that the backend serves, with this
+   * connection's session token. For the iPhone Duo it is Xcode's DeviceKit
+   * USDZ from the host's Xcode. Null when the backend has no model for the
+   * device.
    */
   deviceModelUrl: string | null;
   /**
-   * The active display's own glass corners for the flat view, oriented with
-   * the device; null keeps the presentation's generic shape for the platform.
-   * Set for the iPhone Duo, whose displays the generic iPhone shape cannot express.
+   * The glass corners of the display that `screen` describes, for the flat
+   * view, oriented with the device; null keeps the presentation's generic
+   * shape for the platform. Set for the iPhone Duo, whose displays the
+   * generic iPhone shape cannot express.
    */
   displayCorners: DisplayCornerRadii | null;
   /** Best-effort frames-per-second (0 when unavailable). */
@@ -1039,7 +1084,7 @@ export interface DeviceClient {
 export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
 
 /**
- * The client fields read by DeviceScreen, including the iPhone Duo hinge for its
+ * The client fields read by DeviceScreen, including the fold for its
  * Option+Shift pose shortcuts. Full DeviceClient values remain valid inputs.
  */
 export type DeviceScreenClient = Pick<
@@ -1051,7 +1096,7 @@ export type DeviceScreenClient = Pick<
   | "cancelInput"
   | "sendScroll"
   | "sendKey"
-  | "hinge"
+  | "fold"
   | "pasteText"
   | "capabilities"
   | "screen"
