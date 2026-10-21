@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { adbCommand } from "./adb-command.ts";
 import { listAllDevices, readEmuConsoleValue, type Device } from "./adb.ts";
 import {
   ANDROID_SDK_HINT,
@@ -218,7 +219,7 @@ function adb(
   args: string[],
   runExec: typeof execText = execText,
 ): Promise<ExecResult<string>> {
-  return runExec("adb", ["-s", serial, ...args], { timeout: 5_000 });
+  return runExec(adbCommand(), ["-s", serial, ...args], { timeout: 5_000 });
 }
 
 async function runningAvdName(

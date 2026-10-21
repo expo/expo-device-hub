@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { adbCommand } from "./adb-command.ts";
 import { execText } from "./exec.ts";
 import type { AppActionResponse, FileImportResponse } from "./shared/api-contracts.ts";
 
@@ -51,7 +52,7 @@ export async function adb(
       ? signal.reason
       : new DOMException("The operation was aborted", "AbortError");
   }
-  const result = await runExec("adb", ["-s", serial, ...args], {
+  const result = await runExec(adbCommand(), ["-s", serial, ...args], {
     timeout,
     signal,
     lane: "background",

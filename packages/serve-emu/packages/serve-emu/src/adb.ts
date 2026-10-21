@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { adbCommand } from "./adb-command.ts";
 import { execBuffer, execText, type ExecResult } from "./exec.ts";
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
@@ -74,7 +75,7 @@ function execFailure(result: ExecResult<string | Buffer>): string {
 }
 
 export async function listAllDevices(runExec: typeof execText = execText): Promise<Device[]> {
-  const r = await runExec("adb", ["devices"], { timeout: ADB_QUERY_TIMEOUT_MS });
+  const r = await runExec(adbCommand(), ["devices"], { timeout: ADB_QUERY_TIMEOUT_MS });
   if (execFailed(r)) throw new Error(`adb devices failed: ${execFailure(r)}`);
   return r.stdout
     .split("\n")
@@ -113,10 +114,14 @@ export async function screencapPng(
   runExec: typeof execBuffer = execBuffer,
 ): Promise<Buffer> {
   const capture = async (display: string[]) => {
-    const r = await runExec("adb", ["-s", serial, "exec-out", "screencap", ...display, "-p"], {
-      maxBuffer: 64 * 1024 * 1024,
-      timeout: ADB_SCREENSHOT_TIMEOUT_MS,
-    });
+    const r = await runExec(
+      adbCommand(),
+      ["-s", serial, "exec-out", "screencap", ...display, "-p"],
+      {
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: ADB_SCREENSHOT_TIMEOUT_MS,
+      },
+    );
     if (execFailed(r)) throw new Error(`screencap failed: ${execFailure(r)}`);
     return r.stdout;
   };
@@ -135,7 +140,7 @@ async function activePhysicalDisplay(
   serial: string,
   runExec: typeof execBuffer,
 ): Promise<string | null> {
-  const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "display"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "dumpsys", "display"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) return null;
@@ -153,7 +158,7 @@ export async function shell(
   cmd: string[],
   runExec: typeof execText = execText,
 ): Promise<void> {
-  const r = await runExec("adb", ["-s", serial, "shell", ...cmd], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", ...cmd], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -162,7 +167,7 @@ export async function shell(
 }
 
 export function shellSpawn(serial: string, cmd: string[], runSpawn: typeof spawn = spawn) {
-  return runSpawn("adb", ["-s", serial, "shell", ...cmd]);
+  return runSpawn(adbCommand(), ["-s", serial, "shell", ...cmd]);
 }
 
 /**
@@ -175,7 +180,7 @@ export async function readEmuConsoleValue(
   args: string[],
   runExec: typeof execText = execText,
 ): Promise<string | null> {
-  const r = await runExec("adb", ["-s", serial, "emu", ...args], {
+  const r = await runExec(adbCommand(), ["-s", serial, "emu", ...args], {
     timeout: EMU_CONSOLE_TIMEOUT_MS,
   });
   if (execFailed(r)) return null;
@@ -191,7 +196,7 @@ export async function getDeviceSize(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<{ width: number; height: number }> {
-  const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
@@ -208,7 +213,7 @@ export async function getDisplayRotation(
   runExec: typeof execText = execText,
   signal?: AbortSignal,
 ): Promise<DisplayRotation> {
-  const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "window", "displays"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "dumpsys", "window", "displays"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
     signal,
     lane: "background",
@@ -250,7 +255,7 @@ export async function getUserRotation(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<OrientationStatus> {
-  const r = await runExec("adb", ["-s", serial, "shell", "cmd", "window", "user-rotation"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "cmd", "window", "user-rotation"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -275,7 +280,7 @@ export async function setUserRotation(
     orientation === "auto"
       ? ["cmd", "window", "user-rotation", "free"]
       : ["cmd", "window", "user-rotation", "lock", orientation === "portrait" ? "0" : "1"];
-  const r = await runExec("adb", ["-s", serial, "shell", ...args], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -289,7 +294,7 @@ export async function getFontScale(
   runExec: typeof execText = execText,
 ): Promise<FontScaleStatus> {
   const r = await runExec(
-    "adb",
+    adbCommand(),
     ["-s", serial, "shell", "settings", "get", "system", "font_scale"],
     {
       timeout: ADB_QUERY_TIMEOUT_MS,
@@ -316,7 +321,7 @@ export async function setFontScale(
   }
   const normalized = scale.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
   const args = ["settings", "put", "system", "font_scale", normalized];
-  const r = await runExec("adb", ["-s", serial, "shell", ...args], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -338,7 +343,7 @@ export async function getNightMode(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<NightModeStatus> {
-  const r = await runExec("adb", ["-s", serial, "shell", "cmd", "uimode", "night"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "cmd", "uimode", "night"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -355,7 +360,7 @@ export async function setNightMode(
 ): Promise<NightModeStatus> {
   const value = mode === "dark" ? "yes" : mode === "light" ? "no" : "auto";
   const args = ["cmd", "uimode", "night", value];
-  const r = await runExec("adb", ["-s", serial, "shell", ...args], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -369,9 +374,13 @@ async function globalSetting(
   name: string,
   runExec: typeof execText = execText,
 ): Promise<string> {
-  const r = await runExec("adb", ["-s", serial, "shell", "settings", "get", "global", name], {
-    timeout: ADB_QUERY_TIMEOUT_MS,
-  });
+  const r = await runExec(
+    adbCommand(),
+    ["-s", serial, "shell", "settings", "get", "global", name],
+    {
+      timeout: ADB_QUERY_TIMEOUT_MS,
+    },
+  );
   if (execFailed(r)) {
     throw new Error(`settings get global ${name} failed: ${execFailure(r)}`, {
       cause: r.error ?? undefined,
@@ -419,7 +428,7 @@ export async function setNetworkEnabled(
   const action = enabled ? "enable" : "disable";
   for (const service of ["wifi", "data"]) {
     const args = ["svc", service, action];
-    const r = await runExec("adb", ["-s", serial, "shell", ...args], {
+    const r = await runExec(adbCommand(), ["-s", serial, "shell", ...args], {
       timeout: ADB_MUTATION_TIMEOUT_MS,
     });
     if (execFailed(r)) {
@@ -434,9 +443,13 @@ async function secureSetting(
   name: string,
   runExec: typeof execText = execText,
 ): Promise<string> {
-  const r = await runExec("adb", ["-s", serial, "shell", "settings", "get", "secure", name], {
-    timeout: ADB_QUERY_TIMEOUT_MS,
-  });
+  const r = await runExec(
+    adbCommand(),
+    ["-s", serial, "shell", "settings", "get", "secure", name],
+    {
+      timeout: ADB_QUERY_TIMEOUT_MS,
+    },
+  );
   if (execFailed(r)) {
     throw new Error(`settings get secure ${name} failed: ${execFailure(r)}`, {
       cause: r.error ?? undefined,
@@ -450,7 +463,7 @@ async function mutateShell(
   args: readonly string[],
   runExec: typeof execText = execText,
 ): Promise<void> {
-  const r = await runExec("adb", ["-s", serial, "shell", ...args], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
@@ -578,10 +591,14 @@ async function hardwareKeyboardPresent(
 ): Promise<boolean> {
   const cached = hardwareKeyboardCache.get(serial);
   if (cached && now() - cached.at < HARDWARE_KEYBOARD_TTL_MS) return cached.present;
-  const result = await runExec("adb", ["-s", serial, "shell", "dumpsys input | grep Classes:"], {
-    timeout: ADB_QUERY_TIMEOUT_MS,
-    lane: "background",
-  });
+  const result = await runExec(
+    adbCommand(),
+    ["-s", serial, "shell", "dumpsys input | grep Classes:"],
+    {
+      timeout: ADB_QUERY_TIMEOUT_MS,
+      lane: "background",
+    },
+  );
   const present = hardwareKeyboardFromClasses(result.stdout ?? "");
   hardwareKeyboardCache.set(serial, { at: now(), present });
   return present;
@@ -622,7 +639,7 @@ async function readDisplayDensity(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<{ physical: number; override: number | null; raw: string }> {
-  const r = await runExec("adb", ["-s", serial, "shell", "wm", "density"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "wm", "density"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) throw new Error(`wm density failed: ${execFailure(r)}`);
@@ -643,7 +660,7 @@ export async function readEffectiveDisplaySize(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<{ widthPx: number; heightPx: number }> {
-  const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
+  const r = await runExec(adbCommand(), ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);

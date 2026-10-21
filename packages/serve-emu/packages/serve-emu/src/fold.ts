@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { adbCommand } from "./adb-command.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execText } from "./exec.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
@@ -20,10 +21,14 @@ export async function getFoldStatus(
 ): Promise<FoldStatus> {
   if (!isEmulatorSerial(serial)) return UNSUPPORTED;
 
-  const sensor = await runExec("adb", ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
-    timeout: 5_000,
-    lane: "interactive",
-  });
+  const sensor = await runExec(
+    adbCommand(),
+    ["-s", serial, "emu", "sensor", "get", "hinge-angle0"],
+    {
+      timeout: 5_000,
+      lane: "interactive",
+    },
+  );
   if (sensor.status !== 0 || sensor.timedOut || sensor.error) {
     const detail =
       sensor.stderr.trim() || sensor.error?.message || sensor.stdout.trim() || "unknown error";
@@ -44,10 +49,14 @@ export async function getFoldStatus(
     );
   }
 
-  const state = await runExec("adb", ["-s", serial, "shell", "cmd", "device_state", "base-state"], {
-    timeout: 5_000,
-    lane: "interactive",
-  });
+  const state = await runExec(
+    adbCommand(),
+    ["-s", serial, "shell", "cmd", "device_state", "base-state"],
+    {
+      timeout: 5_000,
+      lane: "interactive",
+    },
+  );
   // While an app holds an override state (rear display, dual screen), the
   // committed override comes first and the physical posture is on "Base state:".
   const name =
@@ -72,7 +81,7 @@ export async function setFoldPosture(
   if (!current.supported) throw new Error("Selected emulator does not support folding");
 
   const command = posture === "closed" ? "fold" : "unfold";
-  const result = await runExec("adb", ["-s", serial, "emu", command], {
+  const result = await runExec(adbCommand(), ["-s", serial, "emu", command], {
     timeout: 5_000,
     lane: "interactive",
   });

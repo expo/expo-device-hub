@@ -4,6 +4,7 @@ import { createConnection, createServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { adbCommand } from "./adb-command.ts";
 import { isEmulatorSerial, parseEmulatorSerial } from "./device-capabilities.ts";
 import { execText, type ExecResult } from "./exec.ts";
 
@@ -197,7 +198,7 @@ function commandDetail(result: ExecResult<string>): string {
 }
 
 async function runningAvdName(serial: string, signal?: AbortSignal): Promise<string | null> {
-  const result = await execText("adb", ["-s", serial, "emu", "avd", "name"], {
+  const result = await execText(adbCommand(), ["-s", serial, "emu", "avd", "name"], {
     timeout: 5_000,
     signal,
     lane: "interactive",
@@ -255,7 +256,7 @@ export async function ensureEmulatorGrpcEndpoint(
   for (let attempt = 0; attempt < 5; attempt++) {
     throwIfAborted(signal, "emulator gRPC discovery aborted");
     const port = await allocatePort(signal);
-    const result = await runAdb("adb", ["-s", serial, "emu", "grpc", String(port)], {
+    const result = await runAdb(adbCommand(), ["-s", serial, "emu", "grpc", String(port)], {
       timeout: 5_000,
       signal,
       lane: "interactive",
