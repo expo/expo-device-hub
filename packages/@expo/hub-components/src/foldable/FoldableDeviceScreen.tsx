@@ -25,6 +25,7 @@ import {
 import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
 import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
+import { useReleaseFocusWhenHidden } from "./useReleaseFocusWhenHidden";
 
 export interface FoldableDeviceScreenProps {
   /**
@@ -161,6 +162,7 @@ export function FoldableDeviceScreen({
   useEffect(() => () => modelReadyChange.current?.(false), []);
   // @ref LLP 0015#states — no black displays: the model shows once it has a frame to draw
   const hidden = modelStatus === "loading" || (modelReady && !framePresented);
+  useReleaseFocusWhenHidden(hostRef, hidden);
   if (!fold || !displays || !deviceModelUrl) return null;
   const activeScreenId = displays.find((display) => display.active)?.id === "cover" ? 1 : 3;
   // The model's hinge handles move a hinge that takes angles.

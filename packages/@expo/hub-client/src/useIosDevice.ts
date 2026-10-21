@@ -774,14 +774,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
   const screenRef = useRef<SimScreenConfig | null>(null);
-  useEffect(() => {
+  // Layout effects, so an input event right after a paint already maps with the new screen.
+  useLayoutEffect(() => {
     screenRef.current = screen;
   }, [screen]);
   // @ref LLP 0015#temporary-drops — input maps with the screen the view shows, also a kept one
   // Pointer input is measured on the shown frame, so it maps back with the
   // same orientation: the helper's config, or the kept one while a helper restarts.
   const viewScreenRef = useRef<SimScreenConfig | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     viewScreenRef.current = viewScreen;
   }, [viewScreen]);
   const rotationCursorRef = useRef(createRotationCursor());
@@ -1873,13 +1874,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       };
       candidate.src = next;
     };
+    // A newly attached <img> got its own request from `attachVideo`, so the
+    // retry is moot, and that request's first frame counts as new.
+    const dropProbeForNewImage = () => {
+      if (!probe || imgRef.current === probeTarget) return false;
+      stopProbe();
+      failed = false;
+      return true;
+    };
     const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
       if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
-      // A newly attached <img> got its own request from `attachVideo`.
-      if (imgRef.current !== visible) {
-        stopProbe();
-        return;
-      }
+      if (dropProbeForNewImage()) return;
       // The browser clears the visible <img> until its new request paints; the
       // retry's frame stays behind it meanwhile.
       bridgeMjpegFrame(visible, candidate);
@@ -1906,6 +1911,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     load();
     // A multipart stream need not fire `load` per frame, so poll both elements.
     const poll = setInterval(() => {
+      dropProbeForNewImage();
       const candidate = probe;
       if (candidate && probeTarget) handOver(candidate, probeTarget, candidate.src);
       if (bridging) {

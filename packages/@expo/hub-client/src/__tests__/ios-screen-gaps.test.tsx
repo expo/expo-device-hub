@@ -318,9 +318,36 @@ test("an <img> attached during a retry loads its own request; the retry does not
   await act(async () => hub.client.attachVideo(second as unknown as HTMLImageElement));
   expect(second.srcs).toHaveLength(1);
   expect(first.src).toBe("");
-  await act(async () => probe.paint());
+  // The next poll stops the moot retry; a late paint of it changes nothing.
   await hub.tick();
-  // The detached element gets no new request, and the retry stops.
-  expect(first.srcs).toHaveLength(1);
   expect(probe.src).toBe("");
+  await act(async () => probe.paint());
+  expect(first.srcs).toHaveLength(1);
+  expect(hub.client.status).toBe("reconnecting");
+
+  // The new element's own request paints: the stream is back.
+  await act(async () => second.paint());
+  await hub.tick();
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
+  expect(hub.client.error).toBeNull();
+});
+
+test("a retry that paints after a new <img> attached does not hold the screen in reconnecting", async () => {
+  const hub = await iosClient();
+  const first = new FakeImage();
+  await act(async () => hub.client.attachVideo(first as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => first.paint());
+  await act(async () => first.fail());
+  await hub.fireTimers(1500);
+  const probe = FakeImage.instances.find((image) => image !== first)!;
+  const second = new FakeImage();
+  await act(async () => hub.client.attachVideo(second as unknown as HTMLImageElement));
+  // The retry paints before any poll: its hand-over finds the new element.
+  await act(async () => probe.paint());
+  expect(first.srcs).toHaveLength(1);
+  await act(async () => second.paint());
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
 });
