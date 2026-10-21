@@ -16,11 +16,12 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 import {
+  duoCameraZoom,
   duoFitScale,
   duoHingeDragAngle,
   duoPanelEdgeAnchor,
   duoProjectAnchor,
-  duoStageZoom,
+  stepDuoFit,
   type DuoScreenPoint as ProjectedPoint,
 } from "./duo-layout";
 import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
@@ -203,6 +204,8 @@ export function createDuoScene(
   });
   let resizePending = false;
   let projectionPending = false;
+  // A resize changes the base zoom at once, so the fill factor follows it at once.
+  let fitSnapPending = false;
   const resizeViewport = () => {
     const width = Math.max(1, window.innerWidth);
     const height = Math.max(1, window.innerHeight);
@@ -213,20 +216,25 @@ export function createDuoScene(
     renderer.domElement.style.height = `${height}px`;
     resizePending = true;
     projectionPending = true;
+    fitSnapPending = true;
   };
   resizeViewport();
   window.addEventListener("resize", resizeViewport);
-  const resize = new ResizeObserver(([entry]) => {
-    if (!entry) return;
-    // contentRect excludes presentation transforms, as do the canvas CSS
-    // dimensions. The handle changes model zoom inside that fixed canvas.
-    const { width, height } = entry.contentRect;
+  // The layout size excludes presentation transforms, as do the canvas CSS
+  // dimensions. The handle changes model zoom inside that fixed canvas. The
+  // render loop reads it before each frame: a sidebar's width transition has
+  // already moved the stage for that frame, and a ResizeObserver would report
+  // it only after the frame is drawn, which fits the model one frame late.
+  const measureStage = () => {
+    const width = host.clientWidth;
+    const height = host.clientHeight;
     if (!width || !height || (height === stageHeight && width === stageWidth)) return;
     stageWidth = width;
     stageHeight = height;
     projectionPending = true;
-  });
-  resize.observe(host);
+    fitSnapPending = true;
+  };
+  measureStage();
 
   let cancelInput = () => {};
   function fail() {
@@ -828,11 +836,11 @@ export function createDuoScene(
               32,
             )
           : 1;
-      camera.zoom =
-        duoStageZoom(
-          { width: viewportWidth, height: viewportHeight },
-          { width: stageWidth, height: stageHeight },
-        ) * scale;
+      camera.zoom = duoCameraZoom(
+        { width: viewportWidth, height: viewportHeight },
+        { width: stageWidth, height: stageHeight },
+        scale,
+      );
       camera.updateProjectionMatrix();
       return projectedHandle(handle);
     } finally {
@@ -991,6 +999,7 @@ export function createDuoScene(
     else root.quaternion.slerp(targetQuaternion, 1 - Math.exp(-10 * dt));
     applyPanelFolds(duoViewFolds(fold, anchoredView ?? view, anchorWeight));
     const renderedAngle = 180 - (fold * 360) / Math.PI;
+    measureStage();
     try {
       // Only a window resize reallocates the buffer. Apply it with rendering
       // because changing canvas dimensions clears the previously drawn frame.
@@ -1013,15 +1022,21 @@ export function createDuoScene(
               32,
             )
           : 1;
-      const fit = stepDuoSpring(fitScale, fitVelocity, targetScale, dt);
-      fitScale = reducedMotion.matches ? targetScale : fit.value;
-      fitVelocity = reducedMotion.matches ? 0 : fit.velocity;
+      const fit = stepDuoFit(
+        { scale: fitScale, velocity: fitVelocity },
+        targetScale,
+        dt,
+        fitSnapPending || reducedMotion.matches,
+      );
+      fitSnapPending = false;
+      fitScale = fit.scale;
+      fitVelocity = fit.velocity;
       // The stage fills the panel's stream area, so it is not always square.
-      const zoom =
-        duoStageZoom(
-          { width: viewportWidth, height: viewportHeight },
-          { width: stageWidth, height: stageHeight },
-        ) * fitScale;
+      const zoom = duoCameraZoom(
+        { width: viewportWidth, height: viewportHeight },
+        { width: stageWidth, height: stageHeight },
+        fitScale,
+      );
       if (camera.zoom !== zoom) {
         camera.zoom = zoom;
         camera.updateProjectionMatrix();
@@ -1053,7 +1068,6 @@ export function createDuoScene(
       endGesture();
       endHingeDrag();
       renderer.setAnimationLoop(null);
-      resize.disconnect();
       canvas.removeEventListener("webglcontextlost", fail);
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);

@@ -5,6 +5,8 @@
 
 import { Box3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera } from "three";
 
+import { stepDuoSpring } from "./duo-pose";
+
 export type DuoViewportSize = { width: number; height: number };
 export type DuoCanvasRect = DuoViewportSize & { left: number; top: number };
 export type DuoScreenPoint = { x: number; y: number };
@@ -37,6 +39,31 @@ function visitBoxCorners(box: Box3, point: Vector3, visit: (point: Vector3) => v
 export function duoStageZoom(viewport: DuoViewportSize, stage: DuoViewportSize): number {
   if (!validSize(viewport) || !validSize(stage)) return 1;
   return Math.min(stage.width, stage.height) / viewport.height;
+}
+
+/** The camera zoom that shows the base view of this stage scaled by `scale`. */
+export function duoCameraZoom(
+  viewport: DuoViewportSize,
+  stage: DuoViewportSize,
+  scale: number,
+): number {
+  return duoStageZoom(viewport, stage) * scale;
+}
+
+export type DuoFit = { scale: number; velocity: number };
+
+/**
+ * Move the fill factor toward its target. A new pose springs, so the model
+ * eases into its framing. A stage or window resize snaps: the base zoom follows
+ * a resize at once, and a factor that lagged behind it would push the model
+ * past the stage edge, where the host clips it. This happens when a sidebar
+ * narrows a stage whose short side is its height.
+ */
+// @ref LLP 0004#stage-size — a stage or window resize snaps the fit; only a new pose springs it
+export function stepDuoFit(fit: DuoFit, target: number, seconds: number, snap: boolean): DuoFit {
+  if (snap) return { scale: target, velocity: 0 };
+  const step = stepDuoSpring(fit.scale, fit.velocity, target, seconds);
+  return { scale: step.value, velocity: step.velocity };
 }
 
 /**
