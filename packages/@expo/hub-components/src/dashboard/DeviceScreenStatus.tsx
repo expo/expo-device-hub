@@ -34,7 +34,9 @@ const NOTICE_STYLE: CSSProperties = {
   left: 0,
   right: 0,
   zIndex: 1,
-  padding: 12,
+  // Centered, so a device's rounded screen corners never clip the text.
+  padding: "12px 24px",
+  textAlign: "center",
   backgroundColor: bg.danger,
   color: text.danger,
   pointerEvents: "none",
