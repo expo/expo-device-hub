@@ -178,3 +178,23 @@ devices it armed; another live session's insert remains owned by that session.
 Stopping the host does not uninstall the app or shut down the simulator
 [observed: `src/index.ts` startup
 signal handlers and `disarmDevicesArmedHere`; `src/launch-manager.ts` `releaseSession`].
+
+## Startup diagnostics
+
+`[startup]` lines on stderr identify the CLI version and report phase start,
+completion/failure, device, and monotonic duration in milliseconds. They cover
+device resolution, boot request and bootstatus, stale loader cleanup, loader/defaults
+publication, app operations, preview imports/construction, HTTP binding, state
+publication, and native device options/capture/screen configuration. A started
+phase without a completion line identifies work still pending. Host-action
+`app.install` and `app.launch` timings also cover apps supplied after the listener
+starts. Phases can overlap; their durations are not an end-to-end sum
+[observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
+`src/host-actions.ts`].
+
+`/readyz` keeps its response contract and logs readiness transitions on stderr.
+An unavailable response identifies missing session state or capture startup failure;
+the latter includes the exception message. Repeated polls with the same outcome
+do not repeat the diagnostic, and a later ready response logs recovery. The
+startup logs leave `--quiet` stdout JSON unchanged
+[observed: `src/middleware.ts`, `src/startup-timing.ts`].

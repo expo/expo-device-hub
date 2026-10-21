@@ -4,6 +4,17 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
 
+function expectStartupDiagnostics(stderr: string) {
+  const lines = stderr.trim().split("\n");
+  expect(lines.length).toBeGreaterThan(0);
+  for (const line of lines) {
+    expect(line).toStartWith("[startup] ");
+    expect(JSON.parse(line.slice("[startup] ".length))).toMatchObject({
+      phase: expect.any(String),
+    });
+  }
+}
+
 const bundleDir = mkdtempSync(join(tmpdir(), "serve-sim-caller-cli-node-"));
 const diagnostic = "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs";
 const UDID = "11111111-2222-3333-4444-555555555555";
@@ -156,7 +167,7 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
             while (!(await reader.read()).done) {}
             expect(await child.exited).toBe(0);
             if (failFirst) expect(await stderr).toContain("retrying separately");
-            else expect(await stderr).toBe("");
+            else expectStartupDiagnostics(await stderr);
             expect(JSON.parse(readFileSync(environment, "utf8")).DYLD_INSERT_LIBRARIES).toBe(
               "/foreign.dylib",
             );
@@ -334,7 +345,7 @@ if (args[3] === 'launchctl') {
         expect(result.exitCode).toBe(1);
         expect(result.stdout.trim().split("\n")).toHaveLength(1);
         expect(JSON.parse(result.stdout)).toEqual({ error: `${diagnostic}: ${guard}` });
-        expect(result.stderr).toBe("");
+        expectStartupDiagnostics(result.stderr);
         const calls: string[][] = readFileSync(log, "utf8")
           .trim()
           .split("\n")
@@ -475,7 +486,7 @@ if (args[1] === 'list') {
           }
           expect(await child.exited).toBe(0);
           expect(stdout.trim().split("\n")).toHaveLength(1);
-          expect(await stderr).toBe("");
+          expectStartupDiagnostics(await stderr);
           expect(existsSync(join(state.dir, `server-${UDID}.json`))).toBe(false);
         } finally {
           child.kill("SIGKILL");

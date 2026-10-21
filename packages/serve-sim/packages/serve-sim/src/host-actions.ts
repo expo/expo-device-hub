@@ -1,3 +1,4 @@
+import { timeStartup } from "./startup-timing";
 import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
@@ -1006,9 +1007,14 @@ export async function runHostActionAsync(
   if (typeof action !== "string" || !isHostActionName(action)) {
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
-  const result = isProcedureAction(action)
-    ? await runProcedureAsync(action, params, streamSettings)
-    : await runInvocation(buildInvocation(action, params, binPath));
+  const run = () =>
+    isProcedureAction(action)
+      ? runProcedureAsync(action, params, streamSettings)
+      : runInvocation(buildInvocation(action, params, binPath));
+  const result =
+    action === "app.install" || action === "app.launch"
+      ? await timeStartup(action, run)
+      : await run();
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;

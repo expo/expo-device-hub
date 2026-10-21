@@ -3,6 +3,7 @@ import {
   RECORDING_FINALIZATION_WAIT_MS,
   RECORDING_RECONCILIATION_WAIT_MS,
 } from "./recording-timeouts";
+import { timeStartup } from "./startup-timing";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
@@ -465,10 +466,14 @@ async function findAvailablePort(start: number): Promise<number> {
 }
 
 async function ensureBooted(udid: string): Promise<void> {
-  bootDevice(udid);
+  await timeStartup("simulator-boot", () => bootDevice(udid), udid);
   // @ref LLP 0011#boot-is-a-readiness-barrier — Booted can still be starting services; a failed wait stops startup.
   try {
-    await simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS);
+    await timeStartup(
+      "simulator-bootstatus",
+      () => simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS),
+      udid,
+    );
   } catch (error) {
     const detail = (error as { killed?: boolean }).killed
       ? `boot did not finish within ${BOOT_TIMEOUT_MS / 1000}s`
@@ -479,7 +484,7 @@ async function ensureBooted(udid: string): Promise<void> {
   // Only clean up a capability loader an earlier session left behind. Arming belongs to
   // launchApp and enableCapabilities: this runs in the stream helper too, and a
   // helper arming after its parent disarmed would leave the insert set.
-  await disarmStaleCapabilityLoader(udid);
+  await timeStartup("stale-loader-cleanup", () => disarmStaleCapabilityLoader(udid), udid);
 }
 
 /**
@@ -1964,7 +1969,7 @@ async function serve(
   };
   const targetDevice = targetDevices[0];
 
-  const capture = await import("./capture");
+  const capture = await timeStartup("capture-module", () => import("./capture"));
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
@@ -1975,7 +1980,7 @@ async function serve(
   );
   if (sessionStopping) return;
 
-  const { simMiddleware } = await import("./middleware");
+  const { simMiddleware } = await timeStartup("preview-module", () => import("./middleware"));
   if (sessionStopping) return;
   // Standalone serve-sim owns its HTTP server and wires WebSocket upgrades, so
   // it can route helper/DevTools sockets through the single preview port.
@@ -1984,23 +1989,25 @@ async function serve(
   const previewToken = randomBytes(32).toString("base64url");
   let middleware: ReturnType<typeof simMiddleware>;
   try {
-    middleware = simMiddleware({
-      basePath: "/",
-      device: targetDevice,
-      streamSettings: options.stream,
-      proxyHelpers: true,
-      corsOrigins: options.corsOrigins ?? [],
-      frameAncestors: options.frameAncestors ?? [],
-      shareUrl: options.shareUrl,
-      disableShare: options.disableShare,
-      allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
-      networkCapture: !!options.networkCapture,
-      networkCaptureProxy: options.networkCaptureProxy,
-      clipboard: options.clipboard,
-      loopbackOnly: isLoopbackHost(host),
-      execToken: previewToken,
-      requirePreviewToken,
-    });
+    middleware = await timeStartup("preview-middleware", () =>
+      simMiddleware({
+        basePath: "/",
+        device: targetDevice,
+        streamSettings: options.stream,
+        proxyHelpers: true,
+        corsOrigins: options.corsOrigins ?? [],
+        frameAncestors: options.frameAncestors ?? [],
+        shareUrl: options.shareUrl,
+        disableShare: options.disableShare,
+        allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
+        networkCapture: !!options.networkCapture,
+        networkCaptureProxy: options.networkCaptureProxy,
+        clipboard: options.clipboard,
+        loopbackOnly: isLoopbackHost(host),
+        execToken: previewToken,
+        requirePreviewToken,
+      }),
+    );
   } catch (error) {
     return failStartup(error instanceof Error ? error.message : String(error));
   }
@@ -2013,7 +2020,7 @@ async function serve(
   for (let i = 0; i < maxScan; i++) {
     const p = servePort + i;
     try {
-      await bindPreviewServer(p, middleware, host);
+      await timeStartup("http-listener", () => bindPreviewServer(p, middleware, host));
       if (sessionStopping) return;
       boundPort = p;
       bound = true;
@@ -2037,13 +2044,15 @@ async function serve(
 
   // Record in-process state so the preview/grid enumerate these devices and the
   // CLI input subcommands can reach the same-origin /helper ws.
-  for (const udid of targetDevices) {
-    const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
-    // Capture CLI commands read this token. A public host without --require-token refuses capture,
-    // so the token is written only where something can use it.
-    const tokenNeeded = requirePreviewToken || isLoopbackHost(host);
-    writeState(tokenNeeded ? { ...state, token: previewToken } : state);
-  }
+  await timeStartup("state-publication", () => {
+    for (const udid of targetDevices) {
+      const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
+      // Capture CLI commands read this token. A public host without --require-token refuses capture,
+      // so the token is written only where something can use it.
+      const tokenNeeded = requirePreviewToken || isLoopbackHost(host);
+      writeState(tokenNeeded ? { ...state, token: previewToken } : state);
+    }
+  });
   const clearAll = () => {
     for (const udid of targetDevices) {
       try {
@@ -2653,7 +2662,10 @@ Examples:
     // @ref LLP 0011#startup-order — boot and requested app startup precede preview readiness.
     if (!opts.detach) {
       try {
-        targets = resolveTargetDevices(devices);
+        process.stderr.write(
+          `[startup] ${JSON.stringify({ phase: "cli", version: program.version() })}\n`,
+        );
+        targets = await timeStartup("device-resolution", () => resolveTargetDevices(devices));
         // The capability loader is armed for the whole session, not when a capability
         // turns on: an app only carries it if it was inserted at launch, so
         // arming late means the app it was armed for cannot receive anything
@@ -2690,7 +2702,11 @@ Examples:
           for (const udid of targets) {
             if (combineInitialDefaults) {
               try {
-                await applyDefaultCapabilities(udid, null, capabilities, { armSession: true });
+                await timeStartup(
+                  "loader-and-defaults",
+                  () => applyDefaultCapabilities(udid, null, capabilities, { armSession: true }),
+                  udid,
+                );
                 defaultsInitialized.add(udid);
               } catch (error) {
                 if (sessionStopping) return;
@@ -2703,10 +2719,10 @@ Examples:
                   `Could not initialize default capabilities with the loader on ${udid}; ` +
                     `retrying separately: ${error instanceof Error ? error.message : String(error)}`,
                 );
-                await armCapabilityLoader(udid);
+                await timeStartup("loader-arming", () => armCapabilityLoader(udid), udid);
               }
             } else {
-              await armCapabilityLoader(udid);
+              await timeStartup("loader-arming", () => armCapabilityLoader(udid), udid);
             }
             if (sessionStopping) return;
           }
@@ -2725,7 +2741,11 @@ Examples:
         for (const udid of isStreamHelper ? [] : targets) {
           if (sessionStopping) return;
           if (installAppPath) {
-            const result = await runInvocation(installAppInvocation(udid, installAppPath));
+            const result = await timeStartup(
+              "app-install",
+              () => runInvocation(installAppInvocation(udid, installAppPath)),
+              udid,
+            );
             if (result.exitCode !== 0) {
               throw new Error(
                 `Could not install ${installAppPath} on ${udid}: ${result.stderr.trim() || `simctl exited ${result.exitCode}`}`,
@@ -2734,9 +2754,17 @@ Examples:
             if (sessionStopping) return;
           }
           if (bundleId) {
-            await launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities });
+            await timeStartup(
+              "app-launch",
+              () => launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities }),
+              udid,
+            );
           } else if (!defaultsInitialized.has(udid)) {
-            const applied = await applyDefaultCapabilities(udid, null, capabilities);
+            const applied = await timeStartup(
+              "default-capabilities",
+              () => applyDefaultCapabilities(udid, null, capabilities),
+              udid,
+            );
             const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {
               // The catch below prints this, stops capture, and disarms what this session armed.
