@@ -124,9 +124,11 @@ const FOLD: DeviceFold = {
 
 /** An iPhone Duo before and after the helper reports a hinge it can move. */
 function duo(controls: DeviceClient["capabilities"]["fold"]): DeviceClient {
+  // As the iOS adapter reports it: the optional groups come with the capability.
+  const { tableMode: _tableMode, physical: _physical, ...withoutGroups } = FOLD;
   return {
     ...BASE_CLIENT,
-    fold: FOLD,
+    fold: controls ? FOLD : withoutGroups,
     displays: [
       { id: "cover", active: true, attachVideo: () => {} },
       { id: "inner", active: false, attachVideo: () => {} },

@@ -3,6 +3,10 @@
  * Xcode's display IDs (1 for the cover, 3 for the inner display), while
  * `@expo/hub-client` names displays by role. The conversion happens here, at
  * the edge of the model.
+ *
+ * `DUO_PANEL_FOR_DISPLAY` and `duoDisplayId` intentionally copy hub-client's
+ * internal `duo/duo-fold.ts`, which hub-client does not export. Keep the two
+ * copies the same.
  */
 
 import { type DeviceDisplayId, type ScreenSize } from "@expo/hub-client";
