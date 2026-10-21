@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
-import { sessionTokenFetch, withSessionTokenQuery } from "../session-token";
+import { type SessionFetch, sessionTokenFetch, withSessionTokenQuery } from "../session-token";
 import { type DeviceStreamStats, type VideoSurfaceKind } from "../types";
 import { useAvccStream } from "../useAvccStream";
 import { type WebRtcIceServer, useWebRtcStream } from "../useWebRtcStream";
@@ -30,6 +30,11 @@ export interface DuoPanelFeeds {
   url: string;
   /** Session token for the same backend as the flat stream. */
   token?: string | null;
+  /**
+   * The helper session, as for the flat stream's readers. A replaced helper at
+   * the same URL changes it, which restarts both panels' readers.
+   */
+  session?: string | null;
   mode: DuoPanelStreamMode;
   codec: WebRtcCodec;
   iceServers?: WebRtcIceServer[];
@@ -68,7 +73,12 @@ function useDuoPanelStream(
 ): DuoPanelStreamState {
   const mode = feeds?.mode;
   const token = feeds?.token ?? null;
-  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const session = feeds?.session ?? null;
+  // Every reader depends on this function, so a new helper session gets new readers.
+  const sessionFetch = useMemo<SessionFetch>(() => {
+    const tokenFetch = sessionTokenFetch(token);
+    return session === null ? tokenFetch : (input, init) => tokenFetch(input, init);
+  }, [token, session]);
   const url = feeds ? duoPanelUrl(feeds.url, screenId) : "";
   const element = mode && attached?.kind === DUO_PANEL_KIND[mode] ? attached.element : null;
   const img = mode === "mjpeg" ? (element as HTMLImageElement | null) : null;

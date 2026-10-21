@@ -542,6 +542,35 @@ for (const strict of [false, true]) {
   });
 }
 
+test("a replaced helper at the same URL restarts both panel streams; a refresh does not", async () => {
+  installBrowser({ duo: true });
+  const { client, socket, pushConfig } = await connectObserved();
+  await act(async () => socket().push(0x82, COVER));
+  await act(async () => {
+    client().displays![0]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+    client().displays![1]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+  });
+  await act(async () => {});
+  const panelRequests = () => requests.map(({ url }) => new URL(url).pathname);
+  expect(panelRequests()).toEqual([
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+  ]);
+  // The same helper session keeps its readers.
+  await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
+  await act(async () => {});
+  expect(panelRequests()).toHaveLength(2);
+  // A new helper process at the same URL needs new readers for both panels.
+  await pushConfig({ pid: 2 });
+  await act(async () => {});
+  expect(panelRequests()).toEqual([
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+  ]);
+});
+
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
   test(`a queued preset ${failure} reports a failure after the accepted preset`, async () => {
     installBrowser({ duo: true });

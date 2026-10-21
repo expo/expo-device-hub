@@ -501,7 +501,8 @@ The contract [observed: `DeviceHinge`, `DeviceDisplay`, and `DeviceClient` in
 - `DeviceClient.displays` lists the cover (1) and the inner display (3), each
   with `active` and an `attachVideo` ref callback. The client owns each
   display's transport as it does for the flat stream: the codec ladder, the
-  transport lock, the session token, statistics, and stream health. While any
+  transport lock, the session token, the helper session, statistics, and stream
+  health. While any
   display has an element, the flat stream is parked; detaching every display
   resumes it. A consumer that attaches no display keeps the flat stream.
 - `TouchSample`, `MultiTouchSample`, and `ScrollSample` take an optional
