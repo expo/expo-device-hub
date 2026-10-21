@@ -155,7 +155,7 @@ type ParsedButton = {
   imageDown: string | null;
   onTop: boolean;
   anchor: "left" | "right" | "top" | "bottom";
-  align: "leading" | "trailing";
+  align: "leading" | "center" | "trailing";
   normalOffset: Point;
   rolloverOffset: Point;
   usagePage: number | null;
@@ -776,7 +776,7 @@ function parseSlice(images: JsonRecord): DeviceKitChromeSlice | null {
   return { topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left };
 }
 
-function parseButton(json: JsonRecord): ParsedButton | null {
+export function parseButton(json: JsonRecord): ParsedButton | null {
   const name = stringValue(json.name);
   const image = stringValue(json.image);
   if (!name || !image) return null;
@@ -795,7 +795,7 @@ function parseButton(json: JsonRecord): ParsedButton | null {
       anchorValue === "right" || anchorValue === "top" || anchorValue === "bottom"
         ? anchorValue
         : "left",
-    align: alignValue === "trailing" ? "trailing" : "leading",
+    align: alignValue === "trailing" || alignValue === "center" ? alignValue : "leading",
     normalOffset: normal ?? rollover ?? { x: 0, y: 0 },
     rolloverOffset: rollover ?? normal ?? { x: 0, y: 0 },
     usagePage: numberOrNull(json.usagePage),
@@ -803,7 +803,7 @@ function parseButton(json: JsonRecord): ParsedButton | null {
   };
 }
 
-function buttonTopLeft(
+export function buttonTopLeft(
   button: ParsedButton,
   imageSize: Size,
   bodySize: Size,
@@ -814,8 +814,13 @@ function buttonTopLeft(
   // The rest position mirrors the rollover offset back across the normal offset.
   const restX = 2 * button.normalOffset.x - button.rolloverOffset.x;
   const restY = 2 * button.normalOffset.y - button.rolloverOffset.y;
+  // Face buttons such as the Home button of iPhone SE and older iPads use "center".
   const alignedX =
-    button.align === "trailing" ? bodyX + bodySize.width + restX - imageSize.width : bodyX + restX;
+    button.align === "trailing"
+      ? bodyX + bodySize.width + restX - imageSize.width
+      : button.align === "center"
+        ? bodyX + (bodySize.width - imageSize.width) / 2 + restX
+        : bodyX + restX;
   switch (button.anchor) {
     case "left": {
       const centerX = bodyX + button.rolloverOffset.x;

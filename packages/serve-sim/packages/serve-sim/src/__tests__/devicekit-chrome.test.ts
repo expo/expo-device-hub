@@ -3,6 +3,8 @@ import { createServer } from "http";
 import { describe, expect, spyOn, test } from "bun:test";
 import {
   bareChromeIdentifier,
+  buttonTopLeft,
+  parseButton,
   logicalScreenSizeFromProfile,
   parsePdfPageSize,
   parseDisplayProfiles,
@@ -108,6 +110,26 @@ describe("DeviceKit chrome helpers", () => {
       height: 16,
     });
     expect(() => JSON.stringify(chrome)).not.toThrow();
+  });
+
+  test("centers a center-aligned button, such as the Home button, on its body edge", () => {
+    // phone.devicechrome's Home input (iPhone SE): anchored to the bottom, centered.
+    const home = parseButton({
+      name: "home",
+      image: "Home BTN",
+      anchor: "bottom",
+      align: "center",
+      offsets: { normal: { x: 0, y: -90 }, rollover: { x: 0, y: -90 } },
+    })!;
+    const body = { width: 400, height: 800 };
+    const margins = { top: 0, left: 9, bottom: 0, right: 9 };
+    expect(home.align).toBe("center");
+    expect(buttonTopLeft(home, { width: 60, height: 60 }, body, margins)).toEqual({
+      x: 9 + (400 - 60) / 2,
+      y: 800 - 90,
+    });
+    const leading = parseButton({ ...home, name: "x", align: "leading" })!;
+    expect(buttonTopLeft(leading, { width: 60, height: 60 }, body, margins).x).toBe(9);
   });
 
   test("strips Apple's chrome bundle prefix", () => {
