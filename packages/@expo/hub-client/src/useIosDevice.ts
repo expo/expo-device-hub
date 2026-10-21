@@ -828,6 +828,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
+  // @ref LLP 0015#temporary-drops — input maps with the screen the view shows, also a kept one
+  // Pointer input is measured on the shown frame, so it maps back with the
+  // same orientation: the helper's config, or the kept one while a helper restarts.
+  const viewScreenRef = useRef<SimScreenConfig | null>(null);
+  useEffect(() => {
+    viewScreenRef.current = viewScreen;
+  }, [viewScreen]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -914,7 +921,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const sendTouch = useCallback(
     (sample: TouchSample) => {
       if (!ownsInput() || dropsDisplayInput("touch", sample.display, sample.phase)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
 
       let displayEdge: number | undefined;
       if (sample.phase === "begin") {
@@ -947,7 +954,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const sendMultiTouch = useCallback(
     (sample: MultiTouchSample) => {
       if (dropsDisplayInput("multi", sample.display, sample.phase)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
       const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
       const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
       sendWs(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
@@ -964,7 +971,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!Number.isFinite(sample.dx) || !Number.isFinite(sample.dy)) return;
       if (sample.dx === 0 && sample.dy === 0) return;
       if (!isNativeDisplay(sample.display)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
       const delta = rawDeltaForDisplayDelta(orientation, sample.dx, sample.dy);
       const anchor = rawPointForDisplayPoint(orientation, sample.x, sample.y);
       sendWs(WS_MSG_SCROLL, { dx: delta.dx, dy: delta.dy, x: anchor.x, y: anchor.y });
@@ -1929,12 +1936,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let cancelled = false;
     let settled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    // A request that loads off screen while the visible <img> keeps its last frame.
+    // A request that loads off screen while the visible <img> keeps its last
+    // frame, and the <img> it is for.
     let probe: HTMLImageElement | null = null;
+    let probeTarget: HTMLImageElement | null = null;
     // After a failed request, the frame on screen is old until a new request paints.
     let failed = false;
     // A retry's frame behind the visible <img>, until that <img> paints its own.
-    let bridging: { sawEmpty: boolean; until: number } | null = null;
+    let bridging: { target: HTMLImageElement; sawEmpty: boolean; until: number } | null = null;
     const session = screenSessionKeyRef.current;
     const img = imgRef.current;
 
@@ -1944,6 +1953,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       probe.onerror = null;
       probe.removeAttribute("src");
       probe = null;
+      probeTarget = null;
     };
 
     const markStreaming = () => {
@@ -1988,6 +1998,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const next = freshStreamSrc(url);
       const candidate = new Image();
       probe = candidate;
+      probeTarget = visible;
       candidate.onload = () => handOver(candidate, visible, next);
       candidate.onerror = () => {
         if (cancelled || probe !== candidate) return;
@@ -1998,10 +2009,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
       if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
+      // A newly attached <img> got its own request from `attachVideo`.
+      if (imgRef.current !== visible) {
+        stopProbe();
+        return;
+      }
       // The browser clears the visible <img> until its new request paints; the
       // retry's frame stays behind it meanwhile.
       bridgeMjpegFrame(visible, candidate);
-      bridging = { sawEmpty: false, until: Date.now() + 5_000 };
+      bridging = { target: visible, sawEmpty: false, until: Date.now() + 5_000 };
       stopProbe();
       failed = false;
       visible.src = next;
@@ -2025,11 +2041,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // A multipart stream need not fire `load` per frame, so poll both elements.
     const poll = setInterval(() => {
       const candidate = probe;
-      if (candidate && img) handOver(candidate, img, candidate.src);
-      if (bridging && img) {
-        if (img.naturalWidth === 0) bridging.sawEmpty = true;
+      if (candidate && probeTarget) handOver(candidate, probeTarget, candidate.src);
+      if (bridging) {
+        const { target } = bridging;
+        if (target.naturalWidth === 0) bridging.sawEmpty = true;
         else if (bridging.sawEmpty || Date.now() > bridging.until) {
-          clearMjpegBridge(img);
+          clearMjpegBridge(target);
           bridging = null;
         }
       }
@@ -2043,7 +2060,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       stopProbe();
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
-      clearMjpegBridge(img);
+      clearMjpegBridge(bridging?.target ?? null);
       // A helper restart for the same screen keeps the last frame. Another
       // screen session, or an unmount, stops the multipart request on the
       // element this effect started: a consumer that streams the displays may

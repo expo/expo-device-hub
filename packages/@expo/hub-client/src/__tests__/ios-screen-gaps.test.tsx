@@ -301,3 +301,26 @@ test("a new helper pid keeps the H.264 to MJPEG fallback", async () => {
   await hub.discover(helper({ pid: 2 }));
   expect(hub.client.videoKind).toBe("img");
 });
+
+test("an <img> attached during a retry loads its own request; the retry does not hand over to the old one", async () => {
+  const hub = await iosClient();
+  const first = new FakeImage();
+  await act(async () => hub.client.attachVideo(first as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => first.paint());
+  await act(async () => first.fail());
+  await hub.fireTimers(1500);
+  const probe = FakeImage.instances.find((image) => image !== first)!;
+  expect(probe.src).toContain("stream.mjpeg");
+
+  // DeviceScreen mounts a new <img> while the retry loads.
+  const second = new FakeImage();
+  await act(async () => hub.client.attachVideo(second as unknown as HTMLImageElement));
+  expect(second.srcs).toHaveLength(1);
+  expect(first.src).toBe("");
+  await act(async () => probe.paint());
+  await hub.tick();
+  // The detached element gets no new request, and the retry stops.
+  expect(first.srcs).toHaveLength(1);
+  expect(probe.src).toBe("");
+});
