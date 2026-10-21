@@ -490,7 +490,9 @@ async function ensureBooted(udid: string): Promise<void> {
   // Only clean up a capability loader an earlier session left behind. Arming belongs to
   // launchApp and enableCapabilities: this runs in the stream helper too, and a
   // helper arming after its parent disarmed would leave the insert set.
-  await timeStartup("stale-loader-cleanup", () => disarmStaleCapabilityLoader(udid), udid);
+  await timeStartup("stale-loader-cleanup", () => disarmStaleCapabilityLoader(udid), udid, {
+    isSuccessful: (result) => result !== false,
+  });
 }
 
 /**

@@ -397,25 +397,27 @@ export function removeCapabilityLoaderSync(udid: string): void {
   armedHere.delete(udid);
 }
 
-export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
-  const current = await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000).catch(
-    () => null,
-  );
-  if (current === null) {
+/** False means the best-effort insert check failed; callers can report it without stopping startup. */
+export async function disarmStaleCapabilityLoader(udid: string): Promise<boolean> {
+  let current: string;
+  try {
+    current = await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000);
+  } catch (error) {
     console.error(
       `Could not read the current insert on ${udid}, so a stale capability loader from an earlier ` +
         `session cannot be cleaned up. Capabilities may not load until it is.`,
+      error,
     );
-    return;
+    return false;
   }
   const entries = current.split(":");
   const caller = new Set(additionalDylibs());
   const ours = entries.find((path) => isCapabilityLoaderPath(path) && !caller.has(path));
   if (ours && !existsSync(ours)) {
     await removeCapabilityLoader(udid);
-    return;
+    return true;
   }
-  if (!ours && !managedStartupDylibs(udid).some((path) => entries.includes(path))) return;
+  if (!ours && !managedStartupDylibs(udid).some((path) => entries.includes(path))) return true;
   // A session that died without a clean teardown (launchctl refused while it exited) leaves its
   // loader and startup images inserted. With no live owner recorded for the device, clear them.
   // Decided under the device lock: a session that is arming holds it from its insert until its
@@ -432,6 +434,7 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
       (Object.keys(state.capabilities).length > 0 || (state.sessionPids?.length ?? 0) > 0);
     if (!liveOwner) await removeCapabilityLoader(udid);
   });
+  return true;
 }
 
 export async function removeCapabilityLoader(udid: string): Promise<void> {

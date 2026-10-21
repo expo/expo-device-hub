@@ -5,7 +5,7 @@ import {
   CapabilityRollbackError,
   setCapabilityEnabled,
 } from "../launch-manager";
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -26,6 +26,7 @@ import {
   isCapabilityArmed,
 } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
+import { timeStartup } from "../startup-timing";
 import { withLaunchStateLock } from "../launch-state-lock";
 import { readLaunchState } from "../launch-state";
 
@@ -276,6 +277,29 @@ test("a first commit that fails reports its own error, not a failed rollback", a
     expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
   } finally {
     rmSync(`${capabilityConfigPath(UDID)}.${process.pid}.tmp`, { recursive: true, force: true });
+  }
+});
+
+test("stale cleanup preserves a failed read cause and reports failure without aborting startup", async () => {
+  writeFileSync(shutdownPath, "");
+  const warning = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(process.stderr, "write").mockImplementation(() => true);
+  try {
+    expect(
+      await timeStartup("stale-loader-cleanup", () => disarmStaleCapabilityLoader(UDID), UDID, {
+        isSuccessful: (result) => result !== false,
+      }),
+    ).toBe(false);
+    const cause = warning.mock.calls[0]?.[1];
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toContain("device is not booted");
+    expect((cause as Error & { cause?: { code?: number } }).cause?.code).toBe(1);
+    const finished = JSON.parse(String(log.mock.calls.at(-1)?.[0]).slice("[startup] ".length));
+    expect(finished).toMatchObject({ phase: "stale-loader-cleanup", status: "failed" });
+    expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib");
+  } finally {
+    log.mockRestore();
+    warning.mockRestore();
   }
 });
 

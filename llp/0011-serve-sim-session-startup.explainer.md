@@ -191,7 +191,9 @@ phase without a completion line identifies work still pending. Host-action
 starts. App timings include the validated target UDID and a device name when
 available from existing device snapshots; logging does not add device queries.
 Nonzero install/launch results, including timeouts, log failure without changing
-the result. For best-effort loader arming, completion means the function returned,
+the result. A failed stale-loader insert read logs the original error (including
+its process-error cause), reports a failed phase, and still lets startup continue.
+For best-effort loader arming, completion means the function returned,
 not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
 [observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
 `src/host-actions.ts`].
