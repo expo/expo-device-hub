@@ -107,9 +107,9 @@ export type HingeCommandEvent =
   /** A command failed, so the client dropped every unconfirmed command, and `error` says why. */
   | { type: "failed"; error: string }
   /**
-   * The client left the device connection, for example for another device or a
-   * restarted helper. It dropped every unconfirmed command without an error,
-   * and forgot the physical pose.
+   * The client left the helper session that owned the commands, for example
+   * for another device or a replaced helper at the same URL. It dropped every
+   * unconfirmed command without an error, and forgot the physical pose.
    */
   | { type: "reset" }
   /** The viewer rotated the device, which clears its named pose. */

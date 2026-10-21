@@ -1826,10 +1826,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   ]);
 
   // ── iPhone Duo: pose bookkeeping and the displays' own streams ──
-  const hingeConnectionRef = useRef<string | undefined>(undefined);
+  // The hinge queue belongs to one input socket. Every change that replaces
+  // that socket also changes this key: the helper and its process, the socket
+  // URL, and its admission. A changed token or device first drops the config.
+  const hingeSessionKey = config
+    ? JSON.stringify([videoSessionKey, config.wsUrl, config.inputAdmission])
+    : null;
+  const hingeSessionRef = useRef<string | null>(null);
   useEffect(() => {
-    const previous = hingeConnectionRef.current;
-    hingeConnectionRef.current = config?.url;
+    const previous = hingeSessionRef.current;
+    hingeSessionRef.current = hingeSessionKey;
+    // A config refresh for the same session, or a strict-mode rerun, keeps
+    // the pending commands.
+    if (previous === hingeSessionKey) return;
     setHingePending(false);
     setHingeError(null);
     setHingePreview(null);
@@ -1837,10 +1846,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
-    // Every command of the old connection gets a final event, so no listener
+    // Every command of the old session gets a final event, so no listener
     // waits for a reply or a confirmation that cannot come.
-    if (previous !== undefined) emitHingeEvent({ type: "reset" });
-  }, [config?.url, emitHingeEvent]);
+    if (previous !== null) emitHingeEvent({ type: "reset" });
+  }, [hingeSessionKey, emitHingeEvent]);
 
   useEffect(() => {
     if (!hingePreview || hingePending || !screen) return;

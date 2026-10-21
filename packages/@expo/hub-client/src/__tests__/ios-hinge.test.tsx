@@ -1,28 +1,36 @@
 import { afterEach, expect, test } from "bun:test";
+import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type HingeControlCommand } from "../hinge-control";
-import { type DeviceClient, type DeviceConnectionOptions, type HingeCommandEvent } from "../types";
+import {
+  type DeviceClient,
+  type DeviceConnectionOptions,
+  type DeviceHinge,
+  type HingeCommandEvent,
+} from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
-/** The helper's binary input socket: `[tag][JSON]` both ways. */
+/** The helper's binary input socket: `[tag][JSON]` both ways. Exec-ws sends text. */
 class FakeSocket {
   static instances: FakeSocket[] = [];
   binaryType = "blob";
   readyState = 0;
   sent: Uint8Array[] = [];
+  texts: string[] = [];
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
+  onmessage: ((event: { data: ArrayBuffer | string }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(public url: string) {
     FakeSocket.instances.push(this);
   }
-  send(data: ArrayBuffer) {
-    this.sent.push(new Uint8Array(data));
+  send(data: ArrayBuffer | string) {
+    if (typeof data === "string") this.texts.push(data);
+    else this.sent.push(new Uint8Array(data));
   }
   close() {
     this.readyState = 3;
@@ -52,6 +60,7 @@ afterEach(async () => {
   renderer = undefined;
   FakeSocket.instances = [];
   requests.length = 0;
+  apiExtra = {};
   restoreGlobals();
 });
 
@@ -120,8 +129,25 @@ function fakeImage() {
   };
 }
 
+/** Extra `/api` fields, such as an exec-ws token and a helper pid. */
+let apiExtra: Record<string, unknown> = {};
+
 /** Holds device-2's `/api` answer so a test can observe the switch before it resolves. */
 const gate: { hold: boolean; release: (() => void) | null } = { hold: false, release: null };
+
+function previewApi(device: string, foldable: boolean) {
+  return {
+    url: `https://hub.test/helper/${device}`,
+    wsUrl: `wss://hub.test/helper/${device}/ws`,
+    device,
+    basePath: "/",
+    gridApiEndpoint: "/grid/api",
+    chrome: foldable
+      ? DUO_CHROME
+      : { identifier: "phone17pro", screen: { width: 402, height: 874 }, screenRadius: 62 },
+    ...apiExtra,
+  };
+}
 
 function installBrowser({ duo }: { duo: boolean }) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -150,16 +176,7 @@ function installBrowser({ duo }: { duo: boolean }) {
           gate.release = resolve;
         });
       }
-      return Response.json({
-        url: `https://hub.test/helper/${device}`,
-        wsUrl: `wss://hub.test/helper/${device}/ws`,
-        device,
-        basePath: "/",
-        gridApiEndpoint: "/grid/api",
-        chrome: foldable
-          ? DUO_CHROME
-          : { identifier: "phone17pro", screen: { width: 402, height: 874 }, screenRadius: 62 },
-      });
+      return Response.json(previewApi(device, foldable));
     }
     if (pathname.includes("/panel/")) {
       requests.push({
@@ -425,6 +442,105 @@ test("a command still pending when the connection changes ends with a reset even
     { type: "reset" },
   ]);
 });
+
+/**
+ * A consumer that observes the hinge from its first render, as a child does:
+ * its effect subscribes before the client's own effects run. Configs arrive
+ * over exec-ws, as serve-sim pushes them.
+ */
+async function connectObserved({ strict = false } = {}) {
+  apiExtra = { execToken: "exec-1", pid: 1 };
+  let client!: DeviceClient;
+  const events: HingeCommandEvent[] = [];
+  function Observer({ observe }: { observe?: DeviceHinge["observe"] }) {
+    useEffect(() => observe?.((event) => events.push(event)), [observe]);
+    return null;
+  }
+  function Harness() {
+    client = useIosDeviceClient({
+      baseUrl: "https://hub.test",
+      device: "device-1",
+      enabled: true,
+      streamMode: "mjpeg",
+    });
+    return <Observer observe={client.hinge?.observe} />;
+  }
+  await act(async () => {
+    renderer = create(
+      strict ? (
+        <StrictMode>
+          <Harness />
+        </StrictMode>
+      ) : (
+        <Harness />
+      ),
+    );
+  });
+  await act(async () => {});
+  const helperSockets = () =>
+    FakeSocket.instances.filter((instance) => instance.url.includes("/helper/ws"));
+  const control = FakeSocket.instances.find((instance) => instance.url.endsWith("/exec-ws"));
+  if (!control) throw new Error("The hook did not open exec-ws");
+  await act(async () => {
+    helperSockets().at(-1)!.open();
+    control.open();
+    control.onmessage?.({ data: JSON.stringify({ ready: true }) });
+  });
+  const subscription = control.texts
+    .map((text) => JSON.parse(text) as { sub?: number; path?: string })
+    .find(({ sub, path }) => typeof sub === "number" && path?.includes("/api/events"));
+  if (!subscription) throw new Error("The hook did not subscribe to config updates");
+  return {
+    client: () => client,
+    events,
+    helperSockets,
+    socket: () => helperSockets().at(-1)!,
+    /** A config pushed over exec-ws for the same device. */
+    pushConfig: (changes: Record<string, unknown>) =>
+      act(async () =>
+        control.onmessage?.({
+          data: JSON.stringify({
+            sub: subscription.sub,
+            data: `data: ${JSON.stringify({ ...previewApi("device-1", true), ...changes })}\n\n`,
+          }),
+        }),
+      ),
+  };
+}
+
+for (const strict of [false, true]) {
+  test(`a replaced helper at the same URL ends a pending command with a reset event${strict ? " in strict mode" : ""}`, async () => {
+    installBrowser({ duo: true });
+    const { client, events, socket, helperSockets, pushConfig } = await connectObserved({
+      strict,
+    });
+    await act(async () => socket().push(0x82, COVER));
+    // Connecting emitted nothing.
+    expect(events).toEqual([]);
+    const open = { control: "pose", value: "open" } as const;
+    await act(async () => client().hinge!.setControl(open));
+    expect(client().hinge?.pending).toBe(true);
+    // A refresh for the same helper session keeps the command pending.
+    await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
+    expect(helperSockets()).toHaveLength(1);
+    expect(client().hinge?.pending).toBe(true);
+    expect(events).toEqual<HingeCommandEvent[]>([
+      { type: "requested", command: open },
+      { type: "sent", command: open, display: 3 },
+    ]);
+    // A new helper process at the same URL replaces the input socket and its queue.
+    await pushConfig({ pid: 2 });
+    expect(helperSockets()).toHaveLength(2);
+    expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "reset" });
+    expect(events.filter(({ type }) => type === "reset")).toHaveLength(1);
+    expect(client().hinge?.pending).toBe(false);
+    // The preview of the dropped command ends, so it cannot stay forever.
+    await act(async () => socket().open());
+    await act(async () => socket().push(0x82, COVER));
+    expect(client().hinge?.pose).toBe("closed");
+    expect(client().hinge?.angle).toBe(0);
+  });
+}
 
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
   test(`a queued preset ${failure} reports a failure after the accepted preset`, async () => {
