@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-20 (CoreDevice hardware buttons); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -418,9 +418,9 @@ The local preview keeps streaming with the keyboard-only warning visible
 
 Duo keeps its existing requirement for both transports
 instead of falling back to its disconnected inner service.
-Nonfoldable orientation stays on the legacy rotation path, and buttons continue
-to use Indigo [observed: `HIDInjector.setup`, `setupCoreDeviceHID`, `sendKey`, and
-`sendOrientation`].
+Nonfoldable orientation stays on the legacy rotation path. Hardware buttons use
+the transport described below [observed: `HIDInjector.sendOrientation`,
+`sendButtonHID`].
 
 When capture omits its optional screen ID, ordinary iOS uses the sole integrated
 panel ID from the static device profile; it does not guess ID 1 or select a
@@ -453,3 +453,44 @@ xcrun devicectl device motion hinge-angle --device <udid>
 
 The motion command is a monitor. Its stdout can contain valid angle samples even
 when a command timeout causes the final JSON report to record a timeout.
+
+## Hardware buttons
+
+CoreDevice touch sessions also open `ButtonHIDCapability` and send hardware
+buttons through `HIDButton.sendCustomButton(usagePage:usageCode:state:)`, followed
+by its barrier. Apple's `HIDButtonState(rawValue:)` constructs the resilient
+state; the shim checks its metadata sizes and Optional tag before sending.
+DeviceKit page/usage values pass through unchanged. Named app switcher uses
+AppleVendorKeyboard `expose_All` (`0xff01/0x10`); Lock, Siri, and side button use
+Consumer `power`, `voiceCommand`, and `watchSideButton` (`0x0c/0x30`, `0xcf`,
+`0x95`). These mappings come from the installed CoreDevice getters, not a new
+wire protocol [observed: Xcode 27.1 beta CoreDevice exported symbols and getter
+disassembly; `CoreDeviceButtonShim.m`, `HIDInjector.sendButton`].
+
+A missing button symbol or failed capability lookup leaves touch and keyboard
+available, but the native button calls reject. They do not fall back to Indigo while
+CoreDevice touch is selected. BackBoard can disconnect `MainScreenButtonsService`
+under CoreDevice ownership and then accept host Indigo sends without delivering
+them. On the owned iPhone 17 Pro / iOS 27.0 Simulator, BackBoard logged this
+disconnect; #366's Indigo Lock left Settings visible, while the CoreDevice Lock
+showed the Lock Screen and `expose_All` showed the app switcher [observed: local
+baseline/follow-up comparison, 2026-10-19; feedback on #366,
+`discussion_r4316167519`]. serve-sim's own CoreDevice touch setup is enough to
+cause this: at the first input, BackBoard disconnected `ExternalKeyboardService`,
+`MainScreenButtonsService`, and one `ScreenTouchService`, with serve-sim as the
+only `dtuhidd` peer. With buttons on Indigo, Lock then did nothing; with buttons on
+CoreDevice, Lock, app switcher, Siri, volume, and Action reached the guest, with
+and without Apple's Device Hub attached, and on iPhone Duo (iOS 27.1) [observed:
+fresh iPhone 17 Pro / iOS 27.0 Simulators, two runs per build, and an iPhone Duo
+run, 2026-10-20]. A host barrier alone is not guest-delivery evidence.
+The opt-in `core-device-buttons.e2e.test.ts` checks UIKit scene deactivation for
+Lock/app switcher and actual UIKit touches with button encoding hidden.
+
+`NativeHid` logs a rejected button and does not return the error to the
+caller, as it does for every other button error. `serve-sim button`, device-frame
+buttons, and hub-client buttons therefore still report success for a button that
+CoreDevice could not send; the server log names the failure [observed:
+`NativeHid.button`, `NativeHid.guard`]. Home still foregrounds SpringBoard;
+unsupported CoreDevice touch retains the existing legacy button path [observed:
+`HIDInjector.sendButton`]. The shared keyboard-service setup gate and separate
+post-relaunch touch-loss follow-up are unchanged.
