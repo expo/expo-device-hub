@@ -1,4 +1,4 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,14 +6,30 @@ import { UDID, installShims } from "../helpers";
 
 let active = 1;
 let unavailable = false;
+let startupFailure = false;
 let sequence: Array<number | Error> = [];
 const owners: unknown[][] = [];
+mock.module("../../devicekit-chrome", () => ({
+  integratedDisplayIds: (identifier: string) =>
+    identifier === "fixture.single" ? [7] : identifier === "fixture.duo" ? [1, 3] : null,
+}));
+beforeEach(() => {
+  unavailable = false;
+  startupFailure = false;
+  sequence = [];
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
+    devices: {
+      iOS: [{ udid: UDID, name: "QA Duo", state: "Booted", deviceTypeIdentifier: "fixture.duo" }],
+    },
+  });
+});
 mock.module("../../device-session", () => ({
   withScreenshotDeviceSession: (
     udid: string,
     settings: unknown,
     capture: (session: unknown) => unknown,
   ) => {
+    if (startupFailure) throw new Error("Missing addon /opt/build/native/serve-sim-native.node");
     const args = [udid, settings];
     owners.push(args);
     return capture({
@@ -119,7 +135,7 @@ test("removes unconfirmed pixels and the reservation when the post-capture query
   sequence = [1, new Error("Post-capture display query failed")];
   expect(await capture()).toMatchObject({
     exitCode: 1,
-    stderr: "Post-capture display query failed",
+    stderr: expect.stringContaining("Could not determine the active display"),
   });
   expect(existsSync(join(tmpdir(), "serve-sim-screenshots", names.at(-1)!))).toBe(false);
 });
@@ -160,11 +176,11 @@ test("refuses ambiguous and missing names before starting native capture", async
   });
   expect(await capture({ udid: "QA Duo" })).toMatchObject({
     exitCode: 1,
-    stderr: expect.stringContaining("Several booted"),
+    stderr: expect.stringContaining("Could not resolve"),
   });
   expect(await capture({ udid: "missing" })).toMatchObject({
     exitCode: 1,
-    stderr: expect.stringContaining("No booted"),
+    stderr: expect.stringContaining("Could not resolve"),
   });
   expect(owners.length).toBe(before);
 });
@@ -173,7 +189,73 @@ test("does not silently capture another display when active selection fails", as
   unavailable = true;
   expect(await capture()).toMatchObject({
     exitCode: 1,
-    stderr: "Simulator did not report its active display",
+    stderr: expect.stringContaining("Could not determine the active display"),
     stdout: "",
   });
+});
+
+test("uses the sole integrated panel when native selection is unavailable", async () => {
+  unavailable = true;
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
+    devices: { iOS: [{ udid: UDID, state: "Booted", deviceTypeIdentifier: "fixture.single" }] },
+  });
+  expect((await capture()).exitCode).toBe(0);
+  expect(displayArg()).toBe("--display=7");
+});
+
+test("does not fallback for unknown profiles", async () => {
+  unavailable = true;
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({ devices: { iOS: [] } });
+  expect((await capture()).exitCode).toBe(1);
+});
+
+test("rejects known non-integrated ports before invoking screenshot", async () => {
+  rmSync(log, { force: true });
+  expect(await capture({ display: 2 })).toMatchObject({
+    exitCode: 1,
+    stderr: expect.stringContaining("integrated display"),
+  });
+  expect(existsSync(log)).toBe(false);
+});
+
+test("keeps native search paths in host logs, not client errors", async () => {
+  const detail = "Addon missing at /private/tmp/review-build/dist/native/serve-sim-native.node";
+  sequence = [new Error(detail)];
+  const original = console.error;
+  const diagnostics: string[] = [];
+  console.error = (...args: unknown[]) => diagnostics.push(args.map(String).join(" "));
+  try {
+    const result = await capture();
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).not.toContain("/private/tmp");
+    expect(result.stderr).not.toContain("serve-sim-native.node");
+    expect(diagnostics.join("\n")).toContain(detail);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("single-panel fallback also handles native startup failure", async () => {
+  startupFailure = true;
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
+    devices: { iOS: [{ udid: UDID, state: "Booted", deviceTypeIdentifier: "fixture.single" }] },
+  });
+  expect((await capture()).exitCode).toBe(0);
+  expect(displayArg()).toBe("--display=7");
+});
+
+test("never falls back after pixels were captured but validation failed", async () => {
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
+    devices: { iOS: [{ udid: UDID, state: "Booted", deviceTypeIdentifier: "fixture.single" }] },
+  });
+  sequence = [7, new Error("post-read failure")];
+  const result = await capture();
+  expect(result.exitCode).toBe(1);
+  expect(existsSync(join(tmpdir(), "serve-sim-screenshots", names.at(-1)!))).toBe(false);
+});
+
+test("explicit capture stays available for unknown profiles", async () => {
+  process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({ devices: { iOS: [] } });
+  expect((await capture({ display: 9 })).exitCode).toBe(0);
+  expect(displayArg()).toBe("--display=9");
 });
