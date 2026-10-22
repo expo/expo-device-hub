@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "fs";
 import { createHash, randomBytes } from "crypto";
-import { networkInterfaces } from "os";
+import { networkInterfaces, tmpdir } from "os";
 import { extname, join, resolve } from "path";
 import WebSocket from "ws";
 import { onCliInputReady } from "./socket/cli-input";
@@ -92,7 +92,13 @@ import {
   sendCameraHelperCommand as sendHelperCommand,
 } from "./camera-helper";
 import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream-runtime-args";
-import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
+import {
+  MAX_MJPEG_STREAM_FPS,
+  MAX_VIDEO_STREAM_FPS,
+  normalizeStreamEncoderSettings,
+} from "./stream-settings";
+import { sessionConfigurationSchema } from "./session-configuration";
+import { adoptSession, bootSession, sessionEnvironment, startSessionOwner } from "./session-owner";
 import { parseHingeAngle } from "./hinge-angle";
 import { CA_DEBUG_ALIASES, CA_DEBUG_FLAGS } from "./ca-debug";
 import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
@@ -1965,6 +1971,7 @@ async function serve(
     allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
+    orphan?: boolean;
     quiet?: boolean;
     networkCapture?: boolean;
     networkCaptureProxy?: string;
@@ -2060,10 +2067,13 @@ async function serve(
   const maxScan = portExplicit ? 1 : 50;
   let lastErr: unknown;
   let bound = false;
+  let previewServer: Awaited<ReturnType<typeof bindPreviewServer>> | undefined;
   for (let i = 0; i < maxScan; i++) {
     const p = servePort + i;
     try {
-      await timeStartup("http-listener", () => bindPreviewServer(p, middleware, host));
+      previewServer = await timeStartup("http-listener", () =>
+        bindPreviewServer(p, middleware, host),
+      );
       if (sessionStopping) return;
       boundPort = p;
       bound = true;
@@ -2085,6 +2095,49 @@ async function serve(
     }
   }
 
+  const disposeSessionResources = () =>
+    runShutdownSteps({
+      stopCapture: () => capture.captureRuntime.disableAll(),
+      disarm: async () => {
+        try {
+          await middleware.dispose();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
+      },
+      totalMs: SHUTDOWN_TIMEOUT_MS,
+      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+    });
+
+  let owner: Awaited<ReturnType<typeof startSessionOwner>> | undefined;
+  try {
+    // @ref LLP 0011#prepared-process-adoption — only an explicit orphan offers ownership.
+    if (options.orphan) {
+      const startupBoot = bootSession();
+      const startupEnvironment = sessionEnvironment();
+      owner = await startSessionOwner(
+        targetDevice!,
+        () => ({
+          version: resolveVersion(),
+          pid: process.pid,
+          device: targetDevice!,
+          bootSession: startupBoot,
+          host,
+          port: boundPort,
+          stateDirectory: resolve(stateDir()),
+          temporaryDirectory: resolve(tmpdir()),
+          environment: startupEnvironment,
+        }),
+        (configuration) => middleware.configureSession(configuration),
+      );
+    }
+  } catch (error) {
+    sessionStopping = true;
+    previewServer?.stop();
+    await disposeSessionResources();
+    return failStartup(error instanceof Error ? error.message : String(error));
+  }
+
   // Record in-process state so the preview/grid enumerate these devices and the
   // CLI input subcommands can reach the same-origin /helper ws.
   await timeStartup("state-publication", () => {
@@ -2097,6 +2150,7 @@ async function serve(
     }
   });
   const clearAll = () => {
+    owner?.close();
     for (const udid of targetDevices) {
       try {
         clearServeSimState(udid, process.pid);
@@ -2169,6 +2223,7 @@ async function serve(
     if (shuttingDown) return;
     shuttingDown = true;
     sessionStopping = true;
+    owner?.close();
     foregroundTracker.stopAll();
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
@@ -2198,18 +2253,7 @@ async function serve(
             console.error(`Could not report recording shutdown failure: ${String(error)}`);
           }
         }
-        await runShutdownSteps({
-          stopCapture: () => capture.captureRuntime.disableAll(),
-          disarm: async () => {
-            try {
-              await middleware.dispose();
-            } finally {
-              await disarmDevicesArmedHereAsync();
-            }
-          },
-          totalMs: SHUTDOWN_TIMEOUT_MS,
-          captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
-        });
+        await disposeSessionResources();
         clearAll();
         process.exit(recordingsFinished ? 0 : 1);
       },
@@ -2261,6 +2305,11 @@ function parseShareUrl(value: string): string {
 }
 
 const program = new Command();
+program.hook("preAction", (_command, actionCommand) => {
+  if ((program.opts().adopt || program.opts().orphan) && actionCommand !== program) {
+    throw new InvalidArgumentError("--adopt/--orphan cannot be used with a subcommand.");
+  }
+});
 
 program
   .name("serve-sim")
@@ -2286,6 +2335,8 @@ program
       "shell commands.",
   )
   .option("--detach", "Spawn helper and exit (daemon mode)")
+  .option("--orphan", "Start a server that a local --adopt command can claim once")
+  .option("--adopt", "Apply these options to an existing compatible orphan server; never start one")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
   .option(
@@ -2463,6 +2514,60 @@ Examples:
                                          Launch an installed app, then start the stream`,
   )
   .action(async (devices: string[], opts) => {
+    if (
+      opts.orphan &&
+      (opts.adopt ||
+        opts.list !== undefined ||
+        opts.kill !== undefined ||
+        opts.detach ||
+        opts.preview === false ||
+        devices.length !== 1 ||
+        !opts.requireToken ||
+        !isLoopbackHost(opts.host) ||
+        opts.transport !== "webrtc")
+    ) {
+      printStartupError(
+        "--orphan requires one device, a loopback preview, --require-token and --transport webrtc; cannot combine with --adopt, --list, --kill or --detach",
+        !!opts.quiet,
+      );
+      process.exit(1);
+    }
+    if (opts.adopt) {
+      try {
+        const unsupported = [
+          "list",
+          "kill",
+          "detach",
+          "preview",
+          "installAppPath",
+          "launchAppIdentifier",
+          "launchArg",
+          "openUrl",
+          "enable",
+          "disable",
+          "debugStream",
+          "allowAnyHostWhenInsecure",
+        ].filter((name) => program.getOptionValueSource(name) === "cli");
+        if (unsupported.length)
+          throw new Error(
+            `--adopt cannot change startup-only options: ${unsupported.join(", ")}; use a cold start`,
+          );
+        if (devices.length !== 1 || !opts.requireToken || opts.transport !== "webrtc") {
+          throw new Error(
+            "--adopt requires one exact UDID, --require-token and --transport webrtc",
+          );
+        }
+        if (
+          process.env.SERVE_SIM_ADDITIONAL_DYLIBS ||
+          process.env.SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+        ) {
+          throw new Error("--adopt cannot change boot-time dylibs; use a cold start");
+        }
+      } catch (error) {
+        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        process.exit(1);
+      }
+    }
     if (opts.list !== undefined) {
       listStreams(typeof opts.list === "string" ? opts.list : undefined);
       return;
@@ -2485,7 +2590,7 @@ Examples:
             "Their stream helpers would capture without it.",
         );
       }
-      captureRuntime.setUpstream(upstream);
+      if (!opts.adopt) captureRuntime.setUpstream(upstream);
     } catch (error) {
       printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
       process.exit(1);
@@ -2688,6 +2793,33 @@ Examples:
         process.exit(1);
       }
     }
+    if (opts.adopt) {
+      try {
+        const configuration = sessionConfigurationSchema.parse({
+          stream: { ...stream, ...normalizeStreamEncoderSettings(stream) },
+          corsOrigins: opts.corsOrigin,
+          frameAncestors: opts.frameAncestor,
+          shareUrl: opts.shareUrl,
+          disableShare: !!opts.disableShare,
+          screenshotsDirectory: process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY,
+          networkCapture: !!opts.networkCapture,
+          networkCaptureFields: parseCaptureFields(opts.networkCaptureField),
+          networkCaptureProxy: opts.networkCaptureProxy,
+        });
+        const adopted = await adoptSession(
+          devices[0]!,
+          resolveVersion(),
+          opts.host,
+          opts.port,
+          configuration,
+        );
+        console.log(JSON.stringify(adopted));
+      } catch (error) {
+        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        process.exitCode = 1;
+      }
+      return;
+    }
     let targets = devices;
     const defaultsInitialized = new Set<string>();
     // A preview with no app startup or capture; those keep arming and defaults separate.
@@ -2855,6 +2987,7 @@ Examples:
         allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
         requireToken: !!opts.requireToken,
+        orphan: !!opts.orphan,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,

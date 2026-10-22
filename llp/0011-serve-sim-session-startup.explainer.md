@@ -163,6 +163,44 @@ action. `launchAppAsync` awaits launch before opening the URL. These are success
 simctl operations, not proof that the app rendered its UI or handled the deep link
 [observed: `src/host-actions-utils.ts` `installAppInvocation`; `src/launch-app.ts`].
 
+## Prepared process adoption
+
+Start a warm server with `serve-sim <udid> --orphan --require-token --transport webrtc`.
+Only `--orphan` creates the private one-shot owner channel; matching these settings
+without the flag leaves a normal server unadoptable. This makes ownership handoff
+an explicit startup choice instead of inferring it from unrelated preview settings
+[confirmed: Gabe Debes, 2026-10-26, explicit orphan flag direction].
+The flag requires one device and a loopback, token-protected WebRTC preview.
+It cannot accompany `--adopt`, list/kill, `--detach`, `--no-preview` or subcommands
+[observed: `packages/serve-sim/packages/serve-sim/src/index.ts`].
+
+`serve-sim <udid> --adopt --require-token --transport webrtc` parses the same
+normal startup flags and defaults, then claims that orphan without
+booting a device or starting another server. The CLI resolves only an exact UDID
+from its existing native state directory, checks the running PID against the
+server's own PID, and requires the same package version, macOS boot, device,
+host, explicit port, state directory, temporary directory and process-bound
+startup environment [observed: `src/index.ts`, `src/session-owner.ts`].
+
+The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
+It is separate from the preview token and never exposed by HTTP or `/exec-ws`.
+A compatible claim consumes the local authority once, including when native setup
+fails. It updates stream settings including normal encoder defaults, STUN/TURN,
+CORS/frame policy, sharing, screenshot directory and capture fields/upstream.
+A running native encoder receives the update before the CLI reports success.
+Capture restarts with the requested upstream before the CLI succeeds and before app operations; an upstream
+failure never selects direct traffic [observed: `src/index.ts`, `src/middleware.ts`,
+`src/device-session.ts`, `src/capture/upstream.ts`].
+
+Adoption rejects helper/detach modes, list/kill combinations, debug logging,
+insecure-host policy changes, app-startup flags, capability overrides and
+additional boot dylibs. These require the caller to stop its prepared service
+and use the existing cold path. It also rejects subcommand combinations before
+the subcommand runs. The adoption command never silently falls back or executes
+app startup twice; the job continues using authenticated `app.install` and
+`app.launch` on `/exec-ws` [observed: `src/index.ts`; confirmed: Gabe Debes,
+2026-10-22, CLI adoption direction].
+
 ## Failure and teardown
 
 Failed boot, install, launch or `simctl openurl` stops startup with exit code 1,
