@@ -558,12 +558,16 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 called.
 
 `screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
-when `fileName` is missing. `display` is a positive simctl screen ID, so a client
+when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
+before capture; an unknown profile leaves explicit selection available. A client
 can capture a particular panel even when it is inactive. Without it, the action
 borrows an existing device session or creates a temporary capture with the
 middleware's trusted settings, then selects the native active display. Temporary
 capture is closed after success or failure; existing streams remain open. If that display cannot be determined,
-the action fails instead of silently capturing a different panel. An inactive
+the action uses the sole integrated panel only when the installed device-type
+capability profile proves there is exactly one. Multi-panel and unknown profiles
+fail with a retry message. Native error details stay in the host logs, rather
+than reaching the client. An inactive
 panel's screenshot may be black.
 
 Captures write to a separate temporary file and publish it to the staged name
