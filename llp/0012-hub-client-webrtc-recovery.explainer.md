@@ -103,3 +103,9 @@ Chrome offers H.264 level 3.1 by default, which is too low for large simulator s
 ## Open questions
 
 None at this time.
+
+## Browser playback permission
+
+`DeviceScreen` observes its mounted WebRTC video independently of the iOS or Android adapter. A rejected `play()` or a later pause exposes a Start live view control above the input surface. The control calls `video.play()` synchronously in the trusted click, preserves the peer and source, and does not dispatch device input. Connection errors take priority over the playback prompt, including when Android retains its old video. Other playback errors retain a Retry live view control. Disposal and source checks suppress late results from a retired video [observed: `DeviceScreen.tsx`, `video-playback.ts`].
+
+This copies serve-sim's `video-playback.ts` policy (LLP 0002#browser-playback-permission). HubClient owns its copy because it is independently published and does not depend on serve-sim's preview renderer. Its recovery control uses the host's theme CSS variables without adding a dependency on the private HubComponents package [observed: package dependencies and `DeviceScreen.tsx`].

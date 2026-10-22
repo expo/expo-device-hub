@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 
+import { observeVideoPlayback, type VideoPlaybackIssue } from "./video-playback";
 import { listenForInputCancellation } from "./input-cancellation";
 import { streamGeometry } from "./orientation";
 import { createFrameScrollSender, wheelDeltaToPixels } from "./scroll-wheel";
@@ -140,6 +141,27 @@ export function DeviceScreen({
     status,
     error,
   } = client;
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [playbackIssue, setPlaybackIssue] = useState<VideoPlaybackIssue>(null);
+  const playbackRef = useRef<ReturnType<typeof observeVideoPlayback> | null>(null);
+  const attachPlaybackVideo = useCallback(
+    (element: HTMLVideoElement | null) => {
+      attachVideo(element);
+      setVideoElement(element);
+    },
+    [attachVideo],
+  );
+  // @ref LLP 0012#browser-playback-permission — recovery belongs to the rendered surface, above device input
+  useEffect(() => {
+    setPlaybackIssue(null);
+    if (!videoElement) return;
+    const playback = observeVideoPlayback(videoElement, setPlaybackIssue);
+    playbackRef.current = playback;
+    return () => {
+      playback.dispose();
+      playbackRef.current = null;
+    };
+  }, [videoElement]);
   const canMulti = !!sendMultiTouch;
   const canPaste = capabilities.clipboard !== false && capabilities.clipboard.paste;
 
@@ -538,13 +560,14 @@ export function DeviceScreen({
   };
 
   const mediaStyle = deviceScreenMediaStyle(rotation);
+  const playbackPrompt = videoKind === "video" && status !== "error" ? playbackIssue : null;
 
   return (
     <div style={surfaceStyle}>
       {videoKind === "canvas" ? (
         <canvas ref={attachVideo} style={mediaStyle} />
       ) : videoKind === "video" ? (
-        <video ref={attachVideo} autoPlay muted playsInline style={mediaStyle} />
+        <video ref={attachPlaybackVideo} autoPlay muted playsInline style={mediaStyle} />
       ) : (
         <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
       )}
@@ -608,7 +631,42 @@ export function DeviceScreen({
 
       <AgentInteractionIndicator interaction={agentInteraction} />
 
-      {!deviceScreenPresentsMedia(status) && (
+      {playbackPrompt && (
+        <div
+          style={{
+            ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
+            zIndex: 3,
+            pointerEvents: "auto",
+            flexDirection: "column",
+            gap: 12,
+            backgroundColor: "var(--expo-theme-background-default, black)",
+            color: "var(--expo-theme-text-default, white)",
+          }}
+        >
+          <span>
+            {playbackPrompt === "blocked"
+              ? "Playback is paused in this browser."
+              : "Live video could not start."}
+          </span>
+          <button
+            type="button"
+            onClick={() => playbackRef.current?.play()}
+            style={{
+              cursor: "pointer",
+              padding: "8px 16px",
+              borderRadius: "var(--expo-radius-lg, 8px)",
+              border: "1px solid var(--expo-theme-button-primary-border, white)",
+              background: "var(--expo-theme-button-primary-background, white)",
+              color: "var(--expo-theme-button-primary-text, black)",
+              font: "inherit",
+            }}
+          >
+            {playbackPrompt === "blocked" ? "Start live view" : "Retry live view"}
+          </button>
+        </div>
+      )}
+
+      {!playbackPrompt && !deviceScreenPresentsMedia(status) && (
         <div
           style={{
             ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
