@@ -16,7 +16,7 @@ export interface DuoModelViewProps {
   view?: DuoView;
   streamConfig?: StreamConfig | null;
   hingeCommands?: DuoHingeCommands;
-  children: ReactNode;
+  children: ReactNode | ((playbackOverlayTarget: HTMLDivElement | null) => ReactNode);
   onUnavailable?: () => void;
   streamError?: string | null;
   cacheScreenOnFold?: boolean;
@@ -42,6 +42,7 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
   const latest = useRef<DuoSceneState>(props);
   latest.current = props;
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [playbackOverlayTarget, setPlaybackOverlayTarget] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!host.current || !source.current) return;
@@ -86,7 +87,7 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
               }
         }
       >
-        {children}
+        {typeof children === "function" ? children(playbackOverlayTarget) : children}
       </div>
       <div
         ref={host}
@@ -128,6 +129,11 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
           {props.streamError}
         </span>
       )}
+      {/* @ref LLP 0002#browser-playback-permission — recovery must escape the hidden texture sources */}
+      <div
+        ref={setPlaybackOverlayTarget}
+        style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 3 }}
+      />
       {status === "unavailable" && (
         <span
           role="status"

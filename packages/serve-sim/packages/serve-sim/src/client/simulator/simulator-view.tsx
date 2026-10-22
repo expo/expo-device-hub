@@ -6,6 +6,7 @@ import {
   type CSSProperties,
   type MouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import type { StreamConfig } from "../types.js";
 import {
   HID_EDGE_BOTTOM,
@@ -40,6 +41,8 @@ const WS_MSG_DIGITAL_CROWN = 0x0a;
 const WS_MSG_SCROLL = 0x0b;
 
 export interface SimulatorViewProps {
+  /** Undefined renders inline; null suppresses recovery for an inactive Duo panel. */
+  playbackOverlayTarget?: HTMLElement | null;
   /** Base URL of the serve-sim server, e.g. "http://localhost:3100" */
   url: string;
   /** Explicit WebSocket URL. If omitted, derived from `url` by replacing http→ws + "/ws". */
@@ -118,6 +121,7 @@ export interface SimulatorViewProps {
  * system gesture recognizer for interactive swipe-to-home on Face ID devices.
  */
 export function SimulatorView({
+  playbackOverlayTarget,
   url,
   wsUrl: wsUrlProp,
   style,
@@ -988,6 +992,32 @@ export function SimulatorView({
     transform: `${streamImageStyle.transform ?? ""} scale(${CANVAS_SEAM_OVERSHOOT})`,
   };
 
+  const playbackOverlay =
+    useWebRtc && playbackIssue && !error && playbackOverlayTarget !== null ? (
+      <div
+        style={{
+          ...overlayStyle,
+          zIndex: 3,
+          flexDirection: "column",
+          gap: 12,
+          pointerEvents: "auto",
+        }}
+      >
+        <span style={{ color: "#fff", fontSize: 14 }}>
+          {playbackIssue === "blocked"
+            ? "Playback is paused in this browser."
+            : "Live video could not start."}
+        </span>
+        <button
+          type="button"
+          className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-gray-200"
+          onClick={() => playbackRef.current?.play()}
+        >
+          {playbackIssue === "blocked" ? "Start live view" : "Retry live view"}
+        </button>
+      </div>
+    ) : null;
+
   return (
     <div
       style={{
@@ -1371,22 +1401,10 @@ export function SimulatorView({
               </span>
             </div>
           )}
-          {useWebRtc && playbackIssue && !error && (
-            <div style={{ ...overlayStyle, zIndex: 3, flexDirection: "column", gap: 12 }}>
-              <span style={{ color: "#fff", fontSize: 14 }}>
-                {playbackIssue === "blocked"
-                  ? "Playback is paused in this browser."
-                  : "Live video could not start."}
-              </span>
-              <button
-                type="button"
-                className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black hover:bg-gray-200"
-                onClick={() => playbackRef.current?.play()}
-              >
-                {playbackIssue === "blocked" ? "Start live view" : "Retry live view"}
-              </button>
-            </div>
-          )}
+          {playbackOverlay &&
+            (playbackOverlayTarget
+              ? createPortal(playbackOverlay, playbackOverlayTarget)
+              : playbackOverlay)}
           {showSlowOverlay && (
             <div style={slowOverlayStyle}>
               <span style={{ color: "#fbbf24", fontSize: 13, fontFamily: "monospace" }}>

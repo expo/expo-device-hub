@@ -17,8 +17,8 @@ function Children({ children }: { children?: ReactNode }) {
 function Silent() {
   return null;
 }
-function DuoModelView({ children }: { children?: ReactNode }) {
-  return children;
+function DuoModelView({ children }: { children?: ReactNode | ((target: null) => ReactNode) }) {
+  return typeof children === "function" ? children(null) : children;
 }
 function ToolsPanel() {
   return null;
