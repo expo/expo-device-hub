@@ -440,6 +440,22 @@ order; entries through link paths and conflicting entries are rejected.
 Directories remain owner-only, and executable owner bits are preserved. The
 uploaded source remains until the client removes it with `upload.remove`.
 
+App installation snapshots staged archive sources before waiting for extraction
+or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
+upload staging ceiling; source removal/reset is blocked only while copying.
+Private snapshots are removed after success or failure and live under the server-owned
+upload folder, where dead-server pruning reclaims abandoned copies. They use a reserved
+private prefix encoding the action deadline and do not expire by age before that
+deadline, so long installs outlive ordinary upload retention without losing their source.
+After the deadline, ordinary age pruning applies even if the owner's PID has been
+reused by another process.
+Copying regular files and app directories shares the original action deadline.
+Staged app directories accept relative links that remain inside the bundle; absolute
+links, escaping link chains and cycles are rejected before copying. Targets must
+use exact measured entry names, so filesystem case or Unicode aliases cannot hide
+a link. Link validation
+uses the measured directory metadata, so it never follows a link into the host filesystem.
+
 ### Uploading an app fixture
 
 `app.file.upload`: `{udid, bundleId, uploadId, relativePath, overwrite?}` copies a

@@ -77,7 +77,7 @@ function isUnderAllowedRoot(path: string): boolean {
 }
 
 /** What macOS itself follows before it gives up with ELOOP (MAXSYMLINKS, sys/param.h). */
-const MAX_SYMLINK_HOPS = 32;
+export const MAX_SYMLINK_HOPS = 32;
 
 /**
  * Canonicalizes one component at a time, in place of `realpathSync`, which resolves the whole path

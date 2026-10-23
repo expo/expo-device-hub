@@ -1,5 +1,5 @@
 import { rm, stat } from "fs/promises";
-import { basename, dirname, join } from "path";
+import { join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
@@ -16,7 +16,7 @@ import {
   redactHostPaths,
   actionTimeoutMs,
 } from "./host-actions-utils";
-import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR, UPLOAD_DIR } from "./host-paths";
+import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import {
   ScreenshotDisplay,
   ScreenshotName,
@@ -36,7 +36,8 @@ import {
   UploadId,
   appendUploadChunkAsync,
   removeUploadAsync,
-  readStagedUploadAsync,
+  withStagedUploadSnapshotAsync,
+  getStagedUploadId,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -813,15 +814,23 @@ async function runProcedureAsync(
     case "app.install": {
       const p = parseParams(action, raw);
       const path = fileSourcePath(p);
-      const uploadId =
-        "uploadId" in p ? p.uploadId : dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
+      const uploadId = "uploadId" in p ? p.uploadId : getStagedUploadId(path);
       const deadline = Date.now() + actionTimeoutMs();
-      // Acquire the staging queue before the install queue; neither installer acquires them in reverse.
-      return uploadId === undefined
-        ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
-        : await readStagedUploadAsync(uploadId, (source) =>
-            installAppAsync(p.udid, source, deadline, serveSimBinPath),
-          );
+      try {
+        return uploadId === undefined
+          ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
+          : await withStagedUploadSnapshotAsync(
+              uploadId,
+              (source) => installAppAsync(p.udid, source, deadline, serveSimBinPath),
+              deadline,
+            );
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
+      }
     }
     case "app.launch": {
       const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
