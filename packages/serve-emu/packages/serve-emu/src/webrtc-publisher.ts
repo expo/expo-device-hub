@@ -1,7 +1,4 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
 import type nodeDataChannel from "node-datachannel";
 import type {
   H264RtpPacketizer,
@@ -58,7 +55,6 @@ const DISCONNECTED_GRACE_MS = 10_000;
 const MAX_CANCELLED_SESSION_IDS = 64;
 
 let loggerInitialized = false;
-let nativeRepairPromise: Promise<void> | null = null;
 
 function randomSsrc(): number {
   return Math.floor(1 + Math.random() * 0x7ffffffe);
@@ -235,81 +231,14 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function isMissingNativeBindingError(err: unknown): boolean {
-  const message = errorMessage(err);
-  return message.includes("node_datachannel.node") || message.includes("build/Release");
-}
-
-function nodeDataChannelPackageDir(): string {
-  let dir = dirname(requireModule.resolve("node-datachannel"));
-  for (let depth = 0; depth < 6; depth++) {
-    if (existsSync(join(dir, "package.json"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  throw new Error("Could not locate node-datachannel package root");
-}
-
-function requireNativeNodeDataChannel(): NodeDataChannel {
-  return requireModule(
-    join(nodeDataChannelPackageDir(), "build", "Release", "node_datachannel.node"),
-  ) as NodeDataChannel;
-}
-
-function runPrebuildInstall(packageDir: string): Promise<void> {
-  const packageRequire = createRequire(join(packageDir, "package.json"));
-  const prebuildInstallBin = packageRequire.resolve("prebuild-install/bin.js");
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [prebuildInstallBin, "-r", "napi"], {
-      cwd: packageDir,
-      stdio: "inherit",
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(`prebuild-install exited with code ${code ?? "null"} signal ${signal ?? "null"}`),
-      );
-    });
-  });
-}
-
-async function loadNodeDataChannel(): Promise<NodeDataChannel> {
-  try {
-    return requireNativeNodeDataChannel();
-  } catch (err) {
-    if (!isMissingNativeBindingError(err)) throw err;
-    const packageDir = nodeDataChannelPackageDir();
-    if (!nativeRepairPromise) {
-      console.warn(
-        "node-datachannel native binding is missing; attempting to download the prebuilt N-API binary...",
-      );
-      nativeRepairPromise = runPrebuildInstall(packageDir);
-    }
-    try {
-      await nativeRepairPromise;
-      return requireNativeNodeDataChannel();
-    } catch (repairErr) {
-      throw new Error(
-        `node-datachannel native binding is missing and automatic repair failed. ` +
-          `Run "bun pm trust node-datachannel" and "bun install", then retry. ` +
-          `Original error: ${errorMessage(err)}. Repair error: ${errorMessage(repairErr)}`,
-      );
-    }
-  }
-}
-
 export async function createWebRtcPublisher(
   options: WebRtcPublisherOptions,
 ): Promise<WebRtcPublisher> {
-  const ndc = await loadNodeDataChannel();
+  // Keep loading lazy: only WebRTC needs the platform-specific native package.
+  const ndc = requireModule("node-datachannel") as NodeDataChannel;
   if (!loggerInitialized) {
     loggerInitialized = true;
-    ndc.initLogger("Warning");
+    ndc.initLogger("Warning", (_level, message) => console.warn(message));
   }
   return new WebRtcPublisher(ndc, options);
 }

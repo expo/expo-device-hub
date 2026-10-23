@@ -57,7 +57,7 @@
   "dependencies": {
     "@fastify/busboy": "^3.2.0",
     "mediabunny": "1.55.3",
-    "node-datachannel": "^0.32.3",
+    "node-datachannel": "^0.33.4",
     "ws": "^8.21.0",
     "zustand": "^5.0.15"
   },
@@ -97,7 +97,7 @@
     "serve-emu": {
       "@fastify/busboy": "^3.2.0",
       "mediabunny": "1.55.3",
-      "node-datachannel": "^0.32.3"
+      "node-datachannel": "^0.33.4"
     }
   }
 }
