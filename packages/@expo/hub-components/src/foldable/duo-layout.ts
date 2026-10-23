@@ -5,6 +5,8 @@
 
 import { Box3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera } from "three";
 
+import { stepDuoSpring } from "./duo-pose";
+
 export type DuoViewportSize = { width: number; height: number };
 export type DuoCanvasRect = DuoViewportSize & { left: number; top: number };
 export type DuoScreenPoint = { x: number; y: number };
@@ -27,19 +29,121 @@ function visitBoxCorners(box: Box3, point: Vector3, visit: (point: Vector3) => v
 }
 
 /**
- * Fit the current articulated geometry inside a centered logical stage.
- * The result multiplies the normal stage.height / viewport.height zoom.
- * This uses the scene's centered perspective camera and never changes its
- * zoom or the model's transforms. Mesh bounds are cached by the geometry.
+ * The camera zoom for the scene's base view: its vertical field of view spans
+ * the largest centered square of the stage. On serve-sim's fixed 1:1 stage this
+ * is its stage.height / viewport.height zoom. The Hub's stage fills the stream
+ * area instead, so its short side limits the base view, and at rest the
+ * physical size never crosses the edges of a stage that is narrower than it
+ * is tall.
  */
-export function duoFitScale(
-  model: Object3D,
-  camera: PerspectiveCamera,
+// @ref LLP 0004#stage-size — the Hub's stage has any aspect ratio; serve-sim's is square
+export function duoStageZoom(viewport: DuoViewportSize, stage: DuoViewportSize): number {
+  if (!validSize(viewport) || !validSize(stage)) return 1;
+  return Math.min(stage.width, stage.height) / viewport.height;
+}
+
+/** The camera zoom that shows the base view of this stage scaled by `scale`. */
+export function duoCameraZoom(
   viewport: DuoViewportSize,
   stage: DuoViewportSize,
-  inset = 24,
+  scale: number,
 ): number {
-  if (!validSize(viewport) || !validSize(stage) || !(camera.zoom > 0)) return 1;
+  return duoStageZoom(viewport, stage) * scale;
+}
+
+/** The fill inset at rest, as in serve-sim. */
+export const DUO_FILL_INSET = 32;
+
+/** How far each hinge handle's center sits outside the model's outer edge. */
+export const DUO_HANDLE_OFFSET = 16;
+
+export type DuoFit = { scale: number; velocity: number };
+
+/**
+ * Move the fill factor toward its target. A new pose springs, so the model
+ * eases into its framing, but never past `limit`. A stage or window resize
+ * snaps: the base zoom follows a resize at once, and a factor that lagged
+ * behind it would push the model past the stage edge, where the host clips it.
+ */
+// @ref LLP 0004#stage-size — a resize snaps the fit; a new pose springs it up to a limit
+export function stepDuoFit(
+  fit: DuoFit,
+  target: number,
+  seconds: number,
+  snap: boolean,
+  limit = Infinity,
+): DuoFit {
+  if (snap) return { scale: Math.min(target, limit), velocity: 0 };
+  const step = stepDuoSpring(fit.scale, fit.velocity, target, seconds);
+  return step.value > limit
+    ? { scale: limit, velocity: 0 }
+    : { scale: step.value, velocity: step.velocity };
+}
+
+/** What the camera zoom keeps from one frame to the next. */
+export interface DuoZoomState {
+  stage: DuoViewportSize;
+  viewport: DuoViewportSize;
+  fit: DuoFit;
+}
+
+export const DUO_INITIAL_ZOOM: DuoZoomState = {
+  stage: { width: 0, height: 0 },
+  viewport: { width: 0, height: 0 },
+  fit: { scale: 1, velocity: 0 },
+};
+
+function sameSize(a: DuoViewportSize, b: DuoViewportSize) {
+  return a.width === b.width && a.height === b.height;
+}
+
+/**
+ * One frame of the camera zoom, from the stage and window sizes measured for
+ * this frame. A zero size, before layout or while hidden, keeps the last one.
+ * `extents` are the current pose's (`duoFitExtents` with the scene's model
+ * and camera); without them the model keeps its physical size.
+ * The fill factor snaps after a resize, springs toward the fill inset after a
+ * new pose, and never lets the model come closer to the stage edge than its
+ * hinge handles need, even while a fold widens it faster than the spring.
+ */
+export function stepDuoZoom(
+  previous: DuoZoomState,
+  frame: {
+    stage: DuoViewportSize;
+    viewport: DuoViewportSize;
+    seconds: number;
+    reducedMotion: boolean;
+    extents?: DuoFitExtents | null;
+  },
+): { state: DuoZoomState; zoom: number } {
+  const stage = validSize(frame.stage) ? frame.stage : previous.stage;
+  const viewport = validSize(frame.viewport) ? frame.viewport : previous.viewport;
+  const resized = !sameSize(stage, previous.stage) || !sameSize(viewport, previous.viewport);
+  // No fit before the stage has a size, as for the physical size.
+  const fitting = frame.extents !== undefined && validSize(stage);
+  const extents = frame.extents ?? null;
+  const fit = stepDuoFit(
+    previous.fit,
+    fitting ? duoFitScaleFromExtents(extents, viewport, stage, DUO_FILL_INSET) : 1,
+    frame.seconds,
+    resized || frame.reducedMotion,
+    fitting ? duoFitScaleFromExtents(extents, viewport, stage, DUO_HANDLE_OFFSET) : Infinity,
+  );
+  const state = resized ? { stage, viewport, fit } : { ...previous, fit };
+  return { state, zoom: duoCameraZoom(viewport, stage, fit.scale) };
+}
+
+/** Half extents of the projected model at camera zoom 1, in normalized device coordinates. */
+export type DuoFitExtents = { x: number; y: number };
+
+/**
+ * Project the current articulated geometry once, for {@link duoFitScaleFromExtents}.
+ * This uses the scene's centered perspective camera and never changes its
+ * zoom or the model's transforms. Mesh bounds are cached by the geometry.
+ * Null when nothing is visible or the geometry crosses the camera.
+ */
+export function duoFitExtents(model: Object3D, camera: PerspectiveCamera): DuoFitExtents | null {
+  if (!(camera.zoom > 0)) return null;
   model.updateWorldMatrix(true, true);
   camera.updateWorldMatrix(true, false);
   let extentX = 0;
@@ -63,13 +167,45 @@ export function duoFitScale(
       extentY = Math.max(extentY, Math.abs(corner.y / camera.zoom));
     });
   });
-  if (crossesCamera || !(extentX > 0) || !(extentY > 0)) return 1;
+  if (crossesCamera || !(extentX > 0) || !(extentY > 0)) return null;
+  return { x: extentX, y: extentY };
+}
+
+/**
+ * Fit projected extents inside a centered logical stage with an inset.
+ * The result multiplies the {@link duoStageZoom} base zoom; without extents
+ * it keeps normal framing.
+ */
+export function duoFitScaleFromExtents(
+  extents: DuoFitExtents | null,
+  viewport: DuoViewportSize,
+  stage: DuoViewportSize,
+  inset = 24,
+): number {
+  if (!extents || !validSize(viewport) || !validSize(stage)) return 1;
   const padding = Number.isFinite(inset) ? Math.max(0, inset) : 24;
   const availableX = Math.max(1, stage.width - 2 * padding) / viewport.width;
   const availableY = Math.max(1, stage.height - 2 * padding) / viewport.height;
-  const zoom = Math.min(availableX / extentX, availableY / extentY);
-  const scale = zoom / (stage.height / viewport.height);
+  const zoom = Math.min(availableX / extents.x, availableY / extents.y);
+  const scale = zoom / duoStageZoom(viewport, stage);
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+/**
+ * Fit the current articulated geometry inside a centered logical stage.
+ * The result multiplies the {@link duoStageZoom} base zoom.
+ * This uses the scene's centered perspective camera and never changes its
+ * zoom or the model's transforms. Mesh bounds are cached by the geometry.
+ */
+export function duoFitScale(
+  model: Object3D,
+  camera: PerspectiveCamera,
+  viewport: DuoViewportSize,
+  stage: DuoViewportSize,
+  inset = 24,
+): number {
+  if (!validSize(viewport) || !validSize(stage)) return 1;
+  return duoFitScaleFromExtents(duoFitExtents(model, camera), viewport, stage, inset);
 }
 
 /** Midpoint on the front of the chosen panel's outer edge, in panel-local coordinates. */

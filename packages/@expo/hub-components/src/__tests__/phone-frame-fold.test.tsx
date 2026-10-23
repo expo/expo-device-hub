@@ -76,7 +76,7 @@ describe("PhoneFrame with an iPhone Duo", () => {
     expect(render(2853, 2007)).toContain("width:min(620px,");
     expect(render(2853, 2007)).toContain("aspect-ratio 250ms ease");
   });
-  test("renders the injected 3D screen on a square stage without a screen clip", () => {
+  test("renders the injected 3D screen on a stage that fills the stream area, without a screen clip", () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}
@@ -94,7 +94,39 @@ describe("PhoneFrame with an iPhone Duo", () => {
     expect(markup).not.toContain("data-mode");
     expect(markup).not.toContain('data-testid="flat-screen"');
     expect(markup).not.toContain("clip-path");
-    expect(markup).toContain("aspect-ratio:1");
+    // The whole content box of the panel's viewport, which StreamPanel keeps
+    // clear of the title and the controls. No fixed size or aspect ratio.
+    expect(markup).toContain("width:100cqw;height:100cqh");
+    expect(markup).not.toContain("aspect-ratio");
+    expect(markup).not.toContain("min(");
+  });
+
+  test("never resizes the 3D stage while the device folds, rotates, or changes displays", () => {
+    const stageStyle = (screen: DeviceClient["screen"], angle: number) =>
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={device}
+          client={{ ...client({ angle }), screen }}
+          DeviceScreen={FlatScreen}
+          FoldableDeviceScreen={ModelScreen}
+          foldPreview={{ ...MODEL_PREVIEW, sizeMode: "fill" }}
+          displayScreen={(next) =>
+            next && next.orientation?.startsWith("landscape")
+              ? { ...next, width: next.height, height: next.width }
+              : (next ?? null)
+          }
+        />,
+      ).match(/data-device-frame-kind="duo-model"[^>]*style="([^"]*)"/)?.[1];
+    const closed = stageStyle({ width: 1398, height: 2034, display: "cover" }, 0);
+    expect(closed).toBeTruthy();
+    for (const [screen, angle] of [
+      [{ width: 2007, height: 2853, display: "inner" }, 180],
+      [{ width: 2007, height: 2853, display: "inner", orientation: "landscape_left" }, 90],
+      [{ width: 1398, height: 2034, display: "cover", orientation: "landscape_right" }, 80],
+      [null, 120],
+    ] as const) {
+      expect(stageStyle(screen, angle)).toBe(closed);
+    }
   });
 
   test("keeps the flat screen for the 2D preview, for consumers without the model, and for clients that cannot feed it", () => {

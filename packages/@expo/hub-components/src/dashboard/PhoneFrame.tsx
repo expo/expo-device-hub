@@ -37,10 +37,20 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
 
-// The iPhone Duo's 3D stage keeps one square footprint as the device folds and
-// changes active displays (serve-sim's fixed 1:1 stage). Resizing it with each
-// native screen configuration would animate on top of the hinge motion.
-const DUO_STAGE_WIDTH = 580;
+// The iPhone Duo's 3D stage takes the whole stream area that StreamPanel keeps
+// clear of the device title and the controls. Only that container sizes it,
+// never a native screen configuration, so the stage keeps its footprint as the
+// device folds and changes active displays: resizing it then would animate on
+// top of the hinge motion. Window and sidebar resizes do resize it.
+// @ref LLP 0004#stage-size — the Hub fills the stream area; serve-sim keeps a fixed 1:1 stage
+const DUO_STAGE_STYLE: CSSProperties = {
+  width: "100cqw",
+  height: "100cqh",
+  flexShrink: 0,
+  position: "relative",
+  isolation: "isolate",
+  containerType: "inline-size",
+};
 
 /** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
 export type FoldPreviewMode = "2d" | "3d";
@@ -71,6 +81,7 @@ const CONFIG: Record<
  * shrinking to the available height or panel width). Without artwork, the frame
  * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
  * clips a centered, undistorted stream and may crop its edges to prevent leaks.
+ * The iPhone Duo's 3D model instead fills the whole stream area.
  */
 // @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({
@@ -214,10 +225,7 @@ export function PhoneFrame({
         data-testid="device-screen-frame"
         data-device-frame-kind="duo-model"
         data-agent-active={agentInteraction ? "true" : "false"}
-        style={{
-          ...deviceViewportStyle({ maxShortSide: DUO_STAGE_WIDTH, ratio: 1 }),
-          containerType: "inline-size",
-        }}
+        style={DUO_STAGE_STYLE}
         onPointerEnter={(event) => {
           if (event.pointerType === "mouse") setHovered(true);
         }}
