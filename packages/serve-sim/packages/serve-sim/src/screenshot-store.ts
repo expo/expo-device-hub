@@ -51,12 +51,16 @@ async function stagedScreenshotBudgetExceededAsync(): Promise<boolean> {
   }
 }
 
-async function isEmptyFileAsync(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).size === 0;
-  } catch {
-    return false;
-  }
+async function removeEmptyReservationAsync(path: string): Promise<void> {
+  await queueScreenshotAsync(async () => {
+    let size: number;
+    try {
+      size = (await stat(path)).size;
+    } catch {
+      return;
+    }
+    if (size === 0) await rm(path, { force: true });
+  });
 }
 
 export async function captureScreenshotAsync(
@@ -117,9 +121,9 @@ export async function captureScreenshotAsync(
         exitCode: 1,
       };
     }
-    if (shot.exitCode === 0) await rename(temporary, staged);
+    if (shot.exitCode === 0) await queueScreenshotAsync(() => rename(temporary, staged));
   } catch (error) {
-    if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
+    await removeEmptyReservationAsync(staged);
     throw error;
   } finally {
     await rm(temporary, { force: true });
@@ -127,7 +131,7 @@ export async function captureScreenshotAsync(
   // Or the reservation holds a ceiling slot until the prune. Only while still empty: a second capture
   // of the same name may have written a real screenshot there since.
   if (shot.exitCode !== 0) {
-    if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
+    await removeEmptyReservationAsync(staged);
     return shot;
   }
   const kept = `stays staged at ${staged} for at least ${hours} hours`;

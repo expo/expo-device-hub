@@ -559,18 +559,32 @@ called.
 
 `screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
-before capture; an unknown profile leaves explicit selection available. A client
+before capture unless the profile declares exactly one screen, as on tvOS; an
+unknown profile leaves explicit selection available. A client
 can capture a particular panel even when it is inactive. Without it, the action
 borrows an existing device session or creates a temporary capture with the
 middleware's trusted settings, then selects the native active display. Temporary
 capture is closed after success or failure; existing streams remain open. If that display cannot be determined,
-the action uses the sole integrated panel only when the installed device-type
-capability profile proves there is exactly one. Multi-panel and unknown profiles
+the action uses the sole declared screen, or the sole integrated panel when
+other output ports are present, only when the installed device-type capability
+profile proves that selection is unambiguous. Multi-panel and unknown profiles
 fail with a retry message. Native error details stay in the host logs, rather
 than reaching the client. An inactive
 panel's screenshot may be black.
 
 Captures write to a separate temporary file and publish it to the staged name
-only after active-display validation succeeds. Failed captures remove their
+only after active-display validation succeeds. Publication and empty-reservation
+cleanup share the reservation queue so a failed capture cannot delete a
+concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
+
+Native screenshot startup and active-display reads use the configured host-action
+deadline. A timed-out one-shot releases its temporary session and stops native
+startup without waiting for the hung start promise; late continuations cannot
+restart it. Retained viewer sessions stay open. Teardown keeps pending recording promises
+until their results are observed, preserving finalization errors. UDID case aliases share the same
+registry entry. Screenshot profile lookup resolves the selected bundle from
+simctl and reads its capability plist asynchronously, without scanning installed
+bundles on the event loop. [observed: `withScreenshotDeviceSession`,
+`DeviceSession.start`, `DeviceSession.close`, `getScreenshotDisplayIdsAsync`]

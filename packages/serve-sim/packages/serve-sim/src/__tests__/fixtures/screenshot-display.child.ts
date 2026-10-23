@@ -2,20 +2,42 @@ import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import * as fsPromises from "fs/promises";
 import { UDID, installShims } from "../helpers";
 
 let active = 1;
 let unavailable = false;
 let startupFailure = false;
+let renameFailure = false;
+const originalRename = fsPromises.rename;
+mock.module("fs/promises", () => ({
+  ...fsPromises,
+  rename: async (from: string, to: string) => {
+    if (renameFailure) throw new Error("EACCES /private/tmp/staging/file.png");
+    return await originalRename(from, to);
+  },
+}));
 let sequence: Array<number | Error> = [];
 const owners: unknown[][] = [];
-mock.module("../../devicekit-chrome", () => ({
-  integratedDisplayIds: (identifier: string) =>
-    identifier === "fixture.single" ? [7] : identifier === "fixture.duo" ? [1, 3] : null,
+mock.module("../../screenshot-display", () => ({
+  getScreenshotDisplayIdsAsync: async () => {
+    const { devices = {} } = JSON.parse(process.env.SERVE_SIM_TEST_DEVICES_JSON ?? "{}") as {
+      devices?: Record<string, Array<{ udid: string; deviceTypeIdentifier?: string }>>;
+    };
+    const device = Object.values(devices)
+      .flat()
+      .find((device) => device.udid === UDID);
+    return device?.deviceTypeIdentifier === "fixture.single"
+      ? [7]
+      : device?.deviceTypeIdentifier === "fixture.duo"
+        ? [1, 3]
+        : null;
+  },
 }));
 beforeEach(() => {
   unavailable = false;
   startupFailure = false;
+  renameFailure = false;
   sequence = [];
   process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
     devices: {
@@ -213,7 +235,7 @@ test("rejects known non-integrated ports before invoking screenshot", async () =
   rmSync(log, { force: true });
   expect(await capture({ display: 2 })).toMatchObject({
     exitCode: 1,
-    stderr: expect.stringContaining("integrated display"),
+    stderr: expect.stringContaining("device screen"),
   });
   expect(existsSync(log)).toBe(false);
 });
@@ -258,4 +280,20 @@ test("explicit capture stays available for unknown profiles", async () => {
   process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({ devices: { iOS: [] } });
   expect((await capture({ display: 9 })).exitCode).toBe(0);
   expect(displayArg()).toBe("--display=9");
+});
+
+test("publication failures report capture failure rather than an active-panel problem", async () => {
+  renameFailure = true;
+  expect(await capture()).toMatchObject({
+    exitCode: 1,
+    stderr: "Could not capture the screenshot. Check the host logs for details.",
+  });
+});
+
+test("native startup failures report startup rather than a fold problem", async () => {
+  startupFailure = true;
+  expect(await capture()).toMatchObject({
+    exitCode: 1,
+    stderr: expect.stringContaining("Could not start screenshot capture"),
+  });
 });
