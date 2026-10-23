@@ -828,8 +828,9 @@ async function runProcedureAsync(
       try {
         return uploadId === undefined
           ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
-          : await withStagedUploadSnapshotAsync(uploadId, (source) =>
-              installAppAsync(p.udid, source, deadline, serveSimBinPath),
+          : await withStagedUploadSnapshotAsync(
+              uploadId,
+              (source) => installAppAsync(p.udid, source, deadline, serveSimBinPath),
               deadline,
             );
       } catch (error) {

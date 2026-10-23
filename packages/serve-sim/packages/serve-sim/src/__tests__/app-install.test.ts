@@ -578,7 +578,7 @@ test("a slow staged install does not block unrelated uploads or removals", async
   process.env.SERVE_SIM_INSTALL_GATE = gate;
   const pending = runHostActionAsync(
     { action: "app.install", params: { udid: UDID, uploadId } },
-    "unused",
+    BIN,
   );
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -651,9 +651,9 @@ test("private upload snapshots survive source removal, clean failures, and enfor
     await writeFile(sparseFile, "");
     try {
       await truncate(sparseFile, 2 * 1024 ** 3 + 1);
-      await expect(
-        withStagedUploadSnapshotAsync(uploadId, async () => {}),
-      ).rejects.toThrow("staging is full");
+      await expect(withStagedUploadSnapshotAsync(uploadId, async () => {})).rejects.toThrow(
+        "staging is full",
+      );
     } finally {
       await rm(oversized, { recursive: true, force: true });
     }
@@ -760,7 +760,7 @@ test("an old staged app directory installs from its private copy while upload pr
   process.env.SERVE_SIM_INSTALL_GATE = gate;
   const pending = runHostActionAsync(
     { action: "app.install", params: { udid: UDID, path: source } },
-    "unused",
+    BIN,
   );
   try {
     for (let n = 0; n < 500 && !existsSync(started); n++) await Bun.sleep(10);
@@ -816,7 +816,8 @@ test("snapshot copying is bounded by the remaining action deadline", async () =>
 test("a staged app with relative framework links survives source pruning during install", async () => {
   const uploadId = "FrameworkLinks.app";
   const source = join(UPLOAD_DIR, uploadId);
-  const started = join(root, "links-install-started"), gate = join(root, "links-install-release");
+  const started = join(root, "links-install-started"),
+    gate = join(root, "links-install-release");
   const trigger = "prune-framework-source";
   await mkdir(join(source, "Versions", "A"), { recursive: true });
   await writeFile(join(source, "Info.plist"), "test app");
@@ -833,9 +834,21 @@ test("a staged app with relative framework links survives source pruning during 
     pending = install(source);
     for (let n = 0; n < 200 && !existsSync(started); n++) await Bun.sleep(10);
     expect(existsSync(started)).toBe(true);
-    expect((await runHostActionAsync({ action: "upload.append", params: {
-      uploadId: trigger, first: true, data: Buffer.from("unrelated upload").toString("base64"),
-    } }, "unused")).exitCode).toBe(0);
+    expect(
+      (
+        await runHostActionAsync(
+          {
+            action: "upload.append",
+            params: {
+              uploadId: trigger,
+              first: true,
+              data: Buffer.from("unrelated upload").toString("base64"),
+            },
+          },
+          "unused",
+        )
+      ).exitCode,
+    ).toBe(0);
     expect(existsSync(source)).toBe(false);
     await writeFile(gate, "release");
     const result = await pending;
@@ -852,43 +865,70 @@ test("a staged app with relative framework links survives source pruning during 
   }
 });
 
-test.each(["absolute-internal", "absolute-external", "relative-escape", "directory-alias-escape", "casefold-alias-escape", "unicode-alias-escape", "dangling", "file-as-directory", "cycle"])(
-  "rejects unsafe staged app links before accepting a snapshot: %s",
-  async kind => {
-    const uploadId = `Unsafe-${kind}.app`, source = join(UPLOAD_DIR, uploadId);
-    await mkdir(source);
-    await writeFile(join(source, "Executable"), "original bytes");
-    const before = (await readdir(UPLOAD_DIR)).filter(name => name.startsWith(".install-snapshot-"));
-    const target = kind === "absolute-internal" ? join(source, "Executable")
-      : kind === "absolute-external" ? join(root, "outside")
-      : kind === "relative-escape" ? "../outside"
-      : kind === "directory-alias-escape" ? "Root/../outside"
-      : kind === "casefold-alias-escape" ? "ROOT/../outside"
-      : kind === "unicode-alias-escape" ? "Ro\u0301o\u0301t/../outside"
-      : kind === "dangling" ? "missing"
-      : kind === "file-as-directory" ? "Executable/../Executable" : "App";
-    if (["directory-alias-escape", "casefold-alias-escape"].includes(kind)) await symlink(".", join(source, "Root"));
-    if (kind === "unicode-alias-escape") await symlink(".", join(source, "Róót"));
-    await symlink(target, join(source, "App"));
-    let accepted = false;
-    try {
-      await expect(withStagedUploadSnapshotAsync(uploadId, async () => { accepted = true; }))
-        .rejects.toThrow("symlinks must be relative and stay inside the app bundle");
-      expect(accepted).toBe(false);
-      expect((await readdir(UPLOAD_DIR)).filter(name => name.startsWith(".install-snapshot-"))).toEqual(before);
-    } finally {
-      await rm(source, { recursive: true, force: true });
-    }
-  },
-);
+test.each([
+  "absolute-internal",
+  "absolute-external",
+  "relative-escape",
+  "directory-alias-escape",
+  "casefold-alias-escape",
+  "unicode-alias-escape",
+  "dangling",
+  "file-as-directory",
+  "cycle",
+])("rejects unsafe staged app links before accepting a snapshot: %s", async (kind) => {
+  const uploadId = `Unsafe-${kind}.app`,
+    source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Executable"), "original bytes");
+  const before = (await readdir(UPLOAD_DIR)).filter((name) =>
+    name.startsWith(".install-snapshot-"),
+  );
+  const target =
+    kind === "absolute-internal"
+      ? join(source, "Executable")
+      : kind === "absolute-external"
+        ? join(root, "outside")
+        : kind === "relative-escape"
+          ? "../outside"
+          : kind === "directory-alias-escape"
+            ? "Root/../outside"
+            : kind === "casefold-alias-escape"
+              ? "ROOT/../outside"
+              : kind === "unicode-alias-escape"
+                ? "Ro\u0301o\u0301t/../outside"
+                : kind === "dangling"
+                  ? "missing"
+                  : kind === "file-as-directory"
+                    ? "Executable/../Executable"
+                    : "App";
+  if (["directory-alias-escape", "casefold-alias-escape"].includes(kind))
+    await symlink(".", join(source, "Root"));
+  if (kind === "unicode-alias-escape") await symlink(".", join(source, "Róót"));
+  await symlink(target, join(source, "App"));
+  let accepted = false;
+  try {
+    await expect(
+      withStagedUploadSnapshotAsync(uploadId, async () => {
+        accepted = true;
+      }),
+    ).rejects.toThrow("symlinks must be relative and stay inside the app bundle");
+    expect(accepted).toBe(false);
+    expect(
+      (await readdir(UPLOAD_DIR)).filter((name) => name.startsWith(".install-snapshot-")),
+    ).toEqual(before);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});
 
 test("relative parent links that remain inside a staged app are preserved", async () => {
-  const uploadId = "RelativeParent.app", source = join(UPLOAD_DIR, uploadId);
+  const uploadId = "RelativeParent.app",
+    source = join(UPLOAD_DIR, uploadId);
   await mkdir(join(source, "Nested"), { recursive: true });
   await writeFile(join(source, "Info.plist"), "bundle metadata");
   await symlink("../Info.plist", join(source, "Nested", "Metadata"));
   try {
-    await withStagedUploadSnapshotAsync(uploadId, async path => {
+    await withStagedUploadSnapshotAsync(uploadId, async (path) => {
       await rm(source, { recursive: true });
       expect(await readFile(join(path, "Nested", "Metadata"), "utf8")).toBe("bundle metadata");
     });
@@ -897,26 +937,97 @@ test("relative parent links that remain inside a staged app are preserved", asyn
   }
 });
 
-test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", async hops => {
-  const uploadId = `Chain-${hops}.app`, source = join(UPLOAD_DIR, uploadId);
+test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", async (hops) => {
+  const uploadId = `Chain-${hops}.app`,
+    source = join(UPLOAD_DIR, uploadId);
   await mkdir(source);
   await writeFile(join(source, "Executable"), "bundle bytes");
   for (let n = 0; n < hops; n++) {
     await symlink(n + 1 === hops ? "Executable" : `Link${n + 1}`, join(source, `Link${n}`));
   }
   let accepted = false;
-  const snapshot = () => withStagedUploadSnapshotAsync(uploadId, async path => {
-    accepted = true;
-    await rm(source, { recursive: true });
-    expect(await readFile(join(path, "Link0"), "utf8")).toBe("bundle bytes");
-  });
+  const snapshot = () =>
+    withStagedUploadSnapshotAsync(uploadId, async (path) => {
+      accepted = true;
+      await rm(source, { recursive: true });
+      expect(await readFile(join(path, "Link0"), "utf8")).toBe("bundle bytes");
+    });
   try {
     if (hops === 32) await snapshot();
     else {
-      await expect(snapshot()).rejects.toThrow("symlinks must be relative and stay inside the app bundle");
+      await expect(snapshot()).rejects.toThrow(
+        "symlinks must be relative and stay inside the app bundle",
+      );
       expect(accepted).toBe(false);
     }
   } finally {
     await rm(source, { recursive: true, force: true });
+  }
+});
+
+test.each([false, true])(
+  "hard-link chains resolve directly to the extracted file: %s",
+  async (reverse) => {
+    const links = [
+      { path: "Framework.app/bin", type: "Link" as const, target: "Framework.app/alias" },
+      { path: "Framework.app/alias", type: "Link" as const, target: "Framework.app/real" },
+    ];
+    if (reverse) links.reverse();
+    const result = await install(
+      await rawArchive("hard-chain.tgz", [
+        ...bundleEntries,
+        ...links,
+        { path: "Framework.app/real", body: "target" },
+      ]),
+    );
+    expect(result.exitCode, result.stderr).toBe(0);
+  },
+);
+
+test.each([false, true])(
+  "deferred archive links cannot redirect extraction writes: %s",
+  async (reverse) => {
+    const canary = await mkdtemp(join(tmpdir(), "owned-archive-canary-"));
+    try {
+      await writeFile(join(canary, "value"), "unchanged");
+      const entries = [
+        {
+          path: "Framework.app/redirect",
+          type: "SymbolicLink" as const,
+          target: "../../" + basename(canary),
+        },
+        { path: "Framework.app/redirect/value", body: "overwrite" },
+      ];
+      if (reverse) entries.reverse();
+      const result = await install(
+        await rawArchive("parent-link.tgz", [...bundleEntries, ...entries]),
+      );
+      expect(result.exitCode).toBe(1);
+      expect(await readFile(join(canary, "value"), "utf8")).toBe("unchanged");
+    } finally {
+      await rm(canary, { recursive: true, force: true });
+    }
+  },
+);
+
+test("failed cleanup cannot accumulate another extraction tree in this process", async () => {
+  const archive = await rawArchive("cleanup-retry.tgz", bundleEntries);
+  const failing = installShims({ rm: "#!/bin/sh\nexit 1\n" });
+  const directories = new Set<string>();
+  try {
+    const first = await install(archive);
+    if (first.stdout.trim()) directories.add(dirname(installedPath(first.stdout)));
+    expect(first.exitCode).toBe(0);
+    expect(first.stderr).toContain("could not be removed");
+    const second = await install(archive);
+    if (second.stdout.trim()) directories.add(dirname(installedPath(second.stdout)));
+    expect(second.exitCode).toBe(1);
+    expect(directories.size).toBe(1);
+  } finally {
+    failing.restore();
+    for (const directory of directories) {
+      expect(basename(directory).startsWith("serve-sim-app-install-")).toBe(true);
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 });
