@@ -11,6 +11,7 @@ import { inProcessServeSimState } from "../state";
 const noopTracker: ForegroundTrackerCache = {
   subscribe: () => ({ unsubscribe: () => {} }),
   peek: () => null,
+  stopAll: () => {},
 };
 
 /**
