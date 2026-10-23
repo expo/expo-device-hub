@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import type { ServerWebSocket } from "bun";
+import { DEFAULT_IDLE_REPEAT_MS } from "./grpc-session.ts";
 import {
   CameraInputError,
   cameraLaunchIsWired,
@@ -1530,6 +1531,10 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     ok: true as const,
     serial: context.serial,
     mode: context.stream.mode,
+    repeatFrameMs:
+      context.stream.mode === "grpc-screenshot"
+        ? opts.repeatFrameMs || DEFAULT_IDLE_REPEAT_MS
+        : (opts.repeatFrameMs ?? SCRCPY_DEFAULTS.repeatFrameMs),
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
     encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,

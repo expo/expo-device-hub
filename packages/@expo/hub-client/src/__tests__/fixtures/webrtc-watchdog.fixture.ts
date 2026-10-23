@@ -202,10 +202,11 @@ async function start(
 
 // Re-run the stream effect without remounting so same-codec retry refs survive.
 async function reconnect() {
-  cleanup[3]?.();
+  const streamEffect = effects.length - 1;
+  cleanup[streamEffect]?.();
   pendingStats = [];
   peers = [];
-  cleanup[3] = effects[3]!();
+  cleanup[streamEffect] = effects[streamEffect]!();
   await flush();
   peers[0]?.ontrack?.({ track: {}, streams: [{}] });
   peers[0]?.onconnectionstatechange?.();
