@@ -34,6 +34,7 @@ const profiles = [
   ["Empty", [], null],
   ["Malformed", [{ displayType: "integrated", screenID: 1 }, {}], null],
   ["Missing", undefined, null],
+  ["Legacy", undefined, [1]],
   ["BadID", [{ displayType: "integrated", screenID: "1" }], null],
   [
     "Duplicate",
@@ -62,13 +63,29 @@ for (const [i, [name, displays]] of profiles.entries()) {
   });
   devicetypes.push({ identifier: `fixture.${name}`, bundlePath });
 }
+// Reduced real Xcode 26.6 / iPhone 17 profile and unmodified IO enumeration.
+const legacyProfile = JSON.parse(
+  readFileSync(join(import.meta.dir, "screenshot-legacy-profile.json"), "utf8"),
+);
+const legacyIO = readFileSync(join(import.meta.dir, "screenshot-legacy-io.txt"), "utf8");
+process.env.SERVE_SIM_PROFILE_IO = legacyIO;
+const legacyFile = join(
+  root,
+  "Legacy.simdevicetype",
+  "Contents",
+  "Resources",
+  "capabilities.plist",
+);
+writeFileSync(legacyFile, JSON.stringify(legacyProfile));
+const legacyUDID = devices[profiles.findIndex(([name]) => name === "Legacy")]!.udid;
+
 const log = join(root, "plutil.log");
 process.env.SERVE_SIM_PROFILE_SNAPSHOT = JSON.stringify({ devices: { iOS: devices }, devicetypes });
 process.env.SERVE_SIM_PROFILE_ROOT = root;
 process.env.SERVE_SIM_PROFILE_LOG = log;
 const shims = installShims({
   xcrun:
-    '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_PROFILE_SNAPSHOT"; else exit 1; fi\n',
+    '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_PROFILE_SNAPSHOT"; elif [ "$2" = io ] && [ "$4" = enumerate ]; then printf \'%s\' "$SERVE_SIM_PROFILE_IO"; else exit 1; fi\n',
   // JSON fixture files stand in for plist conversion on every platform. The real
   // identifier lookup, asynchronous subprocess, path selection and parsing run.
   plutil:
@@ -80,6 +97,7 @@ afterAll(() => {
   delete process.env.SERVE_SIM_PROFILE_SNAPSHOT;
   delete process.env.SERVE_SIM_PROFILE_ROOT;
   delete process.env.SERVE_SIM_PROFILE_LOG;
+  delete process.env.SERVE_SIM_PROFILE_IO;
 });
 const { getScreenshotDisplayIdsAsync } = await import("../../screenshot-display");
 
@@ -109,4 +127,78 @@ test("reads only the selected bundle without blocking the event loop", async () 
 });
 test("unknown device identifiers cannot permit fallback", async () => {
   expect(await getScreenshotDisplayIdsAsync("unknown")).toBeNull();
+});
+
+test("real Xcode 26.6 legacy profile and IO identify the sole integrated screen ID", async () => {
+  process.env.SERVE_SIM_PROFILE_IO = legacyIO;
+  expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toEqual([1]);
+});
+for (const [name, io] of [
+  ["two integrated ports", legacyIO.replace("Display class: 1", "Display class: 0")],
+  ["missing display class", legacyIO.replace("Display class: 0", "Unknown class: 0")],
+  ["unknown display class", legacyIO.replace("Display class: 1", "Display class: 2")],
+  ["missing internal port", legacyIO.replace("Display class: 0", "Display class: 1")],
+  ["dimension mismatch", legacyIO.replace("Default width: 1206", "Default width: 999")],
+  ["invalid screen ID", legacyIO.replace("Screen ID: 1\n", "Screen ID: invalid\n")],
+  ["two integrated screens", legacyIO.replace("Screen Type: TVOut", "Screen Type: Integrated")],
+  ["unknown screen type", legacyIO.replace("Screen Type: TVOut", "Screen Type: Unknown")],
+  [
+    "connected size mismatch",
+    legacyIO.replace("Pixel Size: {1206, 2622}", "Pixel Size: {999, 2622}"),
+  ],
+  ["missing connected screens", legacyIO.replace("Connected Screens:", "Unknown Screens:")],
+  ["no ports", ""],
+] as const) {
+  test(`legacy fallback refuses ${name}`, async () => {
+    process.env.SERVE_SIM_PROFILE_IO = io;
+    expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toBeNull();
+  });
+}
+test("modern display declarations remain authoritative over legacy dimensions", async () => {
+  process.env.SERVE_SIM_PROFILE_IO = legacyIO;
+  try {
+    for (const displays of [
+      null,
+      [],
+      [
+        { displayType: "integrated", screenID: 1 },
+        { displayType: "integrated", screenID: 3 },
+      ],
+    ]) {
+      writeFileSync(
+        legacyFile,
+        JSON.stringify({ capabilities: { ...legacyProfile.capabilities, displays } }),
+      );
+      expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toEqual(
+        Array.isArray(displays) && displays.length === 2 ? [1, 3] : null,
+      );
+    }
+  } finally {
+    writeFileSync(legacyFile, JSON.stringify(legacyProfile));
+  }
+});
+test("unknown or invalid legacy profiles cannot borrow a sole enumerated port", async () => {
+  process.env.SERVE_SIM_PROFILE_IO = legacyIO;
+  try {
+    for (const capabilities of [
+      {},
+      { ...legacyProfile.capabilities, idiom: "unknown" },
+      {
+        ...legacyProfile.capabilities,
+        ScreenDimensionsCapability: { "main-screen-width": 0, "main-screen-height": 2622 },
+      },
+    ]) {
+      writeFileSync(legacyFile, JSON.stringify({ capabilities }));
+      expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toBeNull();
+    }
+  } finally {
+    writeFileSync(legacyFile, JSON.stringify(legacyProfile));
+  }
+});
+
+test("legacy fallback accepts the same sole port after rotation", async () => {
+  process.env.SERVE_SIM_PROFILE_IO = legacyIO
+    .replace("Default width: 1206", "Default width: 2622")
+    .replace("Default height: 2622", "Default height: 1206");
+  expect(await getScreenshotDisplayIdsAsync(legacyUDID)).toEqual([1]);
 });

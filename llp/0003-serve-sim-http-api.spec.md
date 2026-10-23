@@ -568,7 +568,17 @@ capture is closed after success or failure; existing streams remain open. If tha
 the action uses the sole declared screen, or the sole integrated panel when
 other output ports are present, only when the installed device-type capability
 profile proves that selection is unambiguous. Multi-panel and unknown profiles
-fail with a retry message. Native error details stay in the host logs, rather
+fail with a retry message. Legacy iOS profiles that declare only
+`ScreenDimensionsCapability` require a recognized phone/pad idiom and a fresh
+`simctl io enumerate` result: every framebuffer port must have a known class,
+exactly one must be integrated, and its default dimensions must match the
+profile's main screen (allowing rotation). Its display adapter must also list
+exactly one integrated connected screen with matching dimensions and a valid
+numeric ID. Both fallback capture and explicit-ID validation use that ID. A present but malformed `displays` array cannot use
+this legacy path. Public `display` parameters remain numeric. [observed:
+`getScreenshotDisplayIdsAsync`]
+
+Native error details stay in the host logs, rather
 than reaching the client. An inactive
 panel's screenshot may be black.
 
