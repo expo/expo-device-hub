@@ -78,6 +78,23 @@ final class ObservedDeviceStateTests: XCTestCase {
         XCTAssertEqual(json["revision"] as? Int, 1)
     }
 
+    func testTentTableControlOverridesOnlyOlderMotionAndNeverChangesRawObservation() throws {
+        var observed = ObservedDeviceState(generation: 1)
+        observed.apply(.motion(try motion(11, orientation: 1, tabletop: 0)), since: 10)
+        var controls = HingeControlEligibility()
+        controls.angle = (80, 20)
+        controls.orientation = ("facedown", 20)
+        controls.tableMode = (true, 20)
+        XCTAssertEqual(controls.state(observed: observed), .init(angle: 80, orientation: "facedown", tableMode: true))
+        XCTAssertEqual(observed.state, .init(orientation: "portrait", tableMode: false))
+        observed.apply(.motion(try motion(19, orientation: 1, tabletop: 0)), since: 10)
+        XCTAssertEqual(controls.state(observed: observed).tableMode, true)
+        observed.apply(.motion(try motion(21, orientation: 6, tabletop: 0)), since: 10)
+        XCTAssertEqual(controls.state(observed: observed).tableMode, false)
+        observed.apply(.motion(try motion(22, orientation: 6, tabletop: 99)), since: 10)
+        XCTAssertNil(controls.state(observed: observed).tableMode)
+    }
+
     private func motion(_ timestamp: Double, orientation: Int, tabletop: Int) throws -> DeviceMotionSample {
         let json = "{\"timestamp\":\(timestamp),\"properties\":{\"propertyA\":{\"int\":\(orientation)},\"propertyC\":{\"int\":\(tabletop)}}}"
         return try JSONDecoder().decode(DeviceMotionSample.self, from: Data(json.utf8))

@@ -87,7 +87,10 @@ export function observedHingeState(state: {
     physicalOrientation,
     tableMode,
     hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
-    tableModeAvailable: isTableModeAvailable(hingeAngle, physicalOrientation),
+    tableModeAvailable:
+      hingeAngle === undefined || physicalOrientation === undefined
+        ? undefined
+        : isTableModeAvailable(hingeAngle, physicalOrientation),
   };
 }
 

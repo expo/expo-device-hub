@@ -1,4 +1,4 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
@@ -101,6 +101,13 @@ function sample(angle: number, active = false) {
     state: { hingeAngle: angle, physicalOrientation: "portrait", tableMode: active },
   });
 }
+beforeEach(async () => {
+  eligibilityGate = undefined;
+  eligibility = { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false };
+  sample(0);
+  send(0x0f, { angle: 0 });
+  expect(await socket.reply(0x8f)).toMatchObject({ ok: true });
+});
 test("readback orders acknowledgements and fresh external eligibility without trusting stale motion", async () => {
   sample(0);
   send(0x0f, { angle: 90 });
@@ -116,6 +123,8 @@ test("readback orders acknowledgements and fresh external eligibility without tr
   expect((await socket.reply(0x93)).state).toMatchObject({ hingeAngle: 180 });
 });
 test("Table Mode setting stays distinct from observed tabletop activity", async () => {
+  send(0x0f, { angle: 180 });
+  expect(await socket.reply(0x8f)).toMatchObject({ ok: true });
   send(0x10, { requestId: 1, command: { control: "table", value: true } });
   expect(await socket.reply(0x90)).toMatchObject({ ok: true });
   eligibility = { ...eligibility, tableMode: false };
@@ -127,6 +136,8 @@ test("Table Mode setting stays distinct from observed tabletop activity", async 
   });
 });
 test("a readback holds its place before a later hinge command", async () => {
+  eligibility = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  sample(180);
   let release!: () => void;
   eligibilityGate = new Promise<void>((resolve) => {
     release = resolve;
@@ -161,4 +172,13 @@ test("readback derives pose and activity from the same native eligibility snapsh
     tableModeActive: true,
     tableMode: false,
   });
+});
+
+test("empty native eligibility keeps pose and availability unknown", async () => {
+  eligibility = {};
+  send(0x13);
+  const reply = await socket.reply(0x93);
+  expect(reply.ok).toBe(true);
+  for (const field of ["hingeAngle", "hingePose", "tableModeActive", "tableModeAvailable"])
+    expect(reply.state).not.toHaveProperty(field);
 });

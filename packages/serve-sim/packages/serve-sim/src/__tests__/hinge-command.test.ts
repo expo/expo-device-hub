@@ -116,46 +116,24 @@ test("reports a simulator without a hinge instead of an empty state", async () =
   await expect(readHingeStateFromWs(url)).rejects.toThrow("Hinge control is unavailable");
 });
 
-test("reads external native hinge changes instead of the last commanded pose", async () => {
-  const url = serveConfigs([
-    {
-      supportsHingeAngle: true,
-      hingeAngle: 0,
-      hingePose: "closed",
-      physicalOrientation: "facedown",
-      tableMode: true,
-      tableModeAvailable: false,
-      observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false },
-    },
-  ]);
-  expect(await readHingeStateFromWs(url)).toEqual({
-    hingeAngle: 180,
-    hingePose: "open",
-    physicalOrientation: "portrait",
-    tableMode: true,
-    tableModeActive: false,
-    tableModeAvailable: true,
-  });
-});
-
-test("does not replace omitted native state with an older command", async () => {
+test("legacy helpers retain acknowledged config fields even with an older observation", async () => {
   const url = serveConfigs([
     {
       supportsHingeAngle: true,
       hingeAngle: 90,
       hingePose: "book",
       physicalOrientation: "portrait",
-      tableMode: true,
-      observedDeviceState: {},
+      tableMode: false,
+      tableModeAvailable: true,
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false },
     },
   ]);
   expect(await readHingeStateFromWs(url)).toEqual({
-    hingeAngle: undefined,
-    hingePose: undefined,
-    physicalOrientation: undefined,
-    tableMode: true,
-    tableModeActive: undefined,
-    tableModeAvailable: false,
+    hingeAngle: 90,
+    hingePose: "book",
+    physicalOrientation: "portrait",
+    tableMode: false,
+    tableModeAvailable: true,
   });
 });
 

@@ -1770,14 +1770,11 @@ export class DeviceSession {
           const state =
             eligibility === undefined
               ? {
-                  hingeAngle: this.hingeAngle,
-                  physicalOrientation: this.hingePhysicalOrientation,
-                  tableMode: undefined,
+                  ...observedHingeState({
+                    hingeAngle: this.hingeAngle,
+                    physicalOrientation: this.hingePhysicalOrientation,
+                  }),
                   hingePose: this.hingePose,
-                  tableModeAvailable: isTableModeAvailable(
-                    this.hingeAngle,
-                    this.hingePhysicalOrientation,
-                  ),
                 }
               : observedHingeState(eligibility);
           if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");

@@ -293,7 +293,7 @@ test("preview reads native pose independently of saved command state", () => {
   expect(unknown.hingePose).toBeUndefined();
   expect(unknown.physicalOrientation).toBeUndefined();
   expect(unknown.tableMode).toBeUndefined();
-  expect(unknown.tableModeAvailable).toBe(false);
+  expect(unknown.tableModeAvailable).toBeUndefined();
 });
 
 test("native snapshot changes notify even when command state and geometry are unchanged", () => {
