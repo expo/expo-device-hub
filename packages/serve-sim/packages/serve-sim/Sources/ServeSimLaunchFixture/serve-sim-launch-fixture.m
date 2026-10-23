@@ -317,6 +317,10 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
   RecordURLContexts(connectionOptions.URLContexts);
 }
 
+- (void)sceneWillResignActive:(UIScene *)scene {
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--input-test"]) Record(@"input-inactive", @"");
+}
+
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
   RecordURLContexts(URLContexts);
 }
