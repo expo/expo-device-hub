@@ -1824,7 +1824,7 @@ export class DeviceSession {
                   state: {
                     ...state,
                     tableMode: this.tableMode,
-                    ...(observed ? { tableModeActive: state.tableMode } : {}),
+                    ...(observed ? { tableModeActive: eligibility?.tableModeActive } : {}),
                   },
                 }),
               ),

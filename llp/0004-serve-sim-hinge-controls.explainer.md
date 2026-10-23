@@ -197,7 +197,7 @@ pose command that fails.
 
 ## Confirmed hinge state
 
-Acknowledged control updates share one recorder for legacy command fields and timestamped readback overlays. Raw native snapshots remain separate. Legacy helpers without the readback protocol retain config command fields. Readback omits Table Mode availability until angle and orientation are known; unknown does not mean unavailable.
+Acknowledged control updates share one recorder for legacy command fields and timestamped readback overlays. Raw native snapshots remain separate. The native read returns raw tabletop activity alongside the reconciled control fields in one actor turn; `tableModeActive` never uses the acknowledgement overlay. `hingePose` follows reconciled controls so an acknowledged Tent remains readable before the next sample. Legacy helpers without the readback protocol retain config command fields. Readback omits Table Mode availability until angle and orientation are known; unknown does not mean unavailable.
 
 Recording and live preview observe native pose separately from the successful-command cache and
 saved startup state. It opens the hinge stream with requested 100 ms updates and

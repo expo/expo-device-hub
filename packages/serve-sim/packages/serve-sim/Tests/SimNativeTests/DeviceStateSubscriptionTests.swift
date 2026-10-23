@@ -204,6 +204,28 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         XCTAssertEqual(observed.revision, 0)
     }
 
+    func testReadbackKeepsTableActivitySeparateFromAcknowledgedControls() async throws {
+        let connected = expectation(description: "producer")
+        let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await bridge.recordHingeControl(udid: udid, angle: 80, orientation: "facedown", tableMode: true, sentAt: 20, generation: 0)
+        let unknown = await bridge.hingeControlReadback(udid: udid)
+        XCTAssertEqual(unknown.state.tableMode, true)
+        XCTAssertNil(unknown.tableModeActive)
+        for (timestamp, activity) in [(11, 0), (21, 1), (22, 99)] {
+            let sample = try JSONDecoder().decode(DeviceMotionSample.self, from: Data(
+                "{\"timestamp\":\(timestamp),\"properties\":{\"propertyC\":{\"int\":\(activity)}}}".utf8
+            ))
+            await source.inject(0, .motion(sample))
+            let readback = await bridge.hingeControlReadback(udid: udid)
+            XCTAssertEqual(readback.tableModeActive, activity == 99 ? nil : activity != 0)
+            XCTAssertEqual(readback.state.tableMode, timestamp <= 20 ? true : readback.tableModeActive)
+        }
+        await unsubscribe()
+    }
+
     func testEligibilityUsesSourceTimeWithoutChangingObservedValues() async {
         let connected = expectation(description: "producer")
         let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })

@@ -3,9 +3,9 @@ import { EventEmitter } from "node:events";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
 import { UDID, useTempStateDir } from "../helpers";
-import type { NativeHingeState, NativeDeviceStateSnapshot } from "../../native";
+import type { NativeHingeReadback, NativeDeviceStateSnapshot } from "../../native";
 let observed: ((snapshot: NativeDeviceStateSnapshot) => void) | undefined;
-let eligibility: NativeHingeState = { hingeAngle: 0, physicalOrientation: "portrait" };
+let eligibility: NativeHingeReadback = { hingeAngle: 0, physicalOrientation: "portrait" };
 let eligibilityGate: Promise<void> | undefined;
 mock.module("../../native", () => ({
   ...native,
@@ -127,7 +127,7 @@ test("Table Mode setting stays distinct from observed tabletop activity", async 
   expect(await socket.reply(0x8f)).toMatchObject({ ok: true });
   send(0x10, { requestId: 1, command: { control: "table", value: true } });
   expect(await socket.reply(0x90)).toMatchObject({ ok: true });
-  eligibility = { ...eligibility, tableMode: false };
+  eligibility = { ...eligibility, tableMode: true, tableModeActive: false };
   sample(180, false);
   send(0x13);
   expect((await socket.reply(0x93)).state).toMatchObject({
@@ -153,7 +153,7 @@ test("a readback holds its place before a later hinge command", async () => {
   expect(await socket.reply(0x8f)).toMatchObject({ ok: true, angle: 30 });
 });
 
-test("readback derives pose and activity from the same native eligibility snapshot", async () => {
+test("readback gets reconciled pose and raw activity from the same native read", async () => {
   sample(80, false);
   let release!: () => void;
   eligibilityGate = new Promise<void>((resolve) => {
@@ -161,7 +161,12 @@ test("readback derives pose and activity from the same native eligibility snapsh
   });
   send(0x13);
   await Bun.sleep(10);
-  eligibility = { hingeAngle: 80, physicalOrientation: "facedown", tableMode: true };
+  eligibility = {
+    hingeAngle: 80,
+    physicalOrientation: "facedown",
+    tableMode: true,
+    tableModeActive: true,
+  };
   sample(80, true);
   release();
   eligibilityGate = undefined;
