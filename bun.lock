@@ -68,7 +68,6 @@
       "name": "@expo/hub-client",
       "version": "1.2.0",
       "dependencies": {
-        "three": "^0.186.0",
         "use-sync-external-store": "^1.7.0",
       },
       "devDependencies": {
@@ -78,7 +77,6 @@
         "@types/react": "~19.2.2",
         "@types/react-dom": "19.2.3",
         "@types/react-test-renderer": "19.1.0",
-        "@types/three": "^0.186.0",
         "@types/use-sync-external-store": "1.5.0",
         "happy-dom": "^20.14.5",
         "oxfmt": "^0.56.0",
@@ -102,6 +100,7 @@
         "@radix-ui/react-tooltip": "^1.2.16",
         "@radix-ui/react-visually-hidden": "^1.2.4",
         "sonner": "^2.0.7",
+        "three": "^0.186.0",
       },
       "devDependencies": {
         "@expo/hub-client": "workspace:*",
@@ -110,12 +109,14 @@
         "@types/react": "~19.2.2",
         "@types/react-dom": "~19.2.0",
         "@types/react-test-renderer": "19.1.0",
+        "@types/three": "^0.186.0",
         "oxfmt": "^0.56.0",
         "oxlint": "^1.71.0",
         "react-test-renderer": "19.2.3",
         "typescript": "~6.0.3",
       },
       "peerDependencies": {
+        "@expo/hub-client": "*",
         "react": "*",
         "react-dom": "*",
       },
@@ -2298,7 +2299,7 @@
 
     "@expo/hub-apple-utils/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
 
-    "@expo/hub-client/@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
+    "@expo/hub-client/@types/bun": ["@types/bun@1.4.3", "", { "dependencies": { "bun-types": "1.4.3" } }, "sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw=="],
 
     "@expo/hub-client/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
@@ -2584,7 +2585,7 @@
 
     "@expo/hub-apple-utils/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
-    "@expo/hub-client/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+    "@expo/hub-client/@types/bun/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "@expo/serve-sim/@types/bun/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 

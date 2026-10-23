@@ -4,9 +4,9 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
-  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import { bg, border, text, textSize } from "../primitives";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
@@ -49,7 +49,7 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */

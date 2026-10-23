@@ -9,7 +9,7 @@ import { createDuoScene, type DuoSceneState } from "./duo-scene";
 import { DuoHingeHandle } from "./DuoHingeHandle";
 
 export interface DuoModelViewProps extends DuoSceneState {
-  /** The panel feeds. They stay mounted while their frames texture the model. */
+  /** The displays' elements. They stay mounted while their frames texture the model. */
   children: ReactNode;
 }
 

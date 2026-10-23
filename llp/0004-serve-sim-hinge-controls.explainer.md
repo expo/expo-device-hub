@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** ServeSim, Hub
+**Systems:** ServeSim, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-21 (the Hub's 3D preview as a hub-client consumer; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -476,3 +476,49 @@ xcrun devicectl device motion hinge-angle --device <udid>
 
 The motion command is a monitor. Its stdout can contain valid angle samples even
 when a command timeout causes the final JSON report to record a timeout.
+
+## 3D preview in the Hub
+
+The Hub shows the same 3D preview as serve-sim. `@expo/hub-client` supplies
+only the device controls and streams, and the 3D renderer in
+`@expo/hub-components/foldable` is a consumer of them [confirmed] (Krystof
+Woldrich, 2026-10-21). hub-client does not depend on three.js, and a consumer
+that does not import the `foldable` entry does not load it [observed:
+`packages/@expo/hub-client/package.json`, `exports` in
+`packages/@expo/hub-components/package.json`].
+
+The contract [observed: `DeviceHinge`, `DeviceDisplay`, and `DeviceClient` in
+`packages/@expo/hub-client/src/types.ts`]:
+
+- `DeviceClient.hinge` holds fold state and controls only: angle, pose,
+  physical pose, Table Mode, face down, pending, error, `setControl`, and
+  `observe`. `observe` reports each command's request, its submission with the
+  display it elects, its acknowledgement, its confirmation, a failure, a new
+  helper session that drops pending commands, and each rotation. A backend
+  without a command lifecycle leaves `observe` out, and the
+  contract requires no display or model fields, so a backend can offer fold
+  controls without the 3D preview.
+- `DeviceClient.displays` lists the cover (1) and the inner display (3), each
+  with `active` and an `attachVideo` ref callback. The client owns each
+  display's transport as it does for the flat stream: the codec ladder, the
+  transport lock, the session token, the helper session, statistics, and stream
+  health. While any
+  display has an element, the flat stream is parked; detaching every display
+  resumes it. A consumer that attaches no display keeps the flat stream.
+- `TouchSample`, `MultiTouchSample`, and `ScrollSample` take an optional
+  `display`. Their coordinates are that display's, as `DeviceScreen` sends
+  them, and they use the flat stream's mapping, input ownership, and
+  cancellation. The helper routes input to the display that native readback
+  reports, so a gesture that begins on another display is dropped through its
+  end.
+- `DeviceClient.deviceModelUrl` is the `grid/api/devicekit-model` route with
+  the connection's base path, proxy mapping, and session token, which only the
+  client knows.
+
+The 3D component keeps the presentation state that serve-sim's client keeps
+beside its hinge state: the model's framing, the framing restored after a
+failed preset, face-down framing, panel handoff counts, cache on fold, size,
+and the hinge handles. It follows the client's hinge events, so a preset frames
+the model the same way whether it comes from Fold settings or from a keyboard
+shortcut on the model [observed: `useDuoFraming.ts` and
+`FoldableDeviceScreen.tsx` in `packages/@expo/hub-components/src/foldable`].

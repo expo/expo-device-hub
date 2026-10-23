@@ -1,5 +1,9 @@
-import { type DeviceStreamMode, type DuoPreviewMode } from "@expo/hub-client";
-import { type Device, type StreamModeAvailability } from "@expo/hub-components";
+import { type DeviceStreamMode } from "@expo/hub-client";
+import {
+  type Device,
+  type FoldPreviewMode,
+  type StreamModeAvailability,
+} from "@expo/hub-components";
 import { create } from "zustand";
 
 import { dashboardHideSidebar } from "../sidebar";
@@ -16,7 +20,7 @@ export type DuoPreviewSize = "physical" | "fill";
 
 /** How the viewer draws an iPhone Duo; remembered per browser like serve-sim's settings. */
 export type DuoPreviewPreferences = {
-  mode: DuoPreviewMode;
+  mode: FoldPreviewMode;
   cacheScreenOnFold: boolean;
   sizeMode: DuoPreviewSize;
 };

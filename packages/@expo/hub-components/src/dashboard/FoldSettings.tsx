@@ -1,15 +1,19 @@
 import { useEffect, useId, useState } from "react";
 
-import { type DeviceHinge, type DuoPreviewMode } from "@expo/hub-client";
+import { type DeviceHinge } from "@expo/hub-client";
 import { Select, type SelectOption, bg, border, radius, text, textSize } from "../primitives";
 import { DisabledControlHint } from "../components/DisabledControlHint";
 import { FOLD_POSE_OPTIONS, selectedFoldPose } from "./foldPoses";
+import { type FoldPreviewMode } from "./PhoneFrame";
 import { SidebarRow, SidebarSlider, SidebarSwitch } from "./SidebarRow";
 
-/** Viewer-local choices for how the iPhone Duo is drawn; owned by the consumer. */
+/**
+ * Viewer-local choices for how the iPhone Duo is drawn; owned by the consumer.
+ * Pass them only for a client that can feed the 3D model.
+ */
 export type FoldPreviewOption = {
-  mode: DuoPreviewMode;
-  onModeChange: (mode: DuoPreviewMode) => void;
+  mode: FoldPreviewMode;
+  onModeChange: (mode: FoldPreviewMode) => void;
   /** The model failed to load in this session; the flat screen shows until 3D is selected again. */
   unavailable?: boolean;
   /** Freeze the departing panel's last frame while the device folds. */
@@ -22,7 +26,7 @@ export type FoldPreviewOption = {
 
 export const MODEL_UNAVAILABLE_DESCRIPTION = "3D preview unavailable. Select 3D to retry.";
 
-const PREVIEW_MODE_OPTIONS: ReadonlyArray<SelectOption<DuoPreviewMode>> = [
+const PREVIEW_MODE_OPTIONS: ReadonlyArray<SelectOption<FoldPreviewMode>> = [
   { value: "3d", label: "3D" },
   { value: "2d", label: "2D" },
 ];
@@ -82,7 +86,8 @@ export function FoldSettings({
         ]
       : FOLD_POSE_OPTIONS;
   const canChangeTableMode = (tableModeAvailable ?? false) || tableMode === true;
-  const viewMode: DuoPreviewMode = hinge.modelActive ? "3d" : "2d";
+  // An unavailable model shows the flat screen until 3D is selected again.
+  const viewMode: FoldPreviewMode = preview?.mode === "3d" && !preview.unavailable ? "3d" : "2d";
   const changeAngle = (value: number) => {
     setAngleDraft(value);
     hinge.setControl({ control: "angle", value });

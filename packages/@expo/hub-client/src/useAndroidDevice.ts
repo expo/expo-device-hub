@@ -2080,6 +2080,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   return {
     platform: "android",
     hinge: null,
+    displays: null,
+    deviceModelUrl: null,
     displayCorners: null,
     // The transport can stay live while the server stages new stream settings.
     // Show the pending change immediately without feeding it back into the

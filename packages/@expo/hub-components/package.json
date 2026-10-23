@@ -27,6 +27,11 @@
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
+    "./foldable": {
+      "types": "./dist/foldable/index.d.ts",
+      "import": "./dist/foldable/index.mjs",
+      "default": "./dist/foldable/index.mjs"
+    },
     "./theme.css": "./dist/theme/theme.css"
   },
   "scripts": {
@@ -46,7 +51,8 @@
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@radix-ui/react-visually-hidden": "^1.2.4",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "three": "^0.186.0"
   },
   "devDependencies": {
     "@expo/hub-client": "workspace:*",
@@ -55,12 +61,14 @@
     "@types/react": "~19.2.2",
     "@types/react-dom": "~19.2.0",
     "@types/react-test-renderer": "19.1.0",
+    "@types/three": "^0.186.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "peerDependencies": {
+    "@expo/hub-client": "*",
     "react": "*",
     "react-dom": "*"
   },

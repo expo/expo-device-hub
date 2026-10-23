@@ -4,9 +4,9 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
-  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import { bg, text, textSize } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
@@ -41,8 +41,11 @@ const MAX_SHORT_SIDE = 480;
 // native screen configuration would animate on top of the hinge motion.
 const DUO_STAGE_WIDTH = 580;
 
-/** Viewer-local 3D options the consumer passes through to `FoldableDeviceScreen`. */
-export type PhoneFrameFoldPreview = Pick<
+/** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
+export type FoldPreviewMode = "2d" | "3d";
+
+/** Viewer-local 3D choices; the options pass through to `FoldableDeviceScreen`. */
+export type PhoneFrameFoldPreview = { mode: FoldPreviewMode } & Pick<
   FoldableDeviceScreenProps,
   "cacheScreenOnFold" | "sizeMode" | "onUnavailable"
 >;
@@ -86,7 +89,10 @@ export function PhoneFrame({
   onCopy?: DeviceScreenProps["onCopy"];
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  /**
+   * iPhone Duo 3D renderer from `@expo/hub-components/foldable`, injected so
+   * that this entry never loads three.js; without it the Duo stays flat.
+   */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
@@ -172,8 +178,17 @@ export function PhoneFrame({
   );
 
   // The folding model draws its own device, so neither frame artwork nor the
-  // screen clip applies; the agent overlay still covers the stage.
-  if (live && client.hinge?.modelActive && FoldableDeviceScreen) {
+  // screen clip applies; the agent overlay still covers the stage. It needs
+  // the client's fold state, separate display streams, and Xcode's model.
+  if (
+    live &&
+    foldPreview?.mode === "3d" &&
+    FoldableDeviceScreen &&
+    client.hinge &&
+    client.displays &&
+    client.deviceModelUrl
+  ) {
+    const { mode: _mode, ...modelOptions } = foldPreview;
     return (
       <div
         data-testid="device-screen-frame"
@@ -189,7 +204,7 @@ export function PhoneFrame({
         onPointerLeave={() => setHovered(false)}
       >
         <div data-testid="device-screen-clip" style={{ position: "absolute", inset: 0 }}>
-          <FoldableDeviceScreen key={device.id} client={client} onCopy={onCopy} {...foldPreview} />
+          <FoldableDeviceScreen key={device.id} client={client} onCopy={onCopy} {...modelOptions} />
           {takeoverOverlay}
         </div>
       </div>

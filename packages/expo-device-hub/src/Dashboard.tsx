@@ -4,7 +4,6 @@ import "@expo/hub-components/theme.css";
 import "../global.css";
 import {
   DeviceScreen,
-  FoldableDeviceScreen,
   displayScreen,
   useActiveDeviceClient,
   type DeviceHttpCodec,
@@ -27,6 +26,7 @@ import {
   type DeviceFrameAssets,
   type FoldPreviewOption,
 } from "@expo/hub-components";
+import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -306,19 +306,16 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
-  // boots) on load. An iPhone Duo streams both panels only while its 3D model
-  // is actually shown.
+  // boots) on load. An iPhone Duo streams both displays only while its 3D
+  // model is shown and attaches them; the flat screen streams otherwise.
   const client = useActiveDeviceClient(
     connectionStatus === "connected" && selected
-      ? {
-          platform: selected.platform,
-          device: selected.id,
-          streamMode,
-          duoPreview: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
-        }
+      ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
     basePath(),
   );
+  // The 3D choices apply only to a device that can feed the model.
+  const modelAvailable = !!client.hinge && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
     mode: duoPreview.mode,
     onModeChange: (mode) => {
@@ -410,6 +407,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           DeviceScreen={DeviceScreen}
           FoldableDeviceScreen={FoldableDeviceScreen}
           foldPreview={{
+            mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
             cacheScreenOnFold: duoPreview.cacheScreenOnFold,
             sizeMode: duoPreview.sizeMode,
             onUnavailable: () => setDuoModelUnavailableFor(selected.id),
@@ -459,7 +457,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
-          foldPreview={foldPreview}
+          foldPreview={modelAvailable ? foldPreview : undefined}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}
@@ -510,7 +508,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
-          foldPreview={foldPreview}
+          foldPreview={modelAvailable ? foldPreview : undefined}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}

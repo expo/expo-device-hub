@@ -1,29 +1,21 @@
 /**
  * The iPhone Duo 3D scene: Xcode's model articulated by the hinge, textured
  * with the live panel streams, and raycast for input. Ported from serve-sim's
- * `src/client/simulator/duo-scene.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/duo-scene.ts` (@expo/serve-sim 0.5.0). Input goes to
+ * hub-client addressed to the hit display, in that display's coordinates, so
+ * the client maps it, owns it, and cancels it as it does for the flat screen.
  */
 
+import {
+  type HingePose,
+  type MultiTouchSample,
+  type ScreenSize,
+  type ScrollSample,
+  type TouchSample,
+} from "@expo/hub-client";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
-import { type HingePose } from "../hinge-control";
-import {
-  HID_EDGE_BOTTOM,
-  HID_EDGE_LEFT,
-  HID_EDGE_RIGHT,
-  HID_EDGE_TOP,
-  HOME_INDICATOR_BAND_NORM,
-  rawEdgeForDisplayEdge,
-  streamGeometry,
-} from "../orientation";
-import {
-  type DuoModelMultiTouch,
-  type DuoModelScroll,
-  type DuoModelTouch,
-  type ScreenSize,
-} from "../types";
-import { type DuoHingeCommands } from "./duo-hinge-commands";
 import {
   duoFitScale,
   duoHingeDragAngle,
@@ -33,25 +25,27 @@ import {
 } from "./duo-layout";
 import { loadDuoModel } from "./duo-model";
 import {
+  duoDisplayDelta,
+  duoDisplayPoint,
   duoFrameMatchesDisplay,
-  duoIntendedScreen,
   duoScreenMapping,
   duoScreenPoint,
   stepDuoSpring,
   type DuoScreenMapping,
 } from "./duo-pose";
 import { duoInitialView, duoViewFolds, duoViewRotation, type DuoView } from "./duo-view";
+import { type DuoHingeCommands } from "./useDuoFraming";
 
 /** What the scene reads from React on every frame; the component supplies the latest values. */
 export interface DuoSceneState {
-  /** Middleware route serving Xcode's `V68.usdz`. */
+  /** hub-client's `deviceModelUrl`: Xcode's `V68.usdz`, served by the backend. */
   modelUrl: string;
   angle?: number;
   pose?: HingePose | null;
-  /** Physical pose for display selection; undefined follows the confirmed pose, null is unknown. */
+  /** Physical pose for the initial view; undefined follows the confirmed pose, null is unknown. */
   physicalPose?: HingePose | null;
-  /** Face down with Table Mode, which elects the cover of a half-open device. */
-  faceDown?: boolean;
+  /** The display the device presents: hub-client's active `displays` entry. */
+  activeScreenId: 1 | 3;
   view?: DuoView;
   streamConfig?: ScreenSize | null;
   hingeCommands?: DuoHingeCommands;
@@ -60,9 +54,9 @@ export interface DuoSceneState {
   cacheScreenOnFold?: boolean;
   sizeMode?: "physical" | "fill";
   onHingeAngleChange?: (angle: number) => void;
-  onTouch?: (data: DuoModelTouch) => void;
-  onMultiTouch?: (data: DuoModelMultiTouch) => void;
-  onScroll?: (data: DuoModelScroll) => void;
+  onTouch?: (sample: TouchSample) => void;
+  onMultiTouch?: (sample: MultiTouchSample) => void;
+  onScroll?: (sample: ScrollSample) => void;
 }
 
 type FrameSource = HTMLVideoElement | HTMLCanvasElement | HTMLImageElement;
@@ -443,13 +437,7 @@ export function createDuoScene(
       clearRetainedImage(inner);
     }
     previousCacheScreenOnFold = cacheScreenOnFold;
-    const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(
-      current.angle,
-      physicalPose,
-      config?.screenId,
-      current.faceDown,
-    );
+    const intended = current.activeScreenId;
     const coverHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="1"]');
     const innerHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="3"]');
     if (coverHost || innerHost) {
@@ -561,13 +549,7 @@ export function createDuoScene(
     const isInner = inner.meshes.includes(hit.object);
     const current = state();
     const config = current.streamConfig;
-    const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(
-      current.angle,
-      physicalPose,
-      config?.screenId,
-      current.faceDown,
-    );
+    const intended = current.activeScreenId;
     if ((!isCover && !isInner) || intended !== (isCover ? 1 : 3)) return null;
     const surface = isCover ? cover : inner;
     const mapping = surface.mapping;
@@ -623,19 +605,23 @@ export function createDuoScene(
   function boundedPoint(point: Point): Point {
     return { x: Math.max(0, Math.min(1, point.x)), y: Math.max(0, Math.min(1, point.y)) };
   }
-  function homeEdge(point: Point): number | undefined {
-    const orientation = streamGeometry(state().streamConfig).inputOrientation;
-    const edge = rawEdgeForDisplayEdge(orientation, HID_EDGE_BOTTOM);
-    const band = HOME_INDICATOR_BAND_NORM;
-    const inside =
-      edge === HID_EDGE_BOTTOM
-        ? point.y >= band
-        : edge === HID_EDGE_TOP
-          ? point.y <= 1 - band
-          : edge === HID_EDGE_LEFT
-            ? point.x <= 1 - band
-            : edge === HID_EDGE_RIGHT && point.x >= band;
-    return inside ? edge : undefined;
+  // Points stay raw while a gesture runs; each sample leaves in display
+  // coordinates of the panel it began on. The client derives the
+  // home-indicator edge from them, as it does for the flat screen.
+  function displayPoint({ x, y }: Point): Point {
+    return duoDisplayPoint(state().streamConfig, x, y);
+  }
+  function touchSample(current: Gesture, phase: TouchSample["phase"], point: Point): TouchSample {
+    return { phase, display: current.screenId, ...displayPoint(point) };
+  }
+  function multiTouchSample(current: Gesture, phase: MultiTouchSample["phase"]): MultiTouchSample {
+    const { x1, y1, x2, y2 } = current.fingers;
+    return {
+      phase,
+      display: current.screenId,
+      a: displayPoint({ x: x1, y: y1 }),
+      b: displayPoint({ x: x2, y: y2 }),
+    };
   }
   type Contact = { id: number; point: Point; hit: ScreenHit; pointerType: string };
   type Fingers = { x1: number; y1: number; x2: number; y2: number };
@@ -647,7 +633,6 @@ export function createDuoScene(
     multi?: DuoSceneState["onMultiTouch"];
     mirrored: boolean;
     panOffset?: Point;
-    edge?: number;
     fingers: Fingers;
   };
   let gesture: Gesture | null = null;
@@ -672,15 +657,11 @@ export function createDuoScene(
     gesture = null;
     // Release through the callback that began this gesture, even after React
     // disables input for a resize or unmounts the model.
-    if (current.multi) current.multi({ type: "end", ...current.fingers });
-    else {
-      current.touch?.({
-        type: "end",
-        x: current.fingers.x1,
-        y: current.fingers.y1,
-        edge: current.edge,
-      });
-    }
+    if (current.multi) current.multi(multiTouchSample(current, "end"));
+    else
+      current.touch?.(
+        touchSample(current, "end", { x: current.fingers.x1, y: current.fingers.y1 }),
+      );
     for (const id of current.contacts.keys()) {
       if (renderer.domElement.hasPointerCapture(id)) renderer.domElement.releasePointerCapture(id);
     }
@@ -719,11 +700,12 @@ export function createDuoScene(
       }
       event.preventDefault();
       renderer.domElement.setPointerCapture(event.pointerId);
-      gesture.touch?.({ type: "end", x: first.point.x, y: first.point.y, edge: gesture.edge });
+      // A single to multi transition releases the finger but is not a completed tap.
+      gesture.touch?.({ ...touchSample(gesture, "end", first.point), cancelled: true });
       gesture.contacts.set(event.pointerId, contact);
       gesture.multi = multi;
       gesture.fingers = fingersFor(gesture);
-      multi({ type: "begin", ...gesture.fingers });
+      multi(multiTouchSample(gesture, "begin"));
       return;
     }
     const mirrored = event.altKey && event.pointerType === "mouse" && !!state().onMultiTouch;
@@ -739,12 +721,11 @@ export function createDuoScene(
       mirrored,
       panOffset:
         mirrored && event.shiftKey ? { x: 1 - 2 * point.x, y: 1 - 2 * point.y } : undefined,
-      edge: homeEdge(point),
       fingers: { x1: point.x, y1: point.y, x2: point.x, y2: point.y },
     };
     gesture.fingers = fingersFor(gesture);
-    if (gesture.multi) gesture.multi({ type: "begin", ...gesture.fingers });
-    else gesture.touch?.({ type: "begin", ...point, edge: gesture.edge });
+    if (gesture.multi) gesture.multi(multiTouchSample(gesture, "begin"));
+    else gesture.touch?.(touchSample(gesture, "begin", point));
   };
   let hoverPoint: Point | undefined;
   function updateCursor(hit = hoverPoint && screenHit(hoverPoint.x, hoverPoint.y)) {
@@ -767,8 +748,8 @@ export function createDuoScene(
     contact.point = boundedPoint(point);
     if (hit) contact.hit = hit;
     gesture.fingers = fingersFor(gesture);
-    if (gesture.multi) gesture.multi({ type: "move", ...gesture.fingers });
-    else gesture.touch?.({ type: "move", ...contact.point, edge: gesture.edge });
+    if (gesture.multi) gesture.multi(multiTouchSample(gesture, "move"));
+    else gesture.touch?.(touchSample(gesture, "move", contact.point));
   };
   const up = (event: PointerEvent) => {
     if (!gesture?.contacts.has(event.pointerId)) return;
@@ -794,7 +775,12 @@ export function createDuoScene(
     if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return;
     event.preventDefault();
     event.stopPropagation();
-    send({ ...hit.point, dx, dy });
+    const config = state().streamConfig;
+    send({
+      display: config?.screenId,
+      ...duoDisplayPoint(config, hit.point.x, hit.point.y),
+      ...duoDisplayDelta(config, dx, dy),
+    });
   };
   function projectedHandle(handle: HingeHandle): (ProjectedPoint & { rotation: number }) | null {
     const panel = handle.side === "left" ? left : right;
