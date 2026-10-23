@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
-import { observedHingeState, type HingePhysicalOrientation, type HingePose } from "./hinge-control";
+import { type HingePhysicalOrientation, type HingePose } from "./hinge-control";
 
 /** Resolve only after the native hinge operation has been acknowledged. */
 export async function sendHingeAngleToWs(
@@ -132,18 +132,10 @@ export async function readHingeStateFromWs(
         ws.send(Buffer.from([0x13]));
         return;
       }
-      const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } =
-        config.observedDeviceState === undefined
-          ? config
-          : observedHingeState(config.observedDeviceState);
-      finish({
-        hingeAngle,
-        hingePose,
-        physicalOrientation,
-        tableMode: config.tableMode,
-        tableModeAvailable,
-        ...(config.observedDeviceState ? { tableModeActive: tableMode } : {}),
-      });
+      // Older helpers publish acknowledged commands in these fields; their
+      // observation stream may still contain the sample from before the command.
+      const { hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable } = config;
+      finish({ hingeAngle, hingePose, physicalOrientation, tableMode, tableModeAvailable });
     });
     ws.on("error", (error) => finish(new Error(`Hinge state connection failed: ${error.message}`)));
     ws.on("close", () => finish(new Error("Connection closed before the hinge state arrived")));

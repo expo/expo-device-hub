@@ -1,3 +1,4 @@
+import { withHostActionDeadline } from "./host-actions-utils";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
 import { US_KEYBOARD_MAP } from "./text-to-keys";
 /**
@@ -304,6 +305,7 @@ export class DeviceSession {
   private inputGeneration = 0;
   private rebootSuspended = false;
   private captureStart?: Promise<void>;
+  private captureReady = false;
   private phase: "unstarted" | "running" | "stopped" = "unstarted";
 
   private width = 0;
@@ -397,8 +399,8 @@ export class DeviceSession {
 
   /** Use the same native panel election as the live stream, including external folds. */
   async activeScreenId(): Promise<number> {
-    await this.start();
-    return this.capture.activeScreenId();
+    await withHostActionDeadline(this.start(), "Screenshot capture startup");
+    return await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
   }
 
   /** Begin capture. Throws if the device isn't booted. Idempotent. */
@@ -407,8 +409,11 @@ export class DeviceSession {
     if (this.phase === "stopped") return Promise.reject(new Error("Capture session is stopped"));
     this.phase = "running";
     this.captureStart = refreshDeviceOptionState(this.udid)
-      .then(() => this.capture.start())
       .then(async () => {
+        if (this.phase === "running") await this.capture.start();
+      })
+      .then(async () => {
+        if (this.phase !== "running") return;
         const unsubscribe = await this.capture.subscribeScreenChanges(async () => {
           if (this.phase !== "running") return;
           try {
@@ -437,10 +442,12 @@ export class DeviceSession {
             console.error(`[capture] Device state observation unavailable: ${error}`);
           });
         if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
+        if (this.phase !== "running") return;
         this.scheduleScreenRefresh();
         // Discover fold controls without delaying the first frame or inventing
         // an initial angle when CoreDevice has not reported one.
         void this.discoverHingeCapabilities().catch(() => {});
+        this.captureReady = true;
       });
     return this.captureStart;
   }
@@ -493,6 +500,12 @@ export class DeviceSession {
   close(): void {
     if (this.phase !== "running") return;
     this.phase = "stopped";
+    // Keep the promises even if their completion clears the mutable fields
+    // while observer teardown is pending; finalization failures still belong to this close.
+    const recordingStart = this.recordingStart;
+    const recordingFinishing = this.recordingFinishing;
+    const stopPendingStartup =
+      !this.captureReady && !recordingStart && !recordingFinishing && !this.recordingLease;
     this.clearSoftwareKeyboardRequests();
     if (this.recordingLease) clearTimeout(this.recordingLease.timer);
     this.recordingLease = undefined;
@@ -511,23 +524,31 @@ export class DeviceSession {
     }
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
+    // A screenshot may time out while native startup is suspended. Stop it now;
+    // waiting for captureStart would keep that temporary capture alive indefinitely.
+    const stoppingStartup = stopPendingStartup
+      ? Promise.resolve().then(() => this.capture.stop())
+      : undefined;
+    // Observe a stop failure immediately while observer cleanup is still pending;
+    // the tracked finalization below reports it after that cleanup.
+    void stoppingStartup?.catch(() => {});
     trackClosedSessionStop(
       (async () => {
-        await this.captureStart?.catch(() => {});
+        if (!stoppingStartup) await this.captureStart?.catch(() => {});
         await Promise.all([screenChangesDetached, deviceStateDetached]);
         let recordingError: unknown = this.recordingFailure;
         try {
-          await this.recordingStart;
+          await recordingStart;
         } catch (error) {
           if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
         }
         try {
-          await this.recordingFinishing;
+          await recordingFinishing;
         } catch (error) {
           recordingError ??= error;
         }
         try {
-          await this.capture.stop();
+          await (stoppingStartup ?? this.capture.stop());
         } catch (error) {
           recordingError ??= error;
         }
@@ -1786,14 +1807,11 @@ export class DeviceSession {
           const state =
             eligibility === undefined
               ? {
-                  hingeAngle: this.hingeAngle,
-                  physicalOrientation: this.hingePhysicalOrientation,
-                  tableMode: undefined,
+                  ...observedHingeState({
+                    hingeAngle: this.hingeAngle,
+                    physicalOrientation: this.hingePhysicalOrientation,
+                  }),
                   hingePose: this.hingePose,
-                  tableModeAvailable: isTableModeAvailable(
-                    this.hingeAngle,
-                    this.hingePhysicalOrientation,
-                  ),
                 }
               : observedHingeState(eligibility);
           if (!this.canRunInputControl(generation)) throw new Error("Hinge state is unavailable");
@@ -2963,7 +2981,7 @@ function trackClosedSessionStop(stopping: Promise<void>): void {
 
 /** Existing session only. Reading stats must never be the thing that starts capture. */
 export function peekDeviceSession(udid: string): DeviceSession | undefined {
-  return sessions.get(udid);
+  return sessions.get(udid.toUpperCase());
 }
 
 /**
@@ -2975,6 +2993,7 @@ export function getDeviceSession(
   initialStreamSettings?: StreamSettings,
   retainExisting = true,
 ): DeviceSession {
+  udid = udid.toUpperCase();
   let session = sessions.get(udid);
   if (session) {
     if (retainExisting) retainDeviceSession(session);
@@ -3033,20 +3052,21 @@ export async function withScreenshotDeviceSession<T>(
   const session = existing ?? getDeviceSession(udid, settings);
   if (!existing) screenshotOwners.set(session, { count: 0, retained: false });
   return await withDeviceSessionTask(session, async () => {
-    await session.start();
+    await withHostActionDeadline(session.start(), "Screenshot capture startup");
     return await capture(session);
   });
 }
 
 export async function suspendDeviceSessionForReboot(udid: string): Promise<void> {
-  await sessions.get(udid)?.suspendForReboot();
+  await peekDeviceSession(udid)?.suspendForReboot();
 }
 
 export async function resumeDeviceSessionAfterReboot(udid: string): Promise<void> {
-  await sessions.get(udid)?.resumeAfterReboot();
+  await peekDeviceSession(udid)?.resumeAfterReboot();
 }
 
 export function closeDeviceSession(udid: string): void {
+  udid = udid.toUpperCase();
   const session = sessions.get(udid);
   if (session) {
     session.close();

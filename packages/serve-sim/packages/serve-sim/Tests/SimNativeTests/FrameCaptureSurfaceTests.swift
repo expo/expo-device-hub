@@ -2,6 +2,7 @@ import CoreMedia
 import CoreVideo
 import IOSurface
 import XCTest
+import StreamingPolicy
 
 @testable import SimNative
 
@@ -99,6 +100,45 @@ final class FrameCaptureSurfaceTests: XCTestCase {
             log.append(pixelBuffer, canvas: canvas)
         }
         return (capture, log)
+    }
+
+    func testActiveReadCannotOutliveCaptureGeneration() async throws {
+        let gate = DisplayReadGate()
+        let capture = FrameCapture(readDisplayInfo: { _ in await gate.read() })
+        let outer = FakeFramebufferDescriptor(nil), inner = FakeFramebufferDescriptor(nil)
+        await capture.installDescriptorsForTesting([
+            (outer, panel),
+            (inner, SimDisplayMetadata(screenID: 3, orientation: nil, chromeIdentifier: nil, screenType: 0)),
+        ], deviceUDID: "test-duo", profile: SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 1],
+            ["displayType": "integrated", "screenID": 3],
+        ])) { _, _, _ in }
+        let read = Task { try await capture.activeScreenID() }
+        await gate.waitForRead()
+        await capture.stop()
+        await gate.release()
+        do {
+            _ = try await read.value
+            XCTFail("A stopped capture returned a stale active display")
+        } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testFoldableProfileCannotFallBackToOneCachedDescriptor() async throws {
+        let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+        let capture = FrameCapture(readDisplayInfo: { _ in
+            [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)]
+        })
+        await capture.installDescriptorsForTesting([(descriptor, panel)], deviceUDID: "test-duo",
+            profile: SimulatorDisplayProfile(displays: [
+                ["displayType": "integrated", "screenID": 1],
+                ["displayType": "integrated", "screenID": 3],
+            ])) { _, _, _ in }
+        await capture.captureFrameForTesting(force: true)
+        do {
+            _ = try await capture.activeScreenID()
+            XCTFail("An incomplete foldable capture returned its cached outer panel")
+        } catch { XCTAssertEqual((error as NSError).domain, "FrameCapture") }
+        await capture.stop()
     }
 
     private func waitForRepick() async throws {
@@ -488,5 +528,20 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         guard frames.count == 2 else { return }
         XCTAssertGreaterThan(frames[1].luma, 220)
         await capture.stop()
+    }
+}
+
+
+private actor DisplayReadGate {
+    private var continuation: CheckedContinuation<[CoreDeviceDisplayState]?, Never>?
+    func read() async -> [CoreDeviceDisplayState]? {
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func waitForRead() async {
+        while continuation == nil { await Task.yield() }
+    }
+    func release() {
+        continuation?.resume(returning: [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)])
+        continuation = nil
     }
 }

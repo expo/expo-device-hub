@@ -45,7 +45,7 @@ CLI and existing clients; the additional `observedDeviceState` object is a full
 native snapshot for preview. Once present, omitted fields are unknown and never
 fall back to saved commands. Table Mode eligibility uses physical orientation,
 independently of an app's screen rotation. Before enabling Table Mode or turning
-face-down, a native getter reconciles angle and physical orientation with their latest
+face-down, a native getter reconciles angle, physical orientation and table state with their latest
 successful control sends. A command's value remains eligible until that field has a newer source
 sample, including an unknown sample; unrelated fields and delayed delivery do not
 revoke it. Observation loss and capture reset clear these temporary values. The
@@ -196,6 +196,8 @@ and the saved record, so its save keeps the saved orientation. This includes a
 pose command that fails.
 
 ## Confirmed hinge state
+
+Acknowledged control updates share one recorder for legacy command fields and timestamped readback overlays. Raw native snapshots remain separate. Legacy helpers without the readback protocol retain config command fields. Readback omits Table Mode availability until angle and orientation are known; unknown does not mean unavailable.
 
 Recording and live preview observe native pose separately from the successful-command cache and
 saved startup state. It opens the hinge stream with requested 100 ms updates and

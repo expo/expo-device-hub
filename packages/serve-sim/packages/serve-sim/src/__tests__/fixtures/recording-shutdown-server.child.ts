@@ -76,7 +76,12 @@ const launchManager = await import("../../launch-manager");
 let armed = false;
 mock.module("../../launch-manager", () => ({
   ...launchManager,
-  applyDefaultCapabilities: async () => {},
+  applyDefaultCapabilities: async (
+    ...args: Parameters<typeof launchManager.applyDefaultCapabilities>
+  ) => {
+    if (args[3]?.armSession) armed = true;
+    return [];
+  },
   disarmStaleCapabilityLoader: async () => {},
   armCapabilityLoader: async () => {
     armed = true;

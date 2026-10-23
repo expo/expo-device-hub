@@ -622,19 +622,6 @@ function profilePathForName(profileName: string): string {
   );
 }
 
-/** Use the static profile, without requiring native capture or chrome assets. */
-export function hasSingleIntegratedDisplay(identifier: string | undefined): boolean {
-  const name = deviceTypeNameForIdentifier(identifier);
-  if (!name) return false;
-  const profile = readPlist(join(dirname(profilePathForName(name)), "capabilities.plist"));
-  const displays = record(profile?.capabilities).displays;
-  return (
-    Array.isArray(displays) &&
-    displays.every((display) => typeof record(display).displayType === "string") &&
-    displays.filter((display) => record(display).displayType === "integrated").length === 1
-  );
-}
-
 function iconNameForProfile(profile: DeviceProfileMetadata | null): string | null {
   if (!profile) return null;
   const candidates = new Set<string>();

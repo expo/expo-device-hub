@@ -29,6 +29,33 @@ function actionTimeoutMs(): number {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ACTION_TIMEOUT_MS;
 }
 
+/** A safe client message for a native operation that cannot be reaped as a child process. */
+export class HostActionTimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(
+      `${operation} did not finish within ${timeoutMs / 1000}s. The simulator or host may be busy; try again.`,
+    );
+  }
+}
+
+export async function withHostActionDeadline<T>(work: Promise<T>, operation: string): Promise<T> {
+  const timeoutMs = actionTimeoutMs();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new HostActionTimeoutError(operation, timeoutMs)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createSerialQueue(): <T>(work: () => Promise<T>) => Promise<T> {
   let tail: Promise<unknown> = Promise.resolve();
   return (work) => {

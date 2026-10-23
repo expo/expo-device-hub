@@ -558,18 +558,46 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 called.
 
 `screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
-when `fileName` is missing. `display` is a positive simctl screen ID, so a client
+when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
+before capture unless the profile declares exactly one screen, as on tvOS; an
+unknown profile leaves explicit selection available. A client
 can capture a particular panel even when it is inactive. Without it, the action
 borrows an existing device session or creates a temporary capture with the
 middleware's trusted settings, then selects the native active display. Temporary
 capture is closed after success or failure; existing streams remain open. If that display cannot be determined,
-the action fails instead of silently capturing a different panel. An inactive
+the action uses the sole declared screen, or the sole integrated panel when
+other output ports are present, only when the installed device-type capability
+profile proves that selection is unambiguous. Multi-panel and unknown profiles
+fail with a retry message. Legacy iOS profiles that declare only
+`ScreenDimensionsCapability` require a recognized phone/pad idiom and a fresh
+`simctl io enumerate` result: every framebuffer port must have a known class,
+exactly one must be integrated, and its default dimensions must match the
+profile's main screen (allowing rotation). Its display adapter must also list
+exactly one integrated connected screen with matching dimensions and a valid
+numeric ID. Both fallback capture and explicit-ID validation use that ID. A present but malformed `displays` array cannot use
+this legacy path. Public `display` parameters remain numeric. [observed:
+`getScreenshotDisplayIdsAsync`]
+
+Native error details stay in the host logs, rather
+than reaching the client. An inactive
 panel's screenshot may be black.
 
 Captures write to a separate temporary file and publish it to the staged name
-only after active-display validation succeeds. Failed captures remove their
+only after active-display validation succeeds. Publication and empty-reservation
+cleanup share the reservation queue so a failed capture cannot delete a
+concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
+
+Native screenshot startup and active-display reads use the configured host-action
+deadline. A timed-out one-shot releases its temporary session and stops native
+startup without waiting for the hung start promise; late continuations cannot
+restart it. Retained viewer sessions stay open. Teardown keeps pending recording promises
+until their results are observed, preserving finalization errors. UDID case aliases share the same
+registry entry. Screenshot profile lookup resolves the selected bundle from
+simctl and reads its capability plist asynchronously, without scanning installed
+bundles on the event loop. [observed: `withScreenshotDeviceSession`,
+`DeviceSession.start`, `DeviceSession.close`, `getScreenshotDisplayIdsAsync`]
 
 The HTTP `/api/screenshot` download follows the same native active-display
 selection and three-attempt handoff bound as `screenshot.capture`. Its optional
@@ -577,10 +605,10 @@ selection and three-attempt handoff bound as `screenshot.capture`. Its optional
 keeps the existing PNG response, artifact headers, and temporary-file cleanup,
 without the host action's Desktop copy. Default HTTP captures share the same
 one-shot session ownership. If native startup or display readback fails, an
-installed device profile with exactly one integrated display permits a plain
-`simctl screenshot` fallback. Unknown profiles and multi-display devices still
+installed device profile confirming exactly one display permits a
+`simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
-`hasSingleIntegratedDisplay`]
+`getScreenshotDisplayIdsAsync`]
 
 Capture errors return a generic message, except for the safe retry guidance
 when the active display keeps changing. Private native-startup and simctl

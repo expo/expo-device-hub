@@ -19,6 +19,7 @@ import { UDID, installShims, withActionTimeoutAsync, withShimsAsync } from "./he
 // positional would still exit 0 against a real tool. These shims report the argv they were handed,
 // so the vector itself is asserted rather than the fact that something ran.
 const SHIM = `#!/bin/sh
+if [ "$1" = simctl ] && [ "$2" = list ]; then printf '{ "devices": {} }'; exit 0; fi
 {
   printf '%s\\n' "$(basename "$0")"
   for a in "$@"; do printf '%s\\n' "$a"; done
@@ -368,8 +369,7 @@ describe("procedures that shell out", () => {
     const staged = join(dirname(STAGED), fileName);
     const lock = `${staged}.lock`;
     const shim =
-      '#!/bin/sh\nsleep 0.2\nif mkdir "$SERVE_SIM_CAPTURE_TEST_LOCK" 2>/dev/null; then printf PNG > "$6"; exit 0; fi\n' +
-      "sleep 0.5\nexit 1\n";
+      '#!/bin/sh\nif [ "$1" = simctl ] && [ "$2" = list ]; then printf \'{ "devices": {} }\'; exit 0; fi\nsleep 0.2\nif mkdir "$SERVE_SIM_CAPTURE_TEST_LOCK" 2>/dev/null; then printf PNG > "$6"; exit 0; fi\nsleep 0.5\nexit 1\n';
     process.env.SERVE_SIM_CAPTURE_TEST_LOCK = lock;
     try {
       await withShimsAsync({ xcrun: shim }, async () => {

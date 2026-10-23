@@ -6,6 +6,7 @@ import {
   hingeControlState,
   isTableModeAvailable,
   observedHingePose,
+  observedHingeState,
 } from "../hinge-control";
 
 describe("Device Hub hinge controls", () => {
@@ -180,4 +181,9 @@ test("fractional native observations release a preset preview without a named-po
   expect(
     isHingePreviewObserved(laptop, { hingeAngle: 90.8, physicalOrientation: "landscape-left" }),
   ).toBe(false);
+});
+
+test("unknown native state does not report Table Mode as unavailable", () => {
+  expect(observedHingeState({}).tableModeAvailable).toBeUndefined();
+  expect(observedHingeState({ hingeAngle: 90 }).tableModeAvailable).toBeUndefined();
 });

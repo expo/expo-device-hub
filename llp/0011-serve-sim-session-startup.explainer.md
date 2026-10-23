@@ -126,6 +126,17 @@ foreground streaming [observed: `src/index.ts` CLI action]:
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
 
+Plain foreground preview startup without capture, app startup, or capability
+overrides, with the loader and clipboard reader built, prepares defaults while arming
+the session and publishes both in one transaction. A missing reader keeps the old
+order so an on-demand build cannot delay initial arming. Combined initialization
+retains idle-session ownership even when no default prepares.
+A failed publication with successful rollback falls back to separate arming and
+default initialization. A stop signal prevents fallback, and lock timeouts and
+uncertain rollback stop startup. The late live insert
+read and ordered environment writes are unchanged [observed: `src/index.ts`
+`combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
+
 The private preview `serve` function receives the resolved targets from this
 foreground caller, after its successful boot wait and stale-loader cleanup. It
 does not repeat those operations. Helper, no-preview, and detached processes

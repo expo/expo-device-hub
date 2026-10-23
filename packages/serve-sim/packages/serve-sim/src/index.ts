@@ -46,10 +46,17 @@ import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
-import { assertKnownCapabilities, missingCapabilities, registerCapability } from "./capabilities";
+import {
+  assertKnownCapabilities,
+  capabilitiesToApply,
+  missingCapabilities,
+  registerCapability,
+} from "./capabilities";
 import {
   applyDefaultCapabilities,
   armCapabilityLoader,
+  CapabilityRollbackError,
+  capabilityLoaderPath,
   devicesArmedHere,
   disarmStaleCapabilityLoader,
   releaseSessionSync,
@@ -57,6 +64,7 @@ import {
   stopLaunchSession,
   waitForLaunchUpdates,
 } from "./launch-manager";
+import { LaunchStateLockTimeoutError } from "./launch-state-lock";
 import { parseCaptureFields } from "./capture/fields";
 import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
@@ -1873,6 +1881,18 @@ function resolveTargetDevices(devices: string[]): string[] {
 // preview's second call does not repeat a failed start (see createCaptureStarter).
 let captureStarter: ReturnType<(typeof import("./capture"))["createCaptureStarter"]> | undefined;
 
+/**
+ * Whether startup can publish the default capabilities and arm the loader in one step: no
+ * overrides, and the loader and every default capability dylib already built. Building a dylib on
+ * demand must not delay arming.
+ */
+// @ref LLP 0011#startup-order — plain previews publish defaults and idle-session ownership together.
+function canPublishDefaultsWithLoader(overrides: { enable: string[]; disable: string[] }): boolean {
+  if (overrides.enable.length > 0 || overrides.disable.length > 0) return false;
+  if (!existsSync(capabilityLoaderPath())) return false;
+  return capabilitiesToApply(overrides).every((definition) => definition.prebuiltDylib?.() != null);
+}
+
 /** Why capture is refused on this host, or null: a public preview without the token gate. */
 function publicCaptureRefusal(host: string, requireToken: boolean): string | null {
   return !isLoopbackHost(host) && !requireToken
@@ -2613,6 +2633,15 @@ Examples:
       }
     }
     let targets = devices;
+    const defaultsInitialized = new Set<string>();
+    // A preview with no app startup or capture; those keep arming and defaults separate.
+    const plainPreview =
+      !isStreamHelper &&
+      opts.preview !== false &&
+      !opts.networkCapture &&
+      !installAppPath &&
+      !bundleId;
+    const combineInitialDefaults = plainPreview && canPublishDefaultsWithLoader(capabilities);
     let captureStopping: Promise<void> | null = null;
     const stopNetworkCapture = (): Promise<void> => {
       captureStopping ??= (async () => {
@@ -2659,7 +2688,26 @@ Examples:
         }
         if (!isStreamHelper) {
           for (const udid of targets) {
-            await armCapabilityLoader(udid);
+            if (combineInitialDefaults) {
+              try {
+                await applyDefaultCapabilities(udid, null, capabilities, { armSession: true });
+                defaultsInitialized.add(udid);
+              } catch (error) {
+                if (sessionStopping) return;
+                if (
+                  error instanceof CapabilityRollbackError ||
+                  error instanceof LaunchStateLockTimeoutError
+                )
+                  throw error;
+                console.error(
+                  `Could not initialize default capabilities with the loader on ${udid}; ` +
+                    `retrying separately: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                await armCapabilityLoader(udid);
+              }
+            } else {
+              await armCapabilityLoader(udid);
+            }
             if (sessionStopping) return;
           }
         }
@@ -2687,7 +2735,7 @@ Examples:
           }
           if (bundleId) {
             await launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities });
-          } else {
+          } else if (!defaultsInitialized.has(udid)) {
             const applied = await applyDefaultCapabilities(udid, null, capabilities);
             const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {

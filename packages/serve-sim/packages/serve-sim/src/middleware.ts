@@ -1,3 +1,4 @@
+import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
 import {
   captureScreenshotFileAsync,
   ScreenshotDisplay,
@@ -84,7 +85,6 @@ import {
 } from "./state";
 import { debugMw } from "./debug";
 import {
-  hasSingleIntegratedDisplay,
   resolveDevicePlaceholderAsset,
   resolveDeviceKitChrome,
   serveDeviceKitChromeAsset,
@@ -2825,12 +2825,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
               }).catch(async (error) => {
                 // A sole integrated display needs no native panel election. Never
                 // fall back on an unknown profile or a multi-display device.
-                if (
-                  !(await getBootedUdids())?.has(udid) ||
-                  !hasSingleIntegratedDisplay(bootedSnapshot.deviceTypes.get(udid))
-                )
-                  throw error;
-                return await captureScreenshotFileAsync({ udid, file, timeoutMs: 5_000 });
+                if (!(await getBootedUdids())?.has(udid)) throw error;
+                const ids = await getScreenshotDisplayIdsAsync(udid);
+                if (ids?.length !== 1) throw error;
+                return await capture(ids[0]!);
               });
         if (result.exitCode !== 0) throw new Error(result.stderr || "simctl screenshot failed");
         const png = await readFile(file);

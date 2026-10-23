@@ -40,6 +40,7 @@ export const clipboardCapability: CapabilityDefinition = {
   defaultEnabled: true,
   scope: "allApps",
   loadDelayMs: 0,
+  prebuiltDylib: locatePasteboardReaderDylib,
   async setEnabled({ enabled }) {
     if (!enabled) return null;
     return {

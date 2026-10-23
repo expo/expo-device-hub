@@ -619,11 +619,18 @@ async function publishPreparations(
   bundleId: string | null,
   preparations: CapabilityPreparation[],
   ownerPid: number | null = process.pid,
+  armSession = false,
 ): Promise<void> {
   const previous = readLaunchState(udid);
   try {
     const capabilities = preparations.map(({ capability }) => capability);
-    await enableCapabilitiesUnlocked(udid, bundleId, capabilities, { relaunch: false, ownerPid });
+    await enableCapabilitiesUnlocked(
+      udid,
+      bundleId,
+      capabilities,
+      { relaunch: false, ownerPid },
+      armSession,
+    );
   } catch (error) {
     const observerErrors = notifyPreparationFailure(preparations, error);
     if (error instanceof CapabilityRollbackError) {
@@ -663,6 +670,7 @@ export async function applyDefaultCapabilities(
   udid: string,
   bundleId: string | null,
   overrides: CapabilityOverrides = {},
+  { armSession = false }: { armSession?: boolean } = {},
 ): Promise<string[]> {
   return withLaunchStateLock(udid, async () => {
     const preparations: CapabilityPreparation[] = [];
@@ -682,7 +690,7 @@ export async function applyDefaultCapabilities(
         );
       }
     }
-    await publishPreparations(udid, bundleId, preparations);
+    await publishPreparations(udid, bundleId, preparations, process.pid, armSession);
     const applied = preparations.map(({ capability }) => capability.name);
     for (const name of overrides.enable ?? []) {
       if (!applied.includes(name))
@@ -727,8 +735,9 @@ async function enableCapabilitiesUnlocked(
   bundleId: string | null,
   capabilities: Capability[],
   { relaunch = true, ownerPid = process.pid }: EnableOptions = {},
+  armSession = false,
 ): Promise<void> {
-  if (capabilities.length === 0) return;
+  if (capabilities.length === 0 && !armSession) return;
   const dylib = capabilityLoaderPath();
   if (!existsSync(dylib)) {
     throw new Error(
@@ -744,7 +753,11 @@ async function enableCapabilitiesUnlocked(
   const state: LaunchState = {
     ...(previous ?? { launchArgs: [], capabilities: {} }),
     capabilities: { ...previous?.capabilities, ...added },
+    ...(armSession
+      ? { sessionPids: [...new Set([...(previous?.sessionPids ?? []), process.pid])] }
+      : {}),
   };
+  if (armSession) armedHere.add(udid);
   await publishLaunchState(udid, state);
   if (relaunch) await relaunchTarget(udid, bundleId, state);
 }

@@ -101,11 +101,24 @@ actor CoreDeviceBridge {
         return hingeControlEligibility[udid, default: HingeControlEligibility()].state(observed: observed)
     }
 
-    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil,
+    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil, tableMode: Bool? = nil,
                             sentAt: Double, generation: UInt64) {
         guard hingeResetGenerations[udid, default: 0] == generation else { return }
-        if let angle { hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt) }
-        if let orientation { hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt) }
+        // @ref LLP 0004#confirmed-hinge-state — successful controls share one recorder
+        // One successful-send path updates legacy command readback and the
+        // timestamped overlay. Raw observations remain owned by their stream.
+        if let angle {
+            hingeStates[udid, default: HingeState()].angle = angle
+            hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt)
+        }
+        if let orientation {
+            hingeStates[udid, default: HingeState()].orientation = orientation
+            hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt)
+        }
+        if let tableMode {
+            hingeStates[udid, default: HingeState()].tableMode = tableMode
+            hingeControlEligibility[udid, default: HingeControlEligibility()].tableMode = (tableMode, sentAt)
+        }
     }
 
     func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
@@ -284,7 +297,6 @@ actor CoreDeviceBridge {
             self.recordHingeControl(udid: udid, angle: angle, sentAt: sentAt, generation: generation)
         }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].angle = angle }
         return sent
     }
 
@@ -328,7 +340,7 @@ actor CoreDeviceBridge {
         // still fail, and a real send failure must not be reported as success.
         guard SSCoreDeviceTableModeAvailable() else {
             fputs("[hid] CoreDevice Table Mode unavailable in this Xcode\n", stderr)
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: hingeResetGenerations[udid, default: 0]) }
             return !enabled
         }
         let generation = hingeResetGenerations[udid, default: 0]
@@ -339,14 +351,15 @@ actor CoreDeviceBridge {
                 witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
             )
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
+            let sentAt = hingeClock()
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
-            if sent { hingeStates[udid, default: HingeState()].tableMode = enabled }
+            if sent { recordHingeControl(udid: udid, tableMode: enabled, sentAt: sentAt, generation: generation) }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: generation) }
             return !enabled
         } catch {
             fputs("[hid] CoreDevice Table Mode failed: \(error)\n", stderr)
@@ -363,7 +376,6 @@ actor CoreDeviceBridge {
             self.recordHingeControl(udid: udid, orientation: value, sentAt: sentAt, generation: generation)
         }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].orientation = value }
         return sent
     }
 

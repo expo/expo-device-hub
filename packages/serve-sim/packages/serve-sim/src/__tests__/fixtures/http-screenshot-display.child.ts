@@ -1,10 +1,9 @@
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { UDID, installShims, useTempStateDir } from "../helpers";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
-import * as chrome from "../../devicekit-chrome";
 import type { StreamEncoderSettings } from "../../stream-settings";
 
 let active: number | Error = 1;
@@ -51,10 +50,6 @@ mock.module("../../native", () => ({
   },
 }));
 mock.module("../../ui-settings", () => ({ ...ui, refreshDeviceOptionState: async () => {} }));
-mock.module("../../devicekit-chrome", () => ({
-  ...chrome,
-  hasSingleIntegratedDisplay: (identifier: string) => identifier === "fixture.single",
-}));
 const single = "11111111-1111-1111-1111-111111111111";
 const unknown = "22222222-2222-2222-2222-222222222222";
 const temp = useTempStateDir();
@@ -65,9 +60,28 @@ const shims = installShims({
   xcrun:
     '#!/bin/sh\nif [ "$2" = list ]; then printf \'%s\' "$SERVE_SIM_HTTP_DEVICES"; exit 0; fi\nfor last; do :; done\nprintf \'%s\\n\' "$*" >> "$SERVE_SIM_HTTP_SHOTS"\nprintf \'\\211PNG\\r\\n\\032\\n%s\' "$*" > "$last"\n',
   cp: "#!/bin/sh\nexit 0\n",
+  plutil: '#!/bin/sh\nexec cat "$5"\n',
+});
+const devicetypes = [
+  ["fixture.single", [7]],
+  ["fixture.duo", [1, 3]],
+].map(([identifier, ids]) => {
+  const bundlePath = join(shims.dir, String(identifier) + ".simdevicetype");
+  const resources = join(bundlePath, "Contents", "Resources");
+  mkdirSync(resources, { recursive: true });
+  writeFileSync(
+    join(resources, "capabilities.plist"),
+    JSON.stringify({
+      capabilities: {
+        displays: (ids as number[]).map((screenID) => ({ displayType: "integrated", screenID })),
+      },
+    }),
+  );
+  return { identifier, bundlePath };
 });
 process.env.SERVE_SIM_HTTP_SHOTS = join(shims.dir, "shots");
 process.env.SERVE_SIM_HTTP_DEVICES = JSON.stringify({
+  devicetypes,
   devices: {
     runtime: [
       { udid: UDID, state: "Booted", name: "Renamed iPhone", deviceTypeIdentifier: "fixture.duo" },
@@ -113,7 +127,7 @@ afterAll(() => {
 });
 
 test.each(["startup", "readback"])(
-  "a single-display device falls back to plain simctl after native %s fails",
+  "a single-display device falls back to its sole profile display after native %s fails",
   async (failure) => {
     if (failure === "startup") startupError = new Error("Native addon missing");
     else active = new Error("Native display readback unavailable");
@@ -121,7 +135,7 @@ test.each(["startup", "readback"])(
     expect(res.status).toBe(200);
     const png = await res.text();
     expect(png).toContain(`simctl io ${single} screenshot`);
-    expect(png).not.toContain("--display=");
+    expect(png).toContain("--display=7");
     expect((await shot()).status).toBe(500);
     expect((await shot("", unknown)).status).toBe(500);
   },
@@ -177,7 +191,11 @@ test("HTTP and host action surface real session startup failure before simctl", 
     "true",
     settings,
   );
-  expect(result).toMatchObject({ exitCode: 1, stderr: "Native capture startup failed" });
+  expect(result).toMatchObject({
+    exitCode: 1,
+    stderr:
+      "Could not start screenshot capture. Check that the simulator is booted and check the host logs.",
+  });
   expect(readFileSync(process.env.SERVE_SIM_HTTP_SHOTS!, "utf8")).toBe(before);
 });
 test("HTTP fails explicitly when the native active display is unknown", async () => {

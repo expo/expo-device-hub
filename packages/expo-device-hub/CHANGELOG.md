@@ -1,5 +1,15 @@
 # expo-device-hub
 
+## 0.18.0
+
+### Minor Changes
+
+- c2ae06b: Paste and copy text between the browser and an iOS Simulator using the dashboard Clipboard menu or Command+V/Command+C. Show centered clipboard feedback, offer manual clipboard fields when browser access is blocked, and release the clipboard reader when the CLI stops.
+
+### Patch Changes
+
+- 563b357: Refresh the shared Hardware Keyboard setting when another viewer changes it. Hub connections still start with Hardware Keyboard off so browser-layout typing works.
+
 ## 0.17.3
 
 ### Patch Changes

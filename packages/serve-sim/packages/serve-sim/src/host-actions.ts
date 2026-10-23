@@ -7,6 +7,7 @@ import { CAPTURE_FIELDS } from "./capture/fields";
 
 import {
   type HostActionResult,
+  HostActionTimeoutError,
   type Invocation,
   installAppInvocation,
   ok,
@@ -914,24 +915,60 @@ async function runProcedureAsync(
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
+      let failure = "Could not resolve that simulator. Specify a booted simulator UDID.";
       try {
+        const { resolveBootedDeviceAsync } = await import("./device");
+        const { getScreenshotDisplayIdsAsync } = await import("./screenshot-display");
+        p.udid = await resolveBootedDeviceAsync(p.udid);
         const capture = (display: number, read?: () => Promise<number>) =>
           captureScreenshotAsync(
             { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
             read,
           );
-        if (p.display !== undefined) return await capture(p.display);
+        failure = "Could not capture the screenshot. Check the host logs for details.";
+        if (p.display !== undefined) {
+          const ids = await getScreenshotDisplayIdsAsync(p.udid);
+          if (ids && !ids.includes(p.display))
+            return {
+              stdout: "",
+              exitCode: 1,
+              stderr: `Display ${p.display} is not a device screen on this simulator. Choose ${ids.join(" or ")}.`,
+            };
+          return await capture(p.display);
+        }
         const { withScreenshotDeviceSession } = await import("./device-session");
-        const { resolveBootedDeviceAsync } = await import("./device");
-        p.udid = await resolveBootedDeviceAsync(p.udid);
-        return await withScreenshotDeviceSession(p.udid, streamSettings, async (session) => {
-          const read = () => session.activeScreenId();
-          return await capture(await read(), read);
-        });
+        failure =
+          "Could not start screenshot capture. Check that the simulator is booted and check the host logs.";
+        let selected = false;
+        try {
+          return await withScreenshotDeviceSession(p.udid, streamSettings, async (session) => {
+            const read = async () => {
+              failure =
+                "Could not determine the active display. Check that the simulator is booted, then retry or specify a display ID.";
+              const display = await session.activeScreenId();
+              failure = "Could not capture the screenshot. Check the host logs for details.";
+              return display;
+            };
+            const display = await read();
+            selected = true;
+            return await capture(display, read);
+          });
+        } catch (error) {
+          // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
+          const ids = !selected ? await getScreenshotDisplayIdsAsync(p.udid) : null;
+          if (ids?.length !== 1) throw error;
+          console.error(
+            "Native screenshot selection unavailable; using the sole device screen:",
+            error,
+          );
+          failure = "Could not capture the screenshot. Check the host logs for details.";
+          return await capture(ids[0]!);
+        }
       } catch (error) {
+        console.error("Screenshot capture failed:", error);
         return {
           stdout: "",
-          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          stderr: error instanceof HostActionTimeoutError ? error.message : failure,
           exitCode: 1,
         };
       }

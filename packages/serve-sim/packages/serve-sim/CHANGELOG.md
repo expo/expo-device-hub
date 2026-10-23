@@ -1,5 +1,14 @@
 # @expo/serve-sim
 
+## 0.10.3
+
+### Patch Changes
+
+- 144cd70: Avoid repeated capability-loader setup when starting a Simulator preview with the default capabilities.
+- 098b3a2: Wait up to 3 s for an app's clipboard on headless workers, so reads work right after an app starts on iOS 27.
+- 1c1c630: Detect the foreground app when iOS shows it before its process starts, as on a cold launch on iOS 27.
+- 1c1c630: `serve-sim ui` reports an error instead of waiting forever when the simulator does not answer.
+
 ## 0.10.2
 
 ### Patch Changes
