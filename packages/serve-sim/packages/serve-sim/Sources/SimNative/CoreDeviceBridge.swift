@@ -172,6 +172,7 @@ actor CoreDeviceBridge {
 
     private func runDeviceStateObservation(udid: String, token: DeviceStateToken) async {
         defer { if deviceStateObservations[udid]?.token == token { deviceStateObservations[udid]?.token = nil } }
+        var didLogMissingDeviceHint = false
         while !Task.isCancelled, deviceStateObservations[udid]?.token == token {
             let startedAt = hingeClock()
             let connection = UUID()
@@ -194,6 +195,10 @@ actor CoreDeviceBridge {
                     capabilities.removeValue(forKey: "\(udid):\(symbol)")
                 }
                 fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)
+                if case BridgeError.deviceUnavailable = error, !didLogMissingDeviceHint {
+                    didLogMissingDeviceHint = true
+                    fputs("[hid] CoreDevice does not list simulator \(udid). Check `xcrun devicectl list devices`. If it is booted and this started after an Xcode update, the per-user CoreDeviceService may be stale; `pkill -x CoreDeviceService` restarts it on the next CoreDevice request and may interrupt other device sessions.\n", stderr)
+                }
                 do { try await Task.sleep(for: reconnectDelay) }
                 catch { return }
             }

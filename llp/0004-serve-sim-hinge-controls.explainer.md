@@ -213,6 +213,12 @@ motion and orientation-query samples. A failure clears observed fields and
 retries after one second while a recording or live preview remains active. A stationary device's
 Table activity can be unknown until a fresh motion event arrives.
 
+When CoreDevice does not list the device, the observation logs a troubleshooting
+hint once per observation task: check `xcrun devicectl list devices`, then consider
+a stale per-user CoreDeviceService after an Xcode update. Restarting that service
+is a manual step and can interrupt other device sessions; serve-sim does not do it
+automatically [observed: `CoreDeviceBridge.runDeviceStateObservation`].
+
 Apple's native tabletop value zero (`Ambiguous`) records `tableMode: false`;
 recognized values 1–10 record `true`. Missing or unrecognized values are absent.
 This reports observed activity, not whether the Table Mode control is enabled.
