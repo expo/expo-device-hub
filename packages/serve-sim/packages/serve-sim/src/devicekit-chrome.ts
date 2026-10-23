@@ -622,32 +622,6 @@ function profilePathForName(profileName: string): string {
   );
 }
 
-/** Installed integrated panels, independent of native capture and chrome artwork. */
-export function integratedDisplayIds(identifier: string | undefined): number[] | null {
-  const name = deviceTypeNameForIdentifier(identifier);
-  if (!name) return null;
-  const profile = readPlist(join(dirname(profilePathForName(name)), "capabilities.plist"));
-  const displays = record(profile?.capabilities).displays;
-  if (
-    !Array.isArray(displays) ||
-    !displays.every((display) => typeof record(display).displayType === "string")
-  )
-    return null;
-  const ids = displays
-    .filter((display) => record(display).displayType === "integrated")
-    .map((display) => record(display).screenID);
-  if (
-    !ids.length ||
-    !ids.every(
-      (id): id is number =>
-        typeof id === "number" && Number.isInteger(id) && id > 0 && id <= 0xffffffff,
-    ) ||
-    new Set(ids).size !== ids.length
-  )
-    return null;
-  return ids;
-}
-
 function iconNameForProfile(profile: DeviceProfileMetadata | null): string | null {
   if (!profile) return null;
   const candidates = new Set<string>();

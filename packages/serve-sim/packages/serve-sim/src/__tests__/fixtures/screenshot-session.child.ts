@@ -1,17 +1,21 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import * as native from "../../native";
 import * as ui from "../../ui-settings";
-import { UDID, useTempStateDir } from "../helpers";
+import { UDID, useTempStateDir, withActionTimeoutAsync } from "../helpers";
 let starts = 0,
   stops = 0,
   fail = false;
 let updateSettings = async () => {};
+let startCapture = async () => {};
+let readDisplay = async () => 3;
+let subscriptions = 0;
 mock.module("../../native", () => ({
   ...native,
   NativeCapture: class {
     async start() {
       starts++;
       if (fail) throw Error("Startup failed");
+      await startCapture();
     }
     async stop() {
       stops++;
@@ -20,12 +24,13 @@ mock.module("../../native", () => ({
       return { width: 2007, height: 2853, screenId: 3, orientation: "portrait" };
     }
     async activeScreenId() {
-      return 3;
+      return await readDisplay();
     }
     async updateStreamSettings() {
       await updateSettings();
     }
     async subscribeScreenChanges() {
+      subscriptions++;
       return async () => {};
     }
     async subscribeDeviceState() {
@@ -285,4 +290,92 @@ test("an aborted settings body never reports an accepted update despite default 
     socket.destroy();
   });
   expect(peekDeviceSession(UDID)).toBeUndefined();
+});
+
+test("lowercase stream and uppercase screenshot share one session", async () => {
+  const before = starts;
+  const existing = getDeviceSession(UDID.toLowerCase());
+  try {
+    await existing.start();
+    expect(await withScreenshotDeviceSession(UDID, undefined, (s) => s.activeScreenId())).toBe(3);
+    expect(peekDeviceSession(UDID)).toBe(existing);
+    expect(starts).toBe(before + 1);
+  } finally {
+    closeDeviceSession(UDID);
+    closeDeviceSession(UDID.toLowerCase());
+  }
+});
+
+async function deadlineResult() {
+  return await Promise.race([
+    withScreenshotDeviceSession(UDID, undefined, (s) => s.activeScreenId()).then(
+      () => "success",
+      (e: Error) => e.message,
+    ),
+    Bun.sleep(300).then(() => "unbounded"),
+  ]);
+}
+
+test("a native startup deadline releases capture before startup settles", async () => {
+  const gate = deferred();
+  startCapture = () => gate.promise;
+  const beforeStops = stops;
+  const beforeSubscriptions = subscriptions;
+  try {
+    await withActionTimeoutAsync(30, async () => {
+      expect(await deadlineResult()).toContain("did not finish");
+      expect(peekDeviceSession(UDID)).toBeUndefined();
+      await stopped(beforeStops + 1);
+    });
+  } finally {
+    gate.resolve();
+    startCapture = async () => {};
+    await Bun.sleep(20);
+    closeDeviceSession(UDID);
+  }
+  expect(subscriptions).toBe(beforeSubscriptions);
+});
+
+test("a native read deadline closes temporary capture and ignores late results", async () => {
+  const gate = deferred();
+  const beforeStops = stops;
+  readDisplay = async () => {
+    await gate.promise;
+    return 3;
+  };
+  try {
+    await withActionTimeoutAsync(30, async () => {
+      expect(await deadlineResult()).toContain("did not finish");
+      expect(peekDeviceSession(UDID)).toBeUndefined();
+      await stopped(beforeStops + 1);
+    });
+  } finally {
+    gate.resolve();
+    readDisplay = async () => 3;
+    await Bun.sleep(20);
+    closeDeviceSession(UDID);
+  }
+});
+
+test("a native read deadline leaves a retained viewer session running", async () => {
+  const existing = getDeviceSession(UDID);
+  await existing.start();
+  const gate = deferred();
+  const beforeStops = stops;
+  readDisplay = async () => {
+    await gate.promise;
+    return 3;
+  };
+  try {
+    await withActionTimeoutAsync(30, async () => {
+      expect(await deadlineResult()).toContain("did not finish");
+      expect(peekDeviceSession(UDID)).toBe(existing);
+      expect(stops).toBe(beforeStops);
+    });
+  } finally {
+    gate.resolve();
+    readDisplay = async () => 3;
+    await Bun.sleep(20);
+    closeDeviceSession(UDID);
+  }
 });

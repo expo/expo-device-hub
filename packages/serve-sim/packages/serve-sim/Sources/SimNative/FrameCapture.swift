@@ -105,14 +105,17 @@ actor FrameCapture {
     private var displayRefreshRequested = false
     private var displayConfigurationReady = false
     private var captureGeneration: UInt64 = 0
+    private let readDisplayInfo: @Sendable (String) async throws -> [CoreDeviceDisplayState]?
     private var capturedDisplay: SimDisplayMetadata?
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
     private var device: NSObject?
 
-    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+         readDisplayInfo: @escaping @Sendable (String) async throws -> [CoreDeviceDisplayState]? = { try await CoreDeviceDisplayInfo.read(udid: $0) }) {
         self.nowNanoseconds = nowNanoseconds
+        self.readDisplayInfo = readDisplayInfo
         surfaceWatch = FramebufferSurfaceWatch(startNanoseconds: nowNanoseconds())
     }
 
@@ -159,7 +162,7 @@ actor FrameCapture {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if fixedScreenID == nil, integratedIDs.count == 2 {
             // Only foldable main feeds use CoreDevice display election.
-            let displays = try? await CoreDeviceDisplayInfo.read(udid: deviceUDID)
+            let displays = try? await readDisplayInfo(deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
             if let displays {
                 updateDisplayInfo(displays)
@@ -336,7 +339,7 @@ actor FrameCapture {
         defer { if generation == captureGeneration { displayRefreshTask = nil } }
         while displayRefreshRequested, generation == captureGeneration, !Task.isCancelled {
             displayRefreshRequested = false
-            if let displays = try? await CoreDeviceDisplayInfo.read(udid: udid) {
+            if let displays = try? await readDisplayInfo(udid) {
                 guard generation == captureGeneration, !Task.isCancelled else { return }
                 updateDisplayInfo(displays)
             }
@@ -620,10 +623,14 @@ actor FrameCapture {
         _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
         io: NSObject? = nil,
         device: NSObject? = nil,
+        deviceUDID: String? = nil,
+        profile: SimulatorDisplayProfile? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
         self.device = device
+        self.deviceUDID = deviceUDID
+        if let profile { displayProfile = profile }
         self.onFrame = { buffer, timestamp, canvas, _ in onFrame(buffer, timestamp, canvas) }
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
@@ -673,15 +680,21 @@ actor FrameCapture {
     func activeScreenID() async throws -> UInt32 {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if let fixedScreenID { return fixedScreenID }
-        if integratedIDs.count == 2, let deviceUDID {
-            guard let displays = try await CoreDeviceDisplayInfo.read(udid: deviceUDID),
+        if displayProfile.integratedDisplayCount > 1 || integratedIDs.count > 1 {
+            guard let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
+            let generation = captureGeneration
+            let displays = try await readDisplayInfo(deviceUDID)
+            guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
+            guard let displays,
                   let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
                 throw makeError(5, "Simulator did not report its active display")
             }
             updateDisplayInfo(displays)
             return active.screenID
         }
-        guard let id = capturedDisplay?.integratedScreenID else {
+        guard integratedIDs.count == 1,
+              let id = displayProfile.singleIntegratedScreenID, integratedIDs.contains(id),
+              capturedDisplay?.integratedScreenID == id else {
             throw makeError(5, "Simulator did not report its active display")
         }
         return id
