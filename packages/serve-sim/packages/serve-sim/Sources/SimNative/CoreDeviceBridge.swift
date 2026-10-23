@@ -101,6 +101,12 @@ actor CoreDeviceBridge {
         return hingeControlEligibility[udid, default: HingeControlEligibility()].state(observed: observed)
     }
 
+    // Reconciled controls and raw activity are read in one actor turn, without
+    // adding a second cache or turning a setting acknowledgement into a sample.
+    func hingeControlReadback(udid: String) -> (state: HingeState, tableModeActive: Bool?) {
+        (hingeControlEligibility(udid: udid), observedDeviceStates[udid]?.state.tableMode)
+    }
+
     func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil, tableMode: Bool? = nil,
                             sentAt: Double, generation: UInt64) {
         guard hingeResetGenerations[udid, default: 0] == generation else { return }

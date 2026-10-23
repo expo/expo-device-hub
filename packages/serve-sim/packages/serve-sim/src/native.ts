@@ -25,7 +25,7 @@ interface SimHIDHandle {
   setScreen(screenId: number): Promise<boolean | void>;
   supportsHingeAngle(): Promise<boolean>;
   hingeState(): Promise<NativeHingeState>;
-  hingeControlEligibility(): Promise<NativeHingeState>;
+  hingeControlEligibility(): Promise<NativeHingeReadback>;
   setHingeAngle(angle: number): Promise<boolean>;
   setHingePose(pose: string): Promise<boolean>;
   supportsPhysicalOrientation(): Promise<boolean>;
@@ -135,6 +135,9 @@ export type NativeHingeState = {
   tableMode?: boolean;
   physicalOrientation?: HingePhysicalOrientation;
 };
+
+/** Command reconciliation never synthesizes native tabletop activity. */
+export type NativeHingeReadback = NativeHingeState & { tableModeActive?: boolean };
 
 export type NativeDeviceStateSnapshot = {
   generation: number;
@@ -289,10 +292,10 @@ export class NativeHid {
     return this.guard("hingeState", () => this.handle.hingeState(), {});
   }
 
-  async hingeControlEligibility(): Promise<NativeHingeState | null> {
+  async hingeControlEligibility(): Promise<NativeHingeReadback | null> {
     // An empty sample has unknown fields; null means the read failed.
     return (
-      (await this.guard<NativeHingeState | null>(
+      (await this.guard<NativeHingeReadback | null>(
         "hingeControlEligibility",
         () => this.handle.hingeControlEligibility(),
         null,
