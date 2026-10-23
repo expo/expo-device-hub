@@ -12,6 +12,7 @@ import {
   readStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
   serveSimAllowsOrigin,
+  serveSimStreamArgs,
 } from "./serve-sim-options";
 import { FRAME_ANCESTORS, SESSION_TOKEN } from "./session-token";
 
@@ -85,10 +86,19 @@ function ensureHelperSpawned(): void {
   spawnInFlight = true;
   let child: ChildProcess;
   try {
-    child = spawn(process.execPath, [serveSimCliPath(), "--detach", "--quiet"], {
-      stdio: "ignore",
-      detached: true,
-    });
+    child = spawn(
+      process.execPath,
+      [
+        serveSimCliPath(),
+        "--detach",
+        "--quiet",
+        ...serveSimStreamArgs(standaloneOptions.streamSettings),
+      ],
+      {
+        stdio: "ignore",
+        detached: true,
+      },
+    );
   } catch {
     spawnInFlight = false;
     lastSpawnFailureAt = Date.now();
