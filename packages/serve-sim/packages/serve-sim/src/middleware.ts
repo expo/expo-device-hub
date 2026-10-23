@@ -2702,14 +2702,20 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       }
       try {
         await getDeviceSession(state.device, streamSettings).start();
-        reportReadiness("ready", undefined, state.device);
+        reportReadiness("ready", undefined, state.device, undefined, selectedDevice ?? null);
         res.writeHead(200, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
         });
         res.end(JSON.stringify({ status: "ready", device: state.device }));
       } catch (error) {
-        reportReadiness("unavailable", "capture-start-failed", state.device, error);
+        reportReadiness(
+          "unavailable",
+          "capture-start-failed",
+          state.device,
+          error,
+          selectedDevice ?? null,
+        );
         res.writeHead(503, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",

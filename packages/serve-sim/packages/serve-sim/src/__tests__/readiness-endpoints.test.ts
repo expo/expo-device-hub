@@ -58,6 +58,9 @@ describe("readiness endpoints", () => {
         error: "capture initialization failed",
       },
       { status: "ready", device: expect.any(String) },
+      { status: "unavailable", reason: "session-unavailable" },
+      { status: "ready", device: expect.any(String) },
+      { status: "unavailable", reason: "session-unavailable" },
     ]);
   });
 });

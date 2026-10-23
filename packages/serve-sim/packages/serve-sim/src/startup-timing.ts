@@ -24,8 +24,14 @@ export async function timeStartup<T>(
 
 // One reporter per middleware, so repeated readiness polls do not flood worker logs.
 export function createReadinessReporter() {
-  const previous = new Map<string | undefined, string>();
-  return (status: "ready" | "unavailable", reason?: string, device?: string, error?: unknown) => {
+  const previous = new Map<string | null, string>();
+  return (
+    status: "ready" | "unavailable",
+    reason?: string,
+    device?: string,
+    error?: unknown,
+    selector: string | null = device ?? null,
+  ) => {
     const entry = JSON.stringify({
       status,
       reason,
@@ -33,12 +39,12 @@ export function createReadinessReporter() {
       error:
         error instanceof Error ? error.message : error === undefined ? undefined : String(error),
     });
-    if (entry === previous.get(device)) return;
+    if (entry === previous.get(selector)) return;
     // Bound diagnostics for arbitrary /readyz?device= selectors.
-    if (!previous.has(device) && previous.size >= 256) {
-      previous.delete(previous.keys().next().value);
+    if (!previous.has(selector) && previous.size >= 256) {
+      previous.delete(previous.keys().next().value ?? null);
     }
-    previous.set(device, entry);
+    previous.set(selector, entry);
     process.stderr.write(`[readyz] ${entry}\n`);
   };
 }

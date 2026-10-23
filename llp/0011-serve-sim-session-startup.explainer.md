@@ -201,7 +201,8 @@ not that every capability applied. Phases can overlap; their durations are not a
 `/readyz` keeps its response contract and logs readiness transitions on stderr.
 An unavailable response identifies no usable booted session (`session-unavailable`,
 including stopped devices) or capture startup failure; the latter includes the
-exception message. Repeated polls with the same outcome are suppressed per device
+exception message. Repeated polls with the same outcome are suppressed per request selector,
+including unqualified polls across session disappearance and recovery
 with a bounded cache. A failed capture start remains cached until the session is
 replaced; a later ready response from the replacement logs recovery. The
 startup logs leave `--quiet` stdout JSON unchanged
