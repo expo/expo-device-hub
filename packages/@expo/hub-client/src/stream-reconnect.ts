@@ -1,6 +1,8 @@
 /**
  * Reconnect policy of the Android device client. The iOS client keeps its own
- * inline backoff and never reports `reconnecting`.
+ * inline backoff; both report `reconnecting` after a frame through
+ * `screen-presentation.ts`. Android ends a reconnect with the grace period
+ * below; iOS with that module's 30 s drop limit.
  *
  * A stream that was already live keeps its last frame on screen for a short
  * grace period while its transport re-establishes itself, so a deliberate

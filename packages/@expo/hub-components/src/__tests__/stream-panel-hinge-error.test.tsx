@@ -8,6 +8,7 @@ test("a fold error is visible beside the stream without mounting the sidebar", (
   const client = {
     platform: "ios",
     status: "streaming",
+    framePresented: true,
     screen: { width: 1398, height: 2034 },
     fold: { error: "Simulator rejected this pose." },
     screenRecording: null,

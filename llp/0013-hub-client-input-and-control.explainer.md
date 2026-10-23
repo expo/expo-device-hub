@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -91,7 +91,7 @@ This differs from serve-sim's window-blur handler, which cancels paced keyboard 
 
 ## Input feedback
 
-HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
+HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice with design tokens, without hiding live media. `hub-components`' `PhoneFrame` draws it through `DeviceScreenStatus`, over the flat screen and the 3D stage; a stream error takes its place, because input needs a stream [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`, `DeviceScreenStatus.tsx`]. Other consumers choose their own presentation. The loading state follows the same rule ([LLP 0015](0015-hub-screen-loading.explainer.md#where-each-part-lives)).
 
 An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
 

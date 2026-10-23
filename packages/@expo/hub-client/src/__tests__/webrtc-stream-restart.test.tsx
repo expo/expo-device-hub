@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { androidStreamSettingsPatch, parseAndroidStreamSettings } from "../android-stream-settings";
-import { deviceScreenPresentsMedia } from "../DeviceScreen";
 import { useAndroidDeviceClient } from "../useAndroidDevice";
 import { useStreamSettingsResource } from "../useStreamSettingsResource";
 import { useWebRtcStream } from "../useWebRtcStream";
@@ -602,10 +601,12 @@ test("Android settings wait for fresh video, preserve the poster past grace, and
   expect(hub.captures).toEqual([hub.video]);
   await hub.fireTimer(5000);
   expect(hub.client.status).toBe("reconnecting");
-  expect(deviceScreenPresentsMedia(hub.client.status)).toBe(true);
+  expect(hub.client.framePresented).toBe(true);
   expect(hub.client.streamSettingsPending).toBe(true);
   await hub.fireTimer(8000);
-  expect(hub.client.status).toBe("connecting");
+  // A screen that showed a frame never returns to loading; it keeps reconnecting.
+  expect(hub.client.status).toBe("reconnecting");
+  expect(hub.client.framePresented).toBe(true);
   expect(hub.client.streamSettingsPending).toBe(false);
   await hub.paintReplacement();
   expect(hub.client.status).toBe("streaming");

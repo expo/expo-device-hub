@@ -12,11 +12,20 @@ import {
   listenForInputCancellation,
   useDeviceKeyboard,
 } from "@expo/hub-client";
-import { type CSSProperties, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
-import { DuoModelView } from "./DuoModelView";
+import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
+import { useReleaseFocusWhenHidden } from "./useReleaseFocusWhenHidden";
 
 export interface FoldableDeviceScreenProps {
   /**
@@ -28,8 +37,17 @@ export interface FoldableDeviceScreenProps {
   cacheScreenOnFold?: boolean;
   /** Keep the model at its physical size, or fill the stage as the hinge moves. */
   sizeMode?: "physical" | "fill";
-  /** Xcode's model is missing or WebGL failed; the consumer should show the flat screen. */
+  /**
+   * Xcode's model is missing, WebGL failed, or the model did not load in
+   * time; the consumer should show the flat screen.
+   */
   onUnavailable?: () => void;
+  /**
+   * Whether Xcode's model is loaded into the scene. With `client.framePresented`, it tells
+   * when the preview has shown its first display frame; until then the
+   * preview draws nothing, and the consumer shows loading UI.
+   */
+  onModelReadyChange?: (ready: boolean) => void;
   /** Copy the device app's selected text, as on `DeviceScreen`. */
   onCopy?: () => Promise<void>;
 }
@@ -40,22 +58,6 @@ const HOST_STYLE: CSSProperties = {
   outline: "none",
   // Keep the hinge handles' stacking inside the model, under a consumer's overlay.
   isolation: "isolate",
-};
-
-// Matches the connection-state surface of hub-client's flat DeviceScreen.
-const STATUS_LAYOUT_STYLE: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  boxSizing: "border-box",
-  display: "flex",
-  alignItems: "flex-end",
-  justifyContent: "center",
-  padding: 24,
-  textAlign: "center",
-  pointerEvents: "none",
-  fontSize: 13,
-  fontFamily: "var(--expo-font-mono)",
-  color: "rgba(255, 255, 255, 0.85)",
 };
 
 // Framebuffer dimensions only establish the hidden source view's layout.
@@ -111,6 +113,7 @@ export function FoldableDeviceScreen({
   cacheScreenOnFold = false,
   sizeMode = "fill",
   onUnavailable,
+  onModelReadyChange,
   onCopy,
 }: FoldableDeviceScreenProps) {
   const {
@@ -119,8 +122,7 @@ export function FoldableDeviceScreen({
     displays,
     deviceModelUrl,
     screen,
-    status,
-    error,
+    framePresented,
     cancelInput,
     sendTouch,
     sendMultiTouch,
@@ -150,6 +152,17 @@ export function FoldableDeviceScreen({
     (value: number) => fold?.setControl({ control: "angle", value }),
     [fold],
   );
+  const [modelStatus, setModelStatus] = useState<DuoModelStatus>("loading");
+  const modelReadyChange = useRef(onModelReadyChange);
+  modelReadyChange.current = onModelReadyChange;
+  const modelReady = modelStatus === "ready";
+  useEffect(() => {
+    modelReadyChange.current?.(modelReady);
+  }, [modelReady]);
+  useEffect(() => () => modelReadyChange.current?.(false), []);
+  // @ref LLP 0015#states — no black displays: the model shows once it has a frame to draw
+  const hidden = modelStatus === "loading" || (modelReady && !framePresented);
+  useReleaseFocusWhenHidden(hostRef, hidden);
   if (!fold || !displays || !deviceModelUrl) return null;
   const activeScreenId = displays.find((display) => display.active)?.id === "cover" ? 1 : 3;
   // The model's hinge handles move a hinge that takes angles.
@@ -160,8 +173,10 @@ export function FoldableDeviceScreen({
       ref={hostRef}
       role="application"
       aria-label="Interactive iPhone Duo. Focus to control it with your keyboard. Press Shift and Escape to stop keyboard control."
-      tabIndex={0}
-      style={HOST_STYLE}
+      // A hidden preview takes no focus and is not announced.
+      tabIndex={hidden ? -1 : 0}
+      aria-hidden={hidden || undefined}
+      style={hidden ? { ...HOST_STYLE, opacity: 0, pointerEvents: "none" } : HOST_STYLE}
       onPointerDownCapture={() => hostRef.current?.focus({ preventScroll: true })}
       onBlur={releasePressedKeys}
       onKeyDown={onKeyDown}
@@ -179,7 +194,7 @@ export function FoldableDeviceScreen({
         streamConfig={streamConfig}
         hingeCommands={commands}
         onUnavailable={onUnavailable}
-        streamError={status === "error" ? error : null}
+        onStatusChange={setModelStatus}
         cacheScreenOnFold={cacheScreenOnFold}
         sizeMode={sizeMode}
         onHingeAngleChange={canMoveHinge ? setAngle : undefined}
@@ -191,19 +206,6 @@ export function FoldableDeviceScreen({
           <DuoPanelSource key={display.id} display={display} videoKind={client.videoKind} />
         ))}
       </DuoModelView>
-      {status !== "streaming" && status !== "reconnecting" && status !== "error" && (
-        <div style={STATUS_LAYOUT_STYLE}>
-          <span
-            style={{
-              padding: "6px 12px",
-              borderRadius: 8,
-              backgroundColor: "rgba(0, 0, 0, 0.55)",
-            }}
-          >
-            {status === "connecting" ? "Connecting…" : "Not connected"}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

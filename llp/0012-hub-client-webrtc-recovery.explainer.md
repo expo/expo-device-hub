@@ -5,7 +5,7 @@
 **Systems:** HubClient
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248; the client streams the panels into elements that a consumer attaches); 2026-10-14 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248; the client streams the panels into elements that a consumer attaches; iOS keeps the last frame as a poster, see LLP 0015); 2026-10-14 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -71,7 +71,7 @@ One poll per peer reads stats once a second. The watchdog and the stats panel sh
 - The watchdog judges only a connected peer that has shown a frame, in a visible tab.
 - It resets on `visibilitychange`, and after a poll gap longer than 8 s, because sleep does not always send `visibilitychange`.
 - An idle Android stream may send no frames. serve-emu's scrcpy source repeats no frames by default, while its gRPC screenshot source repeats the last frame every 500 ms. The Android adapter sets `expectContinuousFrames: false`, so an idle stream is not a stall with either source [observed: `useAndroidDevice.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`].
-- During automatic recovery, Android keeps the last frame as a poster, but only on the video element that the adapter attached [observed: `preserveWebRtcFrame` in `useAndroidDevice.ts`].
+- During automatic recovery, iOS and Android keep the last frame as a poster, but only on the video element that the adapter attached, and only for the current screen session. A transport retry is not an error to show; [LLP 0015](0015-hub-screen-loading.explainer.md#temporary-drops) explains what the screen shows meanwhile [observed: `preserveVideoFrame` in `video-frame-poster.ts`, `preserveWebRtcFrame` in `useIosDevice.ts` and `useAndroidDevice.ts`, `retrying` in `useWebRtcStream.ts`].
 
 serve-sim's client has the same watchdog [observed: `hooks/playback-stall-watchdog.ts`].
 

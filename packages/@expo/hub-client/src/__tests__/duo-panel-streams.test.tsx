@@ -576,3 +576,42 @@ test("stopping an MJPEG panel mid-decode revokes the frame it was decoding", asy
   expect(img.src).toBe("");
   expect(revoked).toEqual(["blob:frame-0"]);
 });
+
+for (const [offerStatus, reported] of [
+  [503, null],
+  [403, "WebRTC offer failed: HTTP 403."],
+] as const) {
+  test(`a shown WebRTC panel reports ${reported ? "a refused offer" : "no error for a transport retry"}`, async () => {
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    stubGlobal("window", {
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout,
+      clearTimeout,
+    });
+    stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
+    stubGlobal("RTCPeerConnection", Peer);
+    stubGlobal("RTCRtpReceiver", { getCapabilities: () => null });
+    stubGlobal("fetch", async () => new Response(null, { status: offerStatus }));
+    Peer.instances = [];
+    const sink: PanelSink = { streaming: false, error: null, stats: null };
+    const feeds: DuoPanelFeeds = {
+      url: "https://hub.test/helper/duo",
+      mode: "webrtc",
+      codec: "h264",
+      onAvccError() {},
+      onWebRtcFailure() {},
+    };
+    await act(async () => {
+      renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} sink={sink} />, {
+        createNodeMock: (element) => (element.type === "video" ? new FakeVideo() : null),
+      });
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    // A retry reconnects by itself, so the client keeps loading or reconnecting.
+    expect(sink.error).toBe(reported);
+    expect(sink.streaming).toBe(false);
+  });
+}

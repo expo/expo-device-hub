@@ -675,6 +675,8 @@ export function useWebRtcStream({
     stream,
     failure,
     error,
+    // Only a transport retry sets an error without a failure; the hook reconnects by itself.
+    retrying: error !== null && failure === null,
     markFrameDecoded,
     restart,
     streamStats,
