@@ -38,7 +38,7 @@ Options:
                              @expo/hub-client (repeatable). Accepts a subdomain wildcard, e.g.
                              https://*.expo.dev, as serve-sim does.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
-      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT})
+      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT}); webrtc allows only WebRTC video
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(", ")} (default: ${DEFAULT_WEBRTC_CODEC})
       --max-dimension <pixels> Maximum captured width or height; 0 keeps native resolution (0-4096)
       --mjpeg-quality <quality> MJPEG quality (0.05-1)

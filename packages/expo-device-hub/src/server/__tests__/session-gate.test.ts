@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
+import { type AddressInfo } from "node:net";
+import { WebSocketServer } from "ws";
 
 import { accessCookieName } from "../session-auth";
 
@@ -7,6 +10,7 @@ import { accessCookieName } from "../session-auth";
 // does not compile their sources, which use another `tsconfig`.
 const EMU_SOURCE = "../../../../serve-emu/packages/serve-emu/src/middleware.ts";
 const SIM_SOURCE = "../../../../serve-sim/packages/serve-sim/src/middleware.ts";
+const EMU_SRC = "../../../../serve-emu/packages/serve-emu/src";
 const { createRouter: realEmuRouter } = (await import(EMU_SOURCE)) as {
   createRouter: (options: { allowedOrigins?: string[] }) => {
     handleRequest(request: Request): Promise<Response>;
@@ -17,6 +21,11 @@ const { simMiddleware: realSimMiddleware } = (await import(SIM_SOURCE)) as {
     basePath: string;
     corsOrigins?: string[];
   }) => (request: Request) => Promise<Response | undefined>;
+};
+
+type EmuAttachOptions = { request?: Request; video: boolean; frameMeta: boolean };
+const { fromWsSocket: realFromWsSocket } = (await import(`${EMU_SRC}/stream-socket.ts`)) as {
+  fromWsSocket: (socket: unknown) => unknown;
 };
 
 const TOKEN = "hub-gate-token";
@@ -34,6 +43,8 @@ const simSockets: Request[] = [];
 const emuRequests: Request[] = [];
 const emuUpgrades: Request[] = [];
 const emuAttached: Array<{ request?: Request }> = [];
+// A test that needs serve-emu's real socket handling sets this.
+let emuAttach: ((socket: unknown, options: EmuAttachOptions) => void) | null = null;
 let simOptions: Record<string, unknown> = {};
 let emuOptions: Record<string, unknown> = {};
 let deviceListings = 0;
@@ -72,7 +83,7 @@ mock.module("../../../vendor/serve-sim/dist/middleware.js", () => ({
 mock.module("../../../vendor/serve-emu/dist/middleware.js", () => ({
   cameraLaunchArgs: () => [],
   seedCameraFeeds: async () => {},
-  fromWsSocket: (socket: unknown) => socket,
+  fromWsSocket: realFromWsSocket,
   SESSION_TOKEN_SUBPROTOCOL_PREFIX: "serve-emu.token.",
   createRouter: (options: Record<string, unknown>) => {
     emuOptions = options;
@@ -92,8 +103,9 @@ mock.module("../../../vendor/serve-emu/dist/middleware.js", () => ({
         return true;
       },
       ensure: async () => ({ serial: "emulator-5554" }),
-      attachWebSocket: (_socket: unknown, options: { request?: Request }) => {
+      attachWebSocket: (socket: unknown, options: EmuAttachOptions) => {
         emuAttached.push(options);
+        emuAttach?.(socket, options);
       },
       startScreenRecording: async () => {},
       finishScreenRecording: async () => null,
@@ -452,5 +464,114 @@ describe("the Hub under a session token", () => {
     expect(emuAttached.map((o) => o.request?.headers.get("authorization"))).toEqual([
       `Bearer ${TOKEN}`,
     ]);
+  });
+});
+
+/** A scrcpy session with no frames; serve-emu decides the transport lock before reading a frame. */
+function idleScrcpySession() {
+  let end!: (frame: null) => void;
+  const ended = new Promise<null>((resolve) => {
+    end = resolve;
+  });
+  return {
+    transport: "scrcpy",
+    meta: { deviceName: "hub-lock-test", codecId: "h264", width: 720, height: 1280 },
+    protocol: 3,
+    videoReader: {},
+    controlSocket: Object.assign(new EventEmitter(), { write: () => true }),
+    proc: new EventEmitter(),
+    scid: "00000001",
+    localPort: 27_200,
+    serial: "emulator-5554",
+    readFrame: () => ended,
+    close: () => end(null),
+  };
+}
+
+describe("serve-emu --transport webrtc through the Hub", () => {
+  // The Hub's real socket route, `ws` wiring as in the CLI, and serve-emu's real `ws` adapter and
+  // app. Only the device session is fake.
+  test("a video WebSocket closes with 1008 in the browser, and the input-only one stays open", async () => {
+    const { createApp } = (await import(`${EMU_SRC}/middleware.ts`)) as {
+      createApp: (
+        options: object,
+        deps: object,
+      ) => Promise<{
+        attachWebSocket(socket: unknown, options: EmuAttachOptions): void;
+        stop(): Promise<void>;
+      }>;
+    };
+    const { adaptScrcpySession } = (await import(`${EMU_SRC}/stream-session.ts`)) as {
+      adaptScrcpySession: (session: unknown) => unknown;
+    };
+    const app = await createApp(
+      {
+        serial: "emulator-5554",
+        streamSettings: {
+          transport: "webrtc",
+          codec: "h264",
+          iceServers: [],
+          iceTransportPolicy: "all",
+        },
+      },
+      {
+        startSession: async () => adaptScrcpySession(idleScrcpySession()),
+        createWebRtcPublisher: async () => ({
+          activePeerCount: 0,
+          close() {},
+          resetVideoSource() {},
+        }),
+      },
+    );
+    emuAttach = (socket, options) => app.attachWebSocket(socket, options);
+
+    const route = "/vendor/serve-emu/ws";
+    const handler = server.webSocketHandlers[route] as (socket: unknown, request: Request) => void;
+    const wss = new WebSocketServer({ noServer: true });
+    wss.on("connection", (socket, incoming) => {
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (typeof value === "string") headers.set(name, value);
+      }
+      handler(socket, new Request(`${ORIGIN}${incoming.url}`, { headers }));
+    });
+    const http = createServer();
+    http.on("upgrade", (incoming, socket, head) =>
+      wss.handleUpgrade(incoming, socket, head, (ws) => wss.emit("connection", ws, incoming)),
+    );
+    await new Promise<void>((resolve) => http.listen(0, "127.0.0.1", resolve));
+    const port = (http.address() as AddressInfo).port;
+
+    // How a browser socket ended, or "open" when it is still open after 300 ms.
+    const outcome = (query: string) =>
+      new Promise<{ code: number; reason: string } | "open">((resolve) => {
+        const socket = new WebSocket(
+          `ws://127.0.0.1:${port}${route}?device=emulator-5554${query}`,
+          [`serve-emu.token.${TOKEN}`],
+        );
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        socket.addEventListener("open", () => {
+          timer = setTimeout(() => {
+            resolve("open");
+            socket.close();
+          }, 300);
+        });
+        socket.addEventListener("close", (event) => {
+          clearTimeout(timer);
+          resolve({ code: event.code, reason: event.reason });
+        });
+      });
+
+    try {
+      expect(await outcome("")).toEqual({ code: 1008, reason: "stream_transport_locked" });
+      expect(await outcome("&video=0")).toBe("open");
+    } finally {
+      emuAttach = null;
+      for (const client of wss.clients) client.terminate();
+      wss.close();
+      http.closeAllConnections();
+      await new Promise((resolve) => http.close(resolve));
+      await app.stop();
+    }
   });
 });

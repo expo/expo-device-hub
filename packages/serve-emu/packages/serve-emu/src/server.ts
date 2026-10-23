@@ -123,6 +123,8 @@ import {
   streamEncoderSettingsEqual,
   StreamSettingsUnavailableError,
   viewerTransportsFor,
+  webSocketVideoAllowed,
+  STREAM_TRANSPORT_LOCKED,
   type StreamEncoderSettings,
   type StreamEncoderSettingsPatch,
   type StreamSettings,
@@ -2834,6 +2836,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         }
         const frameMeta = url.searchParams.get("frame-meta") === "1";
         const video = url.searchParams.get("video") !== "0";
+        if (video && !webSocketVideoAllowed(streamSettings, requestContext.stream.meta.codecId)) {
+          return new Response(
+            JSON.stringify({ error: STREAM_TRANSPORT_LOCKED, transport: streamSettings.transport }),
+            { status: 409, headers: { "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
         const ok = srv.upgrade(req, {
           data: {
             id: nextId++,
