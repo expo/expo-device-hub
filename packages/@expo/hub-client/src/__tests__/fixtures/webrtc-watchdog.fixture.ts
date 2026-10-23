@@ -20,6 +20,7 @@ let clock = 0;
 let offerStatus = 200;
 let offersPosted = 0;
 let offerBody = "nope";
+let offerResponses: Response[] = [];
 let senderFrames = 0;
 let captureRebooting: unknown = undefined;
 let senderReply: (() => Promise<Response>) | undefined;
@@ -129,7 +130,10 @@ Object.assign(globalThis, {
         }),
       );
     }
-    if (input.includes("/offer")) offersPosted += 1;
+    if (input.includes("/offer")) {
+      offersPosted += 1;
+      if (offerResponses.length > 0) return offerResponses.shift()!;
+    }
     if (input.includes("/offer") && offerStatus !== 200) {
       return new Response(offerBody, { status: offerStatus });
     }
@@ -158,6 +162,7 @@ async function start(
   visible: "visible" | "hidden" = "visible",
   offerAnswers = 200,
   transportLocked = true,
+  responses: Response[] = [],
 ) {
   cleanup.splice(0).forEach((stop) => stop?.());
   effects = [];
@@ -169,6 +174,7 @@ async function start(
   offerStatus = offerAnswers;
   offersPosted = 0;
   offerBody = "nope";
+  offerResponses = responses;
   senderFrames = 0;
   captureRebooting = undefined;
   senderReply = undefined;
@@ -787,5 +793,23 @@ for (const phase of ["first-frame", "established"]) {
     } finally {
       timeout.mockRestore();
     }
+  });
+}
+
+for (const conflict of [
+  { error: "webrtc_stream_changed", message: "The stream changed while WebRTC was starting." },
+  { ok: false, code: "session_changed", error: "device session changed from generation 1 to 2" },
+]) {
+  test(`Android negotiates again after a temporary 409: ${JSON.stringify(conflict)}`, async () => {
+    hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+    await start("visible", 200, false, [Response.json(conflict, { status: 409 })]);
+    expect(offersPosted).toBe(1);
+    expect(failures()).toEqual([]);
+    expect(closed).toBe(0);
+    fireTimer(500);
+    await flush();
+    expect(offersPosted).toBe(2);
+    expect(closed).toBe(0);
+    expect(failures()).toEqual([]);
   });
 }

@@ -1954,6 +1954,13 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         if (req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });
         }
+        const requestedSerial = url.searchParams.get("device")?.trim();
+        if (requestedSerial && requestedSerial !== requestContext.serial) {
+          return Response.json(
+            { ok: false, code: "device_mismatch", error: "selected device is not active" },
+            { status: 409 },
+          );
+        }
         try {
           const offer = parseWebRtcOffer(
             await readJsonLimited(req, MAX_WEBRTC_SIGNALING_BODY_BYTES, requestContext.signal),
