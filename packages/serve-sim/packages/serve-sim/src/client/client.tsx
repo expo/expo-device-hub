@@ -1851,8 +1851,9 @@ function AppWithConfig({
               {...mediaDrop.dropZoneProps}
             >
               {(() => {
-                const streamView = (
+                const renderStreamView = (playbackOverlayTarget?: HTMLElement | null) => (
                   <SimulatorView
+                    playbackOverlayTarget={playbackOverlayTarget}
                     url={config.url}
                     wsUrl={config.wsUrl}
                     style={{
@@ -1903,6 +1904,7 @@ function AppWithConfig({
                     onScreenConfigChange={onScreenConfigChange}
                   />
                 );
+                const streamView = renderStreamView();
                 const screenContent = (
                   <>
                     {streamView}
@@ -1931,29 +1933,32 @@ function AppWithConfig({
                       onMultiTouch={resizing ? undefined : onStreamMultiTouch}
                       onScroll={resizing ? undefined : onStreamScroll}
                     >
-                      {useDuoPanelFeeds ? (
-                        <DuoPanelStreams
-                          streamUrl={config.streamUrl}
-                          mode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
-                          activeScreenId={duoActiveScreen(
-                            previewHingeAngle,
-                            previewHingePose,
-                            activeScreenId,
-                            previewFaceDown,
-                            hingePending,
-                          )}
-                          codec={effectiveWebRtcCodec}
-                          iceServers={streamSettings.iceServers}
-                          onStreamingChange={setStreaming}
-                          onAvccError={onPanelAvccError}
-                          onWebRtcFailure={handleWebRtcFailure}
-                          transportLocked={streamTransportLocked}
-                          onWebRtcPeerChange={setDuoPanelPeer}
-                          onStreamError={setDuoPanelError}
-                        />
-                      ) : (
-                        streamView
-                      )}
+                      {(playbackOverlayTarget) =>
+                        useDuoPanelFeeds ? (
+                          <DuoPanelStreams
+                            playbackOverlayTarget={playbackOverlayTarget}
+                            streamUrl={config.streamUrl}
+                            mode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
+                            activeScreenId={duoActiveScreen(
+                              previewHingeAngle,
+                              previewHingePose,
+                              activeScreenId,
+                              previewFaceDown,
+                              hingePending,
+                            )}
+                            codec={effectiveWebRtcCodec}
+                            iceServers={streamSettings.iceServers}
+                            onStreamingChange={setStreaming}
+                            onAvccError={onPanelAvccError}
+                            onWebRtcFailure={handleWebRtcFailure}
+                            transportLocked={streamTransportLocked}
+                            onWebRtcPeerChange={setDuoPanelPeer}
+                            onStreamError={setDuoPanelError}
+                          />
+                        ) : (
+                          renderStreamView(playbackOverlayTarget)
+                        )
+                      }
                     </DuoModelView>
                   );
                 if (!useChrome) return screenContent;
