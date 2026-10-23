@@ -2128,7 +2128,7 @@ async function serve(
           temporaryDirectory: resolve(tmpdir()),
           environment: startupEnvironment,
         }),
-        (configuration) => middleware.configureSession(configuration),
+        (configuration, signal) => middleware.configureSession(configuration, signal),
       );
     }
   } catch (error) {
@@ -2337,6 +2337,8 @@ program
   .option("--detach", "Spawn helper and exit (daemon mode)")
   .option("--orphan", "Start a server that a local --adopt command can claim once")
   .option("--adopt", "Apply these options to an existing compatible orphan server; never start one")
+  .option("--recording-output <directory>", "Start server-owned video recording during adoption")
+  .option("--recording-id <id>", "Job recording ID for adoption")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
   .option(
@@ -2793,8 +2795,14 @@ Examples:
         process.exit(1);
       }
     }
+    if (!opts.adopt && (opts.recordingOutput || opts.recordingId)) {
+      printStartupError("--recording-output/--recording-id require --adopt", !!opts.quiet);
+      process.exit(1);
+    }
     if (opts.adopt) {
       try {
+        if (!!opts.recordingOutput !== !!opts.recordingId)
+          throw new Error("Pass both --recording-output and --recording-id");
         const configuration = sessionConfigurationSchema.parse({
           stream: { ...stream, ...normalizeStreamEncoderSettings(stream) },
           corsOrigins: opts.corsOrigin,
@@ -2802,6 +2810,9 @@ Examples:
           shareUrl: opts.shareUrl,
           disableShare: !!opts.disableShare,
           screenshotsDirectory: process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY,
+          videoRecording: opts.recordingOutput
+            ? { output: resolve(opts.recordingOutput), recordingId: opts.recordingId }
+            : undefined,
           networkCapture: !!opts.networkCapture,
           networkCaptureFields: parseCaptureFields(opts.networkCaptureField),
           networkCaptureProxy: opts.networkCaptureProxy,

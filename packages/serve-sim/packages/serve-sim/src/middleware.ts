@@ -133,7 +133,7 @@ export type SimMiddleware = WebMiddleware & {
   handleUpgrade(req: SimReq, socket: Socket, head: Buffer): void;
   dispose(): Promise<void>;
   /** In-process owner call only; never routed over HTTP or WebSockets. */
-  configureSession(configuration: SessionConfiguration): Promise<void>;
+  configureSession(configuration: SessionConfiguration, signal?: AbortSignal): Promise<void>;
 };
 
 // Injected at build time as a base64-encoded string via `define`
@@ -3479,7 +3479,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     connectMiddleware.handleUpgrade?.(req, socket, head);
   };
   // @ref LLP 0003#prepared-process-handoff — called only by the private local owner socket.
-  fetchMiddleware.configureSession = async (configuration) => {
+  fetchMiddleware.configureSession = async (configuration, signal) => {
     if (sessionConfigured || !options?.configureResources || streamSettings?.transport !== "webrtc")
       throw new Error("Session cannot be configured");
     sessionConfigured = true;
@@ -3495,6 +3495,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     shareUrl = configuration.shareUrl;
     disableShare = configuration.disableShare;
     networkCapture = configuration.networkCapture;
+    signal?.throwIfAborted();
+    if (configuration.videoRecording) {
+      if (!options.device) throw new Error("Video recording requires one device");
+      const { output, recordingId } = configuration.videoRecording;
+      await getDeviceSession(options.device, streamSettings).startAdoptedRecording(
+        output,
+        recordingId,
+        signal,
+      );
+    }
   };
   fetchMiddleware.dispose = async () => {
     await clipboard?.dispose();

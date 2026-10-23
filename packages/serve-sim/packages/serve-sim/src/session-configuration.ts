@@ -57,6 +57,17 @@ export const sessionConfigurationSchema = z
       .optional(),
     disableShare: z.boolean(),
     screenshotsDirectory: absoluteDirectory.optional(),
+    videoRecording: z
+      .object({
+        output: absoluteDirectory,
+        recordingId: z
+          .string()
+          .min(1)
+          .max(128)
+          .regex(/^[A-Za-z0-9_-]+$/),
+      })
+      .strict()
+      .optional(),
     networkCapture: z.boolean(),
     networkCaptureFields: z.array(z.enum(CAPTURE_FIELDS)).max(4),
     networkCaptureProxy: z
