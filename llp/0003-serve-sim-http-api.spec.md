@@ -414,6 +414,32 @@ proceed independently. The preview UI has no storage editor. These actions are
 currently iOS Simulator only; serve-emu does not expose equivalent file actions.
 Android parity remains outside this serve-sim rollout.
 
+### Installing a simulator app
+
+`app.install` accepts a simulator `.app` bundle on the host or a gzip tar archive
+containing exactly one outer `.app` bundle. EAS `.tar.gz`/`.tgz` artifacts and
+extensionless staged gzip uploads are supported. The catalog advertises
+`uploadArchive: "tar.gz"`; clients can use it to package a local `.app` directory
+before uploading. Device `.ipa` builds and `.zip` archives are refused with an
+actionable Simulator-build error before installation. Regular files without a
+gzip header are also refused, including extensionless staged ZIP uploads.
+
+Archives extract into a private temporary directory, preserving executable bits.
+Traversal, external links and special files are refused. Expanded contents are
+limited to 2 GiB and 100,000 entries. Install preparation runs in a killable CLI
+child, including source inspection, so a FIFO cannot block the serving process's
+filesystem pool. Installs are serialized and share one action deadline across
+queueing, preparation and installation. The parent waits for preparation to exit
+before removing temporary contents in a cleanup child, using the remaining action
+budget with at most ten additional seconds after the action deadline. Cleanup
+failures retain the original error and add a cleanup warning. Each process reuses one private extraction path;
+if removal fails, preparation refuses to extract another tree into that path.
+
+Links are resolved as a complete graph before creation, independently of archive
+order; entries through link paths and conflicting entries are rejected.
+Directories remain owner-only, and executable owner bits are preserved. The
+uploaded source remains until the client removes it with `upload.remove`.
+
 ### Uploading an app fixture
 
 `app.file.upload`: `{udid, bundleId, uploadId, relativePath, overwrite?}` copies a

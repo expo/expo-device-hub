@@ -107,12 +107,16 @@ describe("uploadDroppedFile", () => {
     expect(fractions[fractions.length - 1]).toBe(1);
   });
 
-  test("ipa drops install instead of addmedia", async () => {
-    const file = new File([patternBytes(64)], "app.ipa", { type: "" });
-    await uploadDroppedFile(file, "ipa", "UDID", () => {});
-    expect(actions.some((a) => a.action === "app.install" && a.params.udid === "UDID")).toBe(true);
-    expect(actions.some((a) => a.action === "media.add")).toBe(false);
-  });
+  test.each(["app.ipa", "APP.IPA", "archive.zip"])(
+    "rejects unsupported app drops before uploading: %s",
+    async (name) => {
+      const file = new File([patternBytes(64)], name, { type: "" });
+      await expect(uploadDroppedFile(file, "ipa", "UDID", () => {})).rejects.toThrow(
+        "Simulator installs require a Simulator .app bundle or .tar.gz/.tgz archive.",
+      );
+      expect(actions).toEqual([]);
+    },
+  );
 
   test("failed chunk write surfaces stderr and still cleans up", async () => {
     chunkResult = { stdout: "", stderr: "disk full", exitCode: 1 };

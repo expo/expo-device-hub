@@ -4,6 +4,7 @@ import {
   ScreenshotDisplay,
   SCREENSHOT_DISPLAY_CHANGED,
 } from "./screenshot-store";
+import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
@@ -1282,7 +1283,14 @@ let _html: string | null = null;
  * Falls back to the literal `serve-sim` if we can't determine a usable path.
  */
 function serveSimBinPath(): string {
+  // Bun's embedded source paths exist virtually but cannot be exec'd by the OS.
+  if (import.meta.url.startsWith("file:///$bunfs/")) return process.execPath;
   try {
+    // A mounted middleware's argv[1] belongs to its host app, not this CLI.
+    for (const relative of ["./serve-sim.js", "../dist/serve-sim.js"]) {
+      const cli = fileURLToPath(new URL(relative, import.meta.url));
+      if (existsSync(cli)) return cli;
+    }
     const argv = process.argv;
     if (argv[1] && existsSync(argv[1])) return argv[1];
   } catch {}

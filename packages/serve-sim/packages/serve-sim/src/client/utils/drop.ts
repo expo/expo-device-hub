@@ -1,9 +1,10 @@
 import { runHostAction } from "../../socket/client-control";
+import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 
-// ─── File drop (drag media/ipa onto the simulator) ───
+// ─── File drop (drag media onto the simulator) ───
 //
 // Media → `xcrun simctl addmedia`   (Photos)
-// .ipa  → `xcrun simctl install`    (install app on simulator)
+// Device archives are diagnosed before uploading.
 //
 // Files are streamed to the host in base64 chunks over the action channel, which decodes and
 // appends each one. No sonner dep here, so uploads surface in an inline toast list.
@@ -20,7 +21,7 @@ export const DROP_MEDIA_MIME_TYPES = new Set([
 ]);
 
 // 192KB of raw bytes per chunk → ~256KB of base64 per frame, well inside the channel's 4MB
-// message cap, while sharply cutting round-trips on large .ipa uploads. Each chunk is decoded
+// message cap, while sharply cutting round-trips on large uploads. Each chunk is decoded
 // and appended on its own, so chunks are independent of each other.
 export const DROP_CHUNK_BYTES = 196608;
 export const DROP_MAX_FILE_SIZE = 500 * 1024 * 1024;
@@ -116,6 +117,7 @@ export async function uploadDroppedFile(
   udid: string,
   onProgress: (progress: number | null) => void,
 ) {
+  if (isUnsupportedAppArchive(file.name)) throw new Error(UNSUPPORTED_INSTALL_FORMAT);
   if (file.size > DROP_MAX_FILE_SIZE) {
     throw new Error("File too large (max 500MB)");
   }

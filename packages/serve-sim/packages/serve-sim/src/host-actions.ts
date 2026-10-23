@@ -1,6 +1,7 @@
 import { rm, stat } from "fs/promises";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { z } from "zod";
+import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
@@ -9,12 +10,13 @@ import {
   type HostActionResult,
   HostActionTimeoutError,
   type Invocation,
-  installAppInvocation,
   ok,
   runInvocation,
+  serveSimInvocation,
   redactHostPaths,
+  actionTimeoutMs,
 } from "./host-actions-utils";
-import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
+import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR, UPLOAD_DIR } from "./host-paths";
 import {
   ScreenshotDisplay,
   ScreenshotName,
@@ -34,6 +36,7 @@ import {
   UploadId,
   appendUploadChunkAsync,
   removeUploadAsync,
+  readStagedUploadAsync,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -368,7 +371,12 @@ const ACTION_SCHEMAS = {
   "app.install": z
     .object({ udid: Device })
     .and(FileSource)
-    .meta({ description: "Install an app from an .ipa file.", args: ["path"], upload: "path" }),
+    .meta({
+      description: "Install a simulator .app bundle or a .tar.gz/.tgz app archive.",
+      args: ["path"],
+      upload: "path",
+      uploadArchive: "tar.gz",
+    }),
   "app.launch": z
     .object({
       // Launch state and locks use simctl's canonical uppercase UDID.
@@ -473,6 +481,7 @@ const PROCEDURE_ACTIONS = [
   "app.openUrl",
   "app.approveUrlScheme",
   "app.launch",
+  "app.install",
   "upload.append",
   "upload.remove",
   "app.iconPath",
@@ -517,12 +526,6 @@ function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsF
     );
   }
   return result.data as ParamsFor<A>;
-}
-
-function serveSimInvocation(binPath: string, args: string[]): Invocation {
-  if (binPath.endsWith(".ts")) return { file: "bun", args: [binPath, ...args] };
-  if (binPath.endsWith(".js")) return { file: "node", args: [binPath, ...args] };
-  return { file: binPath, args };
 }
 
 function buildInvocation(action: InvocationAction, raw: unknown, binPath: string): Invocation {
@@ -721,10 +724,6 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const p = parseParams(action, raw);
       return { file: "plutil", args: ["-convert", "json", "-o", "-", p.path] };
     }
-    case "app.install": {
-      const p = parseParams(action, raw);
-      return installAppInvocation(p.udid, fileSourcePath(p));
-    }
     case "media.add": {
       const p = parseParams(action, raw);
       return simctl(["addmedia", p.udid, fileSourcePath(p)]);
@@ -752,7 +751,8 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
-  streamSettings?: StreamSettings,
+  streamSettings: StreamSettings | undefined,
+  serveSimBinPath: string,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -809,6 +809,19 @@ async function runProcedureAsync(
           exitCode: 1,
         };
       }
+    }
+    case "app.install": {
+      const p = parseParams(action, raw);
+      const path = fileSourcePath(p);
+      const uploadId =
+        "uploadId" in p ? p.uploadId : dirname(path) === UPLOAD_DIR ? basename(path) : undefined;
+      const deadline = Date.now() + actionTimeoutMs();
+      // Acquire the staging queue before the install queue; neither installer acquires them in reverse.
+      return uploadId === undefined
+        ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
+        : await readStagedUploadAsync(uploadId, (source) =>
+            installAppAsync(p.udid, source, deadline, serveSimBinPath),
+          );
     }
     case "app.launch": {
       const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
@@ -1007,7 +1020,7 @@ export async function runHostActionAsync(
     throw new InvalidHostActionError(`unknown action ${String(action)}`);
   }
   const result = isProcedureAction(action)
-    ? await runProcedureAsync(action, params, streamSettings)
+    ? await runProcedureAsync(action, params, streamSettings, binPath)
     : await runInvocation(buildInvocation(action, params, binPath));
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
