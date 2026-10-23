@@ -104,7 +104,7 @@ export type DeviceFrameOption = {
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
  * keyboard controls, the viewer-local device frame option, and device-level
  * actions (Android Back and Recents keys, shutting down or removing the device).
- * An iPhone Duo leads with its fold controls, as serve-sim's settings do.
+ * A foldable leads with its fold controls, as serve-sim's settings do for the iPhone Duo.
  */
 export function DeviceOptionsSection({
   client,
@@ -116,7 +116,7 @@ export function DeviceOptionsSection({
 }: {
   client?: DeviceClient;
   deviceFrame?: DeviceFrameOption;
-  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
@@ -126,11 +126,11 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  // Like serve-sim's settings, a failed hinge command opens the section to show its error.
-  const hingeError = client?.hinge?.error ?? null;
+  // Like serve-sim's settings, a failed fold command opens the section to show its error.
+  const foldError = client?.fold?.error ?? null;
   useEffect(() => {
-    if (hingeError) setOpen(true);
-  }, [hingeError]);
+    if (foldError) setOpen(true);
+  }, [foldError]);
   const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
@@ -182,7 +182,13 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {client?.hinge && <FoldSettings hinge={client.hinge} preview={foldPreview} />}
+      {client?.fold && client.capabilities.fold && (
+        <FoldSettings
+          fold={client.fold}
+          controls={client.capabilities.fold}
+          preview={foldPreview}
+        />
+      )}
 
       {showDeviceSettings &&
         visible("appearance") &&

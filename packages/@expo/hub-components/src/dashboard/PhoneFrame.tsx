@@ -120,10 +120,10 @@ export function PhoneFrame({
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({
       // Match serve-sim's 320px portrait / 620px landscape screen widths.
-      maxShortSide: client?.hinge ? (ratio > 1 ? 620 / ratio : 320) : MAX_SHORT_SIDE,
+      maxShortSide: client?.fold ? (ratio > 1 ? 620 / ratio : 320) : MAX_SHORT_SIDE,
       ratio,
     }),
-    ...(client?.hinge ? { transition: "width 250ms ease, aspect-ratio 250ms ease" } : {}),
+    ...(client?.fold ? { transition: "width 250ms ease, aspect-ratio 250ms ease" } : {}),
     containerType: "inline-size",
   };
 
@@ -184,7 +184,7 @@ export function PhoneFrame({
     live &&
     foldPreview?.mode === "3d" &&
     FoldableDeviceScreen &&
-    client.hinge &&
+    client.fold &&
     client.displays &&
     client.deviceModelUrl
   ) {

@@ -315,7 +315,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     basePath(),
   );
   // The 3D choices apply only to a device that can feed the model.
-  const modelAvailable = !!client.hinge && !!client.displays && !!client.deviceModelUrl;
+  const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
     mode: duoPreview.mode,
     onModeChange: (mode) => {

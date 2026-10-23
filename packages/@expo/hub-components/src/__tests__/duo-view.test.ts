@@ -1,20 +1,20 @@
 import { expect, test } from "bun:test";
-import { HINGE_POSES } from "@expo/hub-client";
+import { FOLD_POSES } from "@expo/hub-client";
 import { Quaternion, Vector3 } from "three";
 
 import {
   DUO_FACE_DOWN_HELD,
   duoFaceDownFraming,
   duoInitialView,
-  duoPresetView,
   duoRotateView,
   duoViewFolds,
   duoViewRotation,
 } from "../foldable/duo-view";
+import { duoPreset } from "./duo-fixtures";
 
 test("hinge motion preserves the hinge angle and saved orientation controls for every preset", () => {
-  for (const { id } of HINGE_POSES) {
-    const view = duoPresetView(id);
+  for (const id of FOLD_POSES) {
+    const view = duoPreset(id);
     const rotation: typeof view.rotation = [...view.rotation];
     for (const angle of [0, 1, 30, 54, 55, 90, 150, 179, 180, 0]) {
       const fold = ((180 - angle) * Math.PI) / 360;
@@ -29,7 +29,7 @@ test("ordinary folding reveals the cover when closed and the inside when opened,
   const hinge = new Vector3(0, 1, 0);
   for (const pose of ["closed", "book", "open"] as const) {
     for (const turns of [0, 1, 2, 3]) {
-      const view = duoRotateView(duoPresetView(pose), turns);
+      const view = duoRotateView(duoPreset(pose), turns);
       const hingeDirection = hinge.clone().applyQuaternion(new Quaternion(...view.rotation));
       for (const angle of [0, 1, 30, 54, 55, 60, 90, 120, 179, 180]) {
         const fold = ((180 - angle) * Math.PI) / 360;
@@ -52,7 +52,7 @@ test("ordinary folding reveals the cover when closed and the inside when opened,
 });
 
 test("facing movement is continuous when a hinge gesture reverses", () => {
-  const view = duoPresetView("closed");
+  const view = duoPreset("closed");
   let previous = duoViewRotation(Math.PI / 2, view);
   for (const angles of [
     Array.from({ length: 181 }, (_, angle) => angle),
@@ -67,8 +67,8 @@ test("facing movement is continuous when a hinge gesture reverses", () => {
 });
 
 test("Laptop's base stays fixed and Tent's two edges stay level with a fixed view", () => {
-  const laptop = duoPresetView("laptop");
-  const tent = duoPresetView("tent");
+  const laptop = duoPreset("laptop");
+  const tent = duoPreset("tent");
   const direction = (point: Vector3, fold: number, rotation: number[]) =>
     point.applyAxisAngle(new Vector3(0, 1, 0), fold).applyQuaternion(new Quaternion(...rotation));
   const baseNormal = new Vector3(0, Math.cos(Math.PI / 9), Math.sin(Math.PI / 9));
@@ -92,8 +92,8 @@ test("Laptop's base stays fixed and Tent's two edges stay level with a fixed vie
 });
 
 test("Rotate turns the saved view even in tabletop modes and four clicks restore it", () => {
-  for (const { id } of HINGE_POSES) {
-    const initial = duoPresetView(id);
+  for (const id of FOLD_POSES) {
+    const initial = duoPreset(id);
     for (const turns of [-1, 1]) {
       let view = duoRotateView(initial, turns);
       const expected = new Quaternion()
@@ -116,25 +116,27 @@ test("native orientation is used only to initialize a view; preset selection res
   expect(
     new Quaternion(...portrait.rotation).angleTo(new Quaternion(...landscape.rotation)),
   ).toBeCloseTo(Math.PI / 2, 8);
-  expect(duoPresetView("open")).toEqual(landscape);
-  expect(duoPresetView("closed")).not.toEqual(portrait);
+  expect(duoPreset("open")).toEqual(landscape);
+  expect(duoPreset("closed")).not.toEqual(portrait);
 });
 
 test("a device turned face down elsewhere frames its cover like Tent, then restores the saved view", () => {
-  const open = duoPresetView("open");
-  const faceDown = duoFaceDownFraming({ saved: null, held: false }, true, open);
-  expect(faceDown.view).toEqual(duoPresetView("tent"));
+  const open = duoPreset("open");
+  const faceDown = duoFaceDownFraming({ saved: null, held: false }, true, open, duoPreset("tent"));
+  expect(faceDown.view).toEqual(duoPreset("tent"));
   expect(faceDown.state.saved).toBe(open);
   // Still face down: keep the Tent framing without saving again.
-  expect(duoFaceDownFraming(faceDown.state, true, duoPresetView("tent"))).toEqual({
+  expect(duoFaceDownFraming(faceDown.state, true, duoPreset("tent"), duoPreset("tent"))).toEqual({
     state: faceDown.state,
   });
-  const restored = duoFaceDownFraming(faceDown.state, false, duoPresetView("tent"));
+  const restored = duoFaceDownFraming(faceDown.state, false, duoPreset("tent"), duoPreset("tent"));
   expect(restored.view).toBe(open);
   expect(restored.state).toEqual({ saved: null, held: false });
   // A local control owns the view until the device leaves face down.
-  expect(duoFaceDownFraming(DUO_FACE_DOWN_HELD, true, open)).toEqual({ state: DUO_FACE_DOWN_HELD });
-  expect(duoFaceDownFraming(DUO_FACE_DOWN_HELD, false, open)).toEqual({
+  expect(duoFaceDownFraming(DUO_FACE_DOWN_HELD, true, open, duoPreset("tent"))).toEqual({
+    state: DUO_FACE_DOWN_HELD,
+  });
+  expect(duoFaceDownFraming(DUO_FACE_DOWN_HELD, false, open, duoPreset("tent"))).toEqual({
     state: { saved: null, held: false },
   });
 });

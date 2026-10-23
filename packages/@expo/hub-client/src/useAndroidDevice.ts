@@ -2073,13 +2073,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettings: ANDROID_STREAM_SETTING_CAPABILITIES,
       // serve-emu has no clipboard API.
       clipboard: false,
+      // @ref LLP 0016#android-emulators — serve-emu's /api/fold maps onto the fold contract; not wired yet
+      fold: false,
     }),
     [cameraSupported, accessibilityAvailable, locationCapabilities, permissionsAvailable],
   );
 
   return {
     platform: "android",
-    hinge: null,
+    fold: null,
     displays: null,
     deviceModelUrl: null,
     displayCorners: null,
