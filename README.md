@@ -21,6 +21,8 @@ with it, and manage which devices are running from one place.
 - Interact directly — tap, swipe, scroll, and type into the device.
 - Boot, shut down, and add devices without opening Xcode or Android Studio.
 - Follows your system light/dark theme, and can flip the device's appearance too.
+- Folds the iPhone Duo: pick a pose or drag the hinge on a live 3D model of the device, or
+  watch its active display flat in 2D.
 - Feed an Android emulator's camera a PNG from the inspector's Camera section.
 
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK

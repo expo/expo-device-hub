@@ -319,6 +319,7 @@ export class DeviceSession {
   private tableMode?: boolean;
   private hingePhysicalOrientation?: HingePhysicalOrientation;
   private hingeControlUpdate: Promise<void> = Promise.resolve();
+  private hingeScreenTransition?: { screenId: 1 | 3; expiresAt: number };
   private hingeControlled = false;
   private hingeRotated = false;
   private nativeScreen?: NativeScreenInfo;
@@ -1616,6 +1617,7 @@ export class DeviceSession {
           )
             return;
           if (!this.canRunInputControl(generation)) return;
+          this.hingeScreenTransition = undefined;
           this.hingeRotated = true;
           // Only startup hydration advertises hinge support, after it reads the angle.
           const supportsHingeAngle =
@@ -2060,6 +2062,24 @@ export class DeviceSession {
       )
         return false;
       this.hingeControlled = true;
+      const targetScreen =
+        command.control === "pose"
+          ? command.value === "closed" || command.value === "tent"
+            ? 1
+            : 3
+          : command.control === "angle"
+            ? command.value <= 54
+              ? 1
+              : command.value >= 55
+                ? 3
+                : undefined
+            : undefined;
+      this.hingeScreenTransition =
+        this.supportsHingeAngle === true &&
+        targetScreen !== undefined &&
+        this.nativeScreen?.screenId !== targetScreen
+          ? { screenId: targetScreen, expiresAt: Date.now() + 2000 }
+          : undefined;
       const ok =
         command.control === "pose"
           ? await this.hid.setHingePose(command.value)
@@ -2081,6 +2101,7 @@ export class DeviceSession {
         this.saveHingeState();
         this.broadcastConfig();
       } else {
+        this.hingeScreenTransition = undefined;
         // A failed sequence can still move the hinge or change the active
         // panel. Recover actual state before the failure ack permits a retry.
         this.hingePose = null;
@@ -2870,6 +2891,15 @@ export class DeviceSession {
     const hid = this.hid;
     const screen = await this.capture.screenSize();
     if (this.phase !== "running" || hid !== this.hid) return false;
+    // CoreDevice can report the destination orientation on the departing panel
+    // before display election completes. Publish its geometry only with its ID,
+    // so the flat view changes rotation and glass corners in the same config.
+    if (this.waitingForHingeScreen()) {
+      if (screen.screenId === this.hingeScreenTransition?.screenId)
+        this.hingeScreenTransition = undefined;
+      else if (screen.screenId === this.nativeScreen?.screenId) return false;
+      else this.hingeScreenTransition = undefined;
+    }
     const previous = this.nativeScreen;
     let changed = false;
     if (this.routedHid !== hid || !previous || screen.screenId !== previous.screenId) {
@@ -2917,10 +2947,18 @@ export class DeviceSession {
   }
 
   private updateScreenSize(width: number, height: number): void {
+    if (this.waitingForHingeScreen()) return;
     if (!width || !height || (width === this.width && height === this.height)) return;
     this.width = width;
     this.height = height;
     this.broadcastConfig();
+  }
+
+  private waitingForHingeScreen(): boolean {
+    if (this.hingeScreenTransition && Date.now() >= this.hingeScreenTransition.expiresAt) {
+      this.hingeScreenTransition = undefined;
+    }
+    return this.hingeScreenTransition !== undefined;
   }
 
   private broadcastConfig(): void {

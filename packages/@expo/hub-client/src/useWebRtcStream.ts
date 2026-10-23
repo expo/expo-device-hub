@@ -159,6 +159,7 @@ export function useWebRtcStream({
   sendIceServersInOffer = true,
   allowCodecFallback = true,
   expectContinuousFrames = true,
+  judgeStalls = true,
   onKeyframeNeeded,
   onBeforeDisconnect,
   fetchImpl = fetch,
@@ -179,6 +180,13 @@ export function useWebRtcStream({
   allowCodecFallback?: boolean;
   /** False for sources that emit frames only when the display changes. */
   expectContinuousFrames?: boolean;
+  /**
+   * Whether a missing first frame or a stall counts as a codec or transport
+   * failure. An iPhone Duo's inactive panel passes false: iOS keeps it silent
+   * until a handoff, which must not downgrade the panel that is playing. The
+   * deadline arms once this turns true (serve-sim's `judgeStalls`).
+   */
+  judgeStalls?: boolean;
   onKeyframeNeeded?: () => void;
   /** Preserve the displayed frame before a retry or cleanup closes its peer. */
   onBeforeDisconnect?: () => void;
@@ -195,6 +203,13 @@ export function useWebRtcStream({
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
+  // @ref LLP 0012#inactive-duo-panels — an inactive Duo panel's silence is not a failure
+  const judgeStallsRef = useRef(judgeStalls);
+  judgeStallsRef.current = judgeStalls;
+  // The live connection's deadline and watchdog, so a panel that becomes
+  // active can start judging without reconnecting.
+  const armStallDeadlineRef = useRef<(() => void) | null>(null);
+  const invalidateStallsRef = useRef<(() => void) | null>(null);
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
@@ -402,6 +417,7 @@ export function useWebRtcStream({
         stopped ||
         failing ||
         document.hidden ||
+        !judgeStallsRef.current ||
         firstFrameDecodedRef.current ||
         !trackReceived ||
         !connectionReady ||
@@ -424,10 +440,13 @@ export function useWebRtcStream({
             return;
           // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — an encoding sender blames the transport, not the codec
           const sender = await readSenderStats();
+          // A panel that went inactive during the reads may stay silent; drop
+          // the verdict, and the deadline arms again when it is shown.
           if (
             stopped ||
             failing ||
             document.hidden ||
+            !judgeStallsRef.current ||
             firstFrameDecodedRef.current ||
             reading !== firstFrameGeneration
           )
@@ -463,7 +482,10 @@ export function useWebRtcStream({
       peer: () => peer,
       readable,
       judgeable: () =>
-        readable() && peer?.connectionState === "connected" && firstFrameDecodedRef.current,
+        readable() &&
+        peer?.connectionState === "connected" &&
+        firstFrameDecodedRef.current &&
+        judgeStallsRef.current,
       publish: (report, at) => {
         for (const listener of statsListenersRef.current) listener(report, at);
       },
@@ -474,6 +496,11 @@ export function useWebRtcStream({
       expectContinuousFrames,
       capturePaused: async () => (await readSenderStats())?.capture?.rebooting === true,
     });
+    armStallDeadlineRef.current = armFirstFrameTimeout;
+    invalidateStallsRef.current = () => {
+      clearFirstFrameTimeout();
+      stall.invalidate();
+    };
 
     // Like serve-sim, a used grace stays used across tab switches.
     const onVisibilityChange = () => {
@@ -606,6 +633,8 @@ export function useWebRtcStream({
     return () => {
       stopped = true;
       stall.stop();
+      armStallDeadlineRef.current = null;
+      invalidateStallsRef.current = null;
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", releaseOnPageHide);
       window.removeEventListener("beforeunload", releaseOnPageHide);
@@ -632,6 +661,15 @@ export function useWebRtcStream({
     transportLocked,
     raiseH264Level,
   ]);
+
+  useEffect(() => {
+    if (judgeStalls) {
+      armStallDeadlineRef.current?.();
+    } else {
+      // A panel that just went inactive may stay silent; do not judge it.
+      invalidateStallsRef.current?.();
+    }
+  }, [judgeStalls]);
 
   return {
     stream,
