@@ -47,6 +47,7 @@ declare global {
       requireToken?: boolean;
       /** Public page Share copies when `--share-url` is set. */
       shareUrl?: string;
+      singleDevice?: string;
       /** Hide the Share button when `--disable-share` is set. */
       disableShare?: boolean;
       streamSettings?: StreamSettings;

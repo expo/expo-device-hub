@@ -111,6 +111,33 @@ access. The app and the grant stay after Copy, and the app shows on the Home
 screen. `--disable clipboard`, or `clipboard: false` for `simMiddleware`, does
 not prevent this.
 
+## Single-device sessions
+
+`--single-device <udid>` and `simMiddleware({ singleDevice: udid })` bind a preview
+session to one concrete simulator UUID. The CLI rejects multiple or conflicting
+targets and helper-only run modes before resolving or booting a device. The
+policy survives a shutdown or reconnect; it never chooses a replacement
+[observed: `src/index.ts`, `src/single-device.ts`].
+
+Discovery, catalog and status feeds include only that simulator. Scoped discovery
+does not reap another device's state or prune its runtime caches. HTTP query
+parameters, helper path segments, lifecycle request bodies, control actions,
+simulator settings and SSE subscriptions reject a different target. Omitted
+control targets use the pinned UUID. `server.detach`, `server.kill` and
+`home.watch` are unavailable because they act outside this session. The device
+sidebar and every entry point that opens it are omitted. This restriction adds
+to the existing authentication and origin gates; it never grants access
+[observed: `src/middleware.ts`, `src/socket/server-control.ts`, `src/client/client.tsx`].
+
+Start and shutdown share lifecycle-body validation and refusal responses
+[observed: `src/middleware.ts`, `resolveLifecycleDevice`].
+
+The original simulator may reboot or start again. WebKit inspection is disabled
+because the bridge cannot reliably map its targets to a simulator UUID. The
+middleware uses same-origin helper routes in this mode. The restriction covers
+this server's interfaces, not independently launched servers or host tools
+[observed: `src/middleware.ts`].
+
 ## Preview sharing
 
 `--disable-share` (or the middleware's `disableShare: true`) hides only the

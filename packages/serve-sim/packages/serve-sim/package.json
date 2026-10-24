@@ -43,6 +43,7 @@
     "src/camera-helper.ts",
     "src/connect-to-fetch.ts",
     "src/middleware.ts",
+    "src/single-device.ts",
     "src/native.ts",
     "src/state.ts",
     "src/stream-settings.ts",

@@ -4,6 +4,7 @@ import {
   RECORDING_RECONCILIATION_WAIT_MS,
 } from "./recording-timeouts";
 import { timeStartup } from "./startup-timing";
+import { SingleDevicePolicy } from "./single-device";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
@@ -1965,6 +1966,7 @@ async function serve(
     debugStreamPath?: string;
     requireToken?: boolean;
     quiet?: boolean;
+    singleDevice?: string;
     networkCapture?: boolean;
     networkCaptureProxy?: string;
     clipboard?: boolean | "unmanaged";
@@ -2001,6 +2003,7 @@ async function serve(
       simMiddleware({
         basePath: "/",
         device: targetDevice,
+        singleDevice: options.singleDevice,
         streamSettings: options.stream,
         proxyHelpers: true,
         corsOrigins: options.corsOrigins ?? [],
@@ -2246,6 +2249,10 @@ program
       "it whenever the server is reachable from the network: the same token gates the route that runs " +
       "shell commands.",
   )
+  .option(
+    "--single-device <udid>",
+    "Lock the preview and controls to one simulator; hide the device sidebar",
+  )
   .option("--detach", "Spawn helper and exit (daemon mode)")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
@@ -2424,6 +2431,28 @@ Examples:
                                          Launch an installed app, then start the stream`,
   )
   .action(async (devices: string[], opts) => {
+    if (opts.singleDevice !== undefined) {
+      try {
+        const policy = new SingleDevicePolicy(opts.singleDevice);
+        if (devices.length > 1) throw new Error("--single-device accepts only one startup target.");
+        for (const device of devices) policy.resolveTarget(device);
+        if (
+          opts.detach ||
+          opts.preview === false ||
+          opts.list !== undefined ||
+          opts.kill !== undefined
+        ) {
+          throw new Error(
+            "--single-device requires the preview server; drop --detach/--no-preview/--list/--kill.",
+          );
+        }
+        opts.singleDevice = policy.device;
+        devices = [policy.device];
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    }
     if (opts.list !== undefined) {
       listStreams(typeof opts.list === "string" ? opts.list : undefined);
       return;
@@ -2815,6 +2844,7 @@ Examples:
         disableShare: !!opts.disableShare,
         allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
+        singleDevice: opts.singleDevice,
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
