@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-23 (Codex: iOS permission readback)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -157,3 +158,18 @@ Clipboard fallbacks belong to the selected device and are discarded on a selecti
 ## Open questions
 
 None at this time.
+
+## App permissions
+
+The standalone preview reads `permissions.list` when opened, after a write,
+and every five seconds while active. A page reload reads the services again.
+It never sets an optimistic granted/denied state from a write ACK. Generations
+reject old-target and pre-write reads; read coalescing and pending writes are
+scoped to the target. A stalled read for another app does not block the current
+app's refresh. Mutation errors survive background reads until another explicit
+action or target change. [observed: serve-sim
+`client/components/app-permissions-tool.tsx`; regression coverage in
+`__tests__/fixtures/permissions-ui.child.ts`]
+
+The native services and notification initialization limit are described in
+[LLP 0003](0003-serve-sim-http-api.spec.md#app-permissions).

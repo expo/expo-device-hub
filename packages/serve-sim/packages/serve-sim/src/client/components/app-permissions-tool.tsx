@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { ReloadIcon } from "../icons";
 import { runHostAction } from "../../socket/client-control";
@@ -7,54 +7,140 @@ import { PERMISSION_SERVICES, type PermAction, type PermState } from "../utils/p
 
 export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId: string | null }) {
   const [state, setState] = useState<PermState>({});
-  const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const targetKey = JSON.stringify([udid, bundleId]);
+  const [pendingWrites, setPendingWrites] = useState<Record<string, string>>({});
+  const pending = pendingWrites[targetKey] ?? null;
+  const [readError, setReadError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  const error = writeError ?? readError;
   const [open, setOpen] = useState(false);
 
-  // The `serve-sim permissions` subcommand handles the stores `simctl privacy`
-  // can't (push notifications via BulletinBoard, location's `i<bundleId>:`
-  // clients.plist keys), so the UI drives it instead of calling simctl directly.
-  // Reset assumed state whenever the foreground app changes.
-  useEffect(() => {
-    setState({});
-    setError(null);
-  }, [bundleId]);
-
-  const apply = useCallback(
-    async (service: string, action: PermAction) => {
-      if (!bundleId) return;
-      const key = `${service}:${action}`;
-      setPending(key);
-      setError(null);
+  const generation = useRef(0);
+  const reading = useRef(new Set<string>());
+  const writing = useRef(new Set<string>());
+  const refresh = useCallback(
+    async (force = false) => {
+      const own = generation.current;
+      const readKey = `${targetKey}:${own}`;
+      if (!bundleId || (!force && (reading.current.has(readKey) || writing.current.has(targetKey))))
+        return;
+      reading.current.add(readKey);
       try {
-        const res = await runHostAction("permissions.set", { action, service, bundleId, udid });
-        if (res.exitCode !== 0) {
-          setError(res.stderr.trim() || `serve-sim permissions failed (exit ${res.exitCode})`);
-          return;
+        const res = await runHostAction("permissions.list", { bundleId, udid });
+        if (res.exitCode !== 0) throw new Error(res.stderr.trim() || "Could not read permissions");
+        const payload = JSON.parse(res.stdout);
+        if (
+          !Array.isArray(payload.permissions) ||
+          !payload.permissions.every(
+            (p: any) =>
+              typeof p.id === "string" &&
+              ["granted", "denied", "limited", "undetermined"].includes(p.state),
+          )
+        )
+          throw new Error("Invalid permissions response");
+        if (own !== generation.current) return;
+        const next: PermState = {};
+        for (const permission of payload.permissions) {
+          next[permission.id] =
+            permission.state === "granted"
+              ? "grant"
+              : permission.state === "denied"
+                ? "revoke"
+                : permission.state === "limited"
+                  ? "limited"
+                  : "reset";
         }
-        setState((s) => ({ ...s, [service]: action === "reset" ? undefined : action }));
+        // When-in-use does not imply always authorization.
+        next["location-always"] =
+          payload.location?.Authorization === 4
+            ? "grant"
+            : payload.location?.Authorization === 1
+              ? "revoke"
+              : payload.location?.Authorization == null || payload.location.Authorization === 0
+                ? "reset"
+                : undefined;
+        setState(next);
+        setReadError(null);
+      } catch (e) {
+        if (own === generation.current) {
+          setState({});
+          setReadError(e instanceof Error ? e.message : String(e));
+        }
       } finally {
-        setPending(null);
+        reading.current.delete(readKey);
       }
     },
-    [udid, bundleId],
+    [bundleId, udid, targetKey],
   );
 
-  const resetAll = useCallback(async () => {
-    if (!bundleId) return;
-    setPending("__all__");
-    setError(null);
-    try {
-      const res = await runHostAction("permissions.resetAll", { bundleId, udid });
-      if (res.exitCode !== 0) {
-        setError(res.stderr.trim() || `serve-sim permissions failed (exit ${res.exitCode})`);
-        return;
+  const latestTarget = useRef<{ key: string; refresh: typeof refresh } | null>(null);
+  useEffect(() => {
+    latestTarget.current = { key: targetKey, refresh };
+    const retire = () => {
+      latestTarget.current = null;
+    };
+    return retire;
+  }, [targetKey, refresh]);
+
+  useEffect(() => {
+    generation.current++;
+    setState({});
+    setReadError(null);
+    setWriteError(null);
+    if (!open) return;
+    void refresh(true);
+    const timer = setInterval(() => void refresh(), 5000);
+    const focus = () => void refresh();
+    window.addEventListener("focus", focus);
+    const invalidate = () => {
+      generation.current++;
+    };
+    return () => {
+      invalidate();
+      clearInterval(timer);
+      window.removeEventListener("focus", focus);
+    };
+  }, [bundleId, udid, open, refresh]);
+
+  const write = useCallback(
+    async (key: string, run: () => ReturnType<typeof runHostAction>) => {
+      if (!bundleId || writing.current.has(targetKey)) return;
+      writing.current.add(targetKey);
+      generation.current++;
+      setPendingWrites((previous) => ({ ...previous, [targetKey]: key }));
+      setReadError(null);
+      setWriteError(null);
+      try {
+        const result = await run();
+        if (result.exitCode !== 0)
+          throw new Error(result.stderr.trim() || "Could not change permissions");
+      } catch (error) {
+        if (latestTarget.current?.key === targetKey)
+          setWriteError(error instanceof Error ? error.message : String(error));
+      } finally {
+        const current = latestTarget.current;
+        if (current?.key === targetKey) {
+          generation.current++;
+          await current.refresh(true);
+        }
+        writing.current.delete(targetKey);
+        if (latestTarget.current)
+          setPendingWrites((previous) => {
+            const next = { ...previous };
+            delete next[targetKey];
+            return next;
+          });
       }
-      setState({});
-    } finally {
-      setPending(null);
-    }
-  }, [udid, bundleId]);
+    },
+    [bundleId, targetKey],
+  );
+
+  const apply = (service: string, action: PermAction) =>
+    write(`${service}:${action}`, () =>
+      runHostAction("permissions.set", { action, service, bundleId: bundleId!, udid }),
+    );
+  const resetAll = () =>
+    write("__all__", () => runHostAction("permissions.resetAll", { bundleId: bundleId!, udid }));
 
   if (!bundleId) {
     return <AppPermissionsLoading />;
@@ -80,6 +166,10 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
         </div>
       )}
 
+      <p className="text-[11px] text-white/60 py-1">
+        Shows service authorization. Some apps cache status until relaunch. Notifications may need
+        the app’s normal request to enable alerts.
+      </p>
       <div className="relative">
         <div className="max-h-[260px] overflow-y-auto flex flex-col gap-1 py-2 [scrollbar-width:thin]">
           {PERMISSION_SERVICES.map(({ key, label }) => {
@@ -88,6 +178,7 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
               <div key={key} className="flex items-center justify-between gap-2 px-0.5 py-1">
                 <span className="text-[12px] text-white/90 overflow-hidden text-ellipsis whitespace-nowrap flex-1 min-w-0">
                   {label}
+                  {current === "limited" && <span className="ml-2 text-[10px]">Limited</span>}
                 </span>
                 <div
                   className="flex gap-0.5 bg-white/[0.04] border border-white/8 rounded-md p-0.5"
@@ -96,6 +187,7 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
                 >
                   <PermBtn
                     active={current === "grant"}
+                    disabled={pending !== null}
                     pending={pending === `${key}:grant`}
                     onClick={() => apply(key, "grant")}
                     variant="grant"
@@ -105,6 +197,7 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
                   </PermBtn>
                   <PermBtn
                     active={current === "revoke"}
+                    disabled={pending !== null}
                     pending={pending === `${key}:revoke`}
                     onClick={() => apply(key, "revoke")}
                     variant="revoke"
@@ -113,7 +206,8 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
                     <X size={11} strokeWidth={3} />
                   </PermBtn>
                   <PermBtn
-                    active={false}
+                    active={current === "reset"}
+                    disabled={pending !== null}
                     pending={pending === `${key}:reset`}
                     onClick={() => apply(key, "reset")}
                     variant="reset"
@@ -133,7 +227,7 @@ export function AppPermissionsTool({ udid, bundleId }: { udid: string; bundleId:
       <div className="flex justify-end">
         <button
           onClick={resetAll}
-          disabled={pending === "__all__"}
+          disabled={pending !== null}
           className="bg-transparent border border-white/12 text-white/70 text-[10px] px-2 py-[3px] rounded-[5px] cursor-pointer uppercase tracking-[0.04em]"
           title="serve-sim permissions reset all"
         >
@@ -171,6 +265,7 @@ export function AppPermissionsLoading() {
 function PermBtn({
   active,
   pending,
+  disabled,
   onClick,
   variant,
   title,
@@ -178,6 +273,7 @@ function PermBtn({
 }: {
   active: boolean;
   pending: boolean;
+  disabled: boolean;
   onClick: () => void;
   variant: "grant" | "revoke" | "reset";
   title: string;
@@ -187,7 +283,8 @@ function PermBtn({
   return (
     <button
       onClick={onClick}
-      disabled={pending}
+      disabled={disabled}
+      aria-pressed={active}
       title={title}
       aria-label={title}
       className="w-6 h-5.5 flex items-center justify-center border-none rounded p-0 cursor-pointer [transition:background_0.12s,color_0.12s]"
