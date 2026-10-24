@@ -274,3 +274,32 @@ test("matching code can adopt across image package selectors and explicit defaul
     else process.env.SERVE_SIM_VERSION = before;
   }
 });
+
+test("adoption confirms exact requested server-owned video identity and output", async () => {
+  await fixture(async ({ cli, bodies }) => {
+    const result = await cli([
+      "--recording-output",
+      "/tmp/job-recording",
+      "--recording-id",
+      "job-recording",
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).recording).toEqual({
+      output: "/tmp/job-recording",
+      recordingId: "job-recording",
+    });
+    expect(bodies[0]).toMatchObject({
+      videoRecording: { output: "/tmp/job-recording", recordingId: "job-recording" },
+    });
+  });
+});
+
+test.each([
+  ["--recording-output", "/tmp/job"],
+  ["--recording-id", "job"],
+])("recording adoption requires paired options %s", async (flag, value) => {
+  await fixture(async ({ cli, bodies }) => {
+    expect((await cli([flag, value])).exitCode).toBe(1);
+    expect(bodies).toHaveLength(0);
+  });
+});

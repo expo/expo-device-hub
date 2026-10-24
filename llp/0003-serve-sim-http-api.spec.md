@@ -137,7 +137,19 @@ Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screen
 artifacts, and network capture fields/upstream before the CLI reports success.
 Existing captures stop before the job's upstream is applied; requested capture must
 be active before success, and app installation/launch follows through normal typed
-`/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff
+`/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff.
+
+The paired adoption flags `--recording-output <absolute-directory>` and
+`--recording-id <id>` optionally start the existing native video writer after
+stream reconfiguration and before success. The startup JSON then confirms
+`recording: { output, recordingId }`. Warmup and adoption without these flags do
+not start video. This private owner recording lasts until its exact-ID stop or
+server shutdown; it needs no recorder child or lease heartbeat. Existing
+`record-video` client leases retain their expiry behavior. The normal authenticated
+`DELETE /helper/<udid>/recording/video` with `x-recording-id` waits for native
+finalization and returns `{ manifest }`; retrying the same finished ID returns the
+same manifest. A disconnected adoption drains in-flight recording startup before
+configuration settles; failed adoption still consumes the private claim
 [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 ## Preview sharing

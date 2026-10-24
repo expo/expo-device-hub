@@ -7,6 +7,12 @@ import { UDID, useTempStateDir } from "../helpers";
 const updates: StreamEncoderSettings[] = [];
 class Capture {
   async start() {}
+  async startRecording() {
+    expect(updates.at(-1)).toMatchObject({ h264Fps: 30, h264Bitrate: 2300000 });
+  }
+  async stopRecording() {
+    return "/tmp/adopt-video/session.json";
+  }
   async stop() {}
   async subscribeScreenChanges() {
     return async () => {};
@@ -63,6 +69,7 @@ test("adoption changes the already running native encoder and future viewer sett
         h264Bitrate: 2300000,
         maxDimension: 720,
       },
+      videoRecording: { output: "/tmp/adopt-video", recordingId: "job" },
       networkCapture: false,
       networkCaptureFields: [],
       corsOrigins: [],

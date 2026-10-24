@@ -106,7 +106,7 @@ function identityMatches(identity: unknown, expected: SessionIdentity): boolean 
 export async function startSessionOwner(
   device: string,
   identity: () => SessionIdentity,
-  configure: (configuration: SessionConfiguration) => Promise<void>,
+  configure: (configuration: SessionConfiguration, signal: AbortSignal) => Promise<void>,
 ): Promise<{ close(): void }> {
   const directory = mkdtempSync(join(OWNER_ROOT, "serve-sim-owner-"));
   // mkdtemp uses 0700; do not use a directory under the configurable upload/state roots.
@@ -181,8 +181,21 @@ export async function startSessionOwner(
         removeAuthority();
         socket.setTimeout(120_000, () => socket.destroy());
         const configuration = sessionConfigurationSchema.parse(request.configuration);
-        await configure(configuration);
-        if (!closed) respond({ ok: true, version: identity().version });
+        const cancellation = new AbortController();
+        const cancel = () => cancellation.abort();
+        socket.once("close", cancel);
+        try {
+          await configure(configuration, cancellation.signal);
+          cancellation.signal.throwIfAborted();
+          if (!closed)
+            respond({
+              ok: true,
+              version: identity().version,
+              recording: configuration.videoRecording,
+            });
+        } finally {
+          socket.off("close", cancel);
+        }
       } catch {
         respond({ ok: false, error: "session_configuration_failed" });
       }
@@ -333,5 +346,10 @@ export async function adoptSession(
     configuration: sessionConfigurationSchema.parse(configuration),
   });
   if (result.version !== version) throw new Error("Prepared serve-sim did not confirm adoption");
-  return previewStartupPayload([state], state.token);
+  if (JSON.stringify(result.recording) !== JSON.stringify(configuration.videoRecording))
+    throw new Error("Prepared serve-sim did not confirm requested recording");
+  return {
+    ...previewStartupPayload([state], state.token),
+    ...(configuration.videoRecording ? { recording: configuration.videoRecording } : {}),
+  };
 }

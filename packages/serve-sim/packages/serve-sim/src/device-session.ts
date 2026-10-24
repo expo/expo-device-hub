@@ -356,7 +356,7 @@ export class DeviceSession {
   private readonly scheduledInputSockets = new Set<HidSocket>();
   private readonly inputSocketOrder: HidSocket[] = [];
   private readonly inputStateWaiters = new Set<() => void>();
-  private recordingLease?: { id: string; timer: ReturnType<typeof setTimeout> };
+  private recordingLease?: { id: string; timer?: ReturnType<typeof setTimeout> };
   private readonly recordingLeaseMs = RECORDING_LEASE_MS;
   private recordingStarting = false;
   private recordingStartingId?: string;
@@ -660,32 +660,7 @@ export class DeviceSession {
           });
           return;
         }
-        this.recordingStarting = true;
-        const output = body.output;
-        const recordingId = body.recordingId;
-        this.recordingStartingId = recordingId;
-        this.recordingStartCancelled = false;
-        this.cancelledRecordingStart = undefined;
-        const starting = this.waitForCapture().then(async () => {
-          if (this.rebootSuspended) throw new RecordingStartRebooting("Capture is rebooting");
-          if (this.recordingStartCancelled) {
-            this.cancelledRecordingStart = { id: recordingId };
-            throw new RecordingStartCancelled("Recording start was cancelled");
-          }
-          await this.capture.startRecording(output);
-          if (this.recordingStartCancelled || this.phase !== "running") {
-            this.cancelledRecordingStart = {
-              id: recordingId,
-              manifest: await this.capture.stopRecording(),
-            };
-            throw new RecordingStartCancelled("Recording start was cancelled");
-          }
-          this.refreshRecordingLease(recordingId);
-        });
-        this.recordingStart = starting;
-        await starting;
-        this.lastFinishedRecording = undefined;
-        this.lastFailedRecording = undefined;
+        await this.startVideoRecording(body.output, body.recordingId);
         this.sendJson(res, 200, { recording: true });
       } catch (error) {
         const status =
@@ -701,11 +676,6 @@ export class DeviceSession {
               ? error.code
               : "recording_start_failed";
         this.sendJson(res, status, { error: code, message: String(error) });
-      } finally {
-        this.recordingStart = undefined;
-        this.recordingStarting = false;
-        this.recordingStartingId = undefined;
-        this.recordingStartCancelled = false;
       }
       return;
     }
@@ -802,7 +772,88 @@ export class DeviceSession {
     res.end();
   }
 
+  /** Private local adoption owns this writer until explicit stop or server shutdown. */
+  // @ref LLP 0003#prepared-process-handoff — adoption awaits video startup without a recorder child.
+  async startAdoptedRecording(
+    output: string,
+    recordingId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.startVideoRecording(output, recordingId, true, signal);
+  }
+
+  private async startVideoRecording(
+    output: string,
+    recordingId: string,
+    serverOwned = false,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    if (recordingsShuttingDown || this.rebootSuspended)
+      throw new Error("Recording cannot start while stopping or rebooting");
+    if (this.recordingLease || this.recordingStarting || this.recordingFinishing)
+      throw new Error("A recording is already active");
+    if ((recordingStartCancellations.get(this.udid)?.ids.get(recordingId) ?? 0) > Date.now())
+      throw new RecordingStartCancelled("Recording start was cancelled");
+    const cancelled = () => {
+      this.recordingStartCancelled = true;
+    };
+    signal?.addEventListener("abort", cancelled, { once: true });
+    try {
+      this.recordingStarting = true;
+      this.recordingStartingId = recordingId;
+      this.recordingStartCancelled = false;
+      this.cancelledRecordingStart = undefined;
+      const starting = this.waitForCapture()
+        .then(async () => {
+          if (this.rebootSuspended) throw new RecordingStartRebooting("Capture is rebooting");
+          if (this.recordingStartCancelled) {
+            this.cancelledRecordingStart = { id: recordingId };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          await this.capture.startRecording(output);
+          if (this.recordingStartCancelled || this.phase !== "running") {
+            this.cancelledRecordingStart = {
+              id: recordingId,
+              manifest: await this.capture.stopRecording(),
+            };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          if (serverOwned) this.recordingLease = { id: recordingId };
+          else this.refreshRecordingLease(recordingId);
+        })
+        .catch(async (error) => {
+          // Drain partial native startup inside the promise shutdown/reboot/close await.
+          if (serverOwned && !this.cancelledRecordingStart) {
+            try {
+              await this.capture.stopRecording();
+            } catch (cleanupError) {
+              this.recordingFailure =
+                cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+              throw new AggregateError(
+                [error, cleanupError],
+                "Recording startup and cleanup failed",
+              );
+            }
+          }
+          throw error;
+        });
+      this.recordingStart = starting;
+      await starting;
+      this.lastFinishedRecording = undefined;
+      this.lastFailedRecording = undefined;
+    } finally {
+      signal?.removeEventListener("abort", cancelled);
+      this.recordingStart = undefined;
+      this.recordingStarting = false;
+      this.recordingStartingId = undefined;
+      this.recordingStartCancelled = false;
+    }
+  }
+
   private refreshRecordingLease(id: string): void {
+    // An HTTP heartbeat must not turn a server-owned recording into an expiring client lease.
+    if (this.recordingLease?.id === id && !this.recordingLease.timer) return;
     if (this.recordingLease) clearTimeout(this.recordingLease.timer);
     const timer = setTimeout(() => {
       void this.finishRecording(id).catch((error) => {

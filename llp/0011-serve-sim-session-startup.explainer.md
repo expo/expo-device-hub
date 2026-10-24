@@ -179,6 +179,11 @@ A compatible claim consumes the local authority once, including when native setu
 fails. It updates stream settings including normal encoder defaults, STUN/TURN,
 CORS/frame policy, sharing, screenshot directory and capture fields/upstream.
 A running native encoder receives the update before the CLI reports success.
+Optional paired recording output/ID flags also await the native writer before
+success, confirming that output/ID in startup JSON. The same server owns video
+until exact-ID finalization or shutdown, without a `record-video` child or
+heartbeat; warmup starts no video [observed: `src/device-session.ts`,
+`src/middleware.ts`, `src/session-owner.ts`].
 Capture restarts with the requested upstream before the CLI succeeds and before app operations; an upstream
 failure never selects direct traffic [observed: `src/index.ts`, `src/middleware.ts`,
 `src/device-session.ts`, `src/capture/upstream.ts`].
