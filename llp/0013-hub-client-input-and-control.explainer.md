@@ -148,6 +148,34 @@ Browser clipboard writes from toolbar Copy are serialized. An older write that h
 
 Clipboard fallbacks belong to the selected device and are discarded on a selection change. A new fallback clears an earlier inspector error. A new inspector Copy clears its previous result before reading, including on failure. Key warnings are shown even when React batches an action's start and completion. The toolbar wraps at narrow widths; its measured height reserves space below the stream [observed: `Dashboard.tsx`, `ClipboardSection.tsx`, `ClipboardToast.tsx`, `StreamPanel.tsx`].
 
+## Single-device sessions
+
+The standalone Hub accepts `--platform ios|android --single-device <id>`; iOS
+requires a simulator UUID and Android requires an adb serial. Like the other
+standalone CLI options, its environment setting is ignored in plugin mode. The server
+propagates that startup identity to the backend and shell. Device discovery and
+agent activity expose only that ID. The dashboard does not mount its left
+sidebar, toggle, creation picker or delete action, and a missing device does not
+cause selection of another device
+[observed: `packages/expo-device-hub/src/server/single-device.ts`, `src/Dashboard.tsx`].
+
+Boot, shutdown and remove share request parsing and one lifecycle policy check
+[observed: `src/server/index.ts`, `src/server/single-device.ts`].
+
+The Hub rejects create and delete requests, lifecycle requests for another
+identity, and every route or socket for the other platform. The iOS adapter
+passes serve-sim's single-device policy through without bypassing either token
+gate. The Android adapter pins omitted `device` parameters, rejects conflicting
+ones, and closes its fleet listing, selection and AVD launch/stop routes before
+calling the backend. AVD names are not accepted as lifecycle replacements for an
+adb serial. An iOS simulator may boot again under the original UUID; Android
+may reconnect under its original serial
+[observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`].
+
+The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
+explains helper and control-channel restrictions. A single-device session is
+an application policy layered on authentication, not host-wide device isolation.
+
 ## Hub shutdown
 
 - On `SIGINT` and `SIGTERM`, the `expo-device-hub` CLI stops Android recording and calls serve-sim's `dispose()` at the same time. It exits after both, within its 60 s shutdown deadline [observed: `shutdownServeSim` in `packages/expo-device-hub/src/server/serve-sim.ts`, `packages/expo-device-hub/src/server/cli.ts`].
