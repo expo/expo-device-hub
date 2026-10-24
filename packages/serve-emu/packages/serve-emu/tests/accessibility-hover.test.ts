@@ -26,8 +26,9 @@ describe("accessibility hover hit testing", () => {
     ];
     const originalOrder = nodes.map(({ id }) => id);
 
-    expect(findAccessibilityNodeAt(nodes, { x: 0.5, y: 0.3 }, { width: 1000, height: 2000 })?.id)
-      .toBe("button");
+    expect(
+      findAccessibilityNodeAt(nodes, { x: 0.5, y: 0.3 }, { width: 1000, height: 2000 })?.id,
+    ).toBe("button");
     expect(nodes.map(({ id }) => id)).toEqual(originalOrder);
   });
 
@@ -47,23 +48,26 @@ describe("accessibility hover hit testing", () => {
       height: 2400,
     });
     expect(
-      measureAccessibilityViewport(
-        [node("overscan", 0, 0, 1440, 2600)],
-        { width: 1080, height: 2400 },
-      ),
+      measureAccessibilityViewport([node("overscan", 0, 0, 1440, 2600)], {
+        width: 1080,
+        height: 2400,
+      }),
     ).toEqual({ width: 1440, height: 2600 });
   });
 
   test("visits a representative 50k-node snapshot exactly once", () => {
     let boundsReads = 0;
-    const nodes = Array.from({ length: 50_000 }, (_, index): AccessibilityHitTarget => ({
-      id: String(index),
-      get bounds() {
-        boundsReads += 1;
-        const inset = index % 400;
-        return { left: inset, top: inset, right: 2000 - inset, bottom: 2000 - inset };
-      },
-    }));
+    const nodes = Array.from(
+      { length: 50_000 },
+      (_, index): AccessibilityHitTarget => ({
+        id: String(index),
+        get bounds() {
+          boundsReads += 1;
+          const inset = index % 400;
+          return { left: inset, top: inset, right: 2000 - inset, bottom: 2000 - inset };
+        },
+      }),
+    );
 
     const match = findAccessibilityNodeAt(nodes, { x: 0.5, y: 0.5 }, { width: 2000, height: 2000 });
 
@@ -105,13 +109,16 @@ describe("latest animation-frame scheduling", () => {
     let scheduledCallback: ((timestamp: number) => void) | undefined;
     let boundsReads = 0;
     let hitTests = 0;
-    const nodes = Array.from({ length: 20_000 }, (_, index): AccessibilityHitTarget => ({
-      id: String(index),
-      get bounds() {
-        boundsReads += 1;
-        return { left: 0, top: 0, right: 1080 - (index % 500), bottom: 2400 };
-      },
-    }));
+    const nodes = Array.from(
+      { length: 20_000 },
+      (_, index): AccessibilityHitTarget => ({
+        id: String(index),
+        get bounds() {
+          boundsReads += 1;
+          return { left: 0, top: 0, right: 1080 - (index % 500), bottom: 2400 };
+        },
+      }),
+    );
     const scheduler = createLatestAnimationFrameScheduler(
       (x: number) => {
         hitTests += 1;

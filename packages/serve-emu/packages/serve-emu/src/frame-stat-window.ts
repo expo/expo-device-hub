@@ -60,13 +60,18 @@ export class FrameStatWindow {
       }
     }
     intervals.sort((a, b) => a - b);
-    const at = (q: number) => intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * q))];
+    const at = (q: number) =>
+      intervals[Math.min(intervals.length - 1, Math.floor(intervals.length * q))];
     const round1 = (n: number) => Math.round(n * 10) / 10;
     return {
       windowFrames: this.#count,
       intervalMs:
         intervals.length > 0
-          ? { p50: round1(at(0.5)), p95: round1(at(0.95)), max: round1(intervals[intervals.length - 1]) }
+          ? {
+              p50: round1(at(0.5)),
+              p95: round1(at(0.95)),
+              max: round1(intervals[intervals.length - 1]),
+            }
           : null,
       avgKeyFrameBytes: keyFrames > 0 ? Math.round(keyBytes / keyFrames) : null,
       avgDeltaFrameBytes: deltaFrames > 0 ? Math.round(deltaBytes / deltaFrames) : null,

@@ -3,9 +3,9 @@
 **Type:** Explainer
 **Status:** Active
 **Systems:** ServeSim, Hub
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -18,13 +18,13 @@ and Table Mode follow as standard settings rows, with the decimal angle input
 beside the slider. Partially open uses Device Hub's Book pose.
 Both control locations share the same pending and confirmed state.
 
-| Pose | Hinge angle |
-| --- | --- |
-| Fully folded (Closed) | 0° |
-| Partially open (Book) | 90° |
-| Fully open (Open) | 180° |
-| Laptop | 90° |
-| Tent | 80° |
+| Pose                  | Hinge angle |
+| --------------------- | ----------- |
+| Fully folded (Closed) | 0°          |
+| Partially open (Book) | 90°         |
+| Fully open (Open)     | 180°        |
+| Laptop                | 90°         |
+| Tent                  | 80°         |
 
 Laptop and Book have the same hinge angle but different physical orientations.
 The live slider covers 0–180°, and the numeric input accepts decimal angles.
@@ -34,18 +34,47 @@ after applying the new orientation. Frames still follow the active display and
 any orientation restrictions imposed by the foreground app.
 
 The Table Mode toggle controls the simulator's persistent table state. Tent
-enables it automatically; the other presets disable it.
+enables it automatically; the other presets disable it. Its checked state uses
+the acknowledged control setting, independently of observed tabletop activity.
 
-Confirmed hinge angles, named poses, and Table Mode values reflect successful
-commands in the current serve-sim session. serve-sim does not monitor the live
-hinge sensor for changes made externally in Device Hub. The streamed display
-and its orientation still follow native display readback.
+## Live pose observation
 
-Table Mode eligibility requires a known physical orientation, established by
-choosing a preset. An independent rotation invalidates that knowledge because
-its screen orientation can differ from physical orientation. Choose a preset
-again to restore Table Mode eligibility after rotating. Angle adjustments keep
-the known physical orientation and update eligibility for the new angle.
+The live preview uses native observations independently of the successful-command
+cache and saved startup state. Screen config retains its command fields for the
+CLI and existing clients; the additional `observedDeviceState` object is a full
+native snapshot for preview. Once present, omitted fields are unknown and never
+fall back to saved commands. Table Mode eligibility uses physical orientation,
+independently of an app's screen rotation. Before enabling Table Mode or turning
+face-down, a native getter reconciles angle, physical orientation and table state with their latest
+successful control sends. A command's value remains eligible until that field has a newer source
+sample, including an unknown sample; unrelated fields and delayed delivery do not
+revoke it. Observation loss and capture reset clear these temporary values. The
+getter reads actor-local state without sensor queries or additional polling. Initial
+orientation readback has no source timestamp, so its start/end times bound the read.
+If an orientation send overlaps that interval, eligibility stays unknown until a
+source sample or another orientation send is strictly after the read ends; buffered
+samples inside the interval cannot resolve it. These eligibility values never
+become live-preview or recording observations.
+
+Pose subscription setup is optional to video startup. Slow or failed registration
+does not block screen/input readiness or capture shutdown; registration completing
+after close immediately detaches its listener. Device classification is retained
+across reboot so a delayed Duo subscription still attaches its live observer.
+
+Local controls preview their requested pose while pending. After acknowledgement,
+the preview stays until native state matches or 500 ms elapses. Native display ID
+owns panel and input routing as soon as the command queue drains. Late native
+Laptop/Tent state initializes camera framing unless a local control already chose
+it. An externally observed preset uses physical preset framing independently of
+app rotation and supersedes a saved face-down view. A failed or interrupted
+control batch discards queued preset framing while preserving valid camera
+rotations, including rotations made while that batch was pending. Unknown native
+fields alone do not invalidate the previous camera or release saved face-down
+framing. Each successful preset becomes the recovery baseline for later commands;
+rotations made after that preset was queued remain part of the view.
+[observed: `src/device-session.ts` `applyDeviceState`, `screenConfig`;
+`src/client/simulator/screen-config-state.ts` `previewScreenConfig`;
+`src/client/hooks/use-duo-framing.ts` `useDuoFraming`]
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view
@@ -53,12 +82,18 @@ loads Apple's `V68.usdz` from a local Xcode installation, with the live stream
 on its cover or inner display. Folding, unfolding, and
 switching poses animate continuously, including when a new preset interrupts a
 transition. Closed presents the cover straight toward the viewer, and Open
-presents the inner display straight toward the viewer. The view uses native
-orientation once when connecting. Rotate controls and pose presets choose the
-device's orientation. In Closed, Book (Partially open), and Open, hinge edits
+presents the inner display straight toward the viewer. The view initializes from display geometry, then follows native physical
+orientation for external rotations. UI rotation previews immediately and ignores
+stale native readback for up to 1500 ms, so acknowledgement does not turn the
+model twice. A pending hinge command retains that UI turn through the grace
+timer; readback reconciles it after the hinge releases the view. [observed:
+`useDuoFraming`, `createDuoRotationState`]
+If no physical baseline existed when the UI rotated, its first
+native sample establishes absolute camera framing; subsequent turns apply
+immediately. That first sample may briefly correct an optimistic guess. Pose presets choose their own physical camera framing. In Closed, Book (Partially open), and Open, hinge edits
 smoothly turn the cover or inner screens toward the viewer while retaining the
-chosen portrait/landscape orientation. Display switches and delayed orientation
-updates never rotate the model.
+chosen portrait/landscape orientation. Display switches and delayed app orientation
+updates never rotate the model; physical orientation updates do.
 Laptop has a level base and horizontal hinge; Tent presents the outer cover
 screen with both halves descending from a horizontal ridge. In these two tabletop
 modes, slider adjustments preserve the view through the closed and open endpoints.
@@ -118,15 +153,84 @@ Laptop, Book, and Tent. Command+1–5 remain available for browser tab switching
 
 The existing CLI uses degrees and keeps its three angle aliases:
 
-| Alias | CLI | Angle | UIKit status |
-| --- | --- | --- | --- |
-| Fold | `serve-sim hinge fold` | 0° | `closed` |
-| Half Fold | `serve-sim hinge half` | 90° | `partiallyOpen` |
-| Unfold | `serve-sim hinge unfold` | 180° | `fullyOpen` |
+| Alias     | CLI                      | Angle | UIKit status    |
+| --------- | ------------------------ | ----- | --------------- |
+| Fold      | `serve-sim hinge fold`   | 0°    | `closed`        |
+| Half Fold | `serve-sim hinge half`   | 90°   | `partiallyOpen` |
+| Unfold    | `serve-sim hinge unfold` | 180°  | `fullyOpen`     |
 
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
+
+Run `serve-sim hinge` without a position to read the observed angle, pose, and
+physical orientation as JSON. `tableMode` is the acknowledged setting;
+`tableModeActive` is the observed native sensor activity, which can differ from
+that setting. The response also reports whether Table Mode is available. It
+does not move the device. Unknown fields are left out; a failed native read
+returns an error instead of a successful partial state. [observed:
+`DeviceSession` command `0x13`, `NativeHid.hingeControlEligibility`]
+
+## Hinge state at startup
+
+Before serve-sim reports hinge support, it reads the native hinge angle, so the
+angle is correct even if the device was folded before serve-sim started.
+The command-state lookup reads the native angle and uses saved physical orientation
+and Table Mode. During #139, an orientation probe crashed before returning;
+recording now uses a separate native observation path described below
+[observed: `src/device-session.ts` `hydrateHingeState` and `applyNativeHingeState`, #139].
+
+serve-sim therefore saves the last confirmed pose, physical orientation, and
+Table Mode for each device in its state folder (`hinge-<UDID>.json`). At startup
+it restores them only when the saved angle matches the native angle. A different
+angle means the hinge moved while serve-sim was stopped, so the saved fields
+stay unknown. The limit is that a change made outside serve-sim at the same
+angle cannot be detected; choose a pose again to update the saved state
+[confirmed: Gabe Debes, 2026-09-24].
+
+Manual angle changes and rotation clear the selected pose, including after a
+restart.
+
+A hinge command that arrives before the startup read first reads native state
+and the saved record, so its save keeps the saved orientation. This includes a
+pose command that fails.
+
+## Confirmed hinge state
+
+Acknowledged control updates share one recorder for legacy command fields and timestamped readback overlays. Raw native snapshots remain separate. The native read returns raw tabletop activity alongside the reconciled control fields in one actor turn; `tableModeActive` never uses the acknowledgement overlay. `hingePose` follows reconciled controls so an acknowledged Tent remains readable before the next sample. Legacy helpers without the readback protocol retain config command fields. Readback omits Table Mode availability until angle and orientation are known; unknown does not mean unavailable.
+
+Recording and live preview observe native pose separately from the successful-command cache and
+saved startup state. It opens the hinge stream with requested 100 ms updates and
+a one-degree threshold, plus a generic motion stream for physical orientation
+and tabletop activity. Neither requested cadence nor injected update frequency
+changes the saved timeline's four-per-second pose limit. Geometry boundaries
+retain their first written frame. Ordinary iPhones skip the private motion path.
+
+The first listener starts observation; the last cancels and awaits
+teardown. Boot and connection identities reject callbacks from old producers;
+independent native timestamp watermarks reject history and out-of-order angle,
+motion and orientation-query samples. A failure clears observed fields and
+retries after one second while a recording or live preview remains active. A stationary device's
+Table activity can be unknown until a fresh motion event arrives.
+
+When CoreDevice does not list the device, the observation logs a troubleshooting
+hint once per observation task: check `xcrun devicectl list devices`, then consider
+a stale per-user CoreDeviceService after an Xcode update. Restarting that service
+is a manual step and can interrupt other device sessions; serve-sim does not do it
+automatically [observed: `CoreDeviceBridge.runDeviceStateObservation`].
+
+Apple's native tabletop value zero (`Ambiguous`) records `tableMode: false`;
+recognized values 1–10 record `true`. Missing or unrecognized values are absent.
+This reports observed activity, not whether the Table Mode control is enabled.
+See [recording metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)
+for the format and video-clock contract. Live notifications keep one dispatch in
+flight and one latest full snapshot pending, independently of video backpressure.
+
+[observed: `Sources/SimNative/CoreDeviceBridge.swift`,
+`Sources/SimNative/CoreDeviceHingeReadback.swift`,
+`Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
+`Sources/SimNative/CaptureEngine.swift`, `Sources/SimNative/DeviceStateDelivery.swift`,
+`Sources/SimNative/sim-module.swift`; `Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`]
 
 ## APIs inside an iOS app
 
@@ -159,13 +263,13 @@ defaults write com.apple.dt.Devices com.apple.dt.coredevicepop.useInternalV68Act
 The bar exposes a continuous 0–180° hinge slider, five pose presets, rotation
 controls, and Table Mode. The preset shortcuts and physical states are:
 
-| Shortcut | Pose | Angle | Physical orientation | Table Mode |
-| --- | --- | --- | --- | --- |
-| ⌘1 | Closed | 0° | Portrait | Off |
-| ⌘2 | Open | 180° | Portrait | Off |
-| ⌘3 | Laptop | 90° | Landscape left | Off |
-| ⌘4 | Book | 90° | Portrait | Off |
-| ⌘5 | Tent | 80° | Face down | On |
+| Shortcut | Pose   | Angle | Physical orientation | Table Mode |
+| -------- | ------ | ----- | -------------------- | ---------- |
+| ⌘1       | Closed | 0°    | Portrait             | Off        |
+| ⌘2       | Open   | 180°  | Portrait             | Off        |
+| ⌘3       | Laptop | 90°   | Landscape left       | Off        |
+| ⌘4       | Book   | 90°   | Portrait             | Off        |
+| ⌘5       | Tent   | 80°   | Face down            | On         |
 
 These orientations describe the physical device, independently of the active
 panel's native rotation. A Laptop preset therefore differs from sending a 90°
@@ -183,11 +287,11 @@ rotation control sends the new orientation before releasing Table Mode.
 Table Mode is a persistent simulated state. Device Hub enables its control for
 these combinations:
 
-| Hinge state | Physical orientations |
-| --- | --- |
-| Closed | Landscape left or right |
+| Hinge state    | Physical orientations                                     |
+| -------------- | --------------------------------------------------------- |
+| Closed         | Landscape left or right                                   |
 | Partially open | Portrait, upside down, landscape left or right, face down |
-| Open flat | Portrait |
+| Open flat      | Portrait                                                  |
 
 The installed Action Bar exposes one hinge-angle slider. Its other physical
 controls are presets and rotation controls; no independent pitch, roll, or yaw
@@ -299,13 +403,64 @@ selected service stays pinned through each gesture's final report. Input waits
 for capture to identify a panel. Capability lookup retries transient startup
 failures and never falls back to the disconnected legacy inner service.
 
-The new path is restricted to profiles with exactly two integrated displays;
-virtual outputs (such as CarPlay) do not count. Nonfoldable devices keep their
-original Indigo target (`0x32`), Down events for both begin and move, and legacy
-rotation, without CoreDevice capability queries. Duo keyboard input uses
-CoreDevice's `KeyboardHIDCapability` (`HIDKeyboard.send(key:state:)`) on both
-displays: legacy keyboard messages are accepted but never reach focused text
-fields. Button input continues to use Indigo.
+Ordinary iOS devices with one integrated display also prefer CoreDevice touch
+when its symbols, value layouts, and per-device capability are available.
+Unsupported digitizers retain Indigo. CoreDevice key encoding is optional for
+ordinary iOS: its absence is logged without disabling touch or falling touch
+back to legacy input. Setup still opens the keyboard service, which also starts
+guest HID delivery; the missing-key-encoder regression verifies actual UIKit
+touch receipts. If the digitizer opens but the keyboard service itself cannot
+be opened, setup fails and the session reports input as unavailable: CoreDevice
+then owns guest input, so legacy sends would be acknowledged without reaching
+UIKit [observed: `setupCoreDeviceHID`, `HIDInjector.setup`, `NativeHid.setScreen`]
+[confirmed: Gabe Debes, 2026-10-17]. If keys cannot be encoded, native
+setup reports that capability separately: `NativeHid` logs and rejects keyboard requests, config publishes
+`keyboardUnavailable`, and the preview shows a keyboard-only warning while
+touch remains usable. Legacy keyboard sends also failed delivery under the
+reproduced ownership state, so they are not a fallback for missing CoreDevice
+encoding [observed: `SimHID.setScreen`, `NativeHid`, `DeviceSession.screenConfig`,
+`StreamStatusPill`; local UIKit typing probe, 2026-10-16].
+
+The shared setup gate deliberately also disables Home, rotation, and memory
+warnings after a keyboard-service lookup failure, even where their backends
+could operate independently. Keeping one setup gate is an accepted simplicity
+tradeoff [confirmed: Gabe Debes, 2026-10-18]. Failure stays latched until the
+session is recreated; capture can continue. This is distinct from the missing
+key-encoder case, which disables only keyboard input [observed:
+`HIDInputSetup`, `SimHID`, `NativeHid.setScreen`].
+
+The local preview keeps streaming with the keyboard-only warning visible
+[observed: iPhone 16e, iOS 27.0, injected missing key encoder, 2026-10-16]:
+
+![Local preview with keyboard unavailable and touch still available](assets/0004/ordinary-ios-keyboard-unavailable.png)
+
+Duo keeps its existing requirement for both transports
+instead of falling back to its disconnected inner service.
+Nonfoldable orientation stays on the legacy rotation path, and buttons continue
+to use Indigo [observed: `HIDInjector.setup`, `setupCoreDeviceHID`, `sendKey`, and
+`sendOrientation`].
+
+When capture omits its optional screen ID, ordinary iOS uses the sole integrated
+panel ID from the static device profile; it does not guess ID 1 or select a
+virtual output. Foldables still wait for capture to identify their active panel
+[observed: `SimulatorDisplayProfile.singleIntegratedScreenID`,
+`HIDInjector.setScreen`; `native-no-screen` case in `hid-ownership.e2e.test.ts`].
+
+This also avoids an ordinary iPhone's silent legacy input drop when CoreDevice
+HID owns guest input. On iOS 27.0, setting/posting
+`com.apple.coredevice.dtuhidd.active=1`, restarting BackBoard, and reasserting the
+active owner reproduces missing UIKit touches despite a successful legacy send
+and WebSocket acknowledgement. Clearing the live flag alone is not a reliable
+repair. Transport selection therefore uses capabilities rather than this
+notification. Serve-sim never restarts BackBoard to repair input; only the
+explicitly opted-in, dedicated-device regression does so [observed:
+`src/__tests__/hid-ownership.e2e.test.ts`; local published 0.9.0 middleware
+reproduction, 2026-10-16].
+
+CoreDevice capabilities belong to a boot. Every new main capture resets its
+device's boot-bound cache, including ordinary devices; fixed-panel feeds share
+the main session and do not reset it [observed:
+`FrameCapture.start`; preview reboot case in `hid-ownership.e2e.test.ts`].
 
 For independent checks on Xcode 27.1 beta:
 

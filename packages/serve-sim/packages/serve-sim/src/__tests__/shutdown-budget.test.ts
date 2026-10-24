@@ -58,7 +58,12 @@ test("leaves no timer running once both steps finish early", async () => {
     originalClear(id);
   }) as typeof clearTimeout;
   try {
-    await runShutdownSteps({ stopCapture: async () => {}, disarm: async () => {}, totalMs: 60_000, captureShareMs: 30_000 });
+    await runShutdownSteps({
+      stopCapture: async () => {},
+      disarm: async () => {},
+      totalMs: 60_000,
+      captureShareMs: 30_000,
+    });
     expect(live.size).toBe(0);
   } finally {
     globalThis.setTimeout = originalSet;

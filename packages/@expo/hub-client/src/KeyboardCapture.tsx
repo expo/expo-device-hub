@@ -1,12 +1,12 @@
-import { type CSSProperties, type RefObject, useEffect, useRef } from 'react';
+import { type CSSProperties, type RefObject, useEffect, useRef } from "react";
 
 import {
   KEYBOARD_CAPTURE_ATTRIBUTES,
   keyEventsForBeforeInput,
   keyEventsForTextChange,
-} from './mobile-keyboard';
-import { type HidKeyEvent } from './types';
-import { readNativeKeyboardRaised } from './viewport-keyboard';
+} from "./mobile-keyboard";
+import { type HidKeyEvent } from "./types";
+import { readNativeKeyboardRaised } from "./viewport-keyboard";
 
 export interface KeyboardCaptureProps {
   /** Focus the hidden input (raising the phone keyboard) while true; blur when false. */
@@ -21,16 +21,16 @@ export interface KeyboardCaptureProps {
 }
 
 const HIDDEN_INPUT_STYLE: CSSProperties = {
-  position: 'fixed',
+  position: "fixed",
   top: 0,
   left: 0,
   width: 1,
   height: 1,
   opacity: 0,
-  border: 'none',
+  border: "none",
   padding: 0,
   margin: 0,
-  background: 'transparent',
+  background: "transparent",
 };
 
 /**
@@ -48,14 +48,14 @@ export function KeyboardCapture({ open, onKeys, inputRef }: KeyboardCaptureProps
   onKeysRef.current = onKeys;
   const openRef = useRef(open);
   openRef.current = open;
-  const sentRef = useRef('');
+  const sentRef = useRef("");
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (open) {
-      el.value = '';
-      sentRef.current = '';
+      el.value = "";
+      sentRef.current = "";
       el.focus();
     } else {
       el.blur();
@@ -71,7 +71,7 @@ export function KeyboardCapture({ open, onKeys, inputRef }: KeyboardCaptureProps
     const onBeforeInput = (event: Event) => {
       const e = event as InputEvent;
       emit(keyEventsForBeforeInput(e.inputType));
-      if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+      if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {
         e.preventDefault();
       }
     };
@@ -88,13 +88,13 @@ export function KeyboardCapture({ open, onKeys, inputRef }: KeyboardCaptureProps
         });
       });
     };
-    el.addEventListener('beforeinput', onBeforeInput);
-    el.addEventListener('input', onInput);
-    el.addEventListener('focusout', onFocusOut);
+    el.addEventListener("beforeinput", onBeforeInput);
+    el.addEventListener("input", onInput);
+    el.addEventListener("focusout", onFocusOut);
     return () => {
-      el.removeEventListener('beforeinput', onBeforeInput);
-      el.removeEventListener('input', onInput);
-      el.removeEventListener('focusout', onFocusOut);
+      el.removeEventListener("beforeinput", onBeforeInput);
+      el.removeEventListener("input", onInput);
+      el.removeEventListener("focusout", onFocusOut);
     };
   }, [ref]);
 

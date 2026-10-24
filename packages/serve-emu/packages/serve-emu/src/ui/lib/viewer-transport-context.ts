@@ -12,8 +12,7 @@ export type ViewerTransportControls = {
   downloadStats: () => void | Promise<void>;
 };
 
-export const ViewerTransportControlsContext =
-  createContext<ViewerTransportControls | null>(null);
+export const ViewerTransportControlsContext = createContext<ViewerTransportControls | null>(null);
 
 export function useViewerTransportControls(): ViewerTransportControls | null {
   return useContext(ViewerTransportControlsContext);

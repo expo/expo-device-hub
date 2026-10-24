@@ -9,10 +9,7 @@ describe("groupTargetsByApp", () => {
       { id: "c", appName: "Safari", bundleId: "com.apple.mobilesafari" },
     ]);
 
-    expect(groups.map((g) => g.bundleId)).toEqual([
-      "com.apple.mobilesafari",
-      "com.example.app",
-    ]);
+    expect(groups.map((g) => g.bundleId)).toEqual(["com.apple.mobilesafari", "com.example.app"]);
     expect(groups[0]!.targets.map((t) => t.id)).toEqual(["a", "c"]);
     expect(groups[1]!.targets.map((t) => t.id)).toEqual(["b"]);
   });

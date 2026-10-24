@@ -1,0 +1,285 @@
+// serve-sim shares eight action/UI slots per control connection.
+const MAX_IN_FLIGHT_REQUESTS = 8;
+
+// @ref LLP 0013#control-channel-pool — client ownership, server-slot accounting, and independent health/subscription recovery
+/** A control channel belongs to one client identity, never to the module. */
+export function createControlSocket(
+  url: string,
+  token: string,
+  {
+    openSocket = (address: string) => new WebSocket(address),
+    connectTimeoutMs = 5_000,
+    retryMs = 2_000,
+    healthIntervalMs = 5_000,
+    healthTimeoutMs = 5_000,
+  } = {},
+) {
+  type Reply = Record<string, unknown>;
+  type Pending = { body: Reply; sent: boolean; finish: (error?: Error, reply?: Reply) => void };
+  type Subscription = {
+    path: string;
+    data: (chunk: string) => void;
+    end: () => void;
+    timer?: ReturnType<typeof setTimeout>;
+  };
+  let socket: WebSocket | null = null;
+  let ready = false;
+  let disposed = false;
+  let nextId = 1;
+  let connectTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let healthTimer: ReturnType<typeof setTimeout> | undefined;
+  let healthProbeId: number | undefined;
+  const pending = new Map<number, Pending>();
+  let sendingRequests = false;
+  // Aborted or timed-out writes occupy a server slot until their reply.
+  const inFlight = new Set<number>();
+  const subscriptions = new Map<number, Subscription>();
+  const connectionListeners = new Set<(ready: boolean) => void>();
+
+  const notifyConnection = (value: boolean) => {
+    for (const listener of [...connectionListeners]) {
+      try {
+        listener(value);
+      } catch {}
+    }
+  };
+  const clearHealth = () => {
+    clearTimeout(healthTimer);
+    healthTimer = undefined;
+    healthProbeId = undefined;
+  };
+
+  const notifyEnd = (sub: Subscription) => {
+    try {
+      sub.end();
+    } catch {}
+  };
+  const fail = (ws: WebSocket | null, error: Error) => {
+    if (disposed || socket !== ws) return;
+    socket = null;
+    ready = false;
+    inFlight.clear();
+    clearTimeout(connectTimer);
+    clearHealth();
+    for (const request of [...pending.values()]) request.finish(error);
+    for (const sub of subscriptions.values()) {
+      clearTimeout(sub.timer);
+      sub.timer = undefined;
+      notifyEnd(sub);
+    }
+    try {
+      ws?.close();
+    } catch {}
+    notifyConnection(false);
+    if (disposed) return;
+    if ((subscriptions.size || connectionListeners.size) && retryTimer === undefined) {
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        connect();
+      }, retryMs);
+    }
+  };
+  const send = (ws: WebSocket, body: Reply) => {
+    try {
+      ws.send(JSON.stringify(body));
+    } catch {
+      fail(ws, new Error("exec-ws error"));
+    }
+  };
+  const sendRequests = () => {
+    const ws = socket;
+    if (!ws || !ready || disposed || sendingRequests) return;
+    sendingRequests = true;
+    try {
+      if (inFlight.size >= MAX_IN_FLIGHT_REQUESTS && ![...inFlight].some((id) => pending.has(id))) {
+        // A health reply cannot free abandoned server work. Surface exhaustion
+        // without replaying writes or pretending their server slots are free.
+        for (const request of [...pending.values()])
+          request.finish(new Error("too many actions in flight on this connection"));
+        return;
+      }
+      for (const [id, request] of pending) {
+        if (socket !== ws || inFlight.size >= MAX_IN_FLIGHT_REQUESTS) break;
+        if (request.sent) continue;
+        request.sent = true;
+        inFlight.add(id);
+        send(ws, { ...request.body, id });
+      }
+    } finally {
+      sendingRequests = false;
+    }
+  };
+  const scheduleHealthCheck = (ws: WebSocket) => {
+    if (disposed || socket !== ws || !ready) return;
+    healthTimer = setTimeout(() => {
+      if (disposed || socket !== ws || !ready) return;
+      healthProbeId = nextId++;
+      // An id-only exec request gets an immediate "unsupported request" reply
+      // before host action dispatch, including on older serve-sim servers.
+      // Probe the channel independently of potentially slow host actions.
+      healthTimer = setTimeout(() => fail(ws, new Error("exec-ws timeout")), healthTimeoutMs);
+      send(ws, { id: healthProbeId });
+    }, healthIntervalMs);
+  };
+  const sendSubscription = (id: number, sub: Subscription) => {
+    if (ready && socket) send(socket, { sub: id, path: sub.path });
+  };
+  const connect = () => {
+    if (disposed || socket) return;
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+    let ws: WebSocket;
+    try {
+      ws = openSocket(url);
+    } catch {
+      fail(null, new Error("exec-ws error"));
+      return;
+    }
+    socket = ws;
+    connectTimer = setTimeout(() => fail(ws, new Error("exec-ws timeout")), connectTimeoutMs);
+    ws.onopen = () => {
+      if (!disposed && socket === ws) send(ws, { token });
+    };
+    ws.onmessage = (event) => {
+      if (disposed || socket !== ws) return;
+      let msg: Reply;
+      try {
+        msg = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (!msg || typeof msg !== "object") return;
+      if (msg.ready === true) {
+        if (ready) return;
+        ready = true;
+        clearTimeout(connectTimer);
+        scheduleHealthCheck(ws);
+        sendRequests();
+        for (const [id, sub] of subscriptions) {
+          if (socket !== ws) break;
+          sendSubscription(id, sub);
+        }
+        if (socket === ws) notifyConnection(true);
+        return;
+      }
+      if (!ready) return;
+      if (typeof msg.id === "number") {
+        if (msg.id === healthProbeId) {
+          clearHealth();
+          scheduleHealthCheck(ws);
+          return;
+        }
+        inFlight.delete(msg.id);
+        const request = pending.get(msg.id);
+        if (request?.sent)
+          request.finish(typeof msg.error === "string" ? new Error(msg.error) : undefined, msg);
+        sendRequests();
+      } else if (typeof msg.sub === "number") {
+        const id = msg.sub;
+        const sub = subscriptions.get(id);
+        if (!sub) return;
+        if (msg.end === true) {
+          notifyEnd(sub);
+          if (sub.timer === undefined)
+            sub.timer = setTimeout(() => {
+              sub.timer = undefined;
+              if (!disposed && subscriptions.get(id) === sub) sendSubscription(id, sub);
+            }, retryMs);
+        } else if (typeof msg.data === "string") sub.data(msg.data);
+      }
+    };
+    ws.onclose = () => fail(ws, new Error("exec-ws closed"));
+    ws.onerror = () => fail(ws, new Error("exec-ws error"));
+  };
+
+  return {
+    request(body: Reply, timeoutMs: number, signal?: AbortSignal): Promise<Reply> {
+      return new Promise((resolve, reject) => {
+        if (disposed) {
+          reject(new Error("exec-ws closed"));
+          return;
+        }
+        if (signal?.aborted) {
+          reject(signal.reason);
+          return;
+        }
+        const id = nextId++;
+        let settled = false;
+        const finish = (error?: Error, reply?: Reply) => {
+          if (settled) return;
+          settled = true;
+          pending.delete(id);
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+          if (error) reject(error);
+          else resolve(reply ?? {});
+          sendRequests();
+        };
+        const abort = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        const timer = setTimeout(() => finish(new Error("exec-ws timeout")), timeoutMs);
+        signal?.addEventListener("abort", abort, { once: true });
+        pending.set(id, { body, sent: false, finish });
+        if (ready) sendRequests();
+        else connect();
+      });
+    },
+    subscribe(path: string, data: (chunk: string) => void, end: () => void) {
+      if (disposed) return () => {};
+      const id = nextId++;
+      const sub: Subscription = { path, data, end };
+      subscriptions.set(id, sub);
+      if (ready) sendSubscription(id, sub);
+      else connect();
+      return () => {
+        if (subscriptions.get(id) !== sub) return;
+        subscriptions.delete(id);
+        clearTimeout(sub.timer);
+        if (ready && socket) send(socket, { unsub: id });
+        if (!subscriptions.size && !connectionListeners.size) {
+          clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+      };
+    },
+    /**
+     * Observe authentication (`true`) and loss (`false`) of the channel. An
+     * observer keeps the channel reconnecting, like a subscription does.
+     */
+    onConnectionChange(listener: (ready: boolean) => void) {
+      if (disposed) return () => {};
+      connectionListeners.add(listener);
+      if (!ready) connect();
+      return () => {
+        connectionListeners.delete(listener);
+        if (!subscriptions.size && !connectionListeners.size) {
+          clearTimeout(retryTimer);
+          retryTimer = undefined;
+        }
+      };
+    },
+    /** React may replay an effect for this same identity after its cleanup. */
+    activate() {
+      disposed = false;
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      inFlight.clear();
+      clearTimeout(connectTimer);
+      clearTimeout(retryTimer);
+      clearHealth();
+      for (const request of [...pending.values()]) request.finish(new Error("exec-ws closed"));
+      for (const sub of subscriptions.values()) clearTimeout(sub.timer);
+      subscriptions.clear();
+      const ws = socket;
+      socket = null;
+      ready = false;
+      try {
+        ws?.close();
+      } catch {}
+    },
+  };
+}
+
+export type ControlSocket = ReturnType<typeof createControlSocket>;

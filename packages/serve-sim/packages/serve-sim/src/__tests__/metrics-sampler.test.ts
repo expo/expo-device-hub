@@ -41,7 +41,9 @@ function psFixtureTwoApps(): string {
 // One `nettop -x -P` CSV sample block: a header then one row per process ("name.pid", cumulative bytes).
 function netFixture(rows: Array<{ pid: number; bytesIn: number; bytesOut: number }>): string {
   const header = "time,,interface,state,bytes_in,bytes_out";
-  const body = rows.map((r) => `00:00:00.0,Proc.${r.pid},en0,Established,${r.bytesIn},${r.bytesOut}`);
+  const body = rows.map(
+    (r) => `00:00:00.0,Proc.${r.pid},en0,Established,${r.bytesIn},${r.bytesOut}`,
+  );
   return [header, ...body].join("\n");
 }
 
@@ -80,7 +82,10 @@ describe("findUserAppProcesses", () => {
   it("returns null when no user app is running on this sim", () => {
     // right sim, but only a system process (no Containers/Bundle path)
     expect(
-      findUserAppProcesses(`1 0.1 15000 launchd_sim /x/Devices/${UDID}/data/var/run/x.plist\n`, UDID),
+      findUserAppProcesses(
+        `1 0.1 15000 launchd_sim /x/Devices/${UDID}/data/var/run/x.plist\n`,
+        UDID,
+      ),
     ).toBeNull();
     expect(findUserAppProcesses("", UDID)).toBeNull();
   });
@@ -116,7 +121,9 @@ describe("sumPhysFootprintBytes", () => {
 
   it("returns null when no process was reported", () => {
     expect(sumPhysFootprintBytes("")).toBeNull();
-    expect(sumPhysFootprintBytes("footprint: Unable to find pid for process matching '9'")).toBeNull();
+    expect(
+      sumPhysFootprintBytes("footprint: Unable to find pid for process matching '9'"),
+    ).toBeNull();
   });
 });
 
@@ -149,8 +156,14 @@ describe("netRatesFromSamples", () => {
     const rate = netRatesFromSamples(
       netRun([
         // cumulative since each process started -> not a rate, ignored
-        [{ pid: 42, bytesIn: 900_000, bytesOut: 400_000 }, { pid: 7, bytesIn: 500, bytesOut: 0 }],
-        [{ pid: 42, bytesIn: 500, bytesOut: 200 }, { pid: 7, bytesIn: 0, bytesOut: 0 }],
+        [
+          { pid: 42, bytesIn: 900_000, bytesOut: 400_000 },
+          { pid: 7, bytesIn: 500, bytesOut: 0 },
+        ],
+        [
+          { pid: 42, bytesIn: 500, bytesOut: 200 },
+          { pid: 7, bytesIn: 0, bytesOut: 0 },
+        ],
       ]),
     );
     expect(rate.get(42)).toEqual({ netInBytesPerSec: 500, netOutBytesPerSec: 200 });
@@ -193,10 +206,7 @@ describe("NetworkThroughputMonitor", () => {
   }
 
   const netWindow = (bytesIn: number): string =>
-    netRun([
-      [{ pid: 42, bytesIn: 900_000, bytesOut: 0 }],
-      [{ pid: 42, bytesIn, bytesOut: 0 }],
-    ]);
+    netRun([[{ pid: 42, bytesIn: 900_000, bytesOut: 0 }], [{ pid: 42, bytesIn, bytesOut: 0 }]]);
 
   it("polls nettop in a loop and exposes the latest per-pid rate, cleared on stop", async () => {
     const { run, calls } = controllableNettop();
@@ -275,7 +285,9 @@ describe("sampleUserApp", () => {
   const footprintFor = (pids: string[]): string =>
     pids.map((pid) => `App [${pid}]:\nAuxiliary data:\n    phys_footprint: 1000000 B\n`).join("\n");
 
-  const frontmost = (pid: number, bundleId = "dev.expo.MyApp") => async () => ({ pid, bundleId });
+  const frontmost =
+    (pid: number, bundleId = "dev.expo.MyApp") =>
+    async () => ({ pid, bundleId });
 
   it("combines ps (cpu), footprint (mem), and the network rate for the frontmost app", async () => {
     const seen: string[] = [];
@@ -287,7 +299,9 @@ describe("sampleUserApp", () => {
       return footprintFor(pids);
     };
     let ratePids: number[] = [];
-    const networkRate = (pids: number[]): { netInBytesPerSec: number; netOutBytesPerSec: number } => {
+    const networkRate = (
+      pids: number[],
+    ): { netInBytesPerSec: number; netOutBytesPerSec: number } => {
       ratePids = pids;
       return { netInBytesPerSec: 1000, netOutBytesPerSec: 234 };
     };
@@ -329,7 +343,9 @@ describe("sampleUserApp", () => {
       file === "ps" ? psFixtureTwoApps() : footprintFor(args.filter((a) => /^\d+$/.test(a)));
     // AX unavailable -> no frontmost app: sum all user apps (103 + 104 + 106), bundleId null
     const networkRate = () => ({ netInBytesPerSec: 55, netOutBytesPerSec: 0 });
-    expect(await sampleUserApp(UDID, { exec, frontmostApp: async () => null, networkRate })).toEqual({
+    expect(
+      await sampleUserApp(UDID, { exec, frontmostApp: async () => null, networkRate }),
+    ).toEqual({
       bundleId: null,
       processKey: "103,104,106",
       cpuSeconds: 17,
@@ -338,7 +354,9 @@ describe("sampleUserApp", () => {
       netOutBytesPerSec: 0,
     });
     // a system app is frontmost (pid not among the user-app processes) -> same
-    expect(await sampleUserApp(UDID, { exec, frontmostApp: frontmost(999999), networkRate })).toEqual({
+    expect(
+      await sampleUserApp(UDID, { exec, frontmostApp: frontmost(999999), networkRate }),
+    ).toEqual({
       bundleId: null,
       processKey: "103,104,106",
       cpuSeconds: 17,
@@ -356,7 +374,9 @@ describe("sampleUserApp", () => {
     // ps succeeds but only system processes are present
     const systemOnly = async (file: string): Promise<string> =>
       file === "ps" ? `1 0.1 15000 launchd_sim /x/Devices/${UDID}/data/var/run/x.plist` : "";
-    expect(await sampleUserApp(UDID, { exec: systemOnly, frontmostApp: async () => null })).toBeNull();
+    expect(
+      await sampleUserApp(UDID, { exec: systemOnly, frontmostApp: async () => null }),
+    ).toBeNull();
   });
 });
 
@@ -397,11 +417,46 @@ describe("MetricsSampler", () => {
     // t3 drop (churn) -> clamped 0; t4 app switch (B) -> 0; t5 +0.6s -> 60. netBytesPerSec is already a
     // rate from the nettop stream, so it flows through unchanged.
     const readings = [
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10.0, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10.5, memBytes: 400, netInBytesPerSec: 2000, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10.4, memBytes: 250, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.B", processKey: "2", cpuSeconds: 99.0, memBytes: 260, netInBytesPerSec: 10, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.B", processKey: "2", cpuSeconds: 99.6, memBytes: 270, netInBytesPerSec: 600, netOutBytesPerSec: 0 },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10.0,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10.5,
+        memBytes: 400,
+        netInBytesPerSec: 2000,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10.4,
+        memBytes: 250,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.B",
+        processKey: "2",
+        cpuSeconds: 99.0,
+        memBytes: 260,
+        netInBytesPerSec: 10,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.B",
+        processKey: "2",
+        cpuSeconds: 99.6,
+        memBytes: 270,
+        netInBytesPerSec: 600,
+        netOutBytesPerSec: 0,
+      },
     ];
     let i = 0;
     const sampler = new MetricsSampler({
@@ -416,11 +471,46 @@ describe("MetricsSampler", () => {
     for (let n = 0; n < readings.length; n++) await sampler.tickOnce();
 
     expect(got).toEqual([
-      { t: 1000, bundleId: "dev.expo.A", cpuPct: 0, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { t: 2000, bundleId: "dev.expo.A", cpuPct: 50, memBytes: 400, netInBytesPerSec: 2000, netOutBytesPerSec: 0 },
-      { t: 3000, bundleId: "dev.expo.A", cpuPct: 0, memBytes: 250, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { t: 4000, bundleId: "dev.expo.B", cpuPct: 0, memBytes: 260, netInBytesPerSec: 10, netOutBytesPerSec: 0 },
-      { t: 5000, bundleId: "dev.expo.B", cpuPct: 60, memBytes: 270, netInBytesPerSec: 600, netOutBytesPerSec: 0 },
+      {
+        t: 1000,
+        bundleId: "dev.expo.A",
+        cpuPct: 0,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        t: 2000,
+        bundleId: "dev.expo.A",
+        cpuPct: 50,
+        memBytes: 400,
+        netInBytesPerSec: 2000,
+        netOutBytesPerSec: 0,
+      },
+      {
+        t: 3000,
+        bundleId: "dev.expo.A",
+        cpuPct: 0,
+        memBytes: 250,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        t: 4000,
+        bundleId: "dev.expo.B",
+        cpuPct: 0,
+        memBytes: 260,
+        netInBytesPerSec: 10,
+        netOutBytesPerSec: 0,
+      },
+      {
+        t: 5000,
+        bundleId: "dev.expo.B",
+        cpuPct: 60,
+        memBytes: 270,
+        netInBytesPerSec: 600,
+        netOutBytesPerSec: 0,
+      },
     ]);
     sampler.stop();
   });
@@ -429,12 +519,38 @@ describe("MetricsSampler", () => {
     // Same bundle, but the pid set changes (relaunch / extension swap) at t3. Cumulative CPU isn't
     // comparable across process sets, so the delta must reset rather than report a false spike.
     const readings = [
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10.5, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.A", processKey: "2", cpuSeconds: 99, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10.5,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "2",
+        cpuSeconds: 99,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
     ];
     let i = 0;
-    const sampler = new MetricsSampler({ udid: UDID, sample: async () => readings[i++]!, now: fakeClock(), hostCores: 8 });
+    const sampler = new MetricsSampler({
+      udid: UDID,
+      sample: async () => readings[i++]!,
+      now: fakeClock(),
+      hostCores: 8,
+    });
     const got: MetricSample[] = [];
     sampler.onSample((s) => got.push(s));
 
@@ -448,8 +564,22 @@ describe("MetricsSampler", () => {
     let clockMs = 0;
     const now = () => clockMs;
     const readings = [
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
-      { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 10.5, memBytes: 100, netInBytesPerSec: 0, netOutBytesPerSec: 0 },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
+      {
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 10.5,
+        memBytes: 100,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      },
     ];
     let i = 0;
     let footprintMs = 0;
@@ -491,7 +621,14 @@ describe("MetricsSampler", () => {
   it("keeps notifying later listeners when an earlier one throws", async () => {
     const sampler = new MetricsSampler({
       udid: UDID,
-      sample: async () => ({ bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 1, memBytes: 2, netInBytesPerSec: 0, netOutBytesPerSec: 0 }),
+      sample: async () => ({
+        bundleId: "dev.expo.A",
+        processKey: "1",
+        cpuSeconds: 1,
+        memBytes: 2,
+        netInBytesPerSec: 0,
+        netOutBytesPerSec: 0,
+      }),
       now: fakeClock(),
       hostCores: 8,
     });
@@ -562,7 +699,22 @@ describe("createMetricsSamplerCache", () => {
   it("fans one sample out to every subscriber", async () => {
     let sampler!: MetricsSampler;
     const cache = createMetricsSamplerCache((udid) => {
-      sampler = new MetricsSampler({ udid, sample: async () => ({ bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 5, memBytes: 9, netInBytesPerSec: 0, netOutBytesPerSec: 0 }), now: (() => { let t = 0; return () => (t += 1000); })(), hostCores: 8 });
+      sampler = new MetricsSampler({
+        udid,
+        sample: async () => ({
+          bundleId: "dev.expo.A",
+          processKey: "1",
+          cpuSeconds: 5,
+          memBytes: 9,
+          netInBytesPerSec: 0,
+          netOutBytesPerSec: 0,
+        }),
+        now: (() => {
+          let t = 0;
+          return () => (t += 1000);
+        })(),
+        hostCores: 8,
+      });
       return sampler;
     });
     const seen: number[] = [];
@@ -600,16 +752,37 @@ describe("createMetricsSamplerCache", () => {
 });
 
 describe("network capture rate override", () => {
-  const usage = { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 1, memBytes: 1, netInBytesPerSec: 0, netOutBytesPerSec: 0 };
-  const fakeSample = (async (_udid: string, deps?: { networkRate?: (pids: number[]) => { netInBytesPerSec: number; netOutBytesPerSec: number } }) => {
+  const usage = {
+    bundleId: "dev.expo.A",
+    processKey: "1",
+    cpuSeconds: 1,
+    memBytes: 1,
+    netInBytesPerSec: 0,
+    netOutBytesPerSec: 0,
+  };
+  const fakeSample = (async (
+    _udid: string,
+    deps?: {
+      networkRate?: (pids: number[]) => { netInBytesPerSec: number; netOutBytesPerSec: number };
+    },
+  ) => {
     const net = deps!.networkRate!([1]);
     return { ...usage, ...net };
   }) as typeof sampleUserApp;
   const perApp = () => ({ netInBytesPerSec: 10, netOutBytesPerSec: 1 });
 
   it("marks the proxy's rate as device-wide", async () => {
-    const reading = await sampleWithRateOverride(UDID, () => ({ netInBytesPerSec: 500, netOutBytesPerSec: 50 }), perApp, fakeSample);
-    expect(reading).toMatchObject({ netInBytesPerSec: 500, netOutBytesPerSec: 50, netScope: "device" });
+    const reading = await sampleWithRateOverride(
+      UDID,
+      () => ({ netInBytesPerSec: 500, netOutBytesPerSec: 50 }),
+      perApp,
+      fakeSample,
+    );
+    expect(reading).toMatchObject({
+      netInBytesPerSec: 500,
+      netOutBytesPerSec: 50,
+      netScope: "device",
+    });
   });
 
   it("keeps the per-app rate unmarked when capture has no rate", async () => {
@@ -619,7 +792,12 @@ describe("network capture rate override", () => {
   });
 
   it("passes the scope through to each sample", async () => {
-    const sampler = new MetricsSampler({ udid: UDID, sample: async () => ({ ...usage, netScope: "device" as const }), now: () => 0, hostCores: 8 });
+    const sampler = new MetricsSampler({
+      udid: UDID,
+      sample: async () => ({ ...usage, netScope: "device" as const }),
+      now: () => 0,
+      hostCores: 8,
+    });
     expect((await sampler.tickOnce())?.netScope).toBe("device");
     sampler.stop();
   });

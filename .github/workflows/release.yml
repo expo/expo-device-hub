@@ -20,20 +20,62 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
+  # serve-sim builds native macOS binaries. An EAS macOS job builds this commit
+  # and writes the Turborepo remote cache; the Ubuntu release job then reads it.
+  build-cache:
+    runs-on: ubuntu-latest
+    env:
+      IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
+    permissions:
+      contents: read
+    outputs:
+      canary-id: ${{ steps.canary-id.outputs.canary-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+
+      # Both jobs pass this to apply-canary-version.ts, so they write the same
+      # canary versions even when the runs cross midnight UTC.
+      - name: Compute canary id
+        id: canary-id
+        run: echo "canary-id=$(date -u +%Y%m%d)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build packages on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_CI_ROBOT_ACCESS_TOKEN }}
+          CANARY_ID: ${{ steps.canary-id.outputs.canary-id }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_CI_ROBOT_ACCESS_TOKEN is not set."
+            exit 1
+          fi
+          npx --yes eas-cli@24.14.0 workflow:run .eas/workflows/build-release-cache.yml \
+            --ref "$GITHUB_SHA" \
+            --input "canary=${IS_CANARY}" \
+            --input "canary_id=${CANARY_ID}" \
+            --wait \
+            --non-interactive
+
   release:
-    runs-on:
-      group: macos-publishing
+    needs: build-cache
+    runs-on: ubuntu-latest
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
+      CANARY_ID: ${{ needs.build-cache.outputs.canary-id }}
+      # Read-only access to the remote cache that build-cache wrote.
+      TURBO_TOKEN: readonly
+      TURBO_CACHE: local:rw,remote:r
     permissions:
       contents: write # push the release commit + tags
       id-token: write # npm OIDC Trusted Publishing
       pull-requests: read
     steps:
-      - name: Verify Apple silicon runner
-        run: test "$(uname -m)" = arm64
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -71,6 +113,7 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
+      # serve-sim must be a remote cache hit: its native build fails on Linux.
       - name: Build packages
         run: bun run build
 

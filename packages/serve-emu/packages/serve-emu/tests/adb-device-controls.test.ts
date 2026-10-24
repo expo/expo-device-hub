@@ -87,9 +87,7 @@ unauthorized-1 unauthorized
       calls++;
       throw new Error("should not execute");
     }) as typeof execText;
-    await expect(pickDevice("chosen-device", neverRun)).resolves.toBe(
-      "chosen-device",
-    );
+    await expect(pickDevice("chosen-device", neverRun)).resolves.toBe("chosen-device");
     expect(calls).toBe(0);
 
     const noDevices = (async () =>
@@ -118,9 +116,7 @@ unauthorized-1 unauthorized
 
     for (const { value, detail } of cases) {
       const runExec = (async () => value) as typeof execText;
-      await expect(listAllDevices(runExec)).rejects.toThrow(
-        `adb devices failed: ${detail}`,
-      );
+      await expect(listAllDevices(runExec)).rejects.toThrow(`adb devices failed: ${detail}`);
     }
   });
 });
@@ -144,6 +140,46 @@ describe("ADB screenshot and shell commands", () => {
     ]);
   });
 
+  test("captures the display in use when a foldable has several", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const warning = Buffer.from(
+      "[Warning] Multiple displays were found, but no display id was specified! Defaulting to the first display found.\n",
+    );
+    // A folded Pixel Fold emulator: logical display 0 is the cover screen, the
+    // second physical display. screencap would pick the first, which is off.
+    const displays = `  Logical Displays: size=2
+  Display 0:
+    mDisplayId=0
+    mPrimaryDisplayDevice=Built-in Screen(local:4619827551948147201)
+  Display 1:
+    mDisplayId=1
+    mPrimaryDisplayDevice=Built-in Screen(local:4619827259835644672)
+`;
+    const calls: string[][] = [];
+    const runExec = (async (_command, args) => {
+      calls.push(args);
+      if (args.includes("dumpsys")) return result(Buffer.from(displays));
+      return result(args.includes("-d") ? png : Buffer.concat([warning, png]));
+    }) as typeof execBuffer;
+
+    await expect(screencapPng("device-1", runExec)).resolves.toEqual(png);
+    expect(calls.at(-1)).toEqual([
+      "-s",
+      "device-1",
+      "exec-out",
+      "screencap",
+      "-d",
+      "4619827551948147201",
+      "-p",
+    ]);
+
+    const unmapped = (async (_command, args) =>
+      result(
+        args.includes("dumpsys") ? Buffer.from("") : Buffer.concat([warning, png]),
+      )) as typeof execBuffer;
+    await expect(screencapPng("device-1", unmapped)).resolves.toEqual(png);
+  });
+
   test("reports screenshot and shell failures", async () => {
     const failedBuffer = (async () =>
       result(Buffer.from("binary diagnostic"), { status: 1 })) as typeof execBuffer;
@@ -155,9 +191,7 @@ describe("ADB screenshot and shell commands", () => {
       result("", { status: 1, stderr: "permission denied" })) as typeof execText;
     await expect(
       shell("device-1", ["settings", "put", "global", "x", "1"], failedText),
-    ).rejects.toThrow(
-      "adb shell settings put global x 1 failed: permission denied",
-    );
+    ).rejects.toThrow("adb shell settings put global x 1 failed: permission denied");
   });
 
   test("passes shell arguments to promise and streaming process executors", async () => {
@@ -178,9 +212,7 @@ describe("ADB screenshot and shell commands", () => {
       return child;
     }) as unknown as typeof spawn;
     expect(shellSpawn("device-1", ["logcat"], runSpawn) as unknown).toBe(child);
-    expect(spawnCalls).toEqual([
-      ["adb", ["-s", "device-1", "shell", "logcat"]],
-    ]);
+    expect(spawnCalls).toEqual([["adb", ["-s", "device-1", "shell", "logcat"]]]);
   });
 });
 
@@ -195,13 +227,10 @@ describe("ADB display controls", () => {
 
     for (const entry of cases) {
       const runExec = (async () => result(entry.raw)) as typeof execText;
-      await expect(getDisplayRotation("device-1", runExec)).resolves.toBe(
-        entry.rotation,
-      );
+      await expect(getDisplayRotation("device-1", runExec)).resolves.toBe(entry.rotation);
     }
 
-    const malformed = (async () =>
-      result("display rotation unavailable")) as typeof execText;
+    const malformed = (async () => result("display rotation unavailable")) as typeof execText;
     await expect(getDisplayRotation("device-1", malformed)).rejects.toThrow(
       "Could not parse active display rotation",
     );
@@ -209,17 +238,19 @@ describe("ADB display controls", () => {
 
   test("uses the active default display instead of stale virtual displays", async () => {
     const runExec = (async () =>
-      result([
-        "Display: mDisplayId=1903",
-        "  overrideConfig={ mDisplayRotation=ROTATION_0 }",
-        "  DisplayRotation",
-        "    mRotation=0",
-        "Display: mDisplayId=0 (organized)",
-        "  overrideConfig={ mDisplayRotation=ROTATION_90 }",
-        "  DisplayRotation",
-        "    mRotation=1",
-        "    mCurrentRotation=ROTATION_90",
-      ].join("\n"))) as typeof execText;
+      result(
+        [
+          "Display: mDisplayId=1903",
+          "  overrideConfig={ mDisplayRotation=ROTATION_0 }",
+          "  DisplayRotation",
+          "    mRotation=0",
+          "Display: mDisplayId=0 (organized)",
+          "  overrideConfig={ mDisplayRotation=ROTATION_90 }",
+          "  DisplayRotation",
+          "    mRotation=1",
+          "    mCurrentRotation=ROTATION_90",
+        ].join("\n"),
+      )) as typeof execText;
 
     await expect(getDisplayRotation("device-1", runExec)).resolves.toBe(1);
   });
@@ -232,9 +263,7 @@ describe("ADB display controls", () => {
       return result("DisplayRotation\n  mRotation=0\n");
     }) as typeof execText;
 
-    await expect(
-      getDisplayRotation("device-1", runExec, controller.signal),
-    ).resolves.toBe(0);
+    await expect(getDisplayRotation("device-1", runExec, controller.signal)).resolves.toBe(0);
     expect(options?.signal).toBe(controller.signal);
     expect(options?.lane).toBe("background");
   });
@@ -252,11 +281,8 @@ describe("ADB display controls", () => {
       "Could not parse wm size output: size unavailable",
     );
 
-    const failed = (async () =>
-      result("", { status: 1, stderr: "wm failed" })) as typeof execText;
-    await expect(getDeviceSize("device-1", failed)).rejects.toThrow(
-      "wm size failed: wm failed",
-    );
+    const failed = (async () => result("", { status: 1, stderr: "wm failed" })) as typeof execText;
+    await expect(getDeviceSize("device-1", failed)).rejects.toThrow("wm size failed: wm failed");
   });
 
   test("maps free and locked rotations to logical orientations", async () => {
@@ -310,9 +336,7 @@ describe("ADB display controls", () => {
     await expect(getUserRotation("device-1", failed)).rejects.toThrow(
       "cmd window user-rotation failed: rotation denied",
     );
-    await expect(
-      setUserRotation("device-1", "landscape", failed),
-    ).rejects.toThrow(
+    await expect(setUserRotation("device-1", "landscape", failed)).rejects.toThrow(
       "adb shell cmd window user-rotation lock 1 failed: rotation denied",
     );
   });
@@ -362,10 +386,7 @@ describe("ADB font controls", () => {
       scale: 1.2,
       raw: "1.2",
     });
-    expect(calls).toEqual([
-      "settings put system font_scale 1.2",
-      "settings get system font_scale",
-    ]);
+    expect(calls).toEqual(["settings put system font_scale 1.2", "settings get system font_scale"]);
 
     const failed = (async () =>
       result("", { status: 1, stderr: "write denied" })) as typeof execText;
@@ -408,10 +429,7 @@ describe("ADB night mode controls", () => {
         mode,
         raw: `Night mode: ${value}`,
       });
-      expect(calls).toEqual([
-        `cmd uimode night ${value}`,
-        "cmd uimode night",
-      ]);
+      expect(calls).toEqual([`cmd uimode night ${value}`, "cmd uimode night"]);
     }
   });
 
@@ -439,8 +457,9 @@ describe("ADB accessibility controls", () => {
       ["not-a-scale", false],
     ] as const) {
       const runExec = (async (_command, args) =>
-        result(args.at(-1) === "transition_animation_scale" ? `${transition}\n` : "1\n")
-      ) as typeof execText;
+        result(
+          args.at(-1) === "transition_animation_scale" ? `${transition}\n` : "1\n",
+        )) as typeof execText;
       await expect(getReduceMotion("device-1", runExec)).resolves.toEqual({
         enabled,
         raw: { transition, window: "1", animator: "1" },
@@ -766,9 +785,7 @@ describe("ADB network controls", () => {
       await getNetworkStatus("device-1", failed);
       throw new Error("expected network query to reject");
     } catch (error) {
-      expect((error as Error).message).toBe(
-        "settings get global wifi_on failed: adb disappeared",
-      );
+      expect((error as Error).message).toBe("settings get global wifi_on failed: adb disappeared");
       expect((error as Error).cause).toBe(processError);
     }
   });
@@ -783,9 +800,7 @@ describe("ADB network controls", () => {
         return result(args.includes("settings") ? `${setting}\n` : "");
       }) as typeof execText;
 
-      await expect(
-        setNetworkEnabled("device-1", enabled, runExec),
-      ).resolves.toEqual({
+      await expect(setNetworkEnabled("device-1", enabled, runExec)).resolves.toEqual({
         enabled,
         wifi: enabled ? "enabled" : "disabled",
         mobileData: enabled ? "enabled" : "disabled",
@@ -804,14 +819,12 @@ describe("ADB network controls", () => {
     const calls: string[] = [];
     const runExec = (async (_command, args) => {
       calls.push(args.slice(3).join(" "));
-      return calls.length === 2
-        ? result("", { status: 1, stderr: "data denied" })
-        : result("");
+      return calls.length === 2 ? result("", { status: 1, stderr: "data denied" }) : result("");
     }) as typeof execText;
 
-    await expect(
-      setNetworkEnabled("device-1", true, runExec),
-    ).rejects.toThrow("adb shell svc data enable failed: data denied");
+    await expect(setNetworkEnabled("device-1", true, runExec)).rejects.toThrow(
+      "adb shell svc data enable failed: data denied",
+    );
     expect(calls).toEqual(["svc wifi enable", "svc data enable"]);
   });
 });

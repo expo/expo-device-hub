@@ -1,25 +1,25 @@
 {
   "name": "example",
   "version": "0.1.0",
+  "private": true,
   "main": "index.ts",
-  "dependencies": {
-    "expo": "catalog:",
-    "expo-device-hub": "workspace:*",
-    "serve-emu": "workspace:*",
-    "expo-status-bar": "~57.0.0",
-    "react": "catalog:",
-    "react-native": "catalog:",
-    "@expo/serve-sim": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
-  },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "dependencies": {
+    "@expo/serve-sim": "workspace:*",
+    "expo": "catalog:",
+    "expo-device-hub": "workspace:*",
+    "expo-status-bar": "~57.0.0",
+    "react": "catalog:",
+    "react-native": "catalog:",
+    "serve-emu": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
 }

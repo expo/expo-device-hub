@@ -7,7 +7,10 @@ import { CollapsibleSection } from "./collapsible-section";
 
 export type CamSource = "placeholder" | "image" | "video" | "webcam";
 type CamMirror = "on" | "off";
-export interface CamWebcam { id: string; name: string }
+export interface CamWebcam {
+  id: string;
+  name: string;
+}
 
 export type CameraPillState = "ready" | "active" | "disconnected";
 
@@ -34,9 +37,9 @@ export async function requestCameraStatus(
   try {
     const response = await request(endpoint, { cache: "no-store" });
     if (!response.ok) return null;
-    const value = await response.json() as unknown;
+    const value = (await response.json()) as unknown;
     return value && typeof value === "object" && !Array.isArray(value)
-      ? value as CameraStatusResponse
+      ? (value as CameraStatusResponse)
       : null;
   } catch {
     return null;
@@ -44,15 +47,10 @@ export async function requestCameraStatus(
 }
 
 export const CAMERA_LARGE_VIDEO_BYTES = 200 * 1024 * 1024;
-export const CAMERA_LARGE_VIDEO_WARNING =
-  "Large video (>200 MB) — may stutter on shared memory";
-export const CAMERA_HEIC_ERROR =
-  "HEIC decode failed — export as JPEG or PNG and retry";
+export const CAMERA_LARGE_VIDEO_WARNING = "Large video (>200 MB) — may stutter on shared memory";
+export const CAMERA_HEIC_ERROR = "HEIC decode failed — export as JPEG or PNG and retry";
 
-export function nextCameraPillState(
-  current: CameraPillState,
-  pollAlive: boolean,
-): CameraPillState {
+export function nextCameraPillState(current: CameraPillState, pollAlive: boolean): CameraPillState {
   if (pollAlive) return "active";
   if (current === "active") return "disconnected";
   if (current === "disconnected") return "ready";
@@ -89,7 +87,19 @@ export function parseWebcamListOutput(stdout: string): CamWebcam[] {
 }
 
 const VIDEO_EXTENSIONS = new Set([
-  "mp4", "m4v", "mov", "qt", "avi", "mkv", "webm", "mpg", "mpeg", "3gp", "3g2", "ts", "wmv",
+  "mp4",
+  "m4v",
+  "mov",
+  "qt",
+  "avi",
+  "mkv",
+  "webm",
+  "mpg",
+  "mpeg",
+  "3gp",
+  "3g2",
+  "ts",
+  "wmv",
 ]);
 
 function isVideoFile(file: { type?: string; name?: string }): boolean {
@@ -131,8 +141,7 @@ export function cameraSourceErrorMessage({
 }
 
 export function CameraStatusPill({ state }: { state: CameraPillState }) {
-  const label =
-    state === "active" ? "Active" : state === "disconnected" ? "Disconnected" : "Ready";
+  const label = state === "active" ? "Active" : state === "disconnected" ? "Disconnected" : "Ready";
   const dotClass =
     state === "active"
       ? "size-1.5 rounded-full bg-success-emerald [box-shadow:0_0_6px_rgba(74,222,128,0.7)]"
@@ -216,7 +225,11 @@ export function CameraInlineBanner({
       ? "bg-warning/10 border border-warning/25 text-warning-soft text-[11px] px-2 py-1.5 rounded-md break-words"
       : "bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md break-words";
   return (
-    <div className={classes} data-camera-banner-kind={kind} role={kind === "error" ? "alert" : "status"}>
+    <div
+      className={classes}
+      data-camera-banner-kind={kind}
+      role={kind === "error" ? "alert" : "status"}
+    >
       {message}
     </div>
   );
@@ -224,13 +237,7 @@ export function CameraInlineBanner({
 
 // ─── Main component ────────────────────────────────────────────────────────
 
-export function CameraTool({
-  udid,
-  bundleId,
-}: {
-  udid: string;
-  bundleId: string | null;
-}) {
+export function CameraTool({ udid, bundleId }: { udid: string; bundleId: string | null }) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<CamSource>("placeholder");
   const [filePath, setFilePath] = useState<string>("");
@@ -267,7 +274,9 @@ export function CameraTool({
 
   const refreshWebcamsRef = useRef<() => Promise<void>>(async () => {});
   const bundleIdRef = useRef<string | null>(bundleId);
-  useEffect(() => { bundleIdRef.current = bundleId; }, [bundleId]);
+  useEffect(() => {
+    bundleIdRef.current = bundleId;
+  }, [bundleId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,7 +285,12 @@ export function CameraTool({
       if (cancelled || !reply || !reply.alive) return;
       skipNextAutoSwapRef.current = true;
       const replySource = reply.source;
-      if (replySource === "placeholder" || replySource === "webcam" || replySource === "image" || replySource === "video") {
+      if (
+        replySource === "placeholder" ||
+        replySource === "webcam" ||
+        replySource === "image" ||
+        replySource === "video"
+      ) {
         setSource(replySource);
       }
       if ((replySource === "image" || replySource === "video") && reply.arg) {
@@ -297,9 +311,13 @@ export function CameraTool({
       const fg = bundleIdRef.current;
       const replyHasRealSource = replySource && replySource !== "placeholder";
       setPillState(fg && replyBundles.includes(fg) && replyHasRealSource ? "active" : "ready");
-      setStatus(`Reattached → ${replySource ?? "running helper"}${reply.arg ? ` (${reply.arg})` : ""}`);
+      setStatus(
+        `Reattached → ${replySource ?? "running helper"}${reply.arg ? ` (${reply.arg})` : ""}`,
+      );
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [udid, fetchCameraStatus]);
 
   useEffect(() => {
@@ -317,12 +335,16 @@ export function CameraTool({
         const alive = !!reply?.alive;
         const replyBundles = Array.isArray(reply?.bundleIds) ? reply.bundleIds : null;
         const foregroundIsInjected =
-          !!bundleId && (replyBundles ? replyBundles.includes(bundleId) : injectedBundleIds.has(bundleId));
+          !!bundleId &&
+          (replyBundles ? replyBundles.includes(bundleId) : injectedBundleIds.has(bundleId));
         const replySource = reply?.source ?? null;
         const replyHasRealSource = replySource && replySource !== "placeholder";
         const attachedToCurrentHelper =
-          injected && alive && foregroundIsInjected && !!replyHasRealSource
-          && (attachedHelperPid == null || reply?.helperPid === attachedHelperPid);
+          injected &&
+          alive &&
+          foregroundIsInjected &&
+          !!replyHasRealSource &&
+          (attachedHelperPid == null || reply?.helperPid === attachedHelperPid);
         setPillState((prev) => nextCameraPillState(prev, attachedToCurrentHelper));
         if (!alive) {
           setInjected((prevInjected) => {
@@ -332,7 +354,11 @@ export function CameraTool({
             appliedMirrorRef.current = "off";
             return false;
           });
-        } else if (injected && attachedHelperPid != null && reply?.helperPid !== attachedHelperPid) {
+        } else if (
+          injected &&
+          attachedHelperPid != null &&
+          reply?.helperPid !== attachedHelperPid
+        ) {
           setInjected(false);
           setInjectedBundleIds(new Set());
           setAttachedHelperPid(null);
@@ -349,7 +375,9 @@ export function CameraTool({
       }
     };
 
-    timer = setInterval(() => { void tick(); }, CAMERA_POLL_INTERVAL_MS);
+    timer = setInterval(() => {
+      void tick();
+    }, CAMERA_POLL_INTERVAL_MS);
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") void tick();
@@ -394,47 +422,53 @@ export function CameraTool({
     }
   }, [sourceMenuOpen, webcams.length, webcamLoading, refreshWebcams]);
 
-  const reportSourceError = useCallback((rawMessage: string) => {
-    setError(cameraSourceErrorMessage({
-      rawMessage,
-      lastFileIsHeic: lastFileIsHeicRef.current,
-      source,
-    }));
-  }, [source]);
+  const reportSourceError = useCallback(
+    (rawMessage: string) => {
+      setError(
+        cameraSourceErrorMessage({
+          rawMessage,
+          lastFileIsHeic: lastFileIsHeicRef.current,
+          source,
+        }),
+      );
+    },
+    [source],
+  );
 
-  const pushSwitch = useCallback(async (
-    nextSource: CamSource,
-    nextWebcamId: string,
-    nextFilePath: string,
-  ): Promise<boolean> => {
-    const isFile = nextSource === "image" || nextSource === "video";
-    if (isFile && !nextFilePath.trim()) {
-      setError("Drop a file into the panel or pick another source.");
-      return false;
-    }
-    const target = isFile
-      ? nextFilePath.trim()
-      : nextSource === "webcam"
-        ? nextWebcamId
-        : undefined;
-    const res = await runHostAction("camera.switch", {
-      source: isFile ? "file" : nextSource,
-      target,
-      udid,
-    });
-    if (res.exitCode !== 0) {
-      reportSourceError(res.stderr.trim() || res.stdout.trim() || `switch failed (${res.exitCode})`);
-      return false;
-    }
-    lastFileIsHeicRef.current = false;
-    try {
-      const json = JSON.parse(res.stdout.trim()) as { source?: string; arg?: string };
-      setStatus(`Switched → ${json.source ?? nextSource}${json.arg ? ` (${json.arg})` : ""}`);
-    } catch {
-      setStatus(`Switched → ${nextSource}`);
-    }
-    return true;
-  }, [udid, reportSourceError]);
+  const pushSwitch = useCallback(
+    async (nextSource: CamSource, nextWebcamId: string, nextFilePath: string): Promise<boolean> => {
+      const isFile = nextSource === "image" || nextSource === "video";
+      if (isFile && !nextFilePath.trim()) {
+        setError("Drop a file into the panel or pick another source.");
+        return false;
+      }
+      const target = isFile
+        ? nextFilePath.trim()
+        : nextSource === "webcam"
+          ? nextWebcamId
+          : undefined;
+      const res = await runHostAction("camera.switch", {
+        source: isFile ? "file" : nextSource,
+        target,
+        udid,
+      });
+      if (res.exitCode !== 0) {
+        reportSourceError(
+          res.stderr.trim() || res.stdout.trim() || `switch failed (${res.exitCode})`,
+        );
+        return false;
+      }
+      lastFileIsHeicRef.current = false;
+      try {
+        const json = JSON.parse(res.stdout.trim()) as { source?: string; arg?: string };
+        setStatus(`Switched → ${json.source ?? nextSource}${json.arg ? ` (${json.arg})` : ""}`);
+      } catch {
+        setStatus(`Switched → ${nextSource}`);
+      }
+      return true;
+    },
+    [udid, reportSourceError],
+  );
 
   const inject = useCallback(async () => {
     if (!bundleId) return;
@@ -455,15 +489,20 @@ export function CameraTool({
         target: isFile ? filePath.trim() : webcamId || undefined,
       });
       if (res.exitCode !== 0) {
-        reportSourceError(res.stderr.trim() || res.stdout.trim() || `inject failed (${res.exitCode})`);
+        reportSourceError(
+          res.stderr.trim() || res.stdout.trim() || `inject failed (${res.exitCode})`,
+        );
         return;
       }
       lastFileIsHeicRef.current = false;
       let helperPid: number | null = null;
       try {
         const json = JSON.parse(res.stdout.trim()) as {
-          source?: string; pid?: number; helperPid?: number;
-          hotSwapped?: boolean; helperRelaunched?: boolean;
+          source?: string;
+          pid?: number;
+          helperPid?: number;
+          hotSwapped?: boolean;
+          helperRelaunched?: boolean;
         };
         helperPid = json.helperPid ?? null;
         const verb = json.helperRelaunched === false ? "Attached" : "Injected";
@@ -476,7 +515,7 @@ export function CameraTool({
       setInjected(true);
       setPillState(source === "placeholder" ? "ready" : "active");
       setAttachedHelperPid(helperPid);
-      setInjectedBundleIds((prev) => prev.has(bundleId) ? prev : new Set(prev).add(bundleId));
+      setInjectedBundleIds((prev) => (prev.has(bundleId) ? prev : new Set(prev).add(bundleId)));
       appliedMirrorRef.current = mirror;
     } finally {
       setPendingPrimary(null);
@@ -527,7 +566,9 @@ export function CameraTool({
         if (!cancelled) setPendingAux(null);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSwapKey]);
 
@@ -552,7 +593,9 @@ export function CameraTool({
         if (!cancelled) setPendingAux(null);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mirror, injected]);
 
@@ -578,7 +621,8 @@ export function CameraTool({
   const handleSourceFile = useCallback(async (file: File) => {
     const isHeic = isHeicLikeFile({ type: file.type, name: file.name });
     const isImage = file.type.startsWith("image/") || isHeic;
-    const isVideo = file.type.startsWith("video/") || isVideoFile({ type: file.type, name: file.name });
+    const isVideo =
+      file.type.startsWith("video/") || isVideoFile({ type: file.type, name: file.name });
     if (!isImage && !isVideo) {
       lastFileIsHeicRef.current = false;
       setError(`Unsupported file type: ${file.type || file.name}`);
@@ -606,14 +650,17 @@ export function CameraTool({
     }
   }, []);
 
-  const onDrop = useCallback(async (e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCountRef.current = 0;
-    setIsDragOver(false);
-    const file = e.dataTransfer?.files?.[0];
-    if (file) await handleSourceFile(file);
-  }, [handleSourceFile]);
+  const onDrop = useCallback(
+    async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCountRef.current = 0;
+      setIsDragOver(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) await handleSourceFile(file);
+    },
+    [handleSourceFile],
+  );
 
   const clearMedia = useCallback(() => {
     setSource("placeholder");
@@ -628,12 +675,15 @@ export function CameraTool({
     fileInputRef.current?.click();
   }, []);
 
-  const onFilePicked = useCallback(async (e: Event) => {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = "";
-    if (file) await handleSourceFile(file);
-  }, [handleSourceFile]);
+  const onFilePicked = useCallback(
+    async (e: Event) => {
+      const input = e.target as HTMLInputElement;
+      const file = input.files?.[0];
+      input.value = "";
+      if (file) await handleSourceFile(file);
+    },
+    [handleSourceFile],
+  );
 
   useEffect(() => {
     if (!sourceMenuOpen) return;
@@ -646,15 +696,18 @@ export function CameraTool({
     return () => window.removeEventListener("mousedown", onDocDown);
   }, [sourceMenuOpen]);
 
-  const selectWebcam = useCallback((webcam: CamWebcam) => {
-    setWebcamId(webcam.id);
-    setSource("webcam");
-    setDroppedFileName(null);
-    setError(null);
-    lastFileIsHeicRef.current = false;
-    setSourceMenuOpen(false);
-    if (bundleId) setWebcamAutoInjectRequest(webcam.id);
-  }, [bundleId]);
+  const selectWebcam = useCallback(
+    (webcam: CamWebcam) => {
+      setWebcamId(webcam.id);
+      setSource("webcam");
+      setDroppedFileName(null);
+      setError(null);
+      lastFileIsHeicRef.current = false;
+      setSourceMenuOpen(false);
+      if (bundleId) setWebcamAutoInjectRequest(webcam.id);
+    },
+    [bundleId],
+  );
 
   const toggleMirror = useCallback(() => {
     setMirror((m) => (m === "on" ? "off" : "on"));
@@ -682,13 +735,26 @@ export function CameraTool({
   const primaryKind = selectCameraPrimaryKind({ bundleId, injected, source, foregroundIsInjected });
   const primary: { label: string; onClick: () => void; kind: CameraPrimaryKind } =
     primaryKind === "stop"
-      ? { label: pendingPrimary === "stop" ? "Stopping…" : "Stop", onClick: stopHelper, kind: "stop" }
-    : primaryKind === "attach"
-      ? { label: pendingPrimary === "inject" ? "Injecting…" : `Inject ${bundleId}`, onClick: inject, kind: "attach" }
-    : { label: pendingPrimary === "inject" ? "Starting…" : "Play", onClick: inject, kind: "play" };
-  const primaryDisabled = primaryKind === "stop"
-    ? uploading || pendingPrimary !== null
-    : !bundleId || uploading || pendingPrimary !== null;
+      ? {
+          label: pendingPrimary === "stop" ? "Stopping…" : "Stop",
+          onClick: stopHelper,
+          kind: "stop",
+        }
+      : primaryKind === "attach"
+        ? {
+            label: pendingPrimary === "inject" ? "Injecting…" : `Inject ${bundleId}`,
+            onClick: inject,
+            kind: "attach",
+          }
+        : {
+            label: pendingPrimary === "inject" ? "Starting…" : "Play",
+            onClick: inject,
+            kind: "play",
+          };
+  const primaryDisabled =
+    primaryKind === "stop"
+      ? uploading || pendingPrimary !== null
+      : !bundleId || uploading || pendingPrimary !== null;
 
   const isPlaceholder = source === "placeholder";
   const showWebcam = source === "webcam";
@@ -712,7 +778,9 @@ export function CameraTool({
       summaryClassName="grid [grid-template-columns:auto_1fr_auto] items-center gap-2 text-left"
       summary={
         <>
-          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">Camera</span>
+          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">
+            Camera
+          </span>
           <CameraStatusPill state={pillState} />
         </>
       }
@@ -724,176 +792,198 @@ export function CameraTool({
         onDrop={onDrop}
         className="flex flex-col gap-2.5"
       >
-          <p className="m-0 text-[10px] leading-[1.5] text-white/45">
-            Replaces the simulator's camera feed by injecting a dylib at app launch
-            and streaming frames into shared memory. Pick media or a webcam,
-            then Play to inject into the foreground app.
-          </p>
+        <p className="m-0 text-[10px] leading-[1.5] text-white/45">
+          Replaces the simulator's camera feed by injecting a dylib at app launch and streaming
+          frames into shared memory. Pick media or a webcam, then Play to inject into the foreground
+          app.
+        </p>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            className="hidden"
-            onChange={onFilePicked as any}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          className="hidden"
+          onChange={onFilePicked as any}
+        />
+
+        <div
+          onClick={(e) => {
+            if (!isPlaceholder) return;
+            if ((e.target as HTMLElement).closest("[data-clear-media]")) return;
+            openFilePicker();
+          }}
+          title={
+            isPlaceholder
+              ? "No source selected — Play uses a test-pattern feed. Click to pick an image/video, or drop one here."
+              : showWebcam
+                ? `Source: ${activeWebcamName}`
+                : `Source: ${droppedFileName ?? source}`
+          }
+          className={[
+            "relative min-h-[44px] flex flex-row items-center justify-center gap-2.5 px-3.5 py-2.5 rounded-[7px] text-center transition-[border-color,background] duration-150",
+            isPlaceholder
+              ? "bg-white/[0.04] border border-dashed border-white/12"
+              : "bg-white/[0.04] border border-white/8",
+            isDragOver ? "!bg-[rgba(10,132,255,0.08)] !border-[rgba(10,132,255,0.6)]" : "",
+            uploading ? "cursor-progress" : isPlaceholder ? "cursor-pointer" : "cursor-default",
+          ].join(" ")}
+        >
+          <CameraMediaPreview
+            mode={tileMode}
+            fileName={droppedFileName}
+            webcamName={activeWebcamName}
+            sourceKind={source}
           />
 
-          <div
-            onClick={(e) => {
-              if (!isPlaceholder) return;
-              if ((e.target as HTMLElement).closest("[data-clear-media]")) return;
-              openFilePicker();
-            }}
-            title={
-              isPlaceholder
-                ? "No source selected — Play uses a test-pattern feed. Click to pick an image/video, or drop one here."
-                : showWebcam
-                  ? `Source: ${activeWebcamName}`
-                  : `Source: ${droppedFileName ?? source}`
-            }
-            className={[
-              "relative min-h-[44px] flex flex-row items-center justify-center gap-2.5 px-3.5 py-2.5 rounded-[7px] text-center transition-[border-color,background] duration-150",
-              isPlaceholder
-                ? "bg-white/[0.04] border border-dashed border-white/12"
-                : "bg-white/[0.04] border border-white/8",
-              isDragOver ? "!bg-[rgba(10,132,255,0.08)] !border-[rgba(10,132,255,0.6)]" : "",
-              uploading ? "cursor-progress" : isPlaceholder ? "cursor-pointer" : "cursor-default",
-            ].join(" ")}
-          >
-            <CameraMediaPreview
-              mode={tileMode}
-              fileName={droppedFileName}
-              webcamName={activeWebcamName}
-              sourceKind={source}
-            />
+          {!isPlaceholder && !uploading && (
+            <button
+              data-clear-media
+              onClick={(e) => {
+                e.stopPropagation();
+                clearMedia();
+              }}
+              className="shrink-0 w-5 h-5 flex items-center justify-center bg-transparent border-none text-white/55 hover:text-white/90 cursor-pointer p-0"
+              aria-label="Clear source"
+              title="Clear → placeholder"
+            >
+              <X size={14} strokeWidth={2} />
+            </button>
+          )}
+        </div>
 
-            {!isPlaceholder && !uploading && (
-              <button
-                data-clear-media
-                onClick={(e) => { e.stopPropagation(); clearMedia(); }}
-                className="shrink-0 w-5 h-5 flex items-center justify-center bg-transparent border-none text-white/55 hover:text-white/90 cursor-pointer p-0"
-                aria-label="Clear source"
-                title="Clear → placeholder"
+        {isPlaceholder && !uploading && <CameraTestPatternHint />}
+
+        <div className="flex items-stretch gap-1.5">
+          <div className="relative" data-camera-source-menu>
+            <button
+              onClick={() => setSourceMenuOpen((o) => !o)}
+              className="h-full min-h-[36px] w-10 flex items-center justify-center bg-transparent border border-white/12 text-white/85 rounded-[7px] cursor-pointer p-0 hover:bg-white/[0.06] hover:border-white/20 hover:text-white"
+              aria-haspopup="menu"
+              aria-expanded={sourceMenuOpen}
+              title={
+                source === "webcam"
+                  ? `Source: webcam${webcamId ? ` (${webcams.find((w) => w.id === webcamId)?.name ?? webcamId})` : ""} — click to change`
+                  : `Source: ${source} — click to pick media or webcam`
+              }
+              aria-label="Choose camera source"
+            >
+              <Images size={20} strokeWidth={2} />
+            </button>
+
+            {sourceMenuOpen && (
+              <div
+                role="menu"
+                className="absolute top-[calc(100%+6px)] left-0 z-10 min-w-[200px] flex flex-col gap-px p-1 bg-panel border border-white/8 rounded-[7px] shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
               >
-                <X size={14} strokeWidth={2} />
-              </button>
+                <button
+                  role="menuitem"
+                  className="text-left bg-transparent border-none text-white/85 text-[12px] px-2.5 py-[7px] rounded-md cursor-pointer hover:bg-white/[0.06]"
+                  onClick={() => {
+                    setSourceMenuOpen(false);
+                    openFilePicker();
+                  }}
+                  title="Pick an image or video from disk"
+                >
+                  Browse media…
+                </button>
+                <div className="h-px bg-white/8 my-1" />
+                <div className="flex items-center justify-between pl-2.5 pr-2 pt-1 pb-[2px]">
+                  <span className="text-[10px] text-white/45 uppercase tracking-[0.08em]">
+                    {webcamLoading
+                      ? "Cameras (loading…)"
+                      : webcams.length === 0
+                        ? "No cameras"
+                        : "Cameras"}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void refreshWebcams();
+                    }}
+                    disabled={webcamLoading}
+                    className="flex items-center justify-center w-[22px] h-[22px] bg-transparent border-none rounded-[5px] text-white/55 hover:text-white/90 cursor-pointer p-0 disabled:opacity-50"
+                    aria-label="Refresh cameras"
+                    title="Refresh cameras"
+                  >
+                    <ReloadIcon size={13} strokeWidth={2} />
+                  </button>
+                </div>
+                {webcams.map((w) => {
+                  const active = source === "webcam" && webcamId === w.id;
+                  return (
+                    <button
+                      key={w.id}
+                      role="menuitem"
+                      className={[
+                        "text-left bg-transparent border-none text-[12px] px-2.5 py-[7px] rounded-md cursor-pointer hover:bg-white/[0.06]",
+                        active ? "!bg-white/[0.12] !text-white" : "text-white/85",
+                      ].join(" ")}
+                      onClick={() => selectWebcam(w)}
+                      title={w.name}
+                    >
+                      {w.name}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
 
-          {isPlaceholder && !uploading && <CameraTestPatternHint />}
+          <button
+            onClick={primary.onClick}
+            disabled={primaryDisabled}
+            className={[
+              "flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 border-none rounded-[7px] text-[12px] font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]",
+              primary.kind === "stop"
+                ? "bg-white/[0.16] text-white enabled:hover:bg-white/[0.22]"
+                : "bg-success-emerald text-[#062018] enabled:hover:brightness-[1.08]",
+            ].join(" ")}
+            title={
+              primary.kind === "stop"
+                ? "Stop the camera helper and terminate injected apps"
+                : primary.kind === "attach"
+                  ? `Inject ${bundleId} so it joins the camera feed`
+                  : !bundleId
+                    ? "Bring an app to the foreground first"
+                    : "Start: inject the dylib and launch the foreground app with the chosen source"
+            }
+            aria-pressed={primary.kind === "stop"}
+            aria-label={primary.kind === "stop" ? "Stop" : "Play"}
+          >
+            {primary.kind === "stop" ? <StopGlyph /> : <PlayGlyph />}
+            <span>
+              {primary.kind === "stop" ? "Stop" : primary.kind === "attach" ? "Inject" : "Play"}
+            </span>
+          </button>
 
-          <div className="flex items-stretch gap-1.5">
-            <div className="relative" data-camera-source-menu>
-              <button
-                onClick={() => setSourceMenuOpen((o) => !o)}
-                className="h-full min-h-[36px] w-10 flex items-center justify-center bg-transparent border border-white/12 text-white/85 rounded-[7px] cursor-pointer p-0 hover:bg-white/[0.06] hover:border-white/20 hover:text-white"
-                aria-haspopup="menu"
-                aria-expanded={sourceMenuOpen}
-                title={
-                  source === "webcam"
-                    ? `Source: webcam${webcamId ? ` (${webcams.find((w) => w.id === webcamId)?.name ?? webcamId})` : ""} — click to change`
-                    : `Source: ${source} — click to pick media or webcam`
-                }
-                aria-label="Choose camera source"
-              >
-                <Images size={20} strokeWidth={2} />
-              </button>
-
-              {sourceMenuOpen && (
-                <div
-                  role="menu"
-                  className="absolute top-[calc(100%+6px)] left-0 z-10 min-w-[200px] flex flex-col gap-px p-1 bg-panel border border-white/8 rounded-[7px] shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
-                >
-                  <button
-                    role="menuitem"
-                    className="text-left bg-transparent border-none text-white/85 text-[12px] px-2.5 py-[7px] rounded-md cursor-pointer hover:bg-white/[0.06]"
-                    onClick={() => { setSourceMenuOpen(false); openFilePicker(); }}
-                    title="Pick an image or video from disk"
-                  >
-                    Browse media…
-                  </button>
-                  <div className="h-px bg-white/8 my-1" />
-                  <div className="flex items-center justify-between pl-2.5 pr-2 pt-1 pb-[2px]">
-                    <span className="text-[10px] text-white/45 uppercase tracking-[0.08em]">
-                      {webcamLoading ? "Cameras (loading…)" : webcams.length === 0 ? "No cameras" : "Cameras"}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void refreshWebcams(); }}
-                      disabled={webcamLoading}
-                      className="flex items-center justify-center w-[22px] h-[22px] bg-transparent border-none rounded-[5px] text-white/55 hover:text-white/90 cursor-pointer p-0 disabled:opacity-50"
-                      aria-label="Refresh cameras"
-                      title="Refresh cameras"
-                    >
-                      <ReloadIcon size={13} strokeWidth={2} />
-                    </button>
-                  </div>
-                  {webcams.map((w) => {
-                    const active = source === "webcam" && webcamId === w.id;
-                    return (
-                      <button
-                        key={w.id}
-                        role="menuitem"
-                        className={[
-                          "text-left bg-transparent border-none text-[12px] px-2.5 py-[7px] rounded-md cursor-pointer hover:bg-white/[0.06]",
-                          active ? "!bg-white/[0.12] !text-white" : "text-white/85",
-                        ].join(" ")}
-                        onClick={() => selectWebcam(w)}
-                        title={w.name}
-                      >
-                        {w.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={primary.onClick}
-              disabled={primaryDisabled}
-              className={[
-                "flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 border-none rounded-[7px] text-[12px] font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]",
-                primary.kind === "stop"
-                  ? "bg-white/[0.16] text-white enabled:hover:bg-white/[0.22]"
-                  : "bg-success-emerald text-[#062018] enabled:hover:brightness-[1.08]",
-              ].join(" ")}
-              title={
-                primary.kind === "stop" ? "Stop the camera helper and terminate injected apps" :
-                primary.kind === "attach" ? `Inject ${bundleId} so it joins the camera feed` :
-                !bundleId ? "Bring an app to the foreground first" :
-                "Start: inject the dylib and launch the foreground app with the chosen source"
-              }
-              aria-pressed={primary.kind === "stop"}
-              aria-label={primary.kind === "stop" ? "Stop" : "Play"}
-            >
-              {primary.kind === "stop" ? <StopGlyph /> : <PlayGlyph />}
-              <span>{primary.kind === "stop" ? "Stop" : primary.kind === "attach" ? "Inject" : "Play"}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={toggleMirror}
-              disabled={mirrorDisabled}
-              className={`flex items-center justify-center w-10 min-h-[36px] border rounded-[7px] font-[inherit] disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97] ${
-                mirror === "on"
-                  ? "bg-white border-white text-[#0a0a0c] cursor-pointer enabled:hover:bg-white/[0.88] enabled:hover:border-white/[0.88] enabled:hover:text-[#0a0a0c]"
-                  : "bg-white/[0.04] border-white/8 text-white/85 cursor-pointer enabled:hover:bg-white/[0.09] enabled:hover:border-[rgba(255,255,255,0.18)] enabled:hover:text-white"
-              }`}
-              aria-label={`Mirror: ${mirror} — tap to toggle`}
-              title={
-                mirrorDisabled
-                  ? "Mirror toggle available once a source is streaming"
-                  : `Mirror: ${mirror} — click to toggle`
-              }
-              aria-pressed={mirror === "on"}
-            >
-              <FlipHorizontal2 size={20} strokeWidth={2} fill={mirror === "on" ? "currentColor" : "none"} />
-            </button>
-          </div>
-
-          {warning && <CameraInlineBanner kind="warning" message={warning} />}
-          {error && <CameraInlineBanner kind="error" message={error} />}
+          <button
+            type="button"
+            onClick={toggleMirror}
+            disabled={mirrorDisabled}
+            className={`flex items-center justify-center w-10 min-h-[36px] border rounded-[7px] font-[inherit] disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97] ${
+              mirror === "on"
+                ? "bg-white border-white text-[#0a0a0c] cursor-pointer enabled:hover:bg-white/[0.88] enabled:hover:border-white/[0.88] enabled:hover:text-[#0a0a0c]"
+                : "bg-white/[0.04] border-white/8 text-white/85 cursor-pointer enabled:hover:bg-white/[0.09] enabled:hover:border-[rgba(255,255,255,0.18)] enabled:hover:text-white"
+            }`}
+            aria-label={`Mirror: ${mirror} — tap to toggle`}
+            title={
+              mirrorDisabled
+                ? "Mirror toggle available once a source is streaming"
+                : `Mirror: ${mirror} — click to toggle`
+            }
+            aria-pressed={mirror === "on"}
+          >
+            <FlipHorizontal2
+              size={20}
+              strokeWidth={2}
+              fill={mirror === "on" ? "currentColor" : "none"}
+            />
+          </button>
         </div>
+
+        {warning && <CameraInlineBanner kind="warning" message={warning} />}
+        {error && <CameraInlineBanner kind="error" message={error} />}
+      </div>
     </CollapsibleSection>
   );
 }

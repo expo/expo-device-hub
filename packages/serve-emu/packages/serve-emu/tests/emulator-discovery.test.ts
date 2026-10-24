@@ -6,11 +6,7 @@ import {
 } from "../src/emulator.ts";
 import type { execText } from "../src/exec.ts";
 
-function result(
-  status: number | null,
-  stdout = "",
-  error: Error | null = null,
-) {
+function result(status: number | null, stdout = "", error: Error | null = null) {
   return {
     status,
     signal: null,
@@ -42,10 +38,12 @@ describe("emulator discovery", () => {
         resolveEmulator(undefined, { execText: runExec, env: firstEnvironment }),
       ]),
     ).toEqual(["emulator", "emulator"]);
-    expect(await resolveEmulator(undefined, {
-      execText: runExec,
-      env: firstEnvironment,
-    })).toBe("emulator");
+    expect(
+      await resolveEmulator(undefined, {
+        execText: runExec,
+        env: firstEnvironment,
+      }),
+    ).toBe("emulator");
     expect(probes).toBe(1);
 
     expect(
@@ -56,10 +54,12 @@ describe("emulator discovery", () => {
     ).toBe("emulator");
     expect(probes).toBe(2);
 
-    expect(await resolveEmulator("/custom/emulator", {
-      execText: runExec,
-      env: firstEnvironment,
-    })).toBe("/custom/emulator");
+    expect(
+      await resolveEmulator("/custom/emulator", {
+        execText: runExec,
+        env: firstEnvironment,
+      }),
+    ).toBe("/custom/emulator");
     expect(probes).toBe(2);
 
     clearEmulatorResolutionCache();

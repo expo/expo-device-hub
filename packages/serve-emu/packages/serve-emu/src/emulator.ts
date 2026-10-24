@@ -3,11 +3,15 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { listAllDevices, readEmuConsoleValue, type Device } from "./adb.ts";
-import { cameraLaunchArgs, seedCameraFeeds } from "./camera.ts";
 import {
-  isEmulatorSerial,
-  parseEmulatorSerial,
-} from "./device-capabilities.ts";
+  ANDROID_SDK_HINT,
+  androidExecutable,
+  androidSdkRoots,
+  describeAndroidSdkRoots,
+  type AndroidSdkRoot,
+} from "./android-sdk.ts";
+import { cameraLaunchArgs, seedCameraFeeds } from "./camera.ts";
+import { isEmulatorSerial, parseEmulatorSerial } from "./device-capabilities.ts";
 import { execText, type ExecResult } from "./exec.ts";
 
 export type EmulatorLaunch = {
@@ -67,12 +71,7 @@ function execSucceeded(result: ExecResult<string>): boolean {
 }
 
 function execFailure(result: ExecResult<string>): string {
-  return (
-    result.stderr.trim() ||
-    result.error?.message ||
-    result.stdout.trim() ||
-    "unknown error"
-  );
+  return result.stderr.trim() || result.error?.message || result.stdout.trim() || "unknown error";
 }
 
 let emulatorResolutionCache: {
@@ -80,15 +79,11 @@ let emulatorResolutionCache: {
   resolution: Promise<string>;
 } | null = null;
 
-function sdkEmulatorCandidates(env: NodeJS.ProcessEnv): string[] {
-  const roots = [
-    env.ANDROID_HOME,
-    env.ANDROID_SDK_ROOT,
-    env.HOME ? join(env.HOME, "Library", "Android", "sdk") : undefined,
-  ].filter((v): v is string => Boolean(v));
-  return [...new Set(roots)].flatMap((root) => [
-    join(root, "emulator", "emulator"),
-    join(root, "tools", "emulator"),
+function sdkEmulatorCandidates(roots: readonly AndroidSdkRoot[]): string[] {
+  const executable = androidExecutable("emulator");
+  return roots.flatMap((root) => [
+    join(root.path, "emulator", executable),
+    join(root.path, "tools", executable),
   ]);
 }
 
@@ -98,6 +93,7 @@ function emulatorEnvironmentKey(env: NodeJS.ProcessEnv): string {
     env.ANDROID_HOME ?? "",
     env.ANDROID_SDK_ROOT ?? "",
     env.HOME ?? "",
+    env.LOCALAPPDATA ?? "",
   ].join("\0");
 }
 
@@ -131,12 +127,14 @@ export async function resolveEmulator(
       return "emulator";
     }
 
-    for (const candidate of sdkEmulatorCandidates(env)) {
+    const roots = androidSdkRoots({ env, homeDir: env.HOME, existsSync: pathExists });
+    for (const candidate of sdkEmulatorCandidates(roots)) {
       if (pathExists(candidate)) return candidate;
     }
 
     throw new Error(
-      "Could not find Android Emulator. Put `emulator` on PATH or set ANDROID_HOME / ANDROID_SDK_ROOT.",
+      "Could not find Android Emulator on PATH or in " +
+        `${describeAndroidSdkRoots(roots)}. ${ANDROID_SDK_HINT}`,
       { cause: pathProbe.error ?? undefined },
     );
   })();
@@ -160,10 +158,9 @@ async function listAvdsWithEmulator(
     maxBuffer: 1024 * 1024,
   });
   if (!execSucceeded(r)) {
-    throw new Error(
-      `emulator -list-avds failed: ${execFailure(r)}`,
-      { cause: r.error ?? undefined },
-    );
+    throw new Error(`emulator -list-avds failed: ${execFailure(r)}`, {
+      cause: r.error ?? undefined,
+    });
   }
   return r.stdout
     .split(/\r?\n/)
@@ -231,11 +228,7 @@ async function runningAvdName(
   const fromConsole = await readEmuConsoleValue(serial, ["avd", "name"], runExec);
   if (fromConsole) return fromConsole;
 
-  const fromProp = await adb(
-    serial,
-    ["shell", "getprop", "ro.boot.qemu.avd_name"],
-    runExec,
-  );
+  const fromProp = await adb(serial, ["shell", "getprop", "ro.boot.qemu.avd_name"], runExec);
   if (execSucceeded(fromProp)) {
     const name = fromProp.stdout.trim();
     if (name) return name;
@@ -248,9 +241,7 @@ export async function resolveRunningAvds(
   devices: readonly Device[],
   runExec: typeof execText = execText,
 ): Promise<RunningAvd[]> {
-  const emulators = devices.filter((device) =>
-    isEmulatorSerial(device.serial),
-  );
+  const emulators = devices.filter((device) => isEmulatorSerial(device.serial));
   const named = await Promise.all(
     emulators.map(async (device) => {
       const avd = await runningAvdName(device.serial, runExec);
@@ -272,9 +263,9 @@ async function findRunningAvd(
   name: string,
   dependencies: Pick<EmulatorRuntimeDependencies, "execText" | "listAllDevices"> = {},
 ): Promise<RunningAvd | null> {
-  return (await listRunningAvds(undefined, dependencies)).find(
-    (running) => running.avd === name,
-  ) ?? null;
+  return (
+    (await listRunningAvds(undefined, dependencies)).find((running) => running.avd === name) ?? null
+  );
 }
 
 export async function stopEmulator(
@@ -320,11 +311,7 @@ async function waitForBoot(
 
     const state = await adb(serial, ["get-state"], runExec);
     if (execSucceeded(state) && state.stdout.trim() === "device") {
-      const boot = await adb(
-        serial,
-        ["shell", "getprop", "sys.boot_completed"],
-        runExec,
-      );
+      const boot = await adb(serial, ["shell", "getprop", "sys.boot_completed"], runExec);
       if (execSucceeded(boot) && boot.stdout.trim() === "1") return;
     }
 
@@ -392,12 +379,7 @@ export async function startEmulator(
 
   try {
     await Promise.race([
-      waitForBoot(
-        serial,
-        proc,
-        opts.bootTimeoutMs ?? 120_000,
-        dependencies,
-      ),
+      waitForBoot(serial, proc, opts.bootTimeoutMs ?? 120_000, dependencies),
       spawnError,
     ]);
     return {

@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_HOST } from "../src/server.ts";
-import {
-  frameDeliveryDecision,
-  sendResultDecision,
-} from "../src/server/backpressure.ts";
+import { frameDeliveryDecision, sendResultDecision } from "../src/server/backpressure.ts";
 import {
   StaleSessionError,
   sessionScoped,
@@ -27,9 +24,9 @@ describe("server backpressure policy", () => {
   };
 
   test("drops deltas until a keyframe and prioritizes the close threshold", () => {
-    expect(
-      frameDeliveryDecision({ ...base, awaitingKeyFrame: true }),
-    ).toBe("drop-awaiting-keyframe");
+    expect(frameDeliveryDecision({ ...base, awaitingKeyFrame: true })).toBe(
+      "drop-awaiting-keyframe",
+    );
     expect(
       frameDeliveryDecision({
         ...base,
@@ -37,12 +34,8 @@ describe("server backpressure policy", () => {
         isKeyFrame: true,
       }),
     ).toBe("send");
-    expect(
-      frameDeliveryDecision({ ...base, bufferedBytes: 513 }),
-    ).toBe("drop-buffered");
-    expect(
-      frameDeliveryDecision({ ...base, bufferedBytes: 16_385 }),
-    ).toBe("close-slow-client");
+    expect(frameDeliveryDecision({ ...base, bufferedBytes: 513 })).toBe("drop-buffered");
+    expect(frameDeliveryDecision({ ...base, bufferedBytes: 16_385 })).toBe("close-slow-client");
     expect(
       frameDeliveryDecision({
         ...base,
@@ -63,9 +56,13 @@ describe("device-session isolation", () => {
   test("a replay callback cannot cross a session generation", async () => {
     let generation = 4;
     const calls: string[] = [];
-    const action = sessionScoped(4, () => generation, async (value: string) => {
-      calls.push(value);
-    });
+    const action = sessionScoped(
+      4,
+      () => generation,
+      async (value: string) => {
+        calls.push(value);
+      },
+    );
 
     await action("old-session");
     generation++;
@@ -80,10 +77,13 @@ describe("device-session isolation", () => {
       resolve = done;
     });
     let committed: string | null = null;
-    const work = sessionScopedResult(10, () => generation, () => pending)
-      .then((value) => {
-        committed = value;
-      });
+    const work = sessionScopedResult(
+      10,
+      () => generation,
+      () => pending,
+    ).then((value) => {
+      committed = value;
+    });
 
     generation++;
     resolve("old-device-location");

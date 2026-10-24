@@ -32,7 +32,7 @@ actor H264Encoder {
     private var bitrate: Int
     private var emittedDescription = false
     private var frameCount: Int64 = 0
-    private var lowLatencyEnabled = true
+    private var lowLatencyEnabled: Bool
     /// Times the encoder fell back from low-latency to default rate control. Nothing turns
     /// low-latency rate control back on, so it is 0 or 1 for one encoder.
     private(set) var lowLatencyFallbacks: UInt64 = 0
@@ -55,11 +55,13 @@ actor H264Encoder {
     }
 
     init(fps: Int = 60, bitrate: Int = 6_000_000,
-         constrainedBaseline: Bool = false, dynamicBitrate: Bool = false) {
+         constrainedBaseline: Bool = false, dynamicBitrate: Bool = false,
+         lowLatencyRateControl: Bool = true) {
         self.fps = Int32(max(1, fps))
         self.bitrate = max(1, bitrate)
         self.constrainedBaseline = constrainedBaseline
         self.dynamicBitrate = dynamicBitrate
+        self.lowLatencyEnabled = lowLatencyRateControl
     }
 
     deinit {
@@ -221,12 +223,10 @@ actor H264Encoder {
             self.session = nil
         }
 
-        // Low-latency rate control puts VideoToolbox in its real-time/low-delay
-        // pipeline and, crucially, emits a bitstream the *decoder* treats as
-        // low-latency (small max_dec_frame_buffering). Without it the decoder
-        // fills a large DPB before emitting, adding ~300ms of latency on the
-        // client even though the stream carries no B-frames. Falls back to the
-        // default spec on the rare hardware that rejects it.
+        // Request VideoToolbox's low-latency rate-control pipeline. Both modes
+        // also request real-time encoding and disable frame reordering below.
+        // Decoder reference-buffer capacity alone does not establish display
+        // latency. Fall back if session creation or an encode fails.
         let lowLatencySpec: NSDictionary = [
             kVTVideoEncoderSpecification_EnableLowLatencyRateControl: kCFBooleanTrue!,
         ]

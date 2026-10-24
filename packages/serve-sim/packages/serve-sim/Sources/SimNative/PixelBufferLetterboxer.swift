@@ -6,7 +6,7 @@ import VideoToolbox
 
 final class PixelBufferLetterboxer {
     private let allowCPUFallback: Bool
-    private let maxBuffers: Int?
+    private let allocationLimit: CFDictionary?
     private var pool: CVPixelBufferPool?
     private var poolWidth = 0
     private var poolHeight = 0
@@ -20,7 +20,7 @@ final class PixelBufferLetterboxer {
     /// `preferCPU` skips the VideoToolbox transfer and scales with vImage from the start.
     init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false) {
         self.allowCPUFallback = allowCPUFallback
-        self.maxBuffers = maxBuffers
+        allocationLimit = maxBuffers.map { [kCVPixelBufferPoolAllocationThresholdKey as String: $0] as CFDictionary }
         transferUnavailable = preferCPU && allowCPUFallback
     }
 
@@ -40,20 +40,7 @@ final class PixelBufferLetterboxer {
             sourceWidth: sourceWidth, sourceHeight: sourceHeight,
             canvasWidth: width, canvasHeight: height
         )
-        guard let pool = pixelBufferPool(width: width, height: height, format: format) else { return nil }
-        var output: CVPixelBuffer?
-        let status: CVReturn
-        if let maxBuffers {
-            let limit = [kCVPixelBufferPoolAllocationThresholdKey as String: maxBuffers] as CFDictionary
-            status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
-                                                                         limit, &output)
-        } else {
-            status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output)
-        }
-        guard status == kCVReturnSuccess, let output else {
-            poolDrops &+= 1
-            return nil
-        }
+        guard let output = makeOutput(width: width, height: height, format: format) else { return nil }
 
         if let transfer = transferSession(),
            VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr {
@@ -94,6 +81,104 @@ final class PixelBufferLetterboxer {
         )
         guard vImageScale_ARGB8888(&sourceImage, &destination, nil,
                                    vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return nil }
+        return output
+    }
+
+    private struct RecordingGeometry: Equatable {
+        let source: Dimensions
+        let canvas: Dimensions
+    }
+    private var recordingGeometry: RecordingGeometry?
+    private var recordingTransfer: VTPixelTransferSession?
+    private var recordingTransferUnavailable = false
+
+    deinit {
+        if let recordingTransfer { VTPixelTransferSessionInvalidate(recordingTransfer) }
+    }
+
+    func placeForRecording(_ source: CVPixelBuffer, contentSize: Dimensions, width: Int, height: Int)
+        -> (buffer: CVPixelBuffer, contentRect: RecordingContentRect)? {
+        let size = source.dimensions
+        let format = CVPixelBufferGetPixelFormatType(source)
+        guard width > 0, height > 0, contentSize.width > 0, contentSize.height > 0,
+              contentSize.width <= size.width, contentSize.height <= size.height,
+              Self.supports(format) else { return nil }
+        if size == Dimensions(width: width, height: height) {
+            return (source, RecordingContentRect(x: 0, y: 0,
+                width: contentSize.width, height: contentSize.height))
+        }
+        let placement = LetterboxPlacement(sourceWidth: size.width, sourceHeight: size.height,
+            canvasWidth: width, canvasHeight: height)
+        let geometry = RecordingGeometry(source: size, canvas: Dimensions(width: width, height: height))
+        guard let transfer = recordingSession(geometry, placement: placement),
+              let output = makeOutput(width: width, height: height, format: format),
+              VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr else { return nil }
+        transferFrames &+= 1
+        // The MP4 retains the full canvas and square pixels; cropping belongs to its timeline.
+        for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
+                    kCVImageBufferPixelAspectRatioKey] { CVBufferRemoveAttachment(output, key) }
+        // Include partially covered edge pixels when native odd dimensions were padded.
+        let contentRect = RecordingContentRect(x: placement.x, y: placement.y,
+            width: (contentSize.width * placement.width + size.width - 1) / size.width,
+            height: (contentSize.height * placement.height + size.height - 1) / size.height)
+        return (output, contentRect)
+    }
+
+    private func recordingSession(_ geometry: RecordingGeometry, placement: LetterboxPlacement)
+        -> VTPixelTransferSession? {
+        if recordingTransferUnavailable { return nil }
+        if recordingGeometry == geometry { return recordingTransfer }
+        if recordingTransfer == nil {
+            guard VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault,
+                pixelTransferSessionOut: &recordingTransfer) == noErr else {
+                recordingTransferUnavailable = true
+                return nil
+            }
+        }
+        guard let transfer = recordingTransfer else { return nil }
+        let aperture: [String: Any] = [
+            kCVImageBufferCleanApertureWidthKey as String: placement.width,
+            kCVImageBufferCleanApertureHeightKey as String: placement.height,
+            kCVImageBufferCleanApertureHorizontalOffsetKey as String:
+                Double(placement.x) + Double(placement.width - geometry.canvas.width) / 2,
+            kCVImageBufferCleanApertureVerticalOffsetKey as String:
+                Double(placement.y) + Double(placement.height - geometry.canvas.height) / 2,
+        ]
+        let aspect: [String: Any] = [
+            kCVImageBufferPixelAspectRatioHorizontalSpacingKey as String: geometry.source.width * placement.height,
+            kCVImageBufferPixelAspectRatioVerticalSpacingKey as String: geometry.source.height * placement.width,
+        ]
+        for (key, value) in [
+            (kVTPixelTransferPropertyKey_ScalingMode, kVTScalingMode_Letterbox as CFTypeRef),
+            (kVTPixelTransferPropertyKey_DestinationCleanAperture, aperture as CFDictionary),
+            (kVTPixelTransferPropertyKey_DestinationPixelAspectRatio, aspect as CFDictionary),
+        ] {
+            guard VTSessionSetProperty(transfer, key: key, value: value) == noErr else {
+                VTPixelTransferSessionInvalidate(transfer)
+                recordingTransfer = nil
+                recordingTransferUnavailable = true
+                return nil
+            }
+        }
+        recordingGeometry = geometry
+        return transfer
+    }
+
+    private func makeOutput(width: Int, height: Int, format: OSType) -> CVPixelBuffer? {
+        guard let pool = pixelBufferPool(width: width, height: height, format: format) else { return nil }
+        var output: CVPixelBuffer?
+        let status: CVReturn
+        if let allocationLimit {
+            status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
+                                                                         allocationLimit, &output)
+        } else {
+            status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output)
+        }
+        guard status == kCVReturnSuccess, let output else {
+            poolDrops &+= 1
+            return nil
+        }
+
         return output
     }
 

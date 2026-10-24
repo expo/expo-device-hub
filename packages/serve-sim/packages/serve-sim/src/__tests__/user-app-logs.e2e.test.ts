@@ -17,7 +17,7 @@ type RecordFields = { processImagePath?: string; processID?: number; eventMessag
 function fields(line: LogLine): RecordFields | null {
   try {
     const value: unknown = JSON.parse(line.raw);
-    return value !== null && typeof value === "object" ? value as RecordFields : null;
+    return value !== null && typeof value === "object" ? (value as RecordFields) : null;
   } catch {
     return null;
   }
@@ -47,9 +47,11 @@ describe.skipIf(!ready)("user-app logs with a real simulator", () => {
   });
 
   function launch(): number {
-    const output = execFileSync("xcrun", [
-      "simctl", "launch", "--terminate-running-process", udid!, APP, "--logs-test",
-    ], { encoding: "utf8", timeout: 30_000 });
+    const output = execFileSync(
+      "xcrun",
+      ["simctl", "launch", "--terminate-running-process", udid!, APP, "--logs-test"],
+      { encoding: "utf8", timeout: 30_000 },
+    );
     const pid = Number(output.trim().match(/:\s*(\d+)$/)?.[1]);
     if (!Number.isSafeInteger(pid)) throw new Error(`No fixture PID in simctl response: ${output}`);
     return pid;
@@ -69,22 +71,35 @@ describe.skipIf(!ready)("user-app logs with a real simulator", () => {
   test("keeps default system logs while filtering app logs across relaunch", async () => {
     const all = cache.ensure(udid!);
     const apps = cache.ensure(udid!, "user-apps");
-    for (const [scope, buffer] of [["all", all], ["apps", apps]] as const) {
-      releases.push(buffer.subscribeBatch(lines => {
-        for (const line of lines) {
-          const record = fields(line);
-          // Recognize the fixture independently of the production classifier.
-          const fixture = record?.processImagePath?.endsWith("/ServeSimLaunchFixture.app/ServeSimLaunchFixture");
-          const inAppContainer = record?.processImagePath?.toLowerCase().includes("/containers/bundle/application/");
-          if (scope === "apps" && !inAppContainer) badFilteredRecords++;
-          if (scope === "all" && record?.processImagePath && !inAppContainer) {
-            sawDefaultSystemRecord = true;
+    for (const [scope, buffer] of [
+      ["all", all],
+      ["apps", apps],
+    ] as const) {
+      releases.push(
+        buffer.subscribeBatch((lines) => {
+          for (const line of lines) {
+            const record = fields(line);
+            // Recognize the fixture independently of the production classifier.
+            const fixture = record?.processImagePath?.endsWith(
+              "/ServeSimLaunchFixture.app/ServeSimLaunchFixture",
+            );
+            const inAppContainer = record?.processImagePath
+              ?.toLowerCase()
+              .includes("/containers/bundle/application/");
+            if (scope === "apps" && !inAppContainer) badFilteredRecords++;
+            if (scope === "all" && record?.processImagePath && !inAppContainer) {
+              sawDefaultSystemRecord = true;
+            }
+            if (
+              fixture &&
+              record?.eventMessage?.includes(MARKER) &&
+              typeof record.processID === "number"
+            ) {
+              markers[scope].add(record.processID);
+            }
           }
-          if (fixture && record?.eventMessage?.includes(MARKER) && typeof record.processID === "number") {
-            markers[scope].add(record.processID);
-          }
-        }
-      }));
+        }),
+      );
     }
     const first = launch();
     await waitForBoth(first);
@@ -96,10 +111,12 @@ describe.skipIf(!ready)("user-app logs with a real simulator", () => {
     expect(cache.peek(udid!, "user-apps")).toBe(apps);
     expect(apps).not.toBe(all);
     for (const pid of [first, second]) {
-      expect(apps.read().some(line => {
-        const record = fields(line);
-        return record?.processID === pid && record.eventMessage?.includes(MARKER);
-      })).toBe(true);
+      expect(
+        apps.read().some((line) => {
+          const record = fields(line);
+          return record?.processID === pid && record.eventMessage?.includes(MARKER);
+        }),
+      ).toBe(true);
     }
   }, 90_000);
 });

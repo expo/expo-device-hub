@@ -31,7 +31,10 @@ interface UseAndroidCameraOptions {
 // The preview renders these in an <img>, which cannot set a header.
 function cameraImageUrl(baseUrl: string, device: string | null, token: SessionToken) {
   return (facing: DeviceCameraFacing, digest: string | null) =>
-    withSessionTokenQuery(deviceApiUrl(baseUrl, androidCameraImagePath(facing, digest), device), token);
+    withSessionTokenQuery(
+      deviceApiUrl(baseUrl, androidCameraImagePath(facing, digest), device),
+      token,
+    );
 }
 
 /** Host-fed emulator camera images: polls serve-emu for the feeds and replaces them. */

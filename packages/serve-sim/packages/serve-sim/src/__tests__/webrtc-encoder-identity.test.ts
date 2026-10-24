@@ -10,9 +10,7 @@ describe("encoder identity in sender stats", () => {
         hardware: true,
       },
     });
-    expect(stats.encoder?.id).toBe(
-      "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc",
-    );
+    expect(stats.encoder?.id).toBe("paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc");
     expect(stats.encoder?.hardware).toBe(true);
   });
 
@@ -28,10 +26,18 @@ describe("encoder identity in sender stats", () => {
   test("keeps the mark that the identity is a probe, not a reading of the live encoder", () => {
     const probed = readSenderStats({
       sessions: [],
-      encoder: { id: "com.apple.videotoolbox.videoencoder.ave.avc", hardware: true, codec: "H264", probe: true },
+      encoder: {
+        id: "com.apple.videotoolbox.videoencoder.ave.avc",
+        hardware: true,
+        codec: "H264",
+        probe: true,
+      },
     });
     expect(probed.encoder?.probe).toBe(true);
-    const software = readSenderStats({ sessions: [], encoder: { id: null, hardware: false, codec: "VP8" } });
+    const software = readSenderStats({
+      sessions: [],
+      encoder: { id: null, hardware: false, codec: "VP8" },
+    });
     expect(software.encoder?.probe).toBe(false);
   });
 

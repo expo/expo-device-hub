@@ -54,12 +54,8 @@ function renderedLifecycle(): StreamLifecycleState {
 describe("stream lifecycle generations", () => {
   test("client events require a lifecycle boundary and reject delayed stats", () => {
     expect(classifyStreamEventGeneration(5, 4, false)).toBe("stale");
-    expect(classifyStreamEventGeneration(5, 6, false)).toBe(
-      "awaiting-boundary",
-    );
-    expect(classifyStreamEventGeneration(5, 6, true)).toBe(
-      "new-generation",
-    );
+    expect(classifyStreamEventGeneration(5, 6, false)).toBe("awaiting-boundary");
+    expect(classifyStreamEventGeneration(5, 6, true)).toBe("new-generation");
     expect(classifyStreamEventGeneration(6, 6, false)).toBe("current");
     expect(classifyStreamEventGeneration(6, Number.NaN, true)).toBe("invalid");
   });
@@ -86,12 +82,8 @@ describe("stream lifecycle generations", () => {
       awaitingConnectBoundary: false,
     });
 
-    expect(gateStreamEventGeneration(result.gate, 9, null).disposition).toBe(
-      "stale",
-    );
-    expect(gateStreamEventGeneration(result.gate, 10, null).disposition).toBe(
-      "current",
-    );
+    expect(gateStreamEventGeneration(result.gate, 9, null).disposition).toBe("stale");
+    expect(gateStreamEventGeneration(result.gate, 10, null).disposition).toBe("current");
   });
 
   test("a client epoch nonce distinguishes two effects before either sees a generation", () => {
@@ -103,12 +95,10 @@ describe("stream lifecycle generations", () => {
       reason: "connect" as const,
     };
 
-    expect(
-      isCurrentStreamClientEpoch(replayedEffectEpoch, queuedOldConnect.clientEpoch),
-    ).toBe(false);
-    expect(isCurrentStreamClientEpoch(replayedEffectEpoch, replayedEffectEpoch)).toBe(
-      true,
+    expect(isCurrentStreamClientEpoch(replayedEffectEpoch, queuedOldConnect.clientEpoch)).toBe(
+      false,
     );
+    expect(isCurrentStreamClientEpoch(replayedEffectEpoch, replayedEffectEpoch)).toBe(true);
     expect(isCurrentStreamClientEpoch(0, 0)).toBe(false);
     expect(
       gateStreamEventGeneration(
@@ -350,10 +340,7 @@ describe("stream lifecycle generations", () => {
 
   test("supports deterministic custom status thresholds", () => {
     let state = createStreamLifecycle(0);
-    state = reduceStreamLifecycle(
-      state,
-      currentTransition(state, { type: "socket-open" }),
-    );
+    state = reduceStreamLifecycle(state, currentTransition(state, { type: "socket-open" }));
     expect(
       deriveStreamDisplayStatus(state, 10, {
         waitingMs: 10,
@@ -361,9 +348,7 @@ describe("stream lifecycle generations", () => {
         packetFreshMs: 5,
       }),
     ).toBe("waiting for video");
-    expect(() => deriveStreamDisplayStatus(state, 10, { waitingMs: -1 })).toThrow(
-      "waitingMs",
-    );
+    expect(() => deriveStreamDisplayStatus(state, 10, { waitingMs: -1 })).toThrow("waitingMs");
   });
 });
 

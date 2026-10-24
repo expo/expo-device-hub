@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { BodySection, requestKey, showsEmptyBodyNotice } from "../client/components/network-capture-requests";
+import {
+  BodySection,
+  requestKey,
+  showsEmptyBodyNotice,
+} from "../client/components/network-capture-requests";
 
 import {
   CaptureState,
@@ -15,6 +19,10 @@ import {
   captureStatusLabel,
   captureControl,
   RelaunchHint,
+  CaptureFieldsMenu,
+  NetworkCaptureTool,
+  CaptureFieldsWarning,
+  toggleField,
   visibleChangeError,
   formatMs,
   groupByDomain,
@@ -51,14 +59,20 @@ describe("showsEmptyBodyNotice", () => {
     expect(showsEmptyBodyNotice({ ...base, settled: false })).toBe(false);
     expect(showsEmptyBodyNotice({ ...base, settled: true })).toBe(true);
     expect(showsEmptyBodyNotice({ ...base, settled: true, loading: true })).toBe(false);
-    expect(showsEmptyBodyNotice({ ...base, settled: true, bodyError: "socket closed" })).toBe(false);
+    expect(showsEmptyBodyNotice({ ...base, settled: true, bodyError: "socket closed" })).toBe(
+      false,
+    );
   });
 });
 
 describe("EmptyBodyNotice", () => {
   test("says a body was dropped for memory, or was never kept, so neither reads as the other", () => {
-    expect(renderToStaticMarkup(<EmptyBodyNotice dropped />)).toContain("dropped to keep capture within its memory limit");
-    expect(renderToStaticMarkup(<EmptyBodyNotice dropped={false} />)).toContain("No headers or body were kept for this request.");
+    expect(renderToStaticMarkup(<EmptyBodyNotice dropped />)).toContain(
+      "dropped to keep capture within its memory limit",
+    );
+    expect(renderToStaticMarkup(<EmptyBodyNotice dropped={false} />)).toContain(
+      "No headers or body were kept for this request.",
+    );
   });
 });
 
@@ -106,8 +120,12 @@ describe("RequestRow", () => {
 
 describe("requestKey", () => {
   test("gives a new session's reused id a new row", () => {
-    expect(requestKey(request({ id: "r1", startedAt: 1 }))).not.toBe(requestKey(request({ id: "r1", startedAt: 2 })));
-    expect(requestKey(request({ id: "r1", startedAt: 1 }))).toBe(requestKey(request({ id: "r1", startedAt: 1 })));
+    expect(requestKey(request({ id: "r1", startedAt: 1 }))).not.toBe(
+      requestKey(request({ id: "r1", startedAt: 2 })),
+    );
+    expect(requestKey(request({ id: "r1", startedAt: 1 }))).toBe(
+      requestKey(request({ id: "r1", startedAt: 1 })),
+    );
   });
 });
 
@@ -151,7 +169,10 @@ describe("TimingBar", () => {
 
   test("draws a failure as one bar rather than a split it does not have", () => {
     const html = renderToStaticMarkup(
-      <TimingBar request={request({ failure: "connection refused", durationMs: 50 })} slowestMs={100} />,
+      <TimingBar
+        request={request({ failure: "connection refused", durationMs: 50 })}
+        slowestMs={100}
+      />,
     );
 
     expect(html).toContain("bg-red-400/50");
@@ -200,7 +221,12 @@ describe("DomainSection", () => {
   test("shows the roll-up and stays collapsed so a busy host does not bury the rest", () => {
     const html = renderToStaticMarkup(
       <DomainSection
-        group={{ host: "speed.cloudflare.com", requests: [request()], bytes: 48_000_000, failed: 0 }}
+        group={{
+          host: "speed.cloudflare.com",
+          requests: [request()],
+          bytes: 48_000_000,
+          failed: 0,
+        }}
         udid={UDID}
         slowestMs={171}
       />,
@@ -228,7 +254,9 @@ describe("DomainSection", () => {
 
 describe("CaptureState", () => {
   test("omits a redundant off message when there is no error", () => {
-    expect(renderToStaticMarkup(<CaptureState attachment="not-enabled" attachError={null} />)).toBe("");
+    expect(renderToStaticMarkup(<CaptureState attachment="not-enabled" attachError={null} />)).toBe(
+      "",
+    );
   });
 
   test("keeps an off-state reason visible", () => {
@@ -248,17 +276,13 @@ describe("CaptureState", () => {
   });
 
   test("says it is starting while capture is enabled", () => {
-    const html = renderToStaticMarkup(
-      <CaptureState attachment="starting" attachError={null} />,
-    );
+    const html = renderToStaticMarkup(<CaptureState attachment="starting" attachError={null} />);
 
     expect(html).toContain("Starting capture");
   });
 
   test("says nothing at all while capture is healthy", () => {
-    const html = renderToStaticMarkup(
-      <CaptureState attachment="capturing" attachError={null} />,
-    );
+    const html = renderToStaticMarkup(<CaptureState attachment="capturing" attachError={null} />);
 
     expect(html).toBe("");
   });
@@ -267,11 +291,7 @@ describe("CaptureState", () => {
 describe("CaptureStatusTooltip", () => {
   test("notes when response bodies are off while capturing", () => {
     const html = renderToStaticMarkup(
-      <CaptureStatusTooltip
-        capturing
-        starting={false}
-        fields={["header", "request-body"]}
-      />,
+      <CaptureStatusTooltip capturing starting={false} fields={["header", "request-body"]} />,
     );
     expect(html).toContain("Capture enabled");
     expect(html).toContain("Response bodies not captured");
@@ -407,23 +427,28 @@ test("body previews report UTF-8 bytes instead of UTF-16 length", () => {
 });
 
 describe("RelaunchHint", () => {
-  test("asks to relaunch open apps once capture is on, and stays quiet while it is off", () => {
-    expect(renderToStaticMarkup(<RelaunchHint capturing />)).toContain("Relaunch apps that were already open");
-    expect(renderToStaticMarkup(<RelaunchHint capturing={false} />)).toBe("");
+  test("asks to relaunch apps that were already open; the panel mounts it only while capturing", () => {
+    expect(renderToStaticMarkup(<RelaunchHint />)).toContain(
+      "Relaunch apps that were already open",
+    );
   });
 });
 
 describe("visibleChangeError", () => {
   const failed = (attachError: string) => ({ attachment: "failed", attachError }) as CaptureMeta;
-  const reason = "mitmproxy is not installed. Install it to use network capture: brew install mitmproxy";
+  const reason =
+    "mitmproxy is not installed. Install it to use network capture: brew install mitmproxy";
 
   test("hides an error that only repeats the failed start shown below it", () => {
-    expect(visibleChangeError(`Could not enable network capture: ${reason}`, failed(reason))).toBeNull();
+    expect(
+      visibleChangeError(`Could not enable network capture: ${reason}`, failed(reason)),
+    ).toBeNull();
   });
 
   test("keeps a restart failure that shares the failed start's reason", () => {
     // Its recovery advice (boot the simulator again) is not in the capture state.
-    const restart = "The simulator may now be shut down after simctl refused. Boot it and try again.";
+    const restart =
+      "The simulator may now be shut down after simctl refused. Boot it and try again.";
     expect(visibleChangeError(restart, failed("simctl refused"))).toBe(restart);
   });
 
@@ -431,7 +456,48 @@ describe("visibleChangeError", () => {
     expect(visibleChangeError("The simulator could not be restarted.", failed(reason))).toBe(
       "The simulator could not be restarted.",
     );
-    expect(visibleChangeError("Requests could not be cleared.", null)).toBe("Requests could not be cleared.");
+    expect(visibleChangeError("Requests could not be cleared.", null)).toBe(
+      "Requests could not be cleared.",
+    );
     expect(visibleChangeError(null, failed(reason))).toBeNull();
+  });
+});
+
+describe("capture field toggles", () => {
+  test("switches one field and keeps the proxy's order", () => {
+    expect(toggleField([], "response-body")).toEqual(["response-body"]);
+    expect(toggleField(["response-body"], "header")).toEqual(["header", "response-body"]);
+    expect(toggleField(["header", "response-body"], "header")).toEqual(["response-body"]);
+  });
+
+  test("offers the fields menu before capture starts, when no filter row shows", () => {
+    const html = renderToStaticMarkup(
+      <NetworkCaptureTool udid={UDID} captureEndpoint={`/network-capture?device=${UDID}`} />,
+    );
+    expect(html).toContain('aria-label="What capture keeps"');
+    expect(html).not.toContain("Filter requests");
+  });
+
+  test("puts the fields behind one gear button", () => {
+    const html = renderToStaticMarkup(
+      <CaptureFieldsMenu fields={["query"]} disabled={false} busy={false} onChange={() => {}} />,
+    );
+    expect(html).toContain('aria-label="What capture keeps"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    // serve-sim avoids low-opacity icons.
+    expect(html).toContain("text-[#8e8e93]");
+    expect(html).not.toContain("text-white/60");
+  });
+
+  test("warns only while headers or bodies are kept", () => {
+    expect(renderToStaticMarkup(<CaptureFieldsWarning fields={["query"]} />)).toBe("");
+    const warning = renderToStaticMarkup(<CaptureFieldsWarning fields={["response-body"]} />);
+    // An icon with the warning as its label and tooltip, not a line of text in the layout.
+    expect(warning).toContain('role="img"');
+    // Reachable by keyboard, so the tooltip opens on focus as well as on hover.
+    expect(warning).toContain('tabindex="0"');
+    expect(warning).toContain(
+      'aria-label="Headers and bodies can hold credentials and cookies, and are kept in the recording."',
+    );
   });
 });

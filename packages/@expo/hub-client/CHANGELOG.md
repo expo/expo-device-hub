@@ -1,5 +1,57 @@
 # @expo/hub-client
 
+## 1.8.0
+
+### Minor Changes
+
+- 563b357: Add text Paste and Copy for iOS simulators: `DeviceClient.pasteText`, `copyText`, `clipboardActionId`, `clipboardAction`, `clipboardPending`, `clipboardError`, `clipboardWarning` and `capabilities.clipboard`. Keys typed after a Paste wait for it. `DeviceScreen` pastes the browser's text on Command+V when the helper supports Paste. It routes Command+C through an optional host `onCopy` callback when Copy is supported; without it, Command+C stays native keys. HubClient and `DeviceScreen` do not show clipboard results; the host page shows `clipboardError` and `clipboardWarning`.
+
+  Custom `DeviceClient` implementations and mocks must add these required members; unsupported clients use `capabilities.clipboard: false`, `clipboardActionId: 0`, null action/status fields, and methods that reject as unavailable.
+
+### Patch Changes
+
+- 563b357: Refresh the shared Hardware Keyboard setting when another viewer changes it. Hub connections still start with Hardware Keyboard off so browser-layout typing works.
+
+## 1.7.0
+
+### Minor Changes
+
+- 3fc89c6: Expose `inputError` on `DeviceScreenClient`, and keep Android video live when only the input socket fails. Render the input-error notice in the Hub phone frame while consumers continue to own their UI.
+
+### Patch Changes
+
+- 99a8a36: Cancel held gestures, keys and paced input when a client changes or loses focus. Preserve unsent queued commands when a WebSocket send fails.
+
+## 1.6.1
+
+### Patch Changes
+
+- 821d0a3: Keep WebRTC peers connected during intentional capture reboots and resume normal playback recovery afterward.
+- 58c4fe3: Share one iOS control channel between settings, actions, logs, events and activity. Removing one subscription preserves the others.
+- 9f9f8d4: Add a client-owned control channel for concurrent requests and independent subscriptions, without replaying writes after disconnect.
+- a37fd27: Match serve-sim's asymmetric H.264 offer level for large iOS Simulator surfaces. Android offers retain their original level.
+- 0b680d3: Wait for advertised serve-sim input admission before sending commands or clearing refusal errors. Preserve legacy servers and allow heartbeat recovery before reporting occupied input slots.
+- 6381624: Add admission-aware iOS input connection handling with bounded queuing and refusal recovery.
+- a9a8ebe: Preserve browser-layout printable characters in iOS key messages and consume layout differences through the helper's software keyboard, while preserving shortcuts and HID fallback.
+- 2e4378f: Add the playback stall classification and recovery policy.
+- ff33fa6: Recover frozen WebRTC playback using one shared, bounded stats poll for the watchdog and diagnostics. Reconnect once before demoting a codec on a repeated decoder stall.
+- efbe26b: Bound ordinary WebRTC teardown and retry only offer contention, preserving lasting signaling errors.
+- cb4b181: Pause WebRTC failure diagnosis while hidden and use session-scoped sender stats to distinguish missing media from codec failure. Resume paused video on both platforms and reattach replacement video elements without replacing the peer.
+- 88b9eed: Bound WebRTC stats reads and avoid accumulating browser reads when a peer stops answering.
+- f97577a: Keep iOS sessions with an advertised WebRTC transport on WebRTC during transient failures and codec recovery.
+
+## 1.6.0
+
+### Minor Changes
+
+- 190a904: Expose activity readiness independently of video.
+
+### Patch Changes
+
+- cf4c0b2: Advance the iOS Rotate button through requested orientations while screen readback is delayed or an app declines a pose.
+- cf4c0b2: Wait for helper admission before sending iOS input when the helper advertises `inputAdmission`. Legacy helpers continue accepting input when the socket opens.
+- 66ca088: Keep settings available when other streams restart and prevent duplicate writes.
+
 ## 1.5.0
 
 ### Minor Changes

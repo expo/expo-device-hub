@@ -1,3 +1,4 @@
+import { type ControlSocket } from "./control-socket";
 /**
  * One-shot requests over the serve-sim middleware's **exec-ws** control socket,
  * mirroring the serve-sim client's `utils/exec.ts` (serve-sim #136).
@@ -12,9 +13,8 @@
  *
  * The channel runs a fixed set of host actions (`app.container`,
  * `app.infoPlist`, `appearance.set`, …) rather than shell commands: the preview
- * link is shareable, so no value the page sends ever reaches a shell. Each
- * request here opens its own short-lived socket; the log stream keeps a
- * long-lived one (see `useIosDevice`).
+ * link is shareable, so no value the page sends ever reaches a shell. The iOS
+ * hook supplies its owned channel; standalone callers retain one-shot sockets.
  */
 
 export interface HostActionResult {
@@ -26,7 +26,10 @@ export interface HostActionResult {
 export type HostActionParams = Record<string, string | number | boolean | string[] | undefined>;
 
 /** Runs one typed serve-sim host action and resolves its output. */
-export type RunHostAction = (action: string, params?: HostActionParams) => Promise<HostActionResult>;
+export type RunHostAction = (
+  action: string,
+  params?: HostActionParams,
+) => Promise<HostActionResult>;
 
 export interface UiRequestPayload {
   device: string;
@@ -58,7 +61,9 @@ function execWsRequest(
   body: Record<string, unknown>,
   timeoutMs: number,
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<ExecReply> {
+  if (channel) return channel.request(body, timeoutMs) as Promise<ExecReply>;
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
@@ -79,7 +84,7 @@ function execWsRequest(
       } catch {}
       run();
     };
-    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), timeoutMs);
+    timer = setTimeout(() => finish(() => reject(new Error("exec-ws timeout"))), timeoutMs);
     ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
     ws.onmessage = (event) => {
       if (settled) return;
@@ -101,8 +106,8 @@ function execWsRequest(
         else finish(() => resolve(msg));
       }
     };
-    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
-    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
+    ws.onerror = () => finish(() => reject(new Error("exec-ws error")));
+    ws.onclose = () => finish(() => reject(new Error("exec-ws closed")));
   });
 }
 
@@ -118,6 +123,7 @@ export async function runHostAction(
   params?: HostActionParams,
   /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<HostActionResult> {
   let reply: ExecReply;
   try {
@@ -127,16 +133,17 @@ export async function runHostAction(
       { action, params },
       ACTION_TIMEOUT_MS,
       protocols,
+      channel,
     );
   } catch (err) {
     if (err instanceof Error && isActionRejection(err.message)) {
-      return { stdout: '', stderr: err.message, exitCode: 1 };
+      return { stdout: "", stderr: err.message, exitCode: 1 };
     }
     throw err;
   }
   return {
-    stdout: reply.stdout ?? '',
-    stderr: reply.stderr ?? '',
+    stdout: reply.stdout ?? "",
+    stderr: reply.stderr ?? "",
     exitCode: reply.exitCode ?? 1,
   };
 }
@@ -144,7 +151,7 @@ export async function runHostAction(
 // Transport failures use these exact messages (see execWsRequest); anything
 // else came back from the server as an `{id, error}` reply.
 function isActionRejection(message: string): boolean {
-  return !['exec-ws timeout', 'exec-ws error', 'exec-ws closed'].includes(message);
+  return !["exec-ws timeout", "exec-ws error", "exec-ws closed"].includes(message);
 }
 
 /**
@@ -159,6 +166,7 @@ export async function hostUiRequest(
   payload: UiRequestPayload,
   /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<UiRequestResult> {
   const reply = await execWsRequest(
     execWsUrl,
@@ -166,6 +174,7 @@ export async function hostUiRequest(
     { ui: payload },
     UI_TIMEOUT_MS,
     protocols,
+    channel,
   );
   const result: UiRequestResult = {};
   if (reply.status !== undefined) result.status = reply.status;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "../middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "../middleware-utils";
 
 describe("corsAllowOriginHeaders", () => {
   test("echoes an allowlisted origin", () => {
@@ -33,7 +33,11 @@ describe("corsAllowOriginHeaders", () => {
   });
 
   test("matches a subdomain through a wildcard, so deploy previews work", () => {
-    for (const origin of ["https://pr-31018.expo.dev", "https://staging.expo.dev", "https://a.b.expo.dev"]) {
+    for (const origin of [
+      "https://pr-31018.expo.dev",
+      "https://staging.expo.dev",
+      "https://a.b.expo.dev",
+    ]) {
       expect(corsAllowOriginHeaders(origin, ["https://*.expo.dev"])).toEqual({
         "Access-Control-Allow-Origin": origin,
       });
@@ -57,7 +61,9 @@ describe("corsAllowOriginHeaders", () => {
 
   test("a wildcard still pins the scheme and the port", () => {
     expect(corsAllowOriginHeaders("http://pr-1.expo.dev", ["https://*.expo.dev"])).toEqual({});
-    expect(corsAllowOriginHeaders("https://pr-1.expo.dev:8081", ["https://*.expo.dev"])).toEqual({});
+    expect(corsAllowOriginHeaders("https://pr-1.expo.dev:8081", ["https://*.expo.dev"])).toEqual(
+      {},
+    );
   });
 
   test("refuses a scheme the frame policy would drop, even on an exact match", () => {
@@ -66,7 +72,9 @@ describe("corsAllowOriginHeaders", () => {
   });
 
   test("refuses an opaque origin, which every such scheme canonicalizes to the same 'null'", () => {
-    expect(corsAllowOriginHeaders("foo://evil", ["chrome-extension://abcdefghijklmnop"])).toEqual({});
+    expect(corsAllowOriginHeaders("foo://evil", ["chrome-extension://abcdefghijklmnop"])).toEqual(
+      {},
+    );
     // A loopback host on a scheme no browser sends must not reach the loopback grant either.
     expect(corsAllowOriginHeaders("foo://localhost", [])).toEqual({});
   });
@@ -97,7 +105,9 @@ describe("corsAllowOriginHeaders", () => {
 
 describe("frameAncestorsPolicy", () => {
   test("names the origin allowed to embed the preview", () => {
-    expect(frameAncestorsPolicy(["https://expo.dev"])).toBe("frame-ancestors 'self' https://expo.dev");
+    expect(frameAncestorsPolicy(["https://expo.dev"])).toBe(
+      "frame-ancestors 'self' https://expo.dev",
+    );
   });
 
   test("allows nobody else when no origin is configured", () => {
@@ -154,5 +164,14 @@ describe("frameAncestorsPolicy", () => {
     expect(frameAncestorsPolicy(["https://expo.dev:443/dashboard"])).toBe(
       "frame-ancestors 'self' https://expo.dev",
     );
+  });
+});
+
+describe("isAllowedOrigin", () => {
+  test("matches the page's own origin when a proxy keeps the default port in Host", () => {
+    expect(isAllowedOrigin("https://sim.example.com", "sim.example.com:443", [])).toBe(true);
+    expect(isAllowedOrigin("http://sim.example.com", "SIM.example.com:80", [])).toBe(true);
+    expect(isAllowedOrigin("https://sim.example.com", "sim.example.com:8443", [])).toBe(false);
+    expect(isAllowedOrigin("https://sim.example.com", "bad host", [])).toBe(false);
   });
 });

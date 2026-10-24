@@ -50,6 +50,13 @@ const BASE_CLIENT: DeviceClient = {
   setPermission: () => {},
   resetPermissions: () => {},
   refreshPermissions: () => {},
+  pasteText: async () => {},
+  copyText: async () => "",
+  clipboardActionId: 0,
+  clipboardAction: null,
+  clipboardPending: null,
+  clipboardError: null,
+  clipboardWarning: null,
   streamCapabilities: null,
   streamSettings: null,
   streamSettingsPending: false,
@@ -74,6 +81,7 @@ const BASE_CLIENT: DeviceClient = {
     streamSettings: {},
     location: {},
     permissions: false,
+    clipboard: false,
   },
   foregroundApp: null,
   videoKind: "img",
@@ -184,6 +192,13 @@ describe("LocationSection", () => {
     const html = render(locationClient());
     const options = html.match(/data-test-options="([^"]*)"/);
 
-    expect(options?.[1].split("\n")).toEqual(["Custom", "Apple Park", "Googleplex", "London", "Tokyo", "Sydney"]);
+    expect(options?.[1].split("\n")).toEqual([
+      "Custom",
+      "Apple Park",
+      "Googleplex",
+      "London",
+      "Tokyo",
+      "Sydney",
+    ]);
   });
 });

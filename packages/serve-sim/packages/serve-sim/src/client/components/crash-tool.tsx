@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { useCrashDetail } from "../hooks/use-crash-detail";
-import {
-  applyCrashFrame,
-  EMPTY_CRASH_LIST,
-  type CrashListState,
-} from "../utils/crash-stream";
+import { applyCrashFrame, EMPTY_CRASH_LIST, type CrashListState } from "../utils/crash-stream";
 import { crashStreamUrl, formatCrashAgo } from "../utils/crash-format";
 import { watchCrashes } from "../utils/watch-crashes";
 import { simEndpoint } from "../utils/sim-endpoint";
@@ -21,7 +17,7 @@ export function CrashTool({ udid, crashesEndpoint }: { udid: string; crashesEndp
 
   const path = useMemo(
     () => crashesEndpoint ?? `${simEndpoint("crashes")}?device=${encodeURIComponent(udid)}`,
-    [crashesEndpoint, udid]
+    [crashesEndpoint, udid],
   );
   // Watching costs a device log tail, so ask for one only while the section is showing crashes.
   const streamPath = crashStreamUrl(path, open);
@@ -53,7 +49,8 @@ export function CrashTool({ udid, crashesEndpoint }: { udid: string; crashesEndp
     close: closeDetail,
   } = useCrashDetail(path, list.crashes);
   const crashes = list.crashes;
-  const evicted = list.ready && detail !== null && !crashes.some((crash) => crash.id === detail.record.id);
+  const evicted =
+    list.ready && detail !== null && !crashes.some((crash) => crash.id === detail.record.id);
   const unavailable = list.meta?.status === "unavailable";
   const streamWarning = unavailable
     ? (list.meta?.statusError ?? "Crash reports are unavailable")
@@ -116,7 +113,9 @@ export function CrashTool({ udid, crashesEndpoint }: { udid: string; crashesEndp
                   {crash.count > 1 && (
                     <span className="font-mono text-[10px] text-white/45">×{crash.count}</span>
                   )}
-                  <span className="truncate font-mono text-[11px] text-white/45">{crash.appName}</span>
+                  <span className="truncate font-mono text-[11px] text-white/45">
+                    {crash.appName}
+                  </span>
                   <span
                     title={
                       crash.capturedAtMs === null

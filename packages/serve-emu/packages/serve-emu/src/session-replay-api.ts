@@ -5,10 +5,7 @@ import {
   type SessionRecorder,
 } from "./session-recorder.ts";
 
-type ReplayController = Pick<
-  SessionRecorder,
-  "startReplay" | "cancelAndWait" | "clear"
->;
+type ReplayController = Pick<SessionRecorder, "startReplay" | "cancelAndWait" | "clear">;
 
 export function sessionReplayErrorResponse(
   error: unknown,
@@ -31,9 +28,7 @@ export function startSessionReplayResponse(
 ): Response {
   if (!isCurrent()) {
     return sessionReplayErrorResponse(
-      new SessionReplayConflictError(
-        "device session changed before session replay start",
-      ),
+      new SessionReplayConflictError("device session changed before session replay start"),
     );
   }
   try {
@@ -44,9 +39,7 @@ export function startSessionReplayResponse(
   }
 }
 
-export async function stopSessionReplayResponse(
-  recorder: ReplayController,
-): Promise<Response> {
+export async function stopSessionReplayResponse(recorder: ReplayController): Promise<Response> {
   try {
     return Response.json({
       ok: true,
@@ -57,9 +50,7 @@ export async function stopSessionReplayResponse(
   }
 }
 
-export function clearSessionReplayResponse(
-  recorder: ReplayController,
-): Response {
+export function clearSessionReplayResponse(recorder: ReplayController): Response {
   try {
     return Response.json({ ok: true, session: recorder.clear() });
   } catch (error) {

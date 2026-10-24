@@ -40,11 +40,11 @@ describe.each([false, true])("startup failures (quiet=%s)", (quiet) => {
           "bun",
           CLI,
           UDID,
-          "--port", String(port),
-          ...(withLaunch ? [
-            "--launch-app-identifier", "dev.example.app",
-            "--open-url", "example://startup",
-          ] : []),
+          "--port",
+          String(port),
+          ...(withLaunch
+            ? ["--launch-app-identifier", "dev.example.app", "--open-url", "example://startup"]
+            : []),
           ...(quiet ? ["--quiet"] : []),
         ],
         {
@@ -67,6 +67,17 @@ describe.each([false, true])("startup failures (quiet=%s)", (quiet) => {
           new Response(child.stderr).text(),
         ]);
         expect(await child.exited).toBe(1);
+        const timings = stderr
+          .split("\n")
+          .filter((line) => line.startsWith("[startup] "))
+          .map((line) => JSON.parse(line.slice("[startup] ".length)));
+        expect(timings).toContainEqual({ phase: "cli", version: expect.any(String) });
+        expect(timings).toContainEqual({
+          phase: "simulator-bootstatus",
+          device: UDID,
+          status: failedCommand === "bootstatus" ? "failed" : "complete",
+          durationMs: expect.any(Number),
+        });
         if (quiet) {
           expect(stdout.trim().split("\n")).toHaveLength(1);
           expect(JSON.parse(stdout)).toEqual({ error: expect.stringContaining(diagnostic) });
@@ -77,7 +88,8 @@ describe.each([false, true])("startup failures (quiet=%s)", (quiet) => {
           .trim()
           .split("\n")
           .map((line) => JSON.parse(line) as string[]);
-        const steps = commands.map((args) => args[1])
+        const steps = commands
+          .map((args) => args[1])
           .filter((step) => ["bootstatus", "launch", "openurl"].includes(step!));
         expect(steps).toEqual(expectedSteps);
         if (failedCommand === "bootstatus") {

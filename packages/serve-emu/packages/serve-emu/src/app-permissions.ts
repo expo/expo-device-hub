@@ -4,16 +4,12 @@ import {
   type AppManagementDependencies,
   packageName,
 } from "./app-management.ts";
-import type {
-  AppPermissionsResponse,
-  RuntimePermission,
-} from "./shared/api-contracts.ts";
+import type { AppPermissionsResponse, RuntimePermission } from "./shared/api-contracts.ts";
 
 const BLOCK_HEADER = /^\s*runtime permissions:\s*$/;
 /** `adb shell` exits with the last command's status, so each command marks its own failure. */
 const FAILED = "PERMISSION_RESET_FAILED:";
-const PERMISSION_LINE =
-  /^\s*([A-Za-z][\w.]*): granted=(true|false)(?:, flags=\[([^\]]*)\])?/;
+const PERMISSION_LINE = /^\s*([A-Za-z][\w.]*): granted=(true|false)(?:, flags=\[([^\]]*)\])?/;
 
 /** `dumpsys package` prints the runtime block once per user; the first entry per name wins. */
 export function parseRuntimePermissions(dump: string): RuntimePermission[] {

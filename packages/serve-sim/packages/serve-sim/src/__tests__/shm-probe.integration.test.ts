@@ -4,10 +4,7 @@ import { existsSync, statSync } from "fs";
 import { join } from "path";
 import net from "net";
 
-const HELPER_PATH = join(
-  import.meta.dir,
-  "../../dist/simcam/serve-sim-camera-helper",
-);
+const HELPER_PATH = join(import.meta.dir, "../../dist/simcam/serve-sim-camera-helper");
 
 const SIMCAM_MAGIC = 0x53434d31;
 const SIMCAM_PIXEL_BGRA = 0;
@@ -74,14 +71,7 @@ async function loadFfi(): Promise<NonNullable<typeof lib>> {
     shm_open: (name, oflag, mode) =>
       Number(handle.symbols.shm_open(name as never, oflag, mode) as number),
     mmap: (addr, len, prot, flags, fd, offset) =>
-      handle.symbols.mmap(
-        addr as never,
-        len as never,
-        prot,
-        flags,
-        fd,
-        offset as never,
-      ) as unknown,
+      handle.symbols.mmap(addr as never, len as never, prot, flags, fd, offset as never) as unknown,
     munmap: (addr, len) => Number(handle.symbols.munmap(addr as never, len as never) as number),
     close: (fd) => Number(handle.symbols.close(fd) as number),
     shm_unlink: (name) => Number(handle.symbols.shm_unlink(name as never) as number),
@@ -169,10 +159,9 @@ async function loadIOSurface(): Promise<NonNullable<typeof iosurface>> {
     IOSurfaceGetWidth: { args: [FFIType.ptr], returns: FFIType.u64 },
     IOSurfaceGetHeight: { args: [FFIType.ptr], returns: FFIType.u64 },
   });
-  const cf = dlopen(
-    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
-    { CFRelease: { args: [FFIType.ptr], returns: FFIType.void } },
-  );
+  const cf = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", {
+    CFRelease: { args: [FFIType.ptr], returns: FFIType.void },
+  });
   iosurface = {
     lookup: (id) => io.symbols.IOSurfaceLookup(id) as unknown,
     width: (s) => Number(io.symbols.IOSurfaceGetWidth(s as never) as bigint),
@@ -225,7 +214,10 @@ function sendHelperCommand(socketPath: string, cmd: object, timeoutMs = 3000): P
   });
 }
 
-async function waitFor(check: () => boolean | Promise<boolean>, budgetMs: number): Promise<boolean> {
+async function waitFor(
+  check: () => boolean | Promise<boolean>,
+  budgetMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
     if (await check()) return true;
@@ -250,7 +242,9 @@ describeIf("SimCameraHelper shm probe", () => {
       { stdio: ["ignore", "ignore", "pipe"] },
     ) as unknown as ChildProcessByStdio<null, null, null>;
     const stderr = (helper as unknown as { stderr: NodeJS.ReadableStream | null }).stderr;
-    stderr?.on("data", (chunk: Buffer) => { helperStderr += chunk.toString(); });
+    stderr?.on("data", (chunk: Buffer) => {
+      helperStderr += chunk.toString();
+    });
 
     const ok = await waitFor(() => existsSync(SOCKET_PATH), 5000);
     if (!ok) {
@@ -263,7 +257,9 @@ describeIf("SimCameraHelper shm probe", () => {
 
   afterAll(async () => {
     if (helper && !helper.killed) {
-      try { helper.kill("SIGTERM"); } catch {}
+      try {
+        helper.kill("SIGTERM");
+      } catch {}
     }
     try {
       const sys = await loadFfi();
@@ -295,10 +291,7 @@ describeIf("SimCameraHelper shm probe", () => {
     if (!handle) return;
     try {
       const start = readHeader(handle.buffer).frameSeq;
-      const advanced = await waitFor(
-        () => readHeader(handle.buffer).frameSeq > start,
-        2000,
-      );
+      const advanced = await waitFor(() => readHeader(handle.buffer).frameSeq > start, 2000);
       expect(advanced).toBe(true);
     } finally {
       await closeShm(handle);

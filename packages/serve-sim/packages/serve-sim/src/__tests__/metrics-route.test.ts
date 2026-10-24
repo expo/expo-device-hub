@@ -17,7 +17,7 @@ const noopTracker: ForegroundTrackerCache = {
  * Unit tests for the `/metrics` route handler. These exercise the route's own
  * contract with a fake req/res and a sampler cache backed by a controllable
  * sampler, so they run without a booted simulator or shelling out to `ps`.
- * The end-to-end wiring against a real device lives in metrics-endpoint.test.ts.
+ * The end-to-end wiring against a real device lives in metrics-endpoint.e2e.test.ts.
  */
 
 function createFakeReq(): { req: IncomingMessage; close: () => void } {
@@ -52,7 +52,12 @@ function createFakeRes(): {
       return ended;
     },
   };
-  return { res: res as unknown as ServerResponse, writes, status: () => statusCode, ended: () => ended };
+  return {
+    res: res as unknown as ServerResponse,
+    writes,
+    status: () => statusCode,
+    ended: () => ended,
+  };
 }
 
 // A cache whose samplers never fire on their own timer (huge interval); the

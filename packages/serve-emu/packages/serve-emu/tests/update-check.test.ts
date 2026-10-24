@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { getUpdateNotice, isNewerVersion, UPDATE_CHECK_INTERVAL_MS, type UpdateCache } from "../src/update-check.ts";
+import {
+  getUpdateNotice,
+  isNewerVersion,
+  UPDATE_CHECK_INTERVAL_MS,
+  type UpdateCache,
+} from "../src/update-check.ts";
 
 describe("isNewerVersion", () => {
   test("compares semver-like versions", () => {

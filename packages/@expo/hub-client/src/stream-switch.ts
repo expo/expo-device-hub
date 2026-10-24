@@ -12,13 +12,13 @@
 
 export type StreamSwitchPhase =
   /** No switch in progress. */
-  | 'idle'
+  | "idle"
   /** The request is in flight. */
-  | 'requesting'
+  | "requesting"
   /** The server replaced the session, but the old stream has not dropped yet. */
-  | 'awaiting-interruption'
+  | "awaiting-interruption"
   /** The old stream dropped; waiting for the first frame of the replacement. */
-  | 'awaiting-frame';
+  | "awaiting-frame";
 
 export interface StreamSwitchState {
   phase: StreamSwitchPhase;
@@ -37,19 +37,19 @@ export type StreamSwitchEvent =
    * away from a stream that is not live (still connecting, or in error) has no
    * old session to wait for; its first frame is the replacement.
    */
-  | { type: 'request-start'; live: boolean }
-  | { type: 'request-failure' }
+  | { type: "request-start"; live: boolean }
+  | { type: "request-failure" }
   /** `replaced` is whether the server started a new session generation. */
-  | { type: 'request-success'; replaced: boolean }
+  | { type: "request-success"; replaced: boolean }
   /** The live stream stopped delivering frames (or lost its control channel). */
-  | { type: 'stream-interrupted' }
+  | { type: "stream-interrupted" }
   /** The stream is live again. */
-  | { type: 'stream-live' }
+  | { type: "stream-live" }
   /** The phase-specific safety timeout elapsed. */
-  | { type: 'timeout' };
+  | { type: "timeout" };
 
 export const IDLE_STREAM_SWITCH: StreamSwitchState = {
-  phase: 'idle',
+  phase: "idle",
   interrupted: false,
   recovered: false,
 };
@@ -59,19 +59,19 @@ export const STREAM_SWITCH_INTERRUPTION_TIMEOUT_MS = 3_000;
 /** How long to wait for the replacement stream's first frame after the old one dropped. */
 export const STREAM_SWITCH_FRAME_TIMEOUT_MS = 8_000;
 
-const REQUESTING: StreamSwitchState = { phase: 'requesting', interrupted: false, recovered: false };
+const REQUESTING: StreamSwitchState = { phase: "requesting", interrupted: false, recovered: false };
 const REQUESTING_WITHOUT_STREAM: StreamSwitchState = {
-  phase: 'requesting',
+  phase: "requesting",
   interrupted: true,
   recovered: false,
 };
 const AWAITING_INTERRUPTION: StreamSwitchState = {
-  phase: 'awaiting-interruption',
+  phase: "awaiting-interruption",
   interrupted: false,
   recovered: false,
 };
 const AWAITING_FRAME: StreamSwitchState = {
-  phase: 'awaiting-frame',
+  phase: "awaiting-frame",
   interrupted: true,
   recovered: false,
 };
@@ -81,34 +81,34 @@ export function reduceStreamSwitch(
   state: StreamSwitchState,
   event: StreamSwitchEvent,
 ): StreamSwitchState {
-  if (event.type === 'request-start') return event.live ? REQUESTING : REQUESTING_WITHOUT_STREAM;
+  if (event.type === "request-start") return event.live ? REQUESTING : REQUESTING_WITHOUT_STREAM;
 
   switch (state.phase) {
-    case 'idle':
+    case "idle":
       return state;
-    case 'requesting':
+    case "requesting":
       switch (event.type) {
-        case 'stream-interrupted':
+        case "stream-interrupted":
           return state.interrupted && !state.recovered
             ? state
             : { ...state, interrupted: true, recovered: false };
-        case 'stream-live':
+        case "stream-live":
           return state.interrupted && !state.recovered ? { ...state, recovered: true } : state;
-        case 'request-failure':
+        case "request-failure":
           return IDLE_STREAM_SWITCH;
-        case 'request-success':
+        case "request-success":
           if (!event.replaced || state.recovered) return IDLE_STREAM_SWITCH;
           return state.interrupted ? AWAITING_FRAME : AWAITING_INTERRUPTION;
-        case 'timeout':
+        case "timeout":
           return state;
       }
       return state;
-    case 'awaiting-interruption':
-      if (event.type === 'stream-interrupted') return AWAITING_FRAME;
-      if (event.type === 'timeout') return IDLE_STREAM_SWITCH;
+    case "awaiting-interruption":
+      if (event.type === "stream-interrupted") return AWAITING_FRAME;
+      if (event.type === "timeout") return IDLE_STREAM_SWITCH;
       return state;
-    case 'awaiting-frame':
-      if (event.type === 'stream-live' || event.type === 'timeout') return IDLE_STREAM_SWITCH;
+    case "awaiting-frame":
+      if (event.type === "stream-live" || event.type === "timeout") return IDLE_STREAM_SWITCH;
       return state;
   }
   return state;
@@ -116,11 +116,11 @@ export function reduceStreamSwitch(
 
 /** Safety timeout for the phases that wait on the stream; null while nothing is awaited. */
 export function streamSwitchTimeoutMs(phase: StreamSwitchPhase): number | null {
-  if (phase === 'awaiting-interruption') return STREAM_SWITCH_INTERRUPTION_TIMEOUT_MS;
-  if (phase === 'awaiting-frame') return STREAM_SWITCH_FRAME_TIMEOUT_MS;
+  if (phase === "awaiting-interruption") return STREAM_SWITCH_INTERRUPTION_TIMEOUT_MS;
+  if (phase === "awaiting-frame") return STREAM_SWITCH_FRAME_TIMEOUT_MS;
   return null;
 }
 
 export function isStreamSwitchPending(state: StreamSwitchState): boolean {
-  return state.phase !== 'idle';
+  return state.phase !== "idle";
 }

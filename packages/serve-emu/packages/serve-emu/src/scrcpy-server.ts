@@ -20,7 +20,8 @@ export async function ensureScrcpyServer(): Promise<string> {
   await mkdir(VENDOR_DIR, { recursive: true });
   console.log(`Downloading scrcpy-server v${SCRCPY_VERSION}…`);
   const res = await fetch(DOWNLOAD_URL);
-  if (!res.ok) throw new Error(`Failed to download ${DOWNLOAD_URL}: ${res.status} ${res.statusText}`);
+  if (!res.ok)
+    throw new Error(`Failed to download ${DOWNLOAD_URL}: ${res.status} ${res.statusText}`);
   const buf = new Uint8Array(await res.arrayBuffer());
   await writeFile(SCRCPY_SERVER_PATH, buf);
   console.log(`Saved ${SCRCPY_SERVER_PATH} (${buf.byteLength} bytes)`);

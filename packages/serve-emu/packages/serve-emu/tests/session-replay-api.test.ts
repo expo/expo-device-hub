@@ -102,12 +102,7 @@ describe("session replay API responses", () => {
     const recorder = new SessionRecorder(immediateClock());
     recorder.recordGesture({ type: "home" }, "test");
 
-    const response = startSessionReplayResponse(
-      recorder,
-      handlers,
-      1,
-      () => false,
-    );
+    const response = startSessionReplayResponse(recorder, handlers, 1, () => false);
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
@@ -126,11 +121,7 @@ describe("session replay API responses", () => {
       error: "session has no recorded events",
     });
 
-    const failed = startSessionReplayResponse(
-      throwingController("start exploded"),
-      handlers,
-      1,
-    );
+    const failed = startSessionReplayResponse(throwingController("start exploded"), handlers, 1);
     expect(failed.status).toBe(500);
     expect(await failed.json()).toEqual({
       ok: false,
@@ -195,9 +186,7 @@ describe("session replay API responses", () => {
     });
 
     const failed = clearSessionReplayResponse(
-      throwingController(
-        new SessionReplayConflictError("cannot clear active replay"),
-      ),
+      throwingController(new SessionReplayConflictError("cannot clear active replay")),
     );
     expect(failed.status).toBe(409);
     expect(await failed.json()).toEqual({

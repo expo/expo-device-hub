@@ -1,5 +1,110 @@
 # @expo/serve-sim
 
+## 0.10.4
+
+### Patch Changes
+
+- 0f718a1: Follow the active simulator display when capturing screenshots, or select a device screen by ID. Preserve validated screenshots after failed or concurrent captures, bound native waits, and support the sole screen on tvOS when native selection is unavailable. Keep native diagnostics in host logs. Preserve default screenshots with older iOS Simulator profiles by verifying the sole integrated framebuffer port before capturing it.
+- ace59bf: Follow external Duo rotation in the preview using native physical orientation, without applying UI rotation readback twice, including while a hinge command is pending.
+- 706806e: Make tunneled and dashboard screenshot downloads follow the active Duo panel, with an optional explicit display query. Single-display devices can fall back to simctl when native capture is unavailable.
+
+  Add troubleshooting guidance when CoreDevice cannot find a simulator, including how to check for a stale service after an Xcode update.
+
+- 3dc6128: Report native hinge observations through the CLI and host actions after external folds. Report failed native reads as errors instead of successful partial state.
+
+  Preserve readback from older helpers and immediate acknowledged Tent controls. Report tabletop activity only from native samples, and keep unobserved Table Mode availability unknown.
+
+## 0.10.3
+
+### Patch Changes
+
+- 144cd70: Avoid repeated capability-loader setup when starting a Simulator preview with the default capabilities.
+- 098b3a2: Wait up to 3 s for an app's clipboard on headless workers, so reads work right after an app starts on iOS 27.
+- 1c1c630: Detect the foreground app when iOS shows it before its process starts, as on a cold launch on iOS 27.
+- 1c1c630: `serve-sim ui` reports an error instead of waiting forever when the simulator does not answer.
+
+## 0.10.2
+
+### Patch Changes
+
+- 059ca8e: Reduce encoding work on inactive Duo displays and improve H.264 throughput for Duo panels on virtualized Macs.
+
+## 0.10.1
+
+### Patch Changes
+
+- 6bd437b: Give the installed clipboard app a Clipboard Helper name and icon.
+- 18889a2: Make the first Command+V insert text into the focused Simulator app with Hardware Keyboard off.
+- d3b2b77: Use CoreDevice touch and keyboard input on supported ordinary iOS simulators so input still reaches apps when CoreDevice owns the guest HID service.
+
+## 0.10.0
+
+### Minor Changes
+
+- dd2de34: Add `actions.describe` for action discovery and generate screenshot filenames when omitted.
+- 9155d7b: Add clipboard read, write, copy, and paste host actions.
+- 587be82: Add host actions for simulator settings, touch, typing and device controls, plus `serve-sim software-keyboard`.
+
+### Patch Changes
+
+- a9a8ebe: Preserve browser-layout printable characters in iOS key messages and consume layout differences through the helper's software keyboard, while preserving shortcuts and HID fallback.
+- 100c8c8: Report oversized host command output.
+- c6b6fe9: Accept simulator names with `-d` in input commands.
+- 0a0bafd: Stop stream routes' watchers and timers when the client leaves during setup.
+- 4a9ad65: Show `hinge` command errors without stack traces.
+- 2d58c0f: Update the live Duo preview from native hinge, physical orientation and tabletop observations, including changes made outside serve-sim.
+- d065008: Keep `permissions list` output complete when piped.
+- 0160c0a: Record video-timed screen rotation, semantic Duo panels and their encoded content rectangles, and natively observed hinge, physical orientation, and tabletop activity.
+- cd4240e: Order software keyboard requests and preserve manual toggles after disconnect.
+- a69693e: Add `springboard.restart` and `app.approveUrlScheme` host actions: restart the simulator's SpringBoard, and let links with a custom URL scheme open an app without the "Open in" prompt.
+
+## 0.9.0
+
+### Minor Changes
+
+- 9d50a4d: Add token-protected simulator pasteboard read and write APIs.
+- fc0a29e: Copy selected simulator app text to the browser clipboard from the preview toolbar.
+- 69dac3b: Let embedded previews ask the embedding page for clipboard-read permission when a browser clipboard read fails.
+- 63f3ac2: Paste browser clipboard text into simulator apps from the preview keyboard or toolbar.
+- 89a2f39: Read simulator app clipboard text when simctl cannot access the pasteboard.
+
+### Patch Changes
+
+- e346301: Add `--disable-share` to hide the preview's Share button while keeping the other controls available.
+- c65c8b8: Keep iOS session recording in the same MP4 across network-capture reboots, resuming with fresh frames and a keyframe after boot completes. Preserve elapsed timestamps and record reboot interruptions in the manifest.
+- b819c39: Report in-process recording shutdown deadline failures without interrupting pending MP4 finalization. Retain the process and device state until finalization completes, then clean up and exit with failure status.
+- 27df089: Keep recording through transient control and startup stalls. Preserve an uploadable partial recording after completed encoder-flush failure and allow a fresh recording attempt once that encoder has been invalidated.
+
+## 0.8.0
+
+### Minor Changes
+
+- aafcc8c: Add authenticated app stop and deep-link actions alongside installed-app launch.
+- 8019f7f: Add authenticated app data-container lookup, file listing, reading and single-file removal.
+- 7633754: Copy staged uploads into app data storage with bounded reads and atomic per-file writes. Each server now stages uploads in its own folder.
+- aafcc8c: Add an authenticated app launch action so a running serve-sim session can launch an app installed by its controller.
+
+## 0.7.0
+
+### Minor Changes
+
+- 782fe97: Forward captured traffic through an explicit HTTP proxy with `--network-capture-proxy`,
+  including EAS local egress. Basic proxy credentials are supported
+  and kept out of capture metadata and the mitmproxy command line. Unconfigured capture goes direct.
+- 313ab2e: Accept a colon-separated `SERVE_SIM_ADDITIONAL_DYLIBS` environment variable for simulator boot and app launches alongside the capability loader.
+- 3d22378: Choose what network capture keeps from the tools panel. A gear menu next to the capture toggle selects headers, query values, request bodies, and response bodies. A change applies to a running capture without a proxy restart, and the `capture.enable`, `capture.reboot`, and new `capture.fields` host actions accept the same field list.
+- dd64572: `serve-sim hinge` with no position prints the foldable simulator's hinge angle, pose, physical orientation, and Table Mode as JSON. After a server restart, serve-sim reads the native hinge angle and restores the last pose, orientation, and Table Mode when the saved angle matches.
+- d7349a7: Add --install-app-path to install a local .app after boot and before any requested startup launch. Installation and --launch-app-identifier are independent, so callers can install without launching or install one app and launch another. Validate the app before touching a device, and report installation and validation failures as JSON under --quiet.
+
+### Patch Changes
+
+- f76c5ca: Wait for simulator input admission before sending short CLI input commands, so a full input pool cannot be reported as a successful tap.
+- 8450057: Keep regular iPhone preview rotation when returning to portrait-only apps such as Home.
+- cf984cc: Avoid repeating simulator initialization before preview startup.
+- b7fb493: Stop reading and re-wiring a simulator's framebuffer while the simulator is not booted. A capture left open after a shutdown called into the dead simulator once a second, which leaked memory and, over days, CPU.
+- e4e11f5: Require successful Simulator boot completion before launching an installed app or reporting readiness. In the foreground CLI, report boot, launch and deep-link startup failures as JSON under --quiet.
+- e49a254: Keep toast dismissal timers running after touch taps on screenshot and other preview notifications, while preserving mouse hover pauses.
+
 ## 0.6.3
 
 ### Patch Changes

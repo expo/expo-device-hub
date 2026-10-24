@@ -73,22 +73,24 @@ export function DeviceStream({
   };
 
   if (!pointerMoveSchedulerRef.current) {
-    pointerMoveSchedulerRef.current = createLatestAnimationFrameScheduler(({ point, pointerId }) => {
-      const active = activeRef.current;
-      if (active && pointerId === active.id) {
-        active.x = point.x;
-        active.y = point.y;
-        hoverContextRef.current.send(
-          { type: "touch", action: "move", x: point.x, y: point.y, pointerId: active.id },
-          false,
-        );
-        return;
-      }
+    pointerMoveSchedulerRef.current = createLatestAnimationFrameScheduler(
+      ({ point, pointerId }) => {
+        const active = activeRef.current;
+        if (active && pointerId === active.id) {
+          active.x = point.x;
+          active.y = point.y;
+          hoverContextRef.current.send(
+            { type: "touch", action: "move", x: point.x, y: point.y, pointerId: active.id },
+            false,
+          );
+          return;
+        }
 
-      const { enabled, nodes, size } = hoverContextRef.current;
-      const hovered = enabled && size ? findAccessibilityNodeAt(nodes, point, size) : null;
-      reportAccessibilityHover(hovered?.id ?? null);
-    });
+        const { enabled, nodes, size } = hoverContextRef.current;
+        const hovered = enabled && size ? findAccessibilityNodeAt(nodes, point, size) : null;
+        reportAccessibilityHover(hovered?.id ?? null);
+      },
+    );
   }
 
   useEffect(() => {
@@ -104,8 +106,7 @@ export function DeviceStream({
   }, [accessibilityEnabled]);
 
   const pointFromClient = (clientX: number, clientY: number): Point | null => {
-    const surface =
-      transport === "webrtc" ? videoRef.current : canvasRef.current;
+    const surface = transport === "webrtc" ? videoRef.current : canvasRef.current;
     if (!surface) return null;
     const r = surface.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return null;
@@ -115,18 +116,14 @@ export function DeviceStream({
     };
   };
 
-  const norm = (
-    e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>,
-  ): Point | null =>
+  const norm = (e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>): Point | null =>
     pointFromClient(e.clientX, e.clientY);
 
   const sendTouch = (action: "down" | "move" | "up", p: Point, pointerId: number) => {
     send({ type: "touch", action, x: p.x, y: p.y, pointerId, ack: false });
   };
 
-  const onPointerDown = (
-    e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>,
-  ) => {
+  const onPointerDown = (e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (activeRef.current) return;
     e.preventDefault();
@@ -140,9 +137,7 @@ export function DeviceStream({
     sendTouch("down", p, e.pointerId);
   };
 
-  const onPointerMove = (
-    e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>,
-  ) => {
+  const onPointerMove = (e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>) => {
     const active = activeRef.current;
     if (active && e.pointerId !== active.id) return;
     const native = e.nativeEvent;
@@ -154,9 +149,7 @@ export function DeviceStream({
     if (point) pointerMoveSchedulerRef.current?.schedule({ point, pointerId: e.pointerId });
   };
 
-  const stopPointer = (
-    e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>,
-  ) => {
+  const stopPointer = (e: PointerEvent<HTMLCanvasElement | HTMLVideoElement>) => {
     const active = activeRef.current;
     if (!active || e.pointerId !== active.id) return;
     e.preventDefault();
@@ -188,11 +181,7 @@ export function DeviceStream({
       />
       <video
         ref={videoRef}
-        className={
-          transport === "webrtc"
-            ? "stream-video"
-            : "stream-video stream-hidden"
-        }
+        className={transport === "webrtc" ? "stream-video" : "stream-video stream-hidden"}
         muted
         playsInline
         autoPlay
@@ -235,8 +224,10 @@ const AccessibilityOverlay = memo(function AccessibilityOverlay({
   const boundsPath = useMemo(
     () =>
       nodes
-        .map(({ bounds }) =>
-          `M${bounds.left} ${bounds.top}H${bounds.right}V${bounds.bottom}H${bounds.left}Z`)
+        .map(
+          ({ bounds }) =>
+            `M${bounds.left} ${bounds.top}H${bounds.right}V${bounds.bottom}H${bounds.left}Z`,
+        )
         .join(""),
     [nodes],
   );

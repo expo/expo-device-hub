@@ -46,3 +46,33 @@ enum CoreDeviceDisplayInfo {
         return _openExistential(type, do: readDisplays)
     }
 }
+
+
+/// Root capture owns display election. Panel captures reuse its observation without
+/// additional CoreDevice calls; stale or unavailable observations never throttle.
+final class ActiveDisplayObservation: @unchecked Sendable {
+    static let shared = ActiveDisplayObservation()
+    private struct Entry {
+        let owner: ObjectIdentifier
+        let screenID: UInt32?
+        let observedNs: UInt64
+    }
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+
+    func record(udid: String, owner: ObjectIdentifier, screenID: UInt32?, nowNs: UInt64) {
+        lock.withLock { entries[udid] = Entry(owner: owner, screenID: screenID, observedNs: nowNs) }
+    }
+
+    func isActive(udid: String, screenID: UInt32, nowNs: UInt64) -> Bool? {
+        lock.withLock {
+            guard let entry = entries[udid], let active = entry.screenID,
+                  nowNs >= entry.observedNs, nowNs - entry.observedNs <= 1_000_000_000 else { return nil }
+            return screenID == active
+        }
+    }
+
+    func remove(udid: String, owner: ObjectIdentifier) {
+        lock.withLock { if entries[udid]?.owner == owner { entries.removeValue(forKey: udid) } }
+    }
+}

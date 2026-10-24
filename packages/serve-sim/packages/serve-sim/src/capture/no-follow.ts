@@ -1,13 +1,26 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, fchmodSync, fstatSync, ftruncateSync, lstatSync, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  ftruncateSync,
+  lstatSync,
+  openSync,
+  renameSync,
+  unlinkSync,
+  writeSync,
+} from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 
 // Capture files can land in a folder someone else can write, such as a shared `capture har -o`
 // target. These flags make a symlink planted at the path fail the write instead of redirecting it.
 const NO_FOLLOW = constants.O_NOFOLLOW;
-export const WRITE_NO_FOLLOW = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | NO_FOLLOW;
+export const WRITE_NO_FOLLOW =
+  constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | NO_FOLLOW;
 const STAGE_NO_FOLLOW = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW;
-export const APPEND_NO_FOLLOW = constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | NO_FOLLOW;
+export const APPEND_NO_FOLLOW =
+  constants.O_WRONLY | constants.O_CREAT | constants.O_APPEND | NO_FOLLOW;
 // Capture files hold decrypted traffic, so they are created readable by their owner only rather
 // than with whatever the process umask allows. A file that already exists, such as a HAR being
 // recorded over, is set to the same mode once it is open, before anything is written to it.
@@ -17,9 +30,15 @@ export type SyncWriter = (fd: number, data: string) => void;
 export type AsyncWriter = (handle: FileHandle, data: string) => Promise<void>;
 
 type ChunkWriterSync = (fd: number, buffer: Buffer, offset: number, length: number) => number;
-type ChunkWriter = (handle: FileHandle, buffer: Buffer, offset: number, length: number) => Promise<number>;
+type ChunkWriter = (
+  handle: FileHandle,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+) => Promise<number>;
 
-const writeChunkSync: ChunkWriterSync = (fd, buffer, offset, length) => writeSync(fd, buffer, offset, length);
+const writeChunkSync: ChunkWriterSync = (fd, buffer, offset, length) =>
+  writeSync(fd, buffer, offset, length);
 const writeChunk: ChunkWriter = async (handle, buffer, offset, length) =>
   (await handle.write(buffer, offset, length)).bytesWritten;
 
@@ -28,7 +47,11 @@ const writeChunk: ChunkWriter = async (handle, buffer, offset, length) =>
  * The data is encoded once, so the offsets never split a multibyte character. `writeChunk` is
  * injectable so a test can accept a few bytes at a time.
  */
-export function writeAllSync(fd: number, data: string, write: ChunkWriterSync = writeChunkSync): void {
+export function writeAllSync(
+  fd: number,
+  data: string,
+  write: ChunkWriterSync = writeChunkSync,
+): void {
   const buffer = Buffer.from(data);
   for (let offset = 0; offset < buffer.length; ) {
     const written = write(fd, buffer, offset, buffer.length - offset);
@@ -37,7 +60,11 @@ export function writeAllSync(fd: number, data: string, write: ChunkWriterSync = 
   }
 }
 
-export async function writeAllAsync(handle: FileHandle, data: string, write: ChunkWriter = writeChunk): Promise<void> {
+export async function writeAllAsync(
+  handle: FileHandle,
+  data: string,
+  write: ChunkWriter = writeChunk,
+): Promise<void> {
   const buffer = Buffer.from(data);
   for (let offset = 0; offset < buffer.length; ) {
     const written = await write(handle, buffer, offset, buffer.length - offset);
@@ -75,8 +102,10 @@ export function replaceFilesNoFollow(
     try {
       stat = lstatSync(path);
     } catch {}
-    if (stat?.isSymbolicLink()) throw new Error(`${path} is a symlink, so the recording will not be written there.`);
-    if (stat?.isDirectory()) throw new Error(`${path} is a folder, so the recording cannot be written there.`);
+    if (stat?.isSymbolicLink())
+      throw new Error(`${path} is a symlink, so the recording will not be written there.`);
+    if (stat?.isDirectory())
+      throw new Error(`${path} is a folder, so the recording cannot be written there.`);
   }
   const staged: string[] = [];
   try {
@@ -112,7 +141,11 @@ export function replaceFilesNoFollow(
  * The file is cut back to its previous length before the error is rethrown. `write` is injectable
  * so a test can fail a write part way.
  */
-export function appendFileNoFollowSync(path: string, data: string, write: SyncWriter = (fd, text) => writeAllSync(fd, text)): void {
+export function appendFileNoFollowSync(
+  path: string,
+  data: string,
+  write: SyncWriter = (fd, text) => writeAllSync(fd, text),
+): void {
   const fd = openSync(path, APPEND_NO_FOLLOW, OWNER_ONLY_FILE);
   try {
     fchmodSync(fd, OWNER_ONLY_FILE);
@@ -133,7 +166,11 @@ export function appendFileNoFollowSync(path: string, data: string, write: SyncWr
 }
 
 // fs.promises.appendFile ignores a numeric flag under Bun, so open the file directly.
-export async function appendFileNoFollow(path: string, data: string, write: AsyncWriter = (handle, text) => writeAllAsync(handle, text)): Promise<void> {
+export async function appendFileNoFollow(
+  path: string,
+  data: string,
+  write: AsyncWriter = (handle, text) => writeAllAsync(handle, text),
+): Promise<void> {
   const handle = await open(path, APPEND_NO_FOLLOW, OWNER_ONLY_FILE);
   try {
     await handle.chmod(OWNER_ONLY_FILE);

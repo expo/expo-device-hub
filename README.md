@@ -84,16 +84,16 @@ Upload naming and retry behavior are documented in
 
 This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://turbo.build).
 
-| Package | What it is |
-| --- | --- |
-| [`packages/expo-device-hub`](packages/expo-device-hub) | The main DevTools plugin. |
-| [`packages/@expo/hub-client`](packages/@expo/hub-client) | Device-client hooks and types that own the connection to serve-sim / serve-emu and paint the live stream. See [_hub-client_](#hub-client) below. |
-| [`packages/@expo/hub-components`](packages/@expo/hub-components) | Dependency-free UI kit (`Sidebar`, `StreamPanel`, `Button`, …) built on `@expo/styleguide` design tokens, so Hub matches the Expo dashboard website. |
-| [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils) | Lists, creates, and boots Apple simulator devices via `simctl` (macOS only). |
-| [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
-| [`packages/serve-sim`](packages/serve-sim) | Source for [`@expo/serve-sim`](https://www.npmjs.com/package/@expo/serve-sim), maintained and published from this monorepo. |
-| [`packages/serve-emu`](packages/serve-emu) | Source for the `serve-emu` workspace package, maintained in this monorepo. |
-| [`example`](example) | A minimal Expo app with the plugin installed. |
+| Package                                                                | What it is                                                                                                                                           |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`packages/expo-device-hub`](packages/expo-device-hub)                 | The main DevTools plugin.                                                                                                                            |
+| [`packages/@expo/hub-client`](packages/@expo/hub-client)               | Device-client hooks and types that own the connection to serve-sim / serve-emu and paint the live stream. See [_hub-client_](#hub-client) below.     |
+| [`packages/@expo/hub-components`](packages/@expo/hub-components)       | Dependency-free UI kit (`Sidebar`, `StreamPanel`, `Button`, …) built on `@expo/styleguide` design tokens, so Hub matches the Expo dashboard website. |
+| [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils)     | Lists, creates, and boots Apple simulator devices via `simctl` (macOS only).                                                                         |
+| [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`.                                                            |
+| [`packages/serve-sim`](packages/serve-sim)                             | Source for [`@expo/serve-sim`](https://www.npmjs.com/package/@expo/serve-sim), maintained and published from this monorepo.                          |
+| [`packages/serve-emu`](packages/serve-emu)                             | Source for the `serve-emu` workspace package, maintained in this monorepo.                                                                           |
+| [`example`](example)                                                   | A minimal Expo app with the plugin installed.                                                                                                        |
 
 ## Getting started
 
@@ -103,6 +103,15 @@ Install dependencies with Bun 1.3.14 and build every package once from the repo 
 bun install
 bun run build   # turbo build across all packages
 ```
+
+### Formatting
+
+JavaScript and TypeScript use Oxfmt with double quotes, including JSX attributes,
+as configured in `.oxfmtrc.json`. Oxfmt may choose the other quote when it avoids
+escaping. `bun run format` formats all supported repository files, and
+`bun run lint` checks their formatting before running the workspace linters.
+The existing EAS Checks job runs the same lint command. Installed agent skills
+and LLP tooling are excluded so their upstream copies and receipts stay intact.
 
 ### Run the example
 

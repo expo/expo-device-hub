@@ -8,19 +8,47 @@ import StreamingPolicy
 actor CoreDeviceBridge {
     static let shared = CoreDeviceBridge()
 
-    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup }
+    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup, observationEnded }
 
     private var manager: CoreDeviceManagerObject?
     private let managerReadiness = SharedReadiness()
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
-    struct HingeState {
+    struct HingeState: Codable, Equatable, Sendable {
         var angle: Double?
         var orientation: String?
         var tableMode: Bool?
+        private enum CodingKeys: String, CodingKey {
+            case angle = "hingeAngle", orientation = "physicalOrientation", tableMode
+        }
     }
     private var hingeStates: [String: HingeState] = [:]
+    private var hingeControlEligibility: [String: HingeControlEligibility] = [:]
+    typealias DeviceStateConsumer = @Sendable (String, @escaping @Sendable (DeviceStateUpdate) async -> Void) async throws -> Bool
+    private struct DeviceStateToken: Equatable {
+        let generation: UInt64
+        let id = UUID()
+    }
+    private final class DeviceStateObservation {
+        var token: DeviceStateToken?
+        var connection: UUID?
+        var task: Task<Void, Never>?
+        var listeners: [UUID: @Sendable (DeviceStateSnapshot) -> Void] = [:]
+    }
+    private var deviceStateObservations: [String: DeviceStateObservation] = [:]
+    private var observedDeviceStates: [String: ObservedDeviceState] = [:]
+    private let deviceStateConsumer: DeviceStateConsumer?
+    let hingeClock: @Sendable () -> Double
+    private let reconnectDelay: Duration
+
+    init(deviceStateConsumer: DeviceStateConsumer? = nil,
+         hingeClock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+         reconnectDelay: Duration = .seconds(1)) {
+        self.deviceStateConsumer = deviceStateConsumer
+        self.hingeClock = hingeClock
+        self.reconnectDelay = reconnectDelay
+    }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
     /// session must not reuse them after that device boots again in the same
@@ -34,6 +62,12 @@ actor CoreDeviceBridge {
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
+        hingeControlEligibility.removeValue(forKey: udid)
+        observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
+        publishObservedDeviceState(udid: udid)
+        if let observation = deviceStateObservations[udid], !observation.listeners.isEmpty {
+            startDeviceStateObservation(udid: udid, observation: observation)
+        }
     }
 
     func hingeState(udid: String) async -> HingeState {
@@ -43,11 +77,156 @@ actor CoreDeviceBridge {
             return hingeStates[udid] ?? HingeState()
         }
         if let angle {
-            hingeStates[udid, default: HingeState()].angle = angle
+            var state = hingeStates[udid] ?? HingeState()
+            if state.angle.map({ abs($0 - angle) <= 0.01 }) != true {
+                state.orientation = nil
+                state.tableMode = nil
+            }
+            state.angle = angle
+            hingeStates[udid] = state
         }
         // If readback is unavailable, retain the last individually successful
         // sends, including the portion of a preset applied before its failure.
         return hingeStates[udid] ?? HingeState()
+    }
+
+    func observedDeviceState(udid: String) -> DeviceStateSnapshot {
+        observedDeviceStates[udid]?.snapshot ?? DeviceStateSnapshot(
+            generation: hingeResetGenerations[udid, default: 0], revision: 0, state: HingeState()
+        )
+    }
+
+    func hingeControlEligibility(udid: String) -> HingeState {
+        let observed = observedDeviceStates[udid] ?? ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
+        return hingeControlEligibility[udid, default: HingeControlEligibility()].state(observed: observed)
+    }
+
+    // Reconciled controls and raw activity are read in one actor turn, without
+    // adding a second cache or turning a setting acknowledgement into a sample.
+    func hingeControlReadback(udid: String) -> (state: HingeState, tableModeActive: Bool?) {
+        (hingeControlEligibility(udid: udid), observedDeviceStates[udid]?.state.tableMode)
+    }
+
+    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil, tableMode: Bool? = nil,
+                            sentAt: Double, generation: UInt64) {
+        guard hingeResetGenerations[udid, default: 0] == generation else { return }
+        // @ref LLP 0004#confirmed-hinge-state — successful controls share one recorder
+        // One successful-send path updates legacy command readback and the
+        // timestamped overlay. Raw observations remain owned by their stream.
+        if let angle {
+            hingeStates[udid, default: HingeState()].angle = angle
+            hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt)
+        }
+        if let orientation {
+            hingeStates[udid, default: HingeState()].orientation = orientation
+            hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt)
+        }
+        if let tableMode {
+            hingeStates[udid, default: HingeState()].tableMode = tableMode
+            hingeControlEligibility[udid, default: HingeControlEligibility()].tableMode = (tableMode, sentAt)
+        }
+    }
+
+    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
+        while let previous = deviceStateObservations[udid], previous.listeners.isEmpty {
+            await previous.task?.value
+            if deviceStateObservations[udid] === previous { deviceStateObservations.removeValue(forKey: udid) }
+        }
+        guard !Task.isCancelled else { return {} }
+        let id = UUID()
+        let observation = deviceStateObservations[udid] ?? DeviceStateObservation()
+        let starts = observation.listeners.isEmpty
+        observation.listeners[id] = onChange
+        deviceStateObservations[udid] = observation
+        if observedDeviceStates[udid] == nil {
+            observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
+        }
+        if starts { startDeviceStateObservation(udid: udid, observation: observation) }
+        onChange(observedDeviceState(udid: udid))
+        return { await self.removeDeviceStateListener(udid: udid, id: id) }
+    }
+
+    private func startDeviceStateObservation(udid: String, observation: DeviceStateObservation) {
+        let previous = observation.task
+        previous?.cancel()
+        let token = DeviceStateToken(generation: hingeResetGenerations[udid, default: 0])
+        observation.token = token
+        observation.connection = nil
+        observation.task = Task {
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await self.runDeviceStateObservation(udid: udid, token: token)
+        }
+    }
+
+    private func removeDeviceStateListener(udid: String, id: UUID) async {
+        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
+              observation.listeners.isEmpty else { return }
+        observation.token = nil
+        observation.connection = nil
+        observation.task?.cancel()
+        clearObservedDeviceState(udid: udid)
+        await observation.task?.value
+        if deviceStateObservations[udid] === observation { deviceStateObservations.removeValue(forKey: udid) }
+    }
+
+    private func runDeviceStateObservation(udid: String, token: DeviceStateToken) async {
+        defer { if deviceStateObservations[udid]?.token == token { deviceStateObservations[udid]?.token = nil } }
+        var didLogMissingDeviceHint = false
+        while !Task.isCancelled, deviceStateObservations[udid]?.token == token {
+            let startedAt = hingeClock()
+            let connection = UUID()
+            deviceStateObservations[udid]?.connection = connection
+            do {
+                let receive: @Sendable (DeviceStateUpdate) async -> Void = { update in
+                    await self.applyObservedDeviceState(udid: udid, update: update, token: token,
+                                                       connection: connection, startedAt: startedAt)
+                }
+                let supported: Bool
+                if let deviceStateConsumer { supported = try await deviceStateConsumer(udid, receive) }
+                else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
+                guard supported else { return }
+                throw BridgeError.observationEnded
+            } catch {
+                guard !Task.isCancelled, deviceStateObservations[udid]?.token == token else { return }
+                deviceStateObservations[udid]?.connection = nil
+                clearObservedDeviceState(udid: udid)
+                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN"] {
+                    capabilities.removeValue(forKey: "\(udid):\(symbol)")
+                }
+                fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)
+                if case BridgeError.deviceUnavailable = error, !didLogMissingDeviceHint {
+                    didLogMissingDeviceHint = true
+                    fputs("[hid] CoreDevice does not list simulator \(udid). Check `xcrun devicectl list devices`. If it is booted and this started after an Xcode update, the per-user CoreDeviceService may be stale; `pkill -x CoreDeviceService` restarts it on the next CoreDevice request and may interrupt other device sessions.\n", stderr)
+                }
+                do { try await Task.sleep(for: reconnectDelay) }
+                catch { return }
+            }
+        }
+    }
+
+    private func applyObservedDeviceState(udid: String, update: DeviceStateUpdate, token: DeviceStateToken,
+                                          connection: UUID, startedAt: Double) {
+        guard !Task.isCancelled, let observation = deviceStateObservations[udid],
+              observation.token == token, observation.connection == connection,
+              hingeResetGenerations[udid, default: 0] == token.generation else { return }
+        if case .orientation(let sample) = update {
+            hingeControlEligibility[udid]?.recordOrientationRead(sample, since: startedAt)
+        }
+        let oldRevision = observedDeviceStates[udid]?.revision
+        observedDeviceStates[udid]?.apply(update, since: startedAt)
+        if observedDeviceStates[udid]?.revision != oldRevision { publishObservedDeviceState(udid: udid) }
+    }
+
+    private func clearObservedDeviceState(udid: String) {
+        hingeControlEligibility.removeValue(forKey: udid)
+        if observedDeviceStates[udid]?.clear() == true { publishObservedDeviceState(udid: udid) }
+    }
+
+    private func publishObservedDeviceState(udid: String) {
+        guard let observation = deviceStateObservations[udid] else { return }
+        let snapshot = observedDeviceState(udid: udid)
+        for listener in observation.listeners.values { listener(snapshot) }
     }
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
@@ -125,9 +304,10 @@ actor CoreDeviceBridge {
         guard let rawData = SSCoreDeviceHingeData(angle) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
         let generation = hingeResetGenerations[udid, default: 0]
-        let sent = await sendControl(udid: udid, data: data)
+        let sent = await sendControl(udid: udid, data: data) { sentAt in
+            self.recordHingeControl(udid: udid, angle: angle, sentAt: sentAt, generation: generation)
+        }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].angle = angle }
         return sent
     }
 
@@ -171,7 +351,7 @@ actor CoreDeviceBridge {
         // still fail, and a real send failure must not be reported as success.
         guard SSCoreDeviceTableModeAvailable() else {
             fputs("[hid] CoreDevice Table Mode unavailable in this Xcode\n", stderr)
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: hingeResetGenerations[udid, default: 0]) }
             return !enabled
         }
         let generation = hingeResetGenerations[udid, default: 0]
@@ -182,14 +362,15 @@ actor CoreDeviceBridge {
                 witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
             )
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
+            let sentAt = hingeClock()
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
-            if sent { hingeStates[udid, default: HingeState()].tableMode = enabled }
+            if sent { recordHingeControl(udid: udid, tableMode: enabled, sentAt: sentAt, generation: generation) }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { recordHingeControl(udid: udid, tableMode: false, sentAt: hingeClock(), generation: generation) }
             return !enabled
         } catch {
             fputs("[hid] CoreDevice Table Mode failed: \(error)\n", stderr)
@@ -202,9 +383,10 @@ actor CoreDeviceBridge {
         guard let rawData = value.withCString({ SSCoreDeviceOrientationData($0) }) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
         let generation = hingeResetGenerations[udid, default: 0]
-        let sent = await sendControl(udid: udid, data: data)
+        let sent = await sendControl(udid: udid, data: data) { sentAt in
+            self.recordHingeControl(udid: udid, orientation: value, sentAt: sentAt, generation: generation)
+        }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].orientation = value }
         return sent
     }
 
@@ -215,7 +397,7 @@ actor CoreDeviceBridge {
         return await setPhysicalOrientation(udid: udid, value: value)
     }
 
-    private func sendControl(udid: String, data: Data) async -> Bool {
+    private func sendControl(udid: String, data: Data, onSent: (Double) -> Void) async -> Bool {
         do {
             let capability = try await capability(
                 udid: udid,
@@ -223,9 +405,11 @@ actor CoreDeviceBridge {
                 witnessSymbol: "$s10CoreDevice26VendorDefinedHIDCapabilityVAA0B10CapabilityAAWP"
             )
             let words = unsafeBitCast(data, to: (UInt64, UInt64).self)
+            let sentAt = hingeClock()
             let sent = withExtendedLifetime(data) {
                 SSCoreDeviceSendControl(capability.storage, words.0, words.1)
             }
+            if sent { onSent(sentAt) }
             if !sent { capabilities.removeValue(forKey: "\(udid):$s10CoreDevice26VendorDefinedHIDCapabilityVN") }
             return sent
         } catch {
@@ -286,7 +470,7 @@ actor CoreDeviceBridge {
 
 }
 
-private struct CoreDeviceCallFailed: Error {}
+struct CoreDeviceCallFailed: Error {}
 
 // These types supply the Swift calling convention only. Objects and protocol
 // metadata always come from CoreDevice; no instance of a substitute is made.

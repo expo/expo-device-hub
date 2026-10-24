@@ -7,22 +7,30 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     attachVideo,
     sendTouch,
     sendMultiTouch,
+    cancelInput,
     sendScroll,
     sendKey,
+    pasteText,
+    capabilities,
     screen,
     status,
     error,
+    inputError,
   } = client;
   return {
     videoKind,
     attachVideo,
     sendTouch,
     sendMultiTouch,
+    cancelInput,
     sendScroll,
     sendKey,
+    pasteText,
+    capabilities,
     screen,
     status,
     error,
+    inputError,
   } satisfies DeviceScreenClient & Record<keyof DeviceScreenClient, unknown>;
 }
 

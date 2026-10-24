@@ -11,7 +11,7 @@ export function useCopy(): [boolean, (text: string) => void] {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => setCopied(false), 1200);
       },
-      () => {}
+      () => {},
     );
   };
   return [copied, copy];

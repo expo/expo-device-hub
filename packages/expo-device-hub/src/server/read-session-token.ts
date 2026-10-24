@@ -1,4 +1,4 @@
-export const SESSION_TOKEN_ENV = 'EXPO_DEVICE_HUB_SESSION_TOKEN';
+export const SESSION_TOKEN_ENV = "EXPO_DEVICE_HUB_SESSION_TOKEN";
 
 /**
  * The session token, set only by the standalone CLI, under `--require-token`, before it imports
@@ -10,7 +10,7 @@ export const SESSION_TOKEN_ENV = 'EXPO_DEVICE_HUB_SESSION_TOKEN';
  * `session-token.ts` for the other test files in the same process.
  */
 export function readSessionToken(env: Record<string, string | undefined>): string | undefined {
-  if (env.EXPO_DEVICE_HUB_BASE_PATH !== '') return undefined;
+  if (env.EXPO_DEVICE_HUB_BASE_PATH !== "") return undefined;
   const token = env[SESSION_TOKEN_ENV] || undefined;
   if (token !== undefined && !/^[A-Za-z0-9._~-]+$/.test(token)) {
     throw new Error(`${SESSION_TOKEN_ENV} must use only letters, digits, '-', '.', '_', or '~'.`);

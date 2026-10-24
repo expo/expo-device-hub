@@ -1,18 +1,6 @@
 {
   "name": "expo-serve-device-monorepo",
   "private": true,
-  "packageManager": "bun@1.3.14",
-  "scripts": {
-    "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "llp:check": "python3 .llp/ref-check --root .",
-    "test": "turbo run test",
-    "clean": "turbo run clean",
-    "changeset": "changeset",
-    "changeset:version": "changeset version",
-    "changeset:publish": "changeset publish"
-  },
   "workspaces": {
     "packages": [
       "packages/expo-device-hub",
@@ -30,12 +18,27 @@
       "react-native-web": "^0.21.2"
     }
   },
-  "trustedDependencies": [
-    "node-datachannel"
-  ],
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "bun run format:check && turbo run lint",
+    "llp:check": "python3 .llp/ref-check --root .",
+    "test": "turbo run test",
+    "clean": "turbo run clean",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check ."
+  },
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
     "@types/bun": "^1.3.14",
+    "oxfmt": "0.56.0",
     "turbo": "^2.11.5"
-  }
+  },
+  "packageManager": "bun@1.3.14",
+  "trustedDependencies": [
+    "node-datachannel"
+  ]
 }

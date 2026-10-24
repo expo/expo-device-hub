@@ -29,13 +29,13 @@ Drive an Apple Simulator (iOS, iPad, Apple Watch) from an agent using the [serve
 
 Before any other action, verify the host satisfies these. If something is missing, tell the user exactly what to install — do not proceed.
 
-| Requirement | Check command | Why |
-|---|---|---|
-| macOS host | `uname -s` returns `Darwin` | serve-sim only runs on macOS |
-| Apple silicon | `uname -m` returns `arm64` | bundled native components are arm64-only |
-| Xcode CLI tools | `xcrun --version` exits 0 | `simctl` is the underlying simulator driver |
-| Node.js ≥20 | `node --version` ≥20 | serve-sim supports maintained Node.js LTS releases |
-| macOS 14+ (optional) | `sw_vers -productVersion` ≥14 | Required ONLY for `camera` subcommand |
+| Requirement          | Check command                 | Why                                                |
+| -------------------- | ----------------------------- | -------------------------------------------------- |
+| macOS host           | `uname -s` returns `Darwin`   | serve-sim only runs on macOS                       |
+| Apple silicon        | `uname -m` returns `arm64`    | bundled native components are arm64-only           |
+| Xcode CLI tools      | `xcrun --version` exits 0     | `simctl` is the underlying simulator driver        |
+| Node.js ≥20          | `node --version` ≥20          | serve-sim supports maintained Node.js LTS releases |
+| macOS 14+ (optional) | `sw_vers -productVersion` ≥14 | Required ONLY for `camera` subcommand              |
 
 A bundled helper script is available: `scripts/check-prereqs.sh`. Run it; if it exits non-zero, surface the message to the user.
 
@@ -62,24 +62,25 @@ Key invariants the agent must respect:
 
 ## Common operations
 
-| Goal | Command | Notes |
-|---|---|---|
-| Start preview server | `npx @expo/serve-sim [device]` | Default preview at `http://localhost:3200`; helper routes are same-origin. Foreground process. |
-| Start WebRTC preview | `npx @expo/serve-sim --transport webrtc [device]` | Uses WebRTC media and the ordered helper WebSocket for input. |
-| Start headless / daemon | `npx @expo/serve-sim --detach [device]` | Returns JSON with `pid`, `port`, `url`. Use for agent loops. |
-| Show stream in host's preview | `npx @expo/serve-sim --detach -q` → hand off `url` to host preview tool | See "Showing the stream in your agent's preview" section. |
-| List running streams | `npx @expo/serve-sim --list` | Add `-q` for JSON-only output. |
-| Stop all helpers | `npx @expo/serve-sim --kill` | Pass `[device]` to stop a specific one. |
-| Single tap | `npx @expo/serve-sim tap <x> <y>` | `<x> <y>` in `0..1`. **Use this, not `gesture`, for plain taps.** See "Critical gotcha" below. |
-| Multi-step gesture | `npx @expo/serve-sim gesture '<json>'` | See [references/gestures.md](references/gestures.md). |
-| Hardware button | `npx @expo/serve-sim button <name>` | Names: `home`, `swipe_home`, `app_switcher`, `lock`, `siri`, `side_button`. See [references/buttons-rotation.md](references/buttons-rotation.md). |
-| Rotate device | `npx @expo/serve-sim rotate <orientation>` | `portrait`, `portrait_upside_down`, `landscape_left`, `landscape_right`. |
-| Simulate memory warning | `npx @expo/serve-sim memory-warning` | Equivalent to Debug → Simulate Memory Warning. |
-| CoreAnimation debug | `npx @expo/serve-sim ca-debug <option> <on\|off>` | Options: `blended`, `copies`, `misaligned`, `offscreen`, `slow-animations`. See [references/ca-debug.md](references/ca-debug.md). |
-| Inject camera feed | `npx @expo/serve-sim camera <bundle-id> [--file <path>\|--webcam [name]]` | (Re)launches the app with the camera dylib attached. macOS 14+ only. See [references/camera.md](references/camera.md). |
-| Hot-swap camera source | `npx @expo/serve-sim camera switch <placeholder\|webcam\|file> [arg]` | No app relaunch. |
-| Manage app permissions | `npx @expo/serve-sim permissions <grant\|revoke\|reset\|list> <permission> <bundle-id>` | Camera, photos, location, **push notifications**, contacts, etc. See [references/permissions.md](references/permissions.md). |
-| Read accessibility tree | Derive `/ax` from the helper base in `streamUrl` | Returns axe-style JSON. See [references/endpoints.md](references/endpoints.md). |
+| Goal                          | Command                                                                                 | Notes                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Start preview server          | `npx @expo/serve-sim [device]`                                                          | Default preview at `http://localhost:3200`; helper routes are same-origin. Foreground process.                                                    |
+| Start WebRTC preview          | `npx @expo/serve-sim --transport webrtc [device]`                                       | Uses WebRTC media and the ordered helper WebSocket for input.                                                                                     |
+| Start headless / daemon       | `npx @expo/serve-sim --detach [device]`                                                 | Returns JSON with `pid`, `port`, `url`. Use for agent loops.                                                                                      |
+| Show stream in host's preview | `npx @expo/serve-sim --detach -q` → hand off `url` to host preview tool                 | See "Showing the stream in your agent's preview" section.                                                                                         |
+| List running streams          | `npx @expo/serve-sim --list`                                                            | Add `-q` for JSON-only output.                                                                                                                    |
+| Stop all helpers              | `npx @expo/serve-sim --kill`                                                            | Pass `[device]` to stop a specific one.                                                                                                           |
+| Single tap                    | `npx @expo/serve-sim tap <x> <y>`                                                       | `<x> <y>` in `0..1`. **Use this, not `gesture`, for plain taps.** See "Critical gotcha" below.                                                    |
+| Multi-step gesture            | `npx @expo/serve-sim gesture '<json>'`                                                  | See [references/gestures.md](references/gestures.md).                                                                                             |
+| Hardware button               | `npx @expo/serve-sim button <name>`                                                     | Names: `home`, `swipe_home`, `app_switcher`, `lock`, `siri`, `side_button`. See [references/buttons-rotation.md](references/buttons-rotation.md). |
+| Rotate device                 | `npx @expo/serve-sim rotate <orientation>`                                              | `portrait`, `portrait_upside_down`, `landscape_left`, `landscape_right`.                                                                          |
+| Simulate memory warning       | `npx @expo/serve-sim memory-warning`                                                    | Equivalent to Debug → Simulate Memory Warning.                                                                                                    |
+| Toggle on-screen keyboard     | `npx @expo/serve-sim software-keyboard`                                                 | Equivalent to I/O → Keyboard → Toggle Software Keyboard (⌘K).                                                                                     |
+| CoreAnimation debug           | `npx @expo/serve-sim ca-debug <option> <on\|off>`                                       | Options: `blended`, `copies`, `misaligned`, `offscreen`, `slow-animations`. See [references/ca-debug.md](references/ca-debug.md).                 |
+| Inject camera feed            | `npx @expo/serve-sim camera <bundle-id> [--file <path>\|--webcam [name]]`               | (Re)launches the app with the camera dylib attached. macOS 14+ only. See [references/camera.md](references/camera.md).                            |
+| Hot-swap camera source        | `npx @expo/serve-sim camera switch <placeholder\|webcam\|file> [arg]`                   | No app relaunch.                                                                                                                                  |
+| Manage app permissions        | `npx @expo/serve-sim permissions <grant\|revoke\|reset\|list> <permission> <bundle-id>` | Camera, photos, location, **push notifications**, contacts, etc. See [references/permissions.md](references/permissions.md).                      |
+| Read accessibility tree       | Derive `/ax` from the helper base in `streamUrl`                                        | Returns axe-style JSON. See [references/endpoints.md](references/endpoints.md).                                                                   |
 
 Most subcommands accept `-d <udid|name>` to target a specific device when several are booted.
 
@@ -120,9 +121,11 @@ When the user asks to "see the simulator here", "view it in preview", "open it i
 Steps:
 
 1. Start serve-sim and capture the URL:
+
    ```sh
    npx @expo/serve-sim --detach -q
    ```
+
    This returns JSON like `{"pid":..., "port":3100, "url":"http://localhost:3100", "streamUrl":"http://localhost:3100/helper/<udid>/stream.mjpeg", ...}`. The `url` field is the human-facing preview UI; `streamUrl` is the raw MJPEG endpoint.
 
 2. **Always surface the URL plainly** in your response so the user can fallback to opening it manually in any browser.

@@ -5,9 +5,7 @@ import { LocationEmulationTool } from "../client/location-emulation-tool";
 
 describe("LocationEmulationTool", () => {
   test("hides distance status while collapsed and keeps responsive summary sizing", () => {
-    const html = renderToStaticMarkup(
-      <LocationEmulationTool udid="booted" />,
-    );
+    const html = renderToStaticMarkup(<LocationEmulationTool udid="booted" />);
 
     expect(html).toContain("Location");
     expect(html).toContain("[container-type:inline-size]");
@@ -17,10 +15,7 @@ describe("LocationEmulationTool", () => {
   });
 
   test("keeps location summary chevron anchored at compact widths", () => {
-    const css = readFileSync(
-      new URL("../client/global.css", import.meta.url),
-      "utf8",
-    );
+    const css = readFileSync(new URL("../client/global.css", import.meta.url), "utf8");
 
     expect(css).toContain("[data-location-status-total]");
     expect(css).not.toContain("[data-location-status] {\n    grid-column: 1 / -1");

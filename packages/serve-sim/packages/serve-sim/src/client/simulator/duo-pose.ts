@@ -1,5 +1,9 @@
 import { Euler, Quaternion } from "three";
-import { hingePoseOrientation, type HingePhysicalOrientation, type HingePose } from "../../hinge-control";
+import {
+  hingePoseOrientation,
+  type HingePhysicalOrientation,
+  type HingePose,
+} from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { streamDisplayGeometry } from "./orientation";
 
@@ -16,20 +20,26 @@ export const DUO_DEFAULT_VIEW_ANGLES: Record<"laptop" | "tent", DuoViewAngles> =
 /** Camera-axis roll that makes the active panel's native UI readable. */
 export function duoScreenRoll(config: StreamConfig) {
   const mount = config.screenId === 1 ? 0 : Math.PI / 2;
-  return mount - streamDisplayGeometry(config).rotationDegrees * Math.PI / 180;
+  return mount - (streamDisplayGeometry(config).rotationDegrees * Math.PI) / 180;
 }
 
 /** Turn the ordinary folding view from the cover toward the inner screens. */
 export function duoFacingYaw(fold: number): number {
-  return Math.PI / 2 * Math.pow(fold / (Math.PI / 2), 3);
+  return (Math.PI / 2) * Math.pow(fold / (Math.PI / 2), 3);
 }
 
 /** Another client turned the device over, so a remembered preset no longer describes it. */
 export function duoPhysicalPoseChanged(
   pose: HingePose | null | undefined,
+  previousOrientation: HingePhysicalOrientation | undefined,
   orientation: HingePhysicalOrientation | undefined,
 ): boolean {
-  return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
+  return (
+    !!pose &&
+    orientation !== undefined &&
+    orientation !== previousOrientation &&
+    hingePoseOrientation(pose) !== orientation
+  );
 }
 
 /** Select the requested panel before native display metadata catches up. */
@@ -52,6 +62,18 @@ export function duoIntendedScreen(
   return nativeScreenId === 3 ? 3 : 1;
 }
 
+/** Native display ownership wins once optimistic control previews finish. */
+export function duoActiveScreen(
+  angle: number | undefined,
+  pose: HingePose | null | undefined,
+  nativeScreenId: number | undefined,
+  faceDown: boolean | undefined,
+  pending: boolean,
+): 1 | 3 {
+  if (!pending && (nativeScreenId === 1 || nativeScreenId === 3)) return nativeScreenId;
+  return duoIntendedScreen(angle, pending ? pose : null, nativeScreenId, faceDown);
+}
+
 /** Initial/preset framing. Live hinge edits articulate the saved view in duo-view.ts. */
 export function duoPose(
   angle: number | undefined,
@@ -62,14 +84,14 @@ export function duoPose(
   viewAngles?: DuoViewAngles,
 ) {
   const degrees = Math.max(0, Math.min(180, angle ?? (screenId === 1 ? 0 : 180)));
-  const fold = (180 - degrees) * Math.PI / 360;
+  const fold = ((180 - degrees) * Math.PI) / 360;
   const visibleScreen = degrees === 0 ? 1 : 3;
-  const roll = presentationRoll ?? (config?.screenId === visibleScreen && config.orientation ? duoScreenRoll(config) : 0);
+  const roll =
+    presentationRoll ??
+    (config?.screenId === visibleScreen && config.orientation ? duoScreenRoll(config) : 0);
   // Present the cover exactly front-on at 0°, and the inner screen exactly
   // front-on at 180°. Turn toward the cover gradually as the hinge closes.
-  const presentation = new Quaternion().setFromEuler(new Euler(
-    0, duoFacingYaw(fold), 0, "YXZ",
-  ));
+  const presentation = new Quaternion().setFromEuler(new Euler(0, duoFacingYaw(fold), 0, "YXZ"));
   presentation.premultiply(new Quaternion(0, 0, Math.sin(roll / 2), Math.cos(roll / 2)));
 
   if (pose === "laptop" || pose === "tent") {
@@ -78,12 +100,16 @@ export function duoPose(
     // the same height. Azimuth turns around the table normal, then elevation
     // looks down at it without introducing a sideways tilt.
     const view = viewAngles ?? DUO_DEFAULT_VIEW_ANGLES[pose];
-    const elevation = view.elevation * Math.PI / 180;
-    const tabletopYaw = view.rotation * Math.PI / 180;
-    const physical = new Quaternion().setFromEuler(pose === "laptop"
-      ? new Euler(fold - Math.PI / 2, 0, Math.PI / 2, "YXZ")
-      : new Euler(Math.PI / 2, 0, -Math.PI / 2, "YXZ"));
-    physical.premultiply(new Quaternion().setFromEuler(new Euler(elevation, tabletopYaw, 0, "XYZ")));
+    const elevation = (view.elevation * Math.PI) / 180;
+    const tabletopYaw = (view.rotation * Math.PI) / 180;
+    const physical = new Quaternion().setFromEuler(
+      pose === "laptop"
+        ? new Euler(fold - Math.PI / 2, 0, Math.PI / 2, "YXZ")
+        : new Euler(Math.PI / 2, 0, -Math.PI / 2, "YXZ"),
+    );
+    physical.premultiply(
+      new Quaternion().setFromEuler(new Euler(elevation, tabletopYaw, 0, "XYZ")),
+    );
     // Hinge edits retain the table orientation through both endpoints.
     // Only choosing Closed or Open explicitly returns to a front-on view.
     presentation.copy(physical);
@@ -100,7 +126,10 @@ export function stepDuoSpring(value: number, velocity: number, target: number, s
   const offset = value - target;
   const decay = Math.exp(-omega * dt);
   const impulse = velocity + omega * offset;
-  return { value: target + (offset + impulse * dt) * decay, velocity: (velocity - omega * impulse * dt) * decay };
+  return {
+    value: target + (offset + impulse * dt) * decay,
+    velocity: (velocity - omega * impulse * dt) * decay,
+  };
 }
 
 export interface DuoScreenMapping {
@@ -113,7 +142,11 @@ export interface DuoScreenMapping {
 
 /** Allow scaling's pixel rounding without accepting the other Duo display. */
 export function duoFrameMatchesDisplay(width: number, height: number, config: StreamConfig) {
-  if (![width, height, config.width, config.height].every((dimension) => Number.isFinite(dimension) && dimension > 0)) {
+  if (
+    ![width, height, config.width, config.height].every(
+      (dimension) => Number.isFinite(dimension) && dimension > 0,
+    )
+  ) {
     return false;
   }
   const roundingTolerance = 1 / height + 1 / config.height;
@@ -127,14 +160,24 @@ export function duoFrameMatchesDisplay(width: number, height: number, config: St
  * adding the model's roll, rotates/shrinks content inside its own glass.
  * The painter and touch inverse share this single hardware transform.
  */
-export function duoScreenMapping(config: StreamConfig, width: number, height: number): DuoScreenMapping {
+export function duoScreenMapping(
+  config: StreamConfig,
+  width: number,
+  height: number,
+): DuoScreenMapping {
   const rotation = config.screenId === 1 ? 0 : Math.PI / 2;
   const cos = Math.abs(Math.cos(rotation));
   const sin = Math.abs(Math.sin(rotation));
   const rotatedWidth = config.width * cos + config.height * sin;
   const rotatedHeight = config.width * sin + config.height * cos;
   const scale = Math.min(width / rotatedWidth, height / rotatedHeight);
-  return { rotation, width, height, drawnWidth: config.width * scale, drawnHeight: config.height * scale };
+  return {
+    rotation,
+    width,
+    height,
+    drawnWidth: config.width * scale,
+    drawnHeight: config.height * scale,
+  };
 }
 
 /** Coordinates outside 0..1 are padding or an extrapolated drag off the panel. */

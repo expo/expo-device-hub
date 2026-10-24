@@ -17,10 +17,7 @@ describe("abortable exec", () => {
   });
 
   test("removes an aborted queued command without consuming a permit", async () => {
-    const activeControllers = Array.from(
-      { length: 4 },
-      () => new AbortController(),
-    );
+    const activeControllers = Array.from({ length: 4 }, () => new AbortController());
     const active = activeControllers.map((controller) =>
       execText(process.execPath, ["-e", HOLD_SCRIPT], {
         signal: controller.signal,

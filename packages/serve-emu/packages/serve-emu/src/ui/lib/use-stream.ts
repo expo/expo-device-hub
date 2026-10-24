@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import {
-  controlAcknowledgementMessage,
-  logControlAcknowledgement,
-} from "./control-ack";
+import { controlAcknowledgementMessage, logControlAcknowledgement } from "./control-ack";
 import { scanAU } from "./h264";
 import { MsePlayer } from "./mse-player";
 import { parseFramePacket } from "../../shared/frame-meta";
@@ -89,9 +86,7 @@ function viewerTransportsKey(value: ViewerTransports | null): string | null {
   return value ? JSON.stringify(value) : null;
 }
 
-function legacyViewerTransports(
-  settings: StreamSettings | undefined,
-): ViewerTransports | null {
+function legacyViewerTransports(settings: StreamSettings | undefined): ViewerTransports | null {
   if (!settings) return null;
   return {
     default: settings.transport,
@@ -122,9 +117,7 @@ function createWebRtcSessionId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   bytes[6] = (bytes[6]! & 0x0f) | 0x40;
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
@@ -134,16 +127,11 @@ function streamSettingsKey(settings: StreamSettings | null): string | null {
 
 function iceServersForBrowser(settings: StreamSettings): WebRtcIceServer[] {
   if (settings.transport !== "webrtc") return DEFAULT_WEBRTC_ICE_SERVERS;
-  return settings.iceServers.length
-    ? settings.iceServers
-    : DEFAULT_WEBRTC_ICE_SERVERS;
+  return settings.iceServers.length ? settings.iceServers : DEFAULT_WEBRTC_ICE_SERVERS;
 }
 
 function preferH264(transceiver: RTCRtpTransceiver): void {
-  if (
-    !("setCodecPreferences" in transceiver) ||
-    typeof RTCRtpReceiver === "undefined"
-  ) {
+  if (!("setCodecPreferences" in transceiver) || typeof RTCRtpReceiver === "undefined") {
     return;
   }
   const capabilities = RTCRtpReceiver.getCapabilities("video");
@@ -152,9 +140,7 @@ function preferH264(transceiver: RTCRtpTransceiver): void {
   const isH264 = (codec: BrowserRtpCodecCapability) =>
     codec.mimeType.toLowerCase() === "video/h264";
   const hasMode1 = (codec: BrowserRtpCodecCapability) =>
-    /(?:^|;)\s*packetization-mode=1(?:\s*;|$)/i.test(
-      codec.sdpFmtpLine ?? "",
-    );
+    /(?:^|;)\s*packetization-mode=1(?:\s*;|$)/i.test(codec.sdpFmtpLine ?? "");
   transceiver.setCodecPreferences([
     ...codecs.filter((codec) => isH264(codec) && hasMode1(codec)),
     ...codecs.filter((codec) => isH264(codec) && !hasMode1(codec)),
@@ -162,9 +148,7 @@ function preferH264(transceiver: RTCRtpTransceiver): void {
   ] as Parameters<RTCRtpTransceiver["setCodecPreferences"]>[0]);
 }
 
-async function waitForWebRtcIce(
-  connection: RTCPeerConnection,
-): Promise<void> {
+async function waitForWebRtcIce(connection: RTCPeerConnection): Promise<void> {
   if (connection.iceGatheringState === "complete") return;
   await new Promise<void>((resolve) => {
     let timeout: number | undefined;
@@ -200,20 +184,16 @@ export function useStream(
   const workerRef = useRef<Worker | null>(null);
   const directWsRef = useRef<WebSocket | null>(null);
   const clientEpochRef = useRef(0);
-  const [viewerTransports, setViewerTransports] =
-    useState<ViewerTransports | null>(null);
+  const [viewerTransports, setViewerTransports] = useState<ViewerTransports | null>(null);
   const viewerTransportsRef = useRef<ViewerTransports | null>(null);
   const [transport, setTransport] = useState<StreamTransport | null>(null);
   const transportRef = useRef<StreamTransport | null>(null);
-  const [switchingTo, setSwitchingTo] =
-    useState<StreamTransport | null>(null);
+  const [switchingTo, setSwitchingTo] = useState<StreamTransport | null>(null);
   const [transportError, setTransportError] = useState<string | null>(null);
   const [statsDownloadStatus, setStatsDownloadStatus] = useState<
     "idle" | "downloading" | "complete" | "error"
   >("idle");
-  const [statsDownloadMessage, setStatsDownloadMessage] = useState<
-    string | null
-  >(null);
+  const [statsDownloadMessage, setStatsDownloadMessage] = useState<string | null>(null);
   const [webRtcRetryGeneration, setWebRtcRetryGeneration] = useState(0);
   const [serverGeneration, setServerGeneration] = useState<number | null>(null);
   const serverGenerationRef = useRef<number | null>(null);
@@ -228,7 +208,7 @@ export function useStream(
     transport === "websocket"
       ? { transport: "websocket" }
       : transport === "webrtc"
-        ? viewerTransports?.webrtc ?? null
+        ? (viewerTransports?.webrtc ?? null)
         : null;
   const currentStreamSettingsKey = streamSettingsKey(streamSettings);
 
@@ -245,15 +225,12 @@ export function useStream(
     setSwitchingTo(next);
   }, []);
 
-  const reportTransportError = useCallback(
-    (failed: StreamTransport, message: string) => {
-      if (transportRef.current !== failed) return;
-      liveTransportRef.current = null;
-      setSwitchingTo(null);
-      setTransportError(message);
-    },
-    [],
-  );
+  const reportTransportError = useCallback((failed: StreamTransport, message: string) => {
+    if (transportRef.current !== failed) return;
+    liveTransportRef.current = null;
+    setSwitchingTo(null);
+    setTransportError(message);
+  }, []);
 
   const selectTransport = useCallback((next: StreamTransport) => {
     const catalog = viewerTransportsRef.current;
@@ -288,9 +265,7 @@ export function useStream(
     if (currentTransport === null || statsDownloadPendingRef.current) return;
     if (liveTransportRef.current !== currentTransport) {
       setStatsDownloadStatus("error");
-      setStatsDownloadMessage(
-        "Wait for the selected viewer transport to become live.",
-      );
+      setStatsDownloadMessage("Wait for the selected viewer transport to become live.");
       return;
     }
 
@@ -301,10 +276,7 @@ export function useStream(
       const result = await downloadStreamStats({
         transport: currentTransport,
         viewerState: stateRef.current,
-        webRtcSessionId:
-          currentTransport === "webrtc"
-            ? currentWebRtcSessionIdRef.current
-            : null,
+        webRtcSessionId: currentTransport === "webrtc" ? currentWebRtcSessionIdRef.current : null,
       });
       setStatsDownloadStatus("complete");
       setStatsDownloadMessage(
@@ -328,9 +300,7 @@ export function useStream(
     controlErrorTimerRef.current = setTimeout(() => {
       controlErrorTimerRef.current = null;
       setState((current) =>
-        current.controlError === message
-          ? { ...current, controlError: null }
-          : current,
+        current.controlError === message ? { ...current, controlError: null } : current,
       );
     }, CONTROL_ERROR_VISIBLE_MS);
   }, []);
@@ -377,10 +347,7 @@ export function useStream(
 
     const refresh = async () => {
       controller = new AbortController();
-      const timeout = setTimeout(
-        () => controller?.abort(),
-        HEALTH_REQUEST_TIMEOUT_MS,
-      );
+      const timeout = setTimeout(() => controller?.abort(), HEALTH_REQUEST_TIMEOUT_MS);
       try {
         const response = await fetch("/api", {
           cache: "no-store",
@@ -389,14 +356,10 @@ export function useStream(
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = (await response.json()) as ApiInfo;
         if (cancelled) return;
-        const nextViewerTransports =
-          data.viewerTransports ?? legacyViewerTransports(data.stream);
+        const nextViewerTransports = data.viewerTransports ?? legacyViewerTransports(data.stream);
         if (nextViewerTransports) {
           const previousCatalog = viewerTransportsRef.current;
-          if (
-            viewerTransportsKey(previousCatalog) !==
-            viewerTransportsKey(nextViewerTransports)
-          ) {
+          if (viewerTransportsKey(previousCatalog) !== viewerTransportsKey(nextViewerTransports)) {
             viewerTransportsRef.current = nextViewerTransports;
             setViewerTransports(nextViewerTransports);
           }
@@ -406,9 +369,7 @@ export function useStream(
             const initial =
               stored && nextViewerTransports.available.includes(stored)
                 ? stored
-                : nextViewerTransports.available.includes(
-                    nextViewerTransports.default,
-                  )
+                : nextViewerTransports.available.includes(nextViewerTransports.default)
                   ? nextViewerTransports.default
                   : nextViewerTransports.available[0]!;
             transportRef.current = initial;
@@ -423,22 +384,15 @@ export function useStream(
             );
           } else if (
             currentTransport === "webrtc" &&
-            viewerTransportsKey(previousCatalog) !==
-              viewerTransportsKey(nextViewerTransports)
+            viewerTransportsKey(previousCatalog) !== viewerTransportsKey(nextViewerTransports)
           ) {
             setTransportError(null);
             markTransportSwitching("webrtc");
           }
         }
-        if (
-          Number.isSafeInteger(data.generation) &&
-          data.generation >= 0
-        ) {
+        if (Number.isSafeInteger(data.generation) && data.generation >= 0) {
           const previousGeneration = serverGenerationRef.current;
-          if (
-            previousGeneration !== null &&
-            previousGeneration !== data.generation
-          ) {
+          if (previousGeneration !== null && previousGeneration !== data.generation) {
             markTransportSwitching("webrtc");
           }
           serverGenerationRef.current = data.generation;
@@ -601,10 +555,7 @@ export function useStream(
             }
           : prev;
 
-        if (
-          next.generation !== currentGeneration ||
-          next.lastRenderedAt !== lastRenderedAt
-        ) {
+        if (next.generation !== currentGeneration || next.lastRenderedAt !== lastRenderedAt) {
           next = { ...next, generation: currentGeneration, lastRenderedAt };
         }
 
@@ -640,10 +591,7 @@ export function useStream(
     // generation boundary synchronously with the command.
     if (isNewWorker) {
       const offscreen = canvas.transferControlToOffscreen();
-      worker.postMessage(
-        { type: "init", clientEpoch, canvas: offscreen, url },
-        [offscreen],
-      );
+      worker.postMessage({ type: "init", clientEpoch, canvas: offscreen, url }, [offscreen]);
     } else {
       setState((prev) => ({
         ...prev,
@@ -665,8 +613,7 @@ export function useStream(
     }, 1_000);
 
     const applyServerStatus = (d: ApiInfo) => {
-      serverTerminalStatus =
-        d.status && d.status !== "streaming" ? d.lastError || d.status : null;
+      serverTerminalStatus = d.status && d.status !== "streaming" ? d.lastError || d.status : null;
       setState((prev) => ({
         ...prev,
         deviceSize: d.size,
@@ -695,10 +642,7 @@ export function useStream(
       const requestGeneration = currentGeneration;
       const controller = new AbortController();
       healthController = controller;
-      const requestTimeout = setTimeout(
-        () => controller.abort(),
-        HEALTH_REQUEST_TIMEOUT_MS,
-      );
+      const requestTimeout = setTimeout(() => controller.abort(), HEALTH_REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch("/health", { signal: controller.signal });
@@ -721,10 +665,7 @@ export function useStream(
         if (!cancelled && requestSequence === healthRequestSequence) {
           // If a stream boundary made this response stale, refresh metadata
           // immediately; otherwise keep the normal low-frequency cadence.
-          const delay =
-            requestGeneration === currentGeneration
-              ? HEALTH_POLL_INTERVAL_MS
-              : 0;
+          const delay = requestGeneration === currentGeneration ? HEALTH_POLL_INTERVAL_MS : 0;
           healthTimer = setTimeout(() => void pollHealth(), delay);
         }
       }
@@ -780,9 +721,7 @@ export function useStream(
     let ws: WebSocket | null = null;
 
     const setStatus = (status: string) =>
-      setState((current) =>
-        current.status === status ? current : { ...current, status },
-      );
+      setState((current) => (current.status === status ? current : { ...current, status }));
     const requestKeyframe = () => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "reset-video", ack: false }));
@@ -796,9 +735,7 @@ export function useStream(
     const connect = () => {
       if (cancelled) return;
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(
-        `${protocol}//${location.host}/ws?frame-meta=1`,
-      );
+      ws = new WebSocket(`${protocol}//${location.host}/ws?frame-meta=1`);
       ws.binaryType = "arraybuffer";
       directWsRef.current = ws;
       ws.onopen = () => {
@@ -845,9 +782,7 @@ export function useStream(
                 deviceSize: { width, height },
               })),
             onFps: (fps) =>
-              setState((current) =>
-                current.fps === fps ? current : { ...current, fps },
-              ),
+              setState((current) => (current.fps === fps ? current : { ...current, fps })),
             onError: (message) => {
               reportTransportError("websocket", message);
               setStatus(message);
@@ -863,9 +798,7 @@ export function useStream(
         markTransportSwitching("websocket");
         resetPlayer();
         const retryIn = reconnectDelay;
-        setStatus(
-          `disconnected — retrying in ${Math.round(retryIn / 1_000)}s`,
-        );
+        setStatus(`disconnected — retrying in ${Math.round(retryIn / 1_000)}s`);
         reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5_000);
         retryTimer = setTimeout(connect, retryIn);
       };
@@ -904,9 +837,7 @@ export function useStream(
     let ws: WebSocket | null = null;
 
     const setStatus = (status: string) =>
-      setState((current) =>
-        current.status === status ? current : { ...current, status },
-      );
+      setState((current) => (current.status === status ? current : { ...current, status }));
     const connect = () => {
       if (cancelled) return;
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -925,9 +856,7 @@ export function useStream(
         if (directWsRef.current === ws) directWsRef.current = null;
         if (cancelled) return;
         const retryIn = reconnectDelay;
-        setStatus(
-          `input disconnected — retrying in ${Math.round(retryIn / 1_000)}s`,
-        );
+        setStatus(`input disconnected — retrying in ${Math.round(retryIn / 1_000)}s`);
         reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5_000);
         retryTimer = setTimeout(connect, retryIn);
       };
@@ -958,10 +887,7 @@ export function useStream(
       }));
       return;
     }
-    if (
-      typeof RTCPeerConnection === "undefined" ||
-      typeof RTCRtpReceiver === "undefined"
-    ) {
+    if (typeof RTCPeerConnection === "undefined" || typeof RTCRtpReceiver === "undefined") {
       currentWebRtcSessionIdRef.current = null;
       reportTransportError("webrtc", "WebRTC unsupported");
       setState((current) => ({ ...current, status: "WebRTC unsupported" }));
@@ -998,9 +924,7 @@ export function useStream(
     }));
 
     const setStatus = (status: string) =>
-      setState((current) =>
-        current.status === status ? current : { ...current, status },
-      );
+      setState((current) => (current.status === status ? current : { ...current, status }));
     const requestKeyframe = () => {
       const ws = directWsRef.current;
       if (ws?.readyState === WebSocket.OPEN) {
@@ -1045,9 +969,7 @@ export function useStream(
           ...current,
           status: "streaming",
           lastRenderedAt: Date.now(),
-          ...(width > 0 && height > 0
-            ? { deviceSize: { width, height } }
-            : {}),
+          ...(width > 0 && height > 0 ? { deviceSize: { width, height } } : {}),
         }));
       }
       fpsCount++;
@@ -1063,8 +985,7 @@ export function useStream(
           lastRenderedAt: Date.now(),
           ...(width > 0 &&
           height > 0 &&
-          (current.deviceSize?.width !== width ||
-            current.deviceSize?.height !== height)
+          (current.deviceSize?.width !== width || current.deviceSize?.height !== height)
             ? { deviceSize: { width, height } }
             : {}),
         }));
@@ -1081,11 +1002,7 @@ export function useStream(
         videoFrameCallback = video.requestVideoFrameCallback(observe);
       } else {
         framePollTimer = window.setInterval(() => {
-          if (
-            stopped ||
-            video.readyState < 2 ||
-            video.currentTime === lastVideoTime
-          ) {
+          if (stopped || video.readyState < 2 || video.currentTime === lastVideoTime) {
             return;
           }
           lastVideoTime = video.currentTime;
@@ -1170,10 +1087,8 @@ export function useStream(
           if (stopped) return;
           trackReceived = true;
           firstFrameDecoded = false;
-          event.track.onended = () =>
-            retryTransport("WebRTC video track ended.");
-          video.srcObject =
-            event.streams[0] ?? new MediaStream([event.track]);
+          event.track.onended = () => retryTransport("WebRTC video track ended.");
+          video.srcObject = event.streams[0] ?? new MediaStream([event.track]);
           void video.play().catch(() => {});
           startFrameObserver();
           armFirstFrameTimeout();
@@ -1194,18 +1109,12 @@ export function useStream(
             if (disconnectedTimeout === undefined) {
               disconnectedTimeout = window.setTimeout(() => {
                 disconnectedTimeout = undefined;
-                if (
-                  !stopped &&
-                  peer?.connectionState !== "connected"
-                ) {
+                if (!stopped && peer?.connectionState !== "connected") {
                   retryTransport("WebRTC remained disconnected.");
                 }
               }, WEBRTC_DISCONNECTED_GRACE_MS);
             }
-          } else if (
-            peer.connectionState === "failed" ||
-            peer.connectionState === "closed"
-          ) {
+          } else if (peer.connectionState === "failed" || peer.connectionState === "closed") {
             retryTransport("WebRTC connection failed.");
           }
         };
@@ -1232,12 +1141,7 @@ export function useStream(
           const status = response.status;
           await response.body?.cancel();
           const message = `WebRTC offer failed: HTTP ${status}.`;
-          if (
-            status === 408 ||
-            status === 425 ||
-            status === 429 ||
-            status >= 500
-          ) {
+          if (status === 408 || status === 425 || status === 429 || status >= 500) {
             retryTransport(message);
           } else {
             failPermanently(message);

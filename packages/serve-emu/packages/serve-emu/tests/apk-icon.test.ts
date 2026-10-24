@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
   MAX_CACHED_ICONS,
   clearAppIconCache,
+  findAapt2,
   iconMimeType,
   parseAdaptiveForegroundId,
   selectBaseApkPath,
@@ -9,6 +10,7 @@ import {
   readAppIcon,
   selectResourceFilePath,
 } from "../src/apk-icon.ts";
+import type { execText } from "../src/exec.ts";
 import type { AppIcon } from "../src/shared/api-contracts.ts";
 
 const SETTINGS_BADGING = [
@@ -324,6 +326,79 @@ describe("readAppIcon", () => {
 
     await expect(readAppIcon("emulator-5554", "com.missing", deps)).rejects.toThrow(
       "com.missing is not installed",
+    );
+  });
+});
+
+describe("findAapt2", () => {
+  const PLATFORM_TOOLS = "/Users/test/Library/Android/Sdk/platform-tools";
+  const BUILD_TOOLS = "/Users/test/Library/Android/Sdk/build-tools";
+
+  function aapt2Fakes(files: string[], onPath = false) {
+    const probes: string[] = [];
+    const execTextFake = (async (command: string) => {
+      probes.push(command);
+      return {
+        status: onPath ? 0 : null,
+        signal: null,
+        stdout: "",
+        stderr: "",
+        timedOut: false,
+        error: onPath ? null : new Error("spawn aapt2 ENOENT"),
+      };
+    }) as unknown as typeof execText;
+    return {
+      probes,
+      deps: {
+        sdk: {
+          env: { PATH: `/usr/bin:${PLATFORM_TOOLS}` },
+          platform: "darwin" as const,
+          homeDir: "/Users/test",
+          existsSync: (path: string) => files.includes(path),
+          realpathSync: (path: string) => path,
+        },
+        readdir: async (path: string) => {
+          const prefix = `${path}/`;
+          const children = files.filter((file) => file.startsWith(prefix));
+          if (children.length === 0) throw new Error(`ENOENT ${path}`);
+          return [...new Set(children.map((file) => file.slice(prefix.length).split("/")[0]!))];
+        },
+        access: async (path: string) => {
+          if (!files.includes(path)) throw new Error(`ENOENT ${path}`);
+        },
+        execText: execTextFake,
+      },
+    };
+  }
+
+  test("finds the newest build-tools of the SDK that holds adb on PATH", async () => {
+    // The reported setup: no ANDROID_HOME, adb on PATH, build-tools not on PATH.
+    const { deps, probes } = aapt2Fakes([
+      `${PLATFORM_TOOLS}/adb`,
+      `${BUILD_TOOLS}/26.0.3/aapt2`,
+      `${BUILD_TOOLS}/36.1.0/aapt2`,
+      `${BUILD_TOOLS}/36.0.0/aapt2`,
+    ]);
+
+    await expect(findAapt2(deps)).resolves.toBe(`${BUILD_TOOLS}/36.1.0/aapt2`);
+    expect(probes).toEqual([]);
+  });
+
+  test("falls back to aapt2 on PATH", async () => {
+    const { deps, probes } = aapt2Fakes([], true);
+
+    await expect(findAapt2(deps)).resolves.toBe("aapt2");
+    expect(probes).toEqual(["aapt2"]);
+  });
+
+  test("names every SDK folder it checked and how to fix it", async () => {
+    const { deps } = aapt2Fakes([`${PLATFORM_TOOLS}/adb`]);
+
+    await expect(findAapt2(deps)).rejects.toThrow(
+      "aapt2 not found on PATH or in the build-tools of " +
+        "adb on PATH (/Users/test/Library/Android/Sdk), " +
+        "default location (/Users/test/Library/Android/sdk). " +
+        "Install Android SDK Build-Tools. Set ANDROID_HOME to your Android SDK folder.",
     );
   });
 });

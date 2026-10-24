@@ -1,0 +1,10 @@
+name: Install mitmproxy
+runs:
+  steps:
+    - name: Install mitmproxy
+      # The same Homebrew cask that eas/install_mitmproxy installs for device sessions.
+      run: |
+        brew install --cask mitmproxy
+        # Check the exact binary capture will select, including SERVE_SIM_MITMDUMP.
+        cd packages/serve-sim
+        bun packages/serve-sim/scripts/test/check-mitmproxy.ts

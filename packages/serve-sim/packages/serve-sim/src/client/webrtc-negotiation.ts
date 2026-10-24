@@ -1,7 +1,4 @@
-type FetchLike = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 type SendBeaconLike = (url: string | URL, data?: BodyInit | null) => boolean;
 
@@ -33,7 +30,9 @@ function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
     }
     function abort() {
       clearTimeout(timer);
-      reject(signal ? abortError(signal) : new DOMException("The operation was aborted", "AbortError"));
+      reject(
+        signal ? abortError(signal) : new DOMException("The operation was aborted", "AbortError"),
+      );
     }
     signal?.addEventListener("abort", abort, { once: true });
   });
@@ -56,11 +55,11 @@ export async function closeWebRtcSession({
   fetchImpl?: FetchLike;
 }): Promise<void> {
   const body = JSON.stringify({ sessionId });
-  const beacon = sendBeacon ?? (
-    typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function"
+  const beacon =
+    sendBeacon ??
+    (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function"
       ? navigator.sendBeacon.bind(navigator)
-      : undefined
-  );
+      : undefined);
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so direct helper ports do not need an
@@ -76,7 +75,10 @@ export async function closeWebRtcSession({
     body,
     keepalive,
     signal: keepalive ? undefined : AbortSignal.timeout(CLOSE_TIMEOUT_MS),
-  }).then(() => undefined, () => undefined);
+  }).then(
+    () => undefined,
+    () => undefined,
+  );
 }
 
 /// Only contention clears by itself. A 409 naming another reason, such as a device with no

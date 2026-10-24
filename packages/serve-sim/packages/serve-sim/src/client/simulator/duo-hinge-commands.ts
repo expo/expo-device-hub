@@ -7,7 +7,6 @@ export interface DuoHingeCommands {
   coverDepartures: number;
   innerDepartures: number;
 }
-
 export function recordDuoHingeCommand(
   previous: DuoHingeCommands,
   command: HingeControlCommand,
@@ -18,7 +17,10 @@ export function recordDuoHingeCommand(
   // already active; they cannot establish a departure from either panel.
   if (command.control === "angle" && command.value > 54 && command.value < 55) return previous;
   const { hingeAngle } = hingeControlState(command);
-  const panel = duoIntendedScreen(hingeAngle, command.control === "pose" ? command.value : physicalPose);
+  const panel = duoIntendedScreen(
+    hingeAngle,
+    command.control === "pose" ? command.value : physicalPose,
+  );
   return {
     ...previous,
     coverDepartures: previous.coverDepartures + (panel === 3 ? 1 : 0),

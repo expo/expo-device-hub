@@ -1,12 +1,21 @@
 name: serve-sim tests
 
 on:
+  # The Simulator jobs take several macOS machines. They run on a PR that is ready for
+  # review, and on a draft only with the ci-ready label; adding the label starts a run.
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
     paths:
       - packages/serve-sim/**
       - .eas/workflows/sim-test.yml
+      - .eas/functions/restore-sim-test-build/**
+      - .eas/functions/test-sim-runtime/**
+      - .eas/functions/install-mitmproxy/**
+  # The same rule for labels: ci-ready starts a draft, and eas-approved starts only a ready PR.
   pull_request_labeled:
-    labels: [eas-approved]
+    labels: [ci-ready, eas-approved]
+    if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
 
 # Cancel superseded runs so pushing twice to the same PR does not consume two
 # macOS workers in parallel.
@@ -20,43 +29,17 @@ defaults:
     bun: 1.3.14
 
 jobs:
-  sim-test:
-    name: Build and test serve-sim
+  build:
+    name: Build serve-sim with Xcode 26
     runs_on: macos-medium
-    image: latest
+    image: macos-tahoe-26.5-xcode-26.6
+    outputs:
+      artifact_id: ${{ steps.upload_build.outputs.artifact_id }}
     steps:
       - uses: eas/checkout
 
       # Installs the monorepo root lockfile (bun.lock); serve-sim resolves through it.
       - uses: eas/install_node_modules
-
-      # Gatekeeper has rejected the mitmproxy 12.2.3 cask as unnotarized since
-      # 2026-10-06, and a quarantined first launch never returns
-      # (mitmproxy/mitmproxy#8474), so take the cask out of quarantine.
-      - name: Install mitmproxy
-        run: |
-          brew install --cask mitmproxy
-          xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
-          # Fail here, not in the capture tests, when mitmdump cannot start.
-          mitmdump=$(realpath "$(command -v mitmdump)")
-          if xattr -p com.apple.quarantine "$mitmdump" >/dev/null 2>&1; then
-            echo "::error::$mitmdump is still quarantined"
-            exit 1
-          fi
-          # Output goes to a file, so a child that outlives mitmdump cannot hold the step open.
-          mitmdump --version > /tmp/mitmdump-version.txt 2>&1 &
-          pid=$!
-          for _ in $(seq 1 60); do
-            kill -0 "$pid" 2>/dev/null || break
-            sleep 1
-          done
-          if kill -0 "$pid" 2>/dev/null; then
-            kill -9 "$pid"
-            echo "::error::mitmdump --version did not return in 60 seconds"
-            exit 1
-          fi
-          wait "$pid" || { cat /tmp/mitmdump-version.txt; exit 1; }
-          cat /tmp/mitmdump-version.txt
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
@@ -86,57 +69,69 @@ jobs:
           name: serve-sim-npm-package
           path: packages/serve-sim/packages/serve-sim/release/serve-sim.tgz
 
-      - name: Install Chrome for Testing
-        run: bunx @puppeteer/browsers@3.2.3 install chrome@154.0.8037.57 --path "$HOME/.cache/chrome-for-testing" --format '{{path}}' > /tmp/chrome-path
+      - name: Archive the built package and fixtures
+        working_directory: packages/serve-sim/packages/serve-sim
+        run: |
+          tar -czf /tmp/serve-sim-e2e.tar.gz dist
+          shasum -a 256 /tmp/serve-sim-e2e.tar.gz
 
-      - name: Start iOS Simulator
-        uses: eas/start_ios_simulator
+      - name: Upload E2E build
+        id: upload_build
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: serve-sim-e2e-build
+          path: /tmp/serve-sim-e2e.tar.gz
 
-      - name: Run serve-sim tests
-        # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
-        # Runs from the serve-sim tree root so the attribution test finds its NOTICE.
-        env:
-          SERVE_SIM_E2E_REQUIRED: "1"
+  unit-tests:
+    name: Isolated serve-sim unit tests
+    needs: [build]
+    runs_on: macos-medium
+    image: macos-tahoe-26.5-xcode-26.6
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build.outputs.artifact_id }}
+      # Real mitmdump unit coverage, such as upstream-mitmdump.test.ts, skips without it.
+      - uses: ./.eas/functions/install-mitmproxy
+
+      - name: Run two isolated unit shards
         working_directory: packages/serve-sim
         run: |
-          export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
-          run_tests() {
-            bun test --max-concurrency=1 packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/ &
-            local pid=$!
-            local waited=0
-            while kill -0 "$pid" 2>/dev/null; do
-              if [ "$waited" -ge 1200 ]; then
-                echo "::error::the test process has run for 20 minutes; sampling and killing it"
-                sample "$pid" 3 -mayDie -file /tmp/sample.txt || true
-                awk '/^Binary Images:/{exit} {print}' /tmp/sample.txt | head -80 || true
-                kill -9 "$pid" 2>/dev/null
-                return 1
-              fi
-              sleep 5
-              waited=$((waited + 5))
-            done
-            wait "$pid"
-          }
+          pids=()
+          for shard in 1 2; do
+            bun run test -- --path-ignore-patterns='**/*.e2e.test.*' --shard=$shard/2 --retry=1 &
+            pids+=($!)
+          done
+          result=0
+          for pid in "${pids[@]}"; do wait "$pid" || result=1; done
+          exit "$result"
 
-          if run_tests; then
-            exit 0
-          fi
+  # The e2e files run one at a time, so they are split over two machines; see test-sim-runtime.
+  sim-test-26:
+    name: Xcode 26 build on Xcode 26 runtime (1/2)
+    needs: [build]
+    runs_on: macos-medium
+    image: macos-tahoe-26.5-xcode-26.6
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: slow
 
-          # The simulator-backed e2e tests share one simulator. Reboot and retry
-          # once to clear transient stuck input or native-process failures.
-          UDID=$(xcrun simctl list devices booted -j | node -e '
-            const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
-            for (const devices of Object.values(data.devices)) {
-              for (const device of devices) {
-                console.log(device.udid);
-                process.exit(0);
-              }
-            }
-            process.exit(1);
-          ')
-          echo "Test run failed; rebooting $UDID and retrying once"
-          xcrun simctl shutdown "$UDID" || true
-          sleep 3
-          xcrun simctl boot "$UDID" || true
-          xcrun simctl bootstatus "$UDID" -b || true
-          run_tests
+  sim-test-26-shard2:
+    name: Xcode 26 build on Xcode 26 runtime (2/2)
+    needs: [build]
+    runs_on: macos-medium
+    image: macos-tahoe-26.5-xcode-26.6
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: rest

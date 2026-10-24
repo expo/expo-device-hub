@@ -37,7 +37,6 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
   roots.push(root);
   let nowUs = 10_000_000n;
   const samples: Parameters<RecordingWriter["add"]>[0][] = [];
-  let cancelled = false;
   const recording = await ScreenRecording.create({
     directory: join(root, "session"),
     udid: "emulator-5554",
@@ -51,9 +50,7 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
           samples.push(sample);
         },
         finish: async () => {},
-        cancel: async () => {
-          cancelled = true;
-        },
+        cancel: async () => {},
       };
     },
     ...extra,
@@ -65,7 +62,6 @@ async function setup(extra: Partial<RecordingOptions> = {}) {
     setTime: (value: bigint) => {
       nowUs = value;
     },
-    cancelled: () => cancelled,
   };
 }
 
@@ -270,33 +266,36 @@ test("bounds a stalled writer without blocking packet delivery", async () => {
 test.each([
   { stall: "add", writer: { add: () => new Promise<void>(() => {}), finish: async () => {} } },
   { stall: "finish", writer: { add: async () => {}, finish: () => new Promise<void>(() => {}) } },
-])("bounds a stalled $stall during finalization and keeps the partial file listed", async ({ writer }) => {
-  const { recording, root } = await setup({
-    finalizeTimeoutMs: 50,
-    createWriter: async ({ path }) => {
-      await writeFile(path, "test-writer");
-      return { ...writer, cancel: async () => {} };
-    },
-  });
-  recording.accept(frame(0n), size, "scrcpy");
-  await recording.ready;
-  recording.accept(frame(1_000_000n), size, "scrcpy");
-  const startedAt = performance.now();
-  await expect(recording.finish()).rejects.toThrow("finalization exceeded 50 ms");
-  expect(performance.now() - startedAt).toBeLessThan(2_000);
-  expect(recording.snapshot()).toMatchObject({
-    status: "failed",
-    error: expect.stringContaining("exceeded"),
-  });
-  expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
-    status: "failed",
-    error: expect.stringContaining("exceeded"),
-    recording: "recording.mp4.partial",
-    firstFrameWallClock: { iso8601: new Date(1_800_000_000_000).toISOString() },
-    width: 1280,
-    height: 720,
-  });
-});
+])(
+  "bounds a stalled $stall during finalization and keeps the partial file listed",
+  async ({ writer }) => {
+    const { recording, root } = await setup({
+      finalizeTimeoutMs: 50,
+      createWriter: async ({ path }) => {
+        await writeFile(path, "test-writer");
+        return { ...writer, cancel: async () => {} };
+      },
+    });
+    recording.accept(frame(0n), size, "scrcpy");
+    await recording.ready;
+    recording.accept(frame(1_000_000n), size, "scrcpy");
+    const startedAt = performance.now();
+    await expect(recording.finish()).rejects.toThrow("finalization exceeded 50 ms");
+    expect(performance.now() - startedAt).toBeLessThan(2_000);
+    expect(recording.snapshot()).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("exceeded"),
+    });
+    expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("exceeded"),
+      recording: "recording.mp4.partial",
+      firstFrameWallClock: { iso8601: new Date(1_800_000_000_000).toISOString() },
+      width: 1280,
+      height: 720,
+    });
+  },
+);
 
 test("finish rejects within the bound after a failure while a write is still stalled", async () => {
   let adds = 0;
@@ -330,14 +329,26 @@ test("finish rejects within the bound after a failure while a write is still sta
 });
 
 test("rejects an oversized first frame and persists a failed manifest", async () => {
-  const { recording, root, cancelled } = await setup({ maxQueuedBytes: 16 });
+  const startWriter = Promise.withResolvers<RecordingWriter>();
+  const cancelled = Promise.withResolvers<void>();
+  const { recording, root } = await setup({
+    maxQueuedBytes: 16,
+    createWriter: () => startWriter.promise,
+  });
   recording.accept(frame(0n), size, "scrcpy");
   await expect(recording.ready).rejects.toThrow("byte limit");
   await expect(recording.finish()).rejects.toThrow("byte limit");
-  expect(cancelled()).toBe(true);
   expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
     status: "failed",
   });
+
+  // Failure reporting must not wait for the writer; cleanup follows once it starts.
+  startWriter.resolve({
+    add: async () => {},
+    finish: async () => {},
+    cancel: async () => cancelled.resolve(),
+  });
+  await cancelled.promise;
 });
 
 test.each(["start", "write", "finish"])(
@@ -442,7 +453,11 @@ test.skipIf(!Bun.which("ffmpeg") || !Bun.which("ffprobe"))(
     });
     // Each frame is 1 s apart, so every accepted frame closes the previous fragment.
     for (let second = 0; second < 4; second++) {
-      recording.accept(frame(BigInt(second) * 1_000_000n, encoded), { width: 128, height: 96 }, "scrcpy");
+      recording.accept(
+        frame(BigInt(second) * 1_000_000n, encoded),
+        { width: 128, height: 96 },
+        "scrcpy",
+      );
       if (second === 0) await recording.ready;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));

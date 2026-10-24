@@ -82,23 +82,24 @@ export function unprojectMeters(
   return { lat: origin.lat + dLat, lng: origin.lng + dLng };
 }
 
-interface RawPoint { x: number; z: number; y: number; rawAlt: number }
+interface RawPoint {
+  x: number;
+  z: number;
+  y: number;
+  rawAlt: number;
+}
 
 /** Centripetal Catmull-Rom interpolation between p1 and p2 using p0/p3 as
  *  tangent neighbours. Returns the position at parameter t in [0,1]. */
-function catmullRom(
-  p0: RawPoint, p1: RawPoint, p2: RawPoint, p3: RawPoint,
-  t: number,
-): RawPoint {
+function catmullRom(p0: RawPoint, p1: RawPoint, p2: RawPoint, p3: RawPoint, t: number): RawPoint {
   const t2 = t * t;
   const t3 = t2 * t;
   const a = (v0: number, v1: number, v2: number, v3: number) =>
-    0.5 * (
-      (2 * v1) +
+    0.5 *
+    (2 * v1 +
       (-v0 + v2) * t +
       (2 * v0 - 5 * v1 + 4 * v2 - v3) * t2 +
-      (-v0 + 3 * v1 - 3 * v2 + v3) * t3
-    );
+      (-v0 + 3 * v1 - 3 * v2 + v3) * t3);
   return {
     x: a(p0.x, p1.x, p2.x, p3.x),
     z: a(p0.z, p1.z, p2.z, p3.z),
@@ -109,11 +110,7 @@ function catmullRom(
 
 /** Resample a polyline at fixed segment length `step` (meters), smoothing
  *  with Catmull-Rom. Returns the densified raw points. */
-function densify(
-  raw: RawPoint[],
-  step: number,
-  closed: boolean,
-): RawPoint[] {
+function densify(raw: RawPoint[], step: number, closed: boolean): RawPoint[] {
   if (raw.length < 2) return raw.slice();
 
   const out: RawPoint[] = [];
@@ -178,9 +175,12 @@ export function prepareTrail(trail: Trail): PreparedTrail {
   }
 
   // AABB
-  let xmin = Infinity, xmax = -Infinity;
-  let zmin = Infinity, zmax = -Infinity;
-  let ymin = Infinity, ymax = -Infinity;
+  let xmin = Infinity,
+    xmax = -Infinity;
+  let zmin = Infinity,
+    zmax = -Infinity;
+  let ymin = Infinity,
+    ymax = -Infinity;
   for (const p of points) {
     if (p.x < xmin) xmin = p.x;
     if (p.x > xmax) xmax = p.x;
@@ -219,7 +219,8 @@ export function pointAtDistance(p: PreparedTrail, distance: number): RoutePoint 
   let hi = p.points.length - 1;
   while (lo + 1 < hi) {
     const mid = (lo + hi) >>> 1;
-    if (p.points[mid]!.arc <= d) lo = mid; else hi = mid;
+    if (p.points[mid]!.arc <= d) lo = mid;
+    else hi = mid;
   }
   const a = p.points[lo]!;
   const b = p.points[hi]!;
@@ -238,10 +239,14 @@ export function pointAtDistance(p: PreparedTrail, distance: number): RoutePoint 
 /** Default speed in meters / second for a transport mode. */
 export function defaultSpeed(mode: TrailMode): number {
   switch (mode) {
-    case "walk": return 1.4;
-    case "run": return 3.0;
-    case "cycle": return 5.5;
-    case "drive": return 13.4;
+    case "walk":
+      return 1.4;
+    case "run":
+      return 3.0;
+    case "cycle":
+      return 5.5;
+    case "drive":
+      return 13.4;
   }
 }
 
@@ -260,7 +265,7 @@ const APPLE_PARK_LOOP: Waypoint[] = [
   { lat: 37.33309, lng: -122.00735, alt: 48 },
   { lat: 37.33373, lng: -122.00663, alt: 49 },
   { lat: 37.33454, lng: -122.00627, alt: 49 },
-  { lat: 37.33540, lng: -122.00633, alt: 49 },
+  { lat: 37.3354, lng: -122.00633, alt: 49 },
   { lat: 37.33618, lng: -122.00679, alt: 45 },
   { lat: 37.33675, lng: -122.00759, alt: 45 },
   { lat: 37.33704, lng: -122.00861, alt: 46 },
@@ -271,7 +276,7 @@ const APPLE_PARK_LOOP: Waypoint[] = [
   { lat: 37.33431, lng: -122.01169, alt: 50 },
   { lat: 37.33354, lng: -122.01122, alt: 50 },
   { lat: 37.33296, lng: -122.01042, alt: 51 },
-  { lat: 37.33268, lng: -122.00940, alt: 50 },
+  { lat: 37.33268, lng: -122.0094, alt: 50 },
 ];
 
 /** Golden Gate Bridge round-trip — OSM ways 537838948 (S→N) + 595194543
@@ -280,19 +285,19 @@ const APPLE_PARK_LOOP: Waypoint[] = [
 const GOLDEN_GATE_BRIDGE: Waypoint[] = [
   { lat: 37.83212, lng: -122.48065, alt: 30 },
   { lat: 37.82937, lng: -122.47974, alt: 30 },
-  { lat: 37.82649, lng: -122.47940, alt: 30 },
+  { lat: 37.82649, lng: -122.4794, alt: 30 },
   { lat: 37.82362, lng: -122.47907, alt: 45 },
   { lat: 37.82074, lng: -122.47873, alt: 59 },
   { lat: 37.81786, lng: -122.47839, alt: 66 },
   { lat: 37.81498, lng: -122.47806, alt: 66 },
   { lat: 37.81211, lng: -122.47772, alt: 58 },
   { lat: 37.80923, lng: -122.47734, alt: 44 },
-  { lat: 37.80949, lng: -122.47730, alt: 45 },
+  { lat: 37.80949, lng: -122.4773, alt: 45 },
   { lat: 37.81236, lng: -122.47765, alt: 59 },
   { lat: 37.81524, lng: -122.47798, alt: 66 },
   { lat: 37.81812, lng: -122.47832, alt: 66 },
-  { lat: 37.82100, lng: -122.47866, alt: 58 },
-  { lat: 37.82387, lng: -122.47900, alt: 44 },
+  { lat: 37.821, lng: -122.47866, alt: 58 },
+  { lat: 37.82387, lng: -122.479, alt: 44 },
   { lat: 37.82675, lng: -122.47933, alt: 30 },
   { lat: 37.82963, lng: -122.47967, alt: 30 },
   { lat: 37.83233, lng: -122.48072, alt: 30 },
@@ -303,7 +308,7 @@ const GOLDEN_GATE_BRIDGE: Waypoint[] = [
 const TAM_RIDGE_HIKE: Waypoint[] = [
   { lat: 37.88664, lng: -122.62599, alt: 121 },
   { lat: 37.88887, lng: -122.62332, alt: 135 },
-  { lat: 37.89115, lng: -122.62160, alt: 164 },
+  { lat: 37.89115, lng: -122.6216, alt: 164 },
   { lat: 37.89353, lng: -122.61921, alt: 180 },
   { lat: 37.89466, lng: -122.61577, alt: 220 },
   { lat: 37.89631, lng: -122.61268, alt: 273 },
@@ -314,13 +319,13 @@ const TAM_RIDGE_HIKE: Waypoint[] = [
   { lat: 37.90662, lng: -122.60291, alt: 440 },
   { lat: 37.90971, lng: -122.60173, alt: 432 },
   { lat: 37.91213, lng: -122.60007, alt: 436 },
-  { lat: 37.91439, lng: -122.59780, alt: 410 },
+  { lat: 37.91439, lng: -122.5978, alt: 410 },
   { lat: 37.91285, lng: -122.59504, alt: 422 },
   { lat: 37.91274, lng: -122.59202, alt: 425 },
-  { lat: 37.91500, lng: -122.59032, alt: 412 },
+  { lat: 37.915, lng: -122.59032, alt: 412 },
   { lat: 37.91637, lng: -122.58903, alt: 406 },
   { lat: 37.91481, lng: -122.58595, alt: 382 },
-  { lat: 37.91740, lng: -122.58398, alt: 372 },
+  { lat: 37.9174, lng: -122.58398, alt: 372 },
   { lat: 37.91642, lng: -122.58236, alt: 352 },
   { lat: 37.91481, lng: -122.58011, alt: 342 },
 ];
@@ -330,15 +335,15 @@ const TAM_RIDGE_HIKE: Waypoint[] = [
 const CENTRAL_PARK_RESERVOIR: Waypoint[] = [
   { lat: 40.78216, lng: -73.96254, alt: 37 },
   { lat: 40.78221, lng: -73.96098, alt: 36 },
-  { lat: 40.78328, lng: -73.96010, alt: 36 },
-  { lat: 40.78440, lng: -73.95930, alt: 36 },
-  { lat: 40.78550, lng: -73.95848, alt: 36 },
+  { lat: 40.78328, lng: -73.9601, alt: 36 },
+  { lat: 40.7844, lng: -73.9593, alt: 36 },
+  { lat: 40.7855, lng: -73.95848, alt: 36 },
   { lat: 40.78664, lng: -73.95774, alt: 36 },
-  { lat: 40.78790, lng: -73.95764, alt: 36 },
+  { lat: 40.7879, lng: -73.95764, alt: 36 },
   { lat: 40.78898, lng: -73.95792, alt: 36 },
   { lat: 40.78868, lng: -73.95951, alt: 37 },
   { lat: 40.78897, lng: -73.96112, alt: 36 },
-  { lat: 40.78833, lng: -73.96250, alt: 37 },
+  { lat: 40.78833, lng: -73.9625, alt: 37 },
   { lat: 40.78828, lng: -73.96416, alt: 37 },
   { lat: 40.78805, lng: -73.96573, alt: 36 },
   { lat: 40.78691, lng: -73.96636, alt: 36 },
@@ -356,9 +361,9 @@ const PCH_PACIFICA: Waypoint[] = [
   { lat: 37.59452, lng: -122.50534, alt: 5 },
   { lat: 37.59329, lng: -122.50588, alt: 9 },
   { lat: 37.59212, lng: -122.50508, alt: 20 },
-  { lat: 37.59100, lng: -122.50413, alt: 29 },
+  { lat: 37.591, lng: -122.50413, alt: 29 },
   { lat: 37.58974, lng: -122.50416, alt: 40 },
-  { lat: 37.58870, lng: -122.50524, alt: 51 },
+  { lat: 37.5887, lng: -122.50524, alt: 51 },
   { lat: 37.58745, lng: -122.50496, alt: 60 },
   { lat: 37.58627, lng: -122.50422, alt: 71 },
   { lat: 37.58539, lng: -122.50534, alt: 82 },
@@ -366,9 +371,9 @@ const PCH_PACIFICA: Waypoint[] = [
   { lat: 37.58539, lng: -122.50534, alt: 82 },
   { lat: 37.58627, lng: -122.50422, alt: 71 },
   { lat: 37.58745, lng: -122.50496, alt: 60 },
-  { lat: 37.58870, lng: -122.50524, alt: 51 },
+  { lat: 37.5887, lng: -122.50524, alt: 51 },
   { lat: 37.58974, lng: -122.50416, alt: 40 },
-  { lat: 37.59100, lng: -122.50413, alt: 29 },
+  { lat: 37.591, lng: -122.50413, alt: 29 },
   { lat: 37.59212, lng: -122.50508, alt: 20 },
   { lat: 37.59329, lng: -122.50588, alt: 9 },
   { lat: 37.59452, lng: -122.50534, alt: 5 },

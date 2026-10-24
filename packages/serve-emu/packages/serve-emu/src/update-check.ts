@@ -77,7 +77,11 @@ export async function getUpdateNotice(options: UpdateCheckOptions): Promise<stri
   const cached = await readCacheFn(cachePath);
   let latestVersion = cached?.latestVersion;
 
-  if (!cached?.checkedAt || !latestVersion || now() - cached.checkedAt >= UPDATE_CHECK_INTERVAL_MS) {
+  if (
+    !cached?.checkedAt ||
+    !latestVersion ||
+    now() - cached.checkedAt >= UPDATE_CHECK_INTERVAL_MS
+  ) {
     const fetchedVersion = await fetchLatestFn(options.packageName);
     if (!fetchedVersion) return null;
     latestVersion = fetchedVersion;

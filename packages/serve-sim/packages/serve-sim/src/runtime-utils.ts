@@ -7,7 +7,9 @@ import { rememberLocalPort } from "./request-local-port";
 type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
 
 /** Fetch-style middleware signature, matching what `simMiddleware` returns. */
-export type WebMiddleware = ((request: Request) => Response | undefined | Promise<Response | undefined>) & {
+export type WebMiddleware = ((
+  request: Request,
+) => Response | undefined | Promise<Response | undefined>) & {
   /** WebSocket hook (exec channel); returns true when handled. */
   handleWebSocket?: (request: Request, websocket: UpgradeHandlerWebSocket) => boolean;
 };
@@ -21,22 +23,44 @@ const MAX_BUFFERED_REQUEST_BYTES = 8 * 1024 * 1024;
  */
 export class RequestBodyTooLargeError extends Error {}
 
-export async function readRequestBodyAsync(req: IncomingMessage): Promise<Buffer | undefined> {
+export async function readRequestBodyAsync(
+  req: IncomingMessage,
+  maxBytes = MAX_BUFFERED_REQUEST_BYTES,
+): Promise<Buffer | undefined> {
   if (req.method === "GET" || req.method === "HEAD") return undefined;
   const chunks: Buffer[] = [];
   let size = 0;
   let tooLarge = false;
-  for await (const chunk of req) {
+  const append = (chunk: Buffer | string) => {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     size += buffer.length;
-    if (size > MAX_BUFFERED_REQUEST_BYTES) {
+    if (size > maxBytes) {
       // Keep draining but stop buffering: destroying the request would take the socket with it,
       // and returning early would hand the middleware a partial body as if it were whole.
       tooLarge = true;
       chunks.length = 0;
-      continue;
+      return;
     }
     chunks.push(buffer);
+  };
+  if (typeof req[Symbol.asyncIterator] === "function") {
+    for await (const chunk of req) append(chunk);
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const onAborted = () => settle(new Error("Request aborted"));
+      const settle = (error?: Error) => {
+        req.off("data", append);
+        req.off("end", settle);
+        req.off("error", settle);
+        req.off("aborted", onAborted);
+        if (error) reject(error);
+        else resolve();
+      };
+      req.on("data", append);
+      req.once("end", settle);
+      req.once("error", settle);
+      req.once("aborted", onAborted);
+    });
   }
   if (tooLarge) throw new RequestBodyTooLargeError();
   return Buffer.concat(chunks);

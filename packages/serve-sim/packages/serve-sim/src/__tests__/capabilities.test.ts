@@ -120,7 +120,9 @@ describe("missingCapabilities", () => {
   test("reports a requested capability that did not apply, unless --disable also names it", () => {
     expect(missingCapabilities({ enable: ["a", "b"] }, ["a"])).toEqual(["b"]);
     // --disable wins, so a capability both enabled and disabled is not expected to apply.
-    expect(missingCapabilities({ enable: ["networkCapture"], disable: ["networkCapture"] }, [])).toEqual([]);
+    expect(
+      missingCapabilities({ enable: ["networkCapture"], disable: ["networkCapture"] }, []),
+    ).toEqual([]);
     expect(missingCapabilities({}, [])).toEqual([]);
   });
 });

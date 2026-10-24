@@ -20,6 +20,15 @@ struct CapturedScreenInfo {
     let width: Int
     let height: Int
     var display: SimDisplayMetadata?
+    var displayProfile = SimulatorDisplayProfile()
+    var isActivePanel: Bool? = nil
+
+    var recordingDeviceState: RecordingDeviceState {
+        RecordingDeviceState(
+            width: width, height: height,
+            orientation: display?.orientation, screen: display?.recordingScreen(in: displayProfile)
+        )
+    }
 }
 
 /// Headless simulator frame capture via direct IOSurface access.
@@ -42,14 +51,14 @@ actor FrameCapture {
     private var pollGrid: PollDeadlineGrid?
     /// Each frame carries the viewer canvas computed on this actor, so the engine
     /// never has to hop back here on the frame path.
-    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
+    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void)?
     private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
-    /// Counted by which path produced the frame, callback or idle deadline.
     private var pickCount: UInt64 = 0
     private var pickSumNs: UInt64 = 0
     private var pickMaxNs: UInt64 = 0
+    /// Counted by which path produced the frame, callback or idle deadline.
     private var screenFrameCount: UInt64 = 0
     private var idleFrameCount: UInt64 = 0
     private var captureLastEntryNs: UInt64 = 0
@@ -87,24 +96,31 @@ actor FrameCapture {
     private var screenMetadata: [ObjectIdentifier: SimDisplayMetadata] = [:]
     private var fixedScreenID: UInt32?
     private var deviceUDID: String?
+    private var displayProfile = SimulatorDisplayProfile()
+    private(set) var isFoldable = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
+    private var capturedPanelActivity: Bool?
     private var displayInfoTask: Task<Void, Never>?
     private var displayRefreshTask: Task<Void, Never>?
     private var displayRefreshRequested = false
     private var displayConfigurationReady = false
     private var captureGeneration: UInt64 = 0
+    private let readDisplayInfo: @Sendable (String) async throws -> [CoreDeviceDisplayState]?
     private var capturedDisplay: SimDisplayMetadata?
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
+    private var device: NSObject?
 
-    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+         readDisplayInfo: @escaping @Sendable (String) async throws -> [CoreDeviceDisplayState]? = { try await CoreDeviceDisplayInfo.read(udid: $0) }) {
         self.nowNanoseconds = nowNanoseconds
+        self.readDisplayInfo = readDisplayInfo
         surfaceWatch = FramebufferSurfaceWatch(startNanoseconds: nowNanoseconds())
     }
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
-               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
+               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -126,7 +142,9 @@ actor FrameCapture {
 
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
-        if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        displayProfile = SimulatorDisplayProfile.read(from: device)
+        isFoldable = displayProfile.isFoldable
+        if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }
@@ -135,6 +153,7 @@ actor FrameCapture {
             throw makeError(3, "Failed to get device IO")
         }
         self.ioClient = io
+        self.device = device
 
         try wireUpFramebuffer()
         // Main capture follows authoritative display election. Independent
@@ -143,7 +162,7 @@ actor FrameCapture {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if fixedScreenID == nil, integratedIDs.count == 2 {
             // Only foldable main feeds use CoreDevice display election.
-            let displays = try? await CoreDeviceDisplayInfo.read(udid: deviceUDID)
+            let displays = try? await readDisplayInfo(deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
             if let displays {
                 updateDisplayInfo(displays)
@@ -153,7 +172,7 @@ actor FrameCapture {
         displayConfigurationReady = true
         captureFrame(force: true)
         startSurfacePoller()
-        print("[capture] Frame callbacks registered + 60Hz IOSurface poll + 5fps idle floor")
+        print("[capture] Frame callbacks registered + \(fixedScreenID == nil ? 60 : 120)Hz IOSurface poll + 5fps idle floor")
     }
 
     /// Find all framebuffer display descriptors, register callbacks on each,
@@ -232,6 +251,13 @@ actor FrameCapture {
     private func surface(for descriptor: NSObject, live: Bool = false) -> IOSurface? {
         let key = ObjectIdentifier(descriptor)
         guard live else { return framebufferSurfaces[key] }
+        // @ref LLP 0001#capture-recovery — a simulator that is not booted is not read; its loss keeps counting.
+        // It has no surface, and every read of its descriptor leaves a ROCKit
+        // proxy behind that is never released.
+        guard isDeviceBooted() else {
+            updateCachedSurface(nil, for: key)
+            return nil
+        }
 
         let surfaceSelector = NSSelectorFromString("framebufferSurface")
         var reported: IOSurface?
@@ -313,7 +339,7 @@ actor FrameCapture {
         defer { if generation == captureGeneration { displayRefreshTask = nil } }
         while displayRefreshRequested, generation == captureGeneration, !Task.isCancelled {
             displayRefreshRequested = false
-            if let displays = try? await CoreDeviceDisplayInfo.read(udid: udid) {
+            if let displays = try? await readDisplayInfo(udid) {
                 guard generation == captureGeneration, !Task.isCancelled else { return }
                 updateDisplayInfo(displays)
             }
@@ -332,6 +358,11 @@ actor FrameCapture {
 
     private func updateDisplayInfo(_ displays: [CoreDeviceDisplayState]) {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
+        if fixedScreenID == nil, integratedIDs.count == 2, let deviceUDID {
+            let active = displays.filter { $0.isActive && integratedIDs.contains($0.screenID) }
+            ActiveDisplayObservation.shared.record(udid: deviceUDID, owner: ObjectIdentifier(self),
+                screenID: active.count == 1 ? active[0].screenID : nil, nowNs: nowNanoseconds())
+        }
         guard let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }),
               active != authoritativeDisplay else { return }
         authoritativeDisplay = active
@@ -419,7 +450,7 @@ actor FrameCapture {
     /// held the poll to 48Hz on bare metal even with nothing else running. `.strict` opts out
     /// of coalescing, which is what the frame pump needed on virtualized hosts.
     private func startSurfacePoller() {
-        let intervalNs = UInt64(SimulatorCapturePollPolicy.intervalNanoseconds)
+        let intervalNs = UInt64(SimulatorCapturePollPolicy.intervalNanoseconds(forFixedPanel: fixedScreenID != nil))
         let interval = DispatchTimeInterval.nanoseconds(Int(intervalNs))
         let first = DispatchTime.now() + interval
         pollGrid = PollDeadlineGrid(
@@ -457,8 +488,9 @@ actor FrameCapture {
         guard let lastLiveRevalidationNs else { return }
         // A cached miss cannot establish that the surface is still missing.
         let healthCheckNs = min(nowNs, lastLiveRevalidationNs)
-        guard case .rewire(let lossStarted) = surfaceWatch.tick(atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0)
-        else { return }
+        guard case .rewire(let lossStarted) = surfaceWatch.tick(
+            atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0, deviceBooted: isDeviceBooted()
+        ) else { return }
         if lossStarted {
             print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
         }
@@ -467,6 +499,12 @@ actor FrameCapture {
         } catch {
             // Retry on the next eligible tick.
         }
+    }
+
+    /// A capture installed without a device, as tests do, counts as booted.
+    private func isDeviceBooted() -> Bool {
+        guard let device else { return true }
+        return device.value(forKey: "stateString") as? String == "Booted"
     }
 
     // MARK: - Frame capture
@@ -508,7 +546,10 @@ actor FrameCapture {
             print("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))")
         }
         let display = screenMetadata[key]?.applying(authoritativeDisplay)
-        let displayChanged = capturedDisplay != display
+        let panelActivity: Bool? = if isFoldable, let fixedScreenID, let deviceUDID {
+            ActiveDisplayObservation.shared.isActive(udid: deviceUDID, screenID: fixedScreenID, nowNs: nowNanoseconds())
+        } else { nil }
+        let displayChanged = capturedDisplay != display || capturedPanelActivity != panelActivity
 
         // Seed-skip: when the simulator's framebuffer content hasn't changed,
         // don't spend cycles re-encoding the same pixels back-to-back from the
@@ -543,6 +584,7 @@ actor FrameCapture {
         lastSeeds[key] = seed
         lastCaptureTime = .now
         capturedDisplay = display
+        capturedPanelActivity = panelActivity
         if dimensionsChanged {
             capturedWidth = w
             capturedHeight = h
@@ -553,7 +595,8 @@ actor FrameCapture {
         }
         frameCount += 1
         if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
-        onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
+        onFrame?(copy, timestamp, webRTCEncodeCanvasSize(),
+                 CapturedScreenInfo(width: w, height: h, display: display, displayProfile: displayProfile, isActivePanel: panelActivity))
     }
 
     /// Snapshotting straight to the delivery size avoids moving the whole framebuffer through
@@ -579,10 +622,16 @@ actor FrameCapture {
     func installDescriptorsForTesting(
         _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
         io: NSObject? = nil,
+        device: NSObject? = nil,
+        deviceUDID: String? = nil,
+        profile: SimulatorDisplayProfile? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
-        self.onFrame = onFrame
+        self.device = device
+        self.deviceUDID = deviceUDID
+        if let profile { displayProfile = profile }
+        self.onFrame = { buffer, timestamp, canvas, _ in onFrame(buffer, timestamp, canvas) }
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
             entry.metadata.map { (ObjectIdentifier(entry.descriptor), $0) }
@@ -623,7 +672,32 @@ actor FrameCapture {
 
     func getScreenSize() -> CapturedScreenInfo? {
         guard capturedWidth > 0, capturedHeight > 0 else { return nil }
-        return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay)
+        return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay,
+                                  displayProfile: displayProfile)
+    }
+
+    /// A screenshot must not use the panel cached before the most recent fold.
+    func activeScreenID() async throws -> UInt32 {
+        let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
+        if let fixedScreenID { return fixedScreenID }
+        if displayProfile.integratedDisplayCount > 1 || integratedIDs.count > 1 {
+            guard let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
+            let generation = captureGeneration
+            let displays = try await readDisplayInfo(deviceUDID)
+            guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
+            guard let displays,
+                  let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
+                throw makeError(5, "Simulator did not report its active display")
+            }
+            updateDisplayInfo(displays)
+            return active.screenID
+        }
+        guard integratedIDs.count == 1,
+              let id = displayProfile.singleIntegratedScreenID, integratedIDs.contains(id),
+              capturedDisplay?.integratedScreenID == id else {
+            throw makeError(5, "Simulator did not report its active display")
+        }
+        return id
     }
 
     /// Surfaces that this capture can publish. A fixed-panel session must not
@@ -679,15 +753,21 @@ actor FrameCapture {
         displayRefreshTask?.cancel()
     }
 
-    func stop() {
+    func stop(preservingObservers: Bool = false) {
+        if fixedScreenID == nil, let deviceUDID {
+            ActiveDisplayObservation.shared.remove(udid: deviceUDID, owner: ObjectIdentifier(self))
+        }
+        capturedPanelActivity = nil
         captureGeneration &+= 1
         displayInfoTask?.cancel()
         displayInfoTask = nil
         displayRefreshTask?.cancel()
         displayRefreshTask = nil
         displayRefreshRequested = false
-        screenObservers.removeAll()
+        if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
+        isFoldable = false
+        displayProfile = SimulatorDisplayProfile()
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()
@@ -706,6 +786,7 @@ actor FrameCapture {
         invalidatePick()
         photocopier.reset()
         ioClient = nil
+        device = nil
     }
 
     private func unregisterCallbacks() {

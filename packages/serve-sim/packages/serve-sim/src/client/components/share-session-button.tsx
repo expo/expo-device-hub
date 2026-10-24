@@ -15,6 +15,7 @@ const COPIED_TOAST_MS = 4500;
 const MANUAL_COPY_TOAST_MS = 15_000;
 
 export function ShareSessionButton({ config }: { config: ShareConfig | null | undefined }) {
+  if (config?.disableShare) return null;
   const carriesToken = shareLinkCarriesToken(config);
 
   const share = async () => {

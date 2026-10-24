@@ -2,7 +2,7 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** Hub, HubClient, HubComponents, AppleUtils, AndroidUtils, ServeSim, ServeEmu, Example, Release, LLP
+**Systems:** Hub, HubClient, HubComponents, AppleUtils, AndroidUtils, ServeSim, ServeEmu, Example, CI, Release, LLP
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
@@ -20,16 +20,16 @@ Read this document first. It tells you which package owns what, how the packages
 
 ## Packages
 
-| Package | `Systems` name | What it owns | Published |
-|---|---|---|---|
-| `packages/expo-device-hub` | `Hub` | The DevTools plugin: the dashboard UI and the device server that mounts serve-sim and serve-emu. | `expo-device-hub` |
-| `packages/@expo/hub-client` | `HubClient` | Browser hooks and components (`DeviceScreen`, `useActiveDeviceClient`, …) that connect to serve-sim or serve-emu and paint the stream. | `@expo/hub-client` |
-| `packages/@expo/hub-components` | `HubComponents` | Dependency-free UI kit and design tokens ported from `@expo/styleguide`. | private |
-| `packages/@expo/hub-apple-utils` | `AppleUtils` | Lists, creates, and boots simulators through `simctl`. | private |
-| `packages/@expo/hub-android-utils` | `AndroidUtils` | Lists, creates, and boots emulators through `avdmanager`, `sdkmanager`, `emulator`. | private |
-| `packages/serve-sim/packages/serve-sim` | `ServeSim` | iOS simulator server: Swift capture addon, HTTP and WebRTC streams, input, preview UI, CLI. | `@expo/serve-sim` |
-| `packages/serve-emu/packages/serve-emu` | `ServeEmu` | Android server: scrcpy, H.264 over WebSocket, WebCodecs UI, REST control API, CLI. | private |
-| `example` | `Example` | A minimal Expo app with the plugin installed. | private |
+| Package                                 | `Systems` name  | What it owns                                                                                                                           | Published          |
+| --------------------------------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `packages/expo-device-hub`              | `Hub`           | The DevTools plugin: the dashboard UI and the device server that mounts serve-sim and serve-emu.                                       | `expo-device-hub`  |
+| `packages/@expo/hub-client`             | `HubClient`     | Browser hooks and components (`DeviceScreen`, `useActiveDeviceClient`, …) that connect to serve-sim or serve-emu and paint the stream. | `@expo/hub-client` |
+| `packages/@expo/hub-components`         | `HubComponents` | Dependency-free UI kit and design tokens ported from `@expo/styleguide`.                                                               | private            |
+| `packages/@expo/hub-apple-utils`        | `AppleUtils`    | Lists, creates, and boots simulators through `simctl`.                                                                                 | private            |
+| `packages/@expo/hub-android-utils`      | `AndroidUtils`  | Lists, creates, and boots emulators through `avdmanager`, `sdkmanager`, `emulator`.                                                    | private            |
+| `packages/serve-sim/packages/serve-sim` | `ServeSim`      | iOS simulator server: Swift capture addon, HTTP and WebRTC streams, input, preview UI, CLI.                                            | `@expo/serve-sim`  |
+| `packages/serve-emu/packages/serve-emu` | `ServeEmu`      | Android server: scrcpy, H.264 over WebSocket, WebCodecs UI, REST control API, CLI.                                                     | private            |
+| `example`                               | `Example`       | A minimal Expo app with the plugin installed.                                                                                          | private            |
 
 [observed: `README.md` "Repository structure", `RELEASING.md`, package directories]
 
@@ -81,7 +81,7 @@ Each item names the code that depends on it. Do not "clean up" this code without
 4. <a id="emu-input-path"></a>**serve-emu writes input directly to the scrcpy control socket.** Do not use `adb shell input`; it is too slow for agent workflows [observed: `packages/serve-emu/AGENTS.md` "Runtime Assumptions"].
 5. <a id="emu-auth"></a>**serve-emu binds to loopback by default.** A non-loopback bind requires a token unless `--unsafe-no-auth` is passed. The token gate runs before routing, so new routes are covered. Never put the token in `/health`, `/api`, error bodies, or reconnect URLs [observed: `packages/serve-emu/AGENTS.md` "Server and API Guidance"].
 6. <a id="emu-protocol"></a>**[LLP 0008](0008-serve-emu-protocol.spec.md) is the source of truth for scrcpy framing.** The scrcpy server version is pinned in `scripts/fetch-scrcpy.ts`. Change the pin, the reference, and the parser fixtures together [observed: `packages/serve-emu/AGENTS.md` "scrcpy Protocol Notes"].
-7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"].
+7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"]. CI builds the package and fixtures once with pinned Xcode 26, then shares that archive with isolated unit shards and two Simulator jobs. The `*.e2e.test.*` files are split over the two jobs, one for `*.slow.e2e.test.ts` and one for the rest, and each job runs its files one at a time without rebuilding [observed: `.eas/workflows/sim-test.yml`, `.eas/functions/restore-sim-test-build/function.yml`, `.eas/functions/test-sim-runtime/function.yml`].
 8. <a id="sim-proxy-upgrades"></a>**With `proxyHelpers`, WebSocket upgrades must reach the serve-sim middleware.** If they do not, the page still shows video over HTTP, but simulator input and DevTools stop working [observed: `packages/serve-sim/packages/serve-sim/README.md` "proxyHelpers"]. In the Hub, `simWebSocketHandler` does this.
 9. <a id="native-reload"></a>**The serve-sim N-API addon loads once per process.** After a native rebuild, restart any running serve-sim process before you test [observed: `packages/serve-sim/AGENTS.md` "Native build notes"].
 10. <a id="same-behavior"></a>**A new feature behaves the same on iOS and Android.** Design it for both servers and give it the same behavior on both, even where the wire protocols differ today. A feature that works one way on serve-sim and another way on serve-emu works against the protocol unification [confirmed] (Krystof Woldrich, 2026-10-02).
@@ -100,22 +100,23 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 
 ## Where to look next
 
-| Topic | Source |
-|---|---|
-| serve-sim video pipeline and recording | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md) |
-| serve-sim WebRTC signaling and control | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md) |
-| serve-sim HTTP routes, auth, CORS, WebSockets | [LLP 0003](0003-serve-sim-http-api.spec.md) |
-| serve-sim hinge controls and display selection | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md) |
-| serve-sim network capture and redaction | [LLP 0005](0005-serve-sim-network-capture.explainer.md) |
-| How Simulator.app forwards scroll (reverse-engineered) | [LLP 0006](0006-serve-sim-scroll-injection.research.md) |
-| serve-sim capability loader | [LLP 0007](0007-serve-sim-capability-loader.explainer.md) |
-| serve-sim CLI startup and app readiness | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
-| serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md) |
-| serve-emu hardware H.264 encoder spike | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md) |
-| Hub UI rules and tokens | `packages/expo-device-hub/AGENTS.md` |
-| serve-sim commands, tests, definition of done | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md` |
-| serve-emu layout and auth | `packages/serve-emu/AGENTS.md` |
-| Releases | `RELEASING.md` |
+| Topic                                                      | Source                                                          |
+| ---------------------------------------------------------- | --------------------------------------------------------------- |
+| serve-sim video pipeline and recording                     | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
+| serve-sim WebRTC signaling and control                     | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
+| serve-sim HTTP routes, auth, CORS, WebSockets              | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
+| serve-sim hinge controls and display selection             | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
+| serve-sim network capture and redaction                    | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
+| How Simulator.app forwards scroll (reverse-engineered)     | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |
+| serve-sim capability loader                                | [LLP 0007](0007-serve-sim-capability-loader.explainer.md)       |
+| serve-sim CLI startup and app readiness                    | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
+| serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
+| serve-emu hardware H.264 encoder spike                     | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
+| serve-sim clipboard: pasteboard API, Paste, Copy           | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
+| Hub UI rules and tokens                                    | `packages/expo-device-hub/AGENTS.md`                            |
+| serve-sim commands, tests, definition of done              | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
+| serve-emu layout and auth                                  | `packages/serve-emu/AGENTS.md`                                  |
+| Releases                                                   | `RELEASING.md`                                                  |
 
 LLPs 0001–0009 were moved here from the package `docs/` folders and from `Sources/ServeSimCapabilityLoader/DESIGN.md`. Agent instructions, READMEs, and process docs stay in their packages.
 

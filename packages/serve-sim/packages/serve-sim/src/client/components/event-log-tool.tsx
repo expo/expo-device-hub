@@ -11,18 +11,13 @@ type EventLogPayload = {
 
 const MAX_EVENT_LOG_ROWS = 500;
 
-export function EventLogTool({
-  udid,
-  eventsEndpoint,
-}: {
-  udid: string;
-  eventsEndpoint?: string;
-}) {
+export function EventLogTool({ udid, eventsEndpoint }: { udid: string; eventsEndpoint?: string }) {
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<EventLogEntry[]>([]);
   const [errored, setErrored] = useState(false);
   const path = useMemo(
-    () => eventsEndpoint ?? `${simEndpoint("api/event-log/events")}?device=${encodeURIComponent(udid)}`,
+    () =>
+      eventsEndpoint ?? `${simEndpoint("api/event-log/events")}?device=${encodeURIComponent(udid)}`,
     [eventsEndpoint, udid],
   );
 
@@ -38,7 +33,10 @@ export function EventLogTool({
           setEvents(payload.events.slice(-MAX_EVENT_LOG_ROWS));
         } else if (payload.event) {
           setEvents((prev) => {
-            const next = [...prev.filter((entry) => entry.id !== payload.event!.id), payload.event!];
+            const next = [
+              ...prev.filter((entry) => entry.id !== payload.event!.id),
+              payload.event!,
+            ];
             return next.slice(-MAX_EVENT_LOG_ROWS);
           });
         }
@@ -76,7 +74,10 @@ export function EventLogTool({
           {errored ? "Disconnected" : "No events yet"}
         </div>
       ) : (
-        <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto py-0.5 [scrollbar-width:thin]" role="list">
+        <div
+          className="flex max-h-[320px] flex-col gap-1 overflow-y-auto py-0.5 [scrollbar-width:thin]"
+          role="list"
+        >
           {visibleEvents.map((event) => (
             <EventLogRow key={event.id} event={event} />
           ))}
@@ -90,9 +91,10 @@ function EventLogRow({ event }: { event: EventLogEntry }) {
   const time = formatTime(event.timestamp);
   const detail = [event.source, event.kind, event.action].filter(Boolean).join(" / ");
   const message = event.msg ?? event.summary;
-  const statusClass = event.status === "error"
-    ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ffb3ad]"
-    : "border-white/8 bg-white/[0.04] text-white/50";
+  const statusClass =
+    event.status === "error"
+      ? "border-[#ff453a]/50 bg-[#ff453a]/10 text-[#ffb3ad]"
+      : "border-white/8 bg-white/[0.04] text-white/50";
 
   return (
     <div

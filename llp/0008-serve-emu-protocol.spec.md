@@ -5,7 +5,7 @@
 **Systems:** ServeEmu
 **Author:** Imported from expo/serve-emu in #78 (original authors are in that repo)
 **Date:** 2026-09-09
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated)
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated); 2026-10-17 (upgrade checklist revalidates the omitted server-default arguments)
 **Related:** LLP 0009
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
@@ -49,10 +49,10 @@ disabled because no video preamble is read in this control-only mode.
 Both supported layouts begin with a 64-byte UTF-8 device name, padded with NUL
 bytes. An optional dummy byte may precede it.
 
-| Protocol | Bytes after the device name |
-| --- | --- |
-| v3 | `u32 codec_id`, `u32 width`, `u32 height` (12 bytes) |
-| v4 | `u32 codec_id`, followed by a normal 12-byte session packet: `u32 session_flags`, `u32 width`, `u32 height` (16 bytes total) |
+| Protocol | Bytes after the device name                                                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| v3       | `u32 codec_id`, `u32 width`, `u32 height` (12 bytes)                                                                         |
+| v4       | `u32 codec_id`, followed by a normal 12-byte session packet: `u32 session_flags`, `u32 width`, `u32 height` (16 bytes total) |
 
 The v4 fields are not a new monolithic codec-metadata structure: the codec id is
 immediately followed by the same session record that may appear later in the
@@ -61,11 +61,11 @@ packet stream. Its `session_flags` field has bit 31 set; bit 0 is the
 
 Recognized FourCC values are:
 
-| Hex | Codec |
-| --- | --- |
+| Hex          | Codec          |
+| ------------ | -------------- |
 | `0x68323634` | H.264 (`h264`) |
 | `0x68323635` | H.265 (`h265`) |
-| `0x00617631` | AV1 (`av1`) |
+| `0x00617631` | AV1 (`av1`)    |
 
 The bundled browser UI currently supports H.264 only. A valid H.265 or AV1
 preamble is therefore reported as an unsupported-codec error rather than passed
@@ -80,12 +80,12 @@ payloads are protocol errors.
 
 ### scrcpy v3 frame header
 
-| Bits/bytes | Meaning |
-| --- | --- |
-| PTS bit 63 | codec configuration packet |
-| PTS bit 62 | key frame |
+| Bits/bytes    | Meaning                                |
+| ------------- | -------------------------------------- |
+| PTS bit 63    | codec configuration packet             |
+| PTS bit 62    | key frame                              |
 | PTS bits 0-61 | presentation timestamp in microseconds |
-| bytes 8-11 | `u32` payload size |
+| bytes 8-11    | `u32` payload size                     |
 
 The first eight bytes are a single `u64` containing the flags and PTS. Both flag
 bits are cleared before the PTS is exposed to callers.
@@ -94,21 +94,21 @@ bits are cleared before the PTS is exposed to callers.
 
 For a video frame, the 12 bytes are:
 
-| Bits/bytes | Meaning |
-| --- | --- |
-| PTS bit 63 | session packet (not a video frame) |
-| PTS bit 62 | codec configuration packet |
-| PTS bit 61 | key frame |
+| Bits/bytes    | Meaning                                |
+| ------------- | -------------------------------------- |
+| PTS bit 63    | session packet (not a video frame)     |
+| PTS bit 62    | codec configuration packet             |
+| PTS bit 61    | key frame                              |
 | PTS bits 0-60 | presentation timestamp in microseconds |
-| bytes 8-11 | `u32` payload size |
+| bytes 8-11    | `u32` payload size                     |
 
 When bit 63 is set, the same 12 bytes are a session packet instead:
 
-| Bytes | Meaning |
-| --- | --- |
-| 0-3 | `u32 flags`: bit 31 = session, bit 0 = client resized |
-| 4-7 | `u32 width` |
-| 8-11 | `u32 height` |
+| Bytes | Meaning                                               |
+| ----- | ----------------------------------------------------- |
+| 0-3   | `u32 flags`: bit 31 = session, bit 0 = client resized |
+| 4-7   | `u32 width`                                           |
+| 8-11  | `u32 height`                                          |
 
 A session packet has no following video payload. It updates the active stream
 dimensions; in particular, a packet with bit 0 set reports a client resize.
@@ -126,13 +126,13 @@ The current scrcpy 4.0 server accepts the following messages written by
 `src/input.ts`. Message type and action fields are unsigned bytes; actions are
 `0` down, `1` up, and `2` move.
 
-| Operation | Type | Wire layout | Size |
-| --- | --- | --- | --- |
-| Inject keycode | `0` | `u8 type`, `u8 action`, `i32 keycode`, `i32 repeat`, `i32 meta_state` | 14 bytes |
-| Inject text | `1` | `u8 type`, `u32 utf8_length`, UTF-8 bytes | 5 + N bytes |
-| Inject touch | `2` | `u8 type`, `u8 action`, `u64 pointer_id`, `i32 x`, `i32 y`, `u16 screen_width`, `u16 screen_height`, `u16 pressure`, `u32 action_button`, `u32 buttons` | 32 bytes |
-| Back or screen-on | `4` | `u8 type`, `u8 action` | 2 bytes |
-| Reset video | `17` | `u8 type` | 1 byte |
+| Operation         | Type | Wire layout                                                                                                                                             | Size        |
+| ----------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Inject keycode    | `0`  | `u8 type`, `u8 action`, `i32 keycode`, `i32 repeat`, `i32 meta_state`                                                                                   | 14 bytes    |
+| Inject text       | `1`  | `u8 type`, `u32 utf8_length`, UTF-8 bytes                                                                                                               | 5 + N bytes |
+| Inject touch      | `2`  | `u8 type`, `u8 action`, `u64 pointer_id`, `i32 x`, `i32 y`, `u16 screen_width`, `u16 screen_height`, `u16 pressure`, `u32 action_button`, `u32 buttons` | 32 bytes    |
+| Back or screen-on | `4`  | `u8 type`, `u8 action`                                                                                                                                  | 2 bytes     |
+| Reset video       | `17` | `u8 type`                                                                                                                                               | 1 byte      |
 
 Text is capped at 300 UTF-8 bytes and truncated only at a Unicode character
 boundary. HTTP/WebSocket gesture coordinates are normalized from 0 through 1,
@@ -150,20 +150,20 @@ WebSocket message boundary supplies it.
 
 ### v1 (16 bytes)
 
-| Bytes | Meaning |
-| --- | --- |
-| 0-3 | magic `SEMU` (`0x53454d55`) |
-| 4 | version `1` |
-| 5 | flags; bit 0 = key frame |
-| 6-7 | reserved, zero |
-| 8-15 | `u64` scrcpy PTS in microseconds |
+| Bytes | Meaning                          |
+| ----- | -------------------------------- |
+| 0-3   | magic `SEMU` (`0x53454d55`)      |
+| 4     | version `1`                      |
+| 5     | flags; bit 0 = key frame         |
+| 6-7   | reserved, zero                   |
+| 8-15  | `u64` scrcpy PTS in microseconds |
 
 ### v2 (24 bytes)
 
 v2 keeps all v1 fields and appends:
 
-| Bytes | Meaning |
-| --- | --- |
+| Bytes | Meaning                                           |
+| ----- | ------------------------------------------------- |
 | 16-23 | `u64` server send time as Unix-epoch microseconds |
 
 The server writer always emits v2. The shared browser/server parser accepts v1,
@@ -199,6 +199,8 @@ notes do not call one out.
 1. Change `SCRCPY_VERSION` in `scripts/fetch-scrcpy.ts` and fetch the new server.
 2. Compare upstream `DesktopConnection`, `Streamer`, `ControlMessage`,
    `ControlMessageReader`, and server-option parsing with the pinned version.
+   Revalidate `SCRCPY_SERVER_DEFAULT_ARGS` in `src/scrcpy.ts` against the new
+   `Options.java` defaults.
 3. Revalidate socket order and dummy-byte behavior; the device-name and stream
    preambles; v3/v4 session, configuration, and key-frame flags; PTS masking;
    payload bounds; and every encoder in `src/input.ts`.

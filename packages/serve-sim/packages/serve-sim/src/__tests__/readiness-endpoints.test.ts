@@ -29,4 +29,38 @@ describe("readiness endpoints", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({ status: "starting" });
   });
+
+  test("logs readiness failure and recovery without repeating polling diagnostics", async () => {
+    const child = Bun.spawn(
+      [process.execPath, "test", `${import.meta.dir}/fixtures/readiness-logging.child.ts`],
+      {
+        env: process.env,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code, stdout + stderr).toBe(0);
+    const entries = stderr
+      .split("\n")
+      .filter((line) => line.startsWith("[readyz] "))
+      .map((line) => JSON.parse(line.slice("[readyz] ".length)));
+    expect(entries).toEqual([
+      { status: "unavailable", reason: "session-unavailable", device: expect.any(String) },
+      {
+        status: "unavailable",
+        reason: "capture-start-failed",
+        device: expect.any(String),
+        error: "capture initialization failed",
+      },
+      { status: "ready", device: expect.any(String) },
+      { status: "unavailable", reason: "session-unavailable" },
+      { status: "ready", device: expect.any(String) },
+      { status: "unavailable", reason: "session-unavailable" },
+    ]);
+  });
 });

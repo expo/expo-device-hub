@@ -17,7 +17,11 @@ mock.module("react", () => ({
   useEffect: (run: () => void | (() => void), deps: unknown[]) => {
     const index = effectIndex++;
     const previous = effects[index];
-    if (previous?.deps?.length === deps.length && deps.every((value, i) => Object.is(value, previous.deps![i]))) return;
+    if (
+      previous?.deps?.length === deps.length &&
+      deps.every((value, i) => Object.is(value, previous.deps![i]))
+    )
+      return;
     previous?.cleanup?.();
     effects[index] = { deps, cleanup: run() || undefined };
   },
@@ -28,14 +32,23 @@ mock.module("../../client/hooks/use-webrtc-stream", () => ({ useWebRtcStream: ()
 const { DuoPanelStreams } = await import("../../client/components/duo-panel-streams");
 type Props = ComponentProps<typeof DuoPanelStreams>;
 type View = ReactElement<ComponentProps<typeof SimulatorView>>;
-type Panel = ReactElement<Props & { screenId: 1 | 3 }> & { type: (props: Props & { screenId: 1 | 3 }) => ReactElement<{ children: View }> };
+type Panel = ReactElement<Props & { screenId: 1 | 3 }> & {
+  type: (props: Props & { screenId: 1 | 3 }) => ReactElement<{ children: View }>;
+};
 const timers = new Map<number, () => void>();
 let timerId = 0;
 let failures = 0;
 const props: Props = {
-  streamUrl: "http://localhost/helper/device/stream.avcc", mode: "avcc", activeScreenId: 1, codec: "h264",
-  onStreamingChange: () => {}, onAvccError: () => { failures++; },
-  onWebRtcFailure: () => {}, onWebRtcPeerChange: () => {},
+  streamUrl: "http://localhost/helper/device/stream.avcc",
+  mode: "avcc",
+  activeScreenId: 1,
+  codec: "h264",
+  onStreamingChange: () => {},
+  onAvccError: () => {
+    failures++;
+  },
+  onWebRtcFailure: () => {},
+  onWebRtcPeerChange: () => {},
 };
 const children = (DuoPanelStreams(props) as ReactElement<{ children: Panel[] }>).props.children;
 effects.length = 0;
@@ -44,17 +57,30 @@ function render(overrides: Partial<Props> = {}) {
   refIndex = effectIndex = 0;
   const originalSet = globalThis.setTimeout;
   const originalClear = globalThis.clearTimeout;
-  globalThis.setTimeout = ((callback: () => void) => { timers.set(++timerId, callback); return timerId; }) as unknown as typeof setTimeout;
-  globalThis.clearTimeout = ((id: number) => { timers.delete(id); }) as unknown as typeof clearTimeout;
-  try { return panel.type({ ...panel.props, ...overrides }).props.children.props; }
-  finally { globalThis.setTimeout = originalSet; globalThis.clearTimeout = originalClear; }
+  globalThis.setTimeout = ((callback: () => void) => {
+    timers.set(++timerId, callback);
+    return timerId;
+  }) as unknown as typeof setTimeout;
+  globalThis.clearTimeout = ((id: number) => {
+    timers.delete(id);
+  }) as unknown as typeof clearTimeout;
+  try {
+    return panel.type({ ...panel.props, ...overrides }).props.children.props;
+  } finally {
+    globalThis.setTimeout = originalSet;
+    globalThis.clearTimeout = originalClear;
+  }
 }
 function timeout() {
   const pending = [...timers.values()];
   timers.clear();
   for (const callback of pending) callback();
 }
-afterEach(() => { effects.length = refs.length = 0; timers.clear(); failures = 0; });
+afterEach(() => {
+  effects.length = refs.length = 0;
+  timers.clear();
+  failures = 0;
+});
 
 test("a silent inactive panel cannot downgrade the session", () => {
   render({ activeScreenId: 3 });

@@ -1,10 +1,7 @@
-import {
-  messageToString,
-  requestHost,
-  type SseRequestHandler,
-} from "./control-utils";
+import { messageToString, requestHost, type SseRequestHandler } from "./control-utils";
 import { isWebOrigin, originMatches } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "./types";
+import type { StreamSettings } from "../stream-settings";
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
@@ -77,6 +74,9 @@ interface ExecChannelOptions {
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
+  deviceName?: (udid: string) => string | undefined;
+  /** Trusted initial settings from the owning middleware, never from action parameters. */
+  streamSettings?: StreamSettings;
 }
 
 function wireExecSocket(
@@ -102,7 +102,8 @@ function wireExecSocket(
   };
 
   const offered = request.headers.get("sec-websocket-protocol") ?? undefined;
-  let authed = acceptedTokenSubprotocol({ "sec-websocket-protocol": offered }, opts.execToken) !== null;
+  let authed =
+    acceptedTokenSubprotocol({ "sec-websocket-protocol": offered }, opts.execToken) !== null;
   if (!authed && offered?.includes(TOKEN_SUBPROTOCOL_PREFIX)) {
     ws.close();
     return;
@@ -186,7 +187,9 @@ function wireExecSocket(
       } finally {
         active = false;
         if (reader) {
-          try { reader.releaseLock(); } catch {}
+          try {
+            reader.releaseLock();
+          } catch {}
         }
         if (subscriptions.get(sub) === subscription) {
           subscriptions.delete(sub);
@@ -253,7 +256,12 @@ function wireExecSocket(
     }
     if (!reserveAction(id)) return;
     const params = msg.params as Record<string, unknown> | undefined;
-    runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim")
+    runHostActionAsync(
+      msg,
+      opts.serveSimBinPath ?? "serve-sim",
+      opts.streamSettings,
+      opts.deviceName,
+    )
       .then((result) => {
         try {
           opts.onActionResult?.(action, params, result);

@@ -117,11 +117,7 @@ export function wrapLongitude(longitude: number): number {
 }
 
 /** Returns the wrapped world copy nearest a reference x coordinate. */
-export function nearestWrappedWorldX(
-  x: number,
-  referenceX: number,
-  worldSize: number,
-): number {
+export function nearestWrappedWorldX(x: number, referenceX: number, worldSize: number): number {
   if (!Number.isFinite(x) || !Number.isFinite(referenceX)) {
     throw new Error("world x coordinates must be finite");
   }
@@ -134,11 +130,7 @@ export function nearestWrappedWorldX(
 export function projectLocation(location: LocationPoint, zoom: number): WorldPoint {
   if (!Number.isFinite(location.latitude)) throw new Error("latitude must be finite");
   const longitude = wrapLongitude(location.longitude);
-  const latitude = clamp(
-    location.latitude,
-    -WEB_MERCATOR_MAX_LATITUDE,
-    WEB_MERCATOR_MAX_LATITUDE,
-  );
+  const latitude = clamp(location.latitude, -WEB_MERCATOR_MAX_LATITUDE, WEB_MERCATOR_MAX_LATITUDE);
   const sinLatitude = Math.sin((latitude * Math.PI) / 180);
   const size = worldSizeAtZoom(zoom);
   return {
@@ -251,7 +243,10 @@ class SegmentHeap {
       if (left < segments.length && segmentHasHigherPriority(segments[left]!, segments[highest]!)) {
         highest = left;
       }
-      if (right < segments.length && segmentHasHigherPriority(segments[right]!, segments[highest]!)) {
+      if (
+        right < segments.length &&
+        segmentHasHigherPriority(segments[right]!, segments[highest]!)
+      ) {
         highest = right;
       }
       if (highest === index) break;
@@ -281,9 +276,8 @@ function projectRoutePoints(
 
     // Use the nearest copy of the wrapped world to the previous waypoint. A route
     // from +179° to -179° therefore crosses two degrees, not the whole map.
-    const x = previousX === undefined
-      ? projected.x
-      : nearestWrappedWorldX(projected.x, previousX, size);
+    const x =
+      previousX === undefined ? projected.x : nearestWrappedWorldX(projected.x, previousX, size);
     points.push({ x, y: projected.y, sourceIndex });
     previousX = x;
     minimumX = Math.min(minimumX, x);

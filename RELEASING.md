@@ -47,6 +47,22 @@ Both paths build all packages after the final version changes so bundled version
 vendored artifacts match the versions being published. Build or test failures stop the workflow
 before it commits the version bump or publishes packages.
 
+The release job runs on Ubuntu, but `@expo/serve-sim` builds native macOS binaries. So the
+workflow first dispatches `.eas/workflows/build-release-cache.yml` on EAS for the same commit
+and waits for it. That macOS job applies the same version steps, runs `bun run build --force`, and
+writes the Turborepo remote cache (`turbo.exp.host`, team `expo-device-hub`) with the `TURBO_TOKEN` from the
+production EAS environment. The release job then reads the cache with the public `readonly`
+token, so its build is a cache hit. Both jobs use one canary id (`CANARY_ID`), because package
+versions are Turborepo inputs. If the serve-sim build is not a cache hit, the release fails at
+**Build packages**. The dispatch uses the `EXPO_CI_ROBOT_ACCESS_TOKEN` repository
+secret.
+
+The native release build is pinned to `macos-tahoe-26.5-xcode-26.6`. The EAS
+builder uses `--force` to rebuild and write fresh cache entries on that image.
+The Ubuntu reader uses the cache without `--force`.
+The PR workflow builds serve-sim once on that image and runs the Simulator tests on
+the same build.
+
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
 latest commit on `main`.
 

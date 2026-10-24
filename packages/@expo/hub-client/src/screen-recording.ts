@@ -1,13 +1,13 @@
-import { type DeviceScreenRecordingStatus } from './types';
+import { type DeviceScreenRecordingStatus } from "./types";
 
 export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordingStatus | null {
-  if (!value || typeof value !== 'object' || !('status' in value)) return null;
+  if (!value || typeof value !== "object" || !("status" in value)) return null;
   switch (value.status) {
-    case 'waiting':
-    case 'recording':
-    case 'finalizing':
-    case 'complete':
-    case 'failed':
+    case "waiting":
+    case "recording":
+    case "finalizing":
+    case "complete":
+    case "failed":
       return value.status;
     default:
       return null;
@@ -15,5 +15,10 @@ export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordin
 }
 
 export function areRecordingControlsLocked(status: DeviceScreenRecordingStatus | null): boolean {
-  return status === 'unknown' || status === 'waiting' || status === 'recording' || status === 'finalizing';
+  return (
+    status === "unknown" ||
+    status === "waiting" ||
+    status === "recording" ||
+    status === "finalizing"
+  );
 }

@@ -6,10 +6,7 @@ import {
   simulatorMaxWidth,
 } from "../simulator";
 import { useState, type CSSProperties, type ReactNode } from "react";
-import type {
-  DeviceKitChromeDescriptor,
-  DevicePlaceholderAssetDescriptor,
-} from "../utils/grid";
+import type { DeviceKitChromeDescriptor, DevicePlaceholderAssetDescriptor } from "../utils/grid";
 import { runtimeLabel } from "../utils/grid";
 import { simEndpoint } from "../utils/sim-endpoint";
 import { DeviceKitChrome } from "./device-chrome-frame";
@@ -39,7 +36,7 @@ export function DevicePlaceholder({
   const type = getDeviceType(name);
   const f = DEVICE_FRAMES[type];
   const activeAsset = placeholderAsset ?? null;
-  const activeChrome = activeAsset ? null : chrome ?? null;
+  const activeChrome = activeAsset ? null : (chrome ?? null);
   const screenSize = activeChrome
     ? { width: activeChrome.screen.width, height: activeChrome.screen.height }
     : fallbackScreenSize(type, name);
@@ -47,20 +44,20 @@ export function DevicePlaceholder({
   const frameMaxWidth = activeAsset
     ? placeholderAssetMaxWidth(type, activeAsset.name)
     : activeChrome
-    ? (screenMax * activeChrome.frame.width) / activeChrome.screen.width
-    : (screenMax * f.width) / (f.width - 2 * f.bezelX);
+      ? (screenMax * activeChrome.frame.width) / activeChrome.screen.width
+      : (screenMax * f.width) / (f.width - 2 * f.bezelX);
   const aspectSize = activeAsset
     ? { width: activeAsset.width, height: activeAsset.height }
     : activeChrome
-    ? { width: activeChrome.frame.width, height: activeChrome.frame.height }
-    : { width: f.width, height: f.height };
+      ? { width: activeChrome.frame.width, height: activeChrome.frame.height }
+      : { width: f.width, height: f.height };
   const aspectRatio = `${aspectSize.width} / ${aspectSize.height}`;
   const viewportWidthLimit = (
-    (aspectSize.width / aspectSize.height) * placeholderAssetMaxViewportHeight(type)
+    (aspectSize.width / aspectSize.height) *
+    placeholderAssetMaxViewportHeight(type)
   ).toFixed(2);
-  const fallbackChrome = type === "vision"
-    ? <VisionPlaceholderFallback />
-    : <SvgPlaceholderChrome type={type} />;
+  const fallbackChrome =
+    type === "vision" ? <VisionPlaceholderFallback /> : <SvgPlaceholderChrome type={type} />;
 
   return (
     <div className="flex flex-col items-center gap-5 min-w-0 w-full">
@@ -88,7 +85,9 @@ export function DevicePlaceholder({
         <div className="text-[13px] text-white/45">{runtimeLabel(runtime)} Simulator</div>
       </div>
 
-      {error && <div className="text-danger text-[12px] font-mono max-w-90 text-center">{error}</div>}
+      {error && (
+        <div className="text-danger text-[12px] font-mono max-w-90 text-center">{error}</div>
+      )}
 
       <button
         type="button"
@@ -168,13 +167,7 @@ function SvgPlaceholderChrome({ type }: { type: ReturnType<typeof getDeviceType>
   );
 }
 
-function AssetPlaceholderChrome({
-  name,
-  fallback,
-}: {
-  name: string;
-  fallback: ReactNode;
-}) {
+function AssetPlaceholderChrome({ name, fallback }: { name: string; fallback: ReactNode }) {
   const [assetState, setAssetState] = useState<"loading" | "loaded" | "error">("loading");
 
   return (

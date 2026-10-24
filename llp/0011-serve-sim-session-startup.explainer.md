@@ -126,6 +126,23 @@ foreground streaming [observed: `src/index.ts` CLI action]:
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
 
+Plain foreground preview startup without capture, app startup, or capability
+overrides, with the loader and clipboard reader built, prepares defaults while arming
+the session and publishes both in one transaction. A missing reader keeps the old
+order so an on-demand build cannot delay initial arming. Combined initialization
+retains idle-session ownership even when no default prepares.
+A failed publication with successful rollback falls back to separate arming and
+default initialization. A stop signal prevents fallback, and lock timeouts and
+uncertain rollback stop startup. The late live insert
+read and ordered environment writes are unchanged [observed: `src/index.ts`
+`combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
+
+The private preview `serve` function receives the resolved targets from this
+foreground caller, after its successful boot wait and stale-loader cleanup. It
+does not repeat those operations. Helper, no-preview, and detached processes
+still initialize through their own CLI invocation; readiness is never cached
+across processes or reboots [observed: `src/index.ts` CLI action and `serve`].
+
 The loader must be inserted before an app starts: dyld reads the insert at `exec`
 and cannot add it to an already-running process. See [LLP 0007, The
 problem](0007-serve-sim-capability-loader.explainer.md#the-problem). Capture is
@@ -161,3 +178,32 @@ devices it armed; another live session's insert remains owned by that session.
 Stopping the host does not uninstall the app or shut down the simulator
 [observed: `src/index.ts` startup
 signal handlers and `disarmDevicesArmedHere`; `src/launch-manager.ts` `releaseSession`].
+
+## Startup diagnostics
+
+`[startup]` lines on stderr identify the CLI version and report phase start,
+completion/failure, device, and monotonic duration in milliseconds. They cover
+device resolution, boot request and bootstatus, stale loader cleanup, loader/defaults
+publication, app operations, preview imports/construction, HTTP binding, state
+publication, and native device options/capture/screen configuration. A started
+phase without a completion line identifies work still pending. Host-action
+`app.install` and `app.launch` timings also cover apps supplied after the listener
+starts. App timings include the validated target UDID and a device name when
+available from existing device snapshots; logging does not add device queries.
+Nonzero install/launch results, including timeouts, log failure without changing
+the result. A failed stale-loader insert read logs the original error (including
+its process-error cause), reports a failed phase, and still lets startup continue.
+For best-effort loader arming, completion means the function returned,
+not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
+[observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
+`src/host-actions.ts`].
+
+`/readyz` keeps its response contract and logs readiness transitions on stderr.
+An unavailable response identifies no usable booted session (`session-unavailable`,
+including stopped devices) or capture startup failure; the latter includes the
+exception message. Repeated polls with the same outcome are suppressed per request selector,
+including unqualified polls across session disappearance and recovery
+with a bounded cache. A failed capture start remains cached until the session is
+replaced; a later ready response from the replacement logs recovery. The
+startup logs leave `--quiet` stdout JSON unchanged
+[observed: `src/middleware.ts`, `src/startup-timing.ts`].

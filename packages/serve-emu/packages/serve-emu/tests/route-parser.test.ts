@@ -10,7 +10,10 @@ import {
   type RouteParserWorkerResponse,
 } from "../src/ui/lib/route-parser-worker.ts";
 
-async function expectRouteError(promise: Promise<unknown>, code: RouteParseErrorCode): Promise<RouteParseError> {
+async function expectRouteError(
+  promise: Promise<unknown>,
+  code: RouteParseErrorCode,
+): Promise<RouteParseError> {
   try {
     await promise;
   } catch (error) {
@@ -83,7 +86,10 @@ describe("parseRouteText", () => {
     const geoJson = await parseRouteText(
       `\ufeff${JSON.stringify({
         type: "LineString",
-        coordinates: [[3, 4], [5, 6]],
+        coordinates: [
+          [3, 4],
+          [5, 6],
+        ],
       })}`,
       "route.geojson",
     );
@@ -105,8 +111,20 @@ describe("parseRouteText", () => {
             geometry: {
               type: "GeometryCollection",
               geometries: [
-                { type: "LineString", coordinates: [[-0.1, 51.5], [-0.2, 51.6, 8]] },
-                { type: "MultiPoint", coordinates: [[-0.3, 51.7], [-0.4, 51.8]] },
+                {
+                  type: "LineString",
+                  coordinates: [
+                    [-0.1, 51.5],
+                    [-0.2, 51.6, 8],
+                  ],
+                },
+                {
+                  type: "MultiPoint",
+                  coordinates: [
+                    [-0.3, 51.7],
+                    [-0.4, 51.8],
+                  ],
+                },
               ],
             },
           },
@@ -173,11 +191,9 @@ describe("parseRouteText", () => {
 
   test("enforces XML depth and complexity during token traversal", async () => {
     await expectRouteError(
-      parseRouteText(
-        `<gpx><a><b><c><wpt lat="1" lon="2" /></c></b></a></gpx>`,
-        "route.gpx",
-        { limits: { maxDepth: 3 } },
-      ),
+      parseRouteText(`<gpx><a><b><c><wpt lat="1" lon="2" /></c></b></a></gpx>`, "route.gpx", {
+        limits: { maxDepth: 3 },
+      }),
       "depth-limit",
     );
     await expectRouteError(
@@ -195,7 +211,9 @@ describe("parseRouteText", () => {
     let yields = 0;
     await expectRouteError(
       parseRouteText(
-        JSON.stringify(Array.from({ length: 100 }, (_, index) => ({ latitude: 1, longitude: index / 10 }))),
+        JSON.stringify(
+          Array.from({ length: 100 }, (_, index) => ({ latitude: 1, longitude: index / 10 })),
+        ),
         "route.json",
         {
           signal: abortController.signal,
@@ -228,7 +246,10 @@ describe("parseRouteText", () => {
   test("rejects invalid points rather than silently dropping them", async () => {
     await expectRouteError(
       parseRouteText(
-        JSON.stringify([{ latitude: 1, longitude: 2 }, { latitude: 100, longitude: 3 }]),
+        JSON.stringify([
+          { latitude: 1, longitude: 2 },
+          { latitude: 100, longitude: 3 },
+        ]),
         "route.json",
       ),
       "invalid-route",
@@ -243,17 +264,11 @@ describe("parseRouteText", () => {
       ]),
       "route.json",
     );
-    expect(accepted.points.map((point) => point.altitude)).toEqual([
-      -1_000,
-      100_000,
-    ]);
+    expect(accepted.points.map((point) => point.altitude)).toEqual([-1_000, 100_000]);
 
     for (const altitude of [-1_001, 100_001]) {
       await expectRouteError(
-        parseRouteText(
-          JSON.stringify([{ latitude: 1, longitude: 2, altitude }]),
-          "route.json",
-        ),
+        parseRouteText(JSON.stringify([{ latitude: 1, longitude: 2, altitude }]), "route.json"),
         "invalid-route",
       );
     }
@@ -287,10 +302,7 @@ describe("RouteParserWorkerController", () => {
 
   test("allows a file exactly at the configured byte limit", async () => {
     const responses: RouteParserWorkerResponse[] = [];
-    const text = JSON.stringify([{ latitude: 1, longitude: 2 }]).padEnd(
-      100,
-      " ",
-    );
+    const text = JSON.stringify([{ latitude: 1, longitude: 2 }]).padEnd(100, " ");
     let reads = 0;
     const controller = new RouteParserWorkerController((response) => {
       responses.push(response);
@@ -312,10 +324,7 @@ describe("RouteParserWorkerController", () => {
 
     expect(reads).toBe(1);
     expect(
-      responses.some(
-        (response) =>
-          response.type === "result" && response.requestId === "boundary",
-      ),
+      responses.some((response) => response.type === "result" && response.requestId === "boundary"),
     ).toBe(true);
   });
 
@@ -331,11 +340,19 @@ describe("RouteParserWorkerController", () => {
     await controller.handle({
       type: "parse",
       requestId: "route-1",
-      file: { name: "route.json", size: new TextEncoder().encode(text).byteLength, text: async () => text },
+      file: {
+        name: "route.json",
+        size: new TextEncoder().encode(text).byteLength,
+        text: async () => text,
+      },
     });
 
-    expect(responses.some((response) => response.type === "progress" && response.stage === "reading")).toBe(true);
-    expect(responses.some((response) => response.type === "progress" && response.stage === "parsing")).toBe(true);
+    expect(
+      responses.some((response) => response.type === "progress" && response.stage === "reading"),
+    ).toBe(true);
+    expect(
+      responses.some((response) => response.type === "progress" && response.stage === "parsing"),
+    ).toBe(true);
     const result = responses.find((response) => response.type === "result");
     expect(result).toMatchObject({ type: "result", requestId: "route-1" });
     expect(result?.type === "result" ? result.result.points : []).toHaveLength(3);
@@ -368,8 +385,12 @@ describe("RouteParserWorkerController", () => {
     await first;
 
     expect(responses).toContainEqual({ type: "cancelled", requestId: 1, reason: "superseded" });
-    expect(responses.some((response) => response.type === "result" && response.requestId === 1)).toBe(false);
-    expect(responses.some((response) => response.type === "result" && response.requestId === 2)).toBe(true);
+    expect(
+      responses.some((response) => response.type === "result" && response.requestId === 1),
+    ).toBe(false);
+    expect(
+      responses.some((response) => response.type === "result" && response.requestId === 2),
+    ).toBe(true);
   });
 
   test("explicit cancellation posts once and suppresses completion", async () => {

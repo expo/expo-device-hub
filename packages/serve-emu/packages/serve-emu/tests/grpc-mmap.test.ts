@@ -107,9 +107,7 @@ describe("gRPC screenshot mmap region", () => {
     expect(() => rgb888MmapRegionBytes(0, 640)).toThrow(
       "mmap width must be a positive safe integer",
     );
-    expect(() => rgb888MmapRegionBytes(16_384, 16_384)).toThrow(
-      "must not exceed",
-    );
+    expect(() => rgb888MmapRegionBytes(16_384, 16_384)).toThrow("must not exceed");
     expect(() =>
       readStableMmapFrame({
         byteLength: 8,

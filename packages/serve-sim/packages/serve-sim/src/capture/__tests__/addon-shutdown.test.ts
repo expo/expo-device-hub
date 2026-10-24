@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
@@ -37,7 +39,11 @@ describe("forwardAddonDiagnostics", () => {
         "print(f'elapsed={time.monotonic() - started:.2f}')",
       ].join("\n");
       const child = spawn("python3", ["-c", script], {
-        env: { ...process.env, SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${port}`, SERVE_SIM_CAPTURE_CONTROL_TOKEN: "t" },
+        env: {
+          ...process.env,
+          SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${port}`,
+          SERVE_SIM_CAPTURE_CONTROL_TOKEN: "t",
+        },
       });
       let stdout = "";
       let stderr = "";
@@ -48,7 +54,9 @@ describe("forwardAddonDiagnostics", () => {
       const elapsed = Number(/elapsed=([\d.]+)/.exec(stdout)?.[1]);
       expect(elapsed).toBeLessThan(3);
       // Every record was lost, whether its send timed out, was still running, or never started.
-      expect(stderr).toContain(`[servesim-capture] stopped with ${records} capture record(s) not delivered`);
+      expect(stderr).toContain(
+        `[servesim-capture] stopped with ${records} capture record(s) not delivered`,
+      );
     } finally {
       stalled.closeAllConnections();
       await new Promise<void>((done) => stalled.close(() => done()));
@@ -64,7 +72,11 @@ describe("forwardAddonDiagnostics", () => {
     await shutDownWithStalledControl(1);
   }, 20_000);
 
-  async function runWithControl(reply: (res: import("node:http").ServerResponse) => void, records: number, ready = false) {
+  async function runWithControl(
+    reply: (res: import("node:http").ServerResponse) => void,
+    records: number,
+    ready = false,
+  ) {
     const server: Server = createServer((_req, res) => reply(res));
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
     const port = (server.address() as { port: number }).port;
@@ -79,7 +91,11 @@ describe("forwardAddonDiagnostics", () => {
         "addon.done()",
       ].join("\n");
       const child = spawn("python3", ["-c", script], {
-        env: { ...process.env, SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${port}`, SERVE_SIM_CAPTURE_CONTROL_TOKEN: "t" },
+        env: {
+          ...process.env,
+          SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${port}`,
+          SERVE_SIM_CAPTURE_CONTROL_TOKEN: "t",
+        },
       });
       let stderr = "";
       child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
@@ -98,20 +114,62 @@ describe("forwardAddonDiagnostics", () => {
   }, 20_000);
 
   test("counts a record the control server refuses with ok: false", async () => {
-    const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":false}'), 1);
+    const stderr = await runWithControl(
+      (res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":false}'),
+      1,
+    );
     expect(stderr).toContain("[servesim-capture] stopped with 1 capture record(s) not delivered");
   }, 20_000);
 
   test("does not count a failed ready signal as lost traffic", async () => {
-    const stderr = await runWithControl((res) => {
-      if (res.req.url?.startsWith("/ready")) return res.writeHead(500).end();
-      res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
-    }, 2, true);
+    const stderr = await runWithControl(
+      (res) => {
+        if (res.req.url?.startsWith("/ready")) return res.writeHead(500).end();
+        res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
+      },
+      2,
+      true,
+    );
     expect(stderr).not.toContain("[servesim-capture]");
   }, 20_000);
 
   test("stays quiet when every record is delivered", async () => {
-    const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}'), 2);
+    const stderr = await runWithControl(
+      (res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}'),
+      2,
+    );
     expect(stderr).not.toContain("[servesim-capture]");
   }, 20_000);
+});
+
+(hasPython ? describe : describe.skip)("addon fields", () => {
+  test("re-reads the fields file when it changes, and keeps the last fields when it cannot", () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-addon-fields-"));
+    const file = join(dir, "capture-fields");
+    try {
+      writeFileSync(file, "");
+      const script = [
+        "import importlib.util, os, time",
+        `spec = importlib.util.spec_from_file_location("addon", ${JSON.stringify(ADDON)})`,
+        "addon = importlib.util.module_from_spec(spec); spec.loader.exec_module(addon)",
+        "print('start', addon._want('header'), addon._want('response-body'))",
+        `open(${JSON.stringify(file)}, 'w').write('header,response-body')`,
+        "print('changed', addon._want('header'), addon._want('response-body'))",
+        `os.remove(${JSON.stringify(file)})`,
+        "print('missing', addon._want('header'))",
+      ].join("\n");
+      const result = spawnSync("python3", ["-c", script], {
+        encoding: "utf8",
+        env: { ...process.env, SERVE_SIM_CAPTURE_FIELDS: "", SERVE_SIM_CAPTURE_FIELDS_FILE: file },
+      });
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim().split("\n")).toEqual([
+        "start False False",
+        "changed True True",
+        "missing True",
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  allPermissionNames,
-  parsePermissionsArgs,
-  resolvePermission,
-} from "../permissions";
+import { allPermissionNames, parsePermissionsArgs, resolvePermission } from "../permissions";
 
 describe("resolvePermission", () => {
   test("notifications resolves to the BulletinBoard writer", () => {
@@ -81,21 +77,23 @@ describe("parsePermissionsArgs", () => {
   });
 
   test("location-always alias pins the value", () => {
-    expect(
-      parsePermissionsArgs(["grant", "location-always", "com.foo.bar"]),
-    ).toMatchObject({ permission: "location", value: "always" });
+    expect(parsePermissionsArgs(["grant", "location-always", "com.foo.bar"])).toMatchObject({
+      permission: "location",
+      value: "always",
+    });
   });
 
   test("trailing positional is accepted as the value", () => {
-    expect(
-      parsePermissionsArgs(["grant", "photos", "com.foo.bar", "limited"]),
-    ).toMatchObject({ permission: "photos", value: "limited" });
+    expect(parsePermissionsArgs(["grant", "photos", "com.foo.bar", "limited"])).toMatchObject({
+      permission: "photos",
+      value: "limited",
+    });
   });
 
   test("push is an alias for notifications", () => {
-    expect(
-      parsePermissionsArgs(["grant", "push", "com.foo.bar"]),
-    ).toMatchObject({ permission: "notifications" });
+    expect(parsePermissionsArgs(["grant", "push", "com.foo.bar"])).toMatchObject({
+      permission: "notifications",
+    });
   });
 
   test("-d device flag is captured", () => {
@@ -152,9 +150,9 @@ describe("parsePermissionsArgs", () => {
   });
 
   test("a --value that the permission does not support is rejected", () => {
-    expect(
-      parsePermissionsArgs(["grant", "camera", "com.foo.bar", "--value", "limited"]),
-    ).toEqual({ error: expect.stringContaining("Invalid --value") });
+    expect(parsePermissionsArgs(["grant", "camera", "com.foo.bar", "--value", "limited"])).toEqual({
+      error: expect.stringContaining("Invalid --value"),
+    });
   });
 
   test("an invalid location value is rejected", () => {

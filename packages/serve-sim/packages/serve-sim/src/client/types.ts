@@ -16,10 +16,17 @@ export interface StreamConfig extends HingeControlState {
   screenId?: number;
   /** Native input setup failed; video can continue without touch or keyboard. */
   inputUnavailable?: boolean;
+  keyboardUnavailable?: boolean;
   /** Whether this simulator exposes hinge angle control. */
   supportsHingeAngle?: boolean;
   /** Whether the active Duo surface can be selected without changing its hinge angle. */
   supportsPhysicalOrientation?: boolean;
+  /** Full native pose snapshot for preview; missing fields are unknown. */
+  observedDeviceState?: {
+    hingeAngle?: number;
+    physicalOrientation?: HingePhysicalOrientation;
+    tableMode?: boolean;
+  };
   /** Last confirmed physical orientation, separate from the app's screen orientation. */
   physicalOrientation?: HingePhysicalOrientation;
 }
@@ -30,8 +37,19 @@ export type AdaptiveState = "normal" | "degraded";
 export interface StreamAPI {
   start: (options?: { maxFps?: number }) => void;
   stop: () => void;
-  sendTouch: (data: { type: "begin" | "move" | "end"; x: number; y: number; edge?: number }) => void;
-  sendMultiTouch: (data: { type: "begin" | "move" | "end"; x1: number; y1: number; x2: number; y2: number }) => void;
+  sendTouch: (data: {
+    type: "begin" | "move" | "end";
+    x: number;
+    y: number;
+    edge?: number;
+  }) => void;
+  sendMultiTouch: (data: {
+    type: "begin" | "move" | "end";
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }) => void;
   sendButton: (button: string) => void;
   sendDigitalCrown?: (delta: number) => void;
   /** Subscribe to frame updates (bypasses React state for performance). Returns unsubscribe fn.

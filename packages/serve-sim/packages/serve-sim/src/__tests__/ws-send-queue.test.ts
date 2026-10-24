@@ -42,7 +42,9 @@ describe("ws send queue", () => {
   test("reports a send failure when the socket closes during a command", () => {
     const ws = {
       readyState: WS_OPEN_READY_STATE,
-      send() { throw new Error("Socket closed"); },
+      send() {
+        throw new Error("Socket closed");
+      },
     };
     expect(trySendWsMessage(ws, 0x0f, { angle: 90 })).toBe(false);
   });

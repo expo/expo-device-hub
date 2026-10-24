@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
+**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -105,18 +105,25 @@ reason. URL query values are redacted unless `query` is enabled.
 
 Use `--network-capture-field` to opt into additional fields:
 
-| Field | Contents |
-| --- | --- |
-| `header` | Request and response headers, with values redacted for credential-bearing names |
-| `query` | Query-string values |
-| `request-body` | Request bodies, without redaction |
-| `response-body` | Response bodies, without redaction |
+| Field           | Contents                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| `header`        | Request and response headers, with values redacted for credential-bearing names |
+| `query`         | Query-string values                                                             |
+| `request-body`  | Request bodies, without redaction                                               |
+| `response-body` | Response bodies, without redaction                                              |
 
 For example:
 
 ```bash
 serve-sim <udid> --network-capture --network-capture-field header,request-body
 ```
+
+These flags set the default. The Network requests panel can change the fields for a device, including fields
+the flags left off: while capture is off, the choice applies to the next start; while capture is on, it
+applies at once, without restarting the proxy: headers and bodies to requests that finish after the
+change, and query values to requests that start after it. Requests
+already recorded keep what they were recorded with. The panel's capture actions need the session token
+and a same-origin request, like every capture action.
 
 Each body preview is capped at 512 KiB. The in-memory store retains at most 500 requests and allows
 16 MiB for stored headers and bodies. Full transfer sizes are recorded even when previews are truncated
@@ -162,11 +169,11 @@ Use test accounts or a staging environment when capturing sensitive workflows.
 Each captured device writes to `$TMPDIR/serve-sim/capture-<udid>/`, or beneath `SERVE_SIM_STATE_DIR` when
 that override is set:
 
-| File | Contents |
-| --- | --- |
-| `network-capture.json` | Newline-delimited session and capture events, including started, finished, metadata, and clear events |
-| `capture.entries.ndjson` | One HAR entry per completed exchange |
-| `capture.har` | A HAR document rebuilt on download and at most once a minute, with entries in request start order |
+| File                     | Contents                                                                                              |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `network-capture.json`   | Newline-delimited session and capture events, including started, finished, metadata, and clear events |
+| `capture.entries.ndjson` | One HAR entry per completed exchange                                                                  |
+| `capture.har`            | A HAR document rebuilt on download and at most once a minute, with entries in request start order     |
 
 The event log grows throughout the session. The HAR entry log is periodically compacted to the newest
 10,000 entries, and the rebuilt HAR contains those entries. These are entry-count limits, not disk-byte

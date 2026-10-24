@@ -1,12 +1,32 @@
 import { createCaptureRuntime } from "../capture/runtime";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
-import { applyDefaultCapabilities, CapabilityRollbackError, setCapabilityEnabled } from "../launch-manager";
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import {
+  applyDefaultCapabilities,
+  CapabilityRollbackError,
+  setCapabilityEnabled,
+} from "../launch-manager";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
-import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader, isCapabilityArmed } from "../launch-manager";
+import {
+  capabilityConfigPath,
+  managedStartupDylibs,
+  writeManagedStartupDylibs,
+} from "../capability-config";
+import {
+  configureCapability,
+  enableCapabilities,
+  disableCapability,
+  disarmStaleCapabilityLoader,
+  releaseSessionSync,
+  removeCapabilityLoaderSync,
+  capabilityLoaderPath,
+  armCapabilityLoader,
+  rearmCapabilityLoader,
+  isCapabilityArmed,
+} from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
+import { timeStartup } from "../startup-timing";
 import { withLaunchStateLock } from "../launch-state-lock";
 import { readLaunchState } from "../launch-state";
 
@@ -17,6 +37,7 @@ let envPath: string;
 let failurePath: string;
 let shutdownPath: string;
 let dylib: string;
+let callsPath: string;
 
 beforeEach(() => {
   state = useTempStateDir();
@@ -24,9 +45,11 @@ beforeEach(() => {
   failurePath = join(state.dir, "fail-insert");
   shutdownPath = join(state.dir, "shut-down");
   dylib = join(state.dir, "startup.dylib");
+  callsPath = join(state.dir, "calls.jsonl");
   writeFileSync(dylib, "");
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
-  shims = installShims({ xcrun: `#!/usr/bin/env node
+  shims = installShims({
+    xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
@@ -35,7 +58,12 @@ if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
   process.exit(1);
 }
 const env = JSON.parse(fs.readFileSync(path, 'utf8'));
+fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 const [,,,, command, name, value] = process.argv.slice(2);
+if (command === 'getenv' && name === 'SERVE_SIM_CAPABILITIES_CONFIG' && fs.existsSync(failure + '.foreign')) {
+  env.DYLD_INSERT_LIBRARIES += ':/late.dylib';
+  fs.unlinkSync(failure + '.foreign');
+}
 if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
   // failure + '.watch' names a file to copy, recording what a running app's loader could read then.
   if (fs.existsSync(failure + '.watch')) {
@@ -53,41 +81,175 @@ if (command === 'getenv') process.stdout.write(env[name] || '');
 if (command === 'setenv') env[name] = value;
 if (command === 'unsetenv') delete env[name];
 fs.writeFileSync(path, JSON.stringify(env));
-` });
+`,
+  });
 });
 
-afterEach(() => { shims.restore(); state.restore(); });
+afterEach(() => {
+  shims.restore();
+  state.restore();
+});
 
-function env(): Record<string, string> { return JSON.parse(readFileSync(envPath, "utf8")); }
+function env(): Record<string, string> {
+  return JSON.parse(readFileSync(envPath, "utf8"));
+}
 
 async function enable(path = dylib): Promise<void> {
-  await enableCapabilities(UDID, null, [{
-    name: "capture", scope: "userApps", loadPhase: "startup", dylib: path,
-    env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
-  }], { relaunch: false });
+  await enableCapabilities(
+    UDID,
+    null,
+    [
+      {
+        name: "capture",
+        scope: "userApps",
+        loadPhase: "startup",
+        dylib: path,
+        env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
+      },
+    ],
+    { relaunch: false },
+  );
 }
+
+test("initial defaults publish one owned session and retain a fresh foreign insert", async () => {
+  clearRegisteredCapabilities();
+  registerCapability({
+    name: "clipboard",
+    defaultEnabled: true,
+    scope: "allApps",
+    async setEnabled() {
+      return { dylib };
+    },
+  });
+  writeFileSync(failurePath + ".foreign", "");
+  try {
+    expect(await applyDefaultCapabilities(UDID, null, {}, { armSession: true })).toEqual([
+      "clipboard",
+    ]);
+    expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
+    expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.pid);
+    expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
+      "/other.dylib",
+      "/late.dylib",
+      capabilityLoaderPath(),
+    ]);
+    const calls: string[][] = readFileSync(callsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(calls.filter((args) => args[3] === "launchctl")).toHaveLength(5);
+    releaseSessionSync(UDID, process.pid, () => {});
+    expect(readLaunchState(UDID)).toBeNull();
+    expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib:/late.dylib");
+  } finally {
+    clearRegisteredCapabilities();
+  }
+});
+
+test("initial defaults retain idle ownership when no capability prepares", async () => {
+  clearRegisteredCapabilities();
+  await applyDefaultCapabilities(UDID, null, {}, { armSession: true });
+  expect(readLaunchState(UDID)?.sessionPids).toEqual([process.pid]);
+  expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
+  releaseSessionSync(UDID, process.pid, () => {});
+  expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib");
+});
+
+test("failed initial defaults restore the environment and roll back prepared resources", async () => {
+  clearRegisteredCapabilities();
+  const events: string[] = [];
+  registerCapability({
+    name: "clipboard",
+    defaultEnabled: true,
+    scope: "allApps",
+    async setEnabled() {
+      return {
+        dylib,
+        committed() {
+          events.push("committed");
+        },
+        failed() {
+          events.push("failed");
+        },
+        async rollback() {
+          events.push("rollback");
+        },
+      };
+    },
+  });
+  writeFileSync(failurePath, "1");
+  try {
+    await expect(applyDefaultCapabilities(UDID, null, {}, { armSession: true })).rejects.toThrow();
+    expect(events).toEqual(["failed", "rollback"]);
+    expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+    expect(readLaunchState(UDID)).toBeNull();
+  } finally {
+    clearRegisteredCapabilities();
+  }
+});
+
+test("initial defaults release only their own ownership", async () => {
+  clearRegisteredCapabilities();
+  await enableCapabilities(
+    UDID,
+    null,
+    [{ name: "foreign", scope: "allApps", dylib: "/foreign.dylib" }],
+    { ownerPid: null, relaunch: false },
+  );
+  await applyDefaultCapabilities(UDID, null, {}, { armSession: true });
+  releaseSessionSync(UDID, process.pid, () => {});
+  expect(readLaunchState(UDID)?.capabilities.foreign?.ownerPid).toBeNull();
+  expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/foreign.dylib");
+});
 
 test("startup capture uses shared inserts and capability environment", async () => {
   await enable();
-  expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual(["/other.dylib", capabilityLoaderPath(), dylib]);
+  expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
+    "/other.dylib",
+    capabilityLoaderPath(),
+    dylib,
+  ]);
   expect(env().SIMNET_PROXY_PORT_FILE).toBeUndefined();
-  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(`startup\tuser\t${dylib}\tSIMNET_PROXY_PORT_FILE=/capture/port\t0\n`);
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(
+    `startup\tuser\t${dylib}\tSIMNET_PROXY_PORT_FILE=/capture/port\t0\n`,
+  );
   await disableCapability(UDID, null, "capture", { relaunch: false });
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
   expect(managedStartupDylibs(UDID)).toEqual([]);
 });
 
 test("hybrid capture keeps its early insert and publishes a deferred load for running apps", async () => {
-  await enableCapabilities(UDID, null, [{
-    name: "networkCapture", scope: "userApps", loadPhase: "startupAndDeferred", dylib,
-    env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
-  }], { relaunch: false });
+  await enableCapabilities(
+    UDID,
+    null,
+    [
+      {
+        name: "networkCapture",
+        scope: "userApps",
+        loadPhase: "startupAndDeferred",
+        dylib,
+        env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
+      },
+    ],
+    { relaunch: false },
+  );
   const line = `user\t${dylib}\tSIMNET_PROXY_PORT_FILE=/capture/port\t0`;
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(`startup\t${line}\n${line}\n`);
-  expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual(["/other.dylib", capabilityLoaderPath(), dylib]);
+  expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
+    "/other.dylib",
+    capabilityLoaderPath(),
+    dylib,
+  ]);
   expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(true);
   const armedEnv = env();
-  writeFileSync(envPath, JSON.stringify({ ...armedEnv, DYLD_INSERT_LIBRARIES: `/other.dylib:${capabilityLoaderPath()}` }));
+  writeFileSync(
+    envPath,
+    JSON.stringify({
+      ...armedEnv,
+      DYLD_INSERT_LIBRARIES: `/other.dylib:${capabilityLoaderPath()}`,
+    }),
+  );
   expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(false);
   writeFileSync(envPath, JSON.stringify(armedEnv));
   await disableCapability(UDID, null, "networkCapture", { relaunch: false });
@@ -108,11 +270,36 @@ test("a first commit that fails reports its own error, not a failed rollback", a
   try {
     const error = await enable().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
-    expect(String((error as Error).message)).not.toContain("Could not restore capability launch state");
+    expect(String((error as Error).message)).not.toContain(
+      "Could not restore capability launch state",
+    );
     expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
     expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
   } finally {
     rmSync(`${capabilityConfigPath(UDID)}.${process.pid}.tmp`, { recursive: true, force: true });
+  }
+});
+
+test("stale cleanup preserves a failed read cause and reports failure without aborting startup", async () => {
+  writeFileSync(shutdownPath, "");
+  const warning = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(process.stderr, "write").mockImplementation(() => true);
+  try {
+    expect(
+      await timeStartup("stale-loader-cleanup", () => disarmStaleCapabilityLoader(UDID), UDID, {
+        isSuccessful: (result) => result !== false,
+      }),
+    ).toBe(false);
+    const cause = warning.mock.calls[0]?.[1];
+    expect(cause).toBeInstanceOf(Error);
+    expect((cause as Error).message).toContain("device is not booted");
+    expect((cause as Error & { cause?: { code?: number } }).cause?.code).toBe(1);
+    const finished = JSON.parse(String(log.mock.calls.at(-1)?.[0]).slice("[startup] ".length));
+    expect(finished).toMatchObject({ phase: "stale-loader-cleanup", status: "failed" });
+    expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib");
+  } finally {
+    log.mockRestore();
+    warning.mockRestore();
   }
 });
 
@@ -121,10 +308,16 @@ test("stale cleanup clears the inserts of a session that died without tearing do
   writeFileSync(loader, "");
   const image = join(state.dir, "capture-startup.dylib");
   writeFileSync(image, "");
-  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, image].join(":") }));
+  writeFileSync(
+    envPath,
+    JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, image].join(":") }),
+  );
   writeManagedStartupDylibs(UDID, [image]);
   // The session that armed it is gone: its pid no longer runs.
-  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [2 ** 22 + 17] }));
+  writeFileSync(
+    join(state.dir, `launch-${UDID}.json`),
+    JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [2 ** 22 + 17] }),
+  );
 
   await disarmStaleCapabilityLoader(UDID);
 
@@ -140,7 +333,10 @@ test("stale cleanup leaves the inserts of a live session alone", async () => {
   const insert = ["/other.dylib", loader, image].join(":");
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: insert }));
   writeManagedStartupDylibs(UDID, [image]);
-  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
+  writeFileSync(
+    join(state.dir, `launch-${UDID}.json`),
+    JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }),
+  );
 
   await disarmStaleCapabilityLoader(UDID);
 
@@ -154,12 +350,20 @@ test("stale cleanup waits for a session that is arming instead of clearing it", 
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
   // An arm in progress: it holds the device lock, inserts the loader, and records its session last.
   let inserted!: () => void;
-  const loaderInserted = new Promise<void>((resolve) => { inserted = resolve; });
+  const loaderInserted = new Promise<void>((resolve) => {
+    inserted = resolve;
+  });
   const arming = withLaunchStateLock(UDID, async () => {
-    writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader].join(":") }));
+    writeFileSync(
+      envPath,
+      JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader].join(":") }),
+    );
     inserted();
     await Bun.sleep(300);
-    writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
+    writeFileSync(
+      join(state.dir, `launch-${UDID}.json`),
+      JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }),
+    );
   });
   await loaderInserted;
 
@@ -183,10 +387,22 @@ test("a failed publication never shows running apps its deferred load", async ()
   writeFileSync(capabilityConfigPath(UDID), previous);
   writeFileSync(failurePath, "");
   writeFileSync(`${failurePath}.watch`, capabilityConfigPath(UDID));
-  await expect(enableCapabilities(UDID, null, [{
-    name: "networkCapture", scope: "userApps", loadPhase: "startupAndDeferred", dylib,
-    env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
-  }], { relaunch: false })).rejects.toThrow();
+  await expect(
+    enableCapabilities(
+      UDID,
+      null,
+      [
+        {
+          name: "networkCapture",
+          scope: "userApps",
+          loadPhase: "startupAndDeferred",
+          dylib,
+          env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
+        },
+      ],
+      { relaunch: false },
+    ),
+  ).rejects.toThrow();
   expect(readFileSync(`${failurePath}.seen`, "utf8")).not.toContain(dylib);
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
 });
@@ -211,7 +427,12 @@ test("failed final disarm retains ownership until a successful retry", async () 
 });
 
 test("failed owner release can retry while another capability remains", async () => {
-  await enableCapabilities(UDID, null, [{ name: "camera", scope: "allApps", dylib: "/camera.dylib" }], { relaunch: false, ownerPid: null });
+  await enableCapabilities(
+    UDID,
+    null,
+    [{ name: "camera", scope: "allApps", dylib: "/camera.dylib" }],
+    { relaunch: false, ownerPid: null },
+  );
   await enable();
   writeFileSync(failurePath, "");
   expect(() => releaseSessionSync(UDID, process.pid, () => {})).toThrow();
@@ -223,11 +444,12 @@ test("failed owner release can retry while another capability remains", async ()
   expect(managedStartupDylibs(UDID)).toEqual([]);
 });
 
-
 test("capability resources stop only after startup insertion is removed", async () => {
   let stopped = false;
   const definition = {
-    name: "networkCapture", scope: "userApps" as const, loadPhase: "startup" as const,
+    name: "networkCapture",
+    scope: "userApps" as const,
+    loadPhase: "startup" as const,
     defaultEnabled: false,
     async setEnabled({ enabled }: { enabled: boolean }) {
       if (enabled) return { dylib };
@@ -245,52 +467,90 @@ test("failed capability publication closes its prepared resources after rollback
   let stopped = false;
   let activated = false;
   writeFileSync(failurePath, "");
-  await expect(configureCapability(UDID, {
-    name: "networkCapture", scope: "userApps", loadPhase: "startup", defaultEnabled: false,
-    async setEnabled({ enabled }) {
-      if (!enabled) return null;
-      return {
-        dylib,
-        committed() { activated = true; },
-        async rollback() {
-          expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
-          stopped = true;
+  await expect(
+    configureCapability(
+      UDID,
+      {
+        name: "networkCapture",
+        scope: "userApps",
+        loadPhase: "startup",
+        defaultEnabled: false,
+        async setEnabled({ enabled }) {
+          if (!enabled) return null;
+          return {
+            dylib,
+            committed() {
+              activated = true;
+            },
+            async rollback() {
+              expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
+              stopped = true;
+            },
+          };
         },
-      };
-    },
-  }, { enabled: true, relaunch: false })).rejects.toThrow();
+      },
+      { enabled: true, relaunch: false },
+    ),
+  ).rejects.toThrow();
   expect(stopped).toBe(true);
   expect(activated).toBe(false);
 });
 
 test("a capability that fails after publication is withdrawn before its resources stop", async () => {
   let stopped = false;
-  await expect(configureCapability(UDID, {
-    name: "networkCapture", scope: "userApps", loadPhase: "startup", defaultEnabled: false,
-    async setEnabled({ enabled }) {
-      if (!enabled) return null;
-      return {
-        dylib,
-        committed() { throw new Error("proxy exited during publication"); },
-        async rollback() {
-          expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
-          stopped = true;
+  await expect(
+    configureCapability(
+      UDID,
+      {
+        name: "networkCapture",
+        scope: "userApps",
+        loadPhase: "startup",
+        defaultEnabled: false,
+        async setEnabled({ enabled }) {
+          if (!enabled) return null;
+          return {
+            dylib,
+            committed() {
+              throw new Error("proxy exited during publication");
+            },
+            async rollback() {
+              expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
+              stopped = true;
+            },
+          };
         },
-      };
-    },
-  }, { enabled: true, relaunch: false })).rejects.toThrow("proxy exited during publication");
+      },
+      { enabled: true, relaunch: false },
+    ),
+  ).rejects.toThrow("proxy exited during publication");
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
   expect(stopped).toBe(true);
 });
 
 test("a failed first publication leaves no loader or launch state behind", async () => {
   expect(readLaunchState(UDID)).toBeNull();
-  await expect(configureCapability(UDID, {
-    name: "networkCapture", scope: "userApps", loadPhase: "startup", defaultEnabled: false,
-    async setEnabled({ enabled }) {
-      return enabled ? { dylib, committed() { throw new Error("proxy exited during publication"); } } : null;
-    },
-  }, { enabled: true, relaunch: false })).rejects.toThrow("proxy exited during publication");
+  await expect(
+    configureCapability(
+      UDID,
+      {
+        name: "networkCapture",
+        scope: "userApps",
+        loadPhase: "startup",
+        defaultEnabled: false,
+        async setEnabled({ enabled }) {
+          return enabled
+            ? {
+                dylib,
+                committed() {
+                  throw new Error("proxy exited during publication");
+                },
+              }
+            : null;
+        },
+      },
+      { enabled: true, relaunch: false },
+    ),
+  ).rejects.toThrow("proxy exited during publication");
   expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
   expect(readLaunchState(UDID)).toBeNull();
   expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
@@ -298,15 +558,31 @@ test("a failed first publication leaves no loader or launch state behind", async
 
 test("a failed capability restores the owner it replaced", async () => {
   const definition = (committed: () => void) => ({
-    name: "shared", scope: "userApps" as const, loadPhase: "startup" as const, defaultEnabled: false,
+    name: "shared",
+    scope: "userApps" as const,
+    loadPhase: "startup" as const,
+    defaultEnabled: false,
     async setEnabled({ enabled }: { enabled: boolean }) {
       return enabled ? { dylib, committed } : null;
     },
   });
-  await configureCapability(UDID, definition(() => {}), { enabled: true, relaunch: false, ownerPid: process.ppid });
-  await expect(configureCapability(UDID, definition(() => { throw new Error("proxy exited"); }), {
-    enabled: true, relaunch: false,
-  })).rejects.toThrow("proxy exited");
+  await configureCapability(
+    UDID,
+    definition(() => {}),
+    { enabled: true, relaunch: false, ownerPid: process.ppid },
+  );
+  await expect(
+    configureCapability(
+      UDID,
+      definition(() => {
+        throw new Error("proxy exited");
+      }),
+      {
+        enabled: true,
+        relaunch: false,
+      },
+    ),
+  ).rejects.toThrow("proxy exited");
   expect(readLaunchState(UDID)?.capabilities.shared?.ownerPid).toBe(process.ppid);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
 });
@@ -314,7 +590,9 @@ test("a failed capability restores the owner it replaced", async () => {
 test("failed capability removal keeps resources alive for a retry", async () => {
   let stopped = false;
   const definition = {
-    name: "networkCapture", scope: "userApps" as const, loadPhase: "startup" as const,
+    name: "networkCapture",
+    scope: "userApps" as const,
+    loadPhase: "startup" as const,
     defaultEnabled: false,
     async setEnabled({ enabled }: { enabled: boolean }) {
       if (enabled) return { dylib };
@@ -331,7 +609,6 @@ test("failed capability removal keeps resources alive for a retry", async () => 
   expect(stopped).toBe(true);
 });
 
-
 test("registry capture prepares, publishes, reuses, and removes the same runtime session", async () => {
   let starts = 0;
   let closes = 0;
@@ -341,8 +618,13 @@ test("registry capture prepares, publishes, reuses, and removes the same runtime
     startProxy: async () => {
       starts++;
       return {
-        address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA",
-        close: async () => { closes++; },
+        address: "127.0.0.1:1234",
+        portFile: "/capture/port",
+        caPem: async () => "CA",
+        setFields: () => {},
+        close: async () => {
+          closes++;
+        },
       };
     },
   });
@@ -353,7 +635,9 @@ test("registry capture prepares, publishes, reuses, and removes the same runtime
     expect(env().SIMNET_PROXY_PORT_FILE).toBeUndefined();
     expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
     writeFileSync(failurePath, "");
-    await expect(setCapabilityEnabled(UDID, "networkCapture", { enabled: true, relaunch: false })).rejects.toThrow();
+    await expect(
+      setCapabilityEnabled(UDID, "networkCapture", { enabled: true, relaunch: false }),
+    ).rejects.toThrow();
     expect(starts).toBe(1);
     expect(closes).toBe(0);
     await setCapabilityEnabled(UDID, "networkCapture", { enabled: false });
@@ -366,12 +650,16 @@ test("registry capture prepares, publishes, reuses, and removes the same runtime
   }
 });
 
-
 function captureHarness(close: () => Promise<void> = async () => {}) {
   return createCaptureRuntime({
-    dylib: () => dylib, trustCa: async () => {},
+    dylib: () => dylib,
+    trustCa: async () => {},
     startProxy: async () => ({
-      address: "127.0.0.1:1234", portFile: "/capture/port", caPem: async () => "CA", close,
+      address: "127.0.0.1:1234",
+      portFile: "/capture/port",
+      caPem: async () => "CA",
+      setFields: () => {},
+      close,
     }),
   });
 }
@@ -407,7 +695,9 @@ test("uncertain initial publication can be disabled without leaving a startup in
 test("registry publication failure reports failed capture metadata", async () => {
   const runtime = captureHarness();
   writeFileSync(failurePath, "");
-  await expect(configureCapability(UDID, runtime.capability, { enabled: true, relaunch: false })).rejects.toThrow();
+  await expect(
+    configureCapability(UDID, runtime.capability, { enabled: true, relaunch: false }),
+  ).rejects.toThrow();
   expect(runtime.metaFor(UDID).attachment).toBe("failed");
   expect(runtime.metaFor(UDID).proxyAddress).toBeNull();
   await runtime.disableAll();
@@ -416,9 +706,16 @@ test("registry publication failure reports failed capture metadata", async () =>
 test("runtime enable waits for a registry disable that is closing its proxy", async () => {
   let closing!: () => void;
   let finishClose!: () => void;
-  const closeStarted = new Promise<void>((resolve) => { closing = resolve; });
-  const closeFinished = new Promise<void>((resolve) => { finishClose = resolve; });
-  const runtime = captureHarness(async () => { closing(); await closeFinished; });
+  const closeStarted = new Promise<void>((resolve) => {
+    closing = resolve;
+  });
+  const closeFinished = new Promise<void>((resolve) => {
+    finishClose = resolve;
+  });
+  const runtime = captureHarness(async () => {
+    closing();
+    await closeFinished;
+  });
   await runtime.enableForDevice(UDID);
   const disable = configureCapability(UDID, runtime.capability, { enabled: false });
   await closeStarted;
@@ -430,25 +727,37 @@ test("runtime enable waits for a registry disable that is closing its proxy", as
   await runtime.disableAll();
 });
 
-
 test("capture refuses a foreign owner and leaves its registration on local cleanup", async () => {
   const runtime = captureHarness();
-  await enableCapabilities(UDID, null, [{
-    name: "networkCapture", scope: "userApps", loadPhase: "startup", dylib,
-    env: { SIMNET_PROXY_PORT_FILE: "/foreign/port" },
-  }], { relaunch: false, ownerPid: process.ppid });
+  await enableCapabilities(
+    UDID,
+    null,
+    [
+      {
+        name: "networkCapture",
+        scope: "userApps",
+        loadPhase: "startup",
+        dylib,
+        env: { SIMNET_PROXY_PORT_FILE: "/foreign/port" },
+      },
+    ],
+    { relaunch: false, ownerPid: process.ppid },
+  );
   await expect(runtime.enableForDevice(UDID)).rejects.toThrow("another session");
   await runtime.disableForDevice(UDID);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/foreign/port");
 });
 
-
 test("registry uncertain publication reports failure and remains available for cleanup", async () => {
   let closed = false;
-  const runtime = captureHarness(async () => { closed = true; });
+  const runtime = captureHarness(async () => {
+    closed = true;
+  });
   writeFileSync(failurePath, "2");
-  await expect(configureCapability(UDID, runtime.capability, { enabled: true, relaunch: false })).rejects.toThrow();
+  await expect(
+    configureCapability(UDID, runtime.capability, { enabled: true, relaunch: false }),
+  ).rejects.toThrow();
   expect(runtime.metaFor(UDID).attachment).toBe("failed");
   expect(closed).toBe(false);
   await configureCapability(UDID, runtime.capability, { enabled: false });
@@ -458,14 +767,16 @@ test("registry uncertain publication reports failure and remains available for c
   await runtime.disableAll();
 });
 
-
 for (const uncertain of [false, true]) {
   test(`failure observers cannot skip ${uncertain ? "uncertainty reporting" : "resource rollback"}`, async () => {
     const calls: string[] = [];
     const observerError = new Error("failure observer threw");
     for (const name of ["first", "second"]) {
       registerCapability({
-        name, scope: "userApps", loadPhase: "startup", defaultEnabled: true,
+        name,
+        scope: "userApps",
+        loadPhase: "startup",
+        defaultEnabled: true,
         async setEnabled() {
           return {
             dylib,
@@ -473,7 +784,9 @@ for (const uncertain of [false, true]) {
               calls.push(`failed:${name}`);
               if (name === "first") throw observerError;
             },
-            async rollback() { calls.push(`rollback:${name}`); },
+            async rollback() {
+              calls.push(`rollback:${name}`);
+            },
           };
         },
       });
@@ -481,9 +794,11 @@ for (const uncertain of [false, true]) {
     writeFileSync(failurePath, uncertain ? "2" : "1");
     try {
       const error = await applyDefaultCapabilities(UDID, null).catch((error: unknown) => error);
-      expect(calls).toEqual(uncertain
-        ? ["failed:first", "failed:second"]
-        : ["failed:first", "failed:second", "rollback:second", "rollback:first"]);
+      expect(calls).toEqual(
+        uncertain
+          ? ["failed:first", "failed:second"]
+          : ["failed:first", "failed:second", "rollback:second", "rollback:first"],
+      );
       expect(error).toBeInstanceOf(uncertain ? CapabilityRollbackError : AggregateError);
       if (!(error instanceof AggregateError)) throw new Error("Expected aggregate failure");
       expect(error.errors).toContain(observerError);

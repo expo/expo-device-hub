@@ -1,7 +1,7 @@
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { useId } from 'react';
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { useId } from "react";
 
-import { bg, radius, text, textSize } from '../primitives';
+import { bg, radius, text, textSize } from "../primitives";
 
 const CHART_WIDTH = 100;
 const CHART_HEIGHT = 48;
@@ -41,8 +41,8 @@ function chartPoints(values: readonly number[], maxValue: number) {
 
 function linePath(points: ReadonlyArray<{ x: number; y: number }>) {
   return points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
-    .join(' ');
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+    .join(" ");
 }
 
 function areaPath(points: ReadonlyArray<{ x: number; y: number }>) {
@@ -82,14 +82,14 @@ export function MetricChart({
   const drawn = series
     .filter((entry) => entry.values.length > 0)
     .map((entry, index) => ({ ...entry, points: chartPoints(entry.values, maxValue), index }));
-  const legend = drawn.length > 1 ? ` (${drawn.map((entry) => entry.label).join(', ')})` : '';
+  const legend = drawn.length > 1 ? ` (${drawn.map((entry) => entry.label).join(", ")})` : "";
 
   return (
     <div
       title={description}
       style={{
         minWidth: 0,
-        overflow: 'hidden',
+        overflow: "hidden",
         borderRadius: radius.lg,
         backgroundColor: bg.subtle,
       }}
@@ -100,7 +100,7 @@ export function MetricChart({
         aria-describedby={descriptionId}
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
-        style={{ display: 'block', width: '100%', height: CHART_HEIGHT, overflow: 'visible' }}
+        style={{ display: "block", width: "100%", height: CHART_HEIGHT, overflow: "visible" }}
       >
         <defs>
           {drawn.slice(0, 1).map((entry) => (
@@ -132,7 +132,7 @@ export function MetricChart({
             fill="none"
             stroke={entry.color}
             strokeWidth="2"
-            strokeDasharray={entry.dashed ? '4 3' : undefined}
+            strokeDasharray={entry.dashed ? "4 3" : undefined}
             strokeLinecap="round"
             strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
@@ -141,12 +141,12 @@ export function MetricChart({
       </svg>
       <div
         style={{
-          display: 'flex',
+          display: "flex",
           minWidth: 0,
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
+          alignItems: "baseline",
+          justifyContent: "space-between",
           gap: 12,
-          padding: '8px 10px',
+          padding: "8px 10px",
         }}
       >
         <span style={{ ...textSize.xs, minWidth: 0, color: text.secondary }}>{title}</span>
@@ -155,8 +155,8 @@ export function MetricChart({
             ...textSize.xs,
             flexShrink: 0,
             color: text.default,
-            fontVariantNumeric: 'tabular-nums',
-            whiteSpace: 'nowrap',
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
           }}
         >
           {value}

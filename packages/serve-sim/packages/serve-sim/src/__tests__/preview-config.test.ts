@@ -34,13 +34,16 @@ describe("proxyPreviewConfigForBrowser", () => {
 
   test("preserves middleware mount paths and uses secure websocket on https", () => {
     expect(
-      proxyPreviewConfigForBrowser({
-        ...baseConfig,
-        basePath: "/.sim",
-      } as NonNullable<Window["__SIM_PREVIEW__"]>, {
-        protocol: "https:",
-        host: "tunnel.example.com",
-      }),
+      proxyPreviewConfigForBrowser(
+        {
+          ...baseConfig,
+          basePath: "/.sim",
+        } as NonNullable<Window["__SIM_PREVIEW__"]>,
+        {
+          protocol: "https:",
+          host: "tunnel.example.com",
+        },
+      ),
     ).toEqual({
       ...baseConfig,
       basePath: "/.sim",
@@ -52,7 +55,9 @@ describe("proxyPreviewConfigForBrowser", () => {
   });
 
   test("leaves the config untouched when the server didn't opt into proxying", () => {
-    const direct = { ...baseConfig, proxyHelpers: undefined } as NonNullable<Window["__SIM_PREVIEW__"]>;
+    const direct = { ...baseConfig, proxyHelpers: undefined } as NonNullable<
+      Window["__SIM_PREVIEW__"]
+    >;
     expect(
       proxyPreviewConfigForBrowser(direct, { protocol: "http:", host: "example.test:3200" }),
     ).toBe(direct);

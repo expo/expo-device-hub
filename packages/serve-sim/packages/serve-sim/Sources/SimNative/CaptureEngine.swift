@@ -14,6 +14,8 @@ struct Frame: Identifiable {
     let timestamp: CMTime
     /// The viewer canvas the capture actor saw when it produced this frame.
     var canvas: Dimensions? = nil
+    var captureGeneration: UInt64 = 0
+    var isActivePanel: Bool? = nil
 }
 
 protocol FrameEncoder {
@@ -42,7 +44,9 @@ struct RecordingAvailability {
 
     mutating func finalizationFailed(_ error: Error) {
         let failure = error as NSError
-        unavailable = failure.domain != "serve-sim-recording" || ![13, 17].contains(failure.code)
+        // A returned flush failure has completed teardown and invalidated its session.
+        // A flush timeout may still have native work outstanding and remains blocked.
+        unavailable = failure.domain != "serve-sim-recording" || ![13, 16, 17].contains(failure.code)
     }
 
     func checkStart() throws {
@@ -117,11 +121,17 @@ actor CaptureEngine {
     private var webRTCEncodeCanvas = Dimensions(width: 0, height: 0)
     /// The shared H.264 canvas the publisher encodes at, as last reported.
     private var viewerCanvas = Dimensions(width: 0, height: 0)
+    private var rebootSuspended = false
+    // The device trait survives reboot while FrameCapture's boot-bound state is cleared.
+    private var isFoldable = false
+    private var captureGeneration: UInt64 = 0
     private var recording: NativeVideoRecorder?
     private var recordingStarting = false
     private var recordingFinalizing = false
     private var recordingFinishTask: Task<NativeRecordingResult, Error>?
     private var recordingAvailability = RecordingAvailability()
+    private var recordingStateUnsubscribe: (@Sendable () async -> Void)?
+    private var deviceStateSubscriptions: [UUID: @Sendable () async -> Void] = [:]
     private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
@@ -151,11 +161,17 @@ actor CaptureEngine {
         self.frameContinuation = frameContinuation
         do {
             await refreshSnapshotSize()
+            guard phase == .starting else { throw CancellationError() }
             let nativeFrameMailbox = self.nativeFrameMailbox
-            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
-                nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
-                frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas))
+            let generation = captureGeneration
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas, screen in
+                nativeFrameMailbox.publish(
+                    pixelBuffer, timestamp: timestamp, wallClock: Date(),
+                    deviceState: screen.recordingDeviceState
+                )
+                frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas, captureGeneration: generation, isActivePanel: screen.isActivePanel))
             }
+            isFoldable = await frameCapture.isFoldable
         } catch {
             frameContinuation.finish()
             self.frameContinuation = nil
@@ -170,6 +186,10 @@ actor CaptureEngine {
         }
         webRTCEncodeCanvas = await frameCapture.webRTCEncodeCanvasSize()
             ?? Dimensions(width: 0, height: 0)
+        guard phase == .starting else {
+            frameContinuation.finish()
+            return
+        }
         Task {
             for await frame in frames {
                 await handleFrame(frame)
@@ -221,7 +241,7 @@ actor CaptureEngine {
     }
 
     private func handleFrame(_ frame: Frame) async {
-        guard phase == .running else { return }
+        guard phase == .running, frame.captureGeneration == captureGeneration else { return }
         screenSize = frame.pixelBuffer.dimensions
         // Another integrated panel can change geometry while this active panel
         // still delivers frames at the same dimensions. The capture actor sends
@@ -253,6 +273,7 @@ actor CaptureEngine {
     }
 
     func stopNativeFrameDelivery() async {
+        await stopRecordingStateUpdates()
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameMailbox.setActive(false)
@@ -389,6 +410,7 @@ actor CaptureEngine {
         let data = try JSONEncoder().encode(WebRTCSenderStatsReport(
             sessions: sessions,
             capture: WebRTCCaptureCounts(
+                rebooting: rebootSuspended,
                 pickCount: pick.count,
                 pickSumMs: Double(pick.sumNs) / 1_000_000,
                 pickMaxMs: Double(pick.maxNs) / 1_000_000,
@@ -435,8 +457,84 @@ actor CaptureEngine {
             ?? CapturedScreenInfo(width: screenSize.width, height: screenSize.height)
     }
 
+    func activeScreenID() async throws -> UInt32 {
+        try await frameCapture.activeScreenID()
+    }
+
     func subscribeScreenChanges(_ callback: @escaping @Sendable () -> Void) async -> @Sendable () async -> Void {
         await frameCapture.subscribeScreenChanges(callback)
+    }
+
+    // @ref LLP 0001#recording-reboot-recovery — keep the writer/clock, replace boot-bound capture.
+    func suspendForReboot() async {
+        guard phase == .running else { return }
+        rebootSuspended = true
+        captureGeneration &+= 1
+        webRTCPublisher?.suspendForReboot()
+        await frameCapture.stop(preservingObservers: true)
+        nativeFrameMailbox.setActive(false)
+        recording?.suspendForReboot()
+    }
+
+    /// The caller has awaited bootstatus. Only a snapshot from the new capture can resume recording.
+    func resumeAfterReboot() async throws {
+        guard phase == .running, rebootSuspended else { return }
+        let mailbox = nativeFrameMailbox
+        let continuation = frameContinuation
+        let generation = captureGeneration
+        // Readiness is independent of recording ownership: stopping the writer may clear its mailbox.
+        let readinessMailbox = NativeFrameMailbox()
+        readinessMailbox.setActive(true)
+        defer { readinessMailbox.setActive(false) }
+        mailbox.setActive(nativeFrameDeliveryActive)
+        do {
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixels, timestamp, canvas, screen in
+                mailbox.publish(pixels, timestamp: timestamp, wallClock: Date(),
+                                deviceState: screen.recordingDeviceState)
+                readinessMailbox.publish(pixels, timestamp: timestamp, wallClock: Date())
+                continuation?.yield(Frame(pixelBuffer: pixels, timestamp: timestamp, canvas: canvas, captureGeneration: generation, isActivePanel: screen.isActivePanel))
+            }
+            let deadline = ContinuousClock.now + .seconds(30)
+            while readinessMailbox.latest() == nil {
+                guard phase == .running else { throw CancellationError() }
+                guard ContinuousClock.now < deadline else {
+                    throw recordingError(18, "No fresh capture frame after boot; recording remains paused")
+                }
+                try await Task.sleep(for: .milliseconds(25))
+            }
+            guard phase == .running else { throw CancellationError() }
+            mailbox.setActive(nativeFrameDeliveryActive)
+            rebootSuspended = false
+            webRTCPublisher?.resumeAfterReboot()
+        } catch {
+            await frameCapture.stop(preservingObservers: true)
+            mailbox.setActive(false)
+            throw error
+        }
+    }
+
+    func subscribeDeviceState(_ callback: @escaping @Sendable (DeviceStateSnapshot) -> Void,
+                              onDetach: @escaping @Sendable () async -> Void = {}) async -> @Sendable () async -> Void {
+        guard phase == .running else { await onDetach(); return {} }
+        let id = UUID()
+        let unsubscribe: @Sendable () async -> Void
+        if isFoldable {
+            let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
+            unsubscribe = { await onDetach(); await removeListener() }
+        } else {
+            callback(await CoreDeviceBridge.shared.observedDeviceState(udid: deviceUDID))
+            unsubscribe = onDetach
+        }
+        guard phase == .running else {
+            await unsubscribe()
+            return {}
+        }
+        deviceStateSubscriptions[id] = unsubscribe
+        return { await self.removeDeviceStateSubscription(id) }
+    }
+
+    private func removeDeviceStateSubscription(_ id: UUID) async {
+        if let unsubscribe = deviceStateSubscriptions.removeValue(forKey: id) { await unsubscribe() }
     }
 
     func stop() async throws {
@@ -453,6 +551,10 @@ actor CaptureEngine {
             }
         }
         recording = nil
+        await stopRecordingStateUpdates()
+        let subscriptions = Array(deviceStateSubscriptions.values)
+        deviceStateSubscriptions.removeAll()
+        for unsubscribe in subscriptions { await unsubscribe() }
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameDeliveryActive = false
@@ -468,7 +570,7 @@ actor CaptureEngine {
     }
 
     func startRecording(outputDirectory: String) async throws {
-        guard phase == .running else {
+        guard phase == .running, !rebootSuspended else {
             throw recordingError(10, "Capture is not running; start the simulator session and retry")
         }
         try recordingAvailability.checkStart()
@@ -480,11 +582,15 @@ actor CaptureEngine {
         guard let delivery = await startNativeFrameDelivery() else {
             throw recordingError(13, "The native simulator display is unavailable; check that the device is booted and retry")
         }
-        guard phase == .running else {
+        guard phase == .running, !rebootSuspended else {
             await stopNativeFrameDelivery()
             throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
         }
         do {
+            await startRecordingStateUpdates()
+            guard phase == .running else {
+                throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
+            }
             let recorder = try NativeVideoRecorder(
                 mailbox: delivery.mailbox, canvas: delivery.canvas,
                 outputDirectory: outputDirectory
@@ -497,7 +603,28 @@ actor CaptureEngine {
         }
     }
 
+    private func startRecordingStateUpdates() async {
+        guard await frameCapture.isFoldable, phase == .running else { return }
+        let udid = deviceUDID
+        let mailbox = nativeFrameMailbox
+        let bridge = CoreDeviceBridge.shared
+        let generation = nativeFrameDeliveryGeneration
+        // @ref LLP 0001#device-state-metadata — recording consumes only independently observed motion state
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { snapshot in mailbox.updateHingeState(snapshot.state) }
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { await unsubscribe(); return }
+        recordingStateUnsubscribe = unsubscribe
+    }
+
+    private func stopRecordingStateUpdates() async {
+        let unsubscribe = recordingStateUnsubscribe
+        recordingStateUnsubscribe = nil
+        await unsubscribe?()
+    }
+
     func stopRecording() async throws -> String {
+        guard !recordingFinalizing else {
+            throw recordingError(16, "A recording is already stopping; wait for it to finish")
+        }
         guard let recording else {
             throw recordingError(15, "No recording is active; start recording before stopping it")
         }
@@ -536,12 +663,14 @@ actor CaptureEngine {
             maxFps: options.h264Fps,
             targetBitrate: options.h264Bitrate,
             maxDimension: options.maxDimension,
-            encodeCanvas: webRTCEncodeCanvas
+            encodeCanvas: webRTCEncodeCanvas,
+            fixedPanel: screenID != nil
         )
         let consumerId = UUID()
         consumers[consumerId] = WebRTCConsumer(publisher: publisher)
         webRTCConsumerId = consumerId
         webRTCPublisher = publisher
+        if rebootSuspended { publisher.suspendForReboot() }
         lastViewerCanvasSequence = nil
         publisher.setCanvasObserver { [weak self, weak publisher] canvas, sequence in
             guard let publisher else { return }
@@ -568,7 +697,7 @@ final class WebRTCConsumer: CaptureConsuming, @unchecked Sendable {
     }
 
     func handleFrame(_ frame: Frame) {
-        publisher.sendFrame(frame.pixelBuffer, timestamp: frame.timestamp)
+        publisher.sendFrame(frame.pixelBuffer, timestamp: frame.timestamp, panelActive: frame.isActivePanel)
     }
 }
 

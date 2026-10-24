@@ -56,12 +56,8 @@ describe("WebRTC signaling validation", () => {
   });
 
   test("requires a valid stats session ID", () => {
-    expect(() => parseWebRtcStatsSessionId(null)).toThrow(
-      "WebRTC session ID is required",
-    );
-    expect(() => parseWebRtcStatsSessionId("")).toThrow(
-      "WebRTC session ID is required",
-    );
+    expect(() => parseWebRtcStatsSessionId(null)).toThrow("WebRTC session ID is required");
+    expect(() => parseWebRtcStatsSessionId("")).toThrow("WebRTC session ID is required");
     expect(parseWebRtcStatsSessionId(SESSION_ID)).toBe(SESSION_ID);
     expect(() => parseWebRtcStatsSessionId("not-a-uuid")).toThrow(WebRtcSignalingError);
   });

@@ -33,6 +33,10 @@ export interface ServeSimDeviceState {
   wsUrl: string;
   /** This helper confirms accepted input sockets before screen dimensions are known. */
   inputAdmission?: true;
+  /** This helper accepts paste requests on the input socket; older ones only take keys. */
+  inputPaste?: true;
+  /** This helper acknowledges Copy's input barrier by request ID. Copy waits on an older one until it times out. */
+  inputCopy?: true;
   streamSettings?: StreamSettings;
   /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
@@ -80,12 +84,16 @@ export function inProcessServeSimState(
     streamUrl: `http://${h}:${port}${prefix}/helper/${udid}/stream.mjpeg`,
     wsUrl: `ws://${h}:${port}${prefix}/helper/${udid}/ws`,
     inputAdmission: true,
+    inputPaste: true,
+    inputCopy: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
 }
 
 /** The URL a device's routes live under: the origin, plus the mount prefix of an embedded server. */
-export function serverBaseUrl(state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">): string {
+export function serverBaseUrl(
+  state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">,
+): string {
   const stream = new URL(state.streamUrl);
   const helperPath = `/helper/${state.device}/stream.mjpeg`;
   if (!stream.pathname.endsWith(helperPath)) return state.url;
@@ -113,7 +121,9 @@ export function clearServeSimState(udid: string, ownerPid: number): void {
     return;
   }
   if (state.pid !== ownerPid) return;
-  try { unlinkSync(file); } catch {}
+  try {
+    unlinkSync(file);
+  } catch {}
 }
 
 /** List all per-device state files in the state directory. */

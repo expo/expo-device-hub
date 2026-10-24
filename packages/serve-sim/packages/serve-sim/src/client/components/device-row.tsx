@@ -30,12 +30,14 @@ export function DeviceRow({
   const status = helper
     ? "Streaming"
     : starting
-    ? (isBooted ? "Starting…" : "Booting…")
-    : shuttingDown
-    ? "Shutting down…"
-    : isBooted
-    ? "Booted"
-    : null;
+      ? isBooted
+        ? "Starting…"
+        : "Booting…"
+      : shuttingDown
+        ? "Shutting down…"
+        : isBooted
+          ? "Booted"
+          : null;
   const dotColor = helper ? "#34d399" : isBooted ? "#e9a13b" : null;
   const canShutdown = helper || isBooted;
   const iconBackingClass = helper
@@ -43,8 +45,8 @@ export function DeviceRow({
       ? "bg-[#26364c]"
       : "bg-[#202b3a]"
     : active
-    ? "bg-white/15"
-    : "bg-white/6";
+      ? "bg-white/15"
+      : "bg-white/6";
   const iconColorClass = helper ? "text-[#d2e7ff]" : active ? "text-white/90" : "text-white/55";
 
   return (
@@ -60,9 +62,7 @@ export function DeviceRow({
         }
       }}
       className={`group relative flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer select-none [transition:background_0.12s] ${
-        active
-          ? "bg-white/10 text-white"
-          : "text-white/90 hover:bg-white/8"
+        active ? "bg-white/10 text-white" : "text-white/90 hover:bg-white/8"
       }`}
     >
       <div
@@ -116,7 +116,9 @@ export function DeviceRow({
             }}
             disabled={shuttingDown}
             className={`absolute right-0 top-1/2 -translate-y-1/2 grid place-items-center size-5 rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [transition:opacity_0.12s,background_0.12s,color_0.12s] ${
-              active ? "text-white/80 hover:bg-white/20" : "text-white/70 hover:bg-white/12 hover:text-white"
+              active
+                ? "text-white/80 hover:bg-white/20"
+                : "text-white/70 hover:bg-white/12 hover:text-white"
             }`}
           >
             <X size={13} strokeWidth={2.2} />

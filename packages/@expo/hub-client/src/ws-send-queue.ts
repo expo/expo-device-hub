@@ -8,10 +8,17 @@
 
 export const WS_OPEN_READY_STATE = 1;
 
+export type WsMessagePayload = object | (() => object);
+export type WsMessageSent = (payload: object) => void;
+
 export type QueuedWsMessage = {
   tag: number;
-  payload: object;
+  payload: WsMessagePayload;
   createdAt: number;
+  onSent?: WsMessageSent;
+  // A later send can throw before the caller replaces its queue. Keep successful
+  // entries consumed so retrying that original array cannot replay lazy intent.
+  sent?: true;
 };
 
 export type WsSendTarget = {
@@ -22,6 +29,17 @@ export type WsSendTarget = {
 const DEFAULT_MAX_QUEUE_SIZE = 32;
 const DEFAULT_MAX_QUEUE_AGE_MS = 1_500;
 
+function sendMessage(
+  ws: WsSendTarget,
+  message: Pick<QueuedWsMessage, "tag" | "payload" | "onSent" | "sent">,
+) {
+  // Resolve intent only at delivery, so dropped rotations never advance a cursor.
+  const payload = typeof message.payload === "function" ? message.payload() : message.payload;
+  ws.send(encodeWsMessage(message.tag, payload).buffer);
+  message.sent = true;
+  message.onSent?.(payload);
+}
+
 /** `[tag][JSON]` — the helper's binary frame layout. */
 export function encodeWsMessage(tag: number, payload: object): Uint8Array<ArrayBuffer> {
   const json = new TextEncoder().encode(JSON.stringify(payload));
@@ -29,6 +47,28 @@ export function encodeWsMessage(tag: number, payload: object): Uint8Array<ArrayB
   msg[0] = tag;
   msg.set(json, 1);
   return msg;
+}
+
+/** Commands awaiting a reply must fail on disconnect instead of replaying on reconnect. */
+export function trySendWsMessage(
+  ws: WsSendTarget | null | undefined,
+  tag: number,
+  payload: object,
+): boolean {
+  return trySendEncodedWsMessage(ws, encodeWsMessage(tag, payload));
+}
+
+export function trySendEncodedWsMessage(
+  ws: WsSendTarget | null | undefined,
+  message: Uint8Array<ArrayBuffer>,
+): boolean {
+  if (ws?.readyState !== WS_OPEN_READY_STATE) return false;
+  try {
+    ws.send(message.buffer);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function enqueueWsMessage(
@@ -47,10 +87,17 @@ export function flushWsMessageQueue(
   now = Date.now(),
   maxQueueAgeMs = DEFAULT_MAX_QUEUE_AGE_MS,
 ): QueuedWsMessage[] {
-  const fresh = queue.filter((message) => now - message.createdAt <= maxQueueAgeMs);
+  const fresh = queue.filter(
+    (message) => !message.sent && now - message.createdAt <= maxQueueAgeMs,
+  );
   if (!ws || ws.readyState !== WS_OPEN_READY_STATE) return fresh;
-  for (const message of fresh) {
-    ws.send(encodeWsMessage(message.tag, message.payload).buffer);
+  for (let index = 0; index < fresh.length; index++) {
+    const message = fresh[index]!;
+    try {
+      sendMessage(ws, message);
+    } catch {
+      return fresh.slice(index);
+    }
   }
   return [];
 }
@@ -60,13 +107,40 @@ export function sendOrQueueWsMessage(
   ws: WsSendTarget | null | undefined,
   queue: QueuedWsMessage[],
   tag: number,
-  payload: object,
+  payload: WsMessagePayload,
   now = Date.now(),
+  onSent?: WsMessageSent,
 ): QueuedWsMessage[] {
   const fresh = flushWsMessageQueue(ws, queue, now);
-  if (ws?.readyState === WS_OPEN_READY_STATE) {
-    ws.send(encodeWsMessage(tag, payload).buffer);
-    return fresh;
+  if (ws?.readyState === WS_OPEN_READY_STATE && fresh.length === 0) {
+    try {
+      sendMessage(ws, { tag, payload, onSent });
+      return fresh;
+    } catch {
+      /* Preserve the unsent command for a later admission. */
+    }
   }
-  return enqueueWsMessage(fresh, { tag, payload, createdAt: now });
+  return enqueueWsMessage(fresh, { tag, payload, createdAt: now, ...(onSent ? { onSent } : {}) });
+}
+
+/** Remove only unfinished begin/end sequences for one gesture tag. */
+export function discardUnfinishedQueuedGestures(
+  queue: QueuedWsMessage[],
+  tag: number,
+): QueuedWsMessage[] {
+  const completed = new Set<QueuedWsMessage>();
+  let gesture: QueuedWsMessage[] = [];
+  for (const message of queue) {
+    if (message.tag !== tag) continue;
+    const phase = (message.payload as { type?: string }).type;
+    if (phase === "begin") gesture = [message];
+    else if (gesture.length) {
+      gesture.push(message);
+      if (phase === "end") {
+        for (const entry of gesture) completed.add(entry);
+        gesture = [];
+      }
+    }
+  }
+  return queue.filter((message) => message.tag !== tag || completed.has(message));
 }

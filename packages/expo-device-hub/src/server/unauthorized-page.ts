@@ -9,7 +9,7 @@ const STYLE = `
 :root{
   color-scheme:light;
   --expo-color-white:#fff;--expo-color-black:#000;
-  --expo-font-sans:'Inter',-apple-system,'system-ui',sans-serif;
+  --expo-font-sans:"Inter",-apple-system,"system-ui",sans-serif;
   --expo-radius-md:6px;--expo-radius-lg:8px;
   --expo-theme-background-default:#fff;--expo-theme-background-subtle:#f9f9fb;
   --expo-theme-background-element:#f0f0f3;
@@ -86,11 +86,13 @@ const TOKEN_FORM_SCRIPT = `
 })();
 `.trim();
 
-export function unauthorizedPage({ rejectedToken = false }: { rejectedToken?: boolean } = {}): string {
-  const invalidAttrs = rejectedToken ? ` aria-invalid="true" aria-describedby="token-error"` : '';
+export function unauthorizedPage({
+  rejectedToken = false,
+}: { rejectedToken?: boolean } = {}): string {
+  const invalidAttrs = rejectedToken ? ` aria-invalid="true" aria-describedby="token-error"` : "";
   const fieldError = rejectedToken
     ? `<p class="field-error" id="token-error" role="alert">This token isn't valid.</p>`
-    : '';
+    : "";
 
   return `<!doctype html>
 <html lang="en"><head>

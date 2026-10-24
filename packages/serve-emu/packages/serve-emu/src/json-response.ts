@@ -33,10 +33,7 @@ export class JsonResponseTracker<Channel extends string> {
   readonly #measureNow: () => number;
   readonly #wallNow: () => Date;
 
-  constructor(
-    channels: readonly Channel[],
-    dependencies: JsonResponseTrackerDependencies = {},
-  ) {
+  constructor(channels: readonly Channel[], dependencies: JsonResponseTrackerDependencies = {}) {
     this.#metrics = Object.fromEntries(
       channels.map((channel) => [channel, emptyMetric()]),
     ) as Record<Channel, JsonResponseMetric>;
@@ -50,19 +47,14 @@ export class JsonResponseTracker<Channel extends string> {
     if (body === undefined) {
       throw new TypeError("JSON response value is not serializable");
     }
-    const serializationMs = roundedMilliseconds(
-      this.#measureNow() - started,
-    );
+    const serializationMs = roundedMilliseconds(this.#measureNow() - started);
     const bytes = Buffer.byteLength(body, "utf8");
     const metric = this.#metrics[channel];
     metric.responses++;
     metric.lastBytes = bytes;
     metric.maxBytes = Math.max(metric.maxBytes, bytes);
     metric.lastSerializationMs = serializationMs;
-    metric.maxSerializationMs = Math.max(
-      metric.maxSerializationMs,
-      serializationMs,
-    );
+    metric.maxSerializationMs = Math.max(metric.maxSerializationMs, serializationMs);
     metric.lastAt = this.#wallNow().toISOString();
 
     const headers = new Headers(init.headers);

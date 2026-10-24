@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { parseSimctlDevices, pickAvailableNamed, pickBootedIphone, pickBootedNamed } from "../simctl";
+import {
+  parseSimctlDevices,
+  pickAvailableNamed,
+  pickBootedIphone,
+  pickBootedNamed,
+} from "../simctl";
 
 const listing = JSON.stringify({
   devices: {
@@ -30,7 +35,11 @@ const listing = JSON.stringify({
 
 describe("parseSimctlDevices", () => {
   test("flattens runtimes", () => {
-    expect(parseSimctlDevices(listing).map((device) => device.udid)).toEqual(["AAAA-1", "BBBB-2", "CCCC-3"]);
+    expect(parseSimctlDevices(listing).map((device) => device.udid)).toEqual([
+      "AAAA-1",
+      "BBBB-2",
+      "CCCC-3",
+    ]);
   });
 
   test("prefers a booted iPhone over a watch", () => {

@@ -58,12 +58,14 @@ export function useGridDevices(
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch(withGridQuery(catalogEndpoint, {
-          limit,
-          offset: 0,
-          device: selectedUdidRef.current,
-        }));
-        const json = await res.json() as GridCatalogResponse;
+        const res = await fetch(
+          withGridQuery(catalogEndpoint, {
+            limit,
+            offset: 0,
+            device: selectedUdidRef.current,
+          }),
+        );
+        const json = (await res.json()) as GridCatalogResponse;
         if (cancelled) return;
         setCatalog(json.devices ?? []);
         if (typeof json.total === "number") setTotal(json.total);
@@ -73,14 +75,19 @@ export function useGridDevices(
     };
     void tick();
     const id = setInterval(tick, CATALOG_RECOVERY_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(id); };
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [catalogEndpoint, enabled, refreshKey, limit]);
 
   useEffect(() => {
     if (!enabled || !statusEventsEndpoint) return;
-    const stream = openHostEventStream(withGridQuery(statusEventsEndpoint, {
-      device: selectedUdid,
-    }));
+    const stream = openHostEventStream(
+      withGridQuery(statusEventsEndpoint, {
+        device: selectedUdid,
+      }),
+    );
     stream.onmessage = (event) => {
       try {
         const json = JSON.parse(event.data) as GridStatusResponse;
@@ -96,14 +103,17 @@ export function useGridDevices(
       refreshSignature.current = "";
       return;
     }
-    const signature = statuses.slice(0, limit).map((status) => status.device).join(",");
+    const signature = statuses
+      .slice(0, limit)
+      .map((status) => status.device)
+      .join(",");
     if (signature === refreshSignature.current) return;
     refreshSignature.current = signature;
     setRefreshKey((key) => key + 1);
   }, [catalog, statuses, limit]);
 
   const devices = useMemo(
-    () => catalog === null ? null : mergeGridCatalog(catalog, statuses),
+    () => (catalog === null ? null : mergeGridCatalog(catalog, statuses)),
     [catalog, statuses],
   );
   const loadMore = useCallback(() => setLimit((l) => l + pageSize), [pageSize]);

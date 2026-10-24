@@ -69,7 +69,7 @@ export function startLogsPoll(
     setSince: (seq: number) => void;
     onBatch: (lines: LogSnapshotLine[]) => void;
     onError?: (errored: boolean) => void;
-  }
+  },
 ): () => void {
   let stopped = false;
   let activeRequest: AbortController | null = null;

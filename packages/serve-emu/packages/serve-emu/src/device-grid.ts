@@ -1,10 +1,6 @@
 import { listAllDevices, type Device } from "./adb.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
-import {
-  listAvds,
-  resolveRunningAvds,
-  type RunningAvd,
-} from "./emulator.ts";
+import { listAvds, resolveRunningAvds, type RunningAvd } from "./emulator.ts";
 import type { SessionStatus } from "./session-status.ts";
 
 export type GridDeviceKind = "physical" | "emulator" | "avd";
@@ -32,9 +28,7 @@ export type DeviceGridResponse = {
 export type DeviceGridDependencies = {
   listAllDevices: () => Promise<Device[]>;
   listAvds: () => Promise<string[]>;
-  resolveRunningAvds: (
-    devices: readonly Device[],
-  ) => Promise<RunningAvd[]>;
+  resolveRunningAvds: (devices: readonly Device[]) => Promise<RunningAvd[]>;
 };
 
 const DEFAULT_DEPENDENCIES: DeviceGridDependencies = {
@@ -55,21 +49,15 @@ export async function loadDeviceGrid(
 ): Promise<DeviceGridResponse> {
   const devicesPromise = dependencies.listAllDevices();
   const avdsPromise = dependencies.listAvds();
-  const runningPromise = devicesPromise.then((devices) =>
-    dependencies.resolveRunningAvds(devices),
-  );
+  const runningPromise = devicesPromise.then((devices) => dependencies.resolveRunningAvds(devices));
   const [adbDevices, runningAvds, avds] = await Promise.all([
     devicesPromise,
     runningPromise,
     avdsPromise,
   ]);
 
-  const runningBySerial = new Map(
-    runningAvds.map((running) => [running.serial, running]),
-  );
-  const runningByAvd = new Map(
-    runningAvds.map((running) => [running.avd, running]),
-  );
+  const runningBySerial = new Map(runningAvds.map((running) => [running.serial, running]));
+  const runningByAvd = new Map(runningAvds.map((running) => [running.avd, running]));
   const rows: GridDevice[] = adbDevices.map((device) => {
     const running = runningBySerial.get(device.serial);
     const isEmulator = isEmulatorSerial(device.serial);

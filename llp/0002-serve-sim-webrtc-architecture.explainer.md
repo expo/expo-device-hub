@@ -98,11 +98,11 @@ WebRTCPublisher (LiveKit WebRTC framework)
 
 The browser has three rendering paths:
 
-| Mode | Server endpoint | Browser surface | Control |
-| --- | --- | --- | --- |
-| MJPEG | `/stream.mjpeg` | `<img>` | WebSocket |
-| AVCC | `/stream.avcc` | WebCodecs + `<canvas>` | WebSocket |
-| WebRTC | `/webrtc/offer` + RTP | `<video>` | WebSocket |
+| Mode   | Server endpoint       | Browser surface        | Control   |
+| ------ | --------------------- | ---------------------- | --------- |
+| MJPEG  | `/stream.mjpeg`       | `<img>`                | WebSocket |
+| AVCC   | `/stream.avcc`        | WebCodecs + `<canvas>` | WebSocket |
+| WebRTC | `/webrtc/offer` + RTP | `<video>`              | WebSocket |
 
 ### Capture and frame flow
 
@@ -133,6 +133,44 @@ bitrate estimate, and packet stream. VP8 fallback retains per-peer encoders.
 The recording uses a separate hardware H.264 session at native resolution. See
 [Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for why this encode is
 independent of viewer settings.
+
+Only a known inactive integrated panel on a two-display Duo uses the 5 fps
+keepalive. The main capture's CoreDevice election is shared with panel captures;
+no additional CoreDevice polling is added. Observations older than one second,
+unavailable/ambiguous elections, ordinary devices and active panels retain normal
+publisher cadence even when their pixels are identical. Activity changes are
+propagated even when the surface seed did not change. This avoids spending the
+VM encoder budget on the inactive panel without slowing a motionless active UI.
+Explicit publisher keyframe requests bypass the inactive limit. Browser PLI reaches
+the encoder through libwebrtc on the next source submission, so an inactive panel's
+PLI recovery can wait up to the 200 ms keepalive interval. [observed: `Sources/SimNative/CoreDeviceDisplayInfo.swift`,
+`ActiveDisplayObservation`; `Sources/SimNative/FrameCapture.swift`, `updateDisplayInfo(_:)`;
+`Sources/SimNative/WebRTCPublisher.swift`, `sendFrame(_:timestamp:panelActive:)`;
+`Sources/StreamingPolicy/PanelFrameCadence.swift`]
+Shared H.264 senders, including fixed Duo panels, use `maintainResolution`: the
+shared resolution policy follows bitrate, and libwebrtc can reduce frame rate
+when its encode-overuse detector observes overload. The bounded shared encoder
+replaces pending work when it cannot keep up. Root device feeds keep their
+existing sender and repeat policies. [observed:
+`Sources/SimNative/WebRTCPublisher.swift`, `drainFramePump(generation:chained:)`,
+`applySenderParameters(to:)`; `Sources/StreamingPolicy/PanelFrameCadence.swift`]
+
+Fixed Duo panel captures poll IOSurface seeds at 120 Hz while the root capture
+keeps its 60 Hz poll. Unchanged seeds still skip snapshots, and the static capture
+floor remains 5 fps. This does not change the publisher's configured output rate.
+[observed: `Sources/SimNative/FrameCapture.swift`, `startSurfacePoller()`;
+`Sources/StreamingPolicy/WebRTCFrameRatePolicy.swift`]
+
+Fixed Duo H.264 panel publishers request default rate control when the startup
+H.264 capability probe reports an encoder ID beginning with `paravirtualized:`.
+The request stays fixed for that publisher, including session rebuilds, instead
+of depending on whether an early low-latency frame triggers fallback. Root
+feeds and fixed panels with a missing or non-paravirtualized probe keep the
+low-latency request and its existing fallback after creation or encoding failure.
+Per-peer `maintainResolution` adaptation is unchanged. [observed:
+`Sources/StreamingPolicy/WebRTCH264RateControlPolicy.swift`;
+`Sources/SimNative/WebRTCPublisher.swift`, initializer and `applySenderParameters(to:)`;
+`Sources/SimNative/H264Encoder.swift`, initializer, `rebuildSession()` and `encode(_:forceKeyframe:)`]
 
 The pump is hardened against hostile host timing, because a production trace
 showed it silently degrading to sends on capture arrivals only, with no

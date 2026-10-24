@@ -1,18 +1,19 @@
-import { type ComponentType } from 'react';
+import { type ComponentType, useLayoutEffect, useRef, useState } from "react";
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
-} from '@expo/hub-client';
-import { bg, border } from '../primitives';
-import { type Device } from './data';
-import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
-import { type DeviceFrameAssets } from './deviceFrame';
-import { PhoneFrame } from './PhoneFrame';
-import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
-import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
+} from "@expo/hub-client";
+import { bg, border } from "../primitives";
+import { type Device } from "./data";
+import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
+import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
+import { type DeviceFrameAssets } from "./deviceFrame";
+import { PhoneFrame } from "./PhoneFrame";
+import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
+import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
@@ -38,6 +39,7 @@ export function StreamPanel({
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  onClipboardFallback,
 }: {
   device: Device;
   client: DeviceClient;
@@ -55,52 +57,74 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
+  onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
+  useLayoutEffect(() => {
+    const element = controlsRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setControlsHeight(element.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const captureScreenshot = useScreenshotToast(client, device.name);
   const setting = client.deviceSettings?.appearance;
-  const appearance = setting === 'dark' || setting === 'light' ? setting : null;
+  const appearance = setting === "dark" || setting === "light" ? setting : null;
   const appearanceDisabled =
     appearance === null ||
-    client.deviceSettingsStatus !== 'ready' ||
-    client.deviceSettingsPending.has('appearance');
+    client.deviceSettingsStatus !== "ready" ||
+    client.deviceSettingsPending.has("appearance");
+  const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
+  // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
+  const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
   return (
     <section
       style={{
         flex: 1,
         minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         padding: 40,
-        boxSizing: 'border-box',
+        boxSizing: "border-box",
         backgroundColor: bg.subtle,
-        borderLeft: framed ? `1px solid ${border.default}` : 'none',
-        borderRight: framed ? `1px solid ${border.default}` : 'none',
-        overflow: 'hidden',
-      }}>
+        borderLeft: framed ? `1px solid ${border.default}` : "none",
+        borderRight: framed ? `1px solid ${border.default}` : "none",
+        overflow: "hidden",
+      }}
+    >
       <div
         data-testid="device-frame-viewport"
         style={{
           flex: 1,
           minWidth: 0,
           minHeight: 0,
-          width: '100%',
-          boxSizing: 'border-box',
+          width: "100%",
+          boxSizing: "border-box",
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
-          containerType: 'size',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
+          containerType: "size",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div
           data-testid="device-frame-anchor"
-          style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+          style={{ position: "relative", display: "flex", flexShrink: 0 }}
+        >
           <PhoneFrame
             device={device}
-            client={client}
+            client={screenClient}
             agentInteraction={agentInteraction}
+            onCopy={async () => {
+              if (!client.clipboardPending) await clipboard.copyFromSimulator();
+            }}
             DeviceScreen={DeviceScreen}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
@@ -108,42 +132,56 @@ export function StreamPanel({
           />
           <div
             style={{
-              position: 'absolute',
-              left: '50%',
+              position: "absolute",
+              left: "50%",
               bottom: `calc(100% + ${TITLE_GAP}px)`,
-              display: 'flex',
-              justifyContent: 'center',
-              width: 'max-content',
+              display: "flex",
+              justifyContent: "center",
+              width: "max-content",
               // Bound by the panel, not the frame: `cqw` resolves against the
               // viewport container, so long names keep the panel's width.
-              maxWidth: '100cqw',
-              transform: 'translateX(-50%)',
-            }}>
-            <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
+              maxWidth: "100cqw",
+              transform: "translateX(-50%)",
+            }}
+          >
+            <DeviceTitle
+              key={device.id}
+              device={device}
+              status={client.status}
+              recording={client.screenRecording}
+            />
           </div>
           <div
+            ref={controlsRef}
             style={{
-              position: 'absolute',
-              left: '50%',
+              position: "absolute",
+              left: "50%",
               top: `calc(100% + ${CONTROLS_GAP}px)`,
-              width: 'max-content',
-              transform: 'translateX(-50%)',
-            }}>
+              width: "max-content",
+              maxWidth: "100cqw",
+              transform: "translateX(-50%)",
+            }}
+          >
             <StreamControls
               recording={client.screenRecording}
               appearance={appearance}
               appearanceDisabled={appearanceDisabled}
               onToggleAppearance={() => {
                 if (!appearanceDisabled) {
-                  client.setDeviceSetting('appearance', appearance === 'dark' ? 'light' : 'dark');
+                  client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
                 }
               }}
-              onHome={() => client.pressButton('home')}
+              onHome={() => client.pressButton("home")}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
+              clipboard={client.capabilities.clipboard}
+              clipboardPending={client.clipboardPending}
+              onPaste={() => void clipboard.pasteFromDevice()}
+              onCopy={() => void clipboard.copyFromSimulator()}
             />
           </div>
+          <ClipboardToaster />
         </div>
       </div>
       <ScreenshotToaster />

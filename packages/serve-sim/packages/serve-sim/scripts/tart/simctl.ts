@@ -17,9 +17,13 @@ export function pickBootedNamed(devices: SimctlDevice[], name: string): string |
 }
 
 export function pickBootedIphone(devices: SimctlDevice[]): string | null {
-  return devices.find((device) => device.state === "Booted" && /iPhone/i.test(device.name))?.udid ?? null;
+  return (
+    devices.find((device) => device.state === "Booted" && /iPhone/i.test(device.name))?.udid ?? null
+  );
 }
 
 export function pickAvailableNamed(devices: SimctlDevice[], name: string): string | null {
-  return devices.find((device) => device.name === name && device.isAvailable !== false)?.udid ?? null;
+  return (
+    devices.find((device) => device.name === name && device.isAvailable !== false)?.udid ?? null
+  );
 }

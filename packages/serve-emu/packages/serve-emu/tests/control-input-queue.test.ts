@@ -54,10 +54,7 @@ function abortable(gate: Promise<void>, signal: AbortSignal): Promise<void> {
 class FakeWriter implements ControlBinaryWriter {
   readonly writes: Buffer[] = [];
   readonly closeReasons: Error[] = [];
-  #plans: Array<
-    | { type: "deferred"; gate: Deferred }
-    | { type: "reject"; reason: unknown }
-  > = [];
+  #plans: Array<{ type: "deferred"; gate: Deferred } | { type: "reject"; reason: unknown }> = [];
 
   deferNext(): Deferred {
     const gate = deferred();
@@ -186,10 +183,7 @@ describe("ControlInputQueue ordering and backpressure", () => {
       },
     });
 
-    const input = queue.enqueue(
-      parseGesture({ type: "text", text: original }),
-      SCREEN,
-    );
+    const input = queue.enqueue(parseGesture({ type: "text", text: original }), SCREEN);
     expect(input.gesture).toEqual({
       type: "text",
       text: "a".repeat(300),
@@ -234,15 +228,7 @@ describe("ControlInputQueue ordering and backpressure", () => {
     }
 
     expect(writer.writes.slice(0, 9).map((packet) => packet[1])).toEqual([
-      0,
-      2,
-      2,
-      2,
-      2,
-      2,
-      2,
-      2,
-      1,
+      0, 2, 2, 2, 2, 2, 2, 2, 1,
     ]);
     expect(await swipe.completion).toEqual({ status: "completed" });
     expect(writer.writes).toHaveLength(10);
@@ -293,11 +279,9 @@ describe("SocketControlWriter", () => {
     const writer = new SocketControlWriter(socket as unknown as Socket);
     const controller = new AbortController();
     let settled = false;
-    const write = writer
-      .write(Buffer.from([1, 2, 3]), controller.signal)
-      .then(() => {
-        settled = true;
-      });
+    const write = writer.write(Buffer.from([1, 2, 3]), controller.signal).then(() => {
+      settled = true;
+    });
 
     await flushMicrotasks();
     expect(socket.writes).toEqual([Buffer.from([1, 2, 3])]);
@@ -319,9 +303,9 @@ describe("SocketControlWriter", () => {
     await expect(blocked).rejects.toMatchObject({
       code: "control-writer-error",
     });
-    await expect(
-      writer.write(Buffer.from([2]), controller.signal),
-    ).rejects.toMatchObject({ code: "control-writer-error" });
+    await expect(writer.write(Buffer.from([2]), controller.signal)).rejects.toMatchObject({
+      code: "control-writer-error",
+    });
     expect(socket.writes).toHaveLength(1);
   });
 
@@ -342,10 +326,7 @@ describe("SocketControlWriter", () => {
     const socket = new FakeSocket();
     socket.writeResult = false;
     const writer = new SocketControlWriter(socket as unknown as Socket);
-    const blocked = writer.write(
-      Buffer.from([1]),
-      new AbortController().signal,
-    );
+    const blocked = writer.write(Buffer.from([1]), new AbortController().signal);
 
     socket.emit("close");
     await expect(blocked).rejects.toMatchObject({
@@ -395,9 +376,7 @@ describe("ControlInputQueue bounds and coalescing", () => {
       entries: 2,
       active: true,
     });
-    const error = expectOverloaded(() =>
-      queue.enqueue({ type: "text", text: "c" }, SCREEN),
-    );
+    const error = expectOverloaded(() => queue.enqueue({ type: "text", text: "c" }, SCREEN));
     expect(error.meta).toEqual({
       depth: 2,
       bytes: 12,
@@ -425,9 +404,7 @@ describe("ControlInputQueue bounds and coalescing", () => {
 
     await flushMicrotasks();
     expect(queue.snapshot()).toMatchObject({ depth: 1, bytes: 6 });
-    const error = expectOverloaded(() =>
-      queue.enqueue({ type: "text", text: "b" }, SCREEN),
-    );
+    const error = expectOverloaded(() => queue.enqueue({ type: "text", text: "b" }, SCREEN));
     expect(error.meta).toEqual({
       depth: 1,
       bytes: 6,
@@ -486,18 +463,9 @@ describe("ControlInputQueue bounds and coalescing", () => {
     const queue = makeQueue(writer, clock);
     const active = queue.enqueue({ type: "text", text: "hold" }, SCREEN);
     const moves = [
-      queue.enqueue(
-        { type: "touch", action: "move", x: 0.1, y: 0.1, pointerId: 7 },
-        SCREEN,
-      ),
-      queue.enqueue(
-        { type: "touch", action: "move", x: 0.2, y: 0.2, pointerId: 8 },
-        SCREEN,
-      ),
-      queue.enqueue(
-        { type: "touch", action: "move", x: 0.3, y: 0.3, pointerId: 7 },
-        SCREEN,
-      ),
+      queue.enqueue({ type: "touch", action: "move", x: 0.1, y: 0.1, pointerId: 7 }, SCREEN),
+      queue.enqueue({ type: "touch", action: "move", x: 0.2, y: 0.2, pointerId: 8 }, SCREEN),
+      queue.enqueue({ type: "touch", action: "move", x: 0.3, y: 0.3, pointerId: 7 }, SCREEN),
     ];
 
     await flushMicrotasks();
@@ -510,16 +478,8 @@ describe("ControlInputQueue bounds and coalescing", () => {
       { status: "completed" },
     ]);
 
-    expect(writer.writes.slice(1).map((packet) => packet.readBigUInt64BE(2))).toEqual([
-      7n,
-      8n,
-      7n,
-    ]);
-    expect(writer.writes.slice(1).map((packet) => packet.readInt32BE(10))).toEqual([
-      108,
-      216,
-      324,
-    ]);
+    expect(writer.writes.slice(1).map((packet) => packet.readBigUInt64BE(2))).toEqual([7n, 8n, 7n]);
+    expect(writer.writes.slice(1).map((packet) => packet.readInt32BE(10))).toEqual([108, 216, 324]);
   });
 
   test("never removes touch down or up while coalescing moves", async () => {
@@ -540,10 +500,7 @@ describe("ControlInputQueue bounds and coalescing", () => {
       { type: "touch", action: "move", x: 0.8, y: 0.8, pointerId: 5 },
       SCREEN,
     );
-    const up = queue.enqueue(
-      { type: "touch", action: "up", x: 0.8, y: 0.8, pointerId: 5 },
-      SCREEN,
-    );
+    const up = queue.enqueue({ type: "touch", action: "up", x: 0.8, y: 0.8, pointerId: 5 }, SCREEN);
 
     await flushMicrotasks();
     expect(queue.snapshot()).toMatchObject({ depth: 5, entries: 4 });
@@ -556,11 +513,7 @@ describe("ControlInputQueue bounds and coalescing", () => {
 
     const touches = writer.writes.slice(1);
     expect(touches.map((packet) => packet[1])).toEqual([0, 2, 1]);
-    expect(touches.map((packet) => packet.readBigUInt64BE(2))).toEqual([
-      5n,
-      5n,
-      5n,
-    ]);
+    expect(touches.map((packet) => packet.readBigUInt64BE(2))).toEqual([5n, 5n, 5n]);
     expect(touches[1]!.readInt32BE(10)).toBe(864);
   });
 
@@ -578,15 +531,9 @@ describe("ControlInputQueue bounds and coalescing", () => {
       SCREEN,
     );
     expectOverloaded(() =>
-      queue.enqueue(
-        { type: "touch", action: "move", x: 0.8, y: 0.8, pointerId: 9 },
-        SCREEN,
-      ),
+      queue.enqueue({ type: "touch", action: "move", x: 0.8, y: 0.8, pointerId: 9 }, SCREEN),
     );
-    const up = queue.enqueue(
-      { type: "touch", action: "up", x: 0.8, y: 0.8, pointerId: 9 },
-      SCREEN,
-    );
+    const up = queue.enqueue({ type: "touch", action: "up", x: 0.8, y: 0.8, pointerId: 9 }, SCREEN);
 
     await flushMicrotasks();
     expect(queue.snapshot()).toMatchObject({
@@ -646,10 +593,7 @@ describe("ControlInputQueue cancellation and failures", () => {
 
     queue.close(new Error("device session changed"));
     queue.close(new Error("ignored second close"));
-    const [activeError, pendingError] = await Promise.all([
-      swipeError,
-      tapError,
-    ]);
+    const [activeError, pendingError] = await Promise.all([swipeError, tapError]);
     await flushMicrotasks();
 
     for (const error of [activeError, pendingError]) {
@@ -667,9 +611,9 @@ describe("ControlInputQueue cancellation and failures", () => {
       entries: 0,
       active: false,
     });
-    expect(() =>
-      queue.enqueue({ type: "text", text: "late" }, SCREEN),
-    ).toThrow("device session changed");
+    expect(() => queue.enqueue({ type: "text", text: "late" }, SCREEN)).toThrow(
+      "device session changed",
+    );
   });
 
   test("rejects active and queued work when the writer fails", async () => {
@@ -683,10 +627,7 @@ describe("ControlInputQueue cancellation and failures", () => {
     const firstError = first.completion.catch((error) => error);
     const secondError = second.completion.catch((error) => error);
 
-    const [activeError, pendingError] = await Promise.all([
-      firstError,
-      secondError,
-    ]);
+    const [activeError, pendingError] = await Promise.all([firstError, secondError]);
     await flushMicrotasks();
 
     for (const error of [activeError, pendingError]) {

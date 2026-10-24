@@ -18,10 +18,14 @@ server.on("upgrade", (request, socket, head) => {
   const accept = createHash("sha1")
     .update(`${request.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
     .digest("base64");
-  socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
-    `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  socket.write(
+    "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+  );
   const hid = rawHidSocket(socket as Socket, head);
-  hid.on("close", () => { closes++; });
+  hid.on("close", () => {
+    closes++;
+  });
   hid.on("message", () => {
     messages++;
     hid.close(1013, reason);
@@ -35,7 +39,10 @@ async function main(): Promise<void> {
   const client = new WebSocket(`ws://127.0.0.1:${address.port}/ws`);
   try {
     const result = await new Promise<{ code: number; reason: string }>((resolve, reject) => {
-      const deadline = setTimeout(() => reject(new Error("Rejection did not reach the WebSocket peer")), 3_000);
+      const deadline = setTimeout(
+        () => reject(new Error("Rejection did not reach the WebSocket peer")),
+        3_000,
+      );
       client.on("error", reject);
       client.on("close", (code, closeReason) => {
         clearTimeout(deadline);
@@ -56,4 +63,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => { console.error(error); process.exitCode = 1; });
+main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});

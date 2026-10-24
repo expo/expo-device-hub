@@ -53,6 +53,7 @@ function stubRuntime() {
         address: "127.0.0.1:9999",
         portFile: "/tmp/fake-confdir/proxy-port",
         caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+        setFields: () => {},
         close: async () => void closed.push("x"),
       }) as CaptureProxy,
     trustCa: async () => {},
@@ -67,7 +68,10 @@ function stubRuntime() {
 const dataFrames = (writes: string[]): string[] => writes.filter((w) => w.startsWith("data:"));
 const metaFrom = (writes: string[]): CaptureMeta => {
   for (const frame of dataFrames(writes)) {
-    const parsed = JSON.parse(frame.slice("data:".length).trim()) as { type?: string; meta?: CaptureMeta };
+    const parsed = JSON.parse(frame.slice("data:".length).trim()) as {
+      type?: string;
+      meta?: CaptureMeta;
+    };
     if (parsed.type === "meta" && parsed.meta) return parsed.meta;
   }
   throw new Error("missing meta frame");
@@ -176,7 +180,9 @@ describe("handleNetworkCaptureRequest", () => {
     const viewerRes = createFakeRes();
     handleNetworkCaptureRequest(viewer.req, viewerRes.res, state, runtime);
 
-    const frames = dataFrames(viewerRes.writes).map((w) => JSON.parse(w.slice("data:".length).trim()));
+    const frames = dataFrames(viewerRes.writes).map((w) =>
+      JSON.parse(w.slice("data:".length).trim()),
+    );
     const byUrl = Object.fromEntries(
       frames.filter((f) => f.request).map((f) => [f.request.url, f.type]),
     );
@@ -262,10 +268,22 @@ describe("handleCaptureBodyRequest", () => {
     // A caller that names the start time it saw gets the body only for that same request.
     const startedAt = store.startedAt(id)!;
     const same = createFakeRes();
-    handleCaptureBodyRequest(createFakeReq(`/network-capture/${id}?startedAt=${startedAt}`).req, same.res, state, id, runtime);
+    handleCaptureBodyRequest(
+      createFakeReq(`/network-capture/${id}?startedAt=${startedAt}`).req,
+      same.res,
+      state,
+      id,
+      runtime,
+    );
     expect(same.status()).toBe(200);
     const newer = createFakeRes();
-    handleCaptureBodyRequest(createFakeReq(`/network-capture/${id}?startedAt=${startedAt - 1000}`).req, newer.res, state, id, runtime);
+    handleCaptureBodyRequest(
+      createFakeReq(`/network-capture/${id}?startedAt=${startedAt - 1000}`).req,
+      newer.res,
+      state,
+      id,
+      runtime,
+    );
     expect(newer.status()).toBe(404);
   });
 
@@ -303,6 +321,7 @@ describe("capture exports for another server's device", () => {
           address: "127.0.0.1:9999",
           portFile: "/tmp/fake-confdir/proxy-port",
           caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          setFields: () => {},
           close: async () => {},
         }) as CaptureProxy,
       trustCa: async () => {},
@@ -359,6 +378,7 @@ describe("handleCaptureEntriesRequest", () => {
           address: "127.0.0.1:9999",
           portFile: "/tmp/fake-confdir/proxy-port",
           caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          setFields: () => {},
           close: async () => {},
         }) as CaptureProxy,
       trustCa: async () => {},
@@ -377,11 +397,23 @@ describe("handleCaptureEntriesRequest", () => {
       const owned = createFakeRes();
       await handleCaptureEntriesRequest(createFakeReq().req, owned.res, state, runtime);
       expect(owned.status()).toBe(200);
-      const lines = owned.writes.join("").trim().split("\n").map((line) => JSON.parse(line));
-      expect(lines.map((entry) => entry.request.url)).toEqual(["https://example.com/a", "https://example.com/b"]);
+      const lines = owned.writes
+        .join("")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(lines.map((entry) => entry.request.url)).toEqual([
+        "https://example.com/a",
+        "https://example.com/b",
+      ]);
 
       const foreign = createFakeRes();
-      await handleCaptureEntriesRequest(createFakeReq().req, foreign.res, { ...state, pid: process.pid + 1 }, runtime);
+      await handleCaptureEntriesRequest(
+        createFakeReq().req,
+        foreign.res,
+        { ...state, pid: process.pid + 1 },
+        runtime,
+      );
       expect(foreign.status()).toBe(404);
     } finally {
       await runtime.disableForDevice("UDID-1");
@@ -406,6 +438,7 @@ describe("handleCaptureHarRequest", () => {
           address: "127.0.0.1:9999",
           portFile: "/tmp/fake-confdir/proxy-port",
           caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          setFields: () => {},
           close: async () => void closed.push("x"),
         }) as CaptureProxy,
       trustCa: async () => {},

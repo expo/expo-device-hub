@@ -29,9 +29,13 @@ export function StatusBar({ status, deviceSize, fps, stats, controlError }: Prop
       <h1>serve-emu</h1>
       <div className="status-details">
         {controlError ? (
-          <div className="control-error" role="alert">{controlError}</div>
+          <div className="control-error" role="alert">
+            {controlError}
+          </div>
         ) : null}
-        <div className="meta" title={detail}>{meta}</div>
+        <div className="meta" title={detail}>
+          {meta}
+        </div>
       </div>
     </header>
   );

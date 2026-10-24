@@ -58,6 +58,8 @@ export function KeyboardCapture({
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!openRef.current || document.activeElement === el) return;
+          // The manual clipboard fallback owns focus while the user pastes into it.
+          if (document.activeElement?.closest("[data-suspend-keyboard-capture]")) return;
           if (readNativeKeyboardRaised()) el.focus();
         });
       });
@@ -84,20 +86,9 @@ export function KeyboardCapture({
   );
 }
 
-export function KeyboardToggleButton({
-  open,
-  onClick,
-}: {
-  open: boolean;
-  onClick: () => void;
-}) {
+export function KeyboardToggleButton({ open, onClick }: { open: boolean; onClick: () => void }) {
   return (
-    <IconButton
-      onClick={onClick}
-      aria-label="Keyboard"
-      aria-pressed={open}
-      title="Keyboard"
-    >
+    <IconButton onClick={onClick} aria-label="Keyboard" aria-pressed={open} title="Keyboard">
       <Keyboard size={18} strokeWidth={1.75} />
     </IconButton>
   );

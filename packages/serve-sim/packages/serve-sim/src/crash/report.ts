@@ -112,7 +112,11 @@ function bundleRootOf(procPath: string | null): string | null {
 
 function deviceUdidOf(procPath: string | null): string | null {
   if (!procPath) return null;
-  return /\/Devices\/([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})\//i.exec(procPath)?.[1] ?? null;
+  return (
+    /\/Devices\/([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})\//i.exec(
+      procPath,
+    )?.[1] ?? null
+  );
 }
 
 function describeFrame(frame: CrashFrame): string | null {

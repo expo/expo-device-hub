@@ -1,7 +1,7 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from "react";
 
-import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from './avcc';
-import { type SessionFetch } from './session-token';
+import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from "./avcc";
+import { type SessionFetch } from "./session-token";
 
 export interface UseAvccStreamOptions {
   /** Base serve-sim helper URL, without `/stream.avcc`. */
@@ -79,7 +79,7 @@ export function useAvccStream({
         canvas.height = height;
         callbacks.current.onResize?.(width, height);
       }
-      const context = canvas.getContext('2d');
+      const context = canvas.getContext("2d");
       if (!context) return;
       context.drawImage(source, 0, 0, width, height);
       callbacks.current.onFrame?.();
@@ -106,7 +106,7 @@ export function useAvccStream({
       });
 
     const paintSeed = async (jpeg: Uint8Array) => {
-      const bitmap = await createImageBitmap(new Blob([jpeg as BlobPart], { type: 'image/jpeg' }));
+      const bitmap = await createImageBitmap(new Blob([jpeg as BlobPart], { type: "image/jpeg" }));
       try {
         if (isLive()) paint(bitmap, bitmap.width, bitmap.height, false);
       } finally {
@@ -115,25 +115,25 @@ export function useAvccStream({
     };
 
     const configureDecoder = (description: Uint8Array) => {
-      if (!decoder || decoder.state === 'closed') decoder = makeDecoder();
+      if (!decoder || decoder.state === "closed") decoder = makeDecoder();
       try {
         decoder.configure({
           codec: avcCodecString(description),
           description,
           optimizeForLatency: true,
-          hardwareAcceleration: 'prefer-hardware',
+          hardwareAcceleration: "prefer-hardware",
         });
       } catch (caught) {
         reportDecodeFailure(`config: ${(caught as Error).message}`);
       }
     };
 
-    const decodeFrame = (type: 'keyframe' | 'delta', data: Uint8Array) => {
-      if (decoder?.state !== 'configured') return;
+    const decodeFrame = (type: "keyframe" | "delta", data: Uint8Array) => {
+      if (decoder?.state !== "configured") return;
       try {
         decoder.decode(
           new EncodedVideoChunk({
-            type: type === 'keyframe' ? 'key' : 'delta',
+            type: type === "keyframe" ? "key" : "delta",
             timestamp,
             data,
           }),
@@ -146,14 +146,14 @@ export function useAvccStream({
 
     const handleChunk = (type: AvccChunkType, payload: Uint8Array) => {
       switch (type) {
-        case 'seed':
+        case "seed":
           void paintSeed(payload).catch(() => {});
           break;
-        case 'description':
+        case "description":
           configureDecoder(payload);
           break;
-        case 'keyframe':
-        case 'delta':
+        case "keyframe":
+        case "delta":
           decodeFrame(type, payload);
           break;
       }
@@ -194,7 +194,7 @@ export function useAvccStream({
       if (retryTimer) clearTimeout(retryTimer);
       controller.abort();
       demuxer.reset();
-      if (decoder && decoder.state !== 'closed') {
+      if (decoder && decoder.state !== "closed") {
         try {
           decoder.close();
         } catch {}

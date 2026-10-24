@@ -24,7 +24,9 @@ test("crash frames travel through the exec socket into the list reducer", async 
         this.reply({ ready: true });
       });
     }
-    send(raw: string) { this.sent.push(JSON.parse(raw) as SentFrame); }
+    send(raw: string) {
+      this.sent.push(JSON.parse(raw) as SentFrame);
+    }
     reply(frame: Record<string, unknown>) {
       this.onmessage?.({ data: JSON.stringify(frame) });
     }
@@ -60,9 +62,15 @@ test("crash frames travel through the exec socket into the list reducer", async 
     const second = { ...first, id: "B", lastSeen: first.lastSeen + 1 };
     let state = EMPTY_CRASH_LIST;
     let errors = 0;
-    stop = watchCrashes("/crashes?device=U&tail=1", (frame) => {
-      state = applyCrashFrame(state, frame);
-    }, () => { errors += 1; });
+    stop = watchCrashes(
+      "/crashes?device=U&tail=1",
+      (frame) => {
+        state = applyCrashFrame(state, frame);
+      },
+      () => {
+        errors += 1;
+      },
+    );
     const initial = await subscribed(0);
     expect(initial.socket.protocols).toEqual(["serve-sim.token.test-token"]);
     expect(initial.socket.sent.at(-1)?.path).toBe("/crashes?device=U&tail=1");
@@ -74,7 +82,7 @@ test("crash frames travel through the exec socket into the list reducer", async 
     deliver(initial.socket, initial.sub, { type: "list", crashes: [first] });
     deliver(initial.socket, initial.sub, { type: "crash", record: second });
     expect(state.crashes.map((crash) => crash.id)).toEqual(["B", "A"]);
-    initial.socket.reply({ sub: initial.sub, data: 'data: not-json\n\n' });
+    initial.socket.reply({ sub: initial.sub, data: "data: not-json\n\n" });
     expect(state.crashes).toHaveLength(2);
     deliver(initial.socket, initial.sub, { type: "recurred", record: { ...second, count: 2 } });
     expect(state.crashes[0]?.count).toBe(2);

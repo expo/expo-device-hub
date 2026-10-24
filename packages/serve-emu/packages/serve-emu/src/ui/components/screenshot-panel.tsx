@@ -59,9 +59,12 @@ export function ScreenshotPanel() {
     setStatus("Ready");
   }, [deviceSession.serial, replaceShot]);
 
-  useEffect(() => () => {
-    if (shotRef.current) URL.revokeObjectURL(shotRef.current.url);
-  }, []);
+  useEffect(
+    () => () => {
+      if (shotRef.current) URL.revokeObjectURL(shotRef.current.url);
+    },
+    [],
+  );
 
   const capture = useCallback(async () => {
     setBusy(true);
@@ -87,7 +90,9 @@ export function ScreenshotPanel() {
       } catch {}
       replaceShot({ url: URL.createObjectURL(blob), blob, width, height, capturedAt: Date.now() });
       setStatus(
-        width ? `${width}×${height} · ${formatBytes(blob.size)}` : `Captured · ${formatBytes(blob.size)}`,
+        width
+          ? `${width}×${height} · ${formatBytes(blob.size)}`
+          : `Captured · ${formatBytes(blob.size)}`,
       );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));

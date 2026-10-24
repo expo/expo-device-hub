@@ -5,10 +5,10 @@ import {
   Portal,
   Root,
   Trigger,
-} from '@radix-ui/react-dropdown-menu';
-import { type ReactNode } from 'react';
+} from "@radix-ui/react-dropdown-menu";
+import { type ReactNode } from "react";
 
-import { cx } from './cx';
+import { cx } from "./cx";
 
 /**
  * Popup menu — a port of the website's `Dropdown` (`ui/components/Dropdown`),
@@ -28,7 +28,7 @@ export function Dropdown({
   className,
   sideOffset = 8,
   collisionPadding = { left: 16, right: 16 },
-  side = 'bottom',
+  side = "bottom",
   disabled = false,
   ...rest
 }: Props) {
@@ -40,15 +40,16 @@ export function Dropdown({
       <Portal>
         <Content
           className={cx(
-            'z-overDialog-605 flex min-w-55 flex-col gap-1 rounded-xl border border-secondary bg-default p-2 shadow-md',
-            'will-change-[opacity,transform]',
-            'data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade',
-            className
+            "z-overDialog-605 flex min-w-55 flex-col gap-1 rounded-xl border border-secondary bg-default p-2 shadow-md",
+            "will-change-[opacity,transform]",
+            "data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade",
+            className,
           )}
           side={side}
           sideOffset={sideOffset}
           collisionPadding={collisionPadding}
-          {...rest}>
+          {...rest}
+        >
           <Arrow asChild>
             <div className="relative -top-1 size-2.5 rotate-45 border-r border-b border-secondary bg-default" />
           </Arrow>

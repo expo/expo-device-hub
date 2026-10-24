@@ -1,11 +1,5 @@
 import { execFileSync } from "child_process";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { findBootedDevice, resolveDevice } from "./device";
@@ -55,8 +49,7 @@ const ALIASES: Record<string, { permission: string; value?: string }> = {
 
 export function resolvePermission(name: string): PermissionSpec | null {
   if (name === "notifications") return { kind: "notifications", values: ["critical"] };
-  if (name === "location")
-    return { kind: "location", values: ["always", "inuse", "never"] };
+  if (name === "location") return { kind: "location", values: ["always", "inuse", "never"] };
   const service = TCC_SERVICES[name];
   if (service) {
     return {
@@ -89,9 +82,7 @@ export interface ParsedArgs {
 
 const BUNDLE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9.-]*$/;
 
-export function parsePermissionsArgs(
-  args: string[],
-): ParsedArgs | { error: string } {
+export function parsePermissionsArgs(args: string[]): ParsedArgs | { error: string } {
   let device: string | undefined;
   let value: string | undefined;
   const positional: string[] = [];
@@ -178,12 +169,7 @@ export function parsePermissionsArgs(
 // ─── Simulator paths ───
 
 function simLibraryDir(udid: string): string {
-  return join(
-    homedir(),
-    "Library/Developer/CoreSimulator/Devices",
-    udid,
-    "data/Library",
-  );
+  return join(homedir(), "Library/Developer/CoreSimulator/Devices", udid, "data/Library");
 }
 
 export function tccDbPath(udid: string): string {
@@ -218,9 +204,7 @@ function withSqliteRetry<T>(fn: () => T): T {
 }
 
 function sqlite(dbPath: string, sql: string): string {
-  return withSqliteRetry(() =>
-    execFileSync("sqlite3", [dbPath, sql], { encoding: "utf-8" }),
-  );
+  return withSqliteRetry(() => execFileSync("sqlite3", [dbPath, sql], { encoding: "utf-8" }));
 }
 
 function writeTcc(
@@ -232,9 +216,7 @@ function writeTcc(
 ): void {
   const db = tccDbPath(udid);
   if (!existsSync(db)) {
-    throw new Error(
-      `TCC.db not found for ${udid}. Is the simulator booted?\n  ${db}`,
-    );
+    throw new Error(`TCC.db not found for ${udid}. Is the simulator booted?\n  ${db}`);
   }
   // `service` comes from our fixed catalogue and `bundleId` is regex-validated
   // by the parser, so direct interpolation here cannot inject SQL.
@@ -261,10 +243,7 @@ function readTcc(udid: string, bundleId?: string): Record<string, number> {
   const db = tccDbPath(udid);
   if (!existsSync(db)) return {};
   const where = bundleId ? ` WHERE client='${bundleId}'` : "";
-  const out = sqlite(
-    db,
-    `SELECT service, auth_value FROM access${where};`,
-  );
+  const out = sqlite(db, `SELECT service, auth_value FROM access${where};`);
   const result: Record<string, number> = {};
   for (const line of out.split("\n")) {
     const [service, authValue] = line.split("|");
@@ -336,8 +315,7 @@ function setLocation(
     });
   } catch (e: any) {
     throw new Error(
-      `simctl privacy ${action} ${service} failed: ` +
-        String(e?.stderr ?? e?.message ?? e).trim(),
+      `simctl privacy ${action} ${service} failed: ` + String(e?.stderr ?? e?.message ?? e).trim(),
     );
   }
 }
@@ -438,12 +416,7 @@ function setNotifications(
       ignoreErrors: true,
     });
     if (mode !== "reset") {
-      const blob = buildSectionInfoBlob(
-        tmp,
-        bundleId,
-        mode !== "revoke",
-        mode === "critical",
-      );
+      const blob = buildSectionInfoBlob(tmp, bundleId, mode !== "revoke", mode === "critical");
       plistBuddy(path, [`Import :sectionInfo:${bundleId} ${blob}`, "Save"]);
     }
     // PlistBuddy saves XML; keep the file binary like SpringBoard writes it.
@@ -471,9 +444,7 @@ function readNotifications(
     return null;
   }
   const m = sectionInfo.match(
-    new RegExp(
-      `<key>${bundleId.replace(/[.-]/g, "\\$&")}</key>\\s*<data>([\\s\\S]*?)</data>`,
-    ),
+    new RegExp(`<key>${bundleId.replace(/[.-]/g, "\\$&")}</key>\\s*<data>([\\s\\S]*?)</data>`),
   );
   if (!m?.[1]) return null;
   const tmp = makeTmpDir();
@@ -504,13 +475,7 @@ function applyOne(
   const spec = resolvePermission(permission)!;
   if (spec.kind === "tcc") {
     const authValue: number | "delete" =
-      verb === "reset"
-        ? "delete"
-        : verb === "revoke"
-          ? 0
-          : value === "limited"
-            ? 3
-            : 2;
+      verb === "reset" ? "delete" : verb === "revoke" ? 0 : value === "limited" ? 3 : 2;
     writeTcc(udid, spec.tccService!, spec.tccAuthVersion!, bundleId, authValue);
   } else if (spec.kind === "notifications") {
     const mode =
@@ -560,7 +525,7 @@ export async function permissions(args: string[]): Promise<void> {
       notifications: readNotifications(udid, parsed.bundleId),
     };
     console.log(JSON.stringify(result, null, quiet ? 0 : 2));
-    process.exit(0);
+    return;
   }
 
   const bundleId = parsed.bundleId!;
@@ -589,9 +554,6 @@ export async function permissions(args: string[]): Promise<void> {
     );
   } else {
     const valueStr = parsed.value ? ` (${parsed.value})` : "";
-    console.log(
-      `🔐 ${parsed.verb} ${parsed.permission}${valueStr} for ${bundleId} on ${udid}`,
-    );
+    console.log(`🔐 ${parsed.verb} ${parsed.permission}${valueStr} for ${bundleId} on ${udid}`);
   }
-  process.exit(0);
 }

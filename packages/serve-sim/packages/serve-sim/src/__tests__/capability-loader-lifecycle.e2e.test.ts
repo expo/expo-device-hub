@@ -102,7 +102,11 @@ describe.skipIf(!ready)("capability loader lifecycle", () => {
     const sessions: ChildProcess[] = [];
     const manager = join(import.meta.dir, "../launch-manager.ts");
     const startSession = async (): Promise<ChildProcess> => {
-      const child = spawn(process.execPath, ["-e", `
+      const child = spawn(
+        process.execPath,
+        [
+          "-e",
+          `
         const { armCapabilityLoader, releaseSessionSync } = await import(${JSON.stringify(manager)});
         await armCapabilityLoader(${JSON.stringify(udid)});
         process.on("SIGTERM", () => {
@@ -111,12 +115,18 @@ describe.skipIf(!ready)("capability loader lifecycle", () => {
         });
         setInterval(() => {}, 1000);
         console.log("armed");
-      `], { stdio: ["ignore", "pipe", "pipe"] });
+      `,
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
       sessions.push(child);
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error("session did not arm")), 30_000);
         child.once("error", reject);
-        child.stdout?.once("data", () => { clearTimeout(timeout); resolve(); });
+        child.stdout?.once("data", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
       });
       return child;
     };

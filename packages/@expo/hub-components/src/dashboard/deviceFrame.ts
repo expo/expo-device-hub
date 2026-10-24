@@ -1,7 +1,7 @@
-import { type CSSProperties } from 'react';
-import { type DeviceOrientation } from '@expo/hub-client';
+import { type CSSProperties } from "react";
+import { type DeviceOrientation } from "@expo/hub-client";
 
-import { type DeviceFrameProfileId } from './data';
+import { type DeviceFrameProfileId } from "./data";
 
 export type DeviceFrameRect = {
   x: number;
@@ -53,8 +53,8 @@ export function deviceViewportStyle({
     width: `min(${maxWidth}px, 100cqw, ${(ratio * 100).toFixed(6)}cqh)`,
     aspectRatio: `${ratio}`,
     flexShrink: 0,
-    position: 'relative',
-    isolation: 'isolate',
+    position: "relative",
+    isolation: "isolate",
   };
 }
 
@@ -62,16 +62,13 @@ function percent(value: number, total: number): string {
   return `${((value / total) * 100).toFixed(4)}%`;
 }
 
-function artworkStyle(
-  asset: DeviceFrameAsset,
-  layout: DeviceFrameLayout,
-): CSSProperties {
+function artworkStyle(asset: DeviceFrameAsset, layout: DeviceFrameLayout): CSSProperties {
   const centered: CSSProperties = {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    userSelect: 'none',
-    pointerEvents: 'none',
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    userSelect: "none",
+    pointerEvents: "none",
     zIndex: 2,
   };
 
@@ -86,8 +83,8 @@ function artworkStyle(
 
   return {
     ...centered,
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     transform: `translate(-50%, -50%) rotate(${layout.rotation}deg)`,
   };
 }
@@ -98,11 +95,11 @@ export function deviceFrameRotation(
   displayRatio: number,
 ): DeviceFrameRotation {
   switch (orientation) {
-    case 'landscape_left':
+    case "landscape_left":
       return 90;
-    case 'landscape_right':
+    case "landscape_right":
       return -90;
-    case 'portrait_upside_down':
+    case "portrait_upside_down":
       return 180;
     default:
       return displayRatio > 1 ? 90 : 0;
@@ -111,7 +108,7 @@ export function deviceFrameRotation(
 
 /** Map the portrait source artwork and screen opening into the current orientation. */
 export function deviceFrameLayout(
-  asset: Pick<DeviceFrameAsset, 'width' | 'height' | 'screen'>,
+  asset: Pick<DeviceFrameAsset, "width" | "height" | "screen">,
   rotation: DeviceFrameRotation,
 ): DeviceFrameLayout {
   const { width, height, screen } = asset;
@@ -185,27 +182,27 @@ export function deviceFramePresentation({
   return {
     frameStyle: {
       ...deviceViewportStyle({ maxShortSide: maxFrameShortSide, ratio: frameRatio }),
-      containerType: 'size',
+      containerType: "size",
     },
     screenStyle: {
-      position: 'absolute',
+      position: "absolute",
       left: `calc(${percent(layout.screen.x, layout.width)} - ${SCREEN_BLEED_PX}px)`,
       top: `calc(${percent(layout.screen.y, layout.height)} - ${SCREEN_BLEED_PX}px)`,
       width: `calc(${percent(layout.screen.width, layout.width)} + ${SCREEN_BLEED_PX * 2}px)`,
       height: `calc(${percent(layout.screen.height, layout.height)} + ${SCREEN_BLEED_PX * 2}px)`,
-      containerType: 'size',
+      containerType: "size",
       zIndex: 1,
-      overflow: 'hidden',
+      overflow: "hidden",
       borderRadius: `calc(${screenRadiusX} + ${SCREEN_BLEED_PX}px) / calc(${screenRadiusY} + ${SCREEN_BLEED_PX}px)`,
     } as CSSProperties,
     streamStyle: {
-      position: 'absolute',
-      top: '50%',
-      left: '50%',
+      position: "absolute",
+      top: "50%",
+      left: "50%",
       width: `max(100cqw, ${(displayRatio * 100).toFixed(6)}cqh)`,
       height: `max(100cqh, ${(100 / displayRatio).toFixed(6)}cqw)`,
       aspectRatio: `${displayRatio}`,
-      transform: 'translate(-50%, -50%)',
+      transform: "translate(-50%, -50%)",
     },
     artworkStyle: artworkStyle(asset, layout),
   };

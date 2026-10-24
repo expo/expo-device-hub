@@ -24,7 +24,16 @@ function setup(timeoutMs = 1_000) {
     onError: (message, command) => errors.push({ message, command }),
     timeoutMs,
   });
-  return { queue, sent, pending, results, errors, disconnect: () => { connected = false; } };
+  return {
+    queue,
+    sent,
+    pending,
+    results,
+    errors,
+    disconnect: () => {
+      connected = false;
+    },
+  };
 }
 
 describe("acknowledged control queue", () => {
@@ -130,7 +139,10 @@ describe("acknowledged control queue", () => {
     expect(sent).toHaveLength(1);
     expect(pending).toEqual([true, false]);
     expect(results).toEqual([
-      { command: { pose: "tent" }, reply: { requestId: 1, ok: false, error: "Pose is unsupported" } },
+      {
+        command: { pose: "tent" },
+        reply: { requestId: 1, ok: false, error: "Pose is unsupported" },
+      },
     ]);
     expect(errors).toEqual([{ message: "Pose is unsupported", command: { pose: "tent" } }]);
   });

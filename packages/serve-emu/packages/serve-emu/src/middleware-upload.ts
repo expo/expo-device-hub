@@ -1,19 +1,11 @@
-import {
-  AppManagementError,
-  importMediaFile,
-  installApk,
-} from "./app-management.ts";
+import { AppManagementError, importMediaFile, installApk } from "./app-management.ts";
 import {
   MultipartUploadError,
   stageMultipartUpload,
   type StagedMultipartFile,
 } from "./multipart-upload.ts";
 import { HttpBodyError } from "./request-body.ts";
-import {
-  UploadManager,
-  UploadManagerError,
-  type UploadManagerOptions,
-} from "./upload-manager.ts";
+import { UploadManager, UploadManagerError, type UploadManagerOptions } from "./upload-manager.ts";
 
 const DEFAULT_MAX_APK_UPLOAD_BYTES = 512 * 1024 * 1024;
 const DEFAULT_MAX_MEDIA_UPLOAD_BYTES = 1024 * 1024 * 1024;
@@ -100,16 +92,12 @@ async function cleanupStagedFile(
   try {
     await staged.cleanup();
   } catch (cleanupError) {
-    throw new MultipartUploadError(
-      "upload-cleanup-failed",
-      "failed to clean up multipart upload",
-      {
-        cause:
-          operationError === undefined
-            ? cleanupError
-            : new AggregateError([operationError, cleanupError]),
-      },
-    );
+    throw new MultipartUploadError("upload-cleanup-failed", "failed to clean up multipart upload", {
+      cause:
+        operationError === undefined
+          ? cleanupError
+          : new AggregateError([operationError, cleanupError]),
+    });
   }
 }
 
@@ -149,25 +137,17 @@ export function createMiddlewareUploader(
     "uploadQueueTimeoutMs",
     true,
   );
-  const largestFileLimit = Math.max(
-    maxApkUploadBytes,
-    maxMediaUploadBytes,
-  );
-  if (
-    largestFileLimit >
-    Number.MAX_SAFE_INTEGER - MULTIPART_BODY_OVERHEAD_BYTES
-  ) {
+  const largestFileLimit = Math.max(maxApkUploadBytes, maxMediaUploadBytes);
+  if (largestFileLimit > Number.MAX_SAFE_INTEGER - MULTIPART_BODY_OVERHEAD_BYTES) {
     throw new TypeError("upload byte limit is too large");
   }
 
-  const stageUpload =
-    dependencies.stageMultipartUpload ?? stageMultipartUpload;
+  const stageUpload = dependencies.stageMultipartUpload ?? stageMultipartUpload;
   const installStagedApk = dependencies.installApk ?? installApk;
   const importStagedMedia = dependencies.importMediaFile ?? importMediaFile;
   const uploads = (
     dependencies.createUploadManager ??
-    ((managerOptions: UploadManagerOptions) =>
-      new UploadManager(managerOptions))
+    ((managerOptions: UploadManagerOptions) => new UploadManager(managerOptions))
   )({
     maxActive: maxActiveUploads,
     maxQueued: maxQueuedUploads,
@@ -177,8 +157,7 @@ export function createMiddlewareUploader(
 
   const handle = async (request: Request, kind: UploadKind) => {
     const fieldName = kind === "apk" ? "apk" : "file";
-    const maxFileBytes =
-      kind === "apk" ? maxApkUploadBytes : maxMediaUploadBytes;
+    const maxFileBytes = kind === "apk" ? maxApkUploadBytes : maxMediaUploadBytes;
     const action = kind === "apk" ? installStagedApk : importStagedMedia;
 
     try {
@@ -188,8 +167,7 @@ export function createMiddlewareUploader(
           const staged = await stageUpload(request, {
             fieldName,
             maxFileBytes,
-            maxBodyBytes:
-              maxFileBytes + MULTIPART_BODY_OVERHEAD_BYTES,
+            maxBodyBytes: maxFileBytes + MULTIPART_BODY_OVERHEAD_BYTES,
             signal,
           });
           let operationError: unknown;

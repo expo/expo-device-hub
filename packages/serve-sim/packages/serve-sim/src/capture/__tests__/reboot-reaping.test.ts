@@ -75,14 +75,65 @@ test("leaves another serve-sim's preview running while that process reboots the 
   const peer = Bun.spawn(["sleep", "30"]);
   try {
     const file = writeOwnState(PEER_UDID, peer.pid);
-    writeFileSync(join(stateDir.dir, `reboot-${PEER_UDID}.json`), JSON.stringify({ pid: peer.pid }));
+    writeFileSync(
+      join(stateDir.dir, `reboot-${PEER_UDID}.json`),
+      JSON.stringify({ pid: peer.pid }),
+    );
 
     expect((await readServeSimStates()).map((state) => state.device)).toContain(PEER_UDID);
     expect(existsSync(file)).toBe(true);
-    expect(await Promise.race([peer.exited.then(() => "exited"), Bun.sleep(200).then(() => "running")])).toBe(
-      "running",
-    );
+    expect(
+      await Promise.race([peer.exited.then(() => "exited"), Bun.sleep(200).then(() => "running")]),
+    ).toBe("running");
   } finally {
     peer.kill();
   }
+});
+
+test("resumes the retained session only after boot completion and capability rearm", async () => {
+  const order: string[] = [];
+  const runtime = createCaptureRuntime({
+    configure: capabilityHarness({ publish: async () => {}, remove: async () => {} }),
+  });
+  await rebootWithCapture(UDID, false, {
+    runtime,
+    closeSession: async () => {
+      order.push("suspend");
+    },
+    shutdown: async () => {
+      order.push("shutdown");
+    },
+    boot: async () => {
+      order.push("boot-complete");
+    },
+    rearm: async () => {
+      order.push("rearm");
+    },
+    resumeSession: async () => {
+      order.push("fresh-capture");
+    },
+  });
+  expect(order).toEqual(["suspend", "shutdown", "boot-complete", "rearm", "fresh-capture"]);
+});
+
+test("does not resume a retained recording after boot failure", async () => {
+  const runtime = createCaptureRuntime({
+    configure: capabilityHarness({ publish: async () => {}, remove: async () => {} }),
+  });
+  let resumed = false;
+  await expect(
+    rebootWithCapture(UDID, false, {
+      runtime,
+      closeSession: async () => {},
+      shutdown: async () => {},
+      boot: async () => {
+        throw new Error("boot failed");
+      },
+      rearm: async () => {},
+      resumeSession: async () => {
+        resumed = true;
+      },
+    }),
+  ).rejects.toThrow("boot failed");
+  expect(resumed).toBe(false);
 });

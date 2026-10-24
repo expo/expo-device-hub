@@ -29,6 +29,11 @@ function bearerToken(header: string | undefined): string | null {
   return match ? match[1]!.trim() : null;
 }
 
+export function matchesBearerToken(header: string | undefined, token: string): boolean {
+  const value = bearerToken(header);
+  return value !== null && safeEqualString(value, token);
+}
+
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -165,15 +170,19 @@ export function assertPreviewAccess(
     res.writeHead(302, {
       // A leading "//" would be read as an absolute cross-origin URL by the browser.
       Location: `${url.pathname.replace(/^\/+/, "/")}${url.search}`,
-      "Set-Cookie": accessCookie(sessionToken, opts.basePath, isHttpsRequest(req.headers), embedded),
+      "Set-Cookie": accessCookie(
+        sessionToken,
+        opts.basePath,
+        isHttpsRequest(req.headers),
+        embedded,
+      ),
       "Cache-Control": "no-store, private",
     });
     res.end();
     return false;
   }
 
-  const fromBearer = bearerToken(headerValue(req.headers.authorization));
-  if (fromBearer && safeEqualString(fromBearer, sessionToken)) return true;
+  if (matchesBearerToken(headerValue(req.headers.authorization), sessionToken)) return true;
   const fromCookie = cookieValue(headerValue(req.headers.cookie), accessCookieName(sessionToken));
   if (
     fromCookie &&
@@ -223,10 +232,11 @@ function offeredTokenSubprotocols(headers: SessionAuthReq["headers"]): string[] 
   return offered
     .split(",")
     .map((entry) => entry.trim())
-    .filter((value) =>
-      value.startsWith(TOKEN_SUBPROTOCOL_PREFIX)
-      && value.length > TOKEN_SUBPROTOCOL_PREFIX.length
-      && SUBPROTOCOL_TOKEN.test(value)
+    .filter(
+      (value) =>
+        value.startsWith(TOKEN_SUBPROTOCOL_PREFIX) &&
+        value.length > TOKEN_SUBPROTOCOL_PREFIX.length &&
+        SUBPROTOCOL_TOKEN.test(value),
     );
 }
 
@@ -234,9 +244,11 @@ export function acceptedTokenSubprotocol(
   headers: SessionAuthReq["headers"],
   sessionToken: string,
 ): string | null {
-  return offeredTokenSubprotocols(headers).find((value) =>
-    safeEqualString(value.slice(TOKEN_SUBPROTOCOL_PREFIX.length), sessionToken)
-  ) ?? null;
+  return (
+    offeredTokenSubprotocols(headers).find((value) =>
+      safeEqualString(value.slice(TOKEN_SUBPROTOCOL_PREFIX.length), sessionToken),
+    ) ?? null
+  );
 }
 
 const UPGRADE_AUTH_HEADERS = [
@@ -251,9 +263,10 @@ const UPGRADE_AUTH_HEADERS = [
 export function upgradeAuthHeaders(
   source: SessionAuthReq["headers"] | Request,
 ): SessionAuthReq["headers"] {
-  const read = source instanceof Request
-    ? (name: string) => source.headers.get(name) ?? undefined
-    : (name: string) => source[name];
+  const read =
+    source instanceof Request
+      ? (name: string) => source.headers.get(name) ?? undefined
+      : (name: string) => source[name];
   const headers: SessionAuthReq["headers"] = {};
   for (const name of UPGRADE_AUTH_HEADERS) headers[name] = read(name);
   return headers;
@@ -263,7 +276,10 @@ export function upgradeAuthHeaders(
 // write themselves, so a write gets the same answer whatever its content type.
 export function assertCaptureAccess(req: SessionAuthReq, res: SessionAuthRes): boolean {
   if (!isSameOriginRequest(req.headers)) {
-    res.writeHead(403, { "Content-Type": "application/json", "Cache-Control": "no-store, private" });
+    res.writeHead(403, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, private",
+    });
     res.end(JSON.stringify({ error: "Network capture is same-origin only." }));
     return false;
   }
@@ -277,8 +293,7 @@ export function assertUpgradeAccess(
   opts: { required: boolean },
 ): boolean {
   if (!opts.required) return true;
-  const fromBearer = bearerToken(headerValue(req.authorization));
-  if (fromBearer && safeEqualString(fromBearer, sessionToken)) return true;
+  if (matchesBearerToken(headerValue(req.authorization), sessionToken)) return true;
   if (acceptedTokenSubprotocol(req, sessionToken)) return true;
   const fromCookie = cookieValue(headerValue(req.cookie), accessCookieName(sessionToken));
   return !!fromCookie && safeEqualString(fromCookie, sessionToken) && isSameOriginRequest(req);

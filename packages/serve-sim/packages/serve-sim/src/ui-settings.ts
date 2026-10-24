@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { findBootedDevice, resolveDevice } from "./device";
+import { debugUi } from "./debug";
 import { setHardwareKeyboard } from "./native";
 import { dirnameOf } from "./runtime";
 import { stateDir } from "./state";
@@ -102,23 +103,39 @@ const deviceBootSessions = new Map<string, string>();
 
 function readDeviceOptionState(udid: string): DeviceOptionState | null {
   try {
-    const state = JSON.parse(readFileSync(deviceOptionStateFile(udid), "utf8")) as Partial<DeviceOptionState>;
-    if (typeof state.bootSession !== "string" || typeof state.revision !== "string" ||
-      !state.values || typeof state.values !== "object") return null;
+    const state = JSON.parse(
+      readFileSync(deviceOptionStateFile(udid), "utf8"),
+    ) as Partial<DeviceOptionState>;
+    if (
+      typeof state.bootSession !== "string" ||
+      typeof state.revision !== "string" ||
+      !state.values ||
+      typeof state.values !== "object"
+    )
+      return null;
     return { bootSession: state.bootSession, revision: state.revision, values: state.values };
   } catch {
     return null;
   }
 }
 
-function writeDeviceOptionState(udid: string, bootSession: string, option: string, value: string): string {
+function writeDeviceOptionState(
+  udid: string,
+  bootSession: string,
+  option: string,
+  value: string,
+): string {
   mkdirSync(stateDir(), { recursive: true });
   const file = deviceOptionStateFile(udid);
   const temporary = `${file}.${process.pid}.tmp`;
   const current = readDeviceOptionState(udid);
   const values = current?.bootSession === bootSession ? current.values : {};
   const revision = randomUUID();
-  writeFileSync(temporary, JSON.stringify({ bootSession, revision, values: { ...values, [option]: value } }), { mode: 0o600 });
+  writeFileSync(
+    temporary,
+    JSON.stringify({ bootSession, revision, values: { ...values, [option]: value } }),
+    { mode: 0o600 },
+  );
   renameSync(temporary, file);
   return revision;
 }
@@ -132,10 +149,11 @@ function withDeviceOptionStateLock<T>(udid: string, fn: () => Promise<T>): Promi
   return withStateLock(
     path,
     10_000,
-    () => new Error(
-      `Timed out waiting to update simulator UI settings for ${udid}. Another serve-sim command is holding ${path}. ` +
-        "Wait for it to finish, or remove that file if nothing is running.",
-    ),
+    () =>
+      new Error(
+        `Timed out waiting to update simulator UI settings for ${udid}. Another serve-sim command is holding ${path}. ` +
+          "Wait for it to finish, or remove that file if nothing is running.",
+      ),
     fn,
   );
 }
@@ -145,15 +163,27 @@ async function deviceBootSession(udid: string, refresh = false): Promise<string>
     const cached = deviceBootSessions.get(udid);
     if (cached) return cached;
   }
-  const bootSession = await run("xcrun", ["simctl", "spawn", udid, "launchctl", "managerpid"]);
+  const started = Date.now();
+  // simctl spawn can stall on a loaded host; fail with a clear error rather than wait forever.
+  const bootSession = await run(
+    "xcrun",
+    ["simctl", "spawn", udid, "launchctl", "managerpid"],
+    SIMCTL_TIMEOUT_MS,
+  );
+  debugUi("boot session of %s read in %d ms", udid, Date.now() - started);
   if (!/^\d+$/.test(bootSession)) {
-    throw new Error(`Could not identify the boot session for simulator ${udid}. Make sure it is booted and try again.`);
+    throw new Error(
+      `Could not identify the boot session for simulator ${udid}. Make sure it is booted and try again.`,
+    );
   }
   deviceBootSessions.set(udid, bootSession);
   return bootSession;
 }
 
-async function currentDeviceOptionState(udid: string, refresh = false): Promise<DeviceOptionState | null> {
+async function currentDeviceOptionState(
+  udid: string,
+  refresh = false,
+): Promise<DeviceOptionState | null> {
   const state = readDeviceOptionState(udid);
   if (!state) return null;
   const bootSession = await deviceBootSession(udid, refresh).catch(() => null);
@@ -277,24 +307,38 @@ function axSettingsTool(): Promise<string> {
 // (the sidebar drives them through the control socket), where a blocking
 // execFileSync would stall every stream the server is carrying.
 
-function run(file: string, args: string[]): Promise<string> {
+// A loaded iOS 27 CI host took 10.9 s for `launchctl managerpid`; leave room for that.
+const SIMCTL_TIMEOUT_MS = 30_000;
+
+function run(file: string, args: string[], timeout = 0): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { encoding: "utf-8", maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err) reject(new Error(String(stderr).trim() || err.message));
-      else resolve(String(stdout).trim());
-    });
+    execFile(
+      file,
+      args,
+      { encoding: "utf-8", maxBuffer: 4 * 1024 * 1024, timeout },
+      (err, stdout, stderr) => {
+        if (err?.killed && timeout > 0) {
+          reject(
+            new Error(
+              `\`${file} ${args.join(" ")}\` did not finish within ${timeout / 1000} s. Check that the simulator is booted and responding, then try again.`,
+            ),
+          );
+        } else if (err) reject(new Error(String(stderr).trim() || err.message));
+        else resolve(String(stdout).trim());
+      },
+    );
   });
 }
 
 function simctlUi(udid: string, subcommand: string, value?: string): Promise<string> {
   const args = ["simctl", "ui", udid, subcommand];
   if (value !== undefined) args.push(value);
-  return run("xcrun", args);
+  return run("xcrun", args, SIMCTL_TIMEOUT_MS);
 }
 
 async function axRun(udid: string, ...args: string[]): Promise<string> {
   const tool = await axSettingsTool();
-  return run("xcrun", ["simctl", "spawn", udid, tool, ...args]);
+  return run("xcrun", ["simctl", "spawn", udid, tool, ...args], SIMCTL_TIMEOUT_MS);
 }
 
 function toToggle(simctlValue: string): string {
@@ -319,7 +363,11 @@ export async function getUiOption(udid: string, option: string): Promise<string>
 }
 
 async function applyDeviceUiOption(udid: string, option: string, value: string): Promise<void> {
-  if (option === "hardware-keyboard" && !await setHardwareKeyboard(udid, value === "on")) {
+  const started = Date.now();
+  const changed =
+    option !== "hardware-keyboard" || (await setHardwareKeyboard(udid, value === "on"));
+  debugUi("CoreSimulator set %s to %s on %s in %d ms", option, value, udid, Date.now() - started);
+  if (!changed) {
     throw new Error(
       `Could not turn the hardware keyboard ${value} because CoreSimulator rejected the change. ` +
         "Make sure the simulator is booted, then try again.",
@@ -327,7 +375,11 @@ async function applyDeviceUiOption(udid: string, option: string, value: string):
   }
 }
 
-export async function setUiOption(udid: string, option: string, value: string): Promise<string | undefined> {
+export async function setUiOption(
+  udid: string,
+  option: string,
+  value: string,
+): Promise<string | undefined> {
   const spec = Object.hasOwn(UI_OPTIONS, option) ? UI_OPTIONS[option] : undefined;
   if (!spec) throw new Error(`unknown option: ${option}`);
   if (spec.via === "device") {
@@ -344,7 +396,10 @@ export async function setUiOption(udid: string, option: string, value: string): 
 }
 
 async function applyAndSaveDeviceUiOption(
-  udid: string, bootSession: string, option: string, value: string,
+  udid: string,
+  bootSession: string,
+  option: string,
+  value: string,
 ): Promise<string> {
   const current = readDeviceOptionState(udid);
   const previous = current?.bootSession === bootSession ? current.values[option] : undefined;
@@ -353,15 +408,20 @@ async function applyAndSaveDeviceUiOption(
     return writeDeviceOptionState(udid, bootSession, option, value);
   } catch (error) {
     if (previous === undefined) {
-      throw new Error(`Could not save ${option} for simulator ${udid}; its previous value is unknown and cannot be restored. ` +
-        "Check that the state directory is writable, then explicitly set the option again.", { cause: error });
+      throw new Error(
+        `Could not save ${option} for simulator ${udid}; its previous value is unknown and cannot be restored. ` +
+          "Check that the state directory is writable, then explicitly set the option again.",
+        { cause: error },
+      );
     }
     try {
       await applyDeviceUiOption(udid, option, previous);
     } catch (rollbackError) {
-      throw new AggregateError([error, rollbackError],
+      throw new AggregateError(
+        [error, rollbackError],
         `Could not save or restore ${option} for simulator ${udid}. ` +
-        "Check that the state directory is writable, then explicitly set the option again.");
+          "Check that the state directory is writable, then explicitly set the option again.",
+      );
     }
     throw error;
   }

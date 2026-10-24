@@ -41,7 +41,7 @@ export interface CrashRuntimeOptions {
   watchDir?: (
     dir: string,
     listener: (eventType: string, filename: string | null) => void,
-    onWatchError: (error: unknown) => void
+    onWatchError: (error: unknown) => void,
   ) => CrashWatcherHandle;
   readReport?: (path: string) => Promise<string>;
   readDir?: (dir: string) => Promise<string[]>;
@@ -142,7 +142,7 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
   };
 
   const logTailFor = (
-    report: Pick<CrashReport, "deviceUdid" | "capturedAtMs" | "procName" | "pid">
+    report: Pick<CrashReport, "deviceUdid" | "capturedAtMs" | "procName" | "pid">,
   ): { logTail: string[]; logTailSource: LogTailSource } => {
     const none = { logTail: [], logTailSource: "none" as const };
     if (!report.deviceUdid || report.capturedAtMs === null || !report.procName) return none;
@@ -161,7 +161,7 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
 
   const ingest = async (
     filename: string,
-    claim: { ino: number; udid: string | null }
+    claim: { ino: number; udid: string | null },
   ): Promise<void> => {
     const epoch = generation;
     const releaseClaim = (): void => {
@@ -191,8 +191,8 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
         new Error(
           report
             ? "The report has no simulator device in its process path, so there is nothing to attach it to."
-            : "The report looked like a simulator app crash but its body did not parse."
-        )
+            : "The report looked like a simulator app crash but its body did not parse.",
+        ),
       );
       return;
     }
@@ -282,10 +282,10 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
         (_eventType, filename) => {
           if (!filename) return;
           void consider(filename).catch((error) =>
-            reportError(`could not ingest ${filename}`, error)
+            reportError(`could not ingest ${filename}`, error),
           );
         },
-        markUnavailable
+        markUnavailable,
       );
       if (running) {
         watcher = handle;
@@ -359,7 +359,7 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
     subscribe(
       udid: string,
       listener: (event: CrashEvent) => void,
-      onClosed?: () => void
+      onClosed?: () => void,
     ): { crashes: CrashRecord[]; unsubscribe: () => void } {
       const store = storeFor(udid);
       return { crashes: store.list(), unsubscribe: store.subscribe(listener, onClosed) };

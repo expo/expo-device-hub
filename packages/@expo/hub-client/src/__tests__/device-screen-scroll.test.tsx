@@ -107,16 +107,18 @@ test("unmount cancels pending wheel frames", async () => {
 for (const preview of ["embedded", "standalone"] as const) {
   test(`${preview}: hiding cancels buffered scrolling and return starts a fresh burst`, async () => {
     if (preview === "standalone") {
-      await act(async () => root.render(
-        <SimulatorView
-          url="http://unused.invalid"
-          streamMode="mjpeg"
-          subscribeFrame={() => () => {}}
-          onStreamTouch={() => {}}
-          onStreamScroll={(sample) => scrolls.push(sample)}
-          hideControls
-        />,
-      ));
+      await act(async () =>
+        root.render(
+          <SimulatorView
+            url="http://unused.invalid"
+            streamMode="mjpeg"
+            subscribeFrame={() => () => {}}
+            onStreamTouch={() => {}}
+            onStreamScroll={(sample) => scrolls.push(sample)}
+            hideControls
+          />,
+        ),
+      );
       surface = [...dom.document.querySelectorAll("div")].find(
         (element) => element.style.touchAction === "none",
       ) as unknown as HTMLDivElement;

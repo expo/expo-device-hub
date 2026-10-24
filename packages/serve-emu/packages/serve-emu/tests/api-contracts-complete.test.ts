@@ -169,9 +169,7 @@ describe("complete API success contracts", () => {
           webrtc: {
             transport: "webrtc",
             codec: "h264",
-            iceServers: [
-              { urls: ["stun:stun.l.google.com:19302"] },
-            ],
+            iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
             iceTransportPolicy: "all",
           },
         },
@@ -227,9 +225,11 @@ describe("complete API success contracts", () => {
       avd: "Pixel_9",
       device: "Pixel 9",
     });
-    expect(
-      parseAvdStartResponse({ ok: true, serial: "emulator-5556", avd: "Pixel_9" }),
-    ).toEqual({ ok: true, serial: "emulator-5556", avd: "Pixel_9" });
+    expect(parseAvdStartResponse({ ok: true, serial: "emulator-5556", avd: "Pixel_9" })).toEqual({
+      ok: true,
+      serial: "emulator-5556",
+      avd: "Pixel_9",
+    });
     expect(parseAvdStopResponse({ ok: true, serial: "emulator-5556" })).toEqual({
       ok: true,
       serial: "emulator-5556",
@@ -260,14 +260,18 @@ describe("complete API success contracts", () => {
   });
 
   test("parses orientation, appearance, and network status payloads", () => {
-    expect(parseFoldResponse({
-      ok: true,
-      fold: { supported: true, posture: "half_opened", hingeAngle: 90 },
-    }).fold).toEqual({ supported: true, posture: "half_opened", hingeAngle: 90 });
-    expect(() => parseFoldResponse({
-      ok: true,
-      fold: { supported: true, posture: "sideways", hingeAngle: 90 },
-    })).toThrow();
+    expect(
+      parseFoldResponse({
+        ok: true,
+        fold: { supported: true, posture: "half_opened", hingeAngle: 90 },
+      }).fold,
+    ).toEqual({ supported: true, posture: "half_opened", hingeAngle: 90 });
+    expect(() =>
+      parseFoldResponse({
+        ok: true,
+        fold: { supported: true, posture: "sideways", hingeAngle: 90 },
+      }),
+    ).toThrow();
     expect(
       parseOrientationResponse({
         ok: true,
@@ -405,13 +409,13 @@ describe("complete API success contracts", () => {
         location: appliedLocation,
       }).location,
     ).toEqual(appliedLocation);
-    expect(
-      parseLocationUpdateResponse({ ok: true, location: appliedLocation }).location,
-    ).toEqual(appliedLocation);
+    expect(parseLocationUpdateResponse({ ok: true, location: appliedLocation }).location).toEqual(
+      appliedLocation,
+    );
     expect(parseRoutePlaybackSnapshot(routeSnapshot)).toEqual(routeSnapshot);
-    expect(
-      parseRouteMutationResponse({ ok: true, route: routeSnapshot }).route,
-    ).toEqual(routeSnapshot);
+    expect(parseRouteMutationResponse({ ok: true, route: routeSnapshot }).route).toEqual(
+      routeSnapshot,
+    );
   });
 
   test("parses both recorded event variants and session mutations", () => {
@@ -419,9 +423,9 @@ describe("complete API success contracts", () => {
     expect(parsed.events).toHaveLength(2);
     expect(parsed.events[0]).toMatchObject({ kind: "gesture", gesture: { type: "tap" } });
     expect(parsed.events[1]).toEqual(sessionSnapshot.events[1]);
-    expect(
-      parseSessionMutationResponse({ ok: true, session: sessionSnapshot }).session,
-    ).toEqual(parsed);
+    expect(parseSessionMutationResponse({ ok: true, session: sessionSnapshot }).session).toEqual(
+      parsed,
+    );
   });
 
   test("parses simple action, import, screenshot, and logcat payloads", () => {
@@ -463,7 +467,9 @@ describe("complete API success contracts", () => {
         artifact: { status: "saved" },
       }),
     ).toEqual({ ok: true, mimeType: "image/png", data: "iVBORw==", artifact: { status: "saved" } });
-    expect(parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "iVBORw==" })).toEqual({
+    expect(
+      parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "iVBORw==" }),
+    ).toEqual({
       ok: true,
       mimeType: "image/png",
       data: "iVBORw==",
@@ -489,9 +495,11 @@ describe("complete API success contracts", () => {
         icon: { mimeType, data: "aWNvbg==" },
       });
     }
-    expect(
-      parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null }),
-    ).toEqual({ ok: true, packageName: "com.example.app", icon: null });
+    expect(parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null })).toEqual({
+      ok: true,
+      packageName: "com.example.app",
+      icon: null,
+    });
 
     expect(
       parseLogcatEvent("ready", {
@@ -528,10 +536,7 @@ describe("generic and detailed API contracts", () => {
       value: 4,
     });
     expect(
-      parseApiResult(
-        { ok: false, error: { code: "conflict", message: "busy" } },
-        parseValue,
-      ),
+      parseApiResult({ ok: false, error: { code: "conflict", message: "busy" } }, parseValue),
     ).toEqual({ ok: false, error: { code: "conflict", message: "busy" } });
   });
 
@@ -659,9 +664,12 @@ describe("API parser rejection boundaries", () => {
     expect(() =>
       parseAppPermissionsResponse({ ok: true, packageName: "com.example", permissions: {} }),
     ).toThrow("permissions must be an array");
-    expect(() => parseSessionSnapshot({ ...sessionSnapshot, events: [{ ...sessionSnapshot.events[0], kind: "unknown" }] })).toThrow(
-      "kind is invalid",
-    );
+    expect(() =>
+      parseSessionSnapshot({
+        ...sessionSnapshot,
+        events: [{ ...sessionSnapshot.events[0], kind: "unknown" }],
+      }),
+    ).toThrow("kind is invalid");
     expect(() =>
       parseFileImportResponse({ ok: true, output: "x", path: "/x", kind: "apk" }),
     ).toThrow("kind is invalid");
@@ -669,7 +677,12 @@ describe("API parser rejection boundaries", () => {
       parseScreenshotBase64Response({ ok: true, mimeType: "image/jpeg", data: "x" }),
     ).toThrow("must be image/png");
     expect(() =>
-      parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "x", artifact: { status: "failed" } }),
+      parseScreenshotBase64Response({
+        ok: true,
+        mimeType: "image/png",
+        data: "x",
+        artifact: { status: "failed" },
+      }),
     ).toThrow("artifact.error must be a string");
     expect(() => parseAppIconResponse({ ok: false, error: "no such package" })).toThrow(
       "app icon response.ok must be true",
@@ -691,8 +704,8 @@ describe("API parser rejection boundaries", () => {
         icon: { mimeType: "image/png", data: 7 },
       }),
     ).toThrow("app icon.data must be a string");
-    expect(() =>
-      parseAppIconResponse({ ok: true, icon: null }),
-    ).toThrow("app icon response.packageName must be a string");
+    expect(() => parseAppIconResponse({ ok: true, icon: null })).toThrow(
+      "app icon response.packageName must be a string",
+    );
   });
 });

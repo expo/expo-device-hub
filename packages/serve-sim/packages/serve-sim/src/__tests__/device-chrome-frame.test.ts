@@ -35,10 +35,26 @@ describe("deviceKitChromeGeometry", () => {
     frame: { width: number; height: number };
     screen: { x: number; y: number; width: number; height: number };
   }> = [
-    { orientation: "portrait", frame: { width: 1000, height: 2000 }, screen: { x: 40, y: 80, width: 300, height: 700 } },
-    { orientation: "landscape_left", frame: { width: 2000, height: 1000 }, screen: { x: 1220, y: 40, width: 700, height: 300 } },
-    { orientation: "portrait_upside_down", frame: { width: 1000, height: 2000 }, screen: { x: 660, y: 1220, width: 300, height: 700 } },
-    { orientation: "landscape_right", frame: { width: 2000, height: 1000 }, screen: { x: 80, y: 660, width: 700, height: 300 } },
+    {
+      orientation: "portrait",
+      frame: { width: 1000, height: 2000 },
+      screen: { x: 40, y: 80, width: 300, height: 700 },
+    },
+    {
+      orientation: "landscape_left",
+      frame: { width: 2000, height: 1000 },
+      screen: { x: 1220, y: 40, width: 700, height: 300 },
+    },
+    {
+      orientation: "portrait_upside_down",
+      frame: { width: 1000, height: 2000 },
+      screen: { x: 660, y: 1220, width: 300, height: 700 },
+    },
+    {
+      orientation: "landscape_right",
+      frame: { width: 2000, height: 1000 },
+      screen: { x: 80, y: 660, width: 700, height: 300 },
+    },
   ];
 
   for (const { orientation, frame, screen } of cases) {
@@ -66,21 +82,45 @@ describe("oriented DeviceKitChrome", () => {
     screenStyle: string;
     angle: number;
   }> = [
-    { orientation: "portrait", container: { width: 300, height: 600 }, screenStyle: "left:12px;top:24px;width:90px;height:210px", angle: 0 },
-    { orientation: "landscape_left", container: { width: 600, height: 300 }, screenStyle: "left:366px;top:12px;width:210px;height:90px", angle: 90 },
-    { orientation: "portrait_upside_down", container: { width: 300, height: 600 }, screenStyle: "left:198px;top:366px;width:90px;height:210px", angle: 180 },
-    { orientation: "landscape_right", container: { width: 600, height: 300 }, screenStyle: "left:24px;top:198px;width:210px;height:90px", angle: -90 },
+    {
+      orientation: "portrait",
+      container: { width: 300, height: 600 },
+      screenStyle: "left:12px;top:24px;width:90px;height:210px",
+      angle: 0,
+    },
+    {
+      orientation: "landscape_left",
+      container: { width: 600, height: 300 },
+      screenStyle: "left:366px;top:12px;width:210px;height:90px",
+      angle: 90,
+    },
+    {
+      orientation: "portrait_upside_down",
+      container: { width: 300, height: 600 },
+      screenStyle: "left:198px;top:366px;width:90px;height:210px",
+      angle: 180,
+    },
+    {
+      orientation: "landscape_right",
+      container: { width: 600, height: 300 },
+      screenStyle: "left:24px;top:198px;width:210px;height:90px",
+      angle: -90,
+    },
   ];
 
   for (const { orientation, container, screenStyle, angle } of cases) {
     test(`keeps the live screen axis-aligned while rotating ${orientation} artwork`, () => {
-      const markup = renderToStaticMarkup(createElement(DeviceKitChrome, {
-        chrome,
-        orientation,
-        containerSize: container,
-        screen: createElement("canvas", { "data-live-screen": "true" }),
-      }));
-      const screen = markup.match(/<div[^>]*data-devicekit-screen=""[^>]*style="([^"]+)"[^>]*>(.*?)<\/div>/);
+      const markup = renderToStaticMarkup(
+        createElement(DeviceKitChrome, {
+          chrome,
+          orientation,
+          containerSize: container,
+          screen: createElement("canvas", { "data-live-screen": "true" }),
+        }),
+      );
+      const screen = markup.match(
+        /<div[^>]*data-devicekit-screen=""[^>]*style="([^"]+)"[^>]*>(.*?)<\/div>/,
+      );
       expect(screen?.[1]).toContain(screenStyle);
       expect(screen?.[1]).toContain(`border-radius:${deviceKitScreenRadius(chrome, orientation)}`);
       expect(screen?.[1]).toContain("pointer-events:auto");
@@ -105,10 +145,14 @@ describe("oriented DeviceKitChrome", () => {
       usagePage: 12,
       usage: 1,
     }));
-    const markup = renderToStaticMarkup(createElement(DeviceKitChrome, {
-      chrome: { ...chrome, buttons }, orientation: "landscape_left", interactive: true,
-      screen: createElement("canvas", { "data-live-screen": "true" }),
-    }));
+    const markup = renderToStaticMarkup(
+      createElement(DeviceKitChrome, {
+        chrome: { ...chrome, buttons },
+        orientation: "landscape_left",
+        interactive: true,
+        screen: createElement("canvas", { "data-live-screen": "true" }),
+      }),
+    );
     const back = markup.indexOf('data-devicekit-artwork="back"');
     const screen = markup.indexOf('data-devicekit-screen=""');
     const front = markup.indexOf('data-devicekit-artwork="front"');
@@ -152,9 +196,15 @@ describe("deviceKitScreenRadius", () => {
       screenCornerRadii: { topLeft: 10, topRight: 20, bottomRight: 30, bottomLeft: 40 },
     };
 
-    expect(deviceKitScreenRadius(chrome, "landscape_left")).toBe("10% 2.5% 5% 7.5% / 20% 5% 10% 15%");
-    expect(deviceKitScreenRadius(chrome, "landscape_right")).toBe("5% 7.5% 10% 2.5% / 10% 15% 20% 5%");
-    expect(deviceKitScreenRadius(chrome, "portrait_upside_down")).toBe("15% 20% 5% 10% / 7.5% 10% 2.5% 5%");
+    expect(deviceKitScreenRadius(chrome, "landscape_left")).toBe(
+      "10% 2.5% 5% 7.5% / 20% 5% 10% 15%",
+    );
+    expect(deviceKitScreenRadius(chrome, "landscape_right")).toBe(
+      "5% 7.5% 10% 2.5% / 10% 15% 20% 5%",
+    );
+    expect(deviceKitScreenRadius(chrome, "portrait_upside_down")).toBe(
+      "15% 20% 5% 10% / 7.5% 10% 2.5% 5%",
+    );
     expect(deviceKitScreenRadius(chrome, "portrait")).toBe("5% 10% 15% 20% / 2.5% 5% 7.5% 10%");
   });
 
@@ -177,8 +227,13 @@ describe("deviceKitScreenRadius", () => {
       screenCornerRadii: { topLeft: 10, topRight: 20, bottomRight: 30, bottomLeft: 0 },
     };
 
-    for (const containerSize of [{ width: 100, height: 200 }, { width: 200, height: 400 }]) {
-      const markup = renderToStaticMarkup(createElement(DeviceKitChrome, { chrome, containerSize }));
+    for (const containerSize of [
+      { width: 100, height: 200 },
+      { width: 200, height: 400 },
+    ]) {
+      const markup = renderToStaticMarkup(
+        createElement(DeviceKitChrome, { chrome, containerSize }),
+      );
 
       expect(markup).toContain(`width:${containerSize.width}px;height:${containerSize.height}px`);
       expect(markup).toContain("border-radius:5% 10% 15% 0% / 2.5% 5% 7.5% 0%");

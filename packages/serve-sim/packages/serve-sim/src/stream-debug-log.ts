@@ -18,7 +18,7 @@ export function startStreamDebugLog({
   statsUrl: (device: string) => string;
   /** Sent as `Authorization: Bearer` so the stats fetch passes the preview gate under --require-token. */
   authToken?: string;
-    fetchImpl?: (
+  fetchImpl?: (
     url: string,
     init?: { signal?: AbortSignal; headers?: Record<string, string> },
   ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
@@ -59,9 +59,11 @@ export function startStreamDebugLog({
       // One warning only: a full disk would otherwise print once a second for the whole session.
       if (!warned) {
         warned = true;
-        onError(`Could not write the stream debug log to ${path}: ${
-          error instanceof Error ? error.message : String(error)
-        }`);
+        onError(
+          `Could not write the stream debug log to ${path}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     }
   };

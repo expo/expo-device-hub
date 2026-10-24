@@ -17,37 +17,37 @@ export function startupMessage({
   sessionToken,
   ignoredFrameAncestors = [],
 }: StartupAddress): string {
-  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  const isWildcard = host === '0.0.0.0' || host === '::';
+  const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "::1";
+  const isWildcard = host === "0.0.0.0" || host === "::";
   const link = (hostname: string) =>
-    `http://${hostname}:${port}${sessionToken ? `/?token=${sessionToken}` : ''}`;
+    `http://${hostname}:${port}${sessionToken ? `/?token=${sessionToken}` : ""}`;
 
-  const lines = ['Expo Device Hub ready', ''];
+  const lines = ["Expo Device Hub ready", ""];
   if (isLoopback || isWildcard) {
-    lines.push(`  Local:   ${link('localhost')}`);
+    lines.push(`  Local:   ${link("localhost")}`);
   }
   if (isWildcard) {
     lines.push(`  Network: ${link(lanAddress ?? host)}`);
   } else if (isLoopback) {
-    lines.push('  Network: pass --host 0.0.0.0 to expose on your local network');
+    lines.push("  Network: pass --host 0.0.0.0 to expose on your local network");
   } else {
     lines.push(`  Network: ${link(host)}`);
   }
 
   if (!isLoopback) {
     lines.push(
-      '',
+      "",
       sessionToken
-        ? '  This Hub is listening on the network. The links above carry a token because anyone ' +
-            'who has it can control the devices, read captured traffic, and run commands on this machine. ' +
-            'These links use plain http. On a network you do not trust, anyone who can watch the traffic ' +
-            'can read the token, so put the Hub behind an https proxy or tunnel there.'
-        : '  This Hub is listening on the network with no token required. Anyone who can reach it ' +
-            'can control the devices and run commands on this machine. Pass --require-token to gate it.'
+        ? "  This Hub is listening on the network. The links above carry a token because anyone " +
+            "who has it can control the devices, read captured traffic, and run commands on this machine. " +
+            "These links use plain http. On a network you do not trust, anyone who can watch the traffic " +
+            "can read the token, so put the Hub behind an https proxy or tunnel there."
+        : "  This Hub is listening on the network with no token required. Anyone who can reach it " +
+            "can control the devices and run commands on this machine. Pass --require-token to gate it.",
     );
   }
   if (ignoredFrameAncestors.length > 0) {
-    lines.push('', '  --frame-ancestor has no effect without --require-token.');
+    lines.push("", "  --frame-ancestor has no effect without --require-token.");
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }

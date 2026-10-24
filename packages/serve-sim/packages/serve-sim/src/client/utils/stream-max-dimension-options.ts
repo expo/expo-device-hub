@@ -17,9 +17,10 @@ export function maxDimensionOptions(
   settings: Pick<StreamControlSettings, "maxDimension">,
   configured: number,
 ): MaxDimensionOption[] {
-  const options = configured > 0
-    ? PRESETS.filter((option) => Number(option.value) <= configured)
-    : [FULL, ...PRESETS];
+  const options =
+    configured > 0
+      ? PRESETS.filter((option) => Number(option.value) <= configured)
+      : [FULL, ...PRESETS];
   return withCurrent(settings.maxDimension, options);
 }
 

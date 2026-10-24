@@ -31,7 +31,7 @@ a process starts. Two facts follow, and they shape everything else:
 
 The second fact is the reason this indirection exists. A capability dylib links
 real frameworks: the camera injector pulls in UIKit, AVFoundation, CoreMedia and
-others. Inserting *that* device-wide crash-loops system daemons. This was
+others. Inserting _that_ device-wide crash-loops system daemons. This was
 observed as GSSCred crash-looping when an inserted image linked Foundation.
 
 So the inserted image must be inert and dependency-free, and something else must
@@ -95,8 +95,7 @@ serve-sim. One capability per line, tab-separated:
 - **dylib**: absolute path. A relative path is refused.
 - **env**: `NAME=VALUE` pairs joined by `;`, applied with `setenv` before the
   `dlopen`.
-- **delay-ms**: how long to wait before loading this one. Optional, defaults to
-  0. Delayed loads are scheduled on the main queue without blocking it.
+- **delay-ms**: how long to wait before loading this one. Optional, defaults to 0. Delayed loads are scheduled on the main queue without blocking it.
   Pending and loaded paths are deduplicated, and delayed callbacks reject
   removed or reconfigured entries.
 
@@ -110,7 +109,7 @@ needs the app to exist yet, so a capability can be armed before anything is
 installed. That is what makes serve-sim usable in agent flows, where the app is
 installed later by the agent rather than by the workflow.
 
-Scope decides *which processes load the dylib*. It is not the same as "which app
+Scope decides _which processes load the dylib_. It is not the same as "which app
 this is about": the optional bundle id is a launch target and never narrows what loads.
 
 ## Arriving late
@@ -131,6 +130,13 @@ Two things mitigate this, and neither is perfect:
 An app that asks once at launch and never listens again can only be reached by
 restarting it. That is a property of the app, not something serve-sim can fix.
 
+The clipboard reader is armed the same way, but a clipboard read never restarts
+an app. An app that already has the capability loader picks up the reader when
+its config changes. An app that started before the session armed the loader has
+no loader, so it has no reader until the user restarts it.
+[LLP 0010](0010-serve-sim-clipboard.explainer.md#reads-never-restart-apps)
+explains why.
+
 ## Lifecycle
 
 The insert is machine-wide state on the simulator, so it must be owned by
@@ -143,6 +149,11 @@ something that reliably removes it:
 - The process that arms it registers the teardown first, on `exit` and on
   `SIGINT`/`SIGTERM`/`SIGHUP`. The signal handlers disarm directly, because
   spawning `simctl` from an exit handler does not always finish.
+- An embedded `simMiddleware` does not own the host's signals, so its clipboard
+  setup registers only the `exit` teardown. That teardown is synchronous, like
+  the serve-sim CLI's own `exit` fallback. It runs when the host ends with
+  `process.exit` or returns normally
+  ([LLP 0010](0010-serve-sim-clipboard.explainer.md)).
 - `--detach` never arms. The command exits once the helper is streaming, so no process
   is left to disarm it. `--install-app-path`, `--launch-app-identifier`, `--launch-arg`,
   `--open-url`, `--enable` and `--disable` are rejected with `--detach`.

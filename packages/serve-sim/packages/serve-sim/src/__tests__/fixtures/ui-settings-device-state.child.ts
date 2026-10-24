@@ -15,12 +15,7 @@ const childProcess = await import("child_process");
 
 mock.module("child_process", () => ({
   ...childProcess,
-  execFile(
-    _file: string,
-    _args: string[],
-    _options: unknown,
-    callback: ExecCallback,
-  ) {
+  execFile(_file: string, _args: string[], _options: unknown, callback: ExecCallback) {
     bootRequests.push(callback);
     return {};
   },
@@ -33,7 +28,8 @@ mock.module("../../native", () => ({
   },
 }));
 
-const { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } = await import("../../ui-settings");
+const { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } =
+  await import("../../ui-settings");
 
 async function waitForBootRequests(count: number): Promise<void> {
   const deadline = Date.now() + 1_000;
@@ -49,7 +45,11 @@ function resolveBootRequest(index: number, bootSession: string): void {
   request(null, `${bootSession}\n`, "");
 }
 
-async function setHardwareKeyboard(udid: string, value: "on" | "off", bootSession: string): Promise<string> {
+async function setHardwareKeyboard(
+  udid: string,
+  value: "on" | "off",
+  bootSession: string,
+): Promise<string> {
   const setting = setUiOption(udid, "hardware-keyboard", value);
   await waitForBootRequests(1);
   resolveBootRequest(0, bootSession);
@@ -67,38 +67,44 @@ afterAll(() => {
 });
 
 describe("device-backed UI option state", () => {
-  test.each([false, true])("rolls back a failed state write (conditional: %s)", async (conditional) => {
-    const udid = `FAILED-WRITE-${conditional}`;
-    const revision = await setHardwareKeyboard(udid, "off", "100");
-    const file = join(stateDirectory, `ui-${udid}.json`);
-    const previous = readFileSync(file, "utf8");
-    mkdirSync(`${file}.${process.pid}.tmp`);
+  test.each([false, true])(
+    "rolls back a failed state write (conditional: %s)",
+    async (conditional) => {
+      const udid = `FAILED-WRITE-${conditional}`;
+      const revision = await setHardwareKeyboard(udid, "off", "100");
+      const file = join(stateDirectory, `ui-${udid}.json`);
+      const previous = readFileSync(file, "utf8");
+      mkdirSync(`${file}.${process.pid}.tmp`);
 
-    const setting = conditional
-      ? setUiOptionIfRevision(udid, "hardware-keyboard", "on", revision)
-      : setUiOption(udid, "hardware-keyboard", "on");
-    await waitForBootRequests(1);
-    resolveBootRequest(0, "100");
-    await expect(setting).rejects.toThrow();
+      const setting = conditional
+        ? setUiOptionIfRevision(udid, "hardware-keyboard", "on", revision)
+        : setUiOption(udid, "hardware-keyboard", "on");
+      await waitForBootRequests(1);
+      resolveBootRequest(0, "100");
+      await expect(setting).rejects.toThrow();
 
-    expect(hardwareKeyboardUpdates).toEqual([false, true, false]);
-    expect(readFileSync(file, "utf8")).toBe(previous);
-    expect(await getUiOption(udid, "hardware-keyboard")).toBe("off");
-  });
+      expect(hardwareKeyboardUpdates).toEqual([false, true, false]);
+      expect(readFileSync(file, "utf8")).toBe(previous);
+      expect(await getUiOption(udid, "hardware-keyboard")).toBe("off");
+    },
+  );
 
-  test.each([false, true])("does not guess rollback state (previous boot: %s)", async (previousBoot) => {
-    const udid = `FAILED-FIRST-WRITE-${previousBoot}`;
-    if (previousBoot) await setHardwareKeyboard(udid, "on", "99");
-    hardwareKeyboardUpdates.length = 0;
-    const file = join(stateDirectory, `ui-${udid}.json`);
-    mkdirSync(`${file}.${process.pid}.tmp`);
-    const setting = setUiOption(udid, "hardware-keyboard", "off");
-    await waitForBootRequests(1);
-    resolveBootRequest(0, "100");
-    await expect(setting).rejects.toThrow("previous value is unknown");
-    expect(hardwareKeyboardUpdates).toEqual([false]);
-    expect(await getUiOption(udid, "hardware-keyboard")).toBe("on");
-  });
+  test.each([false, true])(
+    "does not guess rollback state (previous boot: %s)",
+    async (previousBoot) => {
+      const udid = `FAILED-FIRST-WRITE-${previousBoot}`;
+      if (previousBoot) await setHardwareKeyboard(udid, "on", "99");
+      hardwareKeyboardUpdates.length = 0;
+      const file = join(stateDirectory, `ui-${udid}.json`);
+      mkdirSync(`${file}.${process.pid}.tmp`);
+      const setting = setUiOption(udid, "hardware-keyboard", "off");
+      await waitForBootRequests(1);
+      resolveBootRequest(0, "100");
+      await expect(setting).rejects.toThrow("previous value is unknown");
+      expect(hardwareKeyboardUpdates).toEqual([false]);
+      expect(await getUiOption(udid, "hardware-keyboard")).toBe("on");
+    },
+  );
 
   test("preserves a CLI setting when preview starts in the same boot", async () => {
     const udid = "SAME-BOOT";

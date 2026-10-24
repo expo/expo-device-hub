@@ -12,7 +12,14 @@ function fakeScheduler() {
   const drain = () => {
     for (let i = 0; i < pending.length; i++) pending[i]!();
   };
-  return { schedule, cancel: () => {}, drain, get pendingCount() { return pending.length; } };
+  return {
+    schedule,
+    cancel: () => {},
+    drain,
+    get pendingCount() {
+      return pending.length;
+    },
+  };
 }
 
 describe("createPacedKeySender", () => {
@@ -56,5 +63,35 @@ describe("createPacedKeySender", () => {
     clock.drain();
 
     expect(sent).toEqual([{ type: "down", usage: 0x04 }]);
+  });
+
+  test("idle waits until every queued event is sent", async () => {
+    const clock = fakeScheduler();
+    const sent: KeyEvent[] = [];
+    const sender = createPacedKeySender((e) => sent.push(e), 4, clock.schedule, clock.cancel);
+    const events = keyEventsForInputType("insertFromPaste", "Hi!");
+
+    await sender.idle(); // nothing queued yet
+    sender.enqueue(events);
+    let idle = false;
+    const waiting = sender.idle().then(() => {
+      idle = true;
+    });
+    await Promise.resolve();
+    expect(idle).toBe(false);
+    expect(sent.length).toBeLessThan(events.length);
+
+    clock.drain();
+    await waiting;
+    expect(sent).toEqual(events);
+  });
+
+  test("idle resolves when the sender is disposed", async () => {
+    const clock = fakeScheduler();
+    const sender = createPacedKeySender(() => {}, 4, clock.schedule, clock.cancel);
+    sender.enqueue(keyEventsForInputType("insertFromPaste", "Hi!"));
+    const waiting = sender.idle();
+    sender.dispose();
+    await waiting;
   });
 });

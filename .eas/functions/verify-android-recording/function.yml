@@ -33,21 +33,15 @@ runs:
       with:
         system_image_package: system-images;android-35;google_apis;x86_64
 
-    # Records the exit code so the diagnostics upload below always runs.
     - name: Verify recording on an emulator
-      id: verify
-      run: |
-        set +e
-        bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ inputs.source }} ${{ inputs.stop }} ${{ inputs.limit }}
-        set-output exit_code "$?"
+      run: bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ inputs.source }} ${{ inputs.stop }} ${{ inputs.limit }}
 
+    # The verifier writes these files, so upload them also when it fails.
     - name: Upload recordings and diagnostics
       uses: eas/upload_artifact
+      if: ${{ always() }}
       with:
         type: other
         name: android-recording-${{ inputs.source }}-${{ inputs.limit }}
         path: /tmp/android-recording-smoke-*
         ignore_error: true
-
-    - name: Report result
-      run: exit ${{ steps.verify.outputs.exit_code }}

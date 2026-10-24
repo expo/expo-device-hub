@@ -7,12 +7,15 @@ import {
 } from "../client/webrtc-negotiation";
 
 /// A body that sends part of its JSON and then stops, ending only when the request is aborted.
-const stalledBody = (signal: AbortSignal) => new ReadableStream<Uint8Array>({
-  start(controller) {
-    controller.enqueue(new TextEncoder().encode('{"error":'));
-    signal.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
-  },
-});
+const stalledBody = (signal: AbortSignal) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"error":'));
+      signal.addEventListener("abort", () =>
+        controller.error(new DOMException("aborted", "AbortError")),
+      );
+    },
+  });
 
 describe("WebRTC offer negotiation", () => {
   test("uses a fresh request deadline after a busy response", async () => {
@@ -37,14 +40,16 @@ describe("WebRTC offer negotiation", () => {
   });
 
   test("reports serialized signaling contention after exhausting busy retries", async () => {
-    await expect(postWebRtcOffer({
-      url: "https://example.test/webrtc/offer",
-      body: "{}",
-      requestTimeoutMs: 100,
-      busyRetryIntervalMs: 0,
-      busyRetryCount: 1,
-      fetchImpl: async () => new Response(null, { status: 409 }),
-    })).rejects.toBeInstanceOf(WebRtcSignalingBusyError);
+    await expect(
+      postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async () => new Response(null, { status: 409 }),
+      }),
+    ).rejects.toBeInstanceOf(WebRtcSignalingBusyError);
   });
 
   /// The server also answers 409 for reasons that never clear, such as a device with no panel
@@ -71,14 +76,17 @@ describe("WebRTC offer negotiation", () => {
   /// Headers arrive before the body. A 409 whose body stalls has to stay under the request's
   /// own deadline, or negotiation waits on it forever.
   test("gives up on a 409 whose body never finishes", async () => {
-    await expect(postWebRtcOffer({
-      url: "https://example.test/webrtc/offer",
-      body: "{}",
-      requestTimeoutMs: 50,
-      busyRetryIntervalMs: 0,
-      busyRetryCount: 3,
-      fetchImpl: async (_url, init) => new Response(stalledBody(init?.signal as AbortSignal), { status: 409 }),
-    })).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
+    await expect(
+      postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 50,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 3,
+        fetchImpl: async (_url, init) =>
+          new Response(stalledBody(init?.signal as AbortSignal), { status: 409 }),
+      }),
+    ).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
   }, 1_000);
 
   test("stops reading a stalled 409 body when the caller aborts", async () => {
@@ -90,7 +98,8 @@ describe("WebRTC offer negotiation", () => {
       requestTimeoutMs: 10_000,
       busyRetryIntervalMs: 0,
       busyRetryCount: 3,
-      fetchImpl: async (_url, init) => new Response(stalledBody(init?.signal as AbortSignal), { status: 409 }),
+      fetchImpl: async (_url, init) =>
+        new Response(stalledBody(init?.signal as AbortSignal), { status: 409 }),
     });
     setTimeout(() => lifecycle.abort(), 20);
     await expect(read).rejects.toThrow();
@@ -116,19 +125,23 @@ describe("WebRTC offer negotiation", () => {
   });
 
   test("reports a timeout for the individual signaling request", async () => {
-    await expect(postWebRtcOffer({
-      url: "https://example.test/webrtc/offer",
-      body: "{}",
-      requestTimeoutMs: 5,
-      busyRetryIntervalMs: 0,
-      busyRetryCount: 0,
-      fetchImpl: async (_url, init) => {
-        await new Promise<void>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
-        });
-        return new Response(null, { status: 200 });
-      },
-    })).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
+    await expect(
+      postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 5,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 0,
+        fetchImpl: async (_url, init) => {
+          await new Promise<void>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
+              once: true,
+            });
+          });
+          return new Response(null, { status: 200 });
+        },
+      }),
+    ).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
   });
 
   test("gives a close a deadline, so a reconnect behind it cannot wait forever", async () => {

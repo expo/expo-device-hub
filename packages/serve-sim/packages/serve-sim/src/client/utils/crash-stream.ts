@@ -31,7 +31,9 @@ export function parseCrashFrame(data: string): CrashStreamFrame | null {
 // Two signatures can land in the same millisecond, so the tiebreak keeps a reconnect's list
 // in the order the live frames built.
 const byNewest = (a: CrashSummary, b: CrashSummary): number =>
-  b.lastSeen - a.lastSeen || b.firstSeen - a.firstSeen || (a.id === b.id ? 0 : a.id < b.id ? 1 : -1);
+  b.lastSeen - a.lastSeen ||
+  b.firstSeen - a.firstSeen ||
+  (a.id === b.id ? 0 : a.id < b.id ? 1 : -1);
 
 export function applyCrashFrame(state: CrashListState, frame: CrashStreamFrame): CrashListState {
   switch (frame.type) {

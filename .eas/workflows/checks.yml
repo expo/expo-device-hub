@@ -20,6 +20,10 @@ jobs:
   check:
     name: check
     runs_on: linux-medium
+    # The production EAS environment holds a TURBO_TOKEN with write access.
+    # Only .eas/workflows/build-release-cache.yml writes the remote cache.
+    env:
+      TURBO_CACHE: local:rw,remote:r
     steps:
       - uses: eas/checkout
 
@@ -31,19 +35,26 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
+      - name: Lint and format
         run: bun run lint
 
       # --only prevents dependencies from reintroducing the macOS-only serve-sim build.
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
+      # The Android Hub imports serve-sim's middleware, and Android recording
+      # does not run for serve-sim-only changes. Check that it starts on Node.
+      - name: Serve-sim middleware startup on Node
+        run: bun run --filter '@expo/serve-sim' test:middleware-startup
+
       # --only skips the native serve-sim build; its typecheck only needs sources.
       - name: Typecheck
         run: bunx turbo run typecheck --only
 
+      # --retry=1 runs a failed test once more. A failed beforeAll and a file that
+      # fails to load stay red.
       - name: Test
-        run: bun run test
+        run: bunx turbo run test -- --retry=1
 
       - name: Serve-emu critical coverage
         run: bun run --filter serve-emu coverage

@@ -1,9 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  isGesture,
-  parseGesture,
-  type Gesture,
-} from "../src/shared/control-contracts.ts";
+import { isGesture, parseGesture, type Gesture } from "../src/shared/control-contracts.ts";
 import { parseGesture as parseGestureFromInput } from "../src/input.ts";
 
 function gestureName(gesture: Gesture): string {

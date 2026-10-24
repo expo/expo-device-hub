@@ -4,6 +4,10 @@
 public enum SimulatorCapturePollPolicy {
     public static let pollsPerSecond = 60
     public static let intervalNanoseconds: Int64 = 16_666_667
+
+    public static func intervalNanoseconds(forFixedPanel fixedPanel: Bool) -> Int64 {
+        fixedPanel ? 8_333_333 : intervalNanoseconds
+    }
 }
 
 public struct WebRTCFrameRatePolicy: Equatable, Sendable {

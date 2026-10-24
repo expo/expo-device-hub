@@ -14,19 +14,19 @@
  * sidebar can consume `/api/devices` directly.
  */
 
-import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub-android-utils';
-import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
+import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
+import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
-import { type DeviceFrameProfileId } from '@expo/hub-components';
+import { type DeviceFrameProfileId } from "@expo/hub-components";
 
-import { type PlatformFilter } from '../platform-filter';
+import { type PlatformFilter } from "../platform-filter";
 import {
   androidDeviceFrame,
   appleDeviceFrame,
   isSupportedAndroidDevice,
   isSupportedAppleDevice,
-} from './device-support';
-import { type SerializableError, toSerializableError } from './utility-errors';
+} from "./device-support";
+import { type SerializableError, toSerializableError } from "./utility-errors";
 
 export type HubDevicePlatform = PlatformFilter;
 
@@ -76,16 +76,16 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
 
   return {
     devices: listed.value
-      .filter((device) => device.platform === 'iOS' && device.isAvailable)
+      .filter((device) => device.platform === "iOS" && device.isAvailable)
       .map((device) => {
-        const platform = device.platform ?? 'iOS';
+        const platform = device.platform ?? "iOS";
 
         return {
           id: device.udid,
-          name: device.name || 'Simulator',
+          name: device.name || "Simulator",
           version: device.osVersion ? `${platform} ${device.osVersion}` : platform,
-          platform: 'ios' as const,
-          booted: device.state.toLowerCase() === 'booted',
+          platform: "ios" as const,
+          booted: device.state.toLowerCase() === "booted",
           physical: false,
           supported: isSupportedAppleDevice(device),
           deviceFrame: appleDeviceFrame(device),
@@ -110,9 +110,9 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         id: device.serial ?? device.name,
         name: device.name,
         version: androidVersion(device),
-        platform: 'android' as const,
+        platform: "android" as const,
         booted: device.booted,
-        physical: device.type === 'device',
+        physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
         deviceFrame: androidDeviceFrame(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
@@ -124,13 +124,13 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
 
 /** Derive an "Android <version>" label from a device's getprop / avdmanager fields. */
 function androidVersion(device: AndroidDevice): string {
-  const release = device.properties['ro.build.version.release'];
+  const release = device.properties["ro.build.version.release"];
   // Normalize a bare major version to one decimal place: "17" → "17.0", while
   // "17.2" is left untouched.
   if (release) return `Android ${/^\d+$/.test(release) ? `${release}.0` : release}`;
 
-  const match = /Android\s+[\d.]+/.exec(device.properties['Based on'] ?? '');
-  return match ? match[0] : 'Android';
+  const match = /Android\s+[\d.]+/.exec(device.properties["Based on"] ?? "");
+  return match ? match[0] : "Android";
 }
 
 function latestTimestamp(...timestamps: Array<number | null>): number | undefined {
@@ -142,15 +142,15 @@ function latestTimestamp(...timestamps: Array<number | null>): number | undefine
 export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceList> {
   const empty = (): PlatformDeviceList => ({ devices: [], error: null });
   const [simulators, emulators] = await Promise.all([
-    platform === 'android' ? empty() : listIosSimulators(),
-    platform === 'ios' ? empty() : listAndroidEmulators(),
+    platform === "android" ? empty() : listIosSimulators(),
+    platform === "ios" ? empty() : listAndroidEmulators(),
   ]);
 
   return {
     simulators: simulators.devices,
     emulators: emulators.devices,
     errors: [simulators.error, emulators.error].filter(
-      (error): error is SerializableError => error !== null
+      (error): error is SerializableError => error !== null,
     ),
   };
 }

@@ -1,4 +1,5 @@
-import { readdir, rm, stat, writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
+import { readdir, rename, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 
@@ -36,6 +37,11 @@ export const ScreenshotName = z
     "must be a serve-sim screenshot name",
   );
 
+export function newScreenshotName(): string {
+  const time = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 23);
+  return `${SCREENSHOT_PREFIX}${time}-${randomUUID().slice(0, 8)}.png`;
+}
+
 async function stagedScreenshotBudgetExceededAsync(): Promise<boolean> {
   try {
     const entries = await readdir(SCREENSHOT_DIR);
@@ -45,18 +51,62 @@ async function stagedScreenshotBudgetExceededAsync(): Promise<boolean> {
   }
 }
 
-async function isEmptyFileAsync(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).size === 0;
-  } catch {
-    return false;
-  }
+async function removeEmptyReservationAsync(path: string): Promise<void> {
+  await queueScreenshotAsync(async () => {
+    let size: number;
+    try {
+      size = (await stat(path)).size;
+    } catch {
+      return;
+    }
+    if (size === 0) await rm(path, { force: true });
+  });
 }
 
-export async function captureScreenshotAsync(p: {
-  udid: string;
-  fileName: string;
-}): Promise<HostActionResult> {
+export const ScreenshotDisplay = z.number().int().min(1).max(0xffff_ffff);
+export const SCREENSHOT_DISPLAY_CHANGED =
+  "The active display kept changing. Retry the screenshot once the fold has finished.";
+
+/** Same panel election and bounded retry for host actions and HTTP downloads. */
+export async function captureScreenshotFileAsync(
+  p: {
+    udid: string;
+    file: string;
+    display?: number;
+    timeoutMs?: number;
+  },
+  readActiveDisplay?: () => Promise<number>,
+): Promise<HostActionResult> {
+  let display = p.display;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const shot = await runInvocation({
+      file: "xcrun",
+      args: [
+        "simctl",
+        "io",
+        p.udid,
+        "screenshot",
+        ...(display === undefined ? [] : [`--display=${display}`]),
+        p.file,
+      ],
+      timeoutMs: p.timeoutMs,
+    });
+    if (shot.exitCode !== 0 || !readActiveDisplay) return shot;
+    const current = await readActiveDisplay();
+    if (current === display) return shot;
+    display = current;
+  }
+  return { stdout: "", stderr: SCREENSHOT_DISPLAY_CHANGED, exitCode: 1 };
+}
+
+export async function captureScreenshotAsync(
+  p: {
+    udid: string;
+    fileName: string;
+    display: number;
+  },
+  readActiveDisplay?: () => Promise<number>,
+): Promise<HostActionResult> {
   const hours = MAX_SCREENSHOT_AGE_MS / 3_600_000;
   const staged = join(SCREENSHOT_DIR, p.fileName);
   // Only the count and the reservation are serialized: holding the queue across simctl would let one
@@ -85,14 +135,26 @@ export async function captureScreenshotAsync(p: {
       exitCode: 1,
     };
   }
-  const shot = await runInvocation({
-    file: "xcrun",
-    args: ["simctl", "io", p.udid, "screenshot", staged],
-  });
+  let shot: HostActionResult;
+  // Publish only a validated panel. Each capture owns its work file, so a
+  // failed retry cannot overwrite or remove another capture of the same name.
+  const temporary = join(SCREENSHOT_DIR, `.capture-${randomUUID()}.png`);
+  try {
+    shot = await captureScreenshotFileAsync(
+      { udid: p.udid, file: temporary, display: p.display },
+      readActiveDisplay,
+    );
+    if (shot.exitCode === 0) await queueScreenshotAsync(() => rename(temporary, staged));
+  } catch (error) {
+    await removeEmptyReservationAsync(staged);
+    throw error;
+  } finally {
+    await rm(temporary, { force: true });
+  }
   // Or the reservation holds a ceiling slot until the prune. Only while still empty: a second capture
   // of the same name may have written a real screenshot there since.
   if (shot.exitCode !== 0) {
-    if (await isEmptyFileAsync(staged)) await rm(staged, { force: true });
+    await removeEmptyReservationAsync(staged);
     return shot;
   }
   const kept = `stays staged at ${staged} for at least ${hours} hours`;

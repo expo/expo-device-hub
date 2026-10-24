@@ -83,8 +83,8 @@ function parseHttpRequestHead(buffer: Buffer): {
 function isWebSocketUpgrade(headers: Record<string, string | string[]>): boolean {
   const upgrade = headers.upgrade;
   const connection = headers.connection;
-  const upgradeValue = Array.isArray(upgrade) ? upgrade.join(",") : upgrade ?? "";
-  const connectionValue = Array.isArray(connection) ? connection.join(",") : connection ?? "";
+  const upgradeValue = Array.isArray(upgrade) ? upgrade.join(",") : (upgrade ?? "");
+  const connectionValue = Array.isArray(connection) ? connection.join(",") : (connection ?? "");
   return /websocket/i.test(upgradeValue) && /upgrade/i.test(connectionValue);
 }
 
@@ -102,28 +102,33 @@ function proxyTcpToHttpServer(socket: Socket, firstChunk: Buffer, port: number):
   socket.on("error", destroyBoth);
   upstream.on("error", destroyBoth);
   upstream.on("connect", () => {
-    upstream.write(firstChunk);
+    socket.unshift(firstChunk);
     socket.pipe(upstream);
     upstream.pipe(socket);
+    socket.resume();
   });
 }
 
-function createPreviewFrontServer(
-  middleware: PreviewMiddleware,
-  internalPort: number,
-): NetServer {
+function createPreviewFrontServer(middleware: PreviewMiddleware, internalPort: number): NetServer {
   return createNetServer((socket) => {
     let buffered = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
-      if (buffered.length > 64 * 1024) {
+      const parsed = parseHttpRequestHead(buffered);
+      if (!parsed) {
+        if (buffered.length > 64 * 1024) socket.destroy();
+        return;
+      }
+      if (parsed.headEnd > 64 * 1024) {
         socket.destroy();
         return;
       }
-      const parsed = parseHttpRequestHead(buffered);
-      if (!parsed) return;
       socket.removeListener("data", onData);
-      if (middleware.handleUpgrade && isWebSocketUpgrade(parsed.headers) && !isExecWebSocketPath(parsed.url)) {
+      if (
+        middleware.handleUpgrade &&
+        isWebSocketUpgrade(parsed.headers) &&
+        !isExecWebSocketPath(parsed.url)
+      ) {
         const head = buffered.subarray(parsed.headEnd);
         const req = {
           method: parsed.method,
@@ -135,6 +140,7 @@ function createPreviewFrontServer(
         middleware.handleUpgrade(req, socket, head);
         return;
       }
+      socket.pause();
       proxyTcpToHttpServer(socket, buffered, internalPort);
     };
     socket.on("data", onData);

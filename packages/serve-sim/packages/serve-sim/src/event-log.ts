@@ -156,11 +156,13 @@ export function updateEventLogEvent(
   return entry;
 }
 
-export function readEventLog(options: {
-  device?: string | null;
-  sinceId?: number;
-  limit?: number;
-} = {}): EventLogEntry[] {
+export function readEventLog(
+  options: {
+    device?: string | null;
+    sinceId?: number;
+    limit?: number;
+  } = {},
+): EventLogEntry[] {
   const { device, sinceId } = options;
   const limit = clampLimit(options.limit);
   const filtered = entries.filter((entry) => {
@@ -171,9 +173,7 @@ export function readEventLog(options: {
   return filtered.slice(Math.max(0, filtered.length - limit));
 }
 
-export function subscribeEventLog(
-  subscriber: (entry: EventLogEntry) => void,
-): () => void {
+export function subscribeEventLog(subscriber: (entry: EventLogEntry) => void): () => void {
   subscribers.add(subscriber);
   return () => subscribers.delete(subscriber);
 }
@@ -335,11 +335,22 @@ export function eventLogEventForHidMessage(
     }
     case 0x10: {
       if (!isHingeControlCommand(details)) return null;
-      const summary = details.control === "pose" ? HINGE_POSES.find((pose) => pose.id === details.value)!.label
-        : details.control === "table" ? `Table Mode ${details.value ? "on" : "off"}`
-        : details.control === "physical" ? `Physical orientation ${details.value === "faceup" ? "face up" : "face down"}`
-        : `Hinge ${details.value}°`;
-      return { device, source: "hid", kind: "hinge", action: `set-${details.control}`, summary, details: { control: details.control, value: details.value } };
+      const summary =
+        details.control === "pose"
+          ? HINGE_POSES.find((pose) => pose.id === details.value)!.label
+          : details.control === "table"
+            ? `Table Mode ${details.value ? "on" : "off"}`
+            : details.control === "physical"
+              ? `Physical orientation ${details.value === "faceup" ? "face up" : "face down"}`
+              : `Hinge ${details.value}°`;
+      return {
+        device,
+        source: "hid",
+        kind: "hinge",
+        action: `set-${details.control}`,
+        summary,
+        details: { control: details.control, value: details.value },
+      };
     }
     case 0x0f: {
       const angle = details.angle;
@@ -349,7 +360,8 @@ export function eventLogEventForHidMessage(
         source: "hid",
         kind: "hinge",
         action: "set-angle",
-        summary: HINGE_POSITIONS.find((position) => position.angle === angle)?.label ?? `Hinge ${angle}°`,
+        summary:
+          HINGE_POSITIONS.find((position) => position.angle === angle)?.label ?? `Hinge ${angle}°`,
         details: { angle },
       };
     }
@@ -373,6 +385,33 @@ export function eventLogEventForAction(
   if (device === undefined) return null;
 
   switch (action) {
+    case "app.launch":
+    case "app.stop":
+    case "app.openUrl":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "app",
+        action: action.slice("app.".length),
+        status,
+        summary:
+          action === "app.launch"
+            ? "Launch app"
+            : action === "app.stop"
+              ? "Stop app"
+              : "Open app URL",
+        details,
+      };
+    case "app.approveUrlScheme":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "app",
+        action: "approveUrlScheme",
+        status,
+        summary: `Approve ${String(params?.scheme ?? "")}: links`,
+        details,
+      };
     case "app.install":
       return {
         device,
@@ -447,18 +486,36 @@ export function eventLogEventForAction(
         summary: "Home",
         details: { ...details, bundleId: "com.apple.springboard" },
       };
+    case "springboard.restart":
+      return {
+        device: device.toUpperCase(),
+        source: "exec",
+        kind: "springboard",
+        action: "restart",
+        status,
+        summary: "Restart SpringBoard",
+        details,
+      };
     default:
       return null;
   }
 }
 
-export function eventLogEventForScreenshot(udid: string, outcome: ScreenshotOutcome): EventLogDraft {
+export function eventLogEventForScreenshot(
+  udid: string,
+  outcome: ScreenshotOutcome,
+): EventLogDraft {
   const base = { device: udid, source: "ui", kind: "screenshot", action: "capture" } as const;
   switch (outcome.status) {
     case "disabled":
       return { ...base, status: "ok", summary: "Screenshot" };
     case "saved":
-      return { ...base, status: "ok", summary: "Screenshot", details: { file: basename(outcome.file) } };
+      return {
+        ...base,
+        status: "ok",
+        summary: "Screenshot",
+        details: { file: basename(outcome.file) },
+      };
     case "failed":
       return {
         ...base,
@@ -467,7 +524,12 @@ export function eventLogEventForScreenshot(udid: string, outcome: ScreenshotOutc
         details: { file: basename(outcome.file), error: outcome.error },
       };
     case "capture-failed":
-      return { ...base, status: "error", summary: "Screenshot failed", details: { error: outcome.error } };
+      return {
+        ...base,
+        status: "error",
+        summary: "Screenshot failed",
+        details: { error: outcome.error },
+      };
   }
 }
 

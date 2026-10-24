@@ -38,15 +38,7 @@ function geoFixArgs(serial: string, fix: GeoFix): string[] {
     throw new Error("location control is currently supported for Android Emulator serials only");
   }
 
-  const args = [
-    "-s",
-    serial,
-    "emu",
-    "geo",
-    "fix",
-    decimal(fix.longitude),
-    decimal(fix.latitude),
-  ];
+  const args = ["-s", serial, "emu", "geo", "fix", decimal(fix.longitude), decimal(fix.latitude)];
   if (fix.altitude !== undefined) args.push(decimal(fix.altitude));
   if (fix.satellites !== undefined) args.push(String(fix.satellites));
   if (fix.velocity !== undefined) args.push(decimal(fix.velocity));
@@ -71,7 +63,8 @@ export function parseGeoFix(value: unknown): GeoFix {
   const velocity = optionalNumber(record.velocity, "velocity");
 
   if (latitude < -90 || latitude > 90) throw new Error("latitude must be between -90 and 90");
-  if (longitude < -180 || longitude > 180) throw new Error("longitude must be between -180 and 180");
+  if (longitude < -180 || longitude > 180)
+    throw new Error("longitude must be between -180 and 180");
   if (altitude !== undefined && (altitude < -1000 || altitude > 100000)) {
     throw new Error("altitude must be between -1000 and 100000");
   }
@@ -97,15 +90,10 @@ export async function setEmulatorLocationAsync(
   signalOrExec?: AbortSignal | typeof execText,
   runExecOverride?: typeof execText,
 ): Promise<void> {
-  const signal =
-    signalOrExec instanceof AbortSignal ? signalOrExec : undefined;
-  const runExec =
-    runExecOverride ??
-    (typeof signalOrExec === "function" ? signalOrExec : execText);
+  const signal = signalOrExec instanceof AbortSignal ? signalOrExec : undefined;
+  const runExec = runExecOverride ?? (typeof signalOrExec === "function" ? signalOrExec : execText);
   if (signal?.aborted) {
-    throw signal.reason instanceof Error
-      ? signal.reason
-      : new Error("location update aborted");
+    throw signal.reason instanceof Error ? signal.reason : new Error("location update aborted");
   }
   const result = await runExec("adb", geoFixArgs(serial, fix), {
     timeout: 5_000,
@@ -114,17 +102,14 @@ export async function setEmulatorLocationAsync(
     signal,
   });
   if (signal?.aborted) {
-    throw signal.reason instanceof Error
-      ? signal.reason
-      : new Error("location update aborted");
+    throw signal.reason instanceof Error ? signal.reason : new Error("location update aborted");
   }
   if (result.timedOut) throw new Error("adb emu geo fix timed out");
   const output = `${result.stdout}${result.stderr}`.trim();
   if (result.error) {
-    throw new Error(
-      `adb emu geo fix failed: ${output || result.error.message}`,
-      { cause: result.error },
-    );
+    throw new Error(`adb emu geo fix failed: ${output || result.error.message}`, {
+      cause: result.error,
+    });
   }
   assertGeoFixOutput(result.status, output);
 }

@@ -19,7 +19,9 @@ function fileUrlFor(path: string): string {
   return "file://" + path.split("/").map(encodeURIComponent).join("/");
 }
 
-export function shouldDismissScreenshotToastAfterDrag(dropEffect: DataTransfer["dropEffect"]): boolean {
+export function shouldDismissScreenshotToastAfterDrag(
+  dropEffect: DataTransfer["dropEffect"],
+): boolean {
   return dropEffect !== "none";
 }
 
@@ -127,7 +129,11 @@ export function ScreenshotToast({
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           aria-label={isBrowserDownload ? "Download screenshot again" : "Open screenshot in Finder"}
-          title={isBrowserDownload ? "Download screenshot again" : "Click to reveal in Finder · drag to copy the file"}
+          title={
+            isBrowserDownload
+              ? "Download screenshot again"
+              : "Click to reveal in Finder · drag to copy the file"
+          }
           className={`group flex w-full items-center gap-3 pl-2 pr-3.5 py-2 bg-panel border border-white/12 rounded-xl shadow-[0_8px_24px_rgba(0,0,0,0.45)] text-left cursor-pointer enabled:hover:bg-[#2a2a2c] disabled:cursor-default [transition:background_0.15s_ease] ${dragging ? "invisible" : ""}`}
         >
           <div className="size-9 rounded-md overflow-hidden bg-white/10 shrink-0 flex items-center justify-center ring-1 ring-white/10 pointer-events-none">

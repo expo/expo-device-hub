@@ -1,21 +1,19 @@
-import {
-  type DeviceClient,
-  type DeviceHttpCodec,
-  type DeviceStreamMode,
-} from '@expo/hub-client';
-import { SidebarToggle, bg } from '../primitives';
-import { AccessibilitySection } from './AccessibilitySection';
-import { CameraSection } from './CameraSection';
-import { PermissionsSection } from './PermissionsSection';
-import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
-import { CurrentAppSection } from './CurrentAppSection';
-import { DeviceOptionsSection } from './DeviceOptionsSection';
-import { EventsSection } from './EventsSection';
-import { LocationSection } from './LocationSection';
-import { LogsSection } from './LogsSection';
-import { StreamOptionsSection } from './StreamOptionsSection';
-import { type Device, isDeviceFrameProfileId } from './data';
-import { type StreamModeAvailability } from './StreamSection';
+import { type DeviceClient, type DeviceHttpCodec, type DeviceStreamMode } from "@expo/hub-client";
+import { SidebarToggle, bg } from "../primitives";
+import { AccessibilitySection } from "./AccessibilitySection";
+import { CameraSection } from "./CameraSection";
+import { ClipboardSection } from "./ClipboardSection";
+import { type ClipboardRequest } from "./ClipboardToast";
+import { PermissionsSection } from "./PermissionsSection";
+import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
+import { CurrentAppSection } from "./CurrentAppSection";
+import { DeviceOptionsSection } from "./DeviceOptionsSection";
+import { EventsSection } from "./EventsSection";
+import { LocationSection } from "./LocationSection";
+import { LogsSection } from "./LogsSection";
+import { StreamOptionsSection } from "./StreamOptionsSection";
+import { type Device, isDeviceFrameProfileId } from "./data";
+import { type StreamModeAvailability } from "./StreamSection";
 
 export type LogSidebarProps = {
   /** When set, a sidebar toggle is shown to collapse this panel. */
@@ -42,6 +40,10 @@ export type LogSidebarProps = {
   onShutdown?: () => void;
   /** Remove/delete the selected device on the host. Ignored for physical devices. */
   onRemove?: () => void;
+  /** A toolbar Paste or Copy that the browser clipboard stopped, for the Clipboard section to finish. */
+  clipboardRequest?: ClipboardRequest | null;
+  /** The Clipboard section took over `clipboardRequest`. */
+  onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -63,6 +65,8 @@ export function LogSidebar({
   onHttpCodecChange,
   onShutdown,
   onRemove,
+  clipboardRequest,
+  onClipboardRequestHandled,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -78,39 +82,42 @@ export function LogSidebar({
   return (
     <aside
       style={{
-        display: 'flex',
-        flexDirection: 'column',
+        display: "flex",
+        flexDirection: "column",
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
-        height: '100vh',
-        boxSizing: 'border-box',
-        padding: '32px 0 0',
+        height: "100vh",
+        boxSizing: "border-box",
+        padding: "32px 0 0",
         backgroundColor: bg.default,
-        overflow: 'hidden',
-      }}>
+        overflow: "hidden",
+      }}
+    >
       {onToggle && (
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-start",
             padding: `0 ${SIDEBAR_SECTION_INSET}px 12px`,
-          }}>
+          }}
+        >
           <SidebarToggle side="right" onClick={onToggle} />
         </div>
       )}
       <div
         style={{
-          display: 'flex',
+          display: "flex",
           flex: 1,
           minHeight: 0,
-          flexDirection: 'column',
-          overflowX: 'hidden',
-          overflowY: 'auto',
-        }}>
+          flexDirection: "column",
+          overflowX: "hidden",
+          overflowY: "auto",
+        }}
+      >
         <CurrentAppSection client={client} />
         {(client?.capabilities.deviceSettings ||
-          client?.platform === 'android' ||
+          client?.platform === "android" ||
           deviceFrame ||
           (client && (onShutdown || onRemoveDevice))) && (
           <DeviceOptionsSection
@@ -135,6 +142,14 @@ export function LogSidebar({
         {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
         {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
         {client?.capabilities.permissions && <PermissionsSection client={client} />}
+        {client?.capabilities.clipboard && (
+          <ClipboardSection
+            key={`clipboard:${device?.id}`}
+            client={client}
+            request={clipboardRequest}
+            onRequestHandled={onClipboardRequestHandled}
+          />
+        )}
         {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>

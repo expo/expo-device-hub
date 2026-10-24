@@ -1,8 +1,5 @@
 import { buildCodecString, scanAU } from "./h264";
-import {
-  controlAcknowledgementMessage,
-  logControlAcknowledgement,
-} from "./control-ack";
+import { controlAcknowledgementMessage, logControlAcknowledgement } from "./control-ack";
 import { epochNowMs, parseFramePacket } from "../../shared/frame-meta";
 import {
   StreamSessionResources,
@@ -79,7 +76,9 @@ const scheduleFrame: (cb: () => void) => number =
     ? (cb) => requestAnimationFrame(cb)
     : (cb) => setTimeout(cb, 16) as unknown as number;
 const cancelFrame: (handle: number) => void =
-  typeof cancelAnimationFrame === "function" ? (h) => cancelAnimationFrame(h) : (h) => clearTimeout(h);
+  typeof cancelAnimationFrame === "function"
+    ? (h) => cancelAnimationFrame(h)
+    : (h) => clearTimeout(h);
 
 let canvas: OffscreenCanvas | null = null;
 let ctx: OffscreenCanvasRenderingContext2D | null = null;
@@ -119,8 +118,7 @@ let e2eCount = 0;
 const postEvent = (event: StreamWorkerEventPayload) =>
   workerPort.postMessage({ ...event, clientEpoch: activeClientEpoch });
 
-const validClientEpoch = (value: number) =>
-  Number.isSafeInteger(value) && value > 0;
+const validClientEpoch = (value: number) => Number.isSafeInteger(value) && value > 0;
 
 const postLifecycle = () => {
   postEvent({
@@ -358,10 +356,7 @@ const ensureDecoder = (spsBytes: Uint8Array, generation: number): boolean => {
       return false;
     }
     decoder = dec;
-    applyLifecycle(
-      { type: "decoder-configured", generation, at: epochNowMs(), codec },
-      true,
-    );
+    applyLifecycle({ type: "decoder-configured", generation, at: epochNowMs(), codec }, true);
     console.log("VideoDecoder configured:", codec);
     return true;
   } catch (e) {
@@ -437,10 +432,7 @@ const feedFrame = (raw: ArrayBuffer, generation: number) => {
     frameIdx++;
     resources.rememberTiming(timestamp, { recvMs, serverTsMs: packet.serverTsMs });
     if (isKey) {
-      applyLifecycle(
-        { type: "keyframe-submitted", generation, at: recvMs },
-        !lifecycle.rendered,
-      );
+      applyLifecycle({ type: "keyframe-submitted", generation, at: recvMs }, !lifecycle.rendered);
     }
   } catch (e) {
     console.error("decode failed", e);
@@ -511,7 +503,10 @@ const connect = (reason: "connect" | "reconnect") => {
         });
       }
       try {
-        const msg = JSON.parse(e.data) as { type?: string; size?: { width: number; height: number } };
+        const msg = JSON.parse(e.data) as {
+          type?: string;
+          size?: { width: number; height: number };
+        };
         if (
           msg.type === "video-session" &&
           msg.size &&

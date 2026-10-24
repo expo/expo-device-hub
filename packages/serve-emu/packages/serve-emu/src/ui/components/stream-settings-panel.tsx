@@ -41,15 +41,11 @@ export type StreamQualityDraftResult =
 
 export type StreamQualityApplyDependencies = {
   store: DeviceSessionStore;
-  patchSettings: (
-    patch: StreamEncoderSettingsPatch,
-  ) => Promise<StreamEncoderSettingsResponse>;
+  patchSettings: (patch: StreamEncoderSettingsPatch) => Promise<StreamEncoderSettingsResponse>;
   readStreamMode: () => Promise<StreamModeResponse>;
 };
 
-export type StreamQualityDirtyFields = Partial<
-  Record<keyof StreamQualityDraft, true>
->;
+export type StreamQualityDirtyFields = Partial<Record<keyof StreamQualityDraft, true>>;
 
 export type StreamQualityFeedback = {
   revision: number;
@@ -64,21 +60,13 @@ const STREAM_SETTINGS_POLL_INTERVAL_MS = 4_000;
 const MIN_H264_BITRATE_MBPS = MIN_H264_BITRATE / MEGABIT;
 const MAX_H264_BITRATE_MBPS = MAX_H264_BITRATE / MEGABIT;
 
-function integerValue(
-  value: string,
-  min: number,
-  max: number,
-): number | null {
+function integerValue(value: string, min: number, max: number): number | null {
   if (value.trim() === "") return null;
   const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max
-    ? parsed
-    : null;
+  return Number.isSafeInteger(parsed) && parsed >= min && parsed <= max ? parsed : null;
 }
 
-export function streamQualityDraft(
-  settings: StreamEncoderSettings,
-): StreamQualityDraft {
+export function streamQualityDraft(settings: StreamEncoderSettings): StreamQualityDraft {
   return {
     maxDimension: String(settings.maxDimension),
     h264BitrateMbps: String(settings.h264Bitrate / MEGABIT),
@@ -92,9 +80,7 @@ export function mergeStreamQualityDraft(
   dirtyFields: StreamQualityDirtyFields,
 ): StreamQualityDraft {
   return {
-    maxDimension: dirtyFields.maxDimension
-      ? current.maxDimension
-      : incoming.maxDimension,
+    maxDimension: dirtyFields.maxDimension ? current.maxDimension : incoming.maxDimension,
     h264BitrateMbps: dirtyFields.h264BitrateMbps
       ? current.h264BitrateMbps
       : incoming.h264BitrateMbps,
@@ -123,11 +109,7 @@ export function streamQualityPatchFromDraft(
   draft: StreamQualityDraft,
   current: StreamEncoderSettings,
 ): StreamQualityDraftResult {
-  const maxDimension = integerValue(
-    draft.maxDimension,
-    0,
-    MAX_STREAM_DIMENSION,
-  );
+  const maxDimension = integerValue(draft.maxDimension, 0, MAX_STREAM_DIMENSION);
   if (maxDimension === null) {
     return {
       ok: false,
@@ -136,9 +118,8 @@ export function streamQualityPatchFromDraft(
     };
   }
 
-  const bitrateMbps = draft.h264BitrateMbps.trim() === ""
-    ? Number.NaN
-    : Number(draft.h264BitrateMbps);
+  const bitrateMbps =
+    draft.h264BitrateMbps.trim() === "" ? Number.NaN : Number(draft.h264BitrateMbps);
   if (
     !Number.isFinite(bitrateMbps) ||
     bitrateMbps < MIN_H264_BITRATE_MBPS ||
@@ -152,10 +133,7 @@ export function streamQualityPatchFromDraft(
   }
   const scaledBitrate = bitrateMbps * MEGABIT;
   const h264Bitrate = Math.round(scaledBitrate);
-  if (
-    !Number.isSafeInteger(h264Bitrate) ||
-    Math.abs(scaledBitrate - h264Bitrate) > 0.000_001
-  ) {
+  if (!Number.isSafeInteger(h264Bitrate) || Math.abs(scaledBitrate - h264Bitrate) > 0.000_001) {
     return {
       ok: false,
       field: "h264BitrateMbps",
@@ -256,9 +234,7 @@ export function streamQualityStatus({
   if (!selectionReady) {
     return feedback?.kind === "error" ? "Unavailable" : "Loading…";
   }
-  return feedback?.kind === "error"
-    ? "Needs attention"
-    : feedback?.message ?? "Ready";
+  return feedback?.kind === "error" ? "Needs attention" : (feedback?.message ?? "Ready");
 }
 
 export function StreamSettingsPanel() {
@@ -266,8 +242,7 @@ export function StreamSettingsPanel() {
   const actionId = useRef(0);
   const [loaded, setLoaded] = useState<LoadedStreamSettings | null>(null);
   const [draft, setDraft] = useState<StreamQualityDraft | null>(null);
-  const [feedback, setFeedback] =
-    useState<StreamQualityFeedback | null>(null);
+  const [feedback, setFeedback] = useState<StreamQualityFeedback | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(
@@ -287,9 +262,8 @@ export function StreamSettingsPanel() {
     onResult: (response, context) => {
       const currentSession = deviceSessionStore.getSnapshot();
       const freshDraft = streamQualityDraft(response);
-      const dirtyFields = draft && loaded
-        ? streamQualityDirtyFields(draft, streamQualityDraft(loaded))
-        : {};
+      const dirtyFields =
+        draft && loaded ? streamQualityDirtyFields(draft, streamQualityDraft(loaded)) : {};
       const preserveDraft =
         loaded?.serial === currentSession.serial &&
         draft !== null &&
@@ -307,9 +281,7 @@ export function StreamSettingsPanel() {
       setDraft(nextDraft);
       setFeedback((current) => {
         if (hasUnsavedChanges) {
-          return current?.kind === "error" &&
-            current.field &&
-            nextDirtyFields[current.field]
+          return current?.kind === "error" && current.field && nextDirtyFields[current.field]
             ? { ...current, revision: context.key }
             : {
                 revision: context.key,
@@ -350,23 +322,18 @@ export function StreamSettingsPanel() {
   });
 
   const selectionReady =
-    !deviceSession.transitioning &&
-    loaded?.revision === deviceSession.revision &&
-    draft !== null;
-  const matchingFeedback = feedback?.revision === deviceSession.revision
-    ? feedback
-    : null;
+    !deviceSession.transitioning && loaded?.revision === deviceSession.revision && draft !== null;
+  const matchingFeedback = feedback?.revision === deviceSession.revision ? feedback : null;
   const status = streamQualityStatus({
     busy,
     transitioning: deviceSession.transitioning,
     selectionReady,
     feedback: matchingFeedback,
   });
-  const visibleError = matchingFeedback?.kind === "error"
-    ? matchingFeedback.message
-    : null;
+  const visibleError = matchingFeedback?.kind === "error" ? matchingFeedback.message : null;
   const initialDraft = loaded ? streamQualityDraft(loaded) : null;
-  const changed = draft !== null &&
+  const changed =
+    draft !== null &&
     initialDraft !== null &&
     Object.keys(streamQualityDirtyFields(draft, initialDraft)).length > 0;
 
@@ -374,9 +341,8 @@ export function StreamSettingsPanel() {
     (field: keyof StreamQualityDraft, value: string) => {
       if (!draft || !loaded) return;
       const nextDraft = { ...draft, [field]: value };
-      const hasUnsavedChanges = Object.keys(
-        streamQualityDirtyFields(nextDraft, streamQualityDraft(loaded)),
-      ).length > 0;
+      const hasUnsavedChanges =
+        Object.keys(streamQualityDirtyFields(nextDraft, streamQualityDraft(loaded))).length > 0;
       setDraft(nextDraft);
       setFeedback({
         revision: deviceSessionStore.getSnapshot().revision,
@@ -425,18 +391,14 @@ export function StreamSettingsPanel() {
       let appliedRevision: number | null = null;
       let failure: unknown = null;
       try {
-        const applied = await applyStreamQualitySettings(
-          parsed.patch,
-          deviceSession.serial,
-        );
+        const applied = await applyStreamQualitySettings(parsed.patch, deviceSession.serial);
         response = applied.settings;
         appliedRevision = applied.revision;
       } catch (error) {
         failure = error;
       }
 
-      const revision =
-        appliedRevision ?? deviceSessionStore.getSnapshot().revision;
+      const revision = appliedRevision ?? deviceSessionStore.getSnapshot().revision;
       if (id !== actionId.current) return;
 
       if (response) {
@@ -466,18 +428,11 @@ export function StreamSettingsPanel() {
   );
 
   const disabled = busy || deviceSession.transitioning || !selectionReady;
-  const errorField = matchingFeedback?.kind === "error"
-    ? matchingFeedback.field
-    : undefined;
-  const fieldErrorId = visibleError && errorField
-    ? "stream-quality-error"
-    : undefined;
+  const errorField = matchingFeedback?.kind === "error" ? matchingFeedback.field : undefined;
+  const fieldErrorId = visibleError && errorField ? "stream-quality-error" : undefined;
 
   return (
-    <section
-      className="stream-quality-panel"
-      aria-labelledby="stream-quality-heading"
-    >
+    <section className="stream-quality-panel" aria-labelledby="stream-quality-heading">
       <div className="stream-quality-heading">
         <h3 id="stream-quality-heading">Quality</h3>
         <div
@@ -516,12 +471,8 @@ export function StreamSettingsPanel() {
                 data-1p-ignore="true"
                 value={draft?.maxDimension ?? ""}
                 aria-invalid={errorField === "maxDimension"}
-                aria-describedby={
-                  errorField === "maxDimension" ? fieldErrorId : undefined
-                }
-                onChange={(event) =>
-                  updateDraft("maxDimension", event.target.value)
-                }
+                aria-describedby={errorField === "maxDimension" ? fieldErrorId : undefined}
+                onChange={(event) => updateDraft("maxDimension", event.target.value)}
               />
             </label>
             <label htmlFor="stream-bitrate">
@@ -540,14 +491,8 @@ export function StreamSettingsPanel() {
                 data-1p-ignore="true"
                 value={draft?.h264BitrateMbps ?? ""}
                 aria-invalid={errorField === "h264BitrateMbps"}
-                aria-describedby={
-                  errorField === "h264BitrateMbps"
-                    ? fieldErrorId
-                    : undefined
-                }
-                onChange={(event) =>
-                  updateDraft("h264BitrateMbps", event.target.value)
-                }
+                aria-describedby={errorField === "h264BitrateMbps" ? fieldErrorId : undefined}
+                onChange={(event) => updateDraft("h264BitrateMbps", event.target.value)}
               />
             </label>
             <label htmlFor="stream-frame-rate">
@@ -566,12 +511,8 @@ export function StreamSettingsPanel() {
                 data-1p-ignore="true"
                 value={draft?.h264Fps ?? ""}
                 aria-invalid={errorField === "h264Fps"}
-                aria-describedby={
-                  errorField === "h264Fps" ? fieldErrorId : undefined
-                }
-                onChange={(event) =>
-                  updateDraft("h264Fps", event.target.value)
-                }
+                aria-describedby={errorField === "h264Fps" ? fieldErrorId : undefined}
+                onChange={(event) => updateDraft("h264Fps", event.target.value)}
               />
             </label>
           </div>
@@ -604,8 +545,8 @@ export function StreamSettingsPanel() {
         {visibleError ?? ""}
       </p>
       <p className="stream-mode-help" id="stream-quality-help">
-        Use 0 for native size. Applying changes restarts the stream. The viewer
-        reconnects automatically when needed.
+        Use 0 for native size. Applying changes restarts the stream. The viewer reconnects
+        automatically when needed.
       </p>
     </section>
   );

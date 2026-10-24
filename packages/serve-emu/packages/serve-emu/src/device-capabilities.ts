@@ -1,7 +1,4 @@
-import {
-  STREAM_MODES,
-  type StreamMode,
-} from "./shared/api-contracts.ts";
+import { STREAM_MODES, type StreamMode } from "./shared/api-contracts.ts";
 
 const EMULATOR_SERIAL = /^emulator-(\d+)$/;
 

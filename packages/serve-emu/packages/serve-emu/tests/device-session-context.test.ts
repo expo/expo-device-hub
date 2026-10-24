@@ -332,13 +332,10 @@ describe("DeviceSessionManager", () => {
     const prepareStarted = deferred<AbortSignal>();
     const candidate = managedSession("device-b", 2);
 
-    const switching = manager.switch(
-      "device-b",
-      async (_serial, _generation, signal) => {
-        prepareStarted.resolve(signal);
-        return prepareGate.promise;
-      },
-    );
+    const switching = manager.switch("device-b", async (_serial, _generation, signal) => {
+      prepareStarted.resolve(signal);
+      return prepareGate.promise;
+    });
     const signal = await prepareStarted.promise;
     const closing = manager.close("server stopping");
     expect(signal.aborted).toBe(true);
@@ -387,9 +384,7 @@ describe("DeviceSessionManager", () => {
     while (manager.current !== next) await Promise.resolve();
     const closing = manager.close("server stopping");
     expect(next.signal.aborted).toBe(true);
-    expect(next.disposeCalls).toEqual([
-      { reason: "server stopping", opts: { clientCode: 1001 } },
-    ]);
+    expect(next.disposeCalls).toEqual([{ reason: "server stopping", opts: { clientCode: 1001 } }]);
 
     oldDrain.resolve();
     await switching;

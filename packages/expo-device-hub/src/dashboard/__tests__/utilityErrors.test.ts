@@ -1,13 +1,13 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, spyOn, test } from "bun:test";
 
-import { logUtilityErrors } from '../utilityErrors';
+import { logUtilityErrors } from "../utilityErrors";
 
-test('logs each returned utility error once while it remains active', () => {
-  const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
+test("logs each returned utility error once while it remains active", () => {
+  const errorSpy = spyOn(console, "error").mockImplementation(() => {});
   const error = {
-    id: 'Error:spawn avdmanager ENOENT',
-    message: '[android-utils] Failed to run `avdmanager list avd`:',
-    error: 'Error: spawn avdmanager ENOENT',
+    id: "Error:spawn avdmanager ENOENT",
+    message: "[android-utils] Failed to run `avdmanager list avd`:",
+    error: "Error: spawn avdmanager ENOENT",
   };
 
   let active = logUtilityErrors([error, error]);

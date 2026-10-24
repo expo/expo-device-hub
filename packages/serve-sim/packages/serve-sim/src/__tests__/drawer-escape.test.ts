@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { onDrawerEscape } from "../client/utils/drawer-escape";
 
-const keydown = (key: string): Event => Object.assign(new Event("keydown", { cancelable: true }), { key });
+const keydown = (key: string): Event =>
+  Object.assign(new Event("keydown", { cancelable: true }), { key });
 
 function harness(controlTakesEscape: boolean) {
   const target = new EventTarget();
@@ -13,7 +14,9 @@ function harness(controlTakesEscape: boolean) {
   let handled = 0;
   const stop = onDrawerEscape(target, () => (handled += 1));
   const forwarded: string[] = [];
-  target.addEventListener("keydown", (event) => forwarded.push((event as Event & { key: string }).key));
+  target.addEventListener("keydown", (event) =>
+    forwarded.push((event as Event & { key: string }).key),
+  );
   return { target, stop, forwarded, handled: () => handled };
 }
 

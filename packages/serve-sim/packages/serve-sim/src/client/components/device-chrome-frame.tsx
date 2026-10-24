@@ -7,11 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import type {
-  DeviceKitChromeButton,
-  DeviceKitChromeDescriptor,
-  GridRect,
-} from "../utils/grid";
+import type { DeviceKitChromeButton, DeviceKitChromeDescriptor, GridRect } from "../utils/grid";
 import type { SimulatorOrientation } from "../types";
 import { rotationDegreesForOrientation } from "../simulator/orientation";
 import { simEndpoint } from "../utils/sim-endpoint";
@@ -51,9 +47,10 @@ export function DeviceKitChrome({
   const geometry = deviceKitChromeGeometry(chrome, orientation);
   const rotation = rotationDegreesForOrientation(orientation);
   const sideways = Math.abs(rotation) === 90;
-  const artworkSize = sideways && containerSize
-    ? { width: containerSize.height, height: containerSize.width }
-    : containerSize;
+  const artworkSize =
+    sideways && containerSize
+      ? { width: containerSize.height, height: containerSize.width }
+      : containerSize;
   const artworkStyle: CSSProperties = {
     pointerEvents: "none",
     ...(rotation === 0
@@ -182,16 +179,17 @@ export function deviceKitScreenRadius(
   const height = landscape ? chrome.screen.width : chrome.screen.height;
   if (chrome.screenCornerRadii) {
     const { topLeft, topRight, bottomRight, bottomLeft } = chrome.screenCornerRadii;
-    const radii = orientation === "landscape_left"
-      ? [bottomLeft, topLeft, topRight, bottomRight]
-      : orientation === "landscape_right"
-        ? [topRight, bottomRight, bottomLeft, topLeft]
-        : orientation === "portrait_upside_down"
-          ? [bottomRight, bottomLeft, topLeft, topRight]
-          : [topLeft, topRight, bottomRight, bottomLeft];
-    return `${radii.map((radius) => pct(radius, width)).join(" ")} / ${
-      radii.map((radius) => pct(radius, height)).join(" ")
-    }`;
+    const radii =
+      orientation === "landscape_left"
+        ? [bottomLeft, topLeft, topRight, bottomRight]
+        : orientation === "landscape_right"
+          ? [topRight, bottomRight, bottomLeft, topLeft]
+          : orientation === "portrait_upside_down"
+            ? [bottomRight, bottomLeft, topLeft, topRight]
+            : [topLeft, topRight, bottomRight, bottomLeft];
+    return `${radii.map((radius) => pct(radius, width)).join(" ")} / ${radii
+      .map((radius) => pct(radius, height))
+      .join(" ")}`;
   }
   return `${pct(chrome.screenRadius, width)} / ${pct(chrome.screenRadius, height)}`;
 }
@@ -313,14 +311,16 @@ function ChromeButton({
           draggable={false}
           src={chromeAssetUrl(chrome.identifier, sprite)}
           className="absolute inset-0 size-full select-none"
-          style={{
-            objectFit: "fill",
-            // Without a dedicated pressed sprite, brighten so the press still
-            // reads (no low-opacity dimming, per house style).
-            filter: pressed && !button.imageDown ? "brightness(1.4)" : undefined,
-            transition: "filter 0.12s ease",
-            WebkitUserDrag: "none",
-          } as CSSProperties}
+          style={
+            {
+              objectFit: "fill",
+              // Without a dedicated pressed sprite, brighten so the press still
+              // reads (no low-opacity dimming, per house style).
+              filter: pressed && !button.imageDown ? "brightness(1.4)" : undefined,
+              transition: "filter 0.12s ease",
+              WebkitUserDrag: "none",
+            } as CSSProperties
+          }
         />
       )}
     </div>
@@ -451,13 +451,15 @@ export function ChromeImage({
       draggable={false}
       src={chromeAssetUrl(chrome.identifier, image)}
       className="absolute select-none"
-      style={{
-        ...rectStyle(chrome, rect, zIndex, containerSize),
-        objectFit: "fill",
-        // The bezel must never swallow taps meant for the screen / buttons.
-        pointerEvents: "none",
-        WebkitUserDrag: "none",
-      } as CSSProperties}
+      style={
+        {
+          ...rectStyle(chrome, rect, zIndex, containerSize),
+          objectFit: "fill",
+          // The bezel must never swallow taps meant for the screen / buttons.
+          pointerEvents: "none",
+          WebkitUserDrag: "none",
+        } as CSSProperties
+      }
     />
   );
 }

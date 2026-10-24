@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  CONTENT_SIZE_CATEGORIES,
-  UI_OPTIONS,
-  normalizeUiValue,
-  parseUiArgs,
-} from "../ui-settings";
+import { CONTENT_SIZE_CATEGORIES, UI_OPTIONS, normalizeUiValue, parseUiArgs } from "../ui-settings";
 
 describe("parseUiArgs", () => {
   test("no args requests status", () => {
@@ -59,9 +54,7 @@ describe("parseUiArgs", () => {
 
   test("text-size accepts categories and increment/decrement", () => {
     expect(parseUiArgs(["text-size", "large"]).value).toBe("large");
-    expect(parseUiArgs(["text-size", "accessibility-medium"]).value).toBe(
-      "accessibility-medium",
-    );
+    expect(parseUiArgs(["text-size", "accessibility-medium"]).value).toBe("accessibility-medium");
     expect(parseUiArgs(["text-size", "increment"]).value).toBe("increment");
     expect(parseUiArgs(["text-size", "giant"]).error).toMatch(/invalid value/i);
   });
@@ -105,8 +98,6 @@ describe("option catalogue", () => {
     expect(CONTENT_SIZE_CATEGORIES).toHaveLength(12);
     expect(CONTENT_SIZE_CATEGORIES[0]).toBe("extra-small");
     expect(CONTENT_SIZE_CATEGORIES[3]).toBe("large");
-    expect(CONTENT_SIZE_CATEGORIES[11]).toBe(
-      "accessibility-extra-extra-extra-large",
-    );
+    expect(CONTENT_SIZE_CATEGORIES[11]).toBe("accessibility-extra-extra-extra-large");
   });
 });

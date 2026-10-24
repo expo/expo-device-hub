@@ -1,7 +1,4 @@
-import {
-  spawn,
-  type ChildProcessByStdio,
-} from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
 
@@ -88,11 +85,9 @@ export type LogcatHubOptions = {
 
 const SYSTEM_CLOCK: LogcatClock = {
   setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-  clearTimeout: (timer) =>
-    clearTimeout(timer as ReturnType<typeof setTimeout>),
+  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
   setInterval: (callback, delayMs) => setInterval(callback, delayMs),
-  clearInterval: (timer) =>
-    clearInterval(timer as ReturnType<typeof setInterval>),
+  clearInterval: (timer) => clearInterval(timer as ReturnType<typeof setInterval>),
 };
 
 function positiveInteger(value: number, name: string): number {
@@ -144,22 +139,14 @@ async function resolvePackagePids(
         return;
       }
       resolve(
-        new Set(
-          Buffer.concat(stdoutChunks)
-            .toString("utf8")
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean),
-        ),
+        new Set(Buffer.concat(stdoutChunks).toString("utf8").trim().split(/\s+/).filter(Boolean)),
       );
     };
 
     try {
-      child = spawn(
-        "adb",
-        ["-s", serial, "shell", "pidof", packageName],
-        { stdio: ["ignore", "pipe", "pipe"] },
-      );
+      child = spawn("adb", ["-s", serial, "shell", "pidof", packageName], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
     } catch {
       resolve(new Set());
       return;
@@ -184,17 +171,13 @@ async function resolvePackagePids(
 
 function spawnLogcat(serial: string): LogcatChild {
   // Start at the live edge so reconnects do not replay the device ring buffer.
-  return spawn(
-    "adb",
-    ["-s", serial, "logcat", "-T", "1", "-v", "threadtime"],
-    { stdio: ["ignore", "pipe", "pipe"] },
-  );
+  return spawn("adb", ["-s", serial, "logcat", "-T", "1", "-v", "threadtime"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 function encodeEvent(event: string, value: unknown): Uint8Array {
-  return new TextEncoder().encode(
-    `event: ${event}\ndata: ${JSON.stringify(value)}\n\n`,
-  );
+  return new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
 }
 
 class BoundedLineQueue {
@@ -217,18 +200,13 @@ class BoundedLineQueue {
   }
 
   push(value: LogcatLine): number {
-    const bytes =
-      Buffer.byteLength(value.line, "utf8") +
-      Buffer.byteLength(value.at, "utf8");
+    const bytes = Buffer.byteLength(value.line, "utf8") + Buffer.byteLength(value.at, "utf8");
     let dropped = 0;
     if (bytes > this.maxBytes) {
       this.#droppedSinceFlush++;
       return 1;
     }
-    while (
-      this.lineCount >= this.maxLines ||
-      this.#bytes + bytes > this.maxBytes
-    ) {
+    while (this.lineCount >= this.maxLines || this.#bytes + bytes > this.maxBytes) {
       const entry = this.#entries[this.#head++];
       if (!entry) break;
       this.#bytes -= entry.bytes;
@@ -245,9 +223,7 @@ class BoundedLineQueue {
   }
 
   drain(): { lines: LogcatLine[]; dropped: number } {
-    const lines = this.#entries
-      .slice(this.#head)
-      .map((entry) => entry.value);
+    const lines = this.#entries.slice(this.#head).map((entry) => entry.value);
     const dropped = this.#droppedSinceFlush;
     this.#entries = [];
     this.#head = 0;
@@ -350,16 +326,12 @@ export class LogcatHub {
       "terminationGraceMs",
     );
     this.#spawn = options.dependencies?.spawn ?? spawnLogcat;
-    this.#resolvePackagePids =
-      options.dependencies?.resolvePackagePids ?? resolvePackagePids;
+    this.#resolvePackagePids = options.dependencies?.resolvePackagePids ?? resolvePackagePids;
     this.#now = options.dependencies?.now ?? (() => new Date());
     this.#clock = options.dependencies?.clock ?? SYSTEM_CLOCK;
   }
 
-  subscribe(
-    options: LogcatSubscriptionOptions,
-    signal?: AbortSignal,
-  ): Response {
+  subscribe(options: LogcatSubscriptionOptions, signal?: AbortSignal): Response {
     if (this.#closed) {
       return Response.json(
         { ok: false, code: "logcat-session-closed", error: "logcat session is closed" },
@@ -407,10 +379,7 @@ export class LogcatHub {
           search,
           pids: new Set(),
           controller,
-          queue: new BoundedLineQueue(
-            this.#maxQueueLines,
-            this.#maxQueueBytes,
-          ),
+          queue: new BoundedLineQueue(this.#maxQueueLines, this.#maxQueueBytes),
           totalDropped: 0,
           sourceDroppedReported: this.#totals.sourceDroppedLines,
           batchTimer: null,
@@ -484,9 +453,7 @@ export class LogcatHub {
       closed: this.#closed,
       childActive: this.#child !== null,
       childTerminating: this.#terminatingChild !== null,
-      childCount:
-        Number(this.#child !== null) +
-        Number(this.#terminatingChild !== null),
+      childCount: Number(this.#child !== null) + Number(this.#terminatingChild !== null),
       subscribers: this.#subscribers.size,
       activePidLookups: this.#activePidLookups,
       queuedLines,
@@ -560,9 +527,7 @@ export class LogcatHub {
   }
 
   #consumeSource(value: Buffer | string): void {
-    let text = Buffer.isBuffer(value)
-      ? this.#decoder.write(value)
-      : value;
+    let text = Buffer.isBuffer(value) ? this.#decoder.write(value) : value;
     if (this.#discardingLongLine) {
       const newline = text.indexOf("\n");
       if (newline === -1) return;
@@ -574,10 +539,7 @@ export class LogcatHub {
     for (const rawLine of lines) {
       this.#acceptSourceLine(rawLine.replace(/\r$/, ""));
     }
-    if (
-      Buffer.byteLength(this.#lineBuffer, "utf8") >
-      this.#maxSourceLineBytes
-    ) {
+    if (Buffer.byteLength(this.#lineBuffer, "utf8") > this.#maxSourceLineBytes) {
       this.#lineBuffer = "";
       this.#discardingLongLine = true;
       this.#recordSourceDrop();
@@ -612,18 +574,11 @@ export class LogcatHub {
     }
     if (!subscriber.packageName) return true;
     const pid = line.trim().split(/\s+/, 4)[2];
-    return Boolean(
-      (pid && subscriber.pids.has(pid)) ||
-        line.includes(subscriber.packageName),
-    );
+    return Boolean((pid && subscriber.pids.has(pid)) || line.includes(subscriber.packageName));
   }
 
   #scheduleFlush(subscriber: Subscriber): void {
-    if (
-      !subscriber.active ||
-      subscriber.batchTimer !== null ||
-      subscriber.waitingForPull
-    ) {
+    if (!subscriber.active || subscriber.batchTimer !== null || subscriber.waitingForPull) {
       return;
     }
     subscriber.batchTimer = this.#clock.setTimeout(() => {
@@ -634,10 +589,7 @@ export class LogcatHub {
 
   #flush(subscriber: Subscriber): void {
     if (!subscriber.active) return;
-    if (
-      subscriber.controller.desiredSize !== null &&
-      subscriber.controller.desiredSize <= 0
-    ) {
+    if (subscriber.controller.desiredSize !== null && subscriber.controller.desiredSize <= 0) {
       subscriber.waitingForPull = true;
       return;
     }
@@ -667,11 +619,7 @@ export class LogcatHub {
     }
   }
 
-  #sendControl(
-    subscriber: Subscriber,
-    event: string,
-    value: unknown,
-  ): void {
+  #sendControl(subscriber: Subscriber, event: string, value: unknown): void {
     if (!subscriber.active) return;
     try {
       subscriber.controller.enqueue(encodeEvent(event, value));
@@ -681,31 +629,20 @@ export class LogcatHub {
   }
 
   #refreshPids(subscriber: Subscriber): void {
-    if (
-      !subscriber.active ||
-      !subscriber.packageName ||
-      subscriber.pidRefresh
-    ) {
+    if (!subscriber.active || !subscriber.packageName || subscriber.pidRefresh) {
       return;
     }
     const abort = new AbortController();
     subscriber.pidAbort = abort;
     this.#activePidLookups++;
     const refresh = Promise.resolve()
-      .then(() =>
-        this.#resolvePackagePids(
-          this.serial,
-          subscriber.packageName,
-          abort.signal,
-        ),
-      )
+      .then(() => this.#resolvePackagePids(this.serial, subscriber.packageName, abort.signal))
       .then((pids) => {
         if (subscriber.active) subscriber.pids = pids;
       })
       .catch((error) => {
         if (subscriber.active) {
-          this.#lastError =
-            error instanceof Error ? error.message : String(error);
+          this.#lastError = error instanceof Error ? error.message : String(error);
         }
       })
       .finally(() => {
@@ -736,10 +673,7 @@ export class LogcatHub {
       abort.abort("logcat subscriber closed");
     }
     if (subscriber.abortListener && subscriber.signal) {
-      subscriber.signal.removeEventListener(
-        "abort",
-        subscriber.abortListener,
-      );
+      subscriber.signal.removeEventListener("abort", subscriber.abortListener);
       subscriber.abortListener = null;
     }
     if (closeStream) {
@@ -792,15 +726,13 @@ export class LogcatHub {
       try {
         child.kill("SIGKILL");
       } catch (error) {
-        this.#lastError =
-          error instanceof Error ? error.message : String(error);
+        this.#lastError = error instanceof Error ? error.message : String(error);
       }
     }, this.#terminationGraceMs);
     try {
       child.kill("SIGTERM");
     } catch (error) {
-      this.#lastError =
-        error instanceof Error ? error.message : String(error);
+      this.#lastError = error instanceof Error ? error.message : String(error);
     }
   }
 }

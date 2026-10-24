@@ -10,11 +10,15 @@ test("recording start rejects control characters in its ID before capture", asyn
   target.captureStart = Promise.resolve();
   let starts = 0;
   target.capture = {
-    startRecording: async () => { starts++; },
+    startRecording: async () => {
+      starts++;
+    },
     stop: async () => {},
   };
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   try {
@@ -40,16 +44,26 @@ test("a DELETE during startup cancels the eventual recording", async () => {
   target.phase = "running";
   target.captureStart = Promise.resolve();
   let finishStart: () => void = () => {};
-  const startGate = new Promise<void>(resolve => { finishStart = resolve; });
+  const startGate = new Promise<void>((resolve) => {
+    finishStart = resolve;
+  });
   let started = 0;
   let stopped = 0;
   target.capture = {
-    startRecording: async () => { started++; await startGate; },
-    stopRecording: async () => { stopped++; return "/tmp/cancelled/session.json"; },
+    startRecording: async () => {
+      started++;
+      await startGate;
+    },
+    stopRecording: async () => {
+      stopped++;
+      return "/tmp/cancelled/session.json";
+    },
     stop: async () => {},
   };
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   const url = `http://127.0.0.1:${address.port}/recording/video`;
@@ -84,15 +98,21 @@ test("a DELETE before capture starts prevents recording startup", async () => {
   const target = session as any;
   target.phase = "running";
   let finishCapture: () => void = () => {};
-  target.captureStart = new Promise<void>(resolve => { finishCapture = resolve; });
+  target.captureStart = new Promise<void>((resolve) => {
+    finishCapture = resolve;
+  });
   let starts = 0;
   target.capture = {
-    startRecording: async () => { starts++; },
+    startRecording: async () => {
+      starts++;
+    },
     stopRecording: async () => "/tmp/early-cancel/session.json",
     stop: async () => {},
   };
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   const url = `http://127.0.0.1:${address.port}/recording/video`;
@@ -100,7 +120,11 @@ test("a DELETE before capture starts prevents recording startup", async () => {
     const start = fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: true, output: "/tmp/early-cancel", recordingId: "lease-early" }),
+      body: JSON.stringify({
+        start: true,
+        output: "/tmp/early-cancel",
+        recordingId: "lease-early",
+      }),
     });
     for (let i = 0; i < 100 && !target.recordingStarting; i++) await Bun.sleep(5);
     expect(target.recordingStarting).toBe(true);
@@ -124,14 +148,24 @@ test("a DELETE arriving before POST prevents a late recording start", async () =
   target.phase = "running";
   target.captureStart = Promise.resolve();
   let starts = 0;
-  target.capture = { startRecording: async () => { starts++; }, stop: async () => {} };
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  target.capture = {
+    startRecording: async () => {
+      starts++;
+    },
+    stop: async () => {},
+  };
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   const url = `http://127.0.0.1:${address.port}/recording/video`;
   try {
-    const cancel = await fetch(url, { method: "DELETE", headers: { "x-recording-id": "late-start" } });
+    const cancel = await fetch(url, {
+      method: "DELETE",
+      headers: { "x-recording-id": "late-start" },
+    });
     expect(cancel.status).toBe(202);
     const start = await fetch(url, {
       method: "POST",
@@ -152,16 +186,26 @@ test("duplicate DELETE waits for the same finalization and replays its manifest"
   const target = session as any;
   target.phase = "running";
   let finishStop: () => void = () => {};
-  const stopGate = new Promise<void>(resolve => { finishStop = resolve; });
+  const stopGate = new Promise<void>((resolve) => {
+    finishStop = resolve;
+  });
   let stops = 0;
   target.capture = {
-    stopRecording: async () => { stops++; await stopGate; return "/tmp/retry/session.json"; },
-    startRecording: async () => { throw new Error("next recording cannot start"); },
+    stopRecording: async () => {
+      stops++;
+      await stopGate;
+      return "/tmp/retry/session.json";
+    },
+    startRecording: async () => {
+      throw new Error("next recording cannot start");
+    },
     stop: async () => {},
   };
   target.refreshRecordingLease("retry-id");
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   const url = `http://127.0.0.1:${address.port}/recording/video`;
@@ -176,7 +220,8 @@ test("duplicate DELETE waits for the same finalization and replays its manifest"
     expect(await (await second).json()).toEqual({ manifest: "/tmp/retry/session.json" });
     expect(await (await stop()).json()).toEqual({ manifest: "/tmp/retry/session.json" });
     const next = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start: true, output: "/tmp/blocked", recordingId: "next-id" }),
     });
     expect(next.status).toBe(500);
@@ -194,28 +239,41 @@ test("a DELETE retry keeps a finalization failure visible", async () => {
   const target = session as any;
   target.phase = "running";
   target.capture = {
-    stopRecording: async () => { throw new Error("MP4 finalization failed"); },
-    startRecording: async () => { throw new Error("next recording cannot start"); },
+    stopRecording: async () => {
+      throw new Error("MP4 finalization failed");
+    },
+    startRecording: async () => {
+      throw new Error("next recording cannot start");
+    },
     stop: async () => {},
   };
   target.refreshRecordingLease("failed-id");
-  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const server = createServer((req, res) => {
+    void session.handleVideoRecording(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("server has no TCP port");
   const url = `http://127.0.0.1:${address.port}/recording/video`;
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await fetch(url, { method: "DELETE", headers: { "x-recording-id": "failed-id" } });
+      const response = await fetch(url, {
+        method: "DELETE",
+        headers: { "x-recording-id": "failed-id" },
+      });
       expect(response.status).toBe(500);
       expect((await response.json()).message).toContain("MP4 finalization failed");
     }
     const next = await fetch(url, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ start: true, output: "/tmp/blocked", recordingId: "next-id" }),
     });
     expect(next.status).toBe(500);
-    const retry = await fetch(url, { method: "DELETE", headers: { "x-recording-id": "failed-id" } });
+    const retry = await fetch(url, {
+      method: "DELETE",
+      headers: { "x-recording-id": "failed-id" },
+    });
     expect(retry.status).toBe(500);
     expect((await retry.json()).message).toContain("MP4 finalization failed");
   } finally {
@@ -229,10 +287,16 @@ test("shutdown shares an in-progress recording stop", async () => {
   const target = session as any;
   target.phase = "running";
   let finishStop: () => void = () => {};
-  const stopGate = new Promise<void>(resolve => { finishStop = resolve; });
+  const stopGate = new Promise<void>((resolve) => {
+    finishStop = resolve;
+  });
   let stops = 0;
   target.capture = {
-    stopRecording: async () => { stops++; await stopGate; return "/tmp/overlap/session.json"; },
+    stopRecording: async () => {
+      stops++;
+      await stopGate;
+      return "/tmp/overlap/session.json";
+    },
     stop: async () => {},
   };
   target.refreshRecordingLease("lease-overlap");
@@ -253,7 +317,10 @@ test("an expired lease finishes its recording", async () => {
   target.recordingLeaseMs = 10;
   let stops = 0;
   target.capture = {
-    stopRecording: async () => { stops++; return "/tmp/expired/session.json"; },
+    stopRecording: async () => {
+      stops++;
+      return "/tmp/expired/session.json";
+    },
     stop: async () => {},
   };
   target.refreshRecordingLease("lease-expiry");
@@ -274,7 +341,9 @@ test("a later successful recording does not erase an earlier finalization failur
       if (++stops === 1) throw new Error("first MP4 finalization failed");
       return "/tmp/second/session.json";
     },
-    stop: async () => { tornDown = true; },
+    stop: async () => {
+      tornDown = true;
+    },
   };
   target.refreshRecordingLease("first");
   await expect(target.finishRecording("first")).rejects.toThrow("first MP4 finalization failed");
@@ -293,8 +362,12 @@ test("shutdown reports finalization failure after a recording lease expires", as
   target.recordingLeaseMs = 10;
   let tornDown = false;
   target.capture = {
-    stopRecording: async () => { throw new Error("expired MP4 finalization failed"); },
-    stop: async () => { tornDown = true; },
+    stopRecording: async () => {
+      throw new Error("expired MP4 finalization failed");
+    },
+    stop: async () => {
+      tornDown = true;
+    },
   };
   target.refreshRecordingLease("lease-expiry-failure");
   for (let i = 0; i < 100 && !target.recordingFailure; i++) await Bun.sleep(5);
@@ -309,9 +382,15 @@ test("shutdown reports a failed finalization after closing during startup", asyn
   const target = session as any;
   target.phase = "running";
   let failStart: (error: Error) => void = () => {};
-  target.recordingStart = new Promise<void>((_, reject) => { failStart = reject; });
+  target.recordingStart = new Promise<void>((_, reject) => {
+    failStart = reject;
+  });
   let tornDown = false;
-  target.capture = { stop: async () => { tornDown = true; } };
+  target.capture = {
+    stop: async () => {
+      tornDown = true;
+    },
+  };
   session.close();
   failStart(new Error("startup MP4 finalization failed"));
   expect(await finishDeviceRecordingsForShutdown()).toBe(false);
@@ -322,7 +401,11 @@ test("shutdown reports a closed session's recording stop failure", async () => {
   const session = new DeviceSession("recording-stop-failure-test");
   const target = session as any;
   target.phase = "running";
-  target.capture.handle = { stop: async () => { throw new Error("MP4 finalization failed"); } };
+  target.capture.handle = {
+    stop: async () => {
+      throw new Error("MP4 finalization failed");
+    },
+  };
   session.close();
   expect(await finishDeviceRecordingsForShutdown()).toBe(false);
 });
@@ -332,14 +415,18 @@ test("shutdown reports an in-progress MP4 finalization failure after teardown", 
   const target = session as any;
   target.phase = "running";
   let failFinalization: () => void = () => {};
-  const finalizationGate = new Promise<void>(resolve => { failFinalization = resolve; });
+  const finalizationGate = new Promise<void>((resolve) => {
+    failFinalization = resolve;
+  });
   let tornDown = false;
   target.capture = {
     stopRecording: async () => {
       await finalizationGate;
       throw new Error("MP4 finalization failed");
     },
-    stop: async () => { tornDown = true; },
+    stop: async () => {
+      tornDown = true;
+    },
   };
   target.refreshRecordingLease("lease-failure");
   const stopping = target.finishRecording("lease-failure") as Promise<string>;

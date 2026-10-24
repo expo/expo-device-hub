@@ -55,7 +55,7 @@ function errorMessage(error: unknown, fallback: string): string {
 async function readJson<T>(response: Response, fallback: string): Promise<T> {
   let data: T;
   try {
-    data = await response.json() as T;
+    data = (await response.json()) as T;
   } catch {
     throw new Error(fallback);
   }
@@ -81,10 +81,7 @@ export function SessionPanel() {
     const poller = new VisibilityPoller<SessionPage>({
       intervalMs: POLL_INTERVAL_MS,
       poll: async (signal) => {
-        const response = await fetch(
-          `/api/session?limit=${RECENT_EVENT_LIMIT}`,
-          { signal },
-        );
+        const response = await fetch(`/api/session?limit=${RECENT_EVENT_LIMIT}`, { signal });
         return readJson<SessionPage>(response, "Session unavailable");
       },
       onResult: (page) => {
@@ -107,9 +104,7 @@ export function SessionPanel() {
     let observer: IntersectionObserver | null = null;
 
     const updatePolling = () => {
-      poller.setActive(
-        intersectsViewport && document.visibilityState === "visible",
-      );
+      poller.setActive(intersectsViewport && document.visibilityState === "visible");
     };
     const onVisibilityChange = () => updatePolling();
 
@@ -150,10 +145,7 @@ export function SessionPanel() {
     pollerRef.current?.invalidate();
     try {
       const response = await fetch(url, init);
-      const data = await readJson<SessionMutation>(
-        response,
-        failureStatus,
-      );
+      const data = await readJson<SessionMutation>(response, failureStatus);
       if (!data.ok || !data.session) {
         throw new Error(data.error ?? failureStatus);
       }
@@ -196,22 +188,11 @@ export function SessionPanel() {
   };
 
   const stopReplay = async () => {
-    await mutate(
-      "/api/session/replay/stop",
-      { method: "POST" },
-      "Replay stopped",
-      "Stop failed",
-    );
+    await mutate("/api/session/replay/stop", { method: "POST" }, "Replay stopped", "Stop failed");
   };
 
   const clear = async () => {
-    await mutate(
-      "/api/session",
-      { method: "DELETE" },
-      "Cleared",
-      "Clear failed",
-      true,
-    );
+    await mutate("/api/session", { method: "DELETE" }, "Cleared", "Clear failed", true);
   };
 
   const copy = async () => {
@@ -219,9 +200,7 @@ export function SessionPanel() {
     try {
       const response = await fetch("/api/session/export");
       const data = await readJson<SessionExport>(response, "Copy failed");
-      await navigator.clipboard.writeText(
-        JSON.stringify(data.events, null, 2),
-      );
+      await navigator.clipboard.writeText(JSON.stringify(data.events, null, 2));
       if (mountedRef.current) setStatus("Copied");
     } catch (error) {
       if (mountedRef.current) setStatus(errorMessage(error, "Copy failed"));
@@ -259,28 +238,25 @@ export function SessionPanel() {
         >
           Replay
         </button>
-        <button
-          disabled={!session?.replaying}
-          onClick={() => void stopReplay()}
-        >
+        <button disabled={!session?.replaying} onClick={() => void stopReplay()}>
           Stop
         </button>
         <button onClick={() => void clear()}>Clear</button>
         <button onClick={() => void copy()}>Copy</button>
       </div>
       <div className="session-list">
-        {recent.length
-          ? recent.map((event) => (
-              <div key={event.id}>
-                <span>+{Math.round(event.delayMs)}ms</span>
-                {labelForEvent(event)}
-              </div>
-            ))
-          : <div>No recorded events</div>}
+        {recent.length ? (
+          recent.map((event) => (
+            <div key={event.id}>
+              <span>+{Math.round(event.delayMs)}ms</span>
+              {labelForEvent(event)}
+            </div>
+          ))
+        ) : (
+          <div>No recorded events</div>
+        )}
       </div>
-      {session?.lastError && (
-        <div className="route-meta">{session.lastError}</div>
-      )}
+      {session?.lastError && <div className="route-meta">{session.lastError}</div>}
     </section>
   );
 }

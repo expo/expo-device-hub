@@ -12,13 +12,13 @@ function positiveSafeInteger(value: string, name: string): number {
   return parsed;
 }
 
-export function parseSessionPageQuery(
-  searchParams: URLSearchParams,
-): { limit: number; before?: number } {
+export function parseSessionPageQuery(searchParams: URLSearchParams): {
+  limit: number;
+  before?: number;
+} {
   const rawLimit = searchParams.get("limit");
-  const limit = rawLimit === null
-    ? DEFAULT_SESSION_PAGE_LIMIT
-    : positiveSafeInteger(rawLimit, "limit");
+  const limit =
+    rawLimit === null ? DEFAULT_SESSION_PAGE_LIMIT : positiveSafeInteger(rawLimit, "limit");
   if (limit > MAX_SESSION_PAGE_LIMIT) {
     throw new Error(`limit must be at most ${MAX_SESSION_PAGE_LIMIT}`);
   }

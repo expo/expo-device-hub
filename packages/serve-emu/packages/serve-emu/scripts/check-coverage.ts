@@ -32,10 +32,7 @@ const records = (await lcovFile.text())
 
 const missing = CRITICAL_SOURCE_FILES.filter(
   (required) =>
-    !records.some(
-      (record) =>
-        record.source?.endsWith(required) && record.linesFound > 0,
-    ),
+    !records.some((record) => record.source?.endsWith(required) && record.linesFound > 0),
 );
 
 if (missing.length > 0) {
@@ -47,6 +44,4 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(
-  `coverage includes all ${CRITICAL_SOURCE_FILES.length} critical source modules`,
-);
+console.log(`coverage includes all ${CRITICAL_SOURCE_FILES.length} critical source modules`);

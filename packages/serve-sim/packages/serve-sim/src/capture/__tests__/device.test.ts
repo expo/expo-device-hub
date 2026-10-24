@@ -4,7 +4,11 @@ import { join, resolve } from "node:path";
 import { isDeviceInjected, proxyDylibCandidates } from "../device";
 import { useTempStateDir } from "../../__tests__/helpers";
 import { writeLaunchState } from "../../launch-state";
-import { capabilityConfigPath, commitCapabilityConfig, renderCapabilityConfig } from "../../capability-config";
+import {
+  capabilityConfigPath,
+  commitCapabilityConfig,
+  renderCapabilityConfig,
+} from "../../capability-config";
 import { capabilityLoaderPath } from "../../launch-manager";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
@@ -19,8 +23,12 @@ beforeEach(() => {
     launchArgs: [],
     capabilities: {
       networkCapture: {
-        name: "networkCapture", dylib: DYLIB, scope: "userApps" as const,
-        loadPhase: "startupAndDeferred" as const, ownerPid: null, bundleId: null,
+        name: "networkCapture",
+        dylib: DYLIB,
+        scope: "userApps" as const,
+        loadPhase: "startupAndDeferred" as const,
+        ownerPid: null,
+        bundleId: null,
         env: { SIMNET_PROXY_PORT_FILE: portFile },
       },
     },
@@ -34,79 +42,106 @@ const readEnv = (inserts: string) => async (args: string[]) =>
   args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG" ? capabilityConfigPath(UDID) : inserts;
 
 test("capture is healthy when its session, port file, and startup images are armed", async () => {
-  expect(await isDeviceInjected(UDID, portFile, {
-    read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`), expectedPort: 9123,
-  })).toBe(true);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`),
+      expectedPort: 9123,
+    }),
+  ).toBe(true);
 });
 
 test("capture stays healthy with boot-inherited images when launchctl getenv is empty", async () => {
-  expect(await isDeviceInjected(UDID, portFile, {
-    read: async (args) => {
-      if (args[0] !== "getenv" || args[1] !== UDID) return "";
-      return args[2] === "SERVE_SIM_CAPABILITIES_CONFIG"
-        ? capabilityConfigPath(UDID)
-        : `${capabilityLoaderPath()}:${DYLIB}`;
-    },
-    expectedPort: 9123,
-  })).toBe(true);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: async (args) => {
+        if (args[0] !== "getenv" || args[1] !== UDID) return "";
+        return args[2] === "SERVE_SIM_CAPABILITIES_CONFIG"
+          ? capabilityConfigPath(UDID)
+          : `${capabilityLoaderPath()}:${DYLIB}`;
+      },
+      expectedPort: 9123,
+    }),
+  ).toBe(true);
 });
 
 test.each(["SERVE_SIM_CAPABILITIES_CONFIG", "DYLD_INSERT_LIBRARIES"])(
   "capture is unhealthy when inherited %s cannot be read",
   async (variable) => {
-    expect(await isDeviceInjected(UDID, portFile, {
-      read: async (args) => {
-        if (args[0] === "getenv") {
-          throw new Error("Unable to getenv while not booting or booted");
-        }
-        if (args.at(-1) === variable) return "";
-        return args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG"
-          ? capabilityConfigPath(UDID)
-          : `${capabilityLoaderPath()}:${DYLIB}`;
-      },
-    })).toBe(false);
+    expect(
+      await isDeviceInjected(UDID, portFile, {
+        read: async (args) => {
+          if (args[0] === "getenv") {
+            throw new Error("Unable to getenv while not booting or booted");
+          }
+          if (args.at(-1) === variable) return "";
+          return args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG"
+            ? capabilityConfigPath(UDID)
+            : `${capabilityLoaderPath()}:${DYLIB}`;
+        },
+      }),
+    ).toBe(false);
   },
 );
 
 test("runtime removal of a capture image is unhealthy even when boot images remain", async () => {
-  expect(await isDeviceInjected(UDID, portFile, {
-    read: async (args) => {
-      if (args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG") return capabilityConfigPath(UDID);
-      return args[0] === "getenv" ? `${capabilityLoaderPath()}:${DYLIB}` : capabilityLoaderPath();
-    },
-  })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: async (args) => {
+        if (args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG") return capabilityConfigPath(UDID);
+        return args[0] === "getenv" ? `${capabilityLoaderPath()}:${DYLIB}` : capabilityLoaderPath();
+      },
+    }),
+  ).toBe(false);
 });
 
 test("a mismatched runtime config is unhealthy even when boot config matches", async () => {
-  expect(await isDeviceInjected(UDID, portFile, {
-    read: async (args) => {
-      if (args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG") {
-        return args[0] === "getenv" ? capabilityConfigPath(UDID) : "/other/capabilities.conf";
-      }
-      return `${capabilityLoaderPath()}:${DYLIB}`;
-    },
-  })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: async (args) => {
+        if (args.at(-1) === "SERVE_SIM_CAPABILITIES_CONFIG") {
+          return args[0] === "getenv" ? capabilityConfigPath(UDID) : "/other/capabilities.conf";
+        }
+        return `${capabilityLoaderPath()}:${DYLIB}`;
+      },
+    }),
+  ).toBe(false);
 });
 
 test("capture is unhealthy when the startup image is removed", async () => {
-  expect(await isDeviceInjected(UDID, portFile, {
-    read: readEnv(capabilityLoaderPath()),
-  })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: readEnv(capabilityLoaderPath()),
+    }),
+  ).toBe(false);
 });
 
 test("capture is unhealthy when the port file belongs to another session", async () => {
-  expect(await isDeviceInjected(UDID, "/tmp/other-confdir/proxy-port", {
-    read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`),
-  })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, "/tmp/other-confdir/proxy-port", {
+      read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`),
+    }),
+  ).toBe(false);
 });
 
 test("capture is unhealthy when the port file is missing or names an old proxy", async () => {
   rmSync(portFile);
-  expect(await isDeviceInjected(UDID, portFile, { read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`), expectedPort: 9123 })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`),
+      expectedPort: 9123,
+    }),
+  ).toBe(false);
   writeFileSync(portFile, "9124");
-  expect(await isDeviceInjected(UDID, portFile, { read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`), expectedPort: 9123 })).toBe(false);
+  expect(
+    await isDeviceInjected(UDID, portFile, {
+      read: readEnv(`${capabilityLoaderPath()}:${DYLIB}`),
+      expectedPort: 9123,
+    }),
+  ).toBe(false);
 });
 
 test("proxyDylibCandidates includes the checkout's native build", () => {
-  expect(proxyDylibCandidates()).toContain(resolve(import.meta.dir, "../../../dist/simnet/libSimNetProxy.dylib"));
+  expect(proxyDylibCandidates()).toContain(
+    resolve(import.meta.dir, "../../../dist/simnet/libSimNetProxy.dylib"),
+  );
 });

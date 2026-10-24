@@ -9,11 +9,12 @@ type HostDependencies = {
 
 const dependencies: HostDependencies = {
   exists: existsSync,
-  run: (file, args) => execFileSync(file, args, {
-    encoding: "utf-8",
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 3_000,
-  }),
+  run: (file, args) =>
+    execFileSync(file, args, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 3_000,
+    }),
 };
 
 function developerRoot(developerDir: string): string {
@@ -22,7 +23,10 @@ function developerRoot(developerDir: string): string {
 }
 
 /** Resolve the GUI host inside the selected Xcode, not whichever app Launch Services picks. */
-export function resolveSimulatorHost(developerDir: string, exists: (path: string) => boolean = existsSync) {
+export function resolveSimulatorHost(
+  developerDir: string,
+  exists: (path: string) => boolean = existsSync,
+) {
   const dev = developerRoot(developerDir);
   const deviceHub = resolve(dev, "../Applications/DeviceHub.app");
   if (exists(deviceHub)) return { kind: "device-hub" as const, path: deviceHub };
@@ -37,7 +41,9 @@ export function resolveSimulatorHost(developerDir: string, exists: (path: string
 export function openSimulatorHost(udid: string, deps: HostDependencies = dependencies): void {
   const developerDir = deps.run("/usr/bin/xcode-select", ["-p"]).trim();
   if (!developerDir) {
-    throw new Error("xcode-select returned no developer directory. Select a full Xcode installation and retry.");
+    throw new Error(
+      "xcode-select returned no developer directory. Select a full Xcode installation and retry.",
+    );
   }
   const host = resolveSimulatorHost(developerDir, deps.exists);
   const args = ["-g", "-a", host.path];

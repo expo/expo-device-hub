@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import { runHostActionAsync } from "../host-actions";
-import { EXIT_0_SHIM, UDID, installShims } from "./helpers";
+import { EXIT_0_SHIM, SCREENSHOT_SHIM, UDID, installShims } from "./helpers";
 
 const STAGING = join(tmpdir(), "serve-sim-screenshots");
 const SCREENSHOT_PREFIX = "serve-sim-screenshot-";
@@ -18,12 +18,12 @@ const MAX_SCREENSHOT_AGE_MS = 6 * 60 * 60 * 1000;
 // for six hours. Two minutes is far longer than this file runs, so the prune at the start of a
 // capture cannot remove a filler a test is still counting on.
 const FIXTURE_MTIME_MS = Date.now() - MAX_SCREENSHOT_AGE_MS + 2 * 60 * 1000;
-const params = { udid: UDID, fileName: "serve-sim-screenshot-next.png" };
+const params = { display: 1, udid: UDID, fileName: "serve-sim-screenshot-next.png" };
 
 let shims: ReturnType<typeof installShims>;
 
 beforeAll(() => {
-  shims = installShims({ xcrun: EXIT_0_SHIM, cp: EXIT_0_SHIM });
+  shims = installShims({ xcrun: SCREENSHOT_SHIM, cp: EXIT_0_SHIM });
   mkdirSync(STAGING, { recursive: true });
 });
 

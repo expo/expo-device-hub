@@ -19,10 +19,7 @@ export function isVisualViewportKeyboardRaised(
 export function readNativeKeyboardRaised(): boolean {
   if (typeof window === "undefined") return false;
   const vv = window.visualViewport;
-  return isVisualViewportKeyboardRaised(
-    window.innerHeight,
-    vv?.height ?? window.innerHeight,
-  );
+  return isVisualViewportKeyboardRaised(window.innerHeight, vv?.height ?? window.innerHeight);
 }
 export const SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION = 0;
 export const SIMULATOR_RESIZE_DRAG_TRANSITION = "width 70ms linear";
@@ -179,9 +176,7 @@ export function restoredSimulatorFrameWidth(
   storedScale: number | null | undefined,
   reservedForChrome = SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME,
 ) {
-  const restored = Number.isFinite(storedScale)
-    ? defaultWidth * storedScale!
-    : defaultWidth;
+  const restored = Number.isFinite(storedScale) ? defaultWidth * storedScale! : defaultWidth;
   return clampSimulatorFrameWidth(
     restored,
     defaultWidth,

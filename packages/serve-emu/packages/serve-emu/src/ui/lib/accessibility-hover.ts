@@ -37,12 +37,7 @@ export function findAccessibilityNodeAt<T extends AccessibilityHitTarget>(
 
   for (const node of nodes) {
     const bounds = node.bounds;
-    if (
-      x < bounds.left ||
-      x > bounds.right ||
-      y < bounds.top ||
-      y > bounds.bottom
-    ) {
+    if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) {
       continue;
     }
 

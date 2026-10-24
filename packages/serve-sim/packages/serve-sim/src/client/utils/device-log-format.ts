@@ -1,12 +1,6 @@
 export type DeviceLogLevel = "debug" | "info" | "default" | "error" | "fault";
 
-export const DEVICE_LOG_LEVELS: DeviceLogLevel[] = [
-  "debug",
-  "info",
-  "default",
-  "error",
-  "fault",
-];
+export const DEVICE_LOG_LEVELS: DeviceLogLevel[] = ["debug", "info", "default", "error", "fault"];
 
 export type DeviceLogFields = {
   process: string;
@@ -57,9 +51,10 @@ export function parseDeviceLogEntry(entry: unknown): DeviceLogFields | null {
     category: asString(record.category),
     message,
     level: normalizeDeviceLogLevel(record.messageType),
-    pid: typeof record.processID === "number" && Number.isFinite(record.processID)
-      ? record.processID
-      : null,
+    pid:
+      typeof record.processID === "number" && Number.isFinite(record.processID)
+        ? record.processID
+        : null,
     timestamp: asString(record.timestamp),
   };
 }

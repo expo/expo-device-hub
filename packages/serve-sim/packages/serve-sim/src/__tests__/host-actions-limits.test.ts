@@ -16,7 +16,14 @@ import { homedir, tmpdir } from "os";
 import { basename, join, resolve, sep } from "path";
 
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
-import { EXIT_0_SHIM, UDID, withActionTimeoutAsync, withShimsAsync } from "./helpers";
+import { UPLOAD_DIR } from "../host-paths";
+import {
+  EXIT_0_SHIM,
+  SCREENSHOT_SHIM,
+  UDID,
+  withActionTimeoutAsync,
+  withShimsAsync,
+} from "./helpers";
 
 const BIN = "true";
 const PROTECTED = /is inside a location this host protects/;
@@ -73,7 +80,10 @@ describe("what a preview link may spend on the host", () => {
     "refuses to write a screenshot named %s",
     async (fileName) => {
       await expect(
-        runHostActionAsync({ action: "screenshot.capture", params: { udid: UDID, fileName } }, BIN),
+        runHostActionAsync(
+          { action: "screenshot.capture", params: { display: 1, udid: UDID, fileName } },
+          BIN,
+        ),
       ).rejects.toBeInstanceOf(InvalidHostActionError);
     },
   );
@@ -92,7 +102,7 @@ describe("what a preview link may spend on the host", () => {
   it("does not let parallel chunks overshoot the staging ceiling", async () => {
     const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
     const chunk = 1024;
-    const dir = join(tmpdir(), "serve-sim-uploads");
+    const dir = UPLOAD_DIR;
     const filler = join(dir, "zz-toctou-filler.bin");
     const ids = Array.from({ length: 8 }, (_unused, i) => `zz-toctou-${i}.bin`);
 
@@ -183,9 +193,12 @@ describe("what a preview link may spend on the host", () => {
       writeFileSync(fresh, "");
       utimesSync(fresh, cutoffSeconds + 60, cutoffSeconds + 60);
 
-      await withShimsAsync({ xcrun: EXIT_0_SHIM, cp: EXIT_0_SHIM }, async () => {
+      await withShimsAsync({ xcrun: SCREENSHOT_SHIM, cp: EXIT_0_SHIM }, async () => {
         const result = await runHostActionAsync(
-          { action: "screenshot.capture", params: { udid: UDID, fileName: basename(captured) } },
+          {
+            action: "screenshot.capture",
+            params: { display: 1, udid: UDID, fileName: basename(captured) },
+          },
           BIN,
         );
         expect(result.exitCode).toBe(0);
@@ -197,6 +210,27 @@ describe("what a preview link may spend on the host", () => {
       for (const file of [...stale, fresh, captured]) rmSync(file, { force: true });
     }
   });
+
+  it.each(["stdout", "stderr"])("explains a child that exceeds the %s limit", async (stream) => {
+    const redirect = stream === "stderr" ? " >&2" : "";
+    await withShimsAsync(
+      { xcrun: `#!/bin/sh\nexec head -c 17000000 /dev/zero${redirect}\n` },
+      async () => {
+        const result = await runHostActionAsync(
+          { action: "appearance.get", params: { udid: UDID } },
+          BIN,
+        );
+        expect(result).toEqual({
+          stdout: "",
+          stderr:
+            "The xcrun command printed more than 16 MiB to stdout or stderr. " +
+            "Ask for less output, or use a smaller file, and try again.",
+          exitCode: 1,
+        });
+      },
+    );
+  });
+
   // exec, so the deadline's SIGKILL reaps the sleep itself; a plain `sleep` would leave it running
   // under init after its shell died.
   it("gives up on a child that never exits", async () => {

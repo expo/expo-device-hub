@@ -6,21 +6,15 @@ import react from "@vitejs/plugin-react";
 export const DEFAULT_BACKEND_ORIGIN = "http://localhost:3300";
 export const DEFAULT_UI_PORT = 5173;
 
-type BackendProxy = Record<
-  "/api" | "/health" | "/webrtc" | "/ws",
-  ProxyOptions
->;
+type BackendProxy = Record<"/api" | "/health" | "/webrtc" | "/ws", ProxyOptions>;
 
 function parseBackendOrigin(value: string | undefined): URL {
-  const configuredOrigin =
-    value === undefined ? DEFAULT_BACKEND_ORIGIN : value.trim();
+  const configuredOrigin = value === undefined ? DEFAULT_BACKEND_ORIGIN : value.trim();
   let backend: URL;
   try {
     backend = new URL(configuredOrigin);
   } catch {
-    throw new Error(
-      "SERVE_EMU_BACKEND_ORIGIN must be a valid HTTP or HTTPS origin",
-    );
+    throw new Error("SERVE_EMU_BACKEND_ORIGIN must be a valid HTTP or HTTPS origin");
   }
 
   if (backend.protocol !== "http:" && backend.protocol !== "https:") {

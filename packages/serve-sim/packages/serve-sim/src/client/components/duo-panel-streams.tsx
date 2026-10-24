@@ -48,15 +48,21 @@ type PanelStatus = {
 const EMPTY_STATUS: PanelStatus = { streaming: false, error: null, failure: null };
 
 /** Health belongs to the displayed panel; the other decoder can remain healthy independently. */
-export function duoPanelStatus(mode: SimulatorStreamMode, screenId: number | undefined, panels: Record<1 | 3, PanelStatus>) {
+export function duoPanelStatus(
+  mode: SimulatorStreamMode,
+  screenId: number | undefined,
+  panels: Record<1 | 3, PanelStatus>,
+) {
   const panel = panels[screenId === 1 ? 1 : 3];
-  const error = mode === "webrtc"
-    ? panel.error ?? (panel.failure
-      ? panel.failure.kind === "codec"
-        ? "WebRTC could not decode this display."
-        : "WebRTC streaming failed for this display."
-      : null)
-    : null;
+  const error =
+    mode === "webrtc"
+      ? (panel.error ??
+        (panel.failure
+          ? panel.failure.kind === "codec"
+            ? "WebRTC could not decode this display."
+            : "WebRTC streaming failed for this display."
+          : null))
+      : null;
   return { streaming: panel.streaming && !error, error };
 }
 
@@ -69,8 +75,17 @@ const PANEL_CONFIG: Record<1 | 3, StreamConfig> = {
 const ignoreSourceTouch = () => {};
 
 function DuoPanelStream({
-  screenId, streamUrl, mode, activeScreenId, codec, iceServers, transportLocked,
-  onStatusChange, onAvccError, onWebRtcFailure, onPeerChange,
+  screenId,
+  streamUrl,
+  mode,
+  activeScreenId,
+  codec,
+  iceServers,
+  transportLocked,
+  onStatusChange,
+  onAvccError,
+  onWebRtcFailure,
+  onPeerChange,
 }: Omit<DuoPanelStreamsProps, "onStreamingChange" | "onWebRtcPeerChange" | "onStreamError"> & {
   screenId: 1 | 3;
   onStatusChange: (screenId: 1 | 3, status: PanelStatus) => void;
@@ -79,9 +94,13 @@ function DuoPanelStream({
   const url = duoPanelUrl(streamUrl, screenId);
   const mjpeg = useMjpegStream(mode === "mjpeg" ? `${url}/stream.mjpeg` : null);
   const webrtc = useWebRtcStream({
-    offerUrl: `${url}/webrtc/offer`, closeUrl: `${url}/webrtc/close`,
+    offerUrl: `${url}/webrtc/offer`,
+    closeUrl: `${url}/webrtc/close`,
     statsUrl: `${url}/webrtc/stats`,
-    enabled: mode === "webrtc", codec, iceServers, transportLocked,
+    enabled: mode === "webrtc",
+    codec,
+    iceServers,
+    transportLocked,
     judgeStalls: activeScreenId === screenId,
   });
   const [streaming, setStreaming] = useState(false);
@@ -92,15 +111,34 @@ function DuoPanelStream({
     if (mode === "webrtc" && webrtc.failure) onWebRtcFailure(webrtc.failure);
   }, [mode, webrtc.failure, onWebRtcFailure]);
   useEffect(() => {
-    onPeerChange(screenId, mode === "webrtc" ? {
-      peerConnection: webrtc.peerConnection, sessionId: webrtc.sessionId, statsUrl: `${url}/webrtc/stats`,
-      subscribeStats: webrtc.subscribeStats, retry: webrtc.retry,
-    } : null);
+    onPeerChange(
+      screenId,
+      mode === "webrtc"
+        ? {
+            peerConnection: webrtc.peerConnection,
+            sessionId: webrtc.sessionId,
+            statsUrl: `${url}/webrtc/stats`,
+            subscribeStats: webrtc.subscribeStats,
+            retry: webrtc.retry,
+          }
+        : null,
+    );
     return () => onPeerChange(screenId, null);
-  }, [mode, screenId, url, webrtc.peerConnection, webrtc.sessionId, webrtc.subscribeStats, webrtc.retry, onPeerChange]);
+  }, [
+    mode,
+    screenId,
+    url,
+    webrtc.peerConnection,
+    webrtc.sessionId,
+    webrtc.subscribeStats,
+    webrtc.retry,
+    onPeerChange,
+  ]);
 
   const decoded = useRef(false);
-  const onDecodedFrame = useCallback(() => { decoded.current = true; }, []);
+  const onDecodedFrame = useCallback(() => {
+    decoded.current = true;
+  }, []);
   useEffect(() => {
     decoded.current = false;
   }, [url, mode]);
@@ -115,7 +153,14 @@ function DuoPanelStream({
     return () => clearTimeout(timer);
   }, [url, mode, activeScreenId, screenId, onAvccError]);
   return (
-    <div data-duo-panel={screenId} style={{ position: "absolute", inset: 0, visibility: activeScreenId === screenId ? "visible" : "hidden" }}>
+    <div
+      data-duo-panel={screenId}
+      style={{
+        position: "absolute",
+        inset: 0,
+        visibility: activeScreenId === screenId ? "visible" : "hidden",
+      }}
+    >
       <SimulatorView
         key={mode}
         url={url}
@@ -138,10 +183,15 @@ function DuoPanelStream({
 
 /** Both decoders stay mounted while the hinge moves; only the 3D scene handles input. */
 export function DuoPanelStreams(props: DuoPanelStreamsProps) {
-  const [statuses, setStatuses] = useState<Record<1 | 3, PanelStatus>>({ 1: EMPTY_STATUS, 3: EMPTY_STATUS });
+  const [statuses, setStatuses] = useState<Record<1 | 3, PanelStatus>>({
+    1: EMPTY_STATUS,
+    3: EMPTY_STATUS,
+  });
   const [peers, setPeers] = useState<Record<1 | 3, DuoPanelPeer | null>>({ 1: null, 3: null });
   const onPeerChange = useCallback((screenId: 1 | 3, peer: DuoPanelPeer | null) => {
-    setPeers((previous) => previous[screenId] === peer ? previous : { ...previous, [screenId]: peer });
+    setPeers((previous) =>
+      previous[screenId] === peer ? previous : { ...previous, [screenId]: peer },
+    );
   }, []);
   const onStatusChange = useCallback((screenId: 1 | 3, status: PanelStatus) => {
     setStatuses((previous) => ({ ...previous, [screenId]: status }));
@@ -150,19 +200,36 @@ export function DuoPanelStreams(props: DuoPanelStreamsProps) {
   const status = duoPanelStatus(props.mode, activeScreenId, statuses);
   useEffect(() => {
     const shown = peers[activeScreenId === 1 ? 1 : 3];
-    onWebRtcPeerChange(shown && {
-      ...shown,
-      retry: () => { peers[1]?.retry(); peers[3]?.retry(); },
-    });
+    onWebRtcPeerChange(
+      shown && {
+        ...shown,
+        retry: () => {
+          peers[1]?.retry();
+          peers[3]?.retry();
+        },
+      },
+    );
   }, [peers, activeScreenId, onWebRtcPeerChange]);
   useEffect(() => () => onWebRtcPeerChange(null), [onWebRtcPeerChange]);
   useEffect(() => {
     onStreamingChange(status.streaming);
   }, [status.streaming, onStreamingChange]);
   useEffect(() => () => onStreamingChange(false), [onStreamingChange]);
-  useEffect(() => { onStreamError?.(status.error); }, [status.error, onStreamError]);
+  useEffect(() => {
+    onStreamError?.(status.error);
+  }, [status.error, onStreamError]);
   useEffect(() => () => onStreamError?.(null), [onStreamError]);
-  return <>{([1, 3] as const).map((screenId) => (
-    <DuoPanelStream key={screenId} {...props} screenId={screenId} onStatusChange={onStatusChange} onPeerChange={onPeerChange} />
-  ))}</>;
+  return (
+    <>
+      {([1, 3] as const).map((screenId) => (
+        <DuoPanelStream
+          key={screenId}
+          {...props}
+          screenId={screenId}
+          onStatusChange={onStatusChange}
+          onPeerChange={onPeerChange}
+        />
+      ))}
+    </>
+  );
 }

@@ -27,13 +27,15 @@ describe("stream settings", () => {
 
   test("uses native resolution and clamps untrusted numeric values", () => {
     expect(DEFAULT_STREAM_CONTROL_SETTINGS.maxDimension).toBe(0);
-    expect(normalizeStreamControlSettings({
-      mjpegFps: 0,
-      mjpegQuality: 4,
-      maxDimension: -1,
-      h264Bitrate: Number.POSITIVE_INFINITY,
-      h264Fps: 200,
-    })).toMatchObject({
+    expect(
+      normalizeStreamControlSettings({
+        mjpegFps: 0,
+        mjpegQuality: 4,
+        maxDimension: -1,
+        h264Bitrate: Number.POSITIVE_INFINITY,
+        h264Fps: 200,
+      }),
+    ).toMatchObject({
       mjpegFps: 1,
       mjpegQuality: 1,
       maxDimension: 0,
@@ -43,16 +45,18 @@ describe("stream settings", () => {
   });
 
   test("maps launch settings into runtime controls", () => {
-    expect(streamControlSettingsFrom({
-      transport: "webrtc",
-      codec: "vp9",
-      iceServers: [{ urls: ["turn:relay.example.test"] }],
-      mjpegFps: 10,
-      mjpegQuality: 0.55,
-      maxDimension: 1280,
-      h264Bitrate: 3_000_000,
-      h264Fps: 30,
-    })).toMatchObject({
+    expect(
+      streamControlSettingsFrom({
+        transport: "webrtc",
+        codec: "vp9",
+        iceServers: [{ urls: ["turn:relay.example.test"] }],
+        mjpegFps: 10,
+        mjpegQuality: 0.55,
+        maxDimension: 1280,
+        h264Bitrate: 3_000_000,
+        h264Fps: 30,
+      }),
+    ).toMatchObject({
       transport: "webrtc",
       webRtcCodec: "vp9",
       mjpegFps: 10,
@@ -80,15 +84,19 @@ describe("stream settings", () => {
       iceServers: [{ urls: ["turn:relay.example.test"] }],
     });
 
-    expect(mergeStreamControlSettings(current, {
-      iceServers: "invalid" as unknown as StreamControlSettings["iceServers"],
-    }).iceServers).toBe(current.iceServers);
-    expect(mergeStreamControlSettings(current, {
-      iceServers: [
-        { urls: ["stun:stun.example.test"] },
-        { urls: ["https://not-an-ice-server.example.test"] },
-      ],
-    }).iceServers).toBe(current.iceServers);
+    expect(
+      mergeStreamControlSettings(current, {
+        iceServers: "invalid" as unknown as StreamControlSettings["iceServers"],
+      }).iceServers,
+    ).toBe(current.iceServers);
+    expect(
+      mergeStreamControlSettings(current, {
+        iceServers: [
+          { urls: ["stun:stun.example.test"] },
+          { urls: ["https://not-an-ice-server.example.test"] },
+        ],
+      }).iceServers,
+    ).toBe(current.iceServers);
   });
 
   test("preserves viewer playback state and identity for unchanged encoder settings", () => {
@@ -122,16 +130,13 @@ describe("stream settings", () => {
       webRtcCodec: "h264",
     });
 
-    expect(mergeStreamPlaybackSettings(
-      current,
-      { transport: "http", httpCodec: "mjpeg" },
-      true,
-    )).toBe(current);
-    expect(mergeStreamPlaybackSettings(
-      current,
-      { webRtcCodec: "vp8" },
-      true,
-    )).toMatchObject({ transport: "webrtc", webRtcCodec: "vp8" });
+    expect(
+      mergeStreamPlaybackSettings(current, { transport: "http", httpCodec: "mjpeg" }, true),
+    ).toBe(current);
+    expect(mergeStreamPlaybackSettings(current, { webRtcCodec: "vp8" }, true)).toMatchObject({
+      transport: "webrtc",
+      webRtcCodec: "vp8",
+    });
   });
 
   test("recognizes WebRTC launches as transport-locked", () => {
@@ -141,11 +146,16 @@ describe("stream settings", () => {
   });
 
   test("accepts only WebRTC encoder controls for WebRTC sessions", () => {
-    expect(parseStreamEncoderSettingsPatch({
-      maxDimension: 1280,
-      h264Bitrate: 3_000_000,
-      h264Fps: 30,
-    }, "webrtc")).toEqual({
+    expect(
+      parseStreamEncoderSettingsPatch(
+        {
+          maxDimension: 1280,
+          h264Bitrate: 3_000_000,
+          h264Fps: 30,
+        },
+        "webrtc",
+      ),
+    ).toEqual({
       maxDimension: 1280,
       h264Bitrate: 3_000_000,
       h264Fps: 30,

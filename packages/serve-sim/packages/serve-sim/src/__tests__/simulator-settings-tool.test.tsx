@@ -24,7 +24,6 @@ describe("isIosRuntime", () => {
   });
 });
 
-
 describe("SimulatorSettingsTool fold controls", () => {
   test("places fold settings first inside the single Simulator section", () => {
     const html = renderToStaticMarkup(
@@ -36,7 +35,13 @@ describe("SimulatorSettingsTool fold controls", () => {
     );
     const rows = Array.from(html.matchAll(/data-setting-row="([^"]+)"/g), ([, label]) => label);
     expect(rows.slice(0, 7)).toEqual([
-      "Fold pose", "Hinge angle", "Table Mode", "Preview mode", "Cache screen on fold", "Preview size", "Appearance",
+      "Fold pose",
+      "Hinge angle",
+      "Table Mode",
+      "Preview mode",
+      "Cache screen on fold",
+      "Preview size",
+      "Appearance",
     ]);
     expect(html.match(/<details\b/g)).toHaveLength(1);
     expect(html.match(/<summary\b/g)).toHaveLength(1);

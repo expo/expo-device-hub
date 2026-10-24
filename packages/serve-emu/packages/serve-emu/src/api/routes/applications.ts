@@ -1,8 +1,4 @@
-import {
-  activityName,
-  packageName,
-  permissionName,
-} from "../../app-management.ts";
+import { activityName, packageName, permissionName } from "../../app-management.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import {
   MAX_APK_MULTIPART_BYTES,
@@ -10,18 +6,9 @@ import {
   readMultipartFormData,
 } from "../multipart.ts";
 import type { ContractApiRoute } from "./types.ts";
-import {
-  downstream,
-  invalid,
-  parseInput,
-  readObject,
-} from "./route-helpers.ts";
+import { downstream, invalid, parseInput, readObject } from "./route-helpers.ts";
 
-async function fileField(
-  request: Request,
-  field: string,
-  maxBytes: number,
-): Promise<File> {
+async function fileField(request: Request, field: string, maxBytes: number): Promise<File> {
   const form = await readMultipartFormData(request, maxBytes);
   const file = form.get(field);
   if (!(file instanceof File)) {
@@ -40,23 +27,15 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         if (!file.name.toLowerCase().endsWith(".apk")) {
           invalid("APK file must end with .apk");
         }
-        return Response.json(
-          await downstream("install APK", () => deps.installApk(file)),
-        );
+        return Response.json(await downstream("install APK", () => deps.installApk(file)));
       },
     },
     {
       method: "POST",
       path: "/api/files/import",
       handler: async ({ request, deps }) => {
-        const file = await fileField(
-          request,
-          "file",
-          MAX_MEDIA_MULTIPART_BYTES,
-        );
-        return Response.json(
-          await downstream("import file", () => deps.importFile(file)),
-        );
+        const file = await fileField(request, "file", MAX_MEDIA_MULTIPART_BYTES);
+        return Response.json(await downstream("import file", () => deps.importFile(file)));
       },
     },
     {
@@ -65,12 +44,11 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "launch payload");
         const pkg = parseInput(() => packageName(body.packageName));
-        const activity = typeof body.activity === "string" && body.activity.trim()
-          ? parseInput(() => activityName(body.activity))
-          : undefined;
-        return Response.json(
-          await downstream("launch app", () => deps.launchApp(pkg, activity)),
-        );
+        const activity =
+          typeof body.activity === "string" && body.activity.trim()
+            ? parseInput(() => activityName(body.activity))
+            : undefined;
+        return Response.json(await downstream("launch app", () => deps.launchApp(pkg, activity)));
       },
     },
     {
@@ -79,9 +57,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "clear payload");
         const pkg = parseInput(() => packageName(body.packageName));
-        return Response.json(
-          await downstream("clear app data", () => deps.clearApp(pkg)),
-        );
+        return Response.json(await downstream("clear app data", () => deps.clearApp(pkg)));
       },
     },
     {
@@ -90,9 +66,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "force-stop payload");
         const pkg = parseInput(() => packageName(body.packageName));
-        return Response.json(
-          await downstream("force-stop app", () => deps.forceStopApp(pkg)),
-        );
+        return Response.json(await downstream("force-stop app", () => deps.forceStopApp(pkg)));
       },
     },
     {
@@ -103,9 +77,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         const pkg = parseInput(() => packageName(body.packageName));
         const permission = parseInput(() => permissionName(body.permission));
         return Response.json(
-          await downstream("grant app permission", () =>
-            deps.grantPermission(pkg, permission)
-          ),
+          await downstream("grant app permission", () => deps.grantPermission(pkg, permission)),
         );
       },
     },
@@ -127,9 +99,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         const pkg = parseInput(() => packageName(body.packageName));
         const permission = parseInput(() => permissionName(body.permission));
         return Response.json(
-          await downstream("revoke app permission", () =>
-            deps.revokePermission(pkg, permission)
-          ),
+          await downstream("revoke app permission", () => deps.revokePermission(pkg, permission)),
         );
       },
     },
@@ -148,9 +118,7 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
       method: "GET",
       path: "/api/apps/icon",
       handler: async ({ url, deps }) => {
-        const pkg = parseInput(() =>
-          packageName(url.searchParams.get("packageName")),
-        );
+        const pkg = parseInput(() => packageName(url.searchParams.get("packageName")));
         return Response.json({
           ok: true,
           packageName: pkg,

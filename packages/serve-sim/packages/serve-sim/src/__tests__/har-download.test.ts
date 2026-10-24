@@ -5,7 +5,12 @@ import { downloadHar, type HarDownloadEnv } from "../client/utils/har-download";
 const HAR = '{"log":{"entries":[]}}';
 
 function env(overrides: Partial<HarDownloadEnv> = {}) {
-  const calls = { fetched: 0, blobs: [] as string[], written: [] as string[], headers: [] as unknown[] };
+  const calls = {
+    fetched: 0,
+    blobs: [] as string[],
+    written: [] as string[],
+    headers: [] as unknown[],
+  };
   const base: HarDownloadEnv = {
     fetch: async (_url, init) => {
       calls.fetched++;
@@ -22,7 +27,9 @@ function pickedFile(calls: { written: string[] }) {
   return async () => ({
     createWritable: async () => {
       const decoder = new TextDecoder();
-      return new WritableStream<Uint8Array>({ write: (chunk) => void calls.written.push(decoder.decode(chunk)) });
+      return new WritableStream<Uint8Array>({
+        write: (chunk) => void calls.written.push(decoder.decode(chunk)),
+      });
     },
   });
 }
@@ -38,13 +45,21 @@ describe("downloadHar", () => {
   });
 
   test("fetches nothing when the user closes the picker", async () => {
-    const { env: e, calls } = env({ showSaveFilePicker: async () => { throw new DOMException("closed", "AbortError"); } });
+    const { env: e, calls } = env({
+      showSaveFilePicker: async () => {
+        throw new DOMException("closed", "AbortError");
+      },
+    });
     await downloadHar("/network-capture.har", "a.har", {}, e);
     expect(calls.fetched).toBe(0);
   });
 
   test("reports a picker that fails for another reason than being closed", async () => {
-    const { env: e, calls } = env({ showSaveFilePicker: async () => { throw new DOMException("denied", "SecurityError"); } });
+    const { env: e, calls } = env({
+      showSaveFilePicker: async () => {
+        throw new DOMException("denied", "SecurityError");
+      },
+    });
     await expect(downloadHar("/network-capture.har", "a.har", {}, e)).rejects.toThrow("denied");
     expect(calls.fetched).toBe(0);
   });

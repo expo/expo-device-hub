@@ -13,21 +13,14 @@ export type { ApiSuccessResponse } from "../../shared/api-contracts";
 
 export type ApiClientPath = Exclude<ApiPath, "/api/logcat">;
 
-type RequestBodyOption<Body> = [Body] extends [undefined]
-  ? { body?: undefined }
-  : { body: Body };
+type RequestBodyOption<Body> = [Body] extends [undefined] ? { body?: undefined } : { body: Body };
 
-export type ApiRequestOptions<
-  P extends ApiClientPath,
-  M extends ApiMethod<P>,
-> = Omit<RequestInit, "body" | "method"> &
-  { method: M } &
-  RequestBodyOption<ApiRequest<P, M>>;
+export type ApiRequestOptions<P extends ApiClientPath, M extends ApiMethod<P>> = Omit<
+  RequestInit,
+  "body" | "method"
+> & { method: M } & RequestBodyOption<ApiRequest<P, M>>;
 
-export type FetchLike = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 type ApiClientErrorOptions = {
   status: number;
@@ -80,10 +73,7 @@ function requestBody(body: unknown, headers: Headers): BodyInit | undefined {
 }
 
 export function createApiClient(fetcher: FetchLike = globalThis.fetch) {
-  return async function apiRequest<
-    P extends ApiClientPath,
-    M extends ApiMethod<P>,
-  >(
+  return async function apiRequest<P extends ApiClientPath, M extends ApiMethod<P>>(
     path: P,
     options: ApiRequestOptions<P, M>,
   ): Promise<ApiSuccessResponse<P, M>> {
@@ -124,7 +114,7 @@ export function createApiClient(fetcher: FetchLike = globalThis.fetch) {
 
     let payload: unknown;
     try {
-      payload = await response.json() as unknown;
+      payload = (await response.json()) as unknown;
     } catch (cause) {
       if (isAbortError(cause)) throw cause;
       throw new ApiClientError("Server returned invalid JSON", {

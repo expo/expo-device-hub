@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
 import {
   appendStreamStatsSample,
@@ -7,8 +7,8 @@ import {
   readWebRtcClientCounters,
   readWebRtcServerStats,
   type WebRtcClientCounters,
-} from '../stream-stats';
-import { type DeviceStreamStatsSample } from '../types';
+} from "../stream-stats";
+import { type DeviceStreamStatsSample } from "../types";
 
 function statsReport(...entries: Record<string, unknown>[]): RTCStatsReport {
   return new Map(
@@ -30,7 +30,7 @@ function counters(overrides: Partial<WebRtcClientCounters> = {}): WebRtcClientCo
     jitterBufferDelaySeconds: 4,
     jitterBufferEmittedCount: 100,
     roundTripMs: 20,
-    icePath: 'direct',
+    icePath: "direct",
     ...overrides,
   };
 }
@@ -48,25 +48,25 @@ function sample(atMs: number): DeviceStreamStatsSample {
     clientFreezeCount: null,
     clientFreezeDurationMs: null,
     clientRoundTripMs: null,
-    clientIcePath: 'unknown',
+    clientIcePath: "unknown",
   };
 }
 
-describe('readWebRtcClientCounters', () => {
-  test('reads the active video receiver and converts browser seconds to milliseconds', () => {
+describe("readWebRtcClientCounters", () => {
+  test("reads the active video receiver and converts browser seconds to milliseconds", () => {
     expect(
       readWebRtcClientCounters(
         statsReport(
-          { type: 'inbound-rtp', kind: 'audio', framesDecoded: 900, bytesReceived: 9_000 },
+          { type: "inbound-rtp", kind: "audio", framesDecoded: 900, bytesReceived: 9_000 },
           {
-            type: 'inbound-rtp',
-            kind: 'video',
+            type: "inbound-rtp",
+            kind: "video",
             framesDecoded: 10,
             bytesReceived: 1_000,
           },
           {
-            type: 'inbound-rtp',
-            mediaType: 'video',
+            type: "inbound-rtp",
+            mediaType: "video",
             framesDecoded: 20,
             bytesReceived: 2_000,
             framesDropped: 3,
@@ -95,100 +95,100 @@ describe('readWebRtcClientCounters', () => {
       jitterBufferDelaySeconds: 4,
       jitterBufferEmittedCount: 100,
       roundTripMs: null,
-      icePath: 'unknown',
+      icePath: "unknown",
     });
   });
 
-  test('uses the transport-selected pair over a nominated relay pair', () => {
+  test("uses the transport-selected pair over a nominated relay pair", () => {
     const result = readWebRtcClientCounters(
       statsReport(
-        { type: 'inbound-rtp', kind: 'video', framesDecoded: 1 },
-        { type: 'transport', selectedCandidatePairId: 'direct-pair' },
+        { type: "inbound-rtp", kind: "video", framesDecoded: 1 },
+        { type: "transport", selectedCandidatePairId: "direct-pair" },
         {
-          id: 'direct-pair',
-          type: 'candidate-pair',
-          state: 'succeeded',
-          localCandidateId: 'local-host',
-          remoteCandidateId: 'remote-srflx',
+          id: "direct-pair",
+          type: "candidate-pair",
+          state: "succeeded",
+          localCandidateId: "local-host",
+          remoteCandidateId: "remote-srflx",
           currentRoundTripTime: 0.005,
         },
         {
-          id: 'relay-pair',
-          type: 'candidate-pair',
-          state: 'succeeded',
+          id: "relay-pair",
+          type: "candidate-pair",
+          state: "succeeded",
           nominated: true,
-          localCandidateId: 'local-relay',
-          remoteCandidateId: 'remote-srflx',
+          localCandidateId: "local-relay",
+          remoteCandidateId: "remote-srflx",
           currentRoundTripTime: 0.18,
         },
-        { id: 'local-host', type: 'local-candidate', candidateType: 'host' },
-        { id: 'local-relay', type: 'local-candidate', candidateType: 'relay' },
-        { id: 'remote-srflx', type: 'remote-candidate', candidateType: 'srflx' },
+        { id: "local-host", type: "local-candidate", candidateType: "host" },
+        { id: "local-relay", type: "local-candidate", candidateType: "relay" },
+        { id: "remote-srflx", type: "remote-candidate", candidateType: "srflx" },
       ),
       1_000,
       1,
     );
 
     expect(result?.roundTripMs).toBe(5);
-    expect(result?.icePath).toBe('direct');
+    expect(result?.icePath).toBe("direct");
   });
 
-  test('falls back to the nominated pair and recognizes a TURN relay', () => {
+  test("falls back to the nominated pair and recognizes a TURN relay", () => {
     const result = readWebRtcClientCounters(
       statsReport(
-        { type: 'inbound-rtp', kind: 'video', framesDecoded: 1 },
+        { type: "inbound-rtp", kind: "video", framesDecoded: 1 },
         {
-          id: 'relay-pair',
-          type: 'candidate-pair',
-          state: 'succeeded',
+          id: "relay-pair",
+          type: "candidate-pair",
+          state: "succeeded",
           nominated: true,
-          localCandidateId: 'local-relay',
-          remoteCandidateId: 'remote-host',
+          localCandidateId: "local-relay",
+          remoteCandidateId: "remote-host",
         },
-        { id: 'local-relay', type: 'local-candidate', candidateType: 'relay' },
-        { id: 'remote-host', type: 'remote-candidate', candidateType: 'host' },
+        { id: "local-relay", type: "local-candidate", candidateType: "relay" },
+        { id: "remote-host", type: "remote-candidate", candidateType: "host" },
       ),
       1_000,
       1,
     );
 
-    expect(result?.icePath).toBe('relay');
+    expect(result?.icePath).toBe("relay");
   });
 
-  test('keeps the ICE path unknown when either candidate type is missing', () => {
+  test("keeps the ICE path unknown when either candidate type is missing", () => {
     const result = readWebRtcClientCounters(
       statsReport(
-        { type: 'inbound-rtp', kind: 'video', framesDecoded: 1 },
+        { type: "inbound-rtp", kind: "video", framesDecoded: 1 },
         {
-          id: 'pair',
-          type: 'candidate-pair',
+          id: "pair",
+          type: "candidate-pair",
           selected: true,
-          localCandidateId: 'local',
-          remoteCandidateId: 'remote',
+          localCandidateId: "local",
+          remoteCandidateId: "remote",
         },
-        { id: 'local', type: 'local-candidate', candidateType: 'host' },
+        { id: "local", type: "local-candidate", candidateType: "host" },
       ),
       1_000,
       1,
     );
 
-    expect(result?.icePath).toBe('unknown');
+    expect(result?.icePath).toBe("unknown");
   });
 
-  test('does not invent a zero baseline when inbound video stats are absent', () => {
+  test("does not invent a zero baseline when inbound video stats are absent", () => {
     expect(
       readWebRtcClientCounters(
-        statsReport({ type: 'inbound-rtp', kind: 'audio', bytesReceived: 9_000 }),
+        statsReport({ type: "inbound-rtp", kind: "audio", bytesReceived: 9_000 }),
         1_000,
         30,
       ),
     ).toBeNull();
   });
 
-  test('preserves missing optional receiver counters as unknown', () => {
+  test("preserves missing optional receiver counters as unknown", () => {
     expect(
       readWebRtcClientCounters(
-        statsReport({ type: 'inbound-rtp', kind: 'video', framesDecoded: 1, jitter: 0.003 }),
+        statsReport({ type: "inbound-rtp", kind: "video", framesDecoded: 1, jitter: 0.003 }),
         1_000,
         1,
       ),
@@ -205,13 +205,13 @@ describe('readWebRtcClientCounters', () => {
       jitterBufferDelaySeconds: null,
       jitterBufferEmittedCount: null,
       roundTripMs: null,
-      icePath: 'unknown',
+      icePath: "unknown",
     });
   });
 });
 
-describe('describeWebRtcClientCounters', () => {
-  test('derives receiver values from the real elapsed window', () => {
+describe("describeWebRtcClientCounters", () => {
+  test("derives receiver values from the real elapsed window", () => {
     const result = describeWebRtcClientCounters(
       counters(),
       counters({
@@ -227,7 +227,7 @@ describe('describeWebRtcClientCounters', () => {
         jitterBufferDelaySeconds: 4.4,
         jitterBufferEmittedCount: 140,
         roundTripMs: 35,
-        icePath: 'relay',
+        icePath: "relay",
       }),
     );
 
@@ -240,11 +240,11 @@ describe('describeWebRtcClientCounters', () => {
     expect(result.clientFreezeCount).toBe(1);
     expect(result.clientFreezeDurationMs).toBe(1_500);
     expect(result.clientRoundTripMs).toBe(35);
-    expect(result.clientIcePath).toBe('relay');
+    expect(result.clientIcePath).toBe("relay");
   });
 
-  test('leaves window values unknown for the first, short, and backward-clock windows', () => {
-    const current = counters({ jitterMs: 9, roundTripMs: 22, icePath: 'relay' });
+  test("leaves window values unknown for the first, short, and backward-clock windows", () => {
+    const current = counters({ jitterMs: 9, roundTripMs: 22, icePath: "relay" });
     const cases: Array<[WebRtcClientCounters | null, WebRtcClientCounters]> = [
       [null, current],
       [current, counters({ atMs: 1_100 })],
@@ -267,7 +267,7 @@ describe('describeWebRtcClientCounters', () => {
     }
   });
 
-  test('invalidates reset counters independently', () => {
+  test("invalidates reset counters independently", () => {
     const result = describeWebRtcClientCounters(
       counters(),
       counters({
@@ -293,7 +293,7 @@ describe('describeWebRtcClientCounters', () => {
     expect(result.clientJitterBufferMs).toBeNull();
   });
 
-  test('keeps presented FPS when optional receiver counters are missing', () => {
+  test("keeps presented FPS when optional receiver counters are missing", () => {
     const result = describeWebRtcClientCounters(
       counters({
         bytesReceived: null,
@@ -323,7 +323,7 @@ describe('describeWebRtcClientCounters', () => {
     expect(result.clientFreezeDurationMs).toBeNull();
   });
 
-  test('keeps unavailable or reset loss independent from the other window values', () => {
+  test("keeps unavailable or reset loss independent from the other window values", () => {
     const previous = counters({ packetsLost: null });
     const current = counters({
       atMs: 2_000,
@@ -341,7 +341,7 @@ describe('describeWebRtcClientCounters', () => {
     expect(reset.clientFps).toBe(0);
   });
 
-  test('requires emitted frames to calculate the window jitter-buffer mean', () => {
+  test("requires emitted frames to calculate the window jitter-buffer mean", () => {
     const result = describeWebRtcClientCounters(
       counters(),
       counters({ atMs: 2_000, jitterBufferDelaySeconds: 4, jitterBufferEmittedCount: 100 }),
@@ -350,25 +350,25 @@ describe('describeWebRtcClientCounters', () => {
   });
 });
 
-describe('readWebRtcServerStats', () => {
-  test('normalizes the matching serve-sim session and root capture counts', () => {
+describe("readWebRtcServerStats", () => {
+  test("normalizes the matching serve-sim session and root capture counts", () => {
     expect(
       readWebRtcServerStats(
         {
           sessions: [
-            { sessionId: 'other', sourceFps: 60, codec: 'VP8' },
+            { sessionId: "other", sourceFps: 60, codec: "VP8" },
             {
-              sessionId: 'viewer',
+              sessionId: "viewer",
               sourceFps: 30,
               reportedFps: 29.8,
-              codec: 'H264',
+              codec: "H264",
               targetKbps: 4_000,
               encodeMsPerFrame: 2.5,
               framesEncoded: 600,
               framesSent: 598,
               sourceFramesDropped: 4,
               lossRatio: 0.01,
-              qualityLimitationReason: 'cpu',
+              qualityLimitationReason: "cpu",
             },
           ],
           capture: {
@@ -379,12 +379,12 @@ describe('readWebRtcServerStats', () => {
             pumpRestarts: 2,
           },
         },
-        'viewer',
+        "viewer",
       ),
     ).toEqual({
       serverFps: 30,
       encoder: {
-        codec: 'H264',
+        codec: "H264",
         encodeFps: 29.8,
         targetBitrateBps: 4_000_000,
         encodeMsPerFrame: 2.5,
@@ -392,7 +392,7 @@ describe('readWebRtcServerStats', () => {
         framesSent: 598,
         framesDropped: 4,
         packetLossRatio: 0.01,
-        qualityLimitationReason: 'cpu',
+        qualityLimitationReason: "cpu",
         publisherFps: null,
         publisherSubmittedFrames: null,
         publisherDroppedFrames: null,
@@ -410,26 +410,26 @@ describe('readWebRtcServerStats', () => {
     });
   });
 
-  test('combines serve-emu source metrics with only the requested publisher session', () => {
+  test("combines serve-emu source metrics with only the requested publisher session", () => {
     expect(
       readWebRtcServerStats(
         {
           sampledAt: 2_000,
           source: {
-            codec: 'h264',
+            codec: "h264",
             fps: 23.5,
             configuredBitrateBps: 6_000_000,
             frames: 100,
           },
           sessions: [
             {
-              sessionId: 'other',
+              sessionId: "other",
               submittedFrames: 500,
               publisherDroppedFrames: 50,
               payloadBytesSubmitted: 5_000_000,
             },
             {
-              sessionId: 'viewer',
+              sessionId: "viewer",
               submittedFrames: 99,
               publisherDroppedFrames: 1,
               payloadBytesSubmitted: 750_000,
@@ -437,12 +437,12 @@ describe('readWebRtcServerStats', () => {
           ],
           capture: { offeredFrames: 100, forwardedFrames: 98 },
         },
-        'viewer',
+        "viewer",
       ),
     ).toEqual({
       serverFps: 23.5,
       encoder: {
-        codec: 'h264',
+        codec: "h264",
         encodeFps: 23.5,
         targetBitrateBps: 6_000_000,
         encodeMsPerFrame: null,
@@ -472,14 +472,14 @@ describe('readWebRtcServerStats', () => {
     });
   });
 
-  test('does not use another viewer session and preserves unknown values as null', () => {
+  test("does not use another viewer session and preserves unknown values as null", () => {
     expect(
       readWebRtcServerStats(
         {
-          sessions: [{ sessionId: 'other', sourceFps: 60 }],
+          sessions: [{ sessionId: "other", sourceFps: 60 }],
           capture: { screenFrames: Number.NaN, idleFrames: -1 },
         },
-        'viewer',
+        "viewer",
       ),
     ).toEqual({
       serverFps: null,
@@ -494,7 +494,7 @@ describe('readWebRtcServerStats', () => {
       },
       publisherCounters: null,
     });
-    expect(readWebRtcServerStats(null, 'viewer')).toEqual({
+    expect(readWebRtcServerStats(null, "viewer")).toEqual({
       serverFps: null,
       encoder: null,
       capture: null,
@@ -502,16 +502,16 @@ describe('readWebRtcServerStats', () => {
     });
   });
 
-  test.each(['mmap', 'rgb888'])(
-    'normalizes %s producer, transport, and host-copy diagnostics',
+  test.each(["mmap", "rgb888"])(
+    "normalizes %s producer, transport, and host-copy diagnostics",
     (imageMode) => {
       const result = readWebRtcServerStats(
         {
           sampledAt: 2_000,
-          source: { codec: 'h264', fps: 58, frames: 500 },
+          source: { codec: "h264", fps: 58, frames: 500 },
           sessions: [
             {
-              sessionId: 'viewer',
+              sessionId: "viewer",
               submittedFrames: 490,
               publisherDroppedFrames: 0,
               payloadBytesSubmitted: 2_000_000,
@@ -532,18 +532,18 @@ describe('readWebRtcServerStats', () => {
               sequenceGaps: 2,
               imagePayloadBytes: 552_960,
               transportBytes: 55_296_000,
-              grpcMessageBytesReceived: imageMode === 'mmap' ? 12_000 : 55_308_000,
-              mmapFileBytesRead: imageMode === 'mmap' ? 56_000_000 : 0,
-              mmapReadRetries: imageMode === 'mmap' ? 1 : 0,
+              grpcMessageBytesReceived: imageMode === "mmap" ? 12_000 : 55_308_000,
+              mmapFileBytesRead: imageMode === "mmap" ? 56_000_000 : 0,
+              mmapReadRetries: imageMode === "mmap" ? 1 : 0,
               mmapTornFramesDropped: 0,
               productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
               productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
               protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
-              sharedReadCopyTimeMs: imageMode === 'mmap' ? { p50: 0.3, p95: 0.6 } : null,
+              sharedReadCopyTimeMs: imageMode === "mmap" ? { p50: 0.3, p95: 0.6 } : null,
             },
           },
         },
-        'viewer',
+        "viewer",
       );
 
       expect(result.capture?.grpc).toEqual({
@@ -558,21 +558,22 @@ describe('readWebRtcServerStats', () => {
         sequenceGaps: 2,
         imagePayloadBytes: 552_960,
         transportBytes: 55_296_000,
-        messageBytesReceived: imageMode === 'mmap' ? 12_000 : 55_308_000,
-        mmapFileBytesRead: imageMode === 'mmap' ? 56_000_000 : 0,
-        mmapReadRetries: imageMode === 'mmap' ? 1 : 0,
+        messageBytesReceived: imageMode === "mmap" ? 12_000 : 55_308_000,
+        mmapFileBytesRead: imageMode === "mmap" ? 56_000_000 : 0,
+        mmapReadRetries: imageMode === "mmap" ? 1 : 0,
         mmapTornFramesDropped: 0,
         productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
         productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
         protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
-        mmapReadCopyTimeMs: imageMode === 'mmap' ? { p50: 0.3, p95: 0.6 } : { p50: null, p95: null },
+        mmapReadCopyTimeMs:
+          imageMode === "mmap" ? { p50: 0.3, p95: 0.6 } : { p50: null, p95: null },
       });
     },
   );
 });
 
-describe('describeWebRtcPublisherCounters', () => {
-  test('derives accepted frame and H.264 payload rates over the real server window', () => {
+describe("describeWebRtcPublisherCounters", () => {
+  test("derives accepted frame and H.264 payload rates over the real server window", () => {
     expect(
       describeWebRtcPublisherCounters(
         { atMs: 1_000, submittedFrames: 100, payloadBytesSubmitted: 1_000_000 },
@@ -581,7 +582,7 @@ describe('describeWebRtcPublisherCounters', () => {
     ).toEqual({ publisherFps: 24, payloadBitrateBps: 3_200_000 });
   });
 
-  test('keeps first, short, and independently reset counter windows unmeasured', () => {
+  test("keeps first, short, and independently reset counter windows unmeasured", () => {
     const current = { atMs: 1_000, submittedFrames: 100, payloadBytesSubmitted: 1_000_000 };
     expect(describeWebRtcPublisherCounters(null, current)).toEqual({
       publisherFps: null,
@@ -611,9 +612,23 @@ describe('describeWebRtcPublisherCounters', () => {
   });
 });
 
-test('keeps a bounded chronological stream history', () => {
+test("keeps a bounded chronological stream history", () => {
   const samples = Array.from({ length: 60 }, (_, index) => sample(index));
   const next = sample(60);
 
   expect(appendStreamStatsSample(samples, next)).toEqual([...samples.slice(1), next]);
+});
+
+test("capture reboot metadata preserves booleans without coercing older or malformed responses", () => {
+  for (const rebooting of [true, false]) {
+    expect(readWebRtcServerStats({ capture: { rebooting } }, "viewer").capture).toHaveProperty(
+      "rebooting",
+      rebooting,
+    );
+  }
+  for (const rebooting of [undefined, null, 0, 1, "true", {}, []]) {
+    expect(readWebRtcServerStats({ capture: { rebooting } }, "viewer").capture).not.toHaveProperty(
+      "rebooting",
+    );
+  }
 });

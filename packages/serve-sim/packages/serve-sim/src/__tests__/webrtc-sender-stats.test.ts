@@ -27,7 +27,9 @@ const SESSION = {
 describe("readSenderStats", () => {
   /// The requested codec is a preference. Until the stats name one, the codec is unknown.
   test("reads a session whose stats have not named a codec as unknown", () => {
-    expect(readSenderStats({ sessions: [{ sessionId: "s", connected: false }] }).sessions[0]?.codec).toBeNull();
+    expect(
+      readSenderStats({ sessions: [{ sessionId: "s", connected: false }] }).sessions[0]?.codec,
+    ).toBeNull();
   });
 
   test("converts seconds to milliseconds and bits to kbps", () => {
@@ -129,10 +131,12 @@ describe("GET /webrtc/stats", () => {
       proxyHelpers: true,
       corsOrigins: ["https://expo.dev"],
     });
-    const response = await middleware(new Request(
-      "http://localhost/.sim/helper/00000000-0000-4000-8000-000000000000/webrtc/stats",
-      { method: "OPTIONS", headers: { origin: "https://expo.dev" } },
-    ));
+    const response = await middleware(
+      new Request(
+        "http://localhost/.sim/helper/00000000-0000-4000-8000-000000000000/webrtc/stats",
+        { method: "OPTIONS", headers: { origin: "https://expo.dev" } },
+      ),
+    );
 
     expect(response?.status).toBe(204);
     expect(response?.headers.get("access-control-allow-origin")).toBe("https://expo.dev");
@@ -140,10 +144,12 @@ describe("GET /webrtc/stats", () => {
 
   test("answers the same preflight when the panel scopes the request to one session", async () => {
     const middleware = simMiddleware({ basePath: "/.sim", proxyHelpers: true });
-    const response = await middleware(new Request(
-      "http://localhost/.sim/helper/00000000-0000-4000-8000-000000000000/webrtc/stats?sessionId=07a5f32b-273e-4a30-8f62-8e741a815af1",
-      { method: "OPTIONS" },
-    ));
+    const response = await middleware(
+      new Request(
+        "http://localhost/.sim/helper/00000000-0000-4000-8000-000000000000/webrtc/stats?sessionId=07a5f32b-273e-4a30-8f62-8e741a815af1",
+        { method: "OPTIONS" },
+      ),
+    );
 
     expect(response?.status).toBe(204);
   });
@@ -190,7 +196,13 @@ describe("capture counts", () => {
   test("keeps the surface loss counters, which tell a lost display pipeline from a static screen", () => {
     const stats = readSenderStats({
       sessions: [],
-      capture: { screenFrames: 900, idleFrames: 40, surfaceLosses: 1, surfaceLostMs: 1860000, rewires: 1860 },
+      capture: {
+        screenFrames: 900,
+        idleFrames: 40,
+        surfaceLosses: 1,
+        surfaceLostMs: 1860000,
+        rewires: 1860,
+      },
     });
 
     expect(stats.capture?.surfaceLosses).toBe(1);
@@ -203,8 +215,9 @@ describe("capture counts", () => {
   });
 
   test("rejects non-numeric counts instead of coercing them", () => {
-    expect(readSenderStats({ sessions: [], capture: { screenFrames: "900", idleFrames: 40 } }).capture)
-      .toBeNull();
+    expect(
+      readSenderStats({ sessions: [], capture: { screenFrames: "900", idleFrames: 40 } }).capture,
+    ).toBeNull();
   });
 });
 
@@ -221,7 +234,8 @@ describe("frame flow counts", () => {
 
   test("reports one shared H.264 encode counter for all viewers", () => {
     const stats = readSenderStats({
-      sessions: [], capture: { screenFrames: 1, idleFrames: 10, sharedEncodedFrames: 400 },
+      sessions: [],
+      capture: { screenFrames: 1, idleFrames: 10, sharedEncodedFrames: 400 },
     });
     expect(stats.capture?.sharedEncodedFrames).toBe(400);
   });
@@ -229,7 +243,13 @@ describe("frame flow counts", () => {
   test("keeps the pump deferrals, repeats, and canvas mismatch drops", () => {
     const stats = readSenderStats({
       sessions: [],
-      capture: { screenFrames: 1, idleFrames: 1, pumpDeferrals: 12, pumpRepeats: 3, canvasMismatchDrops: 1 },
+      capture: {
+        screenFrames: 1,
+        idleFrames: 1,
+        pumpDeferrals: 12,
+        pumpRepeats: 3,
+        canvasMismatchDrops: 1,
+      },
     });
     expect(stats.capture?.pumpDeferrals).toBe(12);
     expect(stats.capture?.pumpRepeats).toBe(3);
@@ -240,14 +260,23 @@ describe("frame flow counts", () => {
     const stats = readSenderStats({
       sessions: [],
       capture: {
-        screenFrames: 1, idleFrames: 1,
-        pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
-        sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+        screenFrames: 1,
+        idleFrames: 1,
+        pumpTimerTicks: 120,
+        pumpTimerLateSumMs: 42.5,
+        pumpTimerLateMaxMs: 4.2,
+        sourceSubmitCount: 119,
+        sourceSubmitSumMs: 91.25,
+        sourceSubmitMaxMs: 6.1,
       },
     });
     expect(stats.capture).toMatchObject({
-      pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
-      sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+      pumpTimerTicks: 120,
+      pumpTimerLateSumMs: 42.5,
+      pumpTimerLateMaxMs: 4.2,
+      sourceSubmitCount: 119,
+      sourceSubmitSumMs: 91.25,
+      sourceSubmitMaxMs: 6.1,
     });
   });
 });
@@ -259,16 +288,35 @@ describe("viewer resize and shared canvas", () => {
       viewerResize: { backend: "metal", submitted: 60, passedThrough: 60, scaled: 0 },
       sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0 },
     });
-    expect(stats.viewerResize).toEqual({ backend: "metal", submitted: 60, passedThrough: 60, scaled: 0 });
+    expect(stats.viewerResize).toEqual({
+      backend: "metal",
+      submitted: 60,
+      passedThrough: 60,
+      scaled: 0,
+    });
     expect(stats.sharedCanvas).toEqual({
-      width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: null, lowLatencyFallbacks: null,
+      width: 640,
+      height: 1392,
+      scale: 1,
+      step: 0,
+      steps: 0,
+      starvedRecoveries: null,
+      lowLatencyFallbacks: null,
     });
   });
 
   test("reads the shared encoder's counters", () => {
     const stats = readSenderStats({
       sessions: [],
-      sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: 2, lowLatencyFallbacks: 1 },
+      sharedCanvas: {
+        width: 640,
+        height: 1392,
+        scale: 1,
+        step: 0,
+        steps: 0,
+        starvedRecoveries: 2,
+        lowLatencyFallbacks: 1,
+      },
     });
     expect(stats.sharedCanvas?.starvedRecoveries).toBe(2);
     expect(stats.sharedCanvas?.lowLatencyFallbacks).toBe(1);
@@ -276,17 +324,24 @@ describe("viewer resize and shared canvas", () => {
 
   test("reports null for an absent or malformed shared canvas", () => {
     expect(readSenderStats({ sessions: [] }).sharedCanvas).toBeNull();
-    expect(readSenderStats({ sessions: [], sharedCanvas: { width: "640" } }).sharedCanvas).toBeNull();
+    expect(
+      readSenderStats({ sessions: [], sharedCanvas: { width: "640" } }).sharedCanvas,
+    ).toBeNull();
     expect(readSenderStats({ sessions: [] }).viewerResize).toBeNull();
     expect(readSenderStats({ sessions: [] }).sharedEncoderPeers).toBeNull();
-    expect(readSenderStats({ sessions: [], sharedEncoderPeers: [{ peer: 1, encodeCalls: 5 }] }).sharedEncoderPeers).toEqual([{ peer: 1, encodeCalls: 5 }]);
+    expect(
+      readSenderStats({ sessions: [], sharedEncoderPeers: [{ peer: 1, encodeCalls: 5 }] })
+        .sharedEncoderPeers,
+    ).toEqual([{ peer: 1, encodeCalls: 5 }]);
   });
 });
 
 describe("source frame stats", () => {
   test("keeps libwebrtc's own source counts, the link between forwarded and encoded", () => {
     const [session] = readSenderStats({
-      sessions: [{ sessionId: "s", sourceFrames: 3200, sourceFramesPerSecond: 54, sourceFramesDropped: 40 }],
+      sessions: [
+        { sessionId: "s", sourceFrames: 3200, sourceFramesPerSecond: 54, sourceFramesDropped: 40 },
+      ],
     }).sessions;
 
     expect(session!.sourceFrames).toBe(3200);

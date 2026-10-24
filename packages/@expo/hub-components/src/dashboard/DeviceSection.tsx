@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from '../primitives';
-import { RecentDevicesModal } from './RecentDevicesModal';
+import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from "../primitives";
+import { RecentDevicesModal } from "./RecentDevicesModal";
 import {
   type AddDeviceOutcome,
   type AddDeviceTarget,
   type Device,
   type NewDeviceOptions,
-} from './data';
+} from "./data";
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add
@@ -20,7 +20,7 @@ export type DeviceSectionProps = {
   title: string;
   addLabel: string;
   /** Drives the add-device picker's nouns ("simulator" / "emulator"). */
-  kind: 'simulator' | 'emulator';
+  kind: "simulator" | "emulator";
   /** Shown under the heading when the list is empty. */
   emptyLabel: string;
   devices: Device[];
@@ -57,8 +57,8 @@ export function DeviceSection({
   const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
-    <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <section style={{ display: "grid", gap: 12, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
         {!!onAdd && (
           <button
@@ -73,36 +73,38 @@ export function DeviceSection({
             onMouseDown={() => setAddPressed(true)}
             onMouseUp={() => setAddPressed(false)}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               width: 26,
               height: 26,
               padding: 0,
               borderRadius: radius.full,
               border: `1px solid ${border.default}`,
               backgroundColor: addHovered ? bg.hover : bg.default,
-              cursor: 'pointer',
-              transition: 'background-color 150ms ease, transform 100ms ease',
-              transform: addPressed ? 'scale(0.98)' : undefined,
-            }}>
+              cursor: "pointer",
+              transition: "background-color 150ms ease, transform 100ms ease",
+              transform: addPressed ? "scale(0.98)" : undefined,
+            }}
+          >
             <PlusIcon size={18} color={icon.secondary} />
           </button>
         )}
       </div>
 
-      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+      <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
         {devices.length === 0 ? (
           <p
             style={{
               ...textSize.sm,
               color: text.secondary,
               margin: 0,
-              padding: '12px 16px',
+              padding: "12px 16px",
               borderRadius: radius.xl,
               border: `1px dashed ${border.default}`,
               backgroundColor: bg.default,
-            }}>
+            }}
+          >
             {emptyLabel}
           </p>
         ) : (
@@ -126,7 +128,7 @@ export function DeviceSection({
         kind={kind}
         devices={candidates}
         options={options}
-        onAdd={onAdd || (async () => ({ ok: false, error: 'Device actions are unavailable.' }))}
+        onAdd={onAdd || (async () => ({ ok: false, error: "Device actions are unavailable." }))}
       />
     </section>
   );

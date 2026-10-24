@@ -2,6 +2,10 @@
 
 Complete the PR template's Authorship and LLM use section factually. Distinguish human direction from human inspection and approval; an agent-authored PR may say `human review pending`. Report which checks and manual tests actually ran, who ran them, and what remains planned.
 
+Open a PR as a draft. In this repo, a ready PR means "ready for human review". Devin Review skips drafts and runs automatically only when a PR becomes ready, or when commits are pushed to a ready PR. So before you mark a PR ready, comment `/devin review` on the draft. The comment must start with `/devin review`. Wait for the review, address its findings, and push the fixes. If a push changes the code, comment `/devin review` again. Mark the PR ready only when Devin has reviewed the current head.
+
+The serve-sim Simulator tests run on every push to a PR that is ready for review. A draft runs them only with the `ci-ready` label, so iterate on a draft and add the label when you want a run.
+
 Write PR descriptions for reviewers, not as chat transcripts. Summarize meaningful rounds in order: who set or changed the direction, what the LLM made, what review found, and what changed next. Skip minor wording exchanges and distinguish review of an earlier draft from review of the final diff.
 
 # Linked Literate Programming (LLP)
@@ -35,9 +39,11 @@ The core LLP skills are installed once, in `.agents/skills/`, which Codex and ot
 The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When `/llp-adopt update` runs, write only to `.agents/skills/` and keep the symlink.
 
 <!-- BEGIN LLP SKILLS MANAGED BLOCK -->
+
 Before editing a subsystem with documented design, orient first: read its
 governing LLP, and for non-trivial work invoke `llp-orient` to assemble a
 context pack of the constraints the change must respect.
 
 Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
+
 <!-- END LLP SKILLS MANAGED BLOCK -->

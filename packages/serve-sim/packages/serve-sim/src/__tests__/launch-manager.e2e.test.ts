@@ -38,7 +38,9 @@ function simctl(args: string[]): string {
 
 // `simctl terminate` exits non-zero when the app is not running.
 function terminate(device: string, bundleId: string): void {
-  try { simctl(["terminate", device, bundleId]); } catch {}
+  try {
+    simctl(["terminate", device, bundleId]);
+  } catch {}
 }
 
 function markerLines(): string[] {
@@ -93,23 +95,39 @@ async function waitForLines(
 
 beforeAll(() => {
   if (!ready) return;
-  try { simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]); } catch {}
+  try {
+    simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]);
+  } catch {}
   clearLaunchState(udid!);
-  try { rmSync(capabilityConfigPath(udid!)); } catch {}
-  try { rmSync(MARKER); } catch {}
-  try { simctl(["uninstall", udid!, APP]); } catch {}
+  try {
+    rmSync(capabilityConfigPath(udid!));
+  } catch {}
+  try {
+    rmSync(MARKER);
+  } catch {}
+  try {
+    simctl(["uninstall", udid!, APP]);
+  } catch {}
   simctl(["install", udid!, FIXTURE]);
 }, 60_000);
 
 afterAll(() => {
   if (!ready) return;
-  try { simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]); } catch {}
+  try {
+    simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]);
+  } catch {}
   terminate(udid!, APP);
   terminate(udid!, OTHER_APP);
   clearLaunchState(udid!);
-  try { rmSync(MARKER); } catch {}
-  try { rmSync(capabilityConfigPath(udid!)); } catch {}
-  try { simctl(["uninstall", udid!, APP]); } catch {}
+  try {
+    rmSync(MARKER);
+  } catch {}
+  try {
+    rmSync(capabilityConfigPath(udid!));
+  } catch {}
+  try {
+    simctl(["uninstall", udid!, APP]);
+  } catch {}
 }, 60_000);
 
 describe.skipIf(!ready)("launch manager launches", () => {
@@ -244,8 +262,10 @@ describe.skipIf(!ready)("launch manager capabilities", () => {
     await waitForMatch(markerLines, (line) => line.includes(".app/"));
 
     simctl(["launch", udid!, OTHER_APP]);
-    const loadedInto = (executable: string): ((line: string) => boolean) => (line) =>
-      line.includes(executable);
+    const loadedInto =
+      (executable: string): ((line: string) => boolean) =>
+      (line) =>
+        line.includes(executable);
     const lines = await waitForMatch(markerLines, loadedInto("MobileSafari"));
 
     expect(lines.some(loadedInto("ServeSimLaunchFixture"))).toBe(true);

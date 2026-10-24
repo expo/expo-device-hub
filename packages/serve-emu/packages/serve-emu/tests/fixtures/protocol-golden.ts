@@ -1,6 +1,5 @@
 export const GOLDEN_SCRCPY_VERSION = "4.0";
-export const SCRCPY_VERSION_DOC_MARKER =
-  `<!-- scrcpy-server-version: ${GOLDEN_SCRCPY_VERSION} -->`;
+export const SCRCPY_VERSION_DOC_MARKER = `<!-- scrcpy-server-version: ${GOLDEN_SCRCPY_VERSION} -->`;
 
 /** Exact compact byte examples mirrored by LLP 0008 (`llp/0008-serve-emu-protocol.spec.md`). */
 export const PROTOCOL_GOLDEN_HEX = {

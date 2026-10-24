@@ -1,7 +1,7 @@
-export type PlatformFilter = 'ios' | 'android';
+export type PlatformFilter = "ios" | "android";
 
 export function parsePlatformFilter(value: unknown): PlatformFilter | undefined {
-  return value === 'ios' || value === 'android' ? value : undefined;
+  return value === "ios" || value === "android" ? value : undefined;
 }
 
 declare global {
@@ -12,6 +12,6 @@ declare global {
 
 /** Platform selected by the standalone CLI, or undefined when both should be shown. */
 export function dashboardPlatformFilter(): PlatformFilter | undefined {
-  if (typeof window === 'undefined') return undefined;
+  if (typeof window === "undefined") return undefined;
   return parsePlatformFilter(window.__EXPO_DEVICE_HUB_PLATFORM__);
 }

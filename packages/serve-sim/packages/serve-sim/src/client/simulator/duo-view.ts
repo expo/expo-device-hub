@@ -1,7 +1,8 @@
 import { Euler, Quaternion, Vector3 } from "three";
-import { HINGE_POSES, type HingePose } from "../../hinge-control";
+import { HINGE_POSES, type HingePose, type HingePhysicalOrientation } from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { duoFacingYaw, duoPose } from "./duo-pose";
+import { physicalOrientationQuarterTurns } from "./duo-rotation-state";
 
 /** Saved orientation controls; ordinary folding adds a hinge-dependent facing turn. */
 export type DuoView = {
@@ -20,7 +21,11 @@ function captureView(physical: ReturnType<typeof duoPose>, pose?: HingePose | nu
   };
 }
 
-export function duoInitialView(angle: number | undefined, pose: HingePose | null | undefined, config?: StreamConfig | null): DuoView {
+export function duoInitialView(
+  angle: number | undefined,
+  pose: HingePose | null | undefined,
+  config?: StreamConfig | null,
+): DuoView {
   return captureView(duoPose(angle, pose, config?.screenId, config), pose);
 }
 
@@ -28,6 +33,31 @@ export function duoInitialView(angle: number | undefined, pose: HingePose | null
 export function duoPresetView(pose: HingePose): DuoView {
   const { angle } = HINGE_POSES.find(({ id }) => id === pose)!;
   return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
+}
+
+/** Seed a previously unknown physical baseline, independent of stale app geometry. */
+export function duoPhysicalView(
+  angle: number | undefined,
+  orientation: HingePhysicalOrientation,
+  anchor?: DuoView,
+): DuoView {
+  const turns = physicalOrientationQuarterTurns(orientation);
+  if (anchor?.fixedLeftFold !== undefined) {
+    const laptop = { ...duoPresetView("laptop"), fixedLeftFold: anchor.fixedLeftFold };
+    return duoRotateView(laptop, turns - physicalOrientationQuarterTurns("landscape-left"));
+  }
+  return captureView(
+    duoPose(angle, null, undefined, undefined, (Math.max(0, turns) * Math.PI) / 2),
+  );
+}
+
+/** Complete native pose discovery while preserving a locally chosen view. */
+export function duoObservedView(
+  current: DuoView | null,
+  pose: HingePose,
+  localIntent: boolean,
+): DuoView {
+  return localIntent && current ? current : duoPresetView(pose);
 }
 
 /** The view saved before another client turned the device face down. */
@@ -51,7 +81,10 @@ export function duoFaceDownFraming(
 }
 
 export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
-  const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), quarterTurns * Math.PI / 2);
+  const turn = new Quaternion().setFromAxisAngle(
+    new Vector3(0, 0, 1),
+    (quarterTurns * Math.PI) / 2,
+  );
   return { ...view, rotation: turn.multiply(new Quaternion(...view.rotation)).toArray() };
 }
 
@@ -59,7 +92,9 @@ export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
 export function duoViewRotation(fold: number, view: DuoView): Quaternion {
   const rotation = new Quaternion(...view.rotation);
   if (view.facingYaw !== undefined) {
-    rotation.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), duoFacingYaw(fold) - view.facingYaw));
+    rotation.multiply(
+      new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), duoFacingYaw(fold) - view.facingYaw),
+    );
   }
   return rotation;
 }

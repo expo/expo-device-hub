@@ -147,7 +147,10 @@ function queryStringFrom(url: string): { name: string; value: string }[] {
   }
 }
 
-export function cookiesFromHeader(value: string | undefined, kind: "request" | "response"): HarCookie[] {
+export function cookiesFromHeader(
+  value: string | undefined,
+  kind: "request" | "response",
+): HarCookie[] {
   if (!value) return [];
   if (kind === "request") {
     return value
@@ -223,16 +226,15 @@ export function harStartedDateTime(startedAt: number): string {
   return Number.isNaN(started.getTime()) ? new Date().toISOString() : started.toISOString();
 }
 
-export function toHarEntry(
-  request: CapturedRequest,
-  body: CapturedBody | null = null,
-): HarEntry {
+export function toHarEntry(request: CapturedRequest, body: CapturedBody | null = null): HarEntry {
   const { timings, time } = harTimings(request);
   const reqHeaders = headersFrom(body?.requestHeaders);
   const resHeaders = headersFrom(body?.responseHeaders);
   const absUrl = harAbsoluteUrl(request.url);
   const reqMime =
-    request.requestMimeType ?? headerValue(reqHeaders, "content-type") ?? "application/octet-stream";
+    request.requestMimeType ??
+    headerValue(reqHeaders, "content-type") ??
+    "application/octet-stream";
   const location = headerValue(resHeaders, "location") ?? "";
   const status = request.status ?? 0;
 

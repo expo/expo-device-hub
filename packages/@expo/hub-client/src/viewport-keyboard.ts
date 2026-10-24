@@ -19,7 +19,7 @@ export function isVisualViewportKeyboardRaised(
 }
 
 export function readNativeKeyboardRaised(): boolean {
-  if (typeof window === 'undefined') return false;
+  if (typeof window === "undefined") return false;
   const vv = window.visualViewport;
   return isVisualViewportKeyboardRaised(window.innerHeight, vv?.height ?? window.innerHeight);
 }

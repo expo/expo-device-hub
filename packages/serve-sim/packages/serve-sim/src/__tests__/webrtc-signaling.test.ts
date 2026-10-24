@@ -10,26 +10,32 @@ const sessionId = "07a5f32b-273e-4a30-8f62-8e741a815af1";
 
 describe("WebRTC signaling validation", () => {
   test("accepts a bounded offer with ICE credentials", () => {
-    expect(parseWebRtcOffer({
+    expect(
+      parseWebRtcOffer({
+        type: "offer",
+        sdp: "v=0\r\n",
+        sessionId,
+        codec: "vp8",
+        iceServers: [
+          {
+            urls: ["turns:turn.example.test:5349"],
+            username: "user",
+            credential: "secret",
+          },
+        ],
+      }),
+    ).toEqual({
       type: "offer",
       sdp: "v=0\r\n",
       sessionId,
       codec: "vp8",
-      iceServers: [{
-        urls: ["turns:turn.example.test:5349"],
-        username: "user",
-        credential: "secret",
-      }],
-    })).toEqual({
-      type: "offer",
-      sdp: "v=0\r\n",
-      sessionId,
-      codec: "vp8",
-      iceServers: [{
-        urls: ["turns:turn.example.test:5349"],
-        username: "user",
-        credential: "secret",
-      }],
+      iceServers: [
+        {
+          urls: ["turns:turn.example.test:5349"],
+          username: "user",
+          credential: "secret",
+        },
+      ],
     });
   });
 

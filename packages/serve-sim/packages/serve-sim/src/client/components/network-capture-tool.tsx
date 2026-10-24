@@ -1,15 +1,29 @@
-import { Ban, Download, Folder, Radio, TriangleAlert } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  Ban,
+  Check,
+  Download,
+  Folder,
+  Radio,
+  Search,
+  Settings2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useCaptureStream,
   type CaptureAttachment,
   type CaptureMeta,
 } from "../hooks/use-capture-stream";
+import { chooseCaptureFields, useChosenCaptureFields } from "../hooks/use-capture-field-choices";
+import { CAPTURE_FIELDS, isCaptureField, type CaptureField } from "../../capture/fields";
 import { runHostAction } from "../../socket/client-control";
 import { downloadHar } from "../utils/har-download";
 import { simAuthHeaders, simEndpoint } from "../utils/sim-endpoint";
 import { CollapsibleSection } from "./collapsible-section";
+import { Dropdown, DropdownOption } from "./select";
+import { Tooltip } from "./tooltip";
 import {
   DomainSection,
   RequestRow,
@@ -29,7 +43,13 @@ export {
   groupByDomain,
 } from "./network-capture-requests";
 
-export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; captureEndpoint?: string }) {
+export function NetworkCaptureTool({
+  udid,
+  captureEndpoint,
+}: {
+  udid: string;
+  captureEndpoint?: string;
+}) {
   const path = useMemo(
     () => captureEndpoint ?? `${simEndpoint("network-capture")}?device=${encodeURIComponent(udid)}`,
     [captureEndpoint, udid],
@@ -44,12 +64,17 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const [filter, setFilter] = useState("");
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
+  const actionScope = useRef({});
   const [streamKey, setStreamKey] = useState(0);
+  // The fields last picked for this simulator, used by the next enable; the server's default until then.
+  const chosenFields = useChosenCaptureFields(udid);
   const { meta, requests, errored, clear, setMeta } = useCaptureStream(path, streamKey);
   const capturing = meta?.attachment === "capturing";
+  const shownFields = capturing ? (meta?.fields ?? []) : (chosenFields ?? meta?.fields ?? []);
   const starting = meta?.attachment === "starting";
   const captureOn = capturing || starting;
   const captureButton = captureControl({ meta, errored, changing });
+  const showToolbar = capturing || requests.length > 0;
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -66,38 +91,97 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
     }),
     [rows],
   );
-  const slowestMs = useMemo(() => Math.max(1, ...rows.map((request) => request.durationMs ?? 0)), [rows]);
+  const slowestMs = useMemo(
+    () => Math.max(1, ...rows.map((request) => request.durationMs ?? 0)),
+    [rows],
+  );
   const groups = useMemo(() => (grouped ? groupByDomain(rows) : []), [grouped, rows]);
 
+  useEffect(() => {
+    // Replies belong to this visit to the device, even if the viewer switches away and back.
+    actionScope.current = {};
+    setChanging(false);
+    setChangeError(null);
+  }, [udid]);
+
   async function toggleCapture(enable: boolean) {
+    const scope = actionScope.current;
     setChanging(true);
     setChangeError(null);
     try {
       const liveEnable = enable && meta?.attachment === "not-enabled";
+      // Exactly what the menu shows, so a viewer that never got a frame does not get the server's default.
+      const fields = enable ? { fields: shownFields.filter(isCaptureField) } : {};
       const result = liveEnable
-        ? await runHostAction("capture.enable", { udid })
-        : await runHostAction("capture.reboot", { udid, enabled: enable });
+        ? await runHostAction("capture.enable", { udid, ...fields })
+        : await runHostAction("capture.reboot", { udid, enabled: enable, ...fields });
+      if (scope !== actionScope.current) return;
       if (result.exitCode !== 0) {
-        setChangeError(result.stderr || (enable ? "Capture could not be enabled." : "The simulator could not be restarted."));
+        setChangeError(
+          result.stderr ||
+            (enable ? "Capture could not be enabled." : "The simulator could not be restarted."),
+        );
         return;
       }
       setMeta(JSON.parse(result.stdout) as CaptureMeta);
       setStreamKey((key) => key + 1);
     } catch (error) {
-      setChangeError(error instanceof Error ? error.message : "The capture request could not be sent.");
+      if (scope !== actionScope.current) return;
+      setChangeError(
+        error instanceof Error ? error.message : "The capture request could not be sent.",
+      );
     } finally {
-      setChanging(false);
+      if (scope === actionScope.current) setChanging(false);
+    }
+  }
+
+  async function changeFields(next: CaptureField[]) {
+    const scope = actionScope.current;
+    setChangeError(null);
+    // The server, not this panel's last frame, decides whether capture runs: the frame can be
+    // missing or stale. Held until the reply, so a second click builds on the applied fields.
+    setChanging(true);
+    try {
+      const result = await runHostAction("capture.fields", { udid, fields: next });
+      if (scope !== actionScope.current) return;
+      const reported = captureOffMeta(result);
+      if (result.exitCode !== 0 && !reported) {
+        setChangeError(result.stderr || "The capture fields could not be changed.");
+        return;
+      }
+      // Applied to a running capture, taken by one that is starting, or kept for the next enable
+      // when the server says capture is off. A later restart keeps what the menu shows now.
+      setMeta(reported ?? (JSON.parse(result.stdout) as CaptureMeta));
+      chooseCaptureFields(udid, next);
+    } catch (error) {
+      if (scope !== actionScope.current) return;
+      setChangeError(
+        error instanceof Error ? error.message : "The capture fields could not be changed.",
+      );
+    } finally {
+      if (scope === actionScope.current) setChanging(false);
     }
   }
 
   async function clearRequests() {
+    const scope = actionScope.current;
     setChangeError(null);
     try {
       await clear();
     } catch (error) {
+      if (scope !== actionScope.current) return;
       setChangeError(error instanceof Error ? error.message : "Requests could not be cleared.");
     }
   }
+
+  const fieldsMenu = (
+    <CaptureFieldsMenu
+      fields={shownFields}
+      disabled={starting}
+      busy={changing}
+      onChange={(next) => void changeFields(next)}
+    />
+  );
 
   return (
     <CollapsibleSection
@@ -142,7 +226,11 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
           >
             <Radio aria-hidden="true" className="w-3.5 h-3.5" />
             <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-black/90 px-2 py-1 text-[11px] leading-snug text-white/90 shadow-lg group-hover:block">
-              <CaptureStatusTooltip capturing={capturing} starting={starting} fields={meta?.fields} />
+              <CaptureStatusTooltip
+                capturing={capturing}
+                starting={starting}
+                fields={meta?.fields}
+              />
             </span>
           </span>
           <button
@@ -154,59 +242,104 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
           >
             {captureButton.label}
           </button>
+          {/* At the row's end, where the warning's tooltip fits; the toolbar takes the menu once shown. */}
+          <div className="ml-auto flex items-center gap-0.5">
+            {!showToolbar && fieldsMenu}
+            <CaptureFieldsWarning fields={shownFields} />
+          </div>
         </div>
 
         {visibleChangeError(changeError, meta) && (
-          <span className="whitespace-pre-line text-[11px] leading-snug text-red-300">{changeError}</span>
+          <span className="whitespace-pre-line text-[11px] leading-snug text-red-300">
+            {changeError}
+          </span>
         )}
-        <RelaunchHint capturing={capturing} />
-        <CaptureState attachment={meta?.attachment ?? "not-enabled"} attachError={meta?.attachError ?? null} />
+        {/* Remounted each time capture turns on, so the hint shows again for its full time. */}
+        {capturing && <RelaunchHint />}
+        <CaptureState
+          attachment={meta?.attachment ?? "not-enabled"}
+          attachError={meta?.attachError ?? null}
+        />
         <OversizedBodiesNotice count={meta?.droppedOversizedBodies ?? 0} />
 
-        {(capturing || requests.length > 0) && (
+        {showToolbar && (
           <>
-            <div className="flex items-center gap-1">
+            <label className="flex h-8 items-center gap-2 rounded-lg bg-white/6 px-2.5 focus-within:bg-white/10 [transition:background_0.12s]">
+              <Search
+                aria-hidden="true"
+                size={14}
+                strokeWidth={2}
+                className={`shrink-0 ${ICON_COLOR}`}
+              />
               <input
                 type="text"
                 value={filter}
                 onChange={(event) => setFilter(event.target.value)}
-                placeholder="Filter"
+                placeholder="Filter requests"
                 aria-label="Filter requests by URL"
-                className="flex-1 min-w-0 rounded bg-white/5 px-2 py-1 text-[11px] text-white/80 placeholder:text-white/30 focus:outline-none focus:bg-white/10"
+                className="min-w-0 flex-1 border-none bg-transparent text-[12px] text-white/90 outline-none placeholder:text-white/40"
               />
-              <button
-                type="button"
-                aria-label="Group by domain"
-                aria-pressed={grouped}
-                onClick={() => setGrouped((on) => !on)}
-                className={`rounded p-1 ${grouped ? "bg-sky-500/15 text-sky-300" : "text-white/70 hover:bg-white/10"}`}
+              {filter && (
+                <button
+                  type="button"
+                  aria-label="Clear filter"
+                  onClick={() => setFilter("")}
+                  className={`grid size-4 shrink-0 place-items-center rounded-full bg-white/15 hover:bg-white/25 ${ICON_COLOR}`}
+                >
+                  <X aria-hidden="true" size={9} strokeWidth={3} />
+                </button>
+              )}
+            </label>
+
+            <div className="flex items-center justify-end gap-0.5">
+              <Tooltip label="Group by domain" align="right">
+                <button
+                  type="button"
+                  aria-label="Group by domain"
+                  aria-pressed={grouped}
+                  onClick={() => setGrouped((on) => !on)}
+                  className={`${TOOLBAR_BUTTON} ${grouped ? "text-accent" : ICON_COLOR}`}
+                >
+                  <Folder aria-hidden="true" size={14} strokeWidth={1.75} />
+                </button>
+              </Tooltip>
+              {fieldsMenu}
+              <span aria-hidden="true" className="mx-1 h-4 w-px bg-white/10" />
+              <Tooltip label="Download session as HAR" align="right">
+                <button
+                  type="button"
+                  aria-label="Download session as HAR"
+                  className={`${TOOLBAR_BUTTON} ${ICON_COLOR}`}
+                  onClick={() => {
+                    setChangeError(null);
+                    // Closing the save picker resolves quietly; a failed fetch or write is shown.
+                    void downloadHar(
+                      harUrl,
+                      `serve-sim-${udid.slice(0, 8)}.har`,
+                      simAuthHeaders(),
+                    ).catch((error) => {
+                      setChangeError(
+                        error instanceof Error ? error.message : "The HAR could not be downloaded.",
+                      );
+                    });
+                  }}
+                >
+                  <Download aria-hidden="true" size={14} strokeWidth={1.75} />
+                </button>
+              </Tooltip>
+              <Tooltip
+                label="Clear the live request list (the session HAR on disk is kept)"
+                align="right"
               >
-                <Folder aria-hidden="true" className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Download session as HAR"
-                title="Download session as HAR"
-                className="rounded p-1 text-white/70 hover:bg-white/10"
-                onClick={() => {
-                  setChangeError(null);
-                  // Closing the save picker resolves quietly; a failed fetch or write is shown.
-                  void downloadHar(harUrl, `serve-sim-${udid.slice(0, 8)}.har`, simAuthHeaders()).catch((error) => {
-                    setChangeError(error instanceof Error ? error.message : "The HAR could not be downloaded.");
-                  });
-                }}
-              >
-                <Download aria-hidden="true" className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                aria-label="Clear the live request list"
-                title="Clear the live request list (session HAR on disk is kept)"
-                onClick={() => void clearRequests()}
-                className="rounded p-1 text-white/70 hover:bg-white/10"
-              >
-                <Ban aria-hidden="true" className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  type="button"
+                  aria-label="Clear the live request list"
+                  onClick={() => void clearRequests()}
+                  className={`${TOOLBAR_BUTTON} ${ICON_COLOR}`}
+                >
+                  <Ban aria-hidden="true" size={14} strokeWidth={1.75} />
+                </button>
+              </Tooltip>
             </div>
 
             <div className="thin-scroll max-h-64 overflow-y-auto pr-1.5 border-t border-white/5">
@@ -216,12 +349,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
                 </span>
               ) : grouped ? (
                 groups.map((group) => (
-                  <DomainSection
-                    key={group.host}
-                    group={group}
-                    udid={udid}
-                    slowestMs={slowestMs}
-                  />
+                  <DomainSection key={group.host} group={group} udid={udid} slowestMs={slowestMs} />
                 ))
               ) : (
                 rows.map((request) => (
@@ -238,7 +366,9 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
             <div className="border-t border-white/5 pt-1.5 text-[11px] text-white/40 tabular-nums">
               {grouped && `${groups.length} domain${groups.length === 1 ? "" : "s"} · `}
               {rows.length} request{rows.length === 1 ? "" : "s"} · {formatBytes(totals.bytes)}
-              {totals.failed > 0 && <span className="text-red-400/80"> · {totals.failed} failed</span>}
+              {totals.failed > 0 && (
+                <span className="text-red-400/80"> · {totals.failed} failed</span>
+              )}
             </div>
           </>
         )}
@@ -248,20 +378,131 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
 }
 
 /**
+ * The meta in a `capture.fields` refusal that says capture is off. Any other failure, such as a
+ * field write that failed, carries no meta and stays an error.
+ */
+export function captureOffMeta(result: { exitCode: number; stdout: string }): CaptureMeta | null {
+  if (result.exitCode === 0 || !result.stdout) return null;
+  try {
+    const meta = JSON.parse(result.stdout) as CaptureMeta;
+    return meta.attachment === "not-enabled" || meta.attachment === "failed" ? meta : null;
+  } catch {
+    return null;
+  }
+}
+
+const FIELD_LABELS: Record<CaptureField, string> = {
+  header: "Headers",
+  query: "Query values",
+  "request-body": "Request bodies",
+  "response-body": "Response bodies",
+};
+
+/** `fields` with `field` switched, in the proxy's order. */
+export function toggleField(fields: readonly string[], field: CaptureField): CaptureField[] {
+  const on = new Set(fields);
+  return CAPTURE_FIELDS.filter((each) => (each === field ? !on.has(each) : on.has(each)));
+}
+
+/**
+ * What capture keeps beyond method, URL, status, timing, and size. While a change is in flight the
+ * menu ignores clicks, so the next click builds on the applied fields.
+ */
+export function CaptureFieldsMenu({
+  fields,
+  disabled,
+  busy,
+  onChange,
+}: {
+  fields: readonly string[];
+  disabled: boolean;
+  busy: boolean;
+  onChange: (next: CaptureField[]) => void;
+}) {
+  const on = new Set(fields);
+  return (
+    <Tooltip label="What capture keeps" align="right">
+      <Dropdown
+        label="What capture keeps"
+        multiple
+        disabled={disabled}
+        className={`${TOOLBAR_BUTTON} ${ICON_COLOR}`}
+        trigger={<Settings2 aria-hidden="true" size={14} strokeWidth={1.75} />}
+      >
+        {CAPTURE_FIELDS.map((field) => (
+          <DropdownOption
+            key={field}
+            selected={on.has(field)}
+            onClick={() => {
+              if (!busy) onChange(toggleField(fields, field));
+            }}
+          >
+            <span className="inline-flex items-center gap-2">
+              <Check aria-hidden="true" className={`w-3 h-3 ${on.has(field) ? "" : "invisible"}`} />
+              {FIELD_LABELS[field]}
+            </span>
+          </DropdownOption>
+        ))}
+      </Dropdown>
+    </Tooltip>
+  );
+}
+
+/** Solid, not translucent: serve-sim avoids low-opacity icons. Matches the logs drawer. */
+const ICON_COLOR = "text-[#8e8e93]";
+
+/** The icon buttons in the toolbar, matching the logs drawer's. */
+const TOOLBAR_BUTTON =
+  "flex h-6 w-6 items-center justify-center rounded hover:bg-white/8 hover:text-white disabled:opacity-50 disabled:hover:bg-transparent";
+
+const CREDENTIALS_WARNING =
+  "Headers and bodies can hold credentials and cookies, and are kept in the recording.";
+
+/** Shown while headers or bodies are kept, since they can hold credentials. */
+export function CaptureFieldsWarning({ fields }: { fields: readonly string[] }) {
+  if (!fields.some((field) => field !== "query")) return null;
+  return (
+    <Tooltip label={CREDENTIALS_WARNING} align="right">
+      {/* Focusable, so a keyboard user can open the tooltip too. */}
+      <span
+        tabIndex={0}
+        role="img"
+        aria-label={CREDENTIALS_WARNING}
+        className="flex h-6 w-6 items-center justify-center rounded text-amber-400 outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+      >
+        <TriangleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
+      </span>
+    </Tooltip>
+  );
+}
+
+/**
  * The action's error, unless it is exactly the enable action's report of the failed start the
  * capture state already shows ("Could not enable network capture: <reason>"). Any other error, such
  * as a restart that failed with the same reason, keeps its own message and recovery advice.
  */
-export function visibleChangeError(changeError: string | null, meta: CaptureMeta | null): string | null {
+export function visibleChangeError(
+  changeError: string | null,
+  meta: CaptureMeta | null,
+): string | null {
   if (!changeError) return null;
-  const repeatsFailedStart = meta?.attachment === "failed" && !!meta.attachError &&
+  const repeatsFailedStart =
+    meta?.attachment === "failed" &&
+    !!meta.attachError &&
     changeError === `Could not enable network capture: ${meta.attachError}`;
   return repeatsFailedStart ? null : changeError;
 }
 
+const RELAUNCH_HINT_MS = 10_000;
+
 /** Shown once capture is on: an app that was already open keeps its old connections. */
-export function RelaunchHint({ capturing }: { capturing: boolean }) {
-  if (!capturing) return null;
+export function RelaunchHint() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), RELAUNCH_HINT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
   return (
     <span className="text-[11px] leading-snug text-white/40">
       Relaunch apps that were already open to capture their requests.
@@ -292,7 +533,10 @@ export function captureControl({
       title: "Restarts the simulator so running apps stop using the capture proxy.",
     };
   }
-  return { disabled: false, label: meta.attachment === "failed" ? "Restart with capture" : "Enable capture" };
+  return {
+    disabled: false,
+    label: meta.attachment === "failed" ? "Restart with capture" : "Enable capture",
+  };
 }
 
 export function CaptureState({
@@ -314,7 +558,9 @@ export function CaptureState({
     return <span className="text-[11px] text-white/40">Starting capture on this device…</span>;
   }
   return attachError ? (
-    <span className="whitespace-pre-line text-[11px] leading-snug text-white/40">{attachError}</span>
+    <span className="whitespace-pre-line text-[11px] leading-snug text-white/40">
+      {attachError}
+    </span>
   ) : null;
 }
 

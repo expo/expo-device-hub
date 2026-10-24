@@ -23,7 +23,7 @@ in [PR #245](https://github.com/expo/expo-device-hub/pull/245).
 ## TL;DR
 
 Scrolling an iPhone simulator is **not** a synthetic touch digitizer pan. It is a
-**host-HID capture** mechanism: SimulatorKit creates a virtual *indirect pointer*
+**host-HID capture** mechanism: SimulatorKit creates a virtual _indirect pointer_
 (trackpad) HID service on the guest, taps the Mac's real mouse/trackpad at the
 IOKit HID level, and replays each captured `IOHIDEventRef` into the guest as an
 Indigo HID message. Real two-finger trackpad scroll → real momentum/inertial
@@ -35,13 +35,13 @@ drives `SimDisplayView` / `SimHIDCaptureManager` in SimulatorKit.
 
 ## The two input planes
 
-There are two *completely separate* input paths into a booted simulator. Don't
+There are two _completely separate_ input paths into a booted simulator. Don't
 confuse them:
 
-| Plane | Trigger | Indigo message | Use |
-|---|---|---|---|
-| **Touch digitizer** | clicking/dragging in the canvas (NSEvent) | `_touch_event` | taps, swipes, synthetic pans |
-| **Pointer / HID capture** | "Capture pointer" mode, real trackpad/mouse | `_pointer_event`, scroll, trackpad-digitizer | cursor, scroll, magic-mouse |
+| Plane                     | Trigger                                     | Indigo message                               | Use                          |
+| ------------------------- | ------------------------------------------- | -------------------------------------------- | ---------------------------- |
+| **Touch digitizer**       | clicking/dragging in the canvas (NSEvent)   | `_touch_event`                               | taps, swipes, synthetic pans |
+| **Pointer / HID capture** | "Capture pointer" mode, real trackpad/mouse | `_pointer_event`, scroll, trackpad-digitizer | cursor, scroll, magic-mouse  |
 
 serve-sim today only uses the **touch digitizer** plane. Scroll lives entirely in
 the **pointer/HID-capture** plane.
@@ -95,7 +95,7 @@ types specified" if neither bit is set.)
      park point.
    - Send **`IndigoHIDMessageToCreatePointerService`** (target `0x35`) and
      **`IndigoHIDMessageToCreateMouseService`** (target `0x36`) to the guest —
-     this *registers the virtual pointer/mouse HID device on the simulator*.
+     this _registers the virtual pointer/mouse HID device on the simulator_.
    - OR in the CGEvent tap mask `0xe640001e` (includes bit 22 = `kCGEventScrollWheel`,
      plus mouse-button bits).
 5. Parse the escape key combo (default if none set) into a `SimKeyStateTracking`.
@@ -128,12 +128,12 @@ cursor (`cursorPositionBeforeCapture`), re-associates mouse + cursor.
 
 Runs per captured `IOHIDEventRef`. Dispatches on `IOHIDEventGetType()`:
 
-| `IOHIDEventGetType()` | builder called | guest target |
-|---|---|---|
-| `0x3` Keyboard | `IndigoHIDMessageForKeyboardArbitrary` (+ escape via `keyState`) | — |
-| `0x11` Pointer | `IndigoHIDMessageForPointerEventFromHIDEventRef` | `0x35` |
-| `0xb` Digitizer | `IndigoHIDMessageForTrackpadEventFromHIDEventRef` | `0x35` |
-| **`0x6` Scroll** | **`IndigoHIDMessageForScrollEventFromHIDEventRef`** | **`0x35`** |
+| `IOHIDEventGetType()` | builder called                                                   | guest target |
+| --------------------- | ---------------------------------------------------------------- | ------------ |
+| `0x3` Keyboard        | `IndigoHIDMessageForKeyboardArbitrary` (+ escape via `keyState`) | —            |
+| `0x11` Pointer        | `IndigoHIDMessageForPointerEventFromHIDEventRef`                 | `0x35`       |
+| `0xb` Digitizer       | `IndigoHIDMessageForTrackpadEventFromHIDEventRef`                | `0x35`       |
+| **`0x6` Scroll**      | **`IndigoHIDMessageForScrollEventFromHIDEventRef`**              | **`0x35`**   |
 
 Each result is sent with
 `[deviceHIDClient sendWithMessage:msg freeWhenDone:YES completionQueue:nil completion:nil]`.
@@ -150,13 +150,13 @@ The shared `IndigoHIDMessage` header (from the ObjC type encoding):
 
 ### `IndigoHIDMessageToCreatePointerService` (@0xcbf0) — 192 bytes (`0xc0`)
 
-| offset | value | meaning |
-|---|---|---|
-| `0x18` | `0xa0` | post-header field |
-| `0x1c` | `0x01` (byte) | message kind = create/single-record |
-| `0x20` | `0x7fff0001` | control/page id |
-| `0x30` | `0x03` | service class (pointer) |
-| `0x40` | `0x35` | **IndigoHIDTarget = pointer service** |
+| offset | value         | meaning                               |
+| ------ | ------------- | ------------------------------------- |
+| `0x18` | `0xa0`        | post-header field                     |
+| `0x1c` | `0x01` (byte) | message kind = create/single-record   |
+| `0x20` | `0x7fff0001`  | control/page id                       |
+| `0x30` | `0x03`        | service class (pointer)               |
+| `0x40` | `0x35`        | **IndigoHIDTarget = pointer service** |
 
 `IndigoHIDMessageToCreateMouseService` is identical except `0x30`=`0x05` and
 `0x40`=`0x36` (mouse service target).
@@ -165,24 +165,24 @@ The shared `IndigoHIDMessage` header (from the ObjC type encoding):
 
 Extended two-record format. Pulls live values from the `IOHIDEventRef`:
 
-| offset | source | meaning |
-|---|---|---|
-| `0x18` | `0xa0` | post-header field |
-| `0x1c` | `0x02` (byte) | message kind = event (extended/2-record) |
-| `0x20` | `0x11` | record-0 type |
-| `0x24` | `mach_absolute_time` → ns | timestamp |
-| `0x4c` | `arg1` (`0x35`) | target |
-| `0xb1` | `1` (byte) | flag |
-| `0xc0` | `0x06` | **record-1 event type = Scroll** |
-| `0xc4` | ns timestamp | |
-| `0xcc` | `IOHIDEventGetEventFlags` | event flags |
-| `0xd4` | `IOHIDEventGetDoubleValue(0x60000)` (double) | **scroll X** |
-| `0xdc` | `IOHIDEventGetDoubleValue(0x60001)` (double) | **scroll Y** |
-| `0xe4` | `IOHIDEventGetDoubleValue(0x60002)` (double) | **scroll Z** |
-| `0xec` | `arg1` (`0x35`) | target |
-| `0xf4` | `IOHIDEventGetPhase` | **phase** (began/changed/ended) |
-| `0xf8` | `IOHIDEventGetScrollMomentum` | **momentum** (inertial flag) |
-| `0x151`| `1` (byte) | flag |
+| offset  | source                                       | meaning                                  |
+| ------- | -------------------------------------------- | ---------------------------------------- |
+| `0x18`  | `0xa0`                                       | post-header field                        |
+| `0x1c`  | `0x02` (byte)                                | message kind = event (extended/2-record) |
+| `0x20`  | `0x11`                                       | record-0 type                            |
+| `0x24`  | `mach_absolute_time` → ns                    | timestamp                                |
+| `0x4c`  | `arg1` (`0x35`)                              | target                                   |
+| `0xb1`  | `1` (byte)                                   | flag                                     |
+| `0xc0`  | `0x06`                                       | **record-1 event type = Scroll**         |
+| `0xc4`  | ns timestamp                                 |                                          |
+| `0xcc`  | `IOHIDEventGetEventFlags`                    | event flags                              |
+| `0xd4`  | `IOHIDEventGetDoubleValue(0x60000)` (double) | **scroll X**                             |
+| `0xdc`  | `IOHIDEventGetDoubleValue(0x60001)` (double) | **scroll Y**                             |
+| `0xe4`  | `IOHIDEventGetDoubleValue(0x60002)` (double) | **scroll Z**                             |
+| `0xec`  | `arg1` (`0x35`)                              | target                                   |
+| `0xf4`  | `IOHIDEventGetPhase`                         | **phase** (began/changed/ended)          |
+| `0xf8`  | `IOHIDEventGetScrollMomentum`                | **momentum** (inertial flag)             |
+| `0x151` | `1` (byte)                                   | flag                                     |
 
 The field selectors `0x60000/0x60001/0x60002` are `(kIOHIDEventTypeScroll(6) << 16) | axis`
 = `kIOHIDEventFieldScrollX/Y/Z`.
@@ -192,17 +192,17 @@ The field selectors `0x60000/0x60001/0x60002` are `(kIOHIDEventTypeScroll(6) << 
 The simpler "watch / no-IOHIDEvent" variant. Signature
 `(uint32 arg0, double dx, double dy, double dz, IndigoHIDTarget target)`:
 
-| offset | value |
-|---|---|
-| `0x18` | `0xa0` |
+| offset | value                         |
+| ------ | ----------------------------- |
+| `0x18` | `0xa0`                        |
 | `0x1c` | `0x01` (byte) — single record |
-| `0x20` | `0x06` — type Scroll |
-| `0x24` | timestamp (`_setTimestamp`) |
-| `0x30` | `arg0` |
-| `0x34` | `dz` (double) |
-| `0x3c` | `dy` (double) |
-| `0x44` | `dx` (double) |
-| `0x4c` | `target` |
+| `0x20` | `0x06` — type Scroll          |
+| `0x24` | timestamp (`_setTimestamp`)   |
+| `0x30` | `arg0`                        |
+| `0x34` | `dz` (double)                 |
+| `0x3c` | `dy` (double)                 |
+| `0x44` | `dx` (double)                 |
+| `0x4c` | `target`                      |
 
 **Key difference:** this synthetic builder carries **no phase and no momentum**.
 It is the easiest to reproduce without a real trackpad, but won't reproduce iOS
@@ -212,7 +212,7 @@ sending a sequence (began → changed×N → ended) if iOS requires it.
 ## Implications for serve-sim
 
 To inject scroll headlessly (no physical trackpad), replicate the capture path's
-*output* rather than its input:
+_output_ rather than its input:
 
 1. Once per session, send `IndigoHIDMessageToCreatePointerService` (target `0x35`)
    so the guest has a virtual pointer device.
@@ -227,7 +227,7 @@ To inject scroll headlessly (no physical trackpad), replicate the capture path's
 
 ⚠️ See `[[project-hid-injection-broken-xcode26]]`: touch/button HID delivery is
 currently being ignored by the iOS 26.5 simulator. The pointer/scroll plane uses
-the *same* `SimDeviceLegacyHIDClient` transport, so it may hit the same wall —
+the _same_ `SimDeviceLegacyHIDClient` transport, so it may hit the same wall —
 **this needs the e2e check below before we invest in an implementation.**
 
 ## Validation log
@@ -244,7 +244,7 @@ Environment: iPhone 17 Pro, **iOS 27.0**, Xcode 26.6 (17F109). Server:
   symbol names, transport, and `IndigoHIDMessageForButton` /
   `…KeyboardArbitrary` / `…DigitalCrownEvent` signatures all match the binary.
 - ✅ serve-sim's current scroll uses target **`0x32` (display digitizer)** —
-  *different* from Device Hub's **`0x35` (pointer service)**.
+  _different_ from Device Hub's **`0x35` (pointer service)**.
 
 ### Confirmed against a running simulator (behavioral)
 
@@ -259,7 +259,7 @@ Environment: iPhone 17 Pro, **iOS 27.0**, Xcode 26.6 (17F109). Server:
   `IndigoHIDMessageForMouseNSEvent` → `0x32`): a vertical drag moved Settings
   from "Apple Account…StandBy" down to "Siri…Developer".
 
-**Conclusion:** the failure is *scroll-specific*, not general HID breakage —
+**Conclusion:** the failure is _scroll-specific_, not general HID breakage —
 taps/drags work on iOS 27.0. The synthetic scroll message reaches the guest but
 is ignored. This matches the hypothesis that iOS only accepts scroll on the
 **indirect-pointer service (`0x35`)** that must first be created with
@@ -287,17 +287,17 @@ Opened **Device Hub** showing the same iPhone 17 Pro / iOS 27.0 sim:
 
 - ✅ A synthetic **click** (computer-use `left_click`) on "General" **navigated**
   the sim → Device Hub forwards synthetic taps to the guest.
-- ❌ A synthetic **scroll** (computer-use `scroll`, which emits a *discrete,
-  line-based* wheel event with no phase/momentum) did **not** scroll — same as
+- ❌ A synthetic **scroll** (computer-use `scroll`, which emits a _discrete,
+  line-based_ wheel event with no phase/momentum) did **not** scroll — same as
   serve-sim's synthetic attempts.
 
 **Revised conclusion.** The blocker is not the target (`0x35`) or the message
-builder — it's event *fidelity*. iOS 27's pointer scroll only commits for a
+builder — it's event _fidelity_. iOS 27's pointer scroll only commits for a
 **continuous, pixel-based, phase+momentum** scroll stream as produced by real
 trackpad hardware. Both serve-sim's synthesized `IOHIDEvent` scrolls and
 computer-use's discrete wheel events are ignored, even when routed correctly
 through the pointer service. Device Hub "works" because `SimHIDCaptureManager`
-forwards *genuine* captured `IOHIDEventRef`s (full sender ID, pixel units,
+forwards _genuine_ captured `IOHIDEventRef`s (full sender ID, pixel units,
 hardware phase/momentum) — fidelity we have not reproduced synthetically.
 
 ### Why the pointer path is infeasible for serve-sim (definitive)
@@ -328,14 +328,14 @@ and an unprivileged helper can neither capture nor synthesize them.
 
 `HIDInjector.sendScroll` translates the wheel delta into a **touch drag** on the
 digitizer (`IndigoHIDMessageForMouseNSEvent`, target `0x32`) — the same path
-taps/swipes use, which *is* honored on iOS 27. A wheel burst becomes one
+taps/swipes use, which _is_ honored on iOS 27. A wheel burst becomes one
 continuous drag (begin → moves → end on idle), re-anchoring to the cursor
 anchor near the edges when sufficient travel remains. **Verified bidirectional**
 on iPhone 17 Pro / iOS 27.0: a wheel-down burst scrolled Settings from "Apple Account…StandBy" to
 "Siri…Developer", and wheel-up returned to the top — driven through the real
 browser → WS `0x0b` → helper pipeline.
 
-This is also the *correct* model for a touchscreen device: there is no hardware
+This is also the _correct_ model for a touchscreen device: there is no hardware
 scroll wheel; scrolling is a finger drag.
 
 **Cursor-anchored.** The drag begins under the pointer (the wheel event's cursor

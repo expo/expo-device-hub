@@ -41,9 +41,9 @@ describe("previewShareUrl", () => {
   });
 
   test("replaces a token already in the address", () => {
-    expect(previewShareUrl(at("/", "?token=stale"), { requireToken: true, execToken: "tok-1" })).toBe(
-      "http://192.168.1.20:3399/?token=tok-1",
-    );
+    expect(
+      previewShareUrl(at("/", "?token=stale"), { requireToken: true, execToken: "tok-1" }),
+    ).toBe("http://192.168.1.20:3399/?token=tok-1");
     expect(previewShareUrl(at("/", "?token=stale"), null)).toBe("http://192.168.1.20:3399/");
   });
 
@@ -99,12 +99,21 @@ describe("copyTextToClipboard", () => {
 
   function fakeDocument(copy: () => boolean) {
     const appended: unknown[] = [];
+    const document = {
+      activeElement: {} as unknown,
+      createElement: () => area,
+      body: { appendChild: (el: unknown) => appended.push(el) },
+      execCommand: copy,
+    };
     const area = {
       value: "",
       style: {} as Record<string, string>,
       range: null as [number, number] | null,
       removed: false,
       setAttribute() {},
+      focus() {
+        document.activeElement = this;
+      },
       select() {},
       setSelectionRange(start: number, end: number) {
         this.range = [start, end];
@@ -116,11 +125,7 @@ describe("copyTextToClipboard", () => {
     return {
       area,
       appended,
-      document: {
-        createElement: () => area,
-        body: { appendChild: (el: unknown) => appended.push(el) },
-        execCommand: copy,
-      },
+      document,
     };
   }
 
@@ -140,7 +145,10 @@ describe("copyTextToClipboard", () => {
   test("uses the async clipboard when it is available", async () => {
     const written: string[] = [];
     const { document, appended } = fakeDocument(() => true);
-    install({ clipboard: { writeText: async (text: string) => void written.push(text) } }, document);
+    install(
+      { clipboard: { writeText: async (text: string) => void written.push(text) } },
+      document,
+    );
 
     expect(await copyTextToClipboard("http://host/?token=t")).toBe(true);
     expect(written).toEqual(["http://host/?token=t"]);
@@ -160,10 +168,43 @@ describe("copyTextToClipboard", () => {
 
   test("falls back when the async clipboard rejects", async () => {
     const { document, appended } = fakeDocument(() => true);
-    install({ clipboard: { writeText: async () => { throw new Error("denied"); } } }, document);
+    install(
+      {
+        clipboard: {
+          writeText: async () => {
+            throw new Error("denied");
+          },
+        },
+      },
+      document,
+    );
 
     expect(await copyTextToClipboard("link")).toBe(true);
     expect(appended).toHaveLength(1);
+  });
+
+  test("copies the selected text when a toolbar button initially owns focus", async () => {
+    let clipboard = "older browser text";
+    const { document, area } = fakeDocument(() => {
+      // Chromium can accept the command without copying an unfocused textarea.
+      if (document.activeElement === area) clipboard = area.value;
+      return true;
+    });
+    install(
+      {
+        clipboard: {
+          writeText: async () => {
+            throw new Error("denied");
+          },
+        },
+      },
+      document,
+    );
+
+    const text = "manual Copy Ω ✓ 日本語 👩‍💻";
+    expect(await copyTextToClipboard(text)).toBe(true);
+    expect(clipboard).toBe(text);
+    expect(area.removed).toBe(true);
   });
 
   test("reports failure when the selection copy is refused", async () => {
@@ -175,7 +216,9 @@ describe("copyTextToClipboard", () => {
   });
 
   test("reports failure when the selection copy throws, and cleans up", async () => {
-    const { document, area } = fakeDocument(() => { throw new Error("blocked"); });
+    const { document, area } = fakeDocument(() => {
+      throw new Error("blocked");
+    });
     install({}, document);
 
     expect(await copyTextToClipboard("link")).toBe(false);

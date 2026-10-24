@@ -49,7 +49,7 @@ describe("applyCrashFrame", () => {
       EMPTY_CRASH_LIST,
       { type: "crash", record: crash("A", 1_000) },
       { type: "crash", record: crash("B", 3_000) },
-      { type: "crash", record: crash("C", 2_000) }
+      { type: "crash", record: crash("C", 2_000) },
     );
 
     expect(state.crashes.map((entry) => entry.id)).toEqual(["B", "C", "A"]);
@@ -59,7 +59,7 @@ describe("applyCrashFrame", () => {
     const state = replay(
       EMPTY_CRASH_LIST,
       { type: "crash", record: crash("A", 1_000) },
-      { type: "recurred", record: { ...crash("A", 2_000), count: 2 } }
+      { type: "recurred", record: { ...crash("A", 2_000), count: 2 } },
     );
 
     expect(state.crashes).toHaveLength(1);
@@ -71,7 +71,7 @@ describe("applyCrashFrame", () => {
       EMPTY_CRASH_LIST,
       { type: "crash", record: crash("A", 1_000) },
       { type: "crash", record: crash("B", 2_000) },
-      { type: "evicted", id: "A" }
+      { type: "evicted", id: "A" },
     );
 
     expect(state.crashes.map((entry) => entry.id)).toEqual(["B"]);
@@ -82,7 +82,7 @@ describe("applyCrashFrame", () => {
       EMPTY_CRASH_LIST,
       { type: "crash", record: crash("A", 1_000) },
       { type: "crash", record: crash("B", 1_000) },
-      { type: "crash", record: crash("C", 1_000) }
+      { type: "crash", record: crash("C", 1_000) },
     );
     const reconnected = applyCrashFrame(EMPTY_CRASH_LIST, {
       type: "list",
@@ -90,7 +90,7 @@ describe("applyCrashFrame", () => {
     });
 
     expect(reconnected.crashes.map((entry) => entry.id)).toEqual(
-      live.crashes.map((entry) => entry.id)
+      live.crashes.map((entry) => entry.id),
     );
   });
 
@@ -98,7 +98,7 @@ describe("applyCrashFrame", () => {
     const stale = replay(
       EMPTY_CRASH_LIST,
       { type: "crash", record: crash("gone", 1_000) },
-      { type: "crash", record: crash("kept", 2_000) }
+      { type: "crash", record: crash("kept", 2_000) },
     );
 
     const reconnected = applyCrashFrame(stale, { type: "list", crashes: [crash("kept", 2_000)] });

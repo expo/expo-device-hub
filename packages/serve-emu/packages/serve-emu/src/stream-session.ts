@@ -2,12 +2,7 @@ import { ControlInputQueue } from "./control-input-queue.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
-import {
-  startScrcpy,
-  type ScrcpySession,
-  type StartOpts,
-  type VideoPacket,
-} from "./scrcpy.ts";
+import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
 import type {
   GrpcCaptureDiagnostics,
   GrpcEncoder,
@@ -23,10 +18,7 @@ const MAX_SCRCPY_STARTUP_BYTES = 64 * 1024 * 1024;
 const STARTUP_READY: unique symbol = Symbol("scrcpy-startup-ready");
 const NEVER_ABORTED = new AbortController().signal;
 
-export type {
-  GrpcCaptureDiagnostics,
-  RollingTimingSummary,
-} from "./shared/api-contracts.ts";
+export type { GrpcCaptureDiagnostics, RollingTimingSummary } from "./shared/api-contracts.ts";
 
 export type StreamFailure = {
   message: string;
@@ -72,9 +64,7 @@ export type StartEmuSessionOptions = StartOpts & {
   inputSource: InputSource;
 };
 
-export async function startEmuSession(
-  options: StartEmuSessionOptions,
-): Promise<EmuSession> {
+export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {
       throw new Error(
@@ -91,10 +81,7 @@ export async function startEmuSession(
     throw new Error("scrcpy streaming requires scrcpy input");
   }
   const { encoder: _encoder, ...scrcpyOptions } = options;
-  return prepareDecodableScrcpySession(
-    await startScrcpy(scrcpyOptions),
-    options.signal,
-  );
+  return prepareDecodableScrcpySession(await startScrcpy(scrcpyOptions), options.signal);
 }
 
 /**
@@ -113,15 +100,10 @@ export async function prepareDecodableScrcpySession(
 
   try {
     while (!gate.ready) {
-      const packet = await Promise.race([
-        raw.readFrame(),
-        readiness.then(() => STARTUP_READY),
-      ]);
+      const packet = await Promise.race([raw.readFrame(), readiness.then(() => STARTUP_READY)]);
       if (typeof packet === "symbol") break;
       if (packet === null) {
-        throw new Error(
-          "scrcpy stream ended before producing decodable H.264 output",
-        );
+        throw new Error("scrcpy stream ended before producing decodable H.264 output");
       }
 
       bufferedBytes += packet.type === "frame" ? packet.data.length : 16;
@@ -169,11 +151,7 @@ export function adaptScrcpySession(
   };
   const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
     if (!isAbnormalExit(code, signal)) return;
-    const { reason, ...detail } = procExitDetail(
-      code,
-      signal,
-      raw.stderrTail?.(),
-    );
+    const { reason, ...detail } = procExitDetail(code, signal, raw.stderrTail?.());
     emitFatal({ message: reason, ...detail });
   };
   const onControlError = (error: Error) => {

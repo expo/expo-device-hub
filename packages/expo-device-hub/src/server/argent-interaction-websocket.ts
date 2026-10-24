@@ -1,14 +1,14 @@
-import { type AgentInteraction } from '@expo/hub-client';
+import { type AgentInteraction } from "@expo/hub-client";
 
-import { argentInteractionMessage } from '../argent-interaction-protocol';
-import { ArgentInteractionLog } from './argent-interaction-log';
+import { argentInteractionMessage } from "../argent-interaction-protocol";
+import { ArgentInteractionLog } from "./argent-interaction-log";
 
 const POLL_INTERVAL_MS = 100;
 
 export interface ArgentInteractionSocket {
   send(data: string): void;
   close(code?: number, reason?: string): void;
-  on(event: 'close' | 'error', listener: () => void): unknown;
+  on(event: "close" | "error", listener: () => void): unknown;
 }
 
 interface ArgentInteractionBroadcasterOptions {
@@ -24,8 +24,8 @@ export class ArgentInteractionBroadcaster {
   readonly #latest = new Map<string, AgentInteraction>();
   readonly #read: () => Promise<AgentInteraction[]>;
   readonly #intervalMs: number;
-  readonly #schedule: NonNullable<ArgentInteractionBroadcasterOptions['schedule']>;
-  readonly #cancelSchedule: NonNullable<ArgentInteractionBroadcasterOptions['cancelSchedule']>;
+  readonly #schedule: NonNullable<ArgentInteractionBroadcasterOptions["schedule"]>;
+  readonly #cancelSchedule: NonNullable<ArgentInteractionBroadcasterOptions["cancelSchedule"]>;
   readonly #onError: (error: unknown) => void;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #polling = false;
@@ -39,7 +39,7 @@ export class ArgentInteractionBroadcaster {
     this.#cancelSchedule = options.cancelSchedule ?? clearTimeout;
     this.#onError =
       options.onError ??
-      ((error) => console.warn('[expo-device-hub] Failed to read Argent interactions:', error));
+      ((error) => console.warn("[expo-device-hub] Failed to read Argent interactions:", error));
   }
 
   subscribe(socket: ArgentInteractionSocket): void {
@@ -52,8 +52,8 @@ export class ArgentInteractionBroadcaster {
       this.#clients.delete(socket);
       if (this.#clients.size === 0) this.#stopTimer();
     };
-    socket.on('close', unsubscribe);
-    socket.on('error', unsubscribe);
+    socket.on("close", unsubscribe);
+    socket.on("error", unsubscribe);
 
     for (const interaction of this.#latest.values()) this.#send(socket, interaction);
     if (wasEmpty) void this.#poll();

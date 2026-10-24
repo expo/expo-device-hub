@@ -1,8 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  loadDeviceGrid,
-  type DeviceGridDependencies,
-} from "../src/device-grid.ts";
+import { loadDeviceGrid, type DeviceGridDependencies } from "../src/device-grid.ts";
 import type { Device } from "../src/adb.ts";
 
 type Deferred<T> = {
@@ -42,17 +39,11 @@ test("device grid performs one adb discovery and reuses its snapshot", async () 
     resolveRunningAvds: async (snapshot) => {
       runningQueries++;
       receivedSnapshot = snapshot;
-      return [
-        { serial: "emulator-5554", avd: "Pixel_A", state: "device" },
-      ];
+      return [{ serial: "emulator-5554", avd: "Pixel_A", state: "device" }];
     },
   };
 
-  const loading = loadDeviceGrid(
-    "emulator-5554",
-    "streaming",
-    dependencies,
-  );
+  const loading = loadDeviceGrid("emulator-5554", "streaming", dependencies);
   await Promise.resolve();
   expect(avdListStarted).toBe(true);
   expect(runningQueries).toBe(0);

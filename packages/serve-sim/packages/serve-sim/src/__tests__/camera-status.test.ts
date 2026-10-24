@@ -25,7 +25,9 @@ beforeAll(() => {
 
 afterAll(() => {
   for (const path of stateFiles) {
-    try { unlinkSync(path); } catch {}
+    try {
+      unlinkSync(path);
+    } catch {}
   }
 });
 
@@ -51,17 +53,21 @@ describe("camera status", () => {
 
   test("decodes split UTF-8, validates bundles, and keeps helper extensions", async () => {
     const socketPath = cameraHelperSocketFile(udid);
-    try { unlinkSync(socketPath); } catch {}
-    const reply = Buffer.from(JSON.stringify({
-      ok: true,
-      source: "video",
-      arg: "/tmp/zażółć.mov",
-      alive: false,
-      udid: "wrong-device",
-      helperPid: 0,
-      bundleIds: ["wrong.bundle"],
-      frameCount: 12,
-    }) + "\n");
+    try {
+      unlinkSync(socketPath);
+    } catch {}
+    const reply = Buffer.from(
+      JSON.stringify({
+        ok: true,
+        source: "video",
+        arg: "/tmp/zażółć.mov",
+        alive: false,
+        udid: "wrong-device",
+        helperPid: 0,
+        bundleIds: ["wrong.bundle"],
+        frameCount: 12,
+      }) + "\n",
+    );
     const split = reply.indexOf(Buffer.from("ż")) + 1;
     const server = createNetServer((socket) => {
       socket.once("data", () => {
@@ -74,10 +80,13 @@ describe("camera status", () => {
       server.listen(socketPath, resolve);
     });
     writeFileSync(cameraHelperPidFile(udid), String(process.pid));
-    writeFileSync(cameraHelperBundlesFile(udid), JSON.stringify({
-      helperPid: process.pid,
-      bundleIds: ["com.example.app", 42],
-    }));
+    writeFileSync(
+      cameraHelperBundlesFile(udid),
+      JSON.stringify({
+        helperPid: process.pid,
+        bundleIds: ["com.example.app", 42],
+      }),
+    );
 
     try {
       expect(await readCameraStatus(udid)).toEqual({
@@ -96,7 +105,9 @@ describe("camera status", () => {
   });
 
   test("serves status without opening a simulator session", async () => {
-    try { unlinkSync(cameraHelperPidFile(udid)); } catch {}
+    try {
+      unlinkSync(cameraHelperPidFile(udid));
+    } catch {}
     await withMiddleware(async (request) => {
       const response = await request(`/helper/${udid}/camera/status`);
       expect(response.status).toBe(200);

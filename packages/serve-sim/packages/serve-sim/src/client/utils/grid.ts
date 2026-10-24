@@ -58,7 +58,9 @@ export function gridCatalogNeedsRefresh(
 ): boolean {
   if (catalog.length === 0) return false;
   const loaded = new Set(catalog.map((device) => device.device));
-  return statuses.slice(0, Math.min(limit, statuses.length)).some((status) => !loaded.has(status.device));
+  return statuses
+    .slice(0, Math.min(limit, statuses.length))
+    .some((status) => !loaded.has(status.device));
 }
 
 export interface DevicePlaceholderAssetDescriptor {

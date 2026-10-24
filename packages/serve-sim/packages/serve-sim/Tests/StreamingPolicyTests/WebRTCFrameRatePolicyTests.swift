@@ -19,6 +19,12 @@ final class WebRTCFrameRatePolicyTests: XCTestCase {
         XCTAssertEqual(SimulatorCapturePollPolicy.intervalNanoseconds, 16_666_667)
     }
 
+    func testFixedPanelPollingOversamplesWithoutRaisingTheOutputCadence() {
+        XCTAssertEqual(SimulatorCapturePollPolicy.intervalNanoseconds(forFixedPanel: false), 16_666_667)
+        XCTAssertEqual(SimulatorCapturePollPolicy.intervalNanoseconds(forFixedPanel: true), 8_333_333)
+        XCTAssertEqual(WebRTCFrameRatePolicy(configuredFramesPerSecond: 60).outputFramesPerSecond, 60)
+    }
+
     func testClampsOnlyThePublisherCadenceToTheSupportedRange() {
         XCTAssertEqual(
             WebRTCFrameRatePolicy(configuredFramesPerSecond: 0).outputFramesPerSecond,
