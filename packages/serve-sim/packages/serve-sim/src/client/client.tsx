@@ -38,6 +38,7 @@ import { DuoPanelStreams, type DuoPanelPeer } from "./components/duo-panel-strea
 import { useLadderRestart } from "./hooks/use-ladder-restart";
 import type { StreamPanelPeer } from "./components/stream-settings-tool";
 import { duoActiveScreen } from "./simulator/duo-pose";
+import { PreviewToolbar } from "./components/preview-toolbar";
 import { PresentationControls } from "./components/presentation-controls";
 import { KeyboardCapture, KeyboardToggleButton } from "./components/keyboard-capture";
 import {
@@ -77,6 +78,7 @@ import { useAvccStream } from "./hooks/use-avcc-stream";
 import { useWebRtcStream } from "./hooks/use-webrtc-stream";
 import { useResizableHeight, useResizableWidth } from "./hooks/use-resizable-width";
 import { useScreenshotToast } from "./hooks/use-screenshot-toast";
+import { useMobileSimulatorSize } from "./hooks/use-mobile-simulator-size";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
 import { useFlipLayout } from "./hooks/use-flip-layout";
 import { useUploadToasts } from "./hooks/use-upload-toasts";
@@ -1386,7 +1388,9 @@ function AppWithConfig({
   const phoneKeyboardRaised =
     coarsePointer && isVisualViewportKeyboardRaised(windowInnerHeight, viewportHeight);
   const stableViewportHeight = coarsePointer ? windowInnerHeight : viewportHeight;
-  const containerHeight = phoneKeyboardRaised ? viewportHeight : stableViewportHeight;
+  const mobileLayout = viewportWidth < 640;
+  const containerHeight =
+    mobileLayout || phoneKeyboardRaised ? viewportHeight : stableViewportHeight;
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -1709,13 +1713,21 @@ function AppWithConfig({
   const shiftForRightPanel = presentation ? 0 : shiftToClear(rightPanelWidthPx);
   const shiftForLeftPanel = presentation ? 0 : shiftToClear(gridOpen ? gridPanelWidth : 0);
   const presentationInset = SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION;
-  const layoutWidth = simulatorResize.width;
+  const mobileActionsRef = useRef<HTMLDivElement | null>(null);
+  const mobileWidth = useMobileSimulatorSize(
+    scrollContainerRef,
+    mobileActionsRef,
+    mobileLayout && !presentation,
+    containerAspectRatioValue,
+  );
+  const layoutWidth =
+    mobileLayout && !presentation ? (mobileWidth ?? simulatorResize.width) : simulatorResize.width;
   const layoutHeight =
     containerAspectRatioValue > 0 ? roundToDevicePixel(layoutWidth / containerAspectRatioValue) : 0;
   const frameWidth = presentation
     ? getPresentationFrameWidth(
         viewportWidth,
-        stableViewportHeight,
+        mobileLayout ? containerHeight : stableViewportHeight,
         containerAspectRatioValue,
         presentationInset,
       )
@@ -1724,12 +1736,53 @@ function AppWithConfig({
   const resizing = simulatorResize.isResizing || simulatorResize.isInertia;
   useFlipLayout(
     flipRef,
-    !resizing && !presentation && !useDuoModel,
+    !mobileLayout && !resizing && !presentation && !useDuoModel,
     layoutWidth,
     layoutHeight,
     stableViewportHeight,
     phoneKeyboardRaised,
     scaling,
+  );
+
+  const previewControls = (
+    <>
+      {coarsePointer && <KeyboardToggleButton open={keyboardOpen} onClick={toggleKeyboard} />}
+      <ShareSessionButton config={config} />
+      <IconButton onClick={onEnterPresentation} aria-label="Full screen" title="Full screen">
+        <Maximize2 size={18} strokeWidth={1.75} />
+      </IconButton>
+      <IconButton
+        onClick={() => {
+          setDevtoolsOpen(false);
+          setPanelOpen((o) => !o);
+        }}
+        aria-label="Open tools panel"
+        aria-pressed={panelOpen}
+        title="Tools"
+      >
+        <PanelRight size={18} strokeWidth={1.75} />
+      </IconButton>
+      <IconButton
+        onClick={() => {
+          setPanelOpen(false);
+          setDevtoolsOpen((o) => !o);
+        }}
+        className="max-sm:hidden"
+        aria-label="Open WebKit DevTools"
+        aria-pressed={devtoolsOpen}
+        title="WebKit DevTools"
+      >
+        <Globe size={18} strokeWidth={1.75} />
+      </IconButton>
+      <IconButton
+        onClick={() => setLogsOpen((o) => !o)}
+        aria-label="Open device logs"
+        aria-pressed={logsOpen}
+        title="Logs"
+      >
+        <ScrollText size={18} strokeWidth={1.75} />
+      </IconButton>
+    </>
   );
 
   return (
@@ -1738,18 +1791,28 @@ function AppWithConfig({
         ref={scrollContainerRef}
         data-input-socket-open={inputSocketOpen}
         className={`flex flex-col items-center h-dvh bg-page font-system box-border ${
-          phoneKeyboardRaised ? "justify-start overflow-y-hidden" : "justify-center"
-        } ${presentation ? "gap-0" : "pt-16 pb-6 sm:py-6 gap-3"}`}
+          phoneKeyboardRaised && !mobileLayout
+            ? "justify-start overflow-y-hidden"
+            : "justify-center"
+        } ${presentation ? "gap-0" : "pt-[max(56px,calc(env(safe-area-inset-top,0px)+56px))] pb-[max(8px,env(safe-area-inset-bottom,0px))] sm:py-6 gap-3"}`}
         style={{
           height: containerHeight > 0 ? containerHeight : undefined,
           paddingTop: presentation ? presentationInset : undefined,
           paddingBottom: presentation ? presentationInset : logsOpen ? logsDrawerHeight : undefined,
-          paddingLeft: presentation ? presentationInset : 24 + shiftForLeftPanel,
-          paddingRight: presentation ? presentationInset : 24 + shiftForRightPanel,
+          paddingLeft: presentation
+            ? presentationInset
+            : mobileLayout
+              ? "max(4px, env(safe-area-inset-left, 0px))"
+              : 24 + shiftForLeftPanel,
+          paddingRight: presentation
+            ? presentationInset
+            : mobileLayout
+              ? "max(4px, env(safe-area-inset-right, 0px))"
+              : 24 + shiftForRightPanel,
           transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
         }}
       >
-        {phoneKeyboardRaised && (
+        {phoneKeyboardRaised && !mobileLayout && (
           <div
             aria-hidden
             style={{
@@ -1762,7 +1825,7 @@ function AppWithConfig({
           />
         )}
         <div
-          className={`flex flex-col items-center min-w-0 ${phoneKeyboardRaised ? "shrink-0" : ""} ${presentation ? "gap-0" : "gap-3"}`}
+          className={`flex flex-col items-center min-w-0 ${phoneKeyboardRaised || mobileLayout ? "shrink-0" : ""} ${presentation ? "gap-0" : "gap-3"}`}
           style={{
             width: layoutWidth,
             transition: resizing ? SIMULATOR_RESIZE_DRAG_TRANSITION : undefined,
@@ -1770,7 +1833,7 @@ function AppWithConfig({
         >
           {!presentation && (
             <div
-              className={`fixed sm:static top-[18px] sm:top-auto left-1/2 -translate-x-1/2 sm:translate-x-0 z-30 sm:z-auto self-center ${panelOpen || devtoolsOpen ? "max-sm:hidden" : ""}`}
+              className={`hidden sm:block fixed sm:static top-[18px] sm:top-auto left-1/2 -translate-x-1/2 sm:translate-x-0 z-30 sm:z-auto self-center ${panelOpen || devtoolsOpen ? "max-sm:hidden" : ""}`}
             >
               <SimulatorToolbar
                 onRotate={rotateDevice}
@@ -2026,7 +2089,15 @@ function AppWithConfig({
             </div>
           </div>
           {!presentation && (
-            <div className="inline-flex flex-wrap items-center justify-center gap-2 max-w-full pb-1 sm:pb-0">
+            <div
+              ref={mobileActionsRef}
+              className={`inline-flex flex-wrap items-center justify-center gap-2 pb-1 sm:pb-0 ${mobileLayout ? "shrink-0 max-w-[calc(100vw-8px)]" : "max-w-full"}`}
+              style={
+                mobileLayout
+                  ? { width: "max-content", display: phoneKeyboardRaised ? "none" : undefined }
+                  : undefined
+              }
+            >
               {showHingeControls && (
                 <HingeControls
                   key={config.device}
@@ -2117,6 +2188,7 @@ function AppWithConfig({
                 streaming={streaming}
                 aria-label="Accessibility overlay"
                 style={{
+                  display: mobileLayout ? "none" : "flex",
                   width: "auto",
                   minWidth: 0,
                   justifyContent: "center",
@@ -2137,7 +2209,7 @@ function AppWithConfig({
         {!presentation && (
           <>
             <div
-              className="fixed top-3 flex flex-row sm:flex-col gap-1 p-1 bg-panel-bg border border-white/8 rounded-[10px] backdrop-blur-[12px] [-webkit-backdrop-filter:blur(12px)] [transition:right_0.24s_cubic-bezier(0.22,1,0.36,1)] z-30"
+              className={`fixed [transition:right_0.24s_cubic-bezier(0.22,1,0.36,1)] z-30 ${mobileLayout ? "top-[calc(env(safe-area-inset-top,0px)+12px)]" : "top-3 flex flex-row sm:flex-col gap-1 p-1 bg-panel-bg border border-white/8 rounded-[10px] backdrop-blur-[12px] [-webkit-backdrop-filter:blur(12px)]"}`}
               style={{
                 right:
                   PANEL_EDGE_OFFSET +
@@ -2146,48 +2218,16 @@ function AppWithConfig({
                     : 0),
               }}
             >
-              {coarsePointer && (
-                <KeyboardToggleButton open={keyboardOpen} onClick={toggleKeyboard} />
+              {mobileLayout ? (
+                <PreviewToolbar
+                  keyboardRaised={phoneKeyboardRaised}
+                  viewportHeight={containerHeight}
+                >
+                  {previewControls}
+                </PreviewToolbar>
+              ) : (
+                previewControls
               )}
-              <ShareSessionButton config={config} />
-              <IconButton
-                onClick={onEnterPresentation}
-                aria-label="Full screen"
-                title="Full screen"
-              >
-                <Maximize2 size={18} strokeWidth={1.75} />
-              </IconButton>
-              <IconButton
-                onClick={() => {
-                  setDevtoolsOpen(false);
-                  setPanelOpen((o) => !o);
-                }}
-                aria-label="Open tools panel"
-                aria-pressed={panelOpen}
-                title="Tools"
-              >
-                <PanelRight size={18} strokeWidth={1.75} />
-              </IconButton>
-              <IconButton
-                onClick={() => {
-                  setPanelOpen(false);
-                  setDevtoolsOpen((o) => !o);
-                }}
-                className="max-sm:hidden"
-                aria-label="Open WebKit DevTools"
-                aria-pressed={devtoolsOpen}
-                title="WebKit DevTools"
-              >
-                <Globe size={18} strokeWidth={1.75} />
-              </IconButton>
-              <IconButton
-                onClick={() => setLogsOpen((o) => !o)}
-                aria-label="Open device logs"
-                aria-pressed={logsOpen}
-                title="Logs"
-              >
-                <ScrollText size={18} strokeWidth={1.75} />
-              </IconButton>
             </div>
 
             <ToolsPanel
