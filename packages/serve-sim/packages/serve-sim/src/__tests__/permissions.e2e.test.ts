@@ -1,240 +1,359 @@
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
-import { beforeAll, describe, expect, test } from "bun:test";
-import { execFileSync, execSync } from "child_process";
-import { existsSync } from "fs";
-import { homedir } from "os";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync, spawnSync } from "child_process";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  cpSync,
+  mkdtempSync,
+  rmSync,
+  renameSync,
+} from "fs";
+import { tmpdir } from "os";
+import { randomUUID } from "crypto";
 import { join } from "path";
 
-// Drives the built CLI against whatever simulator is already booted (the CI
-// `sim-test.yml` job boots one before running this directory). Each assertion
-// reads the underlying state store the simulator actually consults — TCC.db,
-// the BulletinBoard plist, locationd's clients.plist — rather than trusting
-// `xcrun simctl privacy`, which is the whole reason this command exists.
-
-const FAKE_BUNDLE = "com.serve-sim.permissions-e2e";
-// Location goes through `simctl privacy`, which no-ops on a bundle id that
-// isn't installed — so location assertions need a real stock app.
-const REAL_APP = "com.apple.mobilecal";
-const PKG_DIR = join(import.meta.dir, "../..");
-const CLI = join(PKG_DIR, "dist/serve-sim.js");
-
+const PKG = join(import.meta.dir, "../..");
+const CLI = join(PKG, "dist/serve-sim.js");
+const APP = join(PKG, "dist/simperm/SimPermissionsFixture.app");
+const BUNDLE = "dev.expo.serve-sim.permissions-fixture";
 const udid = e2eDevice();
-// Needs both a booted iOS sim and the built CLI. CI builds serve-sim before
-// running this directory; locally, run `bun run build.ts` first or it skips.
-const describeIfSim = udid && existsSync(CLI) ? describe : describe.skip;
-requireE2E("permissions.e2e", Boolean(udid && existsSync(CLI)));
-
-function cli(...args: string[]): string {
-  return execFileSync("node", [CLI, "permissions", ...args, "-d", udid!], { encoding: "utf-8" });
-}
-
-function libDir(): string {
-  return join(homedir(), "Library/Developer/CoreSimulator/Devices", udid!, "data/Library");
-}
-
-function tccAuthValue(service: string): string {
-  const db = join(libDir(), "TCC/TCC.db");
-  return execSync(
-    `sqlite3 "${db}" "SELECT auth_value FROM access WHERE service='${service}' AND client='${FAKE_BUNDLE}';"`,
-    { encoding: "utf-8" },
-  ).trim();
-}
-
-function bulletinXml(): string {
-  const plist = join(libDir(), "BulletinBoard/VersionedSectionInfo.plist");
-  return execSync(`plutil -convert xml1 -o - "${plist}"`, { encoding: "utf-8" });
-}
-
-// Decode the per-app section-info keyed archive nested as a <data> blob under
-// `sectionInfo.<bundleId>`. `plutil -extract` can't address the dotted bundle
-// id, so pull the whole sectionInfo dict and find the entry by hand.
-function sectionInfoInnerXml(): string {
-  const plist = join(libDir(), "BulletinBoard/VersionedSectionInfo.plist");
-  const xml = execSync(`plutil -extract sectionInfo xml1 -o - "${plist}"`, {
-    encoding: "utf-8",
-  });
-  const m = xml.match(
-    new RegExp(`<key>${FAKE_BUNDLE.replace(/[.-]/g, "\\$&")}</key>\\s*<data>([\\s\\S]*?)</data>`),
-  );
-  if (!m?.[1]) throw new Error(`no sectionInfo entry for ${FAKE_BUNDLE}`);
-  const blob = Buffer.from(m[1].replace(/\s/g, ""), "base64");
-  const tmp = join(libDir(), "..", `.serve-sim-e2e-${Date.now()}.plist`);
-  require("fs").writeFileSync(tmp, blob);
-  try {
-    return execSync(`plutil -convert xml1 -o - "${tmp}"`, { encoding: "utf-8" });
-  } finally {
-    require("fs").rmSync(tmp, { force: true });
-  }
-}
-
-// locationd keys entries as `i<bundleId>:`; pull the Authorization integer out
-// of that entry's dict.
-function locationAuth(bundleId: string): number | null {
-  const plist = join(libDir(), "Caches/locationd/clients.plist");
-  if (!existsSync(plist)) return null;
-  const xml = execSync(`plutil -convert xml1 -o - "${plist}"`, {
-    encoding: "utf-8",
-  });
-  const m = xml.match(
-    new RegExp(
-      `<key>i${bundleId.replace(/[.-]/g, "\\$&")}:</key>\\s*<dict>[\\s\\S]*?` +
-        `<key>Authorization</key>\\s*<integer>(\\d+)</integer>`,
-    ),
-  );
-  return m ? Number(m[1]) : null;
-}
-
-// `simctl privacy` writes locationd's clients.plist asynchronously, so on a cold
-// CI sim the value can lag the `grant`/`revoke` CLI call returning. Poll the
-// readback until it reaches the expected Authorization rather than asserting on
-// the first (possibly stale) read.
-async function locationAuthEventually(bundleId: string, expected: number): Promise<number | null> {
-  let last: number | null = null;
-  for (let i = 0; i < 40; i++) {
-    last = locationAuth(bundleId);
-    if (last === expected) return last;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-  return last;
-}
-
-// Each case shells the built CLI a few times, and a cold `simctl privacy`
-// call (location) can take several seconds on a fresh CI sim — comfortably
-// past bun's 5s default. The beforeAll reset-all also cascades through every
-// permission while the sim is fully cold, and that first touch has been seen
-// to run past 90s on a GitHub macOS runner, so keep the budget well above it.
+const ready = Boolean(udid && existsSync(CLI) && existsSync(APP));
+requireE2E("permissions.e2e", ready);
 const T = 150_000;
+function sim(...args: string[]) {
+  return execFileSync("xcrun", ["simctl", ...args], { encoding: "utf8", timeout: 30_000 });
+}
+function cli(...args: string[]) {
+  return execFileSync("node", [CLI, "permissions", ...args, "-d", udid!], {
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+}
+function list() {
+  return JSON.parse(cli("list", BUNDLE));
+}
+let documents: string;
+function state() {
+  return JSON.parse(readFileSync(join(documents, "state.json"), "utf8"));
+}
+function writeCommand(directory: string, value: object) {
+  const temporary = join(directory, `command-${randomUUID()}.tmp`);
+  writeFileSync(temporary, JSON.stringify(value));
+  renameSync(temporary, join(directory, "command.json"));
+}
+function command(action: string, tag?: string) {
+  writeCommand(documents, { action, tag });
+}
+async function eventually(check: () => boolean) {
+  const end = Date.now() + 12_000;
+  while (Date.now() < end) {
+    try {
+      if (check()) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  expect(check()).toBe(true);
+}
+function springboard() {
+  return sim("spawn", udid!, "launchctl", "list")
+    .split("\n")
+    .filter((line) => /springboard/i.test(line));
+}
 
-describeIfSim("serve-sim permissions (real simulator)", () => {
-  beforeAll(() => {
-    // Start from a known-clean slate for the fake bundle.
-    cli("reset", "all", FAKE_BUNDLE);
+describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
+  beforeAll(async () => {
+    sim("install", udid!, APP);
+    documents = join(sim("get_app_container", udid!, BUNDLE, "data").trim(), "Documents");
+    cli("reset", "all", BUNDLE);
+    cli("grant", "notifications", BUNDLE);
+    const pid = Number(sim("launch", udid!, BUNDLE).trim().split(":").at(-1));
+    await eventually(() => state().pid === pid && state().notifications === 2);
+    // A normal request initializes notification capabilities, including on 27.1.
+    command("request");
+    await eventually(() => state().events.some((e: any) => e.event === "request" && e.granted));
+    await eventually(() => state().alertSetting === 2);
+  }, T);
+  afterAll(() => {
+    if (!documents) return;
+    try {
+      sim("terminate", udid!, BUNDLE);
+    } catch {}
+    sim("uninstall", udid!, BUNDLE);
   }, T);
 
   test(
-    "grant camera writes a TCC row with auth_value=2",
-    () => {
-      cli("grant", "camera", FAKE_BUNDLE);
-      expect(tccAuthValue("kTCCServiceCamera")).toBe("2");
+    "notification grant/denial/reset and delivery change live, with idempotent calls",
+    async () => {
+      const initial = state();
+      const sb = springboard();
+      expect(sb.length).toBeGreaterThan(0);
+      for (const [index, [action, status]] of (
+        [
+          ["grant", 2],
+          ["revoke", 1],
+          ["grant", 2],
+          ["reset", 0],
+          ["grant", 2],
+        ] as const
+      ).entries()) {
+        cli(action, "notifications", BUNDLE);
+        cli(action, "notifications", BUNDLE);
+        await eventually(() => state().notifications === status);
+        expect(list().notifications.authorizationStatus).toBe(status);
+        const tag = `permission-${index}`;
+        command("schedule", tag);
+        if (status === 2) await eventually(() => state().delivered.includes(tag));
+        else {
+          await eventually(() =>
+            state().events.some((e: any) => e.event === "schedule" && e.tag === tag),
+          );
+          await new Promise((r) => setTimeout(r, 1500));
+          expect(state().delivered).not.toContain(tag);
+        }
+        expect(state().pid).toBe(initial.pid);
+        expect(state().launchCount).toBe(initial.launchCount);
+        expect(springboard()).toEqual(sb);
+      }
+    },
+    T,
+  );
+
+  test.each(["camera", "microphone"])(
+    "%s changes use tccd without killing the running app",
+    async (permission) => {
+      const initial = state();
+      for (const [action, raw, publicValue] of [
+        ["grant", 2, 3],
+        ["revoke", 0, 2],
+        ["reset", undefined, 0],
+      ] as const) {
+        cli(action, permission, BUNDLE);
+        cli(action, permission, BUNDLE);
+        expect(list().tcc[permission]).toBe(raw);
+        await eventually(() => state()[permission] === publicValue);
+        expect(state().pid).toBe(initial.pid);
+        expect(state().launchCount).toBe(initial.launchCount);
+      }
+    },
+    T,
+  );
+
+  test.each(["calendar", "reminders"])(
+    "%s service changes preserve the app and public state applies after relaunch",
+    async (permission) => {
+      for (const [action, raw, expected] of [
+        ["grant", 2, 3],
+        ["revoke", 0, 2],
+        ["reset", undefined, 0],
+      ] as const) {
+        const initial = state();
+        cli(action, permission, BUNDLE);
+        expect(list().tcc[permission]).toBe(raw);
+        const finished = Date.now() / 1000;
+        await eventually(() => state().timestamp > finished);
+        expect(state().pid).toBe(initial.pid);
+        expect(state().launchCount).toBe(initial.launchCount);
+        console.log("EventKit before relaunch", {
+          permission,
+          action,
+          public: state()[permission],
+          stored: raw,
+        });
+        // A retained EKEventStore can cache authorization even though tccd changed.
+        sim("terminate", udid!, BUNDLE);
+        const pid = Number(sim("launch", udid!, BUNDLE).trim().split(":").at(-1));
+        await eventually(() => state().pid === pid && state()[permission] === expected);
+      }
     },
     T,
   );
 
   test(
-    "revoke camera flips auth_value to 0",
-    () => {
-      cli("revoke", "camera", FAKE_BUNDLE);
-      expect(tccAuthValue("kTCCServiceCamera")).toBe("0");
+    "Photos full/limited grants remain distinct and apply after app relaunch",
+    async () => {
+      cli("grant", "photos", BUNDLE);
+      expect(list().tcc.photos).toBe(2);
+      await eventually(() => state().photos === 3);
+      cli("grant", "photos", BUNDLE, "--value", "limited");
+      console.log("Photos authorization before relaunch", {
+        public: state().photos,
+        stored: list().tcc.photos,
+      });
+      sim("terminate", udid!, BUNDLE);
+      const pid = Number(sim("launch", udid!, BUNDLE).trim().split(":").at(-1));
+      await eventually(() => state().pid === pid && state().photos === 4);
+      expect(list().permissions.find((p: any) => p.id === "photos").state).toBe("limited");
+      cli("reset", "photos", BUNDLE);
+      expect(list().tcc.photos).toBeUndefined();
+      sim("terminate", udid!, BUNDLE);
+      const resetPid = Number(sim("launch", udid!, BUNDLE).trim().split(":").at(-1));
+      await eventually(() => state().pid === resetPid && state().photos === 0);
     },
     T,
   );
 
   test(
-    "reset camera removes the TCC row",
-    () => {
-      cli("grant", "camera", FAKE_BUNDLE);
-      cli("reset", "camera", FAKE_BUNDLE);
-      expect(tccAuthValue("kTCCServiceCamera")).toBe("");
+    "location changes confirm service and public state without restarting the app",
+    async () => {
+      const initial = state();
+      for (const [action, value, expected] of [
+        ["grant", "always", 4],
+        ["grant", "inuse", 2],
+        ["revoke", undefined, 1],
+        ["reset", undefined, 0],
+      ] as const) {
+        cli(action, "location", BUNDLE, ...(value ? ["--value", value] : []));
+        await eventually(() => (list().location?.Authorization ?? 0) === expected);
+        const publicValue = expected === 4 ? 3 : expected === 2 ? 4 : expected === 1 ? 2 : 0;
+        await eventually(() => state().location === publicValue);
+        expect(state().pid).toBe(initial.pid);
+        expect(state().launchCount).toBe(initial.launchCount);
+      }
     },
     T,
   );
 
   test(
-    "grant photos --value limited writes auth_value=3",
-    () => {
-      cli("grant", "photos", FAKE_BUNDLE, "--value", "limited");
-      expect(tccAuthValue("kTCCServicePhotos")).toBe("3");
-    },
-    T,
-  );
-
-  test(
-    "grant notifications sets allowsNotifications=true in BulletinBoard",
-    () => {
-      cli("grant", "notifications", FAKE_BUNDLE);
-      expect(bulletinXml()).toContain(FAKE_BUNDLE);
-      expect(sectionInfoInnerXml()).toMatch(/<key>allowsNotifications<\/key>\s*<true\/>/);
-    },
-    T,
-  );
-
-  test(
-    "grant notifications --value critical sets criticalAlertSetting=2",
-    () => {
-      cli("grant", "notifications", FAKE_BUNDLE, "--value", "critical");
-      expect(sectionInfoInnerXml()).toMatch(
-        /<key>criticalAlertSetting<\/key>\s*<integer>2<\/integer>/,
+    "reset all clears service state and a fresh CLI process reads it",
+    async () => {
+      const initial = state();
+      cli("grant", "camera", BUNDLE);
+      cli("grant", "notifications", BUNDLE);
+      cli("grant", "location", BUNDLE, "--value", "always");
+      await eventually(() => state().location === 3);
+      cli("reset", "all", BUNDLE);
+      const finished = Date.now() / 1000;
+      const result = list();
+      expect(result.tcc.camera).toBeUndefined();
+      expect(result.notifications.authorizationStatus).toBe(0);
+      expect(result.permissions.every((p: any) => p.state === "undetermined")).toBe(true);
+      await eventually(
+        () =>
+          state().timestamp > finished &&
+          state().camera === 0 &&
+          state().notifications === 0 &&
+          state().location === 0,
       );
+      expect(state().pid).toBe(initial.pid);
+      expect(state().launchCount).toBe(initial.launchCount);
     },
     T,
   );
 
   test(
-    "revoke notifications sets allowsNotifications=false",
+    "critical and ordinary notification grants have separate readback",
     () => {
-      cli("revoke", "notifications", FAKE_BUNDLE);
-      expect(sectionInfoInnerXml()).toMatch(/<key>allowsNotifications<\/key>\s*<false\/>/);
+      cli("grant", "notifications", BUNDLE, "--value", "critical");
+      expect(list().notifications.critical).toBe(true);
+      cli("grant", "notifications", BUNDLE);
+      expect(list().notifications.critical).toBe(false);
     },
     T,
   );
 
   test(
-    "reset notifications removes the bundle entry",
+    "reset of an unknown notification section is a no-op",
     () => {
-      cli("grant", "notifications", FAKE_BUNDLE);
-      cli("reset", "notifications", FAKE_BUNDLE);
-      expect(bulletinXml()).not.toContain(FAKE_BUNDLE);
+      const unknown = `dev.expo.permissions.absent-${randomUUID()}`;
+      cli("reset", "notifications", unknown);
+      expect(JSON.parse(cli("list", unknown)).notifications).toBeNull();
     },
     T,
   );
 
   test(
-    "grant location --value always writes Authorization=4",
+    "a fresh pre-grant is authorization; a normal request initializes presentation",
     async () => {
-      cli("grant", "location", REAL_APP, "--value", "always");
-      expect(await locationAuthEventually(REAL_APP, 4)).toBe(4);
+      const bundle = "dev.expo.permissions.fresh-fixture";
+      const dir = mkdtempSync(join(tmpdir(), "permission-fresh-"));
+      const app = join(dir, "Fresh.app");
+      try {
+        cpSync(APP, app, { recursive: true });
+        execFileSync("/usr/libexec/PlistBuddy", [
+          "-c",
+          `Set :CFBundleIdentifier ${bundle}`,
+          join(app, "Info.plist"),
+        ]);
+        execFileSync("codesign", ["--force", "--sign", "-", app]);
+        cli("grant", "notifications", bundle);
+        sim("install", udid!, app);
+        const pid = Number(sim("launch", udid!, bundle).trim().split(":").at(-1));
+        const documents = join(sim("get_app_container", udid!, bundle, "data").trim(), "Documents");
+        const read = () => JSON.parse(readFileSync(join(documents, "state.json"), "utf8"));
+        await eventually(() => read().pid === pid && read().notifications === 2);
+        // Authorization alone does not promise an enabled alert setting on a fresh app.
+        console.log("fresh notification authorization", {
+          status: read().notifications,
+          alertSetting: read().alertSetting,
+        });
+        writeCommand(documents, { action: "request" });
+        await eventually(
+          () =>
+            read().events.some((e: any) => e.event === "request" && e.granted) &&
+            read().alertSetting === 2,
+        );
+        writeCommand(documents, { action: "schedule", tag: "fresh-delivery" });
+        await eventually(() => read().delivered.includes("fresh-delivery"));
+        expect(read().pid).toBe(pid);
+        expect(read().launchCount).toBe(1);
+      } finally {
+        try {
+          sim("terminate", udid!, bundle);
+        } catch {}
+        try {
+          sim("uninstall", udid!, bundle);
+        } catch {}
+        sim("launch", udid!, BUNDLE);
+        rmSync(dir, { recursive: true, force: true });
+      }
     },
     T,
   );
 
   test(
-    "revoke location downgrades Authorization to never (1)",
-    async () => {
-      cli("revoke", "location", REAL_APP);
-      expect(await locationAuthEventually(REAL_APP, 1)).toBe(1);
-      cli("reset", "location", REAL_APP);
-    },
-    T,
-  );
-
-  test(
-    "reset all clears the TCC and notification stores for the bundle",
+    "the compiled CLI locates its packaged helper",
     () => {
-      cli("grant", "camera", FAKE_BUNDLE);
-      cli("grant", "notifications", FAKE_BUNDLE);
-      cli("reset", "all", FAKE_BUNDLE);
-      expect(tccAuthValue("kTCCServiceCamera")).toBe("");
-      expect(bulletinXml()).not.toContain(FAKE_BUNDLE);
+      cli("grant", "notifications", BUNDLE);
+      const result = JSON.parse(
+        execFileSync(join(PKG, "dist/serve-sim"), ["permissions", "list", BUNDLE, "-d", udid!], {
+          encoding: "utf8",
+          timeout: 30_000,
+        }),
+      );
+      expect(result.notifications.authorizationStatus).toBe(2);
     },
     T,
   );
 
   test(
-    "list reports state under the CLI's own permission names",
-    async () => {
-      cli("grant", "camera", FAKE_BUNDLE);
-      cli("grant", "notifications", FAKE_BUNDLE);
-      cli("grant", "location", REAL_APP, "--value", "always");
-      // Wait for locationd to persist the grant before reading it back via `list`.
-      expect(await locationAuthEventually(REAL_APP, 4)).toBe(4);
-      const fake = JSON.parse(cli("list", FAKE_BUNDLE));
-      expect(fake.tcc.camera).toBe(2);
-      expect(fake.notifications.allowsNotifications).toBe(true);
-      const realOut = JSON.parse(cli("list", REAL_APP));
-      expect(realOut.udid).toBe(udid);
-      expect(realOut.location.Authorization).toBe(4);
-      cli("reset", "all", FAKE_BUNDLE);
-      cli("reset", "location", REAL_APP);
+    "the native helper rejects unknown actions and failed TCC requests",
+    () => {
+      cli("grant", "notifications", BUNDLE);
+      const helper = join(PKG, "dist/simperm/serve-sim-permissions");
+      for (const args of [
+        ["notifications", "unknown", BUNDLE],
+        ["tcc", "grant", BUNDLE, "", "kTCCServiceNotReal"],
+      ]) {
+        const result = spawnSync("xcrun", ["simctl", "spawn", udid!, helper, ...args], {
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toMatch(/Unknown permission action|TCC grant failed/);
+      }
+      expect(list().notifications.authorizationStatus).toBe(2);
+    },
+    T,
+  );
+
+  test(
+    "unknown permission fails without changing state",
+    () => {
+      cli("grant", "notifications", BUNDLE);
+      expect(() => cli("grant", "telepathy", BUNDLE)).toThrow();
+      expect(list().notifications.authorizationStatus).toBe(2);
     },
     T,
   );

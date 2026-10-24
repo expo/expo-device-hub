@@ -20,7 +20,8 @@ import {
 } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, basename } from "path";
+import { dirnameOf } from "./runtime";
 import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -1277,16 +1278,23 @@ function devtoolsFrontendUrl(
 }
 
 let _html: string | null = null;
-/**
- * Best-effort absolute path to the running serve-sim entry script. Used so
- * the in-page Camera tool can `node <path> camera ...` regardless of PATH.
- * Falls back to the literal `serve-sim` if we can't determine a usable path.
- */
+// @ref LLP 0003#app-permissions — mounted Hub actions must run serve-sim's CLI
 function serveSimBinPath(): string {
-  try {
-    const argv = process.argv;
-    if (argv[1] && existsSync(argv[1])) return argv[1];
-  } catch {}
+  const dir = dirnameOf(import.meta.url);
+  if (import.meta.url.endsWith("/middleware.ts") && existsSync(join(dir, "index.ts")))
+    return join(dir, "index.ts");
+  for (const candidate of [
+    join(dir, "serve-sim.js"),
+    join(dir, "../dist/serve-sim.js"),
+    join(dir, "index.ts"),
+  ]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  // A relocated compiled executable may have no sibling JS bundle.
+  if (import.meta.url.startsWith("file:///$bunfs/") && existsSync(process.execPath))
+    return process.execPath;
+  const running = process.argv[1];
+  if (running && basename(running) === "serve-sim" && existsSync(running)) return running;
   return "serve-sim";
 }
 

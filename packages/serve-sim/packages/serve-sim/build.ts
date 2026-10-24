@@ -320,6 +320,13 @@ if (axSettingsBuild.status !== 0) {
 }
 console.log("dist/simax/serve-sim-ax-settings");
 
+const permissionsBuild = spawnSync(
+  "bash",
+  [resolve(root, "Sources/SimPermissions/build.sh"), resolve(distDir, "simperm")],
+  { stdio: "inherit" },
+);
+if (permissionsBuild.status !== 0) process.exit(permissionsBuild.status ?? 1);
+
 // ─── 8. simulator pasteboard tools ────────────────────────────────────────
 
 for (const [name, script] of [

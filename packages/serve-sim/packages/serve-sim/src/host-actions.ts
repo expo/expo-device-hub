@@ -522,7 +522,8 @@ function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsF
 
 function serveSimInvocation(binPath: string, args: string[]): Invocation {
   if (binPath.endsWith(".ts")) return { file: "bun", args: [binPath, ...args] };
-  if (binPath.endsWith(".js")) return { file: "node", args: [binPath, ...args] };
+  if (binPath.endsWith(".js"))
+    return { file: process.versions.bun ? "node" : process.execPath, args: [binPath, ...args] };
   return { file: binPath, args };
 }
 
@@ -1002,7 +1003,7 @@ async function runProcedureAsync(
   }
 }
 
-export async function runHostActionAsync(
+async function runHostActionUnqueuedAsync(
   msg: HostActionRequest,
   binPath: string,
   streamSettings?: StreamSettings,
@@ -1030,4 +1031,52 @@ export async function runHostActionAsync(
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;
   return { stdout, stderr, exitCode };
+}
+
+// @ref LLP 0003#app-permissions — reconnect reads wait for native writes that outlive their socket
+const permissionRequests = new Map<string, Promise<unknown>>();
+let permissionAdmission = Promise.resolve();
+export async function runHostActionAsync(
+  msg: HostActionRequest,
+  binPath: string,
+  streamSettings?: StreamSettings,
+  deviceName?: (udid: string) => string | undefined,
+): Promise<HostActionResult> {
+  const run = () => runHostActionUnqueuedAsync(msg, binPath, streamSettings, deviceName);
+  if (
+    msg.action !== "permissions.set" &&
+    msg.action !== "permissions.resetAll" &&
+    msg.action !== "permissions.list"
+  )
+    return run();
+  const params = parseParams(msg.action, msg.params);
+  const admission = permissionAdmission.then(async () => {
+    // Resolve aliases in arrival order; a fast UUID lookup must not overtake an
+    // earlier name lookup. Only admission is global, execution stays per app.
+    const udid = await (await import("./device")).resolveBootedDeviceAsync(params.udid);
+    const key = JSON.stringify([udid, params.bundleId]);
+    const previous = permissionRequests.get(key) ?? Promise.resolve();
+    const current = previous
+      .catch(() => {})
+      .then(() =>
+        runHostActionUnqueuedAsync(
+          { ...msg, params: { ...params, udid } },
+          binPath,
+          streamSettings,
+          deviceName,
+        ),
+      );
+    permissionRequests.set(key, current);
+    return { key, current };
+  });
+  permissionAdmission = admission.then(
+    () => {},
+    () => {},
+  );
+  const { key, current } = await admission;
+  try {
+    return await current;
+  } finally {
+    if (permissionRequests.get(key) === current) permissionRequests.delete(key);
+  }
 }

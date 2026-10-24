@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-23 (service-backed permissions, fresh notification initialization boundary and mounted CLI resolution; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -615,3 +615,80 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+## App permissions
+
+`permissions.set` keeps `{udid, action, service, bundleId}`, where action is
+`grant`, `revoke` (denial), or `reset` (not determined). `permissions.resetAll`
+resets each permission family. Failure may leave earlier families changed.
+Within a host control server, permission requests for the same device/app run
+in order, including reads. Losing the requesting socket does not cancel native
+work; a reconnect read waits for the outstanding request before reporting state.
+`permissions.list` retains `tcc`, `location`, and `notifications` and, for an
+app-scoped read, adds `permissions: [{id, label, state}]` for the two browser UIs.
+Mounted middleware resolves its packaged serve-sim CLI beside the middleware
+bundle, rather than executing the hosting process's entry script.
+[observed: `src/host-actions.ts`, `src/permissions.ts`]
+
+The packaged `simperm/serve-sim-permissions` executable runs inside the selected
+Simulator. Notification reads and writes use `BBSettingsGateway`, not
+`VersionedSectionInfo.plist`. Denial sets authorization status 1; reset sets 0
+without deleting a registered section; reset of an absent section is a no-op. A write polls gateway readback before
+reporting success. This confirms authorization, not that a fresh app has initialized
+alert, sound, or badge capabilities. The fresh pre-grant runtime test calls the
+app's normal authorization request and checks enabled alerts and local delivery. Required selectors are checked at runtime; unavailable APIs,
+exceptions, and unconfirmed changes fail. [observed:
+`Sources/SimPermissions/sim-permissions.m`]
+
+TCC writes use `TCCAccessSetForBundleIdWithOptions` and
+`TCCAccessResetForBundleIdWithOptions`, require `kTCCSetNoKill`, and check the
+daemon's Boolean result. TCC reads use read-only SQLite because
+`TCCAccessCopyInformationForBundleId` reports both full and limited Photos access
+as granted. Reads allow SQLite to wait up to 4.5 seconds for transient tccd
+writer locks within a five-second subprocess deadline; non-busy errors remain
+errors. Location writes use `simctl privacy` and wait for locationd's persisted
+`Authorization` readback. CoreLocation's cross-app getter returned 0 while the
+public app API reported always authorization on iOS 27.1, so it is not used. These services have separate caching behavior. Camera and microphone reflected
+live changes. An earlier iOS 27.1 probe also observed live calendar/reminders
+changes, but the interactive fixture with a retained EventKit store cached those
+values on iOS 26.5. The runtime test therefore verifies EventKit public state
+after an explicit app relaunch while checking that the write itself keeps the app
+alive. Contacts and Photos add-only retained authorization after denial/reset
+in the running fixture. Full-to-limited
+Photos changes also needed an app relaunch; the runtime test verifies public
+limited authorization after that explicit relaunch boundary. A stored TCC
+change does not promise every framework invalidates an app's cached state.
+[observed: `src/permissions.ts`; local iOS 27.1 TCC API probe, 2026-10-23]
+
+The helper embeds scoped TCC modify/delete and BulletinBoard settings entitlements
+in `__TEXT,__entitlements` and signs ad hoc without private signing entitlements.
+This follows Simulator helper loading requirements. It does not inject into or
+restart the target app or SpringBoard. [observed: `Sources/SimPermissions/build.sh`]
+
+### Fresh notification initialization boundary
+
+A notification grant confirms authorization, not delivery readiness. On iOS 27.1,
+an app that had never made its normal notification authorization request reported
+`UNAuthorizationStatusAuthorized` after a service grant, but scheduling a local
+notification failed with "Source is not authorized." Waiting and relaunching the
+app did not fix it. The app's normal `requestAuthorization` call then returned
+success without a prompt, and local delivery worked without a restart. Subsequent
+live grant, denial and reset changes worked with the app and SpringBoard processes
+unchanged. [observed: native runtime experiment, 2026-10-23; recorded limitation in
+[local permission validation](https://github.com/expo/expo-device-hub/pull/447#issuecomment-6377205261)]
+
+No service-only initialization fix has been validated. Setting `pushSettings` to
+63 did not fix the fresh-app scheduling failure; that negative result must not be
+treated as a working initialization recipe or copied into production. A fresh app
+may still need its normal authorization request before notifications can be
+delivered. This is an unresolved support boundary, not proof that initialization
+can never be controlled externally. [observed: native runtime experiment,
+2026-10-23; [local permission validation](https://github.com/expo/expo-device-hub/pull/447#issuecomment-6377205261)]
+
+The browser's Granted state therefore describes authorization only. The fresh
+pre-grant runtime test deliberately makes the app's normal request before checking
+enabled alerts and local delivery. It proves pre-grant followed by normal app
+initialization, not grant-only delivery. Neither that test nor the earlier local
+notification experiments establish remote APNs delivery. [observed:
+`src/permissions.ts`; `src/__tests__/permissions.e2e.test.ts`, "a fresh pre-grant is
+authorization; a normal request initializes presentation"]

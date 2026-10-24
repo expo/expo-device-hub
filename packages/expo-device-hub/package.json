@@ -32,6 +32,7 @@
     "vendor/serve-sim/dist/middleware.js",
     "vendor/serve-sim/dist/serve-sim.js",
     "vendor/serve-sim/dist/simax",
+    "vendor/serve-sim/dist/simperm",
     "vendor/serve-sim/dist/simcam",
     "vendor/serve-sim/dist/simpb",
     "vendor/serve-sim/dist/native",

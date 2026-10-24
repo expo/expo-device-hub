@@ -64,7 +64,9 @@
     "Sources/SimPasteboardReader/sim-pasteboard-reader.m",
     "Sources/SimPasteboardReader/build.sh",
     "dist/native/serve-sim-native.node",
-    "dist/bin/LiveKitWebRTC.framework"
+    "dist/bin/LiveKitWebRTC.framework",
+    "dist/simperm/serve-sim-permissions",
+    "Sources/SimPermissions/*"
   ],
   "cpu": [
     "arm64"
