@@ -155,7 +155,7 @@ type ParsedButton = {
   imageDown: string | null;
   onTop: boolean;
   anchor: "left" | "right" | "top" | "bottom";
-  align: "leading" | "trailing";
+  align: "leading" | "trailing" | "center";
   normalOffset: Point;
   rolloverOffset: Point;
   usagePage: number | null;
@@ -795,7 +795,7 @@ function parseButton(json: JsonRecord): ParsedButton | null {
       anchorValue === "right" || anchorValue === "top" || anchorValue === "bottom"
         ? anchorValue
         : "left",
-    align: alignValue === "trailing" ? "trailing" : "leading",
+    align: alignValue === "trailing" || alignValue === "center" ? alignValue : "leading",
     normalOffset: normal ?? rollover ?? { x: 0, y: 0 },
     rolloverOffset: rollover ?? normal ?? { x: 0, y: 0 },
     usagePage: numberOrNull(json.usagePage),
@@ -814,8 +814,13 @@ function buttonTopLeft(
   // The rest position mirrors the rollover offset back across the normal offset.
   const restX = 2 * button.normalOffset.x - button.rolloverOffset.x;
   const restY = 2 * button.normalOffset.y - button.rolloverOffset.y;
+  // @ref LLP 0000#devicekit-hardware-artwork — centered offsets are relative to the body center.
   const alignedX =
-    button.align === "trailing" ? bodyX + bodySize.width + restX - imageSize.width : bodyX + restX;
+    button.align === "center"
+      ? bodyX + (bodySize.width - imageSize.width) / 2 + restX
+      : button.align === "trailing"
+        ? bodyX + bodySize.width + restX - imageSize.width
+        : bodyX + restX;
   switch (button.anchor) {
     case "left": {
       const centerX = bodyX + button.rolloverOffset.x;

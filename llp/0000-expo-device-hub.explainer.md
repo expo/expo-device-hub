@@ -79,6 +79,13 @@ keep their existing toolbar rendering and presentation sizing.
 [observed: `src/client/client.tsx` and `src/client/hooks/use-mobile-simulator-size.ts`
 in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
 
+### DeviceKit hardware artwork
+
+Hardware-button sprites follow the alignment in Apple's DeviceKit profile.
+For `align: center`, horizontal offsets are relative to the body center, including
+Home buttons on older iPhones and iPads. [observed: ServeSim `src/devicekit-chrome.ts`
+and the `phone` and `tablet` DeviceKit `chrome.json` profiles]
+
 ### Direction: one device protocol
 
 The goal is to unify the serve-sim and serve-emu protocols. Until then, every new feature must behave the same on iOS and Android, so that unification stays possible [confirmed] (Krystof Woldrich, 2026-10-02). See [constraint 10](#same-behavior).
