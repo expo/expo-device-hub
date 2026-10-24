@@ -45,7 +45,11 @@ const TCC_PROTECTED_DIRS = [
 // such as the /System/Volumes/Data firmlink.
 function leadsIntoProtectedLocation(path: string): boolean {
   const folded = path.toLowerCase();
-  return TCC_PROTECTED_DIRS.some((dir) => folded === dir || folded.startsWith(dir + sep));
+  // Adoption authority stays private even when a staging root resolves to /tmp.
+  return (
+    folded.split(sep).some((component) => component.startsWith("serve-sim-owner-")) ||
+    TCC_PROTECTED_DIRS.some((dir) => folded === dir || folded.startsWith(dir + sep))
+  );
 }
 
 // Each root in the spelling a caller sends and in its realpath, because a path is compared lexically
@@ -98,7 +102,8 @@ function resolveWithinRoots(absolutePath: string): string | null {
   for (let component = parts.shift(); component !== undefined; component = parts.shift()) {
     const candidate = join(prefix, component);
     const whole = join(candidate, ...parts);
-    if (leadsIntoProtectedLocation(whole) || !isUnderAllowedRoot(whole)) return whole;
+    if (leadsIntoProtectedLocation(whole)) return null;
+    if (!isUnderAllowedRoot(whole)) return whole;
 
     let isLink: boolean;
     try {

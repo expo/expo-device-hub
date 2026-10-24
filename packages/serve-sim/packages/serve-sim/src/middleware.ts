@@ -3478,7 +3478,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   fetchMiddleware.handleUpgrade = (req: SimReq, socket: Socket, head: Buffer) => {
     connectMiddleware.handleUpgrade?.(req, socket, head);
   };
-  // @ref LLP 0003#prepared-process-handoff — in-process configuration is never routed over HTTP or WebSockets.
+  // @ref LLP 0003#prepared-process-handoff — called only by the private local owner socket.
   fetchMiddleware.configureSession = async (configuration) => {
     if (sessionConfigured || !options?.configureResources || streamSettings?.transport !== "webrtc")
       throw new Error("Session cannot be configured");

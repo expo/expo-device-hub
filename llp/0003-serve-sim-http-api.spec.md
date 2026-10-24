@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-22 (prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -113,15 +113,32 @@ not prevent this.
 
 ## Prepared process handoff
 
-The in-process middleware `configureSession` method applies a typed configuration
-once; it is not an HTTP or WebSocket route. Its host callback configures capture,
-screenshot output and native state before the middleware updates the active
-encoder, future stream defaults, ICE servers, CORS/frame origins and sharing
-[observed: `src/middleware.ts`, `src/index.ts`, `src/session-configuration.ts`].
+Prepared process ownership is available only to the local `serve-sim <udid> --adopt`
+CLI. HTTP and `/exec-ws` do not expose ownership or reconfiguration, even to a
+preview-token holder. The CLI uses a private Unix socket, not the preview server
+[observed: `src/session-owner.ts`, `src/middleware.ts`].
 
-Configuration is reserved before awaiting native work. A second call, or a retry
-after failed native configuration, is rejected. The shared CORS array also updates
-the execution WebSocket origin policy [observed: `src/middleware.ts`].
+The server creates its owner socket and separate random authority in a private
+0700 directory under canonical `/tmp`, with 0600 socket and authority files. This
+directory is outside the host actions' file roots regardless of custom state or
+temporary directories. Local discovery state contains only the owning PID and
+directory reference; neither owner state nor authority enters public preview
+state. The CLI checks file type, OS user, permissions, process identity and startup
+compatibility before claiming the process. The preview bearer token is not owner
+authority [observed: `src/session-owner.ts`, `src/host-paths.ts`].
+
+A compatible local claim consumes the handoff before native configuration starts.
+The server closes its owner listener and removes the authority, rejecting concurrent
+or later claims. Invalid owner credentials or incompatible identity do not consume
+it; malformed configuration or failed native setup does. The caller must replace
+the process after a failed claim [observed: `src/session-owner.ts`].
+
+Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screenshot
+artifacts, and network capture fields/upstream before the CLI reports success.
+Existing captures stop before the job's upstream is applied; requested capture must
+be active before success, and app installation/launch follows through normal typed
+`/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff
+[observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 ## Preview sharing
 
