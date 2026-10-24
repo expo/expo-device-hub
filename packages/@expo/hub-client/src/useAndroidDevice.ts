@@ -586,6 +586,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [active, baseUrl, targetDevice, sessionFetch],
   );
   const appPermissions = useAppPermissions({
+    targetId: baseUrl ? JSON.stringify([baseUrl, targetDevice]) : null,
     active,
     appId: foregroundApp?.id ?? null,
     backend: permissionsBackend,

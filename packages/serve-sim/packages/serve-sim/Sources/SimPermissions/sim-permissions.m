@@ -37,7 +37,7 @@ static NSDictionary *notificationState(id info) {
   return state;
 }
 
-// @ref LLP 0003#app-permissions — live gateway state; denied and reset differ
+// @ref LLP 0003.000#notifications — live gateway state; denied and reset differ
 static id notifications(NSString *action, NSString *bundle, NSString *value) {
   framework("/System/Library/PrivateFrameworks/BulletinBoard.framework/BulletinBoard");
   id gateway = [[NSClassFromString(@"BBSettingsGateway") alloc] init];
@@ -83,7 +83,7 @@ static id notifications(NSString *action, NSString *bundle, NSString *value) {
   return nil;
 }
 
-// @ref LLP 0003#app-permissions — tccd owns TCC writes; no-kill is required
+// @ref LLP 0003.000#tcc-privacy-permissions — tccd owns writes; no-kill is required
 static void tcc(NSString *action, NSString *service, NSString *bundle, NSString *value) {
   void *handle = framework("/System/Library/PrivateFrameworks/TCC.framework/TCC");
   const CFStringRef *noKill = symbol(handle, "kTCCSetNoKill");

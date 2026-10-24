@@ -48,6 +48,12 @@ export function PermissionsSection({
         <SectionNote>This app declares no runtime permissions.</SectionNote>
       ) : (
         <>
+          {client.platform === "ios" && (
+            <SectionNote>
+              Shows service authorization. Some apps cache status until relaunch. Notifications may
+              need the app’s normal request to enable alerts.
+            </SectionNote>
+          )}
           {permissions.map((permission) => {
             const pending = permissionsPending.has(permission.id);
             return (

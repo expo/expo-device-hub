@@ -105,6 +105,7 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 | serve-sim video pipeline and recording                     | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md)          |
 | serve-sim WebRTC signaling and control                     | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md)     |
 | serve-sim HTTP routes, auth, CORS, WebSockets              | [LLP 0003](0003-serve-sim-http-api.spec.md)                     |
+| Simulator permission services, readback and limits         | [LLP 0003.000](0003.000-simulator-permissions.explainer.md)     |
 | serve-sim hinge controls and display selection             | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md)          |
 | serve-sim network capture and redaction                    | [LLP 0005](0005-serve-sim-network-capture.explainer.md)         |
 | How Simulator.app forwards scroll (reverse-engineered)     | [LLP 0006](0006-serve-sim-scroll-injection.research.md)         |

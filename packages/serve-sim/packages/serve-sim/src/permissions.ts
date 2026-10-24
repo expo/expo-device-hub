@@ -179,7 +179,7 @@ export function tccDbPath(udid: string): string {
   return join(simLibraryDir(udid), "TCC/TCC.db");
 }
 
-// @ref LLP 0003#app-permissions — service writes preserve running app processes
+// @ref LLP 0003.000#helper-fixture-and-packaging — spawn the packaged service helper inside the selected Simulator
 function nativePermission<T = unknown>(udid: string, ...args: string[]): T {
   const candidates = [
     join(dirname(process.execPath), "simperm/serve-sim-permissions"),
@@ -210,7 +210,7 @@ function nativePermission<T = unknown>(udid: string, ...args: string[]): T {
   }
 }
 
-// @ref LLP 0003#app-permissions — wait through tccd writer locks within the read budget
+// @ref LLP 0003.000#tcc-privacy-permissions — wait through tccd writer locks within the read budget
 export function readPermissionDatabase(dbPath: string, sql: string): string {
   // Leave startup/exit time inside the five-second subprocess deadline.
   return execFileSync("sqlite3", ["-readonly", "-cmd", ".timeout 4500", dbPath, sql], {

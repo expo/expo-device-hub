@@ -161,15 +161,29 @@ None at this time.
 
 ## App permissions
 
-The standalone preview reads `permissions.list` when opened, after a write,
-and every five seconds while active. A page reload reads the services again.
-It never sets an optimistic granted/denied state from a write ACK. Generations
-reject old-target and pre-write reads; read coalescing and pending writes are
-scoped to the target. A stalled read for another app does not block the current
-app's refresh. Mutation errors survive background reads until another explicit
-action or target change. [observed: serve-sim
-`client/components/app-permissions-tool.tsx`; regression coverage in
-`__tests__/fixtures/permissions-ui.child.ts`]
+Both iOS UIs read `permissions.list` when opened or mounted, after a write,
+and every five seconds while active. The Hub also reads when its shared control
+channel reconnects; the standalone preview retries through its existing control
+socket. Writes never set an optimistic granted/denied state. A page reload or
+helper replacement reads the services again. Request generations reject reads
+for an old target and reads that overlap newer writes. Pending writes stay owned by
+the device/app across target changes and control-channel reconnection until their
+readback finishes. Backend replacement invalidates cached rows and reads while
+retaining pending writes. iOS ownership includes the middleware URL as well as
+the Simulator and app, so equal UDIDs on different hosts remain independent. [observed:
+`ios-permissions.ts`, `useIosDevice.ts`, `useAppPermissions.ts`; serve-sim
+`client/components/app-permissions-tool.tsx`]
 
-The native services and notification initialization limit are described in
-[LLP 0003](0003-serve-sim-http-api.spec.md#app-permissions).
+The backend services, persistence boundaries and notification startup limitation
+are described in [LLP 0003.000](0003.000-simulator-permissions.explainer.md). The Hub exposes iOS
+permission controls only when an active client has the typed host-action channel.
+An older serve-sim without normalized permission readback reports an update error.
+[observed: `useIosDevice.ts`, `ios-permissions.ts`]
+
+A poll keeps the pending-write IDs it saw when it began, even after those writes
+finish, so a stale snapshot cannot revert their confirmed state. Only one Hub
+permission poll runs at a time. Read errors clear after a successful read; write
+errors survive background refreshes until a new mutation or target change.
+[observed: `useAppPermissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
+coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
+`__tests__/fixtures/permissions-ui.child.ts`]

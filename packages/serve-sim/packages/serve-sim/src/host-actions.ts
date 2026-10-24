@@ -1033,7 +1033,7 @@ async function runHostActionUnqueuedAsync(
   return { stdout, stderr, exitCode };
 }
 
-// @ref LLP 0003#app-permissions — reconnect reads wait for native writes that outlive their socket
+// @ref LLP 0003.000#ordered-requests-and-authoritative-browser-state — reconnect reads wait for native writes that outlive their socket
 const permissionRequests = new Map<string, Promise<unknown>>();
 let permissionAdmission = Promise.resolve();
 export async function runHostActionAsync(
