@@ -62,7 +62,13 @@ assert.equal(result, 372, "fit a landscape stream without changing its aspect ra
 await act(async () => {
   renderer.update(<Probe enabled={false} />);
 });
-assert.equal(result, null, "release mobile sizing on desktop or presentation mode");
+assert.equal(result, 372, "hold the normal width while presentation unmounts its controls");
+page.clientHeight = 700;
+page.clientWidth = 390;
+await act(async () => {
+  renderer.update(<Probe />);
+});
+assert.equal(result, 283, "measure again when normal controls return");
 assert.ok(disconnects >= 2, "disconnect observers on mode changes");
 await act(async () => {
   renderer.unmount();

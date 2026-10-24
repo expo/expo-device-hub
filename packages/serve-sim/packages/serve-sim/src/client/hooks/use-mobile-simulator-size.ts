@@ -12,10 +12,9 @@ export function useMobileSimulatorSize(
   useLayoutEffect(() => {
     const page = pageRef.current;
     const actions = actionsRef.current;
-    if (!enabled || !page || !actions) {
-      setWidth(null);
-      return;
-    }
+    // Presentation removes the action row. Keep the last normal width so exit
+    // can animate back to it without a temporary desktop-size layout.
+    if (!enabled || !page || !actions) return;
     const measure = () => {
       const style = getComputedStyle(page);
       const availableWidth =

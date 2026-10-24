@@ -1720,8 +1720,20 @@ function AppWithConfig({
     mobileLayout && !presentation,
     containerAspectRatioValue,
   );
-  const layoutWidth =
-    mobileLayout && !presentation ? (mobileWidth ?? simulatorResize.width) : simulatorResize.width;
+  const mobileFlipLayout = mobileLayout && !useDuoModel;
+  const mobileFrameWidth = presentation
+    ? getPresentationFrameWidth(
+        viewportWidth,
+        containerHeight,
+        containerAspectRatioValue,
+        presentationInset,
+      )
+    : (mobileWidth ?? simulatorResize.width);
+  const layoutWidth = mobileFlipLayout
+    ? mobileFrameWidth
+    : mobileLayout && !presentation
+      ? (mobileWidth ?? simulatorResize.width)
+      : simulatorResize.width;
   const layoutHeight =
     containerAspectRatioValue > 0 ? roundToDevicePixel(layoutWidth / containerAspectRatioValue) : 0;
   const frameWidth = presentation
@@ -1736,12 +1748,14 @@ function AppWithConfig({
   const resizing = simulatorResize.isResizing || simulatorResize.isInertia;
   useFlipLayout(
     flipRef,
-    !mobileLayout && !resizing && !presentation && !useDuoModel,
+    !resizing && !useDuoModel && (mobileLayout || !presentation),
     layoutWidth,
     layoutHeight,
-    stableViewportHeight,
+    mobileLayout ? containerHeight : stableViewportHeight,
     phoneKeyboardRaised,
-    scaling,
+    mobileFlipLayout ? presentation : scaling,
+    mobileFlipLayout,
+    mobileFlipLayout ? viewportWidth : 0,
   );
 
   const previewControls = (
@@ -1878,7 +1892,10 @@ function AppWithConfig({
             </div>
           )}
           {presentation && !embedLocked && (
-            <PresentationControls onExit={onExitPresentation}>
+            <PresentationControls
+              onExit={onExitPresentation}
+              keyboardRaised={mobileLayout && phoneKeyboardRaised}
+            >
               {coarsePointer && (
                 <KeyboardToggleButton open={keyboardOpen} onClick={toggleKeyboard} />
               )}
@@ -1902,14 +1919,18 @@ function AppWithConfig({
               className="relative w-full h-full"
               style={{
                 aspectRatio: containerAspectRatio,
-                transform: scaling ? `scale(${layoutScale})` : undefined,
+                transform: scaling && !mobileFlipLayout ? `scale(${layoutScale})` : undefined,
                 transformOrigin: "center center",
                 transition: resizing
                   ? undefined
-                  : scaling
+                  : scaling && !mobileFlipLayout
                     ? SIMULATOR_RESIZE_PRESENTATION_TRANSITION
                     : undefined,
-                willChange: resizing ? "width" : scaling ? "transform" : undefined,
+                willChange: resizing
+                  ? "width"
+                  : scaling && !mobileFlipLayout
+                    ? "transform"
+                    : undefined,
               }}
               {...mediaDrop.dropZoneProps}
             >
@@ -2031,11 +2052,12 @@ function AppWithConfig({
                     orientation={clipOrientation}
                     interactive
                     containerSize={
-                      // Measured, not computed: pixel rects can't self-correct the
-                      // way the percentage layout did.
-                      deviceRenderedWidth > 0 && deviceRenderedHeight > 0
-                        ? { width: deviceRenderedWidth, height: deviceRenderedHeight }
-                        : undefined
+                      // @ref LLP 0000#mobile-serve-sim-layout — fit frame pixels in the same render as their container.
+                      mobileFlipLayout
+                        ? { width: layoutWidth, height: layoutHeight }
+                        : deviceRenderedWidth > 0 && deviceRenderedHeight > 0
+                          ? { width: deviceRenderedWidth, height: deviceRenderedHeight }
+                          : undefined
                     }
                     onButton={handleChromeButton}
                     onCrownWheel={(deltaY, deltaMode) => {
