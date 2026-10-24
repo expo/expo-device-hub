@@ -1995,11 +1995,46 @@ async function serve(
   // Minted here, not in the middleware, because the operator has to be told what it is.
   const requirePreviewToken = !!options.requireToken;
   const previewToken = randomBytes(32).toString("base64url");
+  let boundPort = servePort;
   let middleware: ReturnType<typeof simMiddleware>;
   try {
     middleware = await timeStartup("preview-middleware", () =>
       simMiddleware({
         basePath: "/",
+        configureResources: async (configuration) => {
+          if (sessionStopping) throw new Error("Session is stopping");
+          // An active capture keeps its old upstream; stop it before applying the job proxy.
+          await Promise.all(
+            targetDevices.map((udid) => capture.captureRuntime.disableForDevice(udid)),
+          );
+          capture.captureRuntime.setUpstream(parseCaptureProxy(configuration.networkCaptureProxy));
+          captureStarter = undefined;
+          await startNetworkCapture(
+            configuration.networkCapture ? targetDevices : [],
+            configuration.networkCaptureFields,
+            quiet,
+          );
+          if (sessionStopping) throw new Error("Session is stopping");
+          if (
+            configuration.networkCapture &&
+            targetDevices.some(
+              (udid) => capture.captureRuntime.metaFor(udid).attachment !== "capturing",
+            )
+          ) {
+            throw new Error("Network capture could not be configured");
+          }
+          if (configuration.screenshotsDirectory) {
+            process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = configuration.screenshotsDirectory;
+          } else {
+            delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+          }
+          for (const udid of targetDevices) {
+            writeState({
+              ...inProcessServeSimState(udid, boundPort, "/", host, configuration.stream),
+              token: previewToken,
+            });
+          }
+        },
         device: targetDevice,
         streamSettings: options.stream,
         proxyHelpers: true,
@@ -2022,7 +2057,6 @@ async function serve(
 
   // Try requested port; if busy and the user didn't pin it, scan forward.
   const maxScan = portExplicit ? 1 : 50;
-  let boundPort = servePort;
   let lastErr: unknown;
   let bound = false;
   for (let i = 0; i < maxScan; i++) {

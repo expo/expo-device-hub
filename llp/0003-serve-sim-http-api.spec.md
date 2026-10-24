@@ -111,6 +111,18 @@ access. The app and the grant stay after Copy, and the app shows on the Home
 screen. `--disable clipboard`, or `clipboard: false` for `simMiddleware`, does
 not prevent this.
 
+## Prepared process handoff
+
+The in-process middleware `configureSession` method applies a typed configuration
+once; it is not an HTTP or WebSocket route. Its host callback configures capture,
+screenshot output and native state before the middleware updates the active
+encoder, future stream defaults, ICE servers, CORS/frame origins and sharing
+[observed: `src/middleware.ts`, `src/index.ts`, `src/session-configuration.ts`].
+
+Configuration is reserved before awaiting native work. A second call, or a retry
+after failed native configuration, is rejected. The shared CORS array also updates
+the execution WebSocket origin policy [observed: `src/middleware.ts`].
+
 ## Preview sharing
 
 `--disable-share` (or the middleware's `disableShare: true`) hides only the

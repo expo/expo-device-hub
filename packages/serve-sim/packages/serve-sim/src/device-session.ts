@@ -1191,9 +1191,7 @@ export class DeviceSession {
     }
   }
 
-  private updateStreamSettings(
-    patch: Partial<StreamEncoderSettings>,
-  ): Promise<StreamEncoderSettings> {
+  updateStreamSettings(patch: Partial<StreamEncoderSettings>): Promise<StreamEncoderSettings> {
     const update = this.streamSettingsUpdate.then(async () => {
       const next = normalizeStreamEncoderSettings(
         { ...this.encoderSettings, ...patch },
