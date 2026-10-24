@@ -38,6 +38,7 @@ import {
 } from "./launch-state-lock";
 import { isDeviceNotBooted } from "./device";
 import { simctl, simctlSync } from "./simctl";
+import { timeStartup } from "./startup-timing";
 import { additionalDylibs } from "./additional-dylibs";
 
 export {
@@ -486,7 +487,8 @@ export async function launchApp(
         writeLaunchState(udid, state);
       }
       // @ref LLP 0003#launching-an-installed-app — set up before the app stops; a failed launch restores the previous state
-      if (restart) await terminateForRelaunch(udid, bundleId);
+      if (restart)
+        await timeStartup("app.launch.terminate", () => terminateForRelaunch(udid, bundleId), udid);
       await simctl(["launch", udid, bundleId, ...launchArgs]);
     } catch (error) {
       try {

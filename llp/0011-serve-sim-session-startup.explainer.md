@@ -231,15 +231,16 @@ publication, app operations, preview imports/construction, HTTP binding, state
 publication, and native device options/capture/screen configuration. A started
 phase without a completion line identifies work still pending. Host-action
 `app.install` and `app.launch` timings also cover apps supplied after the listener
-starts. App timings include the validated target UDID and a device name when
-available from existing device snapshots; logging does not add device queries.
+starts. A nested `app.launch.terminate` phase times the stop before a restart.
+App timings include the validated target UDID and a device name when available
+from existing device snapshots; logging does not add device queries.
 Nonzero install/launch results, including timeouts, log failure without changing
 the result. A failed stale-loader insert read logs the original error (including
 its process-error cause), reports a failed phase, and still lets startup continue.
 For best-effort loader arming, completion means the function returned,
 not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
 [observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
-`src/host-actions.ts`].
+`src/host-actions.ts`, `src/launch-manager.ts`].
 
 `/readyz` keeps its response contract and logs readiness transitions on stderr.
 An unavailable response identifies no usable booted session (`session-unavailable`,

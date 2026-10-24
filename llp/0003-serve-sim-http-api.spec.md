@@ -411,12 +411,14 @@ concurrent input [observed: `src/__tests__/raw-hid-socket.test.ts`].
 ### Launching an installed app
 
 An authenticated `/exec-ws` client can launch an installed app with
-`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?}}`.
+`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?, restart?}}`.
 Use a Simulator UDID. The action restarts the app with the supplied arguments,
 preserves the session's active capabilities, then pre-approves and opens the
-optional deep link. Pre-approval is best effort. Launch arguments are limited
-to 256 arguments of 8,192 characters each and 128 KiB total UTF-8 bytes,
-including terminators. The action replies with
+optional deep link. `restart: false` skips the stop, for a caller that knows the
+app is not running, such as right after installation. An app that is already
+running then keeps its process and its previous arguments. Pre-approval is best
+effort. Launch arguments are limited to 256 arguments of 8,192 characters each
+and 128 KiB total UTF-8 bytes, including terminators. The action replies with
 `{id, stdout, stderr, exitCode}`; invalid parameters and unsupported actions
 reply with `{id, error}`. Installation stays a separate operation. Setup finishes
 before the app stops. If the stop or the launch fails, the action restores the

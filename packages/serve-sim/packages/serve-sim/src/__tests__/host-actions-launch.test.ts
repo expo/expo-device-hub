@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
@@ -63,6 +63,45 @@ require('fs').appendFileSync(process.env.SERVE_SIM_LAUNCH_LOG, JSON.stringify(pr
       }
     },
   );
+
+  test.each([
+    { restart: undefined, stops: true },
+    { restart: true, stops: true },
+    { restart: false, stops: false },
+  ])("restart option %p", async ({ restart, stops }) => {
+    const state = useTempStateDir();
+    const log = join(state.dir, "commands.jsonl");
+    writeFileSync(log, "");
+    const shims = installShims({
+      xcrun: `#!/usr/bin/env node
+require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+`,
+    });
+    const stderr = spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const result = await runHostActionAsync(
+        {
+          action: "app.launch",
+          params: { udid: UDID, bundleId: "com.example.app", restart },
+        },
+        "true",
+      );
+      expect(result.exitCode).toBe(0);
+      const commands = readFileSync(log, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line)[1]);
+      expect(commands.includes("terminate")).toBe(stops);
+      expect(commands.at(-1)).toBe("launch");
+      expect(
+        stderr.mock.calls.some(([line]) => String(line).includes('"phase":"app.launch.terminate"')),
+      ).toBe(stops);
+    } finally {
+      stderr.mockRestore();
+      shims.restore();
+      state.restore();
+    }
+  });
 
   test("rejects an oversized UTF-8 argument vector before changing launch state", async () => {
     const state = useTempStateDir();

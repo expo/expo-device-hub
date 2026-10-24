@@ -395,8 +395,13 @@ const ACTION_SCHEMAS = {
         .url()
         .refine((value) => !value.includes("\0"), "must not contain NUL")
         .optional(),
+      // false skips the stop, e.g. right after install; a running app then keeps its arguments.
+      restart: z.boolean().default(true),
     })
-    .meta({ description: "Restart an app with launch arguments and an optional URL to open." }),
+    .meta({
+      description:
+        "Launch an app with launch arguments and an optional URL to open. Restarts it first unless restart is false.",
+    }),
   "app.iconPath": z
     .object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) })
     .meta({ hidden: true }),
@@ -809,12 +814,12 @@ async function runProcedureAsync(
       }
     }
     case "app.launch": {
-      const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
+      const { udid, bundleId, launchArgs, openUrl, restart } = parseParams(action, raw);
       return timeStartup(
         action,
         async () => {
           try {
-            await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
+            await launchApp(udid, { bundleId, launchArgs, restart, openUrl });
             return ok();
           } catch (error) {
             return {
