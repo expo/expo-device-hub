@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery)
+**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery); 2026-10-23 (HTTP AVCC decoder configuration)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -55,6 +55,28 @@ recording-plus-WebRTC path uses the accelerated transfer. Neither a
 `CVPixelBuffer` wrapper nor a GPU transfer guarantees that the simulator is
 never delayed by a surface fence. Direct copy and viewer-scale latencies still
 need separate measurements.
+
+### HTTP AVCC decoder configuration
+
+`H264Encoder` requests low-latency rate control and falls back to default rate
+control after a drop, error, or timeout. The fallback protects motion
+throughput: in #437's benchmark, staying on low-latency rate control decoded
+about a third of the frames in a Metal-heavy scene. [confirmed: gwdp's
+benchmark in #437, 2026-10-23]
+
+Both modes disable frame reordering, but VideoToolbox's default-mode SPS omits
+the optional VUI. Chromium then infers a reorder window from the DPB size and
+holds about 14 frames before output: about 3 s on a still screen and about
+250 ms in motion. [observed: Chromium `media/gpu/h264_decoder.cc`,
+`UpdateMaxNumReorderFrames`; confirmed: gwdp's benchmark in #437, 2026-10-23] `avcCBlob` therefore adds a
+VUI with `max_num_reorder_frames = 0` when the SPS has none
+(`Sources/StreamingPolicy/H264SPSReorderLimit.swift`), following WebRTC's
+`SpsVuiRewriter`. It does so only when the session accepted
+`AllowFrameReordering = false`. An SPS that already has a VUI, an unsupported
+layout, or a malformed SPS passes through unchanged. VideoToolbox carries the
+SPS only in the format description, not in-band, so the description and the
+stream agree. The rewrite does not apply to the parameter sets that shared
+WebRTC sends.
 
 ## Capture recovery
 
