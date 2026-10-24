@@ -2,6 +2,7 @@
 #import "SimCamFakes.h"
 #import "SimCamFrameSource.h"
 #import "SimCamLog.h"
+#import "SimCamMetadata.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -306,6 +307,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 - (void)simcam_addOutput:(AVCaptureOutput *)output {
     SimCamSetPosition(output, SimCamPositionOf(self));
     SimCamMarkOutputAttachedToFakeSession(self, output);
+    SimCamMetadataAttach((AVCaptureMetadataOutput *)output, self);
     SimCamMarkCameraInUse();
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
     if (![tracked containsObject:output]) [tracked addObject:output];
@@ -318,6 +320,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 - (void)simcam_addOutputWithNoConnections:(AVCaptureOutput *)output {
     SimCamSetPosition(output, SimCamPositionOf(self));
     SimCamMarkOutputAttachedToFakeSession(self, output);
+    SimCamMetadataAttach((AVCaptureMetadataOutput *)output, self);
     SimCamMarkCameraInUse();
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
     if (![tracked containsObject:output]) [tracked addObject:output];
@@ -328,6 +331,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 }
 - (void)simcam_removeOutput:(AVCaptureOutput *)output {
     SimCamUnmarkOutputAttachedToFakeSession(output);
+    SimCamMetadataDetach((AVCaptureMetadataOutput *)output);
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
     [tracked removeObject:output];
     simcam_log(@"removeOutput: %@ — untracked (count=%lu)",
@@ -1067,8 +1071,13 @@ void SimCamInstallSwizzles(void) {
         @selector(imageWithActions:),
         @selector(simcam_imageWithActions:));
 
+    SimCamInstallMetadataSwizzles();
     InstallCoreMotionSwizzles();
     SimCamInstallPickerSwizzles();
+}
+
+BOOL SimCamSwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
+    return SwizzleInstanceMethod(cls, orig, swiz);
 }
 
 #pragma mark - UIImagePickerController native-UI bridge

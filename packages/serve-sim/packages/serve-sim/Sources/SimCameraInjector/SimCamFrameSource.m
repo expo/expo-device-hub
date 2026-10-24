@@ -1,6 +1,7 @@
 #import "SimCamFrameSource.h"
 #import "SimCamFakes.h"
 #import "SimCamLog.h"
+#import "SimCamMetadata.h"
 #include "include/SimCamShared.h"
 
 #import <CoreImage/CoreImage.h>
@@ -416,6 +417,7 @@ static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
         if (!sb) return;
         CVImageBufferRef pb = CMSampleBufferGetImageBuffer(sb);
         if (gShmHeader || gLastFramePB) [self pushFrameToLayers:pb];
+        SimCamMetadataSampleFrame(pb);
         NSArray *snapshot;
         [self->_lock lock]; snapshot = [self->_entries copy]; [self->_lock unlock];
         BOOL anyDead = NO;

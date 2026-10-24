@@ -82,6 +82,10 @@ npx @expo/serve-sim camera com.acme.MyApp --no-mirror      # shortcut for --mirr
 
 Mirroring applies to the preview layer only. Data-output buffers handed to the app are **never** auto-mirrored — apps that process frames see them in their natural orientation.
 
+## Barcode and QR scanning
+
+Apps that scan with `AVCaptureMetadataOutput` (expo-camera's `onBarcodeScanned`, for example) receive the codes in the injected frames, a few times a second. Inject a picture or video of the code with `--mirror off`, so the code is not mirrored.
+
 ## Hot-swapping a running source
 
 Once a helper is running, you can change source or mirror **without relaunching the app**:
