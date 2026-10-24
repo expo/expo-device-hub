@@ -288,6 +288,89 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
 
 @end
 
+// The camera E2E opens and closes a barcode scanner the way a camera screen
+// does: serve-sim-fixture://camera/open, then serve-sim-fixture://camera/close.
+// "camera-alive" is recorded after the run loop has drained the releases that
+// AVFoundation defers to the autorelease pool, so it proves the app survived
+// the whole teardown, and it reports whether the output was really released.
+@interface FixtureCamera : NSObject <AVCaptureMetadataOutputObjectsDelegate>
+@property(nonatomic, strong) AVCaptureSession *session;
+@property(nonatomic, strong) AVCaptureVideoPreviewLayer *preview;
+@property(nonatomic, weak) AVCaptureMetadataOutput *output;
+@end
+
+@implementation FixtureCamera
+
++ (instancetype)shared {
+  static FixtureCamera *camera;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    camera = [[FixtureCamera alloc] init];
+  });
+  return camera;
+}
+
+- (void)openInView:(UIView *)view {
+  AVCaptureDevice *device =
+      [AVCaptureDevice defaultDeviceWithDeviceType:AVCaptureDeviceTypeBuiltInWideAngleCamera
+                                         mediaType:AVMediaTypeVideo
+                                          position:AVCaptureDevicePositionBack];
+  AVCaptureDeviceInput *input =
+      device ? [AVCaptureDeviceInput deviceInputWithDevice:device error:NULL] : nil;
+  if (input == nil) {
+    Record(@"camera-open", @"no-camera");
+    return;
+  }
+  AVCaptureSession *session = [[AVCaptureSession alloc] init];
+  AVCaptureMetadataOutput *output = [[AVCaptureMetadataOutput alloc] init];
+  [session beginConfiguration];
+  [session addInput:input];
+  [session addOutput:output];
+  [output setMetadataObjectsDelegate:self queue:dispatch_get_main_queue()];
+  [session commitConfiguration];
+  // Like expo-camera's scanner: enable the output's connections, then ask only
+  // for code types the output says it can find.
+  for (AVCaptureConnection *connection in output.connections) connection.enabled = YES;
+  NSArray<AVMetadataObjectType> *available = output.availableMetadataObjectTypes;
+  output.metadataObjectTypes = [available containsObject:AVMetadataObjectTypeQRCode]
+      ? @[ AVMetadataObjectTypeQRCode ]
+      : @[];
+  self.preview = [AVCaptureVideoPreviewLayer layerWithSession:session];
+  self.preview.frame = view.bounds;
+  [view.layer addSublayer:self.preview];
+  [session startRunning];
+  self.session = session;
+  self.output = output;
+  Record(@"camera-open", [NSString stringWithFormat:@"%@ connections=%lu types=%lu",
+                                                   device.localizedName,
+                                                   (unsigned long)output.connections.count,
+                                                   (unsigned long)available.count]);
+}
+
+- (void)close {
+  [self.session stopRunning];
+  [self.preview removeFromSuperlayer];
+  self.preview = nil;
+  self.session = nil;
+  Record(@"camera-closed", @"");
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+    Record(@"camera-alive", self.output == nil ? @"output-released" : @"output-alive");
+  });
+}
+
+@end
+
+static void HandleCameraURLContexts(NSSet<UIOpenURLContext *> *contexts, UIWindow *window) {
+  for (UIOpenURLContext *context in contexts) {
+    if (![context.URL.host isEqualToString:@"camera"]) continue;
+    if ([context.URL.path isEqualToString:@"/open"]) {
+      [FixtureCamera.shared openInView:window.rootViewController.view];
+    } else if ([context.URL.path isEqualToString:@"/close"]) {
+      [FixtureCamera.shared close];
+    }
+  }
+}
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -319,6 +402,7 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {
   RecordURLContexts(URLContexts);
+  HandleCameraURLContexts(URLContexts, self.window);
 }
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
