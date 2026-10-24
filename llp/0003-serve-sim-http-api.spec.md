@@ -138,6 +138,20 @@ middleware uses same-origin helper routes in this mode. The restriction covers
 this server's interfaces, not independently launched servers or host tools
 [observed: `src/middleware.ts`].
 
+## Preview layout
+
+The preview centers the simulator within the area between docked panels, and
+uses that same width for its resize limits. Panel constraints do not overwrite
+the chosen frame width or its persisted scale; closing the panel restores that
+width unless the user resized it. Dragging uses a separate transient width; a
+gesture ending at its starting width preserves the previous preference. Below the desktop breakpoint,
+panels overlay the preview and do not change its horizontal padding. A panel
+also overlays when docking it would leave less than the minimum simulator width
+plus its page gutters. Presentation mode uses the full viewport. Soft-keyboard
+height handling remains owned by the existing viewport logic
+[observed: `src/client/utils/simulator-viewport.ts`,
+`src/client/hooks/use-simulator-resize.ts`, `src/client/client.tsx`].
+
 ## Preview sharing
 
 `--disable-share` (or the middleware's `disableShare: true`) hides only the

@@ -78,6 +78,7 @@ import { useWebRtcStream } from "./hooks/use-webrtc-stream";
 import { useResizableHeight, useResizableWidth } from "./hooks/use-resizable-width";
 import { useScreenshotToast } from "./hooks/use-screenshot-toast";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
+import { getSimulatorViewport } from "./utils/simulator-viewport";
 import { useFlipLayout } from "./hooks/use-flip-layout";
 import { useUploadToasts } from "./hooks/use-upload-toasts";
 import { useWebKitDevtools } from "./hooks/use-webkit-devtools";
@@ -1671,38 +1672,24 @@ function AppWithConfig({
     onHostPathDrop: screenshot.dismiss,
   });
 
+  const rightPanelWidthPx = devtoolsOpen ? devtoolsPanelWidth : panelOpen ? toolsPanelWidth : 0;
+  const contentViewport = getSimulatorViewport(
+    viewportWidth,
+    !presentation && gridOpen ? gridPanelWidth : 0,
+    presentation ? 0 : rightPanelWidthPx,
+  );
   const simulatorResize = useSimulatorResize({
     defaultWidth: containerDefaultWidth,
-    viewportWidth,
+    viewportWidth: contentViewport.width,
     viewportHeight: stableViewportHeight,
     aspectRatio: containerAspectRatioValue,
     reservedForChrome: SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME,
     onStart: () => setSimFocused(false),
   });
 
-  // Only shift the simulator when a panel would otherwise collide with it.
-  // Tools/DevTools dock on the right; the device sidebar docks on the left, so
-  // each pushes the centered simulator the opposite way.
   const PANEL_EDGE_OFFSET = 12;
-  const PANEL_GAP = 24;
   const RAIL_PANEL_GAP = 8;
   const SM_BREAKPOINT = 640;
-  const deviceWidth =
-    deviceRenderedWidth > 0
-      ? Math.min(deviceRenderedWidth, simulatorResize.width)
-      : simulatorResize.width;
-  // Shift needed to clear a docked panel of `panelWidthPx` on the given side
-  // without ever pushing the device under the opposite edge.
-  const shiftToClear = (panelWidthPx: number): number => {
-    if (panelWidthPx <= 0) return 0;
-    const panelInnerEdge = viewportWidth - PANEL_EDGE_OFFSET - panelWidthPx;
-    const deviceEdgeAtCenter = viewportWidth / 2 + deviceWidth / 2;
-    const overlap = deviceEdgeAtCenter - (panelInnerEdge - PANEL_GAP);
-    if (overlap <= 0) return 0;
-    const shiftNeeded = 2 * overlap;
-    return shiftNeeded <= panelWidthPx + PANEL_GAP ? shiftNeeded : 0;
-  };
-  const rightPanelWidthPx = devtoolsOpen ? devtoolsPanelWidth : panelOpen ? toolsPanelWidth : 0;
   const [exitScaling, setExitScaling] = useState(false);
   useEffect(() => {
     if (presentation) {
@@ -1714,8 +1701,6 @@ function AppWithConfig({
     return () => clearTimeout(id);
   }, [presentation, exitScaling]);
   const scaling = presentation || exitScaling;
-  const shiftForRightPanel = presentation ? 0 : shiftToClear(rightPanelWidthPx);
-  const shiftForLeftPanel = presentation ? 0 : shiftToClear(gridOpen ? gridPanelWidth : 0);
   const presentationInset = SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION;
   const layoutWidth = simulatorResize.width;
   const layoutHeight =
@@ -1752,8 +1737,8 @@ function AppWithConfig({
           height: containerHeight > 0 ? containerHeight : undefined,
           paddingTop: presentation ? presentationInset : undefined,
           paddingBottom: presentation ? presentationInset : logsOpen ? logsDrawerHeight : undefined,
-          paddingLeft: presentation ? presentationInset : 24 + shiftForLeftPanel,
-          paddingRight: presentation ? presentationInset : 24 + shiftForRightPanel,
+          paddingLeft: presentation ? presentationInset : 24 + contentViewport.left,
+          paddingRight: presentation ? presentationInset : 24 + contentViewport.right,
           transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
         }}
       >
