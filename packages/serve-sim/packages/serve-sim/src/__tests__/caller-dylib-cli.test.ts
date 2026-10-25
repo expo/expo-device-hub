@@ -159,9 +159,11 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
               .split("\n")
               .map((line) => JSON.parse(line));
             expect(trace.filter((a) => a[1] === "bootstatus")).toHaveLength(1);
+            // After a failed publish: the failed write, its rollback, and the separate loader arming.
+            // The defaults publish that follows finds the insert already armed and leaves it.
             expect(
               trace.filter((a) => a[4] === "setenv" && a[5] === "DYLD_INSERT_LIBRARIES"),
-            ).toHaveLength(failFirst ? 4 : 1);
+            ).toHaveLength(failFirst ? 3 : 1);
             expect(trace.some((a) => ["install", "launch", "openurl"].includes(a[1]!))).toBe(false);
             child.kill("SIGTERM");
             while (!(await reader.read()).done) {}

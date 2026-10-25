@@ -231,7 +231,8 @@ publication, app operations, preview imports/construction, HTTP binding, state
 publication, and native device options/capture/screen configuration. A started
 phase without a completion line identifies work still pending. Host-action
 `app.install` and `app.launch` timings also cover apps supplied after the listener
-starts. A nested `app.launch.terminate` phase times the stop before a restart.
+starts. Nested `app.launch.capabilities` and `app.launch.terminate` phases time
+capability publication and the stop before a restart.
 App timings include the validated target UDID and a device name when available
 from existing device snapshots; logging does not add device queries.
 Nonzero install/launch results, including timeouts, log failure without changing

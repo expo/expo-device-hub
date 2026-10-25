@@ -217,16 +217,22 @@ async function armInsert(
   dylib: string,
   capabilities: Record<string, Capability> = readLaunchState(udid)?.capabilities ?? {},
   previousStartup = managedStartupDylibs(udid),
+  configPath?: string,
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
-  const retained = withoutOurs(await readInsert(udid), previousStartup);
+  // Read the insert fresh: another tool may have changed it since any earlier snapshot.
+  const insert = await readInsert(udid);
+  const retained = withoutOurs(insert, previousStartup);
   const next = [...new Set([...retained, dylib, ...desired, ...additionalDylibs()])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
-  await simctl(
-    ["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)],
-    15_000,
-  );
-  await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
+  // Each launchctl call costs a simctl spawn, so skip values that are already set.
+  if (configPath !== capabilityConfigPath(udid)) {
+    await simctl(
+      ["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)],
+      15_000,
+    );
+  }
+  if (insert !== next) await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
   writeManagedStartupDylibs(udid, desired);
   armedHere.add(udid);
 }
@@ -287,11 +293,15 @@ function validateStartupDylibs(paths: string[]): void {
   }
 }
 
-async function publishLaunchState(udid: string, state: LaunchState): Promise<void> {
+async function publishLaunchState(
+  udid: string,
+  state: LaunchState,
+  snapshot?: CapabilityLaunchSnapshot,
+): Promise<void> {
   const config = renderCapabilityConfig(state);
   const desiredStartupDylibs = startupDylibs(state.capabilities);
   validateStartupDylibs(desiredStartupDylibs);
-  const previous = await snapshotCapabilityLaunch(udid);
+  const previous = snapshot ?? (await snapshotCapabilityLaunch(udid));
   // Running apps' loaders watch the config. Removals go out before arming, so an app launched
   // next cannot load a withdrawn capability. Additions wait until launchd accepts the insert, so
   // a failed update never lets a running app load something rollback cannot take back.
@@ -305,7 +315,13 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
 
   try {
     commitCapabilityConfig(udid, withdrawnOnly);
-    await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs);
+    await armInsert(
+      udid,
+      capabilityLoaderPath(),
+      state.capabilities,
+      previous.startupDylibs,
+      previous.configPath,
+    );
     if (config !== withdrawnOnly) commitCapabilityConfig(udid, config);
     writeLaunchState(udid, state);
   } catch (error) {
@@ -481,7 +497,12 @@ export async function launchApp(
     const previousEnvironment = hasCapabilities ? await snapshotCapabilityLaunch(udid) : undefined;
     const wasArmed = armedHere.has(udid);
     try {
-      if (hasCapabilities) await publishLaunchState(udid, state);
+      if (hasCapabilities)
+        await timeStartup(
+          "app.launch.capabilities",
+          () => publishLaunchState(udid, state, previousEnvironment),
+          udid,
+        );
       else {
         commitCapabilityConfig(udid, renderCapabilityConfig(state));
         writeLaunchState(udid, state);
