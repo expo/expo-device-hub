@@ -102,7 +102,7 @@ import { adoptSession, bootSession, sessionEnvironment, startSessionOwner } from
 import { parseHingeAngle } from "./hinge-angle";
 import { CA_DEBUG_ALIASES, CA_DEBUG_FLAGS } from "./ca-debug";
 import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
-import { finishDeviceRecordingsForShutdown } from "./device-session";
+import { finishDeviceRecordingsForShutdown, getDeviceSession } from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
 
@@ -2149,6 +2149,13 @@ async function serve(
       writeState(tokenNeeded ? { ...state, token: previewToken } : state);
     }
   });
+  // @ref LLP 0011#startup-order — start capture now rather than on the first /readyz, which
+  // still waits for this same start before it reports ready, and reports a session that fails.
+  for (const udid of targetDevices) {
+    try {
+      getDeviceSession(udid, options.stream);
+    } catch {}
+  }
   const clearAll = () => {
     owner?.close();
     for (const udid of targetDevices) {

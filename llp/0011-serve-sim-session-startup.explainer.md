@@ -125,6 +125,9 @@ foreground streaming [observed: `src/index.ts` CLI action]:
    identifier, apply requested/default capabilities instead.
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
+   Once it publishes device state, it starts each device's capture session in the
+   background, without waiting for the first `/readyz`. `/readyz` awaits that same
+   start before it answers ready, and a failed start is retried by the next poll.
 
 Plain foreground preview startup without capture, app startup, or capability
 overrides, with the loader and clipboard reader built, prepares defaults while arming
