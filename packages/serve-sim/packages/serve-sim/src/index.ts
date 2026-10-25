@@ -1764,7 +1764,7 @@ Examples:
   try {
     callerDylibs = validatedAdditionalDylibs();
   } catch (error) {
-    printStartupError(error instanceof Error ? error.message : String(error), quiet);
+    printStartupError(startupErrorMessage(error), quiet);
     process.exit(1);
   }
 
@@ -1949,6 +1949,17 @@ async function startNetworkCapture(
     },
     onFailed: (reason) => console.error(`Network capture could not start for ${udid}. ${reason}`),
   }));
+}
+
+// An aggregate such as CapabilityRollbackError names only the outcome; its causes say which
+// simctl calls failed, so print them too.
+function startupErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  if (!(error instanceof AggregateError)) return error.message;
+  const causes = [
+    ...new Set(error.errors.map((cause) => startupErrorMessage(cause).trim())),
+  ].filter((cause) => cause && !error.message.includes(cause));
+  return causes.length > 0 ? `${error.message} Causes: ${causes.join("; ")}` : error.message;
 }
 
 function printStartupError(message: string, quiet: boolean): void {
@@ -2588,7 +2599,7 @@ Examples:
     try {
       validatedAdditionalDylibs();
     } catch (error) {
-      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      printStartupError(startupErrorMessage(error), !!opts.quiet);
       process.exit(1);
     }
     try {
@@ -2601,7 +2612,7 @@ Examples:
       }
       if (!opts.adopt) captureRuntime.setUpstream(upstream);
     } catch (error) {
-      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      printStartupError(startupErrorMessage(error), !!opts.quiet);
       process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
@@ -2979,7 +2990,7 @@ Examples:
         }
       } catch (error) {
         if (sessionStopping) return;
-        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        printStartupError(startupErrorMessage(error), !!opts.quiet);
         sessionStopping = true;
         try {
           await stopNetworkCapture();

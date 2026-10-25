@@ -31,10 +31,11 @@ beforeAll(async () => {
 });
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
 
-test.each(["none", "publish", "stop", "missing-loader", "lock-timeout"] as const)(
+test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollback"] as const)(
   "plain default initialization handles %s",
   async (failureMode) => {
-    const failFirst = failureMode === "publish" || failureMode === "stop";
+    const failFirst =
+      failureMode === "publish" || failureMode === "stop" || failureMode === "rollback";
     const state = useTempStateDir();
     const artifacts = join(bundleDir, "dist", "capability-loader");
     const loader = join(artifacts, "libServeSimCapabilityLoader.dylib");
@@ -68,7 +69,8 @@ Date.now = () => new Error().stack.includes('withStateLock') ? (lockTime += 9000
     if (failureMode !== "missing-loader") writeFileSync(loader, "");
     writeFileSync(clipboard, "");
     writeFileSync(environment, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/foreign.dylib" }));
-    if (failFirst) writeFileSync(failure, "");
+    // The rollback mode fails the insert write and then its restore.
+    if (failFirst) writeFileSync(failure, failureMode === "rollback" ? "2" : "1");
     try {
       await withShimsAsync(
         {
@@ -83,7 +85,10 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
   const env = JSON.parse(fs.readFileSync(file, 'utf8'));
   const [,,, , command, name, value] = args;
   if (command === 'setenv' && name === 'DYLD_INSERT_LIBRARIES' && fs.existsSync(${JSON.stringify(failure)})) {
-    fs.unlinkSync(${JSON.stringify(failure)});
+    const left = Number(fs.readFileSync(${JSON.stringify(failure)}, 'utf8')) - 1;
+    if (left > 0) fs.writeFileSync(${JSON.stringify(failure)}, String(left));
+    else fs.unlinkSync(${JSON.stringify(failure)});
+    console.error('fixture insert write ' + (left > 0 ? 'failed' : 'restore failed'));
     ${failureMode === "stop" ? "process.kill(process.ppid, 'SIGTERM'); setTimeout(() => process.exit(1), 100); return;" : "process.exit(1);"}
   }
   if (command === 'getenv') process.stdout.write(env[name] || '');
@@ -115,10 +120,20 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
             while (!output.includes("\n")) {
               const { done, value } = await reader.read();
               if (done) {
-                if (["stop", "missing-loader", "lock-timeout"].includes(failureMode)) break;
+                if (["stop", "missing-loader", "lock-timeout", "rollback"].includes(failureMode))
+                  break;
                 throw new Error(`No readiness: ${output} ${await stderr}`);
               }
               output += new TextDecoder().decode(value);
+            }
+            if (failureMode === "rollback") {
+              expect(await child.exited).toBe(1);
+              // Both causes reach the startup error, so a log shows which writes failed.
+              const { error } = JSON.parse(output);
+              expect(error).toContain("Could not restore capability launch state");
+              expect(error).toContain("fixture insert write failed");
+              expect(error).toContain("fixture insert write restore failed");
+              return;
             }
             if (["stop", "missing-loader", "lock-timeout"].includes(failureMode)) {
               expect(await child.exited).toBe(failureMode === "stop" ? 0 : 1);

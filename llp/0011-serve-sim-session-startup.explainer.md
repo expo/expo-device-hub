@@ -136,7 +136,8 @@ order so an on-demand build cannot delay initial arming. Combined initialization
 retains idle-session ownership even when no default prepares.
 A failed publication with successful rollback falls back to separate arming and
 default initialization. A stop signal prevents fallback, and lock timeouts and
-uncertain rollback stop startup. The late live insert
+uncertain rollback stop startup. The startup error then lists the failed update and the
+failed restore, so a log shows which calls failed. The late live insert
 read and ordered environment writes are unchanged [observed: `src/index.ts`
 `combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
 
