@@ -23,6 +23,7 @@ import {
   newScreenshotName,
 } from "./screenshot-store";
 import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
+import { isSimctlTimeout } from "./simctl";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
@@ -819,7 +820,17 @@ async function runProcedureAsync(
         action,
         async () => {
           try {
-            await launchApp(udid, { bundleId, launchArgs, restart, openUrl });
+            const launch = () => launchApp(udid, { bundleId, launchArgs, restart, openUrl });
+            try {
+              await launch();
+            } catch (error) {
+              // A simctl call that hit its time limit gets one more try; other failures and a second stall do not.
+              if (!isSimctlTimeout(error)) throw error;
+              console.error(
+                `app.launch on ${udid}: retrying once after ${(error as Error).message}`,
+              );
+              await launch();
+            }
             return ok();
           } catch (error) {
             return {

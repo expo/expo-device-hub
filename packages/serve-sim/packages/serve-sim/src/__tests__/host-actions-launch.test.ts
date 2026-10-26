@@ -431,3 +431,51 @@ require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv
     },
   );
 });
+
+test("app.launch retries once only when a simctl call timed out", async () => {
+  const { runChildSuite } = await import("./fixtures/run-child-suite");
+  const { exitCode, output } = await runChildSuite("app-launch-retry.child.ts");
+  expect(output).toContain("4 pass");
+  expect(exitCode).toBe(0);
+}, 30_000);
+
+test("a terminate that times out while the app keeps running is retried once", async () => {
+  const state = useTempStateDir();
+  const log = join(state.dir, "terminate-retry.jsonl");
+  const count = join(state.dir, "terminate-count");
+  writeFileSync(log, "");
+  writeFileSync(count, "0");
+  // The first terminate stalls past its 15 s limit and the app still runs; the retry succeeds.
+  const shims = installShims({
+    xcrun: `#!/usr/bin/env node
+const fs = require('fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+if (args[1] === 'terminate') {
+  const n = Number(fs.readFileSync(${JSON.stringify(count)}, 'utf8')) + 1;
+  fs.writeFileSync(${JSON.stringify(count)}, String(n));
+  if (n === 1) setTimeout(() => {}, 30_000);
+} else if (args[3] === 'launchctl' && args[4] === 'list') {
+  console.log('UIKitApplication:com.example.app');
+}
+`,
+  });
+  const stderr = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const result = await runHostActionAsync(
+      { action: "app.launch", params: { udid: UDID, bundleId: "com.example.app" } },
+      "true",
+    );
+    expect(result.exitCode).toBe(0);
+    const commands = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)[1]);
+    expect(commands.filter((command) => command === "terminate")).toHaveLength(2);
+    expect(commands.filter((command) => command === "launch")).toHaveLength(1);
+  } finally {
+    stderr.mockRestore();
+    shims.restore();
+    state.restore();
+  }
+}, 60_000);

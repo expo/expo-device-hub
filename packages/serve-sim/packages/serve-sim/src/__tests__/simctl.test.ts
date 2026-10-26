@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { simctl, simctlRaw, simctlSync } from "../simctl";
+import { isSimctlTimeout, simctl, simctlRaw, simctlSync } from "../simctl";
 import { PasteboardTooLargeError } from "../sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
 import { withShimsAsync } from "./helpers";
@@ -70,6 +70,16 @@ describe("simctl", () => {
       expect(() => simctlSync(args, 1_000)).toThrow(
         "xcrun simctl spawn DEVICE launchctl getenv DYLD_INSERT_LIBRARIES timed out after 1 s",
       );
+    });
+  });
+
+  test("recognizes a timeout by the error object, even with a newline in an argument", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexec sleep 10\n" }, async () => {
+      const error = await simctlRaw(["launch", "DEVICE", "app", "first\nsecond"], 500).catch(
+        (error: unknown) => error,
+      );
+      expect(isSimctlTimeout(error)).toBe(true);
+      expect(isSimctlTimeout(new Error((error as Error).message))).toBe(false);
     });
   });
 

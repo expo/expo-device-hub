@@ -796,12 +796,16 @@ async function isRunning(udid: string, bundleId: string): Promise<boolean | null
 }
 
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
+  let stopError: unknown;
   try {
     await simctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
     return;
-  } catch {}
+  } catch (error) {
+    stopError = error;
+  }
   const running = await isRunning(udid, bundleId);
   if (running === false) return;
+  // The cause keeps a timed-out stop recognizable, so app.launch can retry it.
   throw new Error(
     running === null
       ? `Could not stop ${bundleId} on ${udid}, and could not check whether it is still running. ` +
@@ -809,6 +813,7 @@ async function terminateForRelaunch(udid: string, bundleId: string): Promise<voi
       : `Could not stop ${bundleId} on ${udid}, so it cannot be relaunched with its capabilities ` +
           `loaded. simctl terminate did not take effect within ${TERMINATE_TIMEOUT_MS / 1000}s. ` +
           `Stop the app yourself and retry.`,
+    { cause: stopError },
   );
 }
 
