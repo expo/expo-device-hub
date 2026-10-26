@@ -242,8 +242,9 @@ Options:
                          scrcpy runs a control-only server; grpc sends input
                          through the emulator's gRPC endpoint.
       --transport <websocket|webrtc>
-                         Initial browser video transport (default: websocket).
-                         Each browser tab can switch transports in the UI.
+                         Browser video transport (default: websocket).
+                         With websocket, each browser tab can switch to WebRTC
+                         in the UI; webrtc allows only WebRTC video.
       --stun-url <url[,url...]>
                          STUN URL(s); omitted = default public STUN servers
       --turn-url <url[,url...]>

@@ -248,6 +248,7 @@ async function createHarness(
       port: options.port ?? server.port,
       host: options.host,
       token: options.token,
+      streamSettings: options.streamSettings,
     },
     {
       openScrcpy: async () => session,
@@ -754,6 +755,25 @@ describe("server HTTP and WebSocket boundaries", () => {
     expect(await response(harness.request("/api")).then((result) => result.json())).toMatchObject({
       clients: 0,
     });
+  });
+
+  // As serve-sim's `--transport webrtc` refuses its HTTP streams.
+  test("with a WebRTC transport, refuses a video socket and upgrades an input socket", async () => {
+    const harness = await createHarness({
+      streamSettings: {
+        transport: "webrtc",
+        codec: "h264",
+        iceServers: [],
+        iceTransportPolicy: "all",
+      },
+    });
+    const headers = { origin: "http://127.0.0.1:33040" };
+
+    const refused = await response(harness.request("/ws", { headers }));
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "stream_transport_locked", transport: "webrtc" });
+    expect(await harness.request("/ws?video=0", { headers })).toBeUndefined();
+    expect(harness.server.upgrades).toEqual([expect.objectContaining({ video: false })]);
   });
 
   test("broadcasts session changes, cached config, and framed keyframes", async () => {

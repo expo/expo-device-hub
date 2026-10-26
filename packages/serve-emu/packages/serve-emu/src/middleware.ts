@@ -77,6 +77,8 @@ import {
   StreamSettingsUnavailableError,
   streamEncoderSettingsEqual,
   viewerTransportsFor,
+  webSocketVideoAllowed,
+  STREAM_TRANSPORT_LOCKED,
   type StreamEncoderSettings,
   type StreamEncoderSettingsPatch,
   type StreamSettings,
@@ -1994,6 +1996,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   ): void => {
     if (status !== "streaming") {
       socket.close(1013, `session is ${status}`);
+      return;
+    }
+    if ((meta.video ?? true) && !webSocketVideoAllowed(streamSettings, session.meta.codecId)) {
+      socket.close(1008, STREAM_TRANSPORT_LOCKED);
       return;
     }
     const client: Client = {
