@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -711,16 +712,25 @@ test("staged app directories can be removed after installation", async () => {
   await writeFile(join(source, "Info.plist"), "test app");
   await writeFile(join(source, "App"), "executable");
   await chmod(join(source, "App"), 0o700);
+  const outside = join(root, "removal-canary");
+  await mkdir(outside);
+  await writeFile(join(outside, "data"), "unchanged");
+  await chmod(outside, 0o500);
   try {
     expect(
       (await runHostActionAsync({ action: "app.install", params: { udid: UDID, uploadId } }, BIN))
         .exitCode,
     ).toBe(0);
+    await symlink(outside, join(source, "outside-link"));
     expect(
       (await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, BIN)).exitCode,
     ).toBe(0);
     expect(existsSync(source)).toBe(false);
+    expect(await readFile(join(outside, "data"), "utf8")).toBe("unchanged");
+    expect((await lstat(outside)).mode & 0o777).toBe(0o500);
   } finally {
+    await chmod(outside, 0o700);
+    await rm(outside, { recursive: true, force: true });
     await rm(source, { recursive: true, force: true });
   }
 });
