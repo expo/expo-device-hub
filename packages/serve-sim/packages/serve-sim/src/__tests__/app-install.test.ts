@@ -788,6 +788,15 @@ test.each([false, true])(
       });
       if (failConsumer) await expect(pending).rejects.toThrow("install failed");
       else expect(await pending).toBe("installed");
+      const before = (await readdir(displaced)).sort();
+      let consumed = false;
+      await expect(
+        withStagedUploadSnapshotAsync(uploadId, async () => {
+          consumed = true;
+        }),
+      ).rejects.toThrow("Previous app files still need cleanup");
+      expect(consumed).toBe(false);
+      expect((await readdir(displaced)).sort()).toEqual(before);
     } finally {
       if (moved) {
         await rm(UPLOAD_DIR, { force: true });
