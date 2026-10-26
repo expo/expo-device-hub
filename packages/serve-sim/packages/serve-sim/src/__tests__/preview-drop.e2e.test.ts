@@ -118,7 +118,12 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     execFileSync("xcrun", ["simctl", "bootstatus", udid, "-b"], { timeout: 120000, stdio: "pipe" });
     root = mkdtempSync(join(tmpdir(), "serve-sim-preview-drop-"));
     mkdirSync(join(root, "tmp"));
-    env = { ...process.env, TMPDIR: join(root, "tmp"), SERVE_SIM_STATE_DIR: join(root, "state") };
+    env = {
+      ...process.env,
+      TMPDIR: join(root, "tmp"),
+      SERVE_SIM_STATE_DIR: join(root, "state"),
+      SERVE_SIM_ACTION_TIMEOUT_MS: "120000",
+    };
     const port = await freePortAsync();
     const started = spawnSync("node", [CLI, "--detach", "-p", String(port), udid!], {
       env,
@@ -178,18 +183,28 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
 
   test("a PNG reaches Photos and its staged upload is removed", async () => {
     const before = photoCount();
-    await drop([{ name: "browser-photo.png", bytes: PNG }]);
+    const name = `browser-photo-${crypto.randomUUID()}.png`;
+    await drop([{ name, bytes: PNG }]);
+    // A fresh Photos library can initialize slowly. Wait beyond the host's 120s
+    // action deadline so a test retry cannot overlap an unfinished import.
+    await until(
+      () => sent.some(({ id, action }) => action === "media.add" && replies.has(id)),
+      "Media import did not complete",
+      130000,
+    );
+    const request = sent.find((message) => message.action === "media.add")!;
+    expect(replies.get(request.id)?.exitCode, replies.get(request.id)?.stderr).toBe(0);
     await until(
       () =>
         browser.cdp.evaluate<boolean>(
-          "document.body.textContent.includes('Added browser-photo.png to Photos')",
+          `document.body.textContent.includes(${JSON.stringify(`Added ${name} to Photos`)})`,
         ),
       "Preview did not report media success",
     );
     await until(() => photoCount() === before + 1, "Dropped PNG did not reach Simulator Photos");
     expect(sent.some((message) => message.action === "media.add")).toBe(true);
     await removedUpload();
-  }, 60000);
+  }, 240000);
 
   test("a failed media import reports its error and removes the upload", async () => {
     const before = photoCount();
