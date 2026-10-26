@@ -1,5 +1,15 @@
 import { randomUUID } from "crypto";
-import { appendFile, lstat, mkdtemp, opendir, readdir, readlink, rm, writeFile } from "fs/promises";
+import {
+  appendFile,
+  chmod,
+  lstat,
+  mkdtemp,
+  opendir,
+  readdir,
+  readlink,
+  rm,
+  writeFile,
+} from "fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "path";
 import type { Stats } from "fs";
 import { z } from "zod";
@@ -25,6 +35,38 @@ const SNAPSHOT_PREFIX = ".install-snapshot-";
 // otherwise all read the same pre-write total and sail past the ceiling.
 const queueUploadAsync = createSerialQueue();
 let snapshotBytes = 0;
+const failedSnapshotCleanup = new Map<string, number>();
+
+/** Copied bundles may have read-only directories. Never chmod through their symlinks. */
+async function removeUploadTreeAsync(path: string): Promise<void> {
+  const makeWritable = async (path: string): Promise<void> => {
+    let info: Stats;
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    if (!info.isDirectory()) return;
+    if ((info.mode & 0o700) !== 0o700) await chmod(path, (info.mode & 0o777) | 0o700);
+    for await (const entry of await opendir(path))
+      if (entry.isDirectory()) await makeWritable(join(path, entry.name));
+  };
+  await makeWritable(path);
+  await rm(path, { recursive: true, force: true });
+}
+
+async function removeSnapshotAsync(directory: string, size: number): Promise<void> {
+  try {
+    await removeUploadTreeAsync(directory);
+    snapshotBytes -= size;
+  } catch (error) {
+    // Retained files still consume the budget. Retry before accepting another
+    // snapshot, without replacing the install result or its original error.
+    failedSnapshotCleanup.set(directory, size);
+    console.warn("[uploads] App snapshot cleanup will be retried before the next install:", error);
+  }
+}
 
 export const UploadId = z
   .string()
@@ -118,6 +160,18 @@ export async function withStagedUploadSnapshotAsync<T>(
   };
   const snapshot = await queueUploadAsync(async () => {
     remaining();
+    for (const [directory, size] of failedSnapshotCleanup) {
+      try {
+        await removeUploadTreeAsync(directory);
+      } catch {
+        throw new Error(
+          "Previous app files still need cleanup. Retry the install or check the host logs.",
+        );
+      }
+      failedSnapshotCleanup.delete(directory);
+      snapshotBytes -= size;
+      remaining();
+    }
     const source = stagedUploadPath(uploadId);
     const info = await lstat(source);
     if (!info.isFile() && !info.isDirectory())
@@ -194,16 +248,15 @@ export async function withStagedUploadSnapshotAsync<T>(
         throw new Error(copied.stderr || "Could not snapshot app installation source.");
       return { path, size, directory };
     } catch (error) {
-      if (directory) await rm(directory, { recursive: true, force: true });
-      snapshotBytes -= size;
+      if (directory) await removeSnapshotAsync(directory, size);
+      else snapshotBytes -= size;
       throw error;
     }
   });
   try {
     return await read(snapshot.path);
   } finally {
-    if (snapshot.directory) await rm(snapshot.directory, { recursive: true, force: true });
-    snapshotBytes -= snapshot.size;
+    await removeSnapshotAsync(snapshot.directory, snapshot.size);
   }
 }
 
@@ -239,7 +292,7 @@ export async function appendUploadChunkAsync(p: {
 
 export async function removeUploadAsync(uploadId: string): Promise<HostActionResult> {
   return queueUploadAsync(async () => {
-    await rm(stagedUploadPath(uploadId), { force: true });
+    await removeUploadTreeAsync(stagedUploadPath(uploadId));
     return ok();
   });
 }

@@ -583,6 +583,12 @@ private prefix encoding the action deadline and do not expire by age before that
 deadline, so long installs outlive ordinary upload retention without losing their source.
 After the deadline, ordinary age pruning applies even if the owner's PID has been
 reused by another process.
+Cleanup makes copied directories owner-writable without following links. A cleanup
+failure preserves the consumer result or original error, retains the on-disk byte
+reservation, and must be retried successfully before another snapshot is accepted.
+`upload.remove` also removes staged directories, including read-only bundles
+[observed: `removeUploadTreeAsync`, `removeSnapshotAsync` in `upload-store.ts`].
+
 Copying regular files and app directories shares the original action deadline.
 Staged app directories accept relative links that remain inside the bundle; absolute
 links, escaping link chains and cycles are rejected before copying. Targets must

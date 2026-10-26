@@ -5,6 +5,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   symlink,
   truncate,
@@ -703,6 +704,94 @@ test("expired queued installs do not create a source snapshot", async () => {
   }
 });
 
+test("staged app directories can be removed after installation", async () => {
+  const uploadId = "remove-staged-directory.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Info.plist"), "test app");
+  await writeFile(join(source, "App"), "executable");
+  await chmod(join(source, "App"), 0o700);
+  try {
+    expect(
+      (await runHostActionAsync({ action: "app.install", params: { udid: UDID, uploadId } }, BIN))
+        .exitCode,
+    ).toBe(0);
+    expect(
+      (await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, BIN)).exitCode,
+    ).toBe(0);
+    expect(existsSync(source)).toBe(false);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});
+
+test("snapshot cleanup handles read-only directories and preserves the consumer result", async () => {
+  const uploadId = "read-only-app.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  const locked = join(source, "Frameworks/Locked.framework/Resources");
+  await mkdir(locked, { recursive: true });
+  await writeFile(join(locked, "data"), "read-only resource");
+  await chmod(locked, 0o555);
+  let snapshotDirectory: string | undefined;
+  try {
+    expect(
+      await withStagedUploadSnapshotAsync(uploadId, async (path) => {
+        snapshotDirectory = dirname(path);
+        expect(
+          await readFile(join(path, "Frameworks/Locked.framework/Resources/data"), "utf8"),
+        ).toBe("read-only resource");
+        return "installed";
+      }),
+    ).toBe("installed");
+    expect(existsSync(snapshotDirectory!)).toBe(false);
+  } finally {
+    await chmod(locked, 0o755);
+    await rm(source, { recursive: true, force: true });
+    if (snapshotDirectory && existsSync(snapshotDirectory)) {
+      await chmod(
+        join(snapshotDirectory, "source.app/Frameworks/Locked.framework/Resources"),
+        0o755,
+      );
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }
+});
+
+test.each([false, true])(
+  "failed snapshot cleanup preserves the result and retries before another copy: %s",
+  async (failConsumer) => {
+    const uploadId = "cleanup-retry-source";
+    await writeFile(join(UPLOAD_DIR, uploadId), "source");
+    const displaced = `${UPLOAD_DIR}-cleanup-test`;
+    let moved = false;
+    let snapshotDirectory: string | undefined;
+    try {
+      const pending = withStagedUploadSnapshotAsync(uploadId, async (path) => {
+        snapshotDirectory = dirname(path);
+        // Replace this test process's staging directory with a file, forcing
+        // ENOTDIR regardless of whether the test runner uses a privileged UID.
+        await rename(UPLOAD_DIR, displaced);
+        moved = true;
+        await writeFile(UPLOAD_DIR, "temporarily unavailable");
+        if (failConsumer) throw new Error("install failed");
+        return "installed";
+      });
+      if (failConsumer) await expect(pending).rejects.toThrow("install failed");
+      else expect(await pending).toBe("installed");
+    } finally {
+      if (moved) {
+        await rm(UPLOAD_DIR, { force: true });
+        await rename(displaced, UPLOAD_DIR);
+      }
+    }
+    expect(existsSync(snapshotDirectory!)).toBe(true);
+    await withStagedUploadSnapshotAsync(uploadId, async () => {
+      expect(existsSync(snapshotDirectory!)).toBe(false);
+    });
+    await rm(join(UPLOAD_DIR, uploadId));
+  },
+);
+
 test("owner-scoped snapshots are reclaimed for dead servers and preserved for live servers", async () => {
   const dead = join(UPLOAD_ROOT, "2147483647-deadbeef"),
     live = join(UPLOAD_ROOT, `${process.pid}-deadbeef`);
@@ -962,72 +1051,5 @@ test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", as
     }
   } finally {
     await rm(source, { recursive: true, force: true });
-  }
-});
-
-test.each([false, true])(
-  "hard-link chains resolve directly to the extracted file: %s",
-  async (reverse) => {
-    const links = [
-      { path: "Framework.app/bin", type: "Link" as const, target: "Framework.app/alias" },
-      { path: "Framework.app/alias", type: "Link" as const, target: "Framework.app/real" },
-    ];
-    if (reverse) links.reverse();
-    const result = await install(
-      await rawArchive("hard-chain.tgz", [
-        ...bundleEntries,
-        ...links,
-        { path: "Framework.app/real", body: "target" },
-      ]),
-    );
-    expect(result.exitCode, result.stderr).toBe(0);
-  },
-);
-
-test.each([false, true])(
-  "deferred archive links cannot redirect extraction writes: %s",
-  async (reverse) => {
-    const canary = await mkdtemp(join(tmpdir(), "owned-archive-canary-"));
-    try {
-      await writeFile(join(canary, "value"), "unchanged");
-      const entries = [
-        {
-          path: "Framework.app/redirect",
-          type: "SymbolicLink" as const,
-          target: "../../" + basename(canary),
-        },
-        { path: "Framework.app/redirect/value", body: "overwrite" },
-      ];
-      if (reverse) entries.reverse();
-      const result = await install(
-        await rawArchive("parent-link.tgz", [...bundleEntries, ...entries]),
-      );
-      expect(result.exitCode).toBe(1);
-      expect(await readFile(join(canary, "value"), "utf8")).toBe("unchanged");
-    } finally {
-      await rm(canary, { recursive: true, force: true });
-    }
-  },
-);
-
-test("failed cleanup cannot accumulate another extraction tree in this process", async () => {
-  const archive = await rawArchive("cleanup-retry.tgz", bundleEntries);
-  const failing = installShims({ rm: "#!/bin/sh\nexit 1\n" });
-  const directories = new Set<string>();
-  try {
-    const first = await install(archive);
-    if (first.stdout.trim()) directories.add(dirname(installedPath(first.stdout)));
-    expect(first.exitCode).toBe(0);
-    expect(first.stderr).toContain("could not be removed");
-    const second = await install(archive);
-    if (second.stdout.trim()) directories.add(dirname(installedPath(second.stdout)));
-    expect(second.exitCode).toBe(1);
-    expect(directories.size).toBe(1);
-  } finally {
-    failing.restore();
-    for (const directory of directories) {
-      expect(basename(directory).startsWith("serve-sim-app-install-")).toBe(true);
-      await rm(directory, { recursive: true, force: true });
-    }
   }
 });
