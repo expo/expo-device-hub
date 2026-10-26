@@ -151,17 +151,29 @@ export async function startTestBrowser(): Promise<{ cdp: Cdp; close(): Promise<v
       });
     });
     let pageUrl: string | undefined;
+    let discoveryError: unknown;
     const deadline = Date.now() + 15000;
     while (!pageUrl && Date.now() < deadline) {
-      const targets = (await (
-        await fetch(`http://127.0.0.1:${new URL(browserUrl).port}/json/list`, {
-          signal: AbortSignal.timeout(5000),
-        })
-      ).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>;
-      pageUrl = targets.find((target) => target.type === "page")?.webSocketDebuggerUrl;
+      try {
+        const response = await fetch(`http://127.0.0.1:${new URL(browserUrl).port}/json/list`, {
+          signal: AbortSignal.timeout(Math.min(5000, deadline - Date.now())),
+        });
+        if (!response.ok)
+          throw new Error(`Chrome target discovery returned HTTP ${response.status}`);
+        const targets = (await response.json()) as Array<{
+          type: string;
+          webSocketDebuggerUrl: string;
+        }>;
+        pageUrl = targets.find((target) => target.type === "page")?.webSocketDebuggerUrl;
+      } catch (error) {
+        // The debugging socket can be announced before HTTP discovery is ready.
+        // Retry transient requests within the existing total startup budget.
+        discoveryError = error;
+      }
       if (!pageUrl) await Bun.sleep(100);
     }
-    if (!pageUrl) throw new Error("Chrome opened no page target within 15 seconds");
+    if (!pageUrl)
+      throw new Error("Chrome opened no page target within 15 seconds", { cause: discoveryError });
     cdp = await Cdp.connect(pageUrl);
     await cdp.send("Page.enable");
     return { cdp, close };
