@@ -165,3 +165,60 @@ test.each(["upload.append", "app.install"])(
       expect(calls.some((c) => c.action === "app.install")).toBe(false);
   },
 );
+
+test("a failed upload cancels the file stream while packing is still in progress", async () => {
+  failure = "upload.append";
+  const chunk = crypto.getRandomValues(new Uint8Array(65536));
+  let cancelled = false,
+    produced = 0;
+  const file = new File([new Uint8Array(2 * 1024 ** 2)], "large");
+  Object.defineProperty(file, "stream", {
+    value: () => {
+      let remaining = file.size;
+      return new ReadableStream<Uint8Array<ArrayBuffer>>({
+        pull(controller) {
+          if (!remaining) {
+            controller.close();
+            return;
+          }
+          remaining -= chunk.length;
+          produced += chunk.length;
+          controller.enqueue(chunk);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+    },
+  });
+  const entry = droppedFolder("App.app", [
+    [
+      {
+        name: "large",
+        isDirectory: false,
+        isFile: true,
+        file(ok) {
+          ok(file);
+        },
+      },
+    ],
+  ]);
+  // Keep the source unfinished with a pass-through compressor. This isolates
+  // cancellation from a runtime compressor buffering the whole fixture.
+  const original = globalThis.CompressionStream;
+  try {
+    Object.assign(globalThis, {
+      CompressionStream: class extends TransformStream {
+        constructor() {
+          super();
+        }
+      },
+    });
+    await expect(uploadDroppedAppFolder(entry, "UDID", () => {})).rejects.toThrow("host refused");
+    for (let i = 0; i < 100 && !cancelled; i++) await Bun.sleep(10);
+    expect(cancelled).toBe(true);
+    expect(produced).toBeLessThan(file.size);
+  } finally {
+    Object.assign(globalThis, { CompressionStream: original });
+  }
+});
