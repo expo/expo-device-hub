@@ -10,8 +10,9 @@ import { freePortAsync } from "./helpers";
 import type { ServeSimDeviceState } from "../state";
 
 const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
-const udid = e2eDevice();
-const ready = udid !== null && existsSync(CLI) && existsSync(CHROME);
+const sourceUdid = e2eDevice();
+let udid: string | undefined;
+const ready = sourceUdid !== null && existsSync(CLI) && existsSync(CHROME);
 requireE2E("preview file drops (requires Chrome)", ready);
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRz0AAAAASUVORK5CYII=",
@@ -96,6 +97,25 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   }
 
   beforeAll(async () => {
+    // Imported Photos data leaves with this suite-owned device; the pinned device stays unchanged.
+    const devices = JSON.parse(simctl("list", "devices", "-j")) as {
+      devices: Record<string, Array<{ udid: string; deviceTypeIdentifier: string }>>;
+    };
+    const runtime = Object.entries(devices.devices).find(([, values]) =>
+      values.some((device) => device.udid === sourceUdid),
+    );
+    const model = runtime?.[1].find((device) => device.udid === sourceUdid)?.deviceTypeIdentifier;
+    if (!runtime || !model)
+      throw new Error("Cannot determine the pinned Simulator's runtime and model");
+    udid = simctl(
+      "create",
+      `serve-sim-preview-drop-${process.pid}-${Date.now()}`,
+      model,
+      runtime[0],
+    ).trim();
+    console.info(`[drop-e2e] Owned simulator ${udid}; runtime ${runtime[0]}; source ${sourceUdid}`);
+    simctl("boot", udid);
+    execFileSync("xcrun", ["simctl", "bootstatus", udid, "-b"], { timeout: 120000, stdio: "pipe" });
     root = mkdtempSync(join(tmpdir(), "serve-sim-preview-drop-"));
     mkdirSync(join(root, "tmp"));
     env = { ...process.env, TMPDIR: join(root, "tmp"), SERVE_SIM_STATE_DIR: join(root, "state") };
@@ -138,8 +158,21 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     try {
       await browser?.close();
     } finally {
-      if (env) spawnSync("node", [CLI, "--kill", udid!], { env, timeout: 30000, stdio: "ignore" });
-      if (root) rmSync(root, { recursive: true, force: true });
+      try {
+        if (env && udid)
+          spawnSync("node", [CLI, "--kill", udid], { env, timeout: 30000, stdio: "ignore" });
+        if (udid) {
+          try {
+            simctl("shutdown", udid);
+          } catch {
+            /* Boot can fail during setup. */
+          }
+          simctl("delete", udid);
+          console.info(`[drop-e2e] Deleted simulator ${udid}`);
+        }
+      } finally {
+        if (root) rmSync(root, { recursive: true, force: true });
+      }
     }
   }, 60000);
 
