@@ -79,7 +79,7 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { parseScreenRecordingStatus } from "./screen-recording";
+import { areRecordingControlsLocked, parseScreenRecordingStatus } from "./screen-recording";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { type WebRtcIceServer, useWebRtcStream } from "./useWebRtcStream";
@@ -2262,6 +2262,47 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ],
   );
 
+  const screenRecording =
+    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : active ? "unknown" : null;
+  // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
+  // Turning the device or changing the stream restarts serve-emu's encoder, which ends the
+  // host recording. Refuse those controls in one place while it could break.
+  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
+  const recordingLockedRef = useRef(recordingControlsLocked);
+  recordingLockedRef.current = recordingControlsLocked;
+  const unlessRecording = useCallback(
+    <Args extends unknown[]>(control: (...args: Args) => void) =>
+      (...args: Args) => {
+        if (!recordingLockedRef.current) control(...args);
+      },
+    [],
+  );
+  const lockedRotate = useMemo(() => unlessRecording(rotate), [unlessRecording, rotate]);
+  const lockedSetOrientation = useMemo(
+    () => unlessRecording(setOrientation),
+    [unlessRecording, setOrientation],
+  );
+  const lockedUpdateStreamSettings = useMemo(
+    () => unlessRecording(updateStreamSettings),
+    [unlessRecording, updateStreamSettings],
+  );
+  const lockedSetStreamSource = useMemo(
+    () => unlessRecording(setStreamSource),
+    [unlessRecording, setStreamSource],
+  );
+  const lockedSetGrpcImageMode = useMemo(
+    () => unlessRecording(setGrpcImageMode),
+    [unlessRecording, setGrpcImageMode],
+  );
+  const lockedSetGrpcEncoder = useMemo(
+    () => unlessRecording(setGrpcEncoder),
+    [unlessRecording, setGrpcEncoder],
+  );
+  const lockedSetGrpcInputSource = useMemo(
+    () => unlessRecording(setGrpcInputSource),
+    [unlessRecording, setGrpcInputSource],
+  );
+
   return {
     platform: "android",
     // The transport can stay live while the server stages new stream settings.
@@ -2310,20 +2351,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
-    updateStreamSettings,
+    updateStreamSettings: lockedUpdateStreamSettings,
     streamSource,
-    screenRecording:
-      recordingSnapshot.scope === deviceScope
-        ? recordingSnapshot.status
-        : active
-          ? "unknown"
-          : null,
+    screenRecording,
+    recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
-    setStreamSource,
-    setGrpcImageMode,
-    setGrpcEncoder,
-    setGrpcInputSource,
+    setStreamSource: lockedSetStreamSource,
+    setGrpcImageMode: lockedSetGrpcImageMode,
+    setGrpcEncoder: lockedSetGrpcEncoder,
+    setGrpcInputSource: lockedSetGrpcInputSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: "h264",
@@ -2338,12 +2375,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendKey,
     pressButton,
     reload,
-    rotate,
+    rotate: lockedRotate,
     orientation,
     orientationPending: chosenOrientation?.answeredAt === null,
     orientationError:
       orientationFailureState?.scope === deviceScope ? orientationFailureState.message : null,
-    setOrientation,
+    setOrientation: lockedSetOrientation,
     screenshot,
     appearance,
     setAppearance,
