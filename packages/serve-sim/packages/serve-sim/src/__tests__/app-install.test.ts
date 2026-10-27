@@ -1,5 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  truncate,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, basename, dirname } from "node:path";
 import { tmpdir } from "node:os";
@@ -7,8 +20,9 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { create, Header, Pax } from "tar";
 import { runHostActionAsync } from "../host-actions";
-import { UPLOAD_DIR } from "../host-paths";
-import { UDID, installShims, withActionTimeoutAsync } from "./helpers";
+import { UPLOAD_DIR, UPLOAD_ROOT } from "../host-paths";
+import { readStagedUploadAsync, withStagedUploadSnapshotAsync } from "../upload-store";
+import { UDID, installShims, withActionTimeoutAsync, withShimsAsync } from "./helpers";
 const BIN = fileURLToPath(new URL("../../dist/serve-sim.js", import.meta.url));
 let root: string;
 let shims: ReturnType<typeof installShims>;
@@ -17,7 +31,7 @@ beforeAll(async () => {
   root = await mkdtemp(join(UPLOAD_DIR, "install-test-"));
   shims = installShims({
     xcrun:
-      '#!/bin/sh\n[ -z "$SERVE_SIM_INSTALL_STARTED" ] || touch "$SERVE_SIM_INSTALL_STARTED"\nprintf "%s\\n" "$3"\n[ -z "$SERVE_SIM_INSTALL_SLEEP" ] || sleep "$SERVE_SIM_INSTALL_SLEEP"\ncat "$4/Info.plist"\nprintf "\\n%s\\n" "$4"\n[ -x "$4/App" ] || exit 9\nexit "${SERVE_SIM_INSTALL_EXIT:-0}"\n',
+      '#!/bin/sh\nprintf "%s\\n" "$3"\n[ -z "$SERVE_SIM_INSTALL_SLEEP" ] || sleep "$SERVE_SIM_INSTALL_SLEEP"\n[ -z "$SERVE_SIM_INSTALL_STARTED" ] || touch "$SERVE_SIM_INSTALL_STARTED"\nif [ -n "$SERVE_SIM_INSTALL_GATE" ]; then while [ ! -f "$SERVE_SIM_INSTALL_GATE" ]; do sleep 0.01; done; fi\ncat "$4/Info.plist"\nprintf "\\n%s\\n" "$4"\n[ -x "$4/App" ] || exit 9\nexit "${SERVE_SIM_INSTALL_EXIT:-0}"\n',
   });
 });
 afterAll(async () => {
@@ -549,5 +563,510 @@ test("a valid TAR with a corrupt gzip trailer is rejected before installation", 
     expect(existsSync(started)).toBe(false);
   } finally {
     delete process.env.SERVE_SIM_INSTALL_STARTED;
+  }
+});
+
+test("a slow staged install does not block unrelated uploads or removals", async () => {
+  await app();
+  const uploadId = "install-snapshot-progress";
+  const bytes = await readFile(await archive("snapshot-progress.tgz", ["My App.app"]));
+  await runHostActionAsync(
+    { action: "upload.append", params: { uploadId, first: true, data: bytes.toString("base64") } },
+    "unused",
+  );
+  const started = join(root, "snapshot-started"),
+    gate = join(root, "snapshot-release");
+  process.env.SERVE_SIM_INSTALL_STARTED = started;
+  process.env.SERVE_SIM_INSTALL_GATE = gate;
+  const pending = runHostActionAsync(
+    { action: "app.install", params: { udid: UDID, uploadId } },
+    BIN,
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    for (let n = 0; n < 500 && !existsSync(started); n++) await Bun.sleep(10);
+    expect(existsSync(started)).toBe(true);
+    const progress = (async () => {
+      const appended = await runHostActionAsync(
+        {
+          action: "upload.append",
+          params: {
+            uploadId: "unrelated-upload",
+            first: true,
+            data: Buffer.from("other app").toString("base64"),
+          },
+        },
+        "unused",
+      );
+      const removed = await runHostActionAsync(
+        { action: "upload.remove", params: { uploadId } },
+        "unused",
+      );
+      return appended.exitCode === 0 && removed.exitCode === 0;
+    })();
+    expect(
+      await Promise.race([
+        progress,
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 2000);
+        }),
+      ]),
+    ).toBe(true);
+  } finally {
+    if (timer) clearTimeout(timer);
+    await writeFile(gate, "release");
+    delete process.env.SERVE_SIM_INSTALL_STARTED;
+    delete process.env.SERVE_SIM_INSTALL_GATE;
+    expect((await pending).exitCode).toBe(0);
+    await runHostActionAsync(
+      { action: "upload.remove", params: { uploadId: "unrelated-upload" } },
+      "unused",
+    );
+  }
+});
+
+test("private upload snapshots survive source removal, clean failures, and enforce their byte ceiling", async () => {
+  const uploadId = "snapshot-cleanup";
+  await runHostActionAsync(
+    {
+      action: "upload.append",
+      params: { uploadId, first: true, data: Buffer.from("stable source").toString("base64") },
+    },
+    "unused",
+  );
+  let snapshotPath: string | undefined;
+  await expect(
+    withStagedUploadSnapshotAsync(uploadId, async (path) => {
+      snapshotPath = path;
+      expect(path.startsWith(join(UPLOAD_DIR, ".install-snapshot-"))).toBe(true);
+      await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, "unused");
+      expect(await readFile(path, "utf8")).toBe("stable source");
+      throw new Error("consumer failed");
+    }),
+  ).rejects.toThrow("consumer failed");
+  expect(snapshotPath).toBeDefined();
+  expect(existsSync(snapshotPath!)).toBe(false);
+  for (const uploadId of ["snapshot-too-large", "Sparse.app"]) {
+    const oversized = join(UPLOAD_DIR, uploadId);
+    const sparseFile = uploadId.endsWith(".app") ? join(oversized, "App") : oversized;
+    if (uploadId.endsWith(".app")) await mkdir(oversized);
+    await writeFile(sparseFile, "");
+    try {
+      await truncate(sparseFile, 2 * 1024 ** 3 + 1);
+      await expect(withStagedUploadSnapshotAsync(uploadId, async () => {})).rejects.toThrow(
+        "staging is full",
+      );
+    } finally {
+      await rm(oversized, { recursive: true, force: true });
+    }
+  }
+});
+
+test("expired queued installs do not create a source snapshot", async () => {
+  const uploadId = "expired-snapshot";
+  await writeFile(join(UPLOAD_DIR, uploadId), "source");
+  let release!: () => void, entered!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held = readStagedUploadAsync(uploadId, async () => {
+    entered();
+    await gate;
+  });
+  await ready;
+  const before = await readdir(UPLOAD_DIR);
+  let consumed = false;
+  const pending = withStagedUploadSnapshotAsync(
+    uploadId,
+    async () => {
+      consumed = true;
+    },
+    Date.now() + 10,
+  );
+  const outcome = pending.then(
+    () => undefined,
+    (error) => error,
+  );
+  try {
+    await Bun.sleep(30);
+    release();
+    await held;
+    expect(await outcome).toBeInstanceOf(Error);
+    expect((await outcome)?.message).toContain("timed out");
+    expect(consumed).toBe(false);
+    expect(await readdir(UPLOAD_DIR)).toEqual(before);
+  } finally {
+    release();
+    await held;
+    await rm(join(UPLOAD_DIR, uploadId));
+  }
+});
+
+test("staged app directories can be removed after installation", async () => {
+  const uploadId = "remove-staged-directory.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Info.plist"), "test app");
+  await writeFile(join(source, "App"), "executable");
+  await chmod(join(source, "App"), 0o700);
+  const outside = join(root, "removal-canary");
+  await mkdir(outside);
+  await writeFile(join(outside, "data"), "unchanged");
+  await chmod(outside, 0o500);
+  try {
+    expect(
+      (await runHostActionAsync({ action: "app.install", params: { udid: UDID, uploadId } }, BIN))
+        .exitCode,
+    ).toBe(0);
+    await symlink(outside, join(source, "outside-link"));
+    expect(
+      (await runHostActionAsync({ action: "upload.remove", params: { uploadId } }, BIN)).exitCode,
+    ).toBe(0);
+    expect(existsSync(source)).toBe(false);
+    expect(await readFile(join(outside, "data"), "utf8")).toBe("unchanged");
+    expect((await lstat(outside)).mode & 0o777).toBe(0o500);
+  } finally {
+    await chmod(outside, 0o700);
+    await rm(outside, { recursive: true, force: true });
+    await rm(source, { recursive: true, force: true });
+  }
+});
+
+test("snapshot cleanup handles read-only directories and preserves the consumer result", async () => {
+  const uploadId = "read-only-app.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  const locked = join(source, "Frameworks/Locked.framework/Resources");
+  await mkdir(locked, { recursive: true });
+  await writeFile(join(locked, "data"), "read-only resource");
+  await chmod(locked, 0o555);
+  let snapshotDirectory: string | undefined;
+  try {
+    expect(
+      await withStagedUploadSnapshotAsync(uploadId, async (path) => {
+        snapshotDirectory = dirname(path);
+        expect(
+          await readFile(join(path, "Frameworks/Locked.framework/Resources/data"), "utf8"),
+        ).toBe("read-only resource");
+        return "installed";
+      }),
+    ).toBe("installed");
+    expect(existsSync(snapshotDirectory!)).toBe(false);
+  } finally {
+    await chmod(locked, 0o755);
+    await rm(source, { recursive: true, force: true });
+    if (snapshotDirectory && existsSync(snapshotDirectory)) {
+      await chmod(
+        join(snapshotDirectory, "source.app/Frameworks/Locked.framework/Resources"),
+        0o755,
+      );
+      await rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }
+});
+
+test.each([false, true])(
+  "failed snapshot cleanup preserves the result and retries before another copy: %s",
+  async (failConsumer) => {
+    const uploadId = "cleanup-retry-source";
+    await writeFile(join(UPLOAD_DIR, uploadId), "source");
+    const displaced = `${UPLOAD_DIR}-cleanup-test`;
+    let moved = false;
+    let snapshotDirectory: string | undefined;
+    try {
+      const pending = withStagedUploadSnapshotAsync(uploadId, async (path) => {
+        snapshotDirectory = dirname(path);
+        // Replace this test process's staging directory with a file, forcing
+        // ENOTDIR regardless of whether the test runner uses a privileged UID.
+        await rename(UPLOAD_DIR, displaced);
+        moved = true;
+        await writeFile(UPLOAD_DIR, "temporarily unavailable");
+        if (failConsumer) throw new Error("install failed");
+        return "installed";
+      });
+      if (failConsumer) await expect(pending).rejects.toThrow("install failed");
+      else expect(await pending).toBe("installed");
+      const before = (await readdir(displaced)).sort();
+      let consumed = false;
+      await expect(
+        withStagedUploadSnapshotAsync(uploadId, async () => {
+          consumed = true;
+        }),
+      ).rejects.toThrow("Previous app files still need cleanup");
+      expect(consumed).toBe(false);
+      expect((await readdir(displaced)).sort()).toEqual(before);
+    } finally {
+      if (moved) {
+        await rm(UPLOAD_DIR, { force: true });
+        await rename(displaced, UPLOAD_DIR);
+      }
+    }
+    expect(existsSync(snapshotDirectory!)).toBe(true);
+    await withStagedUploadSnapshotAsync(uploadId, async () => {
+      expect(existsSync(snapshotDirectory!)).toBe(false);
+    });
+    await rm(join(UPLOAD_DIR, uploadId));
+  },
+);
+
+test("owner-scoped snapshots are reclaimed for dead servers and preserved for live servers", async () => {
+  const dead = join(UPLOAD_ROOT, "2147483647-deadbeef"),
+    live = join(UPLOAD_ROOT, `${process.pid}-deadbeef`);
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+  const active = `.install-snapshot-${Date.now() + 8 * 60 * 60 * 1000}-active`;
+  const expired = `.install-snapshot-${Date.now() - 1000}-expired`;
+  for (const directory of [dead, live]) {
+    for (const name of [active, expired]) {
+      await mkdir(join(directory, name), { recursive: true });
+      await writeFile(join(directory, name, "source"), "app source");
+      await utimes(join(directory, name), old, old);
+    }
+    await writeFile(join(directory, "install-snapshot-upload"), "old upload");
+    await utimes(join(directory, "install-snapshot-upload"), old, old);
+  }
+  try {
+    await runHostActionAsync(
+      {
+        action: "upload.append",
+        params: {
+          uploadId: "prune-snapshots",
+          first: true,
+          data: Buffer.from("x").toString("base64"),
+        },
+      },
+      "unused",
+    );
+    expect(existsSync(dead)).toBe(false);
+    expect(existsSync(join(live, active, "source"))).toBe(true);
+    // A live PID may belong to a different process after the snapshot owner died.
+    expect(existsSync(join(live, expired))).toBe(false);
+    expect(existsSync(join(live, "install-snapshot-upload"))).toBe(false);
+  } finally {
+    await rm(dead, { recursive: true, force: true });
+    await rm(live, { recursive: true, force: true });
+    await runHostActionAsync(
+      { action: "upload.remove", params: { uploadId: "prune-snapshots" } },
+      "unused",
+    );
+  }
+});
+
+test("an old staged app directory installs from its private copy while upload pruning runs", async () => {
+  const uploadId = "Old.app",
+    source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Info.plist"), "test app");
+  await writeFile(join(source, "App"), "executable");
+  await chmod(join(source, "App"), 0o755);
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+  await utimes(source, old, old);
+  const started = join(root, "directory-started"),
+    gate = join(root, "directory-release");
+  process.env.SERVE_SIM_INSTALL_STARTED = started;
+  process.env.SERVE_SIM_INSTALL_GATE = gate;
+  const pending = runHostActionAsync(
+    { action: "app.install", params: { udid: UDID, path: source } },
+    BIN,
+  );
+  try {
+    for (let n = 0; n < 500 && !existsSync(started); n++) await Bun.sleep(10);
+    expect(existsSync(started)).toBe(true);
+    const uploaded = await runHostActionAsync(
+      {
+        action: "upload.append",
+        params: {
+          uploadId: "prune-old-app",
+          first: true,
+          data: Buffer.from("x").toString("base64"),
+        },
+      },
+      "unused",
+    );
+    expect(uploaded.exitCode).toBe(0);
+    expect(existsSync(source)).toBe(false);
+  } finally {
+    await writeFile(gate, "release");
+    delete process.env.SERVE_SIM_INSTALL_STARTED;
+    delete process.env.SERVE_SIM_INSTALL_GATE;
+    expect((await pending).exitCode).toBe(0);
+    await rm(source, { recursive: true, force: true });
+    await runHostActionAsync(
+      { action: "upload.remove", params: { uploadId: "prune-old-app" } },
+      "unused",
+    );
+  }
+});
+
+test("snapshot copying is bounded by the remaining action deadline", async () => {
+  const uploadId = "snapshot-copy-timeout";
+  await writeFile(join(UPLOAD_DIR, uploadId), "source");
+  let consumed = false;
+  try {
+    await withShimsAsync({ cp: "#!/bin/sh\nsleep 2\n" }, async () => {
+      await expect(
+        withStagedUploadSnapshotAsync(
+          uploadId,
+          async () => {
+            consumed = true;
+          },
+          Date.now() + 100,
+        ),
+      ).rejects.toThrow("timed out");
+    });
+    expect(consumed).toBe(false);
+  } finally {
+    await rm(join(UPLOAD_DIR, uploadId));
+  }
+});
+
+test("a staged app with relative framework links survives source pruning during install", async () => {
+  const uploadId = "FrameworkLinks.app";
+  const source = join(UPLOAD_DIR, uploadId);
+  const started = join(root, "links-install-started"),
+    gate = join(root, "links-install-release");
+  const trigger = "prune-framework-source";
+  await mkdir(join(source, "Versions", "A"), { recursive: true });
+  await writeFile(join(source, "Info.plist"), "test app");
+  await writeFile(join(source, "Versions", "A", "Executable"), "executable");
+  await chmod(join(source, "Versions", "A", "Executable"), 0o755);
+  await symlink("A", join(source, "Versions", "Current"));
+  await symlink("Versions/Current/Executable", join(source, "App"));
+  const old = new Date(Date.now() - 7 * 60 * 60 * 1000);
+  await utimes(source, old, old);
+  process.env.SERVE_SIM_INSTALL_STARTED = started;
+  process.env.SERVE_SIM_INSTALL_GATE = gate;
+  let pending: ReturnType<typeof install> | undefined;
+  try {
+    pending = install(source);
+    for (let n = 0; n < 200 && !existsSync(started); n++) await Bun.sleep(10);
+    expect(existsSync(started)).toBe(true);
+    expect(
+      (
+        await runHostActionAsync(
+          {
+            action: "upload.append",
+            params: {
+              uploadId: trigger,
+              first: true,
+              data: Buffer.from("unrelated upload").toString("base64"),
+            },
+          },
+          "unused",
+        )
+      ).exitCode,
+    ).toBe(0);
+    expect(existsSync(source)).toBe(false);
+    await writeFile(gate, "release");
+    const result = await pending;
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("test app");
+    expect(existsSync(installedPath(result.stdout))).toBe(false);
+  } finally {
+    await writeFile(gate, "release");
+    if (pending) await pending;
+    delete process.env.SERVE_SIM_INSTALL_STARTED;
+    delete process.env.SERVE_SIM_INSTALL_GATE;
+    await rm(source, { recursive: true, force: true });
+    await rm(join(UPLOAD_DIR, trigger), { force: true });
+  }
+});
+
+test.each([
+  "absolute-internal",
+  "absolute-external",
+  "relative-escape",
+  "directory-alias-escape",
+  "casefold-alias-escape",
+  "unicode-alias-escape",
+  "dangling",
+  "file-as-directory",
+  "cycle",
+])("rejects unsafe staged app links before accepting a snapshot: %s", async (kind) => {
+  const uploadId = `Unsafe-${kind}.app`,
+    source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Executable"), "original bytes");
+  const before = (await readdir(UPLOAD_DIR)).filter((name) =>
+    name.startsWith(".install-snapshot-"),
+  );
+  const target =
+    kind === "absolute-internal"
+      ? join(source, "Executable")
+      : kind === "absolute-external"
+        ? join(root, "outside")
+        : kind === "relative-escape"
+          ? "../outside"
+          : kind === "directory-alias-escape"
+            ? "Root/../outside"
+            : kind === "casefold-alias-escape"
+              ? "ROOT/../outside"
+              : kind === "unicode-alias-escape"
+                ? "Ro\u0301o\u0301t/../outside"
+                : kind === "dangling"
+                  ? "missing"
+                  : kind === "file-as-directory"
+                    ? "Executable/../Executable"
+                    : "App";
+  if (["directory-alias-escape", "casefold-alias-escape"].includes(kind))
+    await symlink(".", join(source, "Root"));
+  if (kind === "unicode-alias-escape") await symlink(".", join(source, "Róót"));
+  await symlink(target, join(source, "App"));
+  let accepted = false;
+  try {
+    await expect(
+      withStagedUploadSnapshotAsync(uploadId, async () => {
+        accepted = true;
+      }),
+    ).rejects.toThrow(/unsafe link|cyclic or excessive link/);
+    expect(accepted).toBe(false);
+    expect(
+      (await readdir(UPLOAD_DIR)).filter((name) => name.startsWith(".install-snapshot-")),
+    ).toEqual(before);
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});
+
+test("relative parent links that remain inside a staged app are preserved", async () => {
+  const uploadId = "RelativeParent.app",
+    source = join(UPLOAD_DIR, uploadId);
+  await mkdir(join(source, "Nested"), { recursive: true });
+  await writeFile(join(source, "Info.plist"), "bundle metadata");
+  await symlink("../Info.plist", join(source, "Nested", "Metadata"));
+  try {
+    await withStagedUploadSnapshotAsync(uploadId, async (path) => {
+      await rm(source, { recursive: true });
+      expect(await readFile(join(path, "Nested", "Metadata"), "utf8")).toBe("bundle metadata");
+    });
+  } finally {
+    await rm(source, { recursive: true, force: true });
+  }
+});
+
+test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", async (hops) => {
+  const uploadId = `Chain-${hops}.app`,
+    source = join(UPLOAD_DIR, uploadId);
+  await mkdir(source);
+  await writeFile(join(source, "Executable"), "bundle bytes");
+  for (let n = 0; n < hops; n++) {
+    await symlink(n + 1 === hops ? "Executable" : `Link${n + 1}`, join(source, `Link${n}`));
+  }
+  let accepted = false;
+  const snapshot = () =>
+    withStagedUploadSnapshotAsync(uploadId, async (path) => {
+      accepted = true;
+      await rm(source, { recursive: true });
+      expect(await readFile(join(path, "Link0"), "utf8")).toBe("bundle bytes");
+    });
+  try {
+    if (hops === 32) await snapshot();
+    else {
+      await expect(snapshot()).rejects.toThrow("cyclic or excessive link chain");
+      expect(accepted).toBe(false);
+    }
+  } finally {
+    await rm(source, { recursive: true, force: true });
   }
 });
