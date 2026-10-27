@@ -5,8 +5,8 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-27 (recording lock)
-**Related:** LLP 0000, LLP 0003
+**Revised:** 2026-10-27 (recording lock; iPhone Duo hinge state and commands)
+**Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
 
@@ -112,6 +112,16 @@ The iOS client pastes text into the device and copies text from it with the serv
 - A failed Copy shows serve-sim's `error` text. The client has fixed texts only for a reply without one [observed: `COPY_FAILURES` in `ios-clipboard.ts`].
 - `DeviceScreen` handles Command+V and Control+V when `capabilities.clipboard.paste` is set. It does not send the V key, so the browser fires a `paste` event. Its text needs no clipboard permission, and `DeviceScreen` pastes it. When the event has no text, or no `paste` event comes before the V key goes up, `DeviceScreen` sends a Paste without text, and the device pastes its own clipboard. serve-sim's client does the same [observed: `DeviceScreen.tsx`; serve-sim `client/client.tsx`, `client/utils/keyboard-paste-gate.ts`]. Held shortcut repeats are suppressed until V keyup or focus loss, including after the first paste event. Command+C stays keys unless the host supplies `DeviceScreen.onCopy` and the device supports Copy. That callback owns the browser clipboard write; the C key is not sent again. Held repeats are suppressed until keyup or focus loss.
 - Clipboard actions use serve-sim's shared Command+V and Command+C path, which prepares the foreground app's editing shortcuts while preserving a saved OFF setting (LLP 0010). The client adds no clipboard-specific keyboard policy [observed: `pasteText` and `copyText` in `useIosDevice.ts`].
+
+## Hinge
+
+`client.hinge` gives the iPhone Duo hinge state and sends hinge commands. It is null until a screen config sets `supportsHingeAngle: true` [observed: `useIosHinge.ts`]. The poses, their angles and the command shapes copy serve-sim's `src/hinge-control.ts`; LLP 0004 explains them.
+
+- The state comes from the `0x82` screen config. When the config has `observedDeviceState`, its fields replace the command fields (`hingeAngle`, `hingePose`, `physicalOrientation`, `tableMode`), and a field that it omits is unknown. The pose is then the preset that the observation matches, as in serve-sim's `observedHingeState` [observed: `screenHingeState` in `screen-config.ts`; serve-sim `src/hinge-control.ts`].
+- The client compares every screen config field, like serve-sim's `screenConfigsEqual`. A hinge move often keeps the pixel size, so a size and orientation check alone dropped it [observed: `screen-config.ts`; serve-sim `src/client/simulator/screen-config-state.ts`].
+- `setControl` sends `0x10` with `{requestId, command}` on the admitted input socket, and the `0x90` reply with the same request ID settles it. serve-sim answers every request, also an invalid one [observed: `0x10` in serve-sim `src/device-session.ts`].
+- Like Paste and Copy, a hinge command is never queued or sent again on a new socket. A disconnect or a replaced helper fails every command without a reply with `hinge.error`, because the hinge maybe moved. A change of device, server or token clears the state. A command without an open socket fails at once [observed: `useIosHinge.ts`].
+- There is no client deadline, because serve-sim always replies or closes the socket. HubClient keeps no local preview of a requested pose; the page sees the new state when the helper pushes the next config. serve-sim's own client previews the pose while the command is pending [observed: LLP 0004, Live pose observation].
 
 ### Dashboard
 

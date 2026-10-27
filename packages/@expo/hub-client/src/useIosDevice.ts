@@ -124,6 +124,8 @@ import {
   type WsMessageSent,
 } from "./ws-send-queue";
 import { WS_MSG_CONFIG } from "./input-protocol";
+import { screenConfigsEqual } from "./screen-config";
+import { useIosHinge } from "./useIosHinge";
 import { WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 const MAX_LOGS = 200;
@@ -499,6 +501,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       committedInputIdentityRef.current === inputIdentity && pendingInputRef.current.scope !== null,
     [inputIdentity],
   );
+  const trySendInput = useCallback(
+    (tag: number, payload: object) =>
+      ownsInput() && inputSocketRef.current?.trySend(tag, payload) === true,
+    [ownsInput],
+  );
+  const {
+    hinge,
+    receive: receiveHingeReply,
+    failPending: failPendingHinge,
+  } = useIosHinge({ screen, identity: clipboardIdentity, trySend: trySendInput });
   // @ref LLP 0013#ios-input-adapter — discovery gaps retain intent, known owner changes discard it
   useLayoutEffect(() => {
     const previous = pendingInputRef.current;
@@ -1480,7 +1492,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         onMessage(data) {
           if (!(data instanceof ArrayBuffer) || keyboard.receive(data)) return false;
           const bytes = new Uint8Array(data);
-          if (bytes[0] !== WS_MSG_CONFIG) return false;
+          if (receiveHingeReply(bytes) || bytes[0] !== WS_MSG_CONFIG) return false;
           try {
             const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
               inputUnavailable?: boolean;
@@ -1498,13 +1510,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             rotationCursorRef.current.updateReadback(c.orientation);
             setInputUnavailable(c.inputUnavailable === true);
             hasWsConfigRef.current = true;
-            setScreen((prev) =>
-              prev?.width === c.width &&
-              prev.height === c.height &&
-              prev.orientation === c.orientation
-                ? prev
-                : c,
-            );
+            // @ref LLP 0013#hinge — a hinge move keeps the size, so every field is compared
+            setScreen((prev) => (screenConfigsEqual(prev, c) ? prev : c));
             return true;
           } catch {
             return false;
@@ -1512,6 +1519,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         },
         onDisconnect() {
           keyboard.cancelRequests();
+          failPendingHinge();
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(null);
           // Normally exec-ws pushes replacement config by the reconnect. HTTP discovery
@@ -1550,6 +1558,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       clearTimeout(refreshTimer);
       let messages = input.takePending();
       keyboard.cancelRequests();
+      failPendingHinge();
       input.dispose();
       if (pendingInputRef.current === pendingOwner) {
         for (const message of pendingOwner.messages) messages = enqueueWsMessage(messages, message);
@@ -1558,7 +1567,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
+  }, [
+    wsUrl,
+    requireInputAdmission,
+    controlDevice,
+    socketProtocols,
+    videoSessionKey,
+    keyboard,
+    receiveHingeReply,
+    failPendingHinge,
+  ]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -2136,5 +2154,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     hardwareKeyboardConnected,
     setHardwareKeyboardConnected,
     toggleSoftwareKeyboard,
+    hinge,
   };
 }
