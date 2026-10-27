@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-27 (CLI entry selection and ESM scope), 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -1043,3 +1043,17 @@ artifacts remain PNG at the requested size. Binary responses declare
 total durations; total includes response construction but excludes delivery [observed:
 `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
 middleware, and inspection route callers].
+
+## CLI entry selection
+
+The build selects the CLI entry used by mounted middleware: Node bundles use
+sibling `serve-sim.js`, compiled executables use `process.execPath`, and source
+execution uses `index.ts`. Middleware consumes that path without inspecting its
+host's entry script or Bun virtual paths. The Node middleware and CLI must ship
+as siblings. [observed: `build.ts`, `src/cli-path.ts`, `src/middleware.ts`]
+
+Hub's vendored Node CLI retains a type-only `vendor/serve-sim/package.json`
+with `type: module`, included in Hub's published files. This preserves its ESM
+scope after other package metadata is removed, avoiding module-type warnings in
+action stderr. [observed: `packages/expo-device-hub/scripts/vendor.ts`,
+`packages/expo-device-hub/package.json`]

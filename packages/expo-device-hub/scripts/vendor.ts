@@ -42,5 +42,9 @@ for (const name of deps) {
     .filter((file) => file.split(sep).pop() === "package.json");
   for (const manifest of manifests) rmSync(resolve(dest, manifest), { force: true });
 
+  // @ref LLP 0003#cli-entry-selection — preserve the CLI's ESM scope after stripping package metadata
+  if (name === "@expo/serve-sim")
+    writeFileSync(resolve(dest, "package.json"), JSON.stringify({ type: "module" }) + "\n");
+
   console.log(`Vendored ${name} → vendor/${vendorName}`);
 }
