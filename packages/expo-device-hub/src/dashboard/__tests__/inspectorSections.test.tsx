@@ -1176,12 +1176,15 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
-test("offers the orientations the client can set and shows the one the stream reports", () => {
+test("offers the client's orientations and shows the pose the device reports", () => {
+  const all = {
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  } as const;
   const ios = renderToStaticMarkup(
     <LogSidebar
       client={{
         ...inspectorClient("ios"),
-        orientations: ["portrait", "landscape_left", "landscape_right", "portrait_upside_down"],
+        capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
         screen: { width: 844, height: 390, orientation: "landscape_right" },
       }}
     />,
@@ -1194,32 +1197,51 @@ test("offers the orientations the client can set and shows the one the stream re
   ]);
   expect(selectValue(ios, "Orientation")).toBe("Landscape right");
 
-  // serve-emu reports no orientation, so a landscape frame shows its only landscape option.
   const android = renderToStaticMarkup(
     <LogSidebar
       client={{
         ...inspectorClient("android"),
-        orientations: ["portrait", "landscape_left"],
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: {
+          width: 390,
+          height: 844,
+          orientation: "portrait_upside_down",
+          framesUpright: true,
+        },
+      }}
+    />,
+  );
+  expect(selectValue(android, "Orientation")).toBe("Upside down");
+
+  // An older serve-emu takes two poses but reports none, so the select waits instead of guessing.
+  const unreported = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: {
+          ...inspectorClient("android").capabilities,
+          orientation: { orientations: ["portrait", "landscape_left"] },
+        },
         screen: { width: 844, height: 390 },
       }}
     />,
   );
-  expect(selectOptionLabels(android, "Orientation")).toEqual(["Portrait", "Landscape left"]);
-  expect(selectValue(android, "Orientation")).toBe("Landscape left");
+  expect(unreported).not.toContain('aria-label="Orientation"');
 
-  const noSetter = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
-  expect(noSetter).not.toContain('aria-label="Orientation"');
+  const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(unsupported).not.toContain('aria-label="Orientation"');
 });
 
-test("locks the orientation select like Rotate while recording or not streaming", () => {
+test("disables the orientation select from the client's recording lock or a stopped stream", () => {
+  const ios = inspectorClient("ios");
   const client = {
-    ...inspectorClient("ios"),
-    orientations: ["portrait", "landscape_left"] as const,
-  };
+    ...ios,
+    capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
+  } as const;
   for (const [overrides, locked] of [
     [{}, false],
-    [{ screenRecording: "recording" as const }, true],
-    [{ screenRecording: "unknown" as const }, true],
+    [{ recordingControlsLocked: true }, true],
     [{ status: "connecting" as const }, true],
   ] as const) {
     const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
