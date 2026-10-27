@@ -20,6 +20,7 @@ import {
   applyDefaultCapabilities,
   capabilityConfigPath,
   renderCapabilityConfig,
+  launchApp,
 } from "../launch-manager";
 import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
@@ -632,6 +633,72 @@ exit 0
       clearRegisteredCapabilities();
     }
   });
+});
+
+test("launching with unchanged capabilities reads the device environment and sets nothing", async () => {
+  const log = join(stateDir(), "simctl-noop-calls");
+  const environment = join(stateDir(), "launchctl-noop-environment.json");
+  writeFileSync(log, "");
+  writeFileSync(environment, "{}");
+  clearRegisteredCapabilities();
+  registerCapability({
+    name: "camera",
+    defaultEnabled: false,
+    scope: "allApps",
+    async setEnabled() {
+      return { dylib: "/camera.dylib" };
+    },
+  });
+  try {
+    await withShimsAsync(
+      {
+        xcrun: `#!/usr/bin/env node
+const fs = require("fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
+const values = JSON.parse(fs.readFileSync(${JSON.stringify(environment)}, "utf8"));
+if (args[1] === "spawn" && args[3] === "launchctl") {
+  const [operation, name, value] = args.slice(4);
+  if (operation === "getenv") console.log(values[name] ?? "");
+  if (operation === "setenv") values[name] = value;
+  if (operation === "unsetenv") delete values[name];
+  fs.writeFileSync(${JSON.stringify(environment)}, JSON.stringify(values));
+}
+`,
+      },
+      async () => {
+        await applyDefaultCapabilities(UDID, null, { enable: ["camera"] });
+        const armed = readFileSync(environment, "utf8");
+        const launchctl = () => {
+          const calls = readFileSync(log, "utf8").trim().split("\n");
+          writeFileSync(log, "");
+          return calls
+            .filter((line) => line.includes(" launchctl "))
+            .map((line) => line.split(" ").slice(4, 6).join(" "));
+        };
+        launchctl();
+
+        await launchApp(UDID, { bundleId: "explicit.app" });
+        expect(launchctl()).toEqual([
+          "getenv DYLD_INSERT_LIBRARIES",
+          "getenv SERVE_SIM_CAPABILITIES_CONFIG",
+          "getenv DYLD_INSERT_LIBRARIES",
+        ]);
+        expect(readFileSync(environment, "utf8")).toBe(armed);
+
+        // A reboot clears launchd's values, so the next launch must arm the device again.
+        writeFileSync(environment, "{}");
+        await launchApp(UDID, { bundleId: "explicit.app" });
+        expect(launchctl().filter((call) => call.startsWith("setenv"))).toEqual([
+          "setenv SERVE_SIM_CAPABILITIES_CONFIG",
+          "setenv DYLD_INSERT_LIBRARIES",
+        ]);
+        expect(JSON.parse(readFileSync(environment, "utf8"))).toEqual(JSON.parse(armed));
+      },
+    );
+  } finally {
+    clearRegisteredCapabilities();
+  }
 });
 
 describe("childLaunchEnv", () => {

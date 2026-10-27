@@ -1,6 +1,6 @@
 {
   "name": "expo-device-hub",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "Expo DevTools plugin for managing iOS simulators and Android emulators.",
   "keywords": [
     "android",
@@ -49,6 +49,8 @@
     "web": "expo start --web",
     "cli": "bun dist/server/cli.mjs",
     "test": "bun test",
+    "test:e2e:client": "bun scripts/e2e/run.ts",
+    "typecheck:e2e:client": "tsc -p scripts/e2e/tsconfig.json",
     "build": "bun run build:web && bun run build:vendor && bun run build:server",
     "build:web": "expo export --platform web --output-dir dist/client",
     "build:vendor": "bun run scripts/vendor.ts",
@@ -57,7 +59,7 @@
   "dependencies": {
     "@fastify/busboy": "^3.2.0",
     "mediabunny": "1.55.3",
-    "node-datachannel": "^0.32.3",
+    "node-datachannel": "^0.33.4",
     "ws": "^8.21.0",
     "zustand": "^5.0.15"
   },
@@ -97,7 +99,7 @@
     "serve-emu": {
       "@fastify/busboy": "^3.2.0",
       "mediabunny": "1.55.3",
-      "node-datachannel": "^0.32.3"
+      "node-datachannel": "^0.33.4"
     }
   }
 }

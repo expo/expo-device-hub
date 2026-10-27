@@ -125,6 +125,9 @@ foreground streaming [observed: `src/index.ts` CLI action]:
    identifier, apply requested/default capabilities instead.
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
+   Once it publishes device state, it starts each device's capture session in the
+   background, without waiting for the first `/readyz`. `/readyz` awaits that same
+   start before it answers ready, and a failed start is retried by the next poll.
 
 Plain foreground preview startup without capture, app startup, or capability
 overrides, with the loader and clipboard reader built, prepares defaults while arming
@@ -133,7 +136,8 @@ order so an on-demand build cannot delay initial arming. Combined initialization
 retains idle-session ownership even when no default prepares.
 A failed publication with successful rollback falls back to separate arming and
 default initialization. A stop signal prevents fallback, and lock timeouts and
-uncertain rollback stop startup. The late live insert
+uncertain rollback stop startup. The startup error then lists the failed update and the
+failed restore, so a log shows which calls failed. The late live insert
 read and ordered environment writes are unchanged [observed: `src/index.ts`
 `combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
 
@@ -163,6 +167,49 @@ action. `launchAppAsync` awaits launch before opening the URL. These are success
 simctl operations, not proof that the app rendered its UI or handled the deep link
 [observed: `src/host-actions-utils.ts` `installAppInvocation`; `src/launch-app.ts`].
 
+## Prepared process adoption
+
+Start a warm server with `serve-sim <udid> --orphan --require-token --transport webrtc`.
+Only `--orphan` creates the private one-shot owner channel; matching these settings
+without the flag leaves a normal server unadoptable. This makes ownership handoff
+an explicit startup choice instead of inferring it from unrelated preview settings
+[confirmed: Gabe Debes, 2026-10-26, explicit orphan flag direction].
+The flag requires one device and a loopback, token-protected WebRTC preview.
+It cannot accompany `--adopt`, list/kill, `--detach`, `--no-preview` or subcommands
+[observed: `packages/serve-sim/packages/serve-sim/src/index.ts`].
+
+`serve-sim <udid> --adopt --require-token --transport webrtc` parses the same
+normal startup flags and defaults, then claims that orphan without
+booting a device or starting another server. The CLI resolves only an exact UDID
+from its existing native state directory, checks the running PID against the
+server's own PID, and requires the same package version, macOS boot, device,
+host, explicit port, state directory, temporary directory and process-bound
+startup environment [observed: `src/index.ts`, `src/session-owner.ts`].
+
+The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
+It is separate from the preview token and never exposed by HTTP or `/exec-ws`.
+A compatible claim consumes the local authority once, including when native setup
+fails. It updates stream settings including normal encoder defaults, STUN/TURN,
+CORS/frame policy, sharing, screenshot directory and capture fields/upstream.
+A running native encoder receives the update before the CLI reports success.
+Optional paired recording output/ID flags also await the native writer before
+success, confirming that output/ID in startup JSON. The same server owns video
+until exact-ID finalization or shutdown, without a `record-video` child or
+heartbeat; warmup starts no video [observed: `src/device-session.ts`,
+`src/middleware.ts`, `src/session-owner.ts`].
+Capture restarts with the requested upstream before the CLI succeeds and before app operations; an upstream
+failure never selects direct traffic [observed: `src/index.ts`, `src/middleware.ts`,
+`src/device-session.ts`, `src/capture/upstream.ts`].
+
+Adoption rejects helper/detach modes, list/kill combinations, debug logging,
+insecure-host policy changes, app-startup flags, capability overrides and
+additional boot dylibs. These require the caller to stop its prepared service
+and use the existing cold path. It also rejects subcommand combinations before
+the subcommand runs. The adoption command never silently falls back or executes
+app startup twice; the job continues using authenticated `app.install` and
+`app.launch` on `/exec-ws` [observed: `src/index.ts`; confirmed: Gabe Debes,
+2026-10-22, CLI adoption direction].
+
 ## Failure and teardown
 
 Failed boot, install, launch or `simctl openurl` stops startup with exit code 1,
@@ -188,15 +235,17 @@ publication, app operations, preview imports/construction, HTTP binding, state
 publication, and native device options/capture/screen configuration. A started
 phase without a completion line identifies work still pending. Host-action
 `app.install` and `app.launch` timings also cover apps supplied after the listener
-starts. App timings include the validated target UDID and a device name when
-available from existing device snapshots; logging does not add device queries.
+starts. Nested `app.launch.capabilities` and `app.launch.terminate` phases time
+capability publication and the stop before a restart.
+App timings include the validated target UDID and a device name when available
+from existing device snapshots; logging does not add device queries.
 Nonzero install/launch results, including timeouts, log failure without changing
 the result. A failed stale-loader insert read logs the original error (including
 its process-error cause), reports a failed phase, and still lets startup continue.
 For best-effort loader arming, completion means the function returned,
 not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
 [observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
-`src/host-actions.ts`].
+`src/host-actions.ts`, `src/launch-manager.ts`].
 
 `/readyz` keeps its response contract and logs readiness transitions on stderr.
 An unavailable response identifies no usable booted session (`session-unavailable`,

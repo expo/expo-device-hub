@@ -125,3 +125,8 @@ export function simEndpoint(path: string): string {
   const basePath = configured ?? (window.location.pathname.replace(/\/+$/, "") || "/");
   return basePath === "/" ? `/${path}` : `${basePath}/${path}`;
 }
+
+/** Simulator UUIDs may arrive with different casing from helpers and discovery. */
+export function sameSimulator(a: string | null | undefined, b: string | null | undefined): boolean {
+  return !!a && !!b && a.toUpperCase() === b.toUpperCase();
+}

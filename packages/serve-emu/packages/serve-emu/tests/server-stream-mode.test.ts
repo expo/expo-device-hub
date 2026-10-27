@@ -444,94 +444,100 @@ describe("server stream source switching", () => {
     }
   });
 
-  test("stages, publishes, rolls back, and idempotently reports a source", async () => {
-    const initial = fakeSession("emulator-5554", "scrcpy");
-    const grpc = fakeSession("emulator-5554", "grpc-screenshot");
-    const grpcGate = deferred<EmuSession>();
-    const grpcStarted = deferred<void>();
-    const modes: StreamMode[] = [];
-    let failScrcpy = false;
-    const captured: CapturedServer = { options: null };
-    const started = await startServer(
-      { serial: "emulator-5554", port: 3300 },
-      {
-        openSession: async ({ mode }) => {
-          modes.push(mode);
-          if (modes.length === 1) return initial.session;
-          if (mode === "grpc-screenshot") {
-            grpcStarted.resolve();
-            return grpcGate.promise;
-          }
-          if (failScrcpy) throw new Error("replacement failed");
-          return fakeSession("emulator-5554", mode).session;
+  test.each([undefined, 0, 30_000])(
+    "reports source repeat cadence %s across switches",
+    async (repeatFrameMs) => {
+      const initial = fakeSession("emulator-5554", "scrcpy");
+      const grpc = fakeSession("emulator-5554", "grpc-screenshot");
+      const grpcGate = deferred<EmuSession>();
+      const grpcStarted = deferred<void>();
+      const modes: StreamMode[] = [];
+      let failScrcpy = false;
+      const captured: CapturedServer = { options: null };
+      const started = await startServer(
+        { serial: "emulator-5554", port: 3300, repeatFrameMs },
+        {
+          openSession: async ({ mode }) => {
+            modes.push(mode);
+            if (modes.length === 1) return initial.session;
+            if (mode === "grpc-screenshot") {
+              grpcStarted.resolve();
+              return grpcGate.promise;
+            }
+            if (failScrcpy) throw new Error("replacement failed");
+            return fakeSession("emulator-5554", mode).session;
+          },
+          serve: capturingServe(captured),
         },
-        serve: capturingServe(captured),
-      },
-    );
+      );
 
-    expect(await (await request(captured, "/api/stream-mode")).json()).toEqual({
-      ok: true,
-      serial: "emulator-5554",
-      mode: "scrcpy",
-      grpcImageMode: "png",
-      inputSource: "scrcpy",
-      availableInputSources: ["scrcpy"],
-      encoder: "software",
-      encoderName: null,
-      availableEncoders: ["software", "hardware"],
-      availableModes: ["scrcpy", "grpc-screenshot"],
-      sessionGeneration: 0,
-    });
-    const methodNotAllowed = await request(captured, "/api/stream-mode", {
-      method: "POST",
-    });
-    expect(methodNotAllowed.status).toBe(405);
-    expect(methodNotAllowed.headers.get("allow")).toBe("GET, PUT");
-    expect(await methodNotAllowed.json()).toEqual({
-      ok: false,
-      error: {
-        code: "method_not_allowed",
-        message: "Method must be GET or PUT",
-      },
-    });
+      expect(await (await request(captured, "/api/stream-mode")).json()).toEqual({
+        ok: true,
+        serial: "emulator-5554",
+        mode: "scrcpy",
+        repeatFrameMs: repeatFrameMs ?? SCRCPY_DEFAULTS.repeatFrameMs,
+        grpcImageMode: "png",
+        inputSource: "scrcpy",
+        availableInputSources: ["scrcpy"],
+        encoder: "software",
+        encoderName: null,
+        availableEncoders: ["software", "hardware"],
+        availableModes: ["scrcpy", "grpc-screenshot"],
+        sessionGeneration: 0,
+      });
+      const methodNotAllowed = await request(captured, "/api/stream-mode", {
+        method: "POST",
+      });
+      expect(methodNotAllowed.status).toBe(405);
+      expect(methodNotAllowed.headers.get("allow")).toBe("GET, PUT");
+      expect(await methodNotAllowed.json()).toEqual({
+        ok: false,
+        error: {
+          code: "method_not_allowed",
+          message: "Method must be GET or PUT",
+        },
+      });
 
-    const switching = putMode(captured, "grpc-screenshot");
-    await grpcStarted.promise;
-    expect(initial.closeCalls()).toBe(0);
-    expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe("scrcpy");
+      const switching = putMode(captured, "grpc-screenshot");
+      await grpcStarted.promise;
+      expect(initial.closeCalls()).toBe(0);
+      expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe("scrcpy");
 
-    grpcGate.resolve(grpc.session);
-    expect(await (await switching).json()).toMatchObject({
-      mode: "grpc-screenshot",
-      sessionGeneration: 1,
-    });
-    expect(initial.closeCalls()).toBe(1);
+      grpcGate.resolve(grpc.session);
+      expect(await (await switching).json()).toMatchObject({
+        mode: "grpc-screenshot",
+        repeatFrameMs: repeatFrameMs || 500,
+        sessionGeneration: 1,
+      });
+      expect(initial.closeCalls()).toBe(1);
 
-    const idempotent = await putMode(captured, "grpc-screenshot");
-    expect(await idempotent.json()).toMatchObject({
-      mode: "grpc-screenshot",
-      sessionGeneration: 1,
-    });
-    expect(modes).toEqual(["scrcpy", "grpc-screenshot"]);
+      const idempotent = await putMode(captured, "grpc-screenshot");
+      expect(await idempotent.json()).toMatchObject({
+        mode: "grpc-screenshot",
+        repeatFrameMs: repeatFrameMs || 500,
+        sessionGeneration: 1,
+      });
+      expect(modes).toEqual(["scrcpy", "grpc-screenshot"]);
 
-    failScrcpy = true;
-    const failed = await putMode(captured, "scrcpy");
-    expect(failed.status).toBe(503);
-    expect(await failed.json()).toEqual({
-      ok: false,
-      error: {
-        code: "service_unavailable",
-        message: "replacement failed",
-      },
-    });
-    expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe(
-      "grpc-screenshot",
-    );
-    expect(grpc.closeCalls()).toBe(0);
+      failScrcpy = true;
+      const failed = await putMode(captured, "scrcpy");
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toEqual({
+        ok: false,
+        error: {
+          code: "service_unavailable",
+          message: "replacement failed",
+        },
+      });
+      expect((await (await request(captured, "/api/stream-mode")).json()).mode).toBe(
+        "grpc-screenshot",
+      );
+      expect(grpc.closeCalls()).toBe(0);
 
-    await started.stop();
-    expect(grpc.closeCalls()).toBe(1);
-  });
+      await started.stop();
+      expect(grpc.closeCalls()).toBe(1);
+    },
+  );
 
   test("atomically applies an explicit gRPC image mode without fallback", async () => {
     let failRgb888 = true;

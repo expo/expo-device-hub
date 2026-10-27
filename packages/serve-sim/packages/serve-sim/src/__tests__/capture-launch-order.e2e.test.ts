@@ -150,6 +150,7 @@ describeOrSkip("capture arms before launch", () => {
   }, 180_000);
 
   test("keeps stdout to the JSON payload --quiet promises", () => {
+    expect(stderr).toContain("[capture] Frame callbacks registered");
     // An empty stdout would make the loop below vacuous.
     expect(stdout.trim().length).toBeGreaterThan(0);
     for (const line of stdout.split("\n").filter((line) => line.trim().length > 0)) {

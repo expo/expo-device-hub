@@ -110,17 +110,43 @@ describe("locateMitmdump", () => {
 });
 
 describe("mitmdumpMissingMessage", () => {
-  test("says in one line what is missing and the command that fixes it", () => {
-    const message = mitmdumpMissingMessage();
-    expect(message).toContain("mitmproxy is not installed");
-    expect(message).toContain("brew install mitmproxy");
-    expect(message).not.toContain("\n");
+  function withRunner(runner: string | undefined, body: () => void) {
+    const previous = process.env.EAS_BUILD_RUNNER;
+    if (runner === undefined) delete process.env.EAS_BUILD_RUNNER;
+    else process.env.EAS_BUILD_RUNNER = runner;
+    try {
+      body();
+    } finally {
+      if (previous === undefined) delete process.env.EAS_BUILD_RUNNER;
+      else process.env.EAS_BUILD_RUNNER = previous;
+    }
+  }
+
+  test.each([undefined, "local-build-plugin"])(
+    "gives Homebrew instructions on local runner %s",
+    (runner) => {
+      withRunner(runner, () => {
+        expect(mitmdumpMissingMessage()).toBe(
+          "mitmproxy is not installed. Install it via Homebrew: brew install mitmproxy.",
+        );
+      });
+    },
+  );
+
+  test("asks hosted EAS users to restart the session with capture", () => {
+    withRunner("eas-build", () => {
+      expect(mitmdumpMissingMessage()).toBe(
+        "This session does not have network capture configured. Please restart the EAS session with --network-capture.",
+      );
+    });
   });
 
   test("names a SERVE_SIM_MITMDUMP override that cannot run", () => {
-    expect(mitmdumpMissingMessage("/nope/mitmdump")).toContain(
-      "SERVE_SIM_MITMDUMP points at /nope/mitmdump",
-    );
+    withRunner("eas-build", () => {
+      expect(mitmdumpMissingMessage("/nope/mitmdump")).toContain(
+        "SERVE_SIM_MITMDUMP points at /nope/mitmdump",
+      );
+    });
   });
 });
 

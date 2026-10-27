@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync } from "fs";
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -105,3 +106,56 @@ describe.each([false, true])("startup failures (quiet=%s)", (quiet) => {
     20_000,
   );
 });
+
+const NATIVE_ARTIFACTS = [
+  "native/serve-sim-native.node",
+  "capability-loader/libServeSimCapabilityLoader.dylib",
+].map((path) => join(import.meta.dir, "../../dist", path));
+
+test.skipIf(!NATIVE_ARTIFACTS.every((path) => existsSync(path)))(
+  "starts capture after publishing state, before anything polls /readyz",
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), "serve-sim-early-capture-test-"));
+    await writeFile(
+      join(directory, "xcrun"),
+      `#!/usr/bin/env node
+if (process.argv[3] === 'list') {
+  console.log(JSON.stringify({ devices: { iOS: [{ udid: '${UDID}', name: 'Startup test', state: 'Booted' }] } }));
+}
+`,
+      { mode: 0o755 },
+    );
+    const child = Bun.spawn(
+      ["bun", CLI, UDID, "--port", String(await freePortAsync()), "--quiet"],
+      {
+        env: {
+          ...Bun.env,
+          DEVELOPER_DIR: directory,
+          PATH: `${directory}:${Bun.env.PATH}`,
+          SERVE_SIM_STATE_DIR: join(directory, "state"),
+          SERVE_SIM_CAPTURE_CA_DIR: join(directory, "capture-ca"),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const deadline = setTimeout(() => child.kill(), 10_000);
+    try {
+      let stderr = "";
+      const decoder = new TextDecoder();
+      for await (const chunk of child.stderr) {
+        stderr += decoder.decode(chunk);
+        if (stderr.includes(`"phase":"device-options","device":"${UDID}","status":"started"`))
+          break;
+      }
+      expect(stderr).toContain('"phase":"state-publication","status":"complete"');
+      expect(stderr).toContain(`"phase":"device-options","device":"${UDID}","status":"started"`);
+    } finally {
+      clearTimeout(deadline);
+      child.kill();
+      await child.exited;
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  20_000,
+);

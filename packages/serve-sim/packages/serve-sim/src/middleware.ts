@@ -27,6 +27,7 @@ import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
 import { z } from "zod";
+import { type SessionConfiguration } from "./session-configuration";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
@@ -132,6 +133,8 @@ type SimNext = (err?: unknown) => Promise<void>;
 export type SimMiddleware = WebMiddleware & {
   handleUpgrade(req: SimReq, socket: Socket, head: Buffer): void;
   dispose(): Promise<void>;
+  /** In-process owner call only; never routed over HTTP or WebSockets. */
+  configureSession(configuration: SessionConfiguration, signal?: AbortSignal): Promise<void>;
 };
 
 // Injected at build time as a base64-encoded string via `define`
@@ -1576,6 +1579,8 @@ function buildMemoryReport(): MemoryReport {
 }
 
 export interface SimMiddlewareOptions {
+  /** Standalone process handoff; omitted by embedded servers. */
+  configureResources?: (configuration: SessionConfiguration) => Promise<void>;
   /** Base path to serve the preview at. Default: "/.sim" */
   basePath?: string;
   /** Pin this preview server to a specific simulator UDID. */
@@ -2062,8 +2067,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   }
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
-  const shareUrl = options?.shareUrl;
-  const disableShare = !!options?.disableShare;
+  let shareUrl = options?.shareUrl;
+  let disableShare = !!options?.disableShare;
   const allowAnyHostWhenInsecure = options?.allowAnyHostWhenInsecure ?? false;
   // Under the token gate a rebinding page has no cookie and cannot read the token, so only an
   // ungated preview needs its Host checked.
@@ -2078,7 +2083,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
-  const networkCapture = options?.networkCapture ?? false;
+  let networkCapture = options?.networkCapture ?? false;
+  let sessionConfigured = false;
   captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
   const clipboardOption = options?.clipboard ?? true;
   const clipboard =
@@ -3557,6 +3563,34 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // channel plus same-origin helper/devtools proxy sockets.
   fetchMiddleware.handleUpgrade = (req: SimReq, socket: Socket, head: Buffer) => {
     connectMiddleware.handleUpgrade?.(req, socket, head);
+  };
+  // @ref LLP 0003#prepared-process-handoff — called only by the private local owner socket.
+  fetchMiddleware.configureSession = async (configuration, signal) => {
+    if (sessionConfigured || !options?.configureResources || streamSettings?.transport !== "webrtc")
+      throw new Error("Session cannot be configured");
+    sessionConfigured = true;
+    await options.configureResources(configuration);
+    if (options.device)
+      await peekDeviceSession(options.device)?.updateStreamSettings(configuration.stream);
+    Object.assign(streamSettings, configuration.stream);
+    streamSettings.iceServers = configuration.stream.iceServers;
+    corsOrigins.splice(0, corsOrigins.length, ...configuration.corsOrigins);
+    framePolicyHeaders["Content-Security-Policy"] = frameAncestorsPolicy(
+      configuration.frameAncestors,
+    );
+    shareUrl = configuration.shareUrl;
+    disableShare = configuration.disableShare;
+    networkCapture = configuration.networkCapture;
+    signal?.throwIfAborted();
+    if (configuration.videoRecording) {
+      if (!options.device) throw new Error("Video recording requires one device");
+      const { output, recordingId } = configuration.videoRecording;
+      await getDeviceSession(options.device, streamSettings).startAdoptedRecording(
+        output,
+        recordingId,
+        signal,
+      );
+    }
   };
   fetchMiddleware.dispose = async () => {
     await clipboard?.dispose();
