@@ -394,12 +394,9 @@ test("a non-string orientation readback cannot throw or poison iOS rotation requ
 
 test("an iOS orientation choice sends that pose and Rotate continues from it", async () => {
   const { client, helper } = await mount();
-  expect(client().orientations).toEqual([
-    "portrait",
-    "landscape_left",
-    "landscape_right",
-    "portrait_upside_down",
-  ]);
+  expect(client().capabilities.orientation).toEqual({
+    orientations: ["portrait", "landscape_left", "landscape_right", "portrait_upside_down"],
+  });
   client().setOrientation("landscape_right");
   client().rotate();
   expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);

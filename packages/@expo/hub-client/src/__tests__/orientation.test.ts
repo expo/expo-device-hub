@@ -6,6 +6,7 @@ import {
   homeIndicatorEdge,
   rawDeltaForDisplayDelta,
   rawPointForDisplayPoint,
+  streamGeometry,
 } from "../orientation";
 
 describe("homeIndicatorEdge", () => {
@@ -46,5 +47,18 @@ describe("rawDeltaForDisplayDelta", () => {
 
   test("leaves portrait deltas untouched", () => {
     expect(rawDeltaForDisplayDelta(undefined, 0.25, 0.5)).toEqual({ dx: 0.25, dy: 0.5 });
+  });
+});
+
+describe("streamGeometry", () => {
+  test("turns raw serve-sim frames but leaves upright serve-emu frames alone", () => {
+    const portrait = { width: 1080, height: 2400 };
+    expect(streamGeometry({ ...portrait, orientation: "portrait_upside_down" })).toMatchObject({
+      rotationDegrees: 180,
+      inputOrientation: "portrait_upside_down",
+    });
+    expect(
+      streamGeometry({ ...portrait, orientation: "portrait_upside_down", framesUpright: true }),
+    ).toMatchObject({ rotationDegrees: 0, needsRotation: false, inputOrientation: undefined });
   });
 });

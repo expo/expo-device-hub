@@ -145,6 +145,7 @@ const IOS_ORIENTATIONS: readonly DeviceOrientation[] = [
   "landscape_right",
   "portrait_upside_down",
 ];
+const IOS_ORIENTATION_CAPABILITIES = { orientations: IOS_ORIENTATIONS } as const;
 // Native scroll (wheel/trackpad) in raw device fractions, anchored under the pointer.
 const WS_MSG_SCROLL = 0x0b;
 const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
@@ -2034,6 +2035,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
+      orientation: IOS_ORIENTATION_CAPABILITIES,
     }),
     [
       deviceSettingsAvailable,
@@ -2126,7 +2128,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     rotate,
-    orientations: IOS_ORIENTATIONS,
     setOrientation,
     screenshot,
     appearance,
