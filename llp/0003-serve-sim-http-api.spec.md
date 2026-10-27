@@ -129,6 +129,11 @@ sidebar and every entry point that opens it are omitted. This restriction adds
 to the existing authentication and origin gates; it never grants access
 [observed: `src/middleware.ts`, `src/socket/server-control.ts`, `src/client/client.tsx`].
 
+Path-only `file.readBase64` and `app.infoPlist` actions retain their existing
+host-scoped allowed roots, including files belonging to another Simulator. The
+device policy does not sandbox filesystem reads [confirmed: Gabe Debes,
+2026-10-26, accepted host-scoped reads; observed: `src/host-actions.ts`].
+
 Start and shutdown share lifecycle-body validation and refusal responses
 [observed: `src/middleware.ts`, `resolveLifecycleDevice`].
 
@@ -177,6 +182,13 @@ the process after a failed claim [observed: `src/session-owner.ts`].
 
 Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screenshot
 artifacts, and network capture fields/upstream before the CLI reports success.
+An orphan restricts requests to its startup device while awaiting ownership.
+Adoption may add `--single-device` for that same UUID; a different UUID is refused.
+The middleware applies the adopted policy before awaiting resource configuration,
+and existing execution sockets read the current policy for each message. Without
+the flag, adoption restores normal multi-device behavior; an explicit startup
+single-device policy cannot be removed or changed [observed: `src/index.ts`,
+`src/middleware.ts`, `src/session-configuration.ts`].
 Existing captures stop before the job's upstream is applied; requested capture must
 be active before success, and app installation/launch follows through normal typed
 `/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff.
