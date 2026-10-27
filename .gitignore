@@ -1,3 +1,6 @@
 node_modules
 .turbo
 release-artifacts
+
+# PR validation artifacts belong outside git.
+.github/pr-evidence/
