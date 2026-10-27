@@ -13,13 +13,8 @@ describe("serve-sim CLI entry", () => {
   test.each([false, true])("build selects the CLI entry (compiled=%j)", async (compiled) => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "serve-sim cli with spaces-")));
     try {
-      const entry = join(dir, "entry.ts");
+      const entry = join(import.meta.dir, "fixtures/cli-path-entry.child.ts");
       const output = join(dir, "middleware.mjs");
-      writeFileSync(
-        entry,
-        `import { serveSimCliPath } from ${JSON.stringify(resolve(import.meta.dir, "../cli-path.ts"))};
-         console.log(JSON.stringify({ cli: serveSimCliPath(), executable: process.execPath }));`,
-      );
       // Both outputs can be colocated; compiled mode must still launch itself.
       writeFileSync(join(dir, "serve-sim.js"), "");
       const built = await Bun.build({
