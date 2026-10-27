@@ -68,6 +68,7 @@ const CALLS: Array<[string, string, Record<string, unknown> | undefined]> = [
         { action: "grant", service, bundleId: BUNDLE, udid: UDID },
       ] as [string, string, Record<string, unknown>],
   ),
+  ["permissions-tool", "permissions.list", { bundleId: BUNDLE, udid: UDID }],
   ["permissions-tool", "permissions.resetAll", { bundleId: BUNDLE, udid: UDID }],
 
   // useSimStream.ts
