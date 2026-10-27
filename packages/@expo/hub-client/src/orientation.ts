@@ -83,7 +83,8 @@ export function streamGeometry(config?: ScreenSize | null): StreamGeometry {
   const orientationRotation = rotationDegreesForOrientation(config?.orientation);
   const rotatesSideways = Math.abs(orientationRotation) === 90;
   const rawIsLandscape = !!config && config.width > config.height;
-  const needsRotation = orientationRotation === 180 || (rotatesSideways && !rawIsLandscape);
+  const needsRotation =
+    !config?.framesUpright && (orientationRotation === 180 || (rotatesSideways && !rawIsLandscape));
   return {
     display,
     rotationDegrees: needsRotation ? orientationRotation : 0,

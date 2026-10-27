@@ -38,7 +38,7 @@ export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
  */
 export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "streaming" | "error";
 
-/** Device orientation, as reported by serve-sim's stream config. */
+/** How the device faces: serve-sim's stream config, or serve-emu's display rotation. */
 export type DeviceOrientation =
   | "portrait"
   | "portrait_upside_down"
@@ -49,8 +49,13 @@ export type DeviceOrientation =
 export interface ScreenSize {
   width: number;
   height: number;
-  /** Last known orientation, when the backend reports it (serve-sim). */
+  /** Last known orientation, when the backend reports it (serve-sim, serve-emu). */
   orientation?: DeviceOrientation;
+  /**
+   * True when frames already show the display as it faces (serve-emu), so the client never
+   * turns the video. serve-sim can send raw portrait frames for a turned device instead.
+   */
+  framesUpright?: boolean;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -229,6 +234,14 @@ export interface DeviceGeoFix {
  */
 export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
+/**
+ * Orientations that `setOrientation` can turn the device to. `false` hides orientation
+ * controls; `rotate` still works where the backend supports it.
+ */
+export type DeviceOrientationCapabilities =
+  | false
+  | Readonly<{ orientations: readonly DeviceOrientation[] }>;
+
 /** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
 export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
 
@@ -387,6 +400,8 @@ export interface DeviceCapabilities {
   permissions: boolean;
   /** Text clipboard actions, in order with keyboard input. */
   clipboard: DeviceClipboardCapabilities;
+  /** Orientations that `setOrientation` accepts. */
+  orientation: DeviceOrientationCapabilities;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -846,17 +861,12 @@ export interface DeviceClient {
    */
   rotate: () => void;
   /**
-   * Orientations that {@link setOrientation} can request on this device. serve-sim offers all
-   * four. serve-emu offers `portrait` and `landscape_left`, because it can only lock the
-   * emulator to rotation 0 or 1 (turned 90° counterclockwise). Empty in the no-op client.
-   */
-  orientations: readonly DeviceOrientation[];
-  /**
    * Turn the device to one orientation. serve-sim sends it over the helper's orientation
-   * channel, and a later {@link rotate} continues the cycle from it; serve-emu locks user
-   * rotation via `POST /api/orientation`. Ignores values missing from {@link orientations}. A
-   * foreground app that does not support the orientation can keep its layout. A no-op if
-   * nothing is connected.
+   * channel, and a later {@link rotate} continues the cycle from it; serve-emu locks the
+   * matching user rotation via `POST /api/orientation`, one request at a time, so the last
+   * choice wins. Ignores values missing from `capabilities.orientation`. A foreground app that
+   * does not support the orientation can keep its layout. Read the result from
+   * `screen.orientation`.
    */
   setOrientation: (orientation: DeviceOrientation) => void;
   /**

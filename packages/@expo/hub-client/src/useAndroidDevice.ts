@@ -54,6 +54,7 @@ import { NO_CLIPBOARD } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from "./h264";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
+import { createLatestWriter } from "./latest-writer";
 import { androidMessageForKeyboardInput } from "./keyboard";
 import { MsePlayer } from "./mse-player";
 import {
@@ -133,7 +134,20 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
-const ANDROID_ORIENTATIONS: readonly DeviceOrientation[] = ["portrait", "landscape_left"];
+const DEVICE_ORIENTATIONS: readonly DeviceOrientation[] = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+];
+// Servers that report `orientation` in `/api` lock every pose; older ones only portrait and
+// landscape (rotation 0 or 1).
+const ORIENTATION_CAPABILITIES = { orientations: DEVICE_ORIENTATIONS } as const;
+const LEGACY_ORIENTATION_CAPABILITIES = { orientations: ["portrait", "landscape_left"] } as const;
+
+function parseReportedOrientation(value: unknown): DeviceOrientation | null {
+  return DEVICE_ORIENTATIONS.find((orientation) => orientation === value) ?? null;
+}
 
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
@@ -185,6 +199,8 @@ type ServeEmuStreamSettings =
 type ServeEmuApiInfo = {
   screenRecording?: unknown;
   size?: { width?: unknown; height?: unknown };
+  /** The display's current pose. Absent on servers that cannot report it. */
+  orientation?: unknown;
   stream?: unknown;
 };
 
@@ -310,6 +326,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   if (recordingSnapshot.scope !== deviceScope) {
     setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
   }
+  // Whether this server reports the display orientation, and its last report. Null until the
+  // first `/api` answer for this device.
+  const [orientationReport, setOrientationReport] = useState<{
+    scope: string;
+    reports: boolean;
+    orientation: DeviceOrientation | null;
+  } | null>(null);
+  const orientationState = orientationReport?.scope === deviceScope ? orientationReport : null;
   const deviceScopeRef = useRef(deviceScope);
   const inputIdentity = useMemo(() => ({ deviceScope, token }), [deviceScope, token]);
   const committedInputIdentityRef = useRef(inputIdentity);
@@ -441,35 +465,54 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
 
-  // Rotate the emulator by locking user rotation to the opposite of the current
-  // aspect via `/api/orientation` (POST `adb shell cmd window user-rotation
-  // lock 0|1`). The streamed frame size tells which way the display currently
-  // faces; locking (rather than `auto`) turns it even when auto-rotate is off.
-  const lockRotation = useCallback(
-    (orientation: "portrait" | "landscape") => {
-      if (!baseUrl) return;
-      const url = `${apiUrl(baseUrl, "/api/orientation")}${
-        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""
-      }`;
-      void sessionFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orientation }),
-      }).catch(() => {});
-    },
+  const orientationCapabilities = !orientationState
+    ? false
+    : orientationState.reports
+      ? ORIENTATION_CAPABILITIES
+      : LEGACY_ORIENTATION_CAPABILITIES;
+  // One request at a time, so quick choices cannot reach serve-emu out of order.
+  const lockOrientation = useMemo(
+    () =>
+      createLatestWriter((orientation: string) => {
+        if (!baseUrl) return Promise.resolve();
+        const url = `${apiUrl(baseUrl, "/api/orientation")}${
+          targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""
+        }`;
+        return sessionFetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orientation }),
+        });
+      }),
     [baseUrl, targetDevice, sessionFetch],
   );
+  // Rotate the emulator by locking user rotation to the opposite of the current
+  // aspect via `/api/orientation` (POST `adb shell cmd window user-rotation
+  // lock`). The streamed frame size tells which way the display currently
+  // faces; locking (rather than `auto`) turns it even when auto-rotate is off.
   const rotate = useCallback(() => {
-    lockRotation(screen && screen.width > screen.height ? "portrait" : "landscape");
-  }, [lockRotation, screen]);
-  // serve-emu locks rotation 0 or 1 only. Android's rotation 1 shows the
-  // device turned 90° counterclockwise, which is iOS's `landscape_left`.
+    lockOrientation(screen && screen.width > screen.height ? "portrait" : "landscape");
+  }, [lockOrientation, screen]);
+  // Older serve-emu servers only take portrait or landscape (rotation 1, which
+  // shows the device turned 90° counterclockwise, iOS's `landscape_left`).
   const setOrientation = useCallback(
     (orientation: DeviceOrientation) => {
-      if (orientation === "portrait") lockRotation("portrait");
-      else if (orientation === "landscape_left") lockRotation("landscape");
+      if (!orientationCapabilities || !orientationCapabilities.orientations.includes(orientation)) {
+        return;
+      }
+      if (orientationCapabilities === ORIENTATION_CAPABILITIES) lockOrientation(orientation);
+      else lockOrientation(orientation === "portrait" ? "portrait" : "landscape");
     },
-    [lockRotation],
+    [lockOrientation, orientationCapabilities],
+  );
+  // serve-emu frames already show the display upright, so only the pose is added.
+  const reportedOrientation = orientationState?.orientation ?? null;
+  const orientedScreen = useMemo(
+    () =>
+      screen && reportedOrientation
+        ? { ...screen, orientation: reportedOrientation, framesUpright: true }
+        : screen,
+    [screen, reportedOrientation],
   );
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
@@ -918,6 +961,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+        const reports = info.orientation !== undefined;
+        const orientation = parseReportedOrientation(info.orientation);
+        setOrientationReport((current) =>
+          current?.scope === deviceScope &&
+          current.reports === reports &&
+          current.orientation === orientation
+            ? current
+            : { scope: deviceScope, reports, orientation },
         );
         const width = Number(info.size?.width);
         const height = Number(info.size?.height);
@@ -2099,8 +2151,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettings: ANDROID_STREAM_SETTING_CAPABILITIES,
       // serve-emu has no clipboard API.
       clipboard: false,
+      orientation: orientationCapabilities,
     }),
-    [cameraSupported, accessibilityAvailable, locationCapabilities, permissionsAvailable],
+    [
+      cameraSupported,
+      accessibilityAvailable,
+      locationCapabilities,
+      permissionsAvailable,
+      orientationCapabilities,
+    ],
   );
 
   return {
@@ -2115,7 +2174,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     error,
     // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
     inputError: webRtcInputError,
-    screen,
+    screen: orientedScreen,
     fps,
     devices,
     logs,
@@ -2180,7 +2239,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     pressButton,
     reload,
     rotate,
-    orientations: ANDROID_ORIENTATIONS,
     setOrientation,
     screenshot,
     appearance,
