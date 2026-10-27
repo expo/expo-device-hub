@@ -1019,7 +1019,7 @@ test.each([
       withStagedUploadSnapshotAsync(uploadId, async () => {
         accepted = true;
       }),
-    ).rejects.toThrow("symlinks must be relative and stay inside the app bundle");
+    ).rejects.toThrow(/unsafe link|cyclic or excessive link/);
     expect(accepted).toBe(false);
     expect(
       (await readdir(UPLOAD_DIR)).filter((name) => name.startsWith(".install-snapshot-")),
@@ -1063,9 +1063,7 @@ test.each([32, 33])("staged app link chains respect the macOS hop limit: %s", as
   try {
     if (hops === 32) await snapshot();
     else {
-      await expect(snapshot()).rejects.toThrow(
-        "symlinks must be relative and stay inside the app bundle",
-      );
+      await expect(snapshot()).rejects.toThrow("cyclic or excessive link chain");
       expect(accepted).toBe(false);
     }
   } finally {
