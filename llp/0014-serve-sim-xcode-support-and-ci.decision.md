@@ -28,7 +28,7 @@ The release build uses the image above, not `image: latest`. With `latest`, an E
 
 ## When CI runs
 
-Hub’s vendor script and package manifest also trigger the serve-sim workflow,
+Hub's vendor script and package manifest also trigger the serve-sim workflow,
 because the packaged middleware regression exercises those files and must run
 when Hub-only changes affect CLI dispatch. [observed: `.eas/workflows/sim-test.yml`;
 `packages/serve-sim/packages/serve-sim/src/__tests__/bundle-portability.test.ts`]
