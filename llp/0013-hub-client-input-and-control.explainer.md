@@ -234,6 +234,12 @@ permission controls only when an active client has the typed host-action channel
 An older serve-sim without normalized permission readback reports an update error.
 [observed: `useIosDevice.ts`, `ios-permissions.ts`]
 
+The Hub allows 125 seconds for permission replies, covering serve-sim's default
+120-second execution budget. Queue waits or a raised `SERVE_SIM_ACTION_TIMEOUT_MS`
+can exceed it; the standalone preview has no corresponding client deadline.
+Lost replies retain pending ownership until a successful ordered readback.
+[observed: `exec-ws.ts`; serve-sim `host-actions-utils.ts`; `useAppPermissions.ts`]
+
 A poll keeps the pending-write IDs it saw when it began, even after those writes
 finish, so a stale snapshot cannot revert their confirmed state. Only one Hub
 permission poll runs at a time. Refresh skips targets with an active write: its
