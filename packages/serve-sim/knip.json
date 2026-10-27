@@ -16,7 +16,6 @@
         "src/**/__tests__/**/*.test.{ts,tsx}",
         "src/__tests__/fixtures/*.child.{ts,tsx,mjs,cjs}",
         "src/__tests__/fixtures/grid-shutdown-xcrun.cjs",
-        "scripts/test/middleware-startup.mjs",
         "scripts/tart/__tests__/*.test.ts"
       ]
     }
