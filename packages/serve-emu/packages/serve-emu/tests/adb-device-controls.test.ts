@@ -26,6 +26,7 @@ import {
   setReduceMotion,
   setNightMode,
   setSoftwareKeyboard,
+  screenOrientationForRotation,
   setUserRotation,
   shell,
   shellSpawn,
@@ -308,26 +309,54 @@ describe("ADB display controls", () => {
     }
   });
 
-  test("encodes rotation mutations and returns the observed state", async () => {
+  test("locks the rotation that shows the requested pose on the device's natural display", async () => {
+    const phone = "Physical size: 1080x2400";
+    const tablet = "Physical size: 2560x1600";
     const cases = [
-      { requested: "auto", command: "free", observed: "free" },
-      { requested: "portrait", command: "lock 0", observed: "lock 0" },
-      { requested: "landscape", command: "lock 1", observed: "lock 1" },
+      { size: phone, requested: "auto", command: "free" },
+      { size: phone, requested: "portrait", command: "lock 0" },
+      { size: phone, requested: "landscape", command: "lock 1" },
+      { size: phone, requested: "landscape_left", command: "lock 1" },
+      { size: phone, requested: "portrait_upside_down", command: "lock 2" },
+      { size: phone, requested: "landscape_right", command: "lock 3" },
+      // A tablet already shows landscape_left at rotation 0.
+      { size: tablet, requested: "landscape_left", command: "lock 0" },
+      { size: tablet, requested: "landscape", command: "lock 0" },
+      { size: tablet, requested: "portrait", command: "lock 3" },
     ] as const;
 
     for (const entry of cases) {
       const calls: string[] = [];
       const runExec = (async (_command, args) => {
-        calls.push(args.slice(3).join(" "));
-        return result(calls.length === 1 ? "" : entry.observed);
+        const call = args.slice(3).join(" ");
+        calls.push(call);
+        if (call === "wm size") return result(entry.size);
+        return result(call === "cmd window user-rotation" ? "lock 1" : "");
       }) as typeof execText;
       const status = await setUserRotation("device-1", entry.requested, runExec);
-      expect(calls).toEqual([
+      expect(calls.filter((call) => call !== "wm size")).toEqual([
         `cmd window user-rotation ${entry.command}`,
         "cmd window user-rotation",
       ]);
-      expect(status.raw).toBe(entry.observed);
+      expect(status.raw).toBe("lock 1");
     }
+  });
+
+  test("names display rotations from the natural display", () => {
+    const phone = { width: 1080, height: 2400 };
+    const tablet = { width: 2560, height: 1600 };
+    expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, phone))).toEqual([
+      "portrait",
+      "landscape_left",
+      "portrait_upside_down",
+      "landscape_right",
+    ]);
+    expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, tablet))).toEqual([
+      "landscape_left",
+      "portrait_upside_down",
+      "landscape_right",
+      "portrait",
+    ]);
   });
 
   test("reports rotation command failures", async () => {
@@ -336,7 +365,11 @@ describe("ADB display controls", () => {
     await expect(getUserRotation("device-1", failed)).rejects.toThrow(
       "cmd window user-rotation failed: rotation denied",
     );
-    await expect(setUserRotation("device-1", "landscape", failed)).rejects.toThrow(
+    const lockFails = (async (_command, args) =>
+      args.includes("wm")
+        ? result("Physical size: 1080x2400")
+        : result("", { status: 1, stderr: "rotation denied" })) as typeof execText;
+    await expect(setUserRotation("device-1", "landscape", lockFails)).rejects.toThrow(
       "adb shell cmd window user-rotation lock 1 failed: rotation denied",
     );
   });
