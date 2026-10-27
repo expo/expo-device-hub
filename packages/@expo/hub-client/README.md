@@ -220,6 +220,8 @@ and each backend ignores the buttons its platform does not have.
 client.pressButton("home");
 
 client.rotate();
+// One orientation from client.orientations: all four on iOS, 'portrait' | 'landscape_left' on Android.
+client.setOrientation("landscape_left");
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
