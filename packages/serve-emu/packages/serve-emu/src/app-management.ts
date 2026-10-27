@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { execText } from "./exec.ts";
+import { runPermissionRequest } from "./permission-requests.ts";
 import type { AppActionResponse, FileImportResponse } from "./shared/api-contracts.ts";
 
 export type AppActionResult = AppActionResponse;
@@ -16,6 +17,7 @@ export type AppManagementErrorCode = "adb-failed" | "adb-timeout" | "adb-cleanup
 
 export type AppManagementDependencies = {
   execText?: typeof execText;
+  runPermissionRequest?: typeof runPermissionRequest;
   uploadId?: () => string;
 };
 
@@ -264,12 +266,16 @@ export function grantPermission(
   permissionValue: string,
   dependencies: AppManagementDependencies = {},
 ): Promise<AppActionResult> {
-  return adb(
-    serial,
-    ["shell", "pm", "grant", packageName(packageNameValue), permissionName(permissionValue)],
-    30_000,
-    undefined,
-    dependencies.execText,
+  const pkg = packageName(packageNameValue);
+  const permission = permissionName(permissionValue);
+  return (dependencies.runPermissionRequest ?? runPermissionRequest)(serial, pkg, () =>
+    adb(
+      serial,
+      ["shell", "pm", "grant", pkg, permission],
+      30_000,
+      undefined,
+      dependencies.execText,
+    ),
   );
 }
 
@@ -279,11 +285,15 @@ export function revokePermission(
   permissionValue: string,
   dependencies: AppManagementDependencies = {},
 ): Promise<AppActionResult> {
-  return adb(
-    serial,
-    ["shell", "pm", "revoke", packageName(packageNameValue), permissionName(permissionValue)],
-    30_000,
-    undefined,
-    dependencies.execText,
+  const pkg = packageName(packageNameValue);
+  const permission = permissionName(permissionValue);
+  return (dependencies.runPermissionRequest ?? runPermissionRequest)(serial, pkg, () =>
+    adb(
+      serial,
+      ["shell", "pm", "revoke", pkg, permission],
+      30_000,
+      undefined,
+      dependencies.execText,
+    ),
   );
 }
