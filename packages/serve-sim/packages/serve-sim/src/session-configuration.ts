@@ -37,6 +37,7 @@ const iceServers = z
 // Only the local job owner configures a prepared process, before opening its tunnel.
 export const sessionConfigurationSchema = z
   .object({
+    singleDevice: z.string().length(36).optional(),
     stream: z
       .object({
         transport: z.literal("webrtc"),

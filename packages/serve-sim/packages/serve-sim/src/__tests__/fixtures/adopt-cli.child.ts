@@ -170,6 +170,16 @@ test("real CLI adopts using the normal startup flags and screenshot environment 
   });
 });
 
+test("adopts the selected single device without booting another server", async () => {
+  await fixture(async ({ cli, bodies, port }) => {
+    const result = await cli(["--single-device", UDID.toLowerCase()]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ device: UDID, port });
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ singleDevice: UDID });
+  });
+});
+
 test.each([
   "version",
   "pid",

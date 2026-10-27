@@ -4,7 +4,11 @@ import { timeStartup } from "../startup-timing";
 import { type SessionConfiguration } from "../session-configuration";
 import { type StreamSettings } from "../stream-settings";
 import { type UpgradeHandlerWebSocket } from "../socket/types";
-import { useTempStateDir } from "./helpers";
+import { recordState, useTempStateDir } from "./helpers";
+import type { SimMiddlewareOptions } from "../middleware";
+
+const DEVICE = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA";
+const OTHER = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB";
 
 const configuration: SessionConfiguration = {
   stream: {
@@ -28,6 +32,7 @@ const configuration: SessionConfiguration = {
 
 async function host(
   configureResources: (value: SessionConfiguration) => Promise<void> = async () => {},
+  options: Partial<SimMiddlewareOptions> = {},
 ) {
   const streamSettings: StreamSettings = { transport: "webrtc", codec: "h264" };
   const middleware = await timeStartup("preview-middleware", () =>
@@ -38,6 +43,7 @@ async function host(
       loopbackOnly: true,
       streamSettings,
       configureResources,
+      ...options,
     }),
   );
   const request = async (method = "GET", headers: Record<string, string> = {}, body?: unknown) => {
@@ -61,6 +67,132 @@ describe("prepared process session configuration", () => {
     state = useTempStateDir();
   });
   afterAll(() => state.restore());
+
+  for (const singleDevice of [DEVICE, undefined]) {
+    test(`existing execution sockets use the adopted policy (single-device=${!!singleDevice})`, async () => {
+      const { configure, middleware } = await host(async () => {}, {
+        device: DEVICE,
+        prepareForAdoption: true,
+      });
+      let receive!: (data: string) => void;
+      const replies: { error?: string }[] = [];
+      const socket: UpgradeHandlerWebSocket = {
+        OPEN: 1,
+        readyState: 1,
+        send(data) {
+          replies.push(JSON.parse(String(data)));
+        },
+        on(event, handler) {
+          if (event === "message") receive = handler as typeof receive;
+        },
+        close() {},
+      };
+      middleware.handleWebSocket?.(
+        new Request("http://127.0.0.1:3200/exec-ws", {
+          headers: { "Sec-WebSocket-Protocol": "serve-sim.token.owner-token" },
+        }),
+        socket,
+      );
+      const subscribe = (sub: number) =>
+        receive(JSON.stringify({ sub, path: `/not-allowed?device=${OTHER}` }));
+      subscribe(1);
+      expect(replies.at(-1)?.error).toContain("single-device");
+      await configure({ ...configuration, singleDevice });
+      subscribe(2);
+      expect(replies.at(-1)?.error).toContain(singleDevice ? "single-device" : "path not allowed");
+    });
+  }
+
+  test("pins preparation and adopts the same device before native configuration", async () => {
+    let middleware: Awaited<ReturnType<typeof host>>["middleware"];
+    const foreign = () =>
+      middleware(
+        new Request(`http://127.0.0.1:3200/api?device=${OTHER}`, {
+          headers: { Authorization: "Bearer owner-token" },
+        }),
+      );
+    const server = await host(
+      async () => {
+        expect((await foreign())?.status).toBe(403);
+      },
+      { device: DEVICE, prepareForAdoption: true },
+    );
+    middleware = server.middleware;
+    expect((await foreign())?.status).toBe(403);
+    await server.configure({ ...configuration, singleDevice: DEVICE.toLowerCase() });
+    expect((await foreign())?.status).toBe(403);
+    const remove = recordState(DEVICE, process.pid, 1);
+    try {
+      const api = await middleware(
+        new Request("http://127.0.0.1:3200/api", {
+          headers: { Authorization: "Bearer owner-token" },
+        }),
+      );
+      expect(await api?.json()).toMatchObject({ singleDevice: DEVICE });
+    } finally {
+      remove();
+    }
+    await expect(server.configure(configuration)).rejects.toThrow("cannot be configured");
+  });
+
+  test("refuses adoption onto another device before configuring resources", async () => {
+    let calls = 0;
+    const { configure } = await host(
+      async () => {
+        calls++;
+      },
+      {
+        device: DEVICE,
+        prepareForAdoption: true,
+      },
+    );
+    await expect(configure({ ...configuration, singleDevice: OTHER })).rejects.toThrow(
+      "single-device",
+    );
+    expect(calls).toBe(0);
+  });
+
+  test("adoption without a restriction retains normal multi-device behavior", async () => {
+    const { configure, middleware } = await host(async () => {}, {
+      device: DEVICE,
+      prepareForAdoption: true,
+    });
+    await configure(configuration);
+    const response = await middleware(
+      new Request(`http://127.0.0.1:3200/api/event-log?device=${OTHER}`, {
+        headers: { Authorization: "Bearer owner-token" },
+      }),
+    );
+    expect(response?.status).toBe(200);
+    await response?.text();
+  });
+
+  test("omitting the adopted policy cannot remove an explicit startup restriction", async () => {
+    const { configure, middleware } = await host(async () => {}, {
+      device: DEVICE,
+      singleDevice: DEVICE,
+    });
+    await configure(configuration);
+    const response = await middleware(
+      new Request(`http://127.0.0.1:3200/api?device=${OTHER}`, {
+        headers: { Authorization: "Bearer owner-token" },
+      }),
+    );
+    expect(response?.status).toBe(403);
+    let closed = false;
+    middleware.handleWebSocket?.(
+      new Request(`http://127.0.0.1:3200/helper/${OTHER}/ws`, {
+        headers: { Authorization: "Bearer owner-token" },
+      }),
+      {
+        on() {},
+        close() {
+          closed = true;
+        },
+      } as unknown as UpgradeHandlerWebSocket,
+    );
+    expect(closed).toBe(true);
+  });
 
   test("never exposes ownership or reconfiguration to HTTP token holders", async () => {
     const { request } = await host();

@@ -412,14 +412,19 @@ This boots and locks the preview to that exact simulator. The device sidebar
 and its toggle are removed. HTTP routes, helper sockets, and control actions
 reject other device targets, including `all` and `booted`. The same simulator
 can reboot or reconnect without changing the session's device. This option
-requires the preview server and cannot be combined with `--detach`,
-`--no-preview`, `--list`, or `--kill`.
+requires the preview server and cannot be combined with `--detach`, `--orphan`,
+`--no-preview`, `--list`, or `--kill`. It can accompany `--adopt` when its UDID
+matches the prepared server's startup device. The private handoff applies the
+restriction before reporting success; it does not boot another Simulator.
 
 Embedded hosts can set `simMiddleware({ singleDevice: udid })`. This also enables
 same-origin helper proxies; forward WebSocket upgrades as described below.
 WebKit DevTools is disabled because the bridge cannot reliably associate its
 targets with a simulator UDID. The restriction applies to this server's routes;
 it does not prevent host tools or separately running servers from using devices.
+Path-based `file.readBase64` and `app.infoPlist` actions remain host-scoped within
+their existing allowed roots. They can read files belonging to another Simulator;
+single-device mode is not a filesystem sandbox.
 
 ## Embed in your dev server
 
