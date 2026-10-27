@@ -139,6 +139,12 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
+const IOS_ORIENTATIONS: readonly DeviceOrientation[] = [
+  "portrait",
+  "landscape_left",
+  "landscape_right",
+  "portrait_upside_down",
+];
 // Native scroll (wheel/trackpad) in raw device fractions, anchored under the pointer.
 const WS_MSG_SCROLL = 0x0b;
 const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
@@ -855,6 +861,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         ),
     );
   }, [sendWs]);
+
+  // A chosen pose goes through the same queue as Rotate, so the cursor records
+  // it only on delivery and the next Rotate continues from it.
+  const setOrientation = useCallback(
+    (orientation: DeviceOrientation) => {
+      if (!IOS_ORIENTATIONS.includes(orientation)) return;
+      sendWs(WS_MSG_ORIENTATION, { orientation }, () =>
+        rotationCursorRef.current.recordSent(orientation),
+      );
+    },
+    [sendWs],
+  );
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
@@ -2108,6 +2126,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     rotate,
+    orientations: IOS_ORIENTATIONS,
+    setOrientation,
     screenshot,
     appearance,
     setAppearance,

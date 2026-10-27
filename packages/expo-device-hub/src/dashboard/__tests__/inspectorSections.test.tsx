@@ -154,6 +154,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
+    orientations: [],
+    setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",
     setAppearance: () => {},
