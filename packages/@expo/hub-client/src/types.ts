@@ -19,6 +19,13 @@
 
 import { type CSSProperties } from "react";
 
+import {
+  type HingeControlCommand,
+  type HingePhysicalOrientation,
+  type HingePose,
+  type ObservedHingeState,
+} from "./hinge-control";
+
 export type DevicePlatform = "ios" | "android";
 
 /** Viewer-selected transport for the active device stream. */
@@ -56,6 +63,25 @@ export interface ScreenSize {
    * turns the video. serve-sim can send raw portrait frames for a turned device instead.
    */
   framesUpright?: boolean;
+  /** iPhone Duo active display reported by serve-sim: 1 for the cover, 3 for the inner screen. */
+  screenId?: number;
+  /** Whether this simulator has a hinge that serve-sim can move (iPhone Duo). */
+  supportsHingeAngle?: boolean;
+  /** Hinge angle of serve-sim's last successful command, in degrees from 0 to 180. */
+  hingeAngle?: number;
+  /** Pose preset of serve-sim's last successful command; null after a custom angle or rotation. */
+  hingePose?: HingePose | null;
+  /** Physical orientation of serve-sim's last successful command. */
+  physicalOrientation?: HingePhysicalOrientation;
+  /** Table Mode of serve-sim's last successful command. */
+  tableMode?: boolean;
+  /** Whether serve-sim can turn Table Mode on in the current hinge state. */
+  tableModeAvailable?: boolean;
+  /**
+   * serve-sim's native hinge observation. When present it replaces the command fields
+   * above, including the fields it omits, which are then unknown.
+   */
+  observedDeviceState?: ObservedHingeState;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -926,6 +952,33 @@ export interface DeviceClient {
   setHardwareKeyboardConnected: (connected: boolean) => void;
   /** Toggle the iOS on-screen software keyboard without changing the hardware connection. */
   toggleSoftwareKeyboard: () => void;
+
+  /**
+   * iPhone Duo hinge state and controls. Null or missing for a device without a
+   * hinge, a backend without hinge support, and before the first screen config.
+   */
+  hinge?: DeviceHinge | null;
+}
+
+/**
+ * iPhone Duo hinge state and controls. State comes from serve-sim's native
+ * observation when it reports one, otherwise from its last successful command.
+ */
+export interface DeviceHinge {
+  /** Hinge angle in degrees from 0 (closed) to 180 (open); undefined while unknown. */
+  angle?: number;
+  /** The pose preset that the state matches; null for any other state, undefined while unknown. */
+  pose?: HingePose | null;
+  physicalOrientation?: HingePhysicalOrientation;
+  tableMode?: boolean;
+  /** The display that serve-sim streams: 1 for the cover, 3 for the inner screen. */
+  activeScreenId: 1 | 3;
+  /** A hinge command waits for the helper's reply. */
+  pending: boolean;
+  /** Why the last hinge command failed; cleared when the next one is sent. */
+  error: string | null;
+  /** Send a hinge command over the helper's input socket (`0x10`, answered with `0x90`). */
+  setControl: (command: HingeControlCommand) => void;
 }
 
 /** A platform implementation of the connection half of the interface. */
