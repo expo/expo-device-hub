@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-27 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -431,7 +431,9 @@ screen remains server-owned
 
 HubClient advances its cursor only after the browser socket's `send` returns.
 Queued Rotate clicks resolve their next pose at delivery, in queue order;
-expired or evicted clicks never advance it. Helpers advertising `inputAdmission`
+expired or evicted clicks never advance it. `setOrientation` sends a chosen pose
+through the same queue and records it the same way, so the next Rotate
+continues from that pose. Helpers advertising `inputAdmission`
 must send `0x83` or a valid `0x82` screen config before HubClient sends input.
 A screen config that establishes admission reconciles orientation before queued
 clicks flush, while an older initial config cannot overwrite newer sent poses

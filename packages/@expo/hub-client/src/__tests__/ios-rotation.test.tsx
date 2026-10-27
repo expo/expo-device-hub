@@ -391,3 +391,26 @@ test("a non-string orientation readback cannot throw or poison iOS rotation requ
   client().rotate();
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
+
+test("an iOS orientation choice sends that pose and Rotate continues from it", async () => {
+  const { client, helper } = await mount();
+  expect(client().orientations).toEqual([
+    "portrait",
+    "landscape_left",
+    "landscape_right",
+    "portrait_upside_down",
+  ]);
+  client().setOrientation("landscape_right");
+  client().rotate();
+  expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);
+  expect(client().screen?.orientation).toBe("portrait");
+});
+
+test("a queued iOS orientation choice is sent once the helper admits input", async () => {
+  const { client, helper } = await mount({ inputAdmission: true });
+  client().setOrientation("portrait_upside_down");
+  expect(helper().rotations()).toEqual([]);
+  await act(async () => helper().admit());
+  client().rotate();
+  expect(helper().rotations()).toEqual(["portrait_upside_down", "landscape_right"]);
+});

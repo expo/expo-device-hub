@@ -846,6 +846,20 @@ export interface DeviceClient {
    */
   rotate: () => void;
   /**
+   * Orientations that {@link setOrientation} can request on this device. serve-sim offers all
+   * four. serve-emu offers `portrait` and `landscape_left`, because it can only lock the
+   * emulator to rotation 0 or 1 (turned 90° counterclockwise). Empty in the no-op client.
+   */
+  orientations: readonly DeviceOrientation[];
+  /**
+   * Turn the device to one orientation. serve-sim sends it over the helper's orientation
+   * channel, and a later {@link rotate} continues the cycle from it; serve-emu locks user
+   * rotation via `POST /api/orientation`. Ignores values missing from {@link orientations}. A
+   * foreground app that does not support the orientation can keep its layout. A no-op if
+   * nothing is connected.
+   */
+  setOrientation: (orientation: DeviceOrientation) => void;
+  /**
    * Capture a still PNG of the device via the backend's `POST /api/screenshot`
    * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving
    * to the PNG and its session artifact outcome, or `null` if capture fails or
