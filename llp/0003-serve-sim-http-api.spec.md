@@ -526,6 +526,17 @@ The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them thr
 `upload.append`, calls `app.install`, and removes the staged source on success or
 failure. Device `.ipa`/`.zip` drops are rejected before upload.
 
+The preview also accepts dropped `.app` directories when the browser exposes
+filesystem entries. It walks every directory batch before streaming a gzip tar
+through the same upload/install path. Only one folder is packed at a time per
+preview; ordinary file drops can proceed independently. Paths, entry count and
+uncompressed bytes share the host limits; the compressed upload is capped at
+500 MiB. Browser files expose no POSIX modes, so packing grants owner execution
+to Mach-O binaries and shebang scripts, with other files owner-readable/writable
+and directories owner-only. Browser drops cannot preserve symlink metadata or
+arbitrary executable modes; use an archive when those matter or a folder cannot
+be read [observed: `app-drop-folder.ts`, `use-media-drop.ts`, `drop.ts`].
+
 The preparation worker uses `multitars` after a bounded TAR-header gate. The gate
 rejects special entries that the parser would otherwise skip and caps individual
 PAX/GNU metadata records at 1 MiB before buffering them. Ambiguous numeric fields

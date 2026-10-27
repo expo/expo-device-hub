@@ -1,5 +1,6 @@
 import { runHostAction } from "../../socket/client-control";
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
+import { packAppFolder, type AppFolderEntry } from "./app-drop-folder";
 
 // ─── File drop (drag media onto the simulator) ───
 //
@@ -80,16 +81,7 @@ async function streamFileToHost(
   let lastReportedPct = 0;
   for (let offset = 0; offset < file.size; offset += DROP_CHUNK_BYTES) {
     const slice = await file.slice(offset, offset + DROP_CHUNK_BYTES).arrayBuffer();
-    const chunk = arrayBufferToBase64(slice);
-    const result = await runHostAction("upload.append", {
-      uploadId,
-      data: chunk,
-      first: offset === 0,
-    });
-    if (result.exitCode !== 0) {
-      throw new Error(result.stderr || `Write failed (exit ${result.exitCode})`);
-    }
-    hostPath = result.stdout.trim();
+    hostPath = await appendChunk(uploadId, slice, offset === 0);
     if (!onProgress) continue;
     const written = Math.min(offset + DROP_CHUNK_BYTES, file.size);
     const pct = Math.floor((written / file.size) * 100);
@@ -99,6 +91,47 @@ async function streamFileToHost(
     }
   }
   return hostPath;
+}
+
+async function appendChunk(uploadId: string, bytes: ArrayBuffer, first: boolean): Promise<string> {
+  const result = await runHostAction("upload.append", {
+    uploadId,
+    data: arrayBufferToBase64(bytes),
+    first,
+  });
+  if (result.exitCode !== 0)
+    throw new Error(result.stderr || `Write failed (exit ${result.exitCode})`);
+  return result.stdout.trim();
+}
+
+async function streamArchiveToHost(stream: ReadableStream<Uint8Array>, uploadId: string) {
+  const reader = stream.getReader();
+  const buffer = new Uint8Array(DROP_CHUNK_BYTES);
+  let used = 0,
+    written = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (written + used + value.byteLength > DROP_MAX_FILE_SIZE)
+        throw new Error("App archive too large (max 500MB compressed)");
+      for (let offset = 0; offset < value.byteLength; ) {
+        const size = Math.min(buffer.length - used, value.length - offset);
+        buffer.set(value.subarray(offset, offset + size), used);
+        used += size;
+        offset += size;
+        if (used === buffer.length) {
+          await appendChunk(uploadId, buffer.buffer, written === 0);
+          written += used;
+          used = 0;
+        }
+      }
+    }
+    if (used) await appendChunk(uploadId, buffer.buffer.slice(0, used), written === 0);
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
 
 // Stream a file to the host upload directory in base64 chunks. Used by the camera
@@ -122,13 +155,39 @@ export async function uploadDroppedFile(
     throw new Error("File too large (max 500MB)");
   }
 
-  const ext = kind === "app" ? "tgz" : fileExtension(file);
+  await installDroppedSource(
+    kind,
+    udid,
+    kind === "app" ? "tgz" : fileExtension(file),
+    onProgress,
+    (uploadId) => streamFileToHost(file, uploadId, onProgress),
+  );
+}
+
+export async function uploadDroppedAppFolder(
+  entry: AppFolderEntry,
+  udid: string,
+  onProgress: (progress: number | null) => void,
+) {
+  await installDroppedSource("app", udid, "tgz", onProgress, async (uploadId) => {
+    const archive = await packAppFolder(entry, onProgress);
+    await streamArchiveToHost(archive, uploadId);
+  });
+}
+
+async function installDroppedSource(
+  kind: DropKind,
+  udid: string,
+  ext: string,
+  onProgress: (progress: number | null) => void,
+  upload: (uploadId: string) => Promise<unknown>,
+) {
   const prefix = kind === "app" ? "serve-sim-install" : "serve-sim-upload";
   const uploadId = `${prefix}-${crypto.randomUUID()}.${ext}`;
 
   try {
     onProgress(0);
-    await streamFileToHost(file, uploadId, onProgress);
+    await upload(uploadId);
 
     // install/addmedia gives no progress signal — flip to indeterminate.
     onProgress(null);

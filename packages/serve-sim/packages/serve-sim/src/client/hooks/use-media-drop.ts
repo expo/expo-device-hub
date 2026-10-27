@@ -5,7 +5,9 @@ import {
   dropKindFor,
   DROP_HOST_PATH_TYPE,
   uploadDroppedFile,
+  uploadDroppedAppFolder,
 } from "../utils/drop";
+import { APP_FOLDER_GUIDANCE } from "../utils/app-drop-folder";
 
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 
@@ -55,6 +57,7 @@ export function useMediaDrop({
 }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCountRef = useRef(0);
+  const folderQueueRef = useRef(Promise.resolve());
 
   const handleDrop = useCallback(
     async (e: DragEvent) => {
@@ -81,9 +84,29 @@ export function useMediaDrop({
       }
 
       const files = Array.from(e.dataTransfer.files);
+      // Browser entry handles must be acquired while the drop event is live.
+      const entries = Array.from(e.dataTransfer.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.webkitGetAsEntry?.() ?? null);
       if (files.length === 0) return;
 
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
+        const entry = entries[index];
+        if (entry?.isDirectory || /\.app$/i.test(file.name)) {
+          const id = onUploadStart(file.name, "app");
+          const upload = async () => {
+            try {
+              if (!entry?.isDirectory) throw new Error(APP_FOLDER_GUIDANCE);
+              await uploadDroppedAppFolder(entry, udid, (p) => onUploadProgress(id, p));
+              onUploadEnd(id, true);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Folder upload failed";
+              onUploadEnd(id, false, message);
+            }
+          };
+          folderQueueRef.current = folderQueueRef.current.then(upload, upload);
+          continue;
+        }
         if (isUnsupportedAppArchive(file.name)) {
           const id = onUploadStart(file.name, "media");
           onUploadEnd(id, false, UNSUPPORTED_INSTALL_FORMAT);

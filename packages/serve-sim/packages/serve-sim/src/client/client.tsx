@@ -2000,9 +2000,7 @@ function AppWithConfig({
                   style={{ borderRadius: useChrome ? undefined : imgBorderRadius }}
                 >
                   <Upload size={32} strokeWidth={1.5} />
-                  <span className="text-[13px] font-medium">
-                    Drop media or a Simulator app archive
-                  </span>
+                  <span className="text-[13px] font-medium">Drop media or a Simulator app</span>
                 </div>
               )}
               {!presentation && viewportWidth >= SM_BREAKPOINT && (
