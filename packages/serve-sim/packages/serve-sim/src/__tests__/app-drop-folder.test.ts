@@ -1,6 +1,10 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import { untar, TarTypeFlag } from "multitars";
-import { packAppFolder, type AppFolderEntry } from "../client/utils/app-drop-folder";
+import {
+  APP_FOLDER_GUIDANCE,
+  packAppFolder,
+  type AppFolderEntry,
+} from "../client/utils/app-drop-folder";
 
 const calls: Array<{ action: string; params: Record<string, unknown> }> = [];
 let failure: string | undefined;
@@ -152,6 +156,47 @@ test("streams bounded upload chunks, installs only after packing, and removes th
   ).toBe(true);
   expect(calls.slice(-2).map((c) => c.action)).toEqual(["app.install", "upload.remove"]);
 });
+
+test.each(["directory", "file", "contents"])(
+  "%s read failures include archive guidance",
+  async (kind) => {
+    const error = new DOMException("access denied.", "NotReadableError");
+    const file = new File(["contents"], "data");
+    if (kind === "contents")
+      Object.defineProperty(file, "stream", {
+        value: () =>
+          new ReadableStream({
+            start(controller) {
+              controller.error(error);
+            },
+          }),
+      });
+    const entry = droppedFolder("App.app", [
+      [
+        {
+          name: "data",
+          isFile: true,
+          isDirectory: false,
+          file(ok, fail) {
+            if (kind === "file") fail(error);
+            else ok(file);
+          },
+        },
+      ],
+    ]);
+    if (kind === "directory")
+      entry.createReader = () => ({
+        readEntries(_ok, fail) {
+          fail(error);
+        },
+      });
+    await expect(uploadDroppedAppFolder(entry, "UDID", () => {})).rejects.toThrow(
+      `access denied.\n${APP_FOLDER_GUIDANCE}`,
+    );
+    expect(calls.some((c) => c.action === "app.install")).toBe(false);
+    expect(calls.at(-1)?.action).toBe("upload.remove");
+  },
+);
 
 test.each(["upload.append", "app.install"])(
   "failed %s does not leave an upload or report success",

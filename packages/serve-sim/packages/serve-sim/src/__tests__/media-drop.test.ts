@@ -7,9 +7,11 @@ import type { AppFolderEntry } from "../client/utils/app-drop-folder";
 
 const actions: string[] = [];
 let failure: string | undefined;
+let failureMessage = "host operation failed";
 beforeEach(() => {
   actions.length = 0;
   failure = undefined;
+  failureMessage = "host operation failed";
 });
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -19,7 +21,7 @@ void mock.module("../socket/client-control", () => ({
     if (failure === "disconnect" && action === "upload.append")
       throw new Error("channel disconnected");
     return action === failure
-      ? { stdout: "", stderr: "host operation failed", exitCode: 1 }
+      ? { stdout: "", stderr: failureMessage, exitCode: 1 }
       : { stdout: "/tmp/staged-media", stderr: "", exitCode: 0 };
   },
 }));
@@ -175,6 +177,30 @@ test("folder packing is serial while a mixed media drop can proceed", async () =
   expect(actions.indexOf("media.add")).toBeLessThan(actions.indexOf("app.install"));
   expect(peak).toBe(1);
 });
+
+test.each(["upload.append", "app.install"])(
+  "folder drops preserve the host %s error",
+  async (action) => {
+    failure = action;
+    failureMessage = "App installation timed out.";
+    const result = await dropFiles([new File([], "Build.app")], {
+      entries: [
+        {
+          name: "Build.app",
+          isDirectory: true,
+          isFile: false,
+          createReader: () => ({
+            readEntries(ok) {
+              ok([]);
+            },
+          }),
+        },
+      ],
+    });
+    expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message: failureMessage });
+    expect(actions.at(-1)).toBe("upload.remove");
+  },
+);
 
 test.each(["OtherFolder", "Build.app"])(
   "unreadable or unsupported %s gives archive guidance",

@@ -101,13 +101,7 @@ export function useMediaDrop({
               onUploadEnd(id, true);
             } catch (error) {
               const message = error instanceof Error ? error.message : "Folder upload failed";
-              onUploadEnd(
-                id,
-                false,
-                message.includes(APP_FOLDER_GUIDANCE)
-                  ? message
-                  : `${message}. ${APP_FOLDER_GUIDANCE}`,
-              );
+              onUploadEnd(id, false, message);
             }
           };
           folderQueueRef.current = folderQueueRef.current.then(upload, upload);

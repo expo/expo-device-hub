@@ -1,4 +1,11 @@
-import { iterableToStream, tar, TarChunk, TarFile, TarTypeFlag } from "multitars";
+import {
+  iterableToStream,
+  streamToAsyncIterable,
+  tar,
+  TarChunk,
+  TarFile,
+  TarTypeFlag,
+} from "multitars";
 
 // The browser exposes file contents, but not POSIX modes or symlink metadata.
 export interface AppFolderEntry {
@@ -19,6 +26,27 @@ export const APP_FOLDER_GUIDANCE =
 
 const LIMITS = { entries: 100000, bytes: 2 * 1024 ** 3 };
 const encoder = new TextEncoder();
+
+function folderReadError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : "Could not read app folder";
+  return new Error(`${message}\n${APP_FOLDER_GUIDANCE}`, { cause: error });
+}
+
+async function readFolder<T>(read: () => T | Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw folderReadError(error);
+  }
+}
+
+async function* fileContents(file: File) {
+  try {
+    yield* streamToAsyncIterable(file.stream());
+  } catch (error) {
+    throw folderReadError(error);
+  }
+}
 
 function component(name: string): string {
   if (!name || name === "." || name === ".." || /[/\\]/.test(name) || name.includes("\0"))
@@ -55,10 +83,11 @@ export async function packAppFolder(
       throw new Error("App folder has too many entries (max 100000)");
     if (next.entry.isDirectory && next.entry.createReader) {
       items.push({ path: next.path });
-      const reader = next.entry.createReader();
+      const reader = await readFolder(() => next.entry.createReader!());
       for (;;) {
-        const batch = await new Promise<AppFolderEntry[]>((resolve, reject) =>
-          reader.readEntries(resolve, reject),
+        const batch = await readFolder(
+          () =>
+            new Promise<AppFolderEntry[]>((resolve, reject) => reader.readEntries(resolve, reject)),
         );
         if (!batch.length) break;
         if (names.size + pending.length + batch.length > limits.entries)
@@ -67,7 +96,9 @@ export async function packAppFolder(
           pending.push({ entry: child, path: `${next.path}/${component(child.name)}` });
       }
     } else if (next.entry.isFile && next.entry.file) {
-      const file = await new Promise<File>((resolve, reject) => next.entry.file!(resolve, reject));
+      const file = await readFolder(
+        () => new Promise<File>((resolve, reject) => next.entry.file!(resolve, reject)),
+      );
       bytes += file.size;
       if (!Number.isSafeInteger(bytes) || bytes > limits.bytes)
         throw new Error("App folder is too large (max 2GB before compression)");
@@ -98,8 +129,8 @@ export async function packAppFolder(
         });
       } else {
         const file = item.file;
-        const mode = await fileMode(file);
-        const stream = file.stream().pipeThrough(
+        const mode = await readFolder(() => fileMode(file));
+        const stream = iterableToStream(fileContents(file)).pipeThrough(
           new TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>({
             transform(chunk, controller) {
               read += chunk.byteLength;
