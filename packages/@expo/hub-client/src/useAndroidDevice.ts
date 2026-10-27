@@ -97,6 +97,7 @@ import {
   type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceLog,
+  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamEncoderSettings,
@@ -136,6 +137,7 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+const ANDROID_ORIENTATIONS: readonly DeviceOrientation[] = ["portrait", "landscape_left"];
 
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
@@ -487,18 +489,32 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // aspect via `/api/orientation` (POST `adb shell cmd window user-rotation
   // lock 0|1`). The streamed frame size tells which way the display currently
   // faces; locking (rather than `auto`) turns it even when auto-rotate is off.
+  const lockRotation = useCallback(
+    (orientation: "portrait" | "landscape") => {
+      if (!baseUrl) return;
+      const url = `${apiUrl(baseUrl, "/api/orientation")}${
+        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""
+      }`;
+      void sessionFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation }),
+      }).catch(() => {});
+    },
+    [baseUrl, targetDevice, sessionFetch],
+  );
   const rotate = useCallback(() => {
-    if (!baseUrl) return;
-    const next = screen && screen.width > screen.height ? "portrait" : "landscape";
-    const url = `${apiUrl(baseUrl, "/api/orientation")}${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""
-    }`;
-    void sessionFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orientation: next }),
-    }).catch(() => {});
-  }, [baseUrl, targetDevice, screen, sessionFetch]);
+    lockRotation(screen && screen.width > screen.height ? "portrait" : "landscape");
+  }, [lockRotation, screen]);
+  // serve-emu locks rotation 0 or 1 only. Android's rotation 1 shows the
+  // device turned 90° counterclockwise, which is iOS's `landscape_left`.
+  const setOrientation = useCallback(
+    (orientation: DeviceOrientation) => {
+      if (orientation === "portrait") lockRotation("portrait");
+      else if (orientation === "landscape_left") lockRotation("landscape");
+    },
+    [lockRotation],
+  );
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
@@ -2250,6 +2266,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     pressButton,
     reload,
     rotate,
+    orientations: ANDROID_ORIENTATIONS,
+    setOrientation,
     screenshot,
     appearance,
     setAppearance,

@@ -91,6 +91,8 @@ const BASE_CLIENT: DeviceClient = {
   pressButton: () => {},
   reload: () => {},
   rotate: () => {},
+  orientations: [],
+  setOrientation: () => {},
   screenshot: async () => null,
   appearance: "light",
   setAppearance: () => {},
