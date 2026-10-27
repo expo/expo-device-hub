@@ -72,9 +72,9 @@ export function UploadToastContent({ toast }: { toast: UploadToast }) {
           {isUploading && transferring && `Uploading ${toast.name}… ${pct}%`}
           {isUploading &&
             !transferring &&
-            (toast.kind === "ipa" ? `Installing ${toast.name}…` : `Adding ${toast.name}…`)}
+            (toast.kind === "app" ? `Installing ${toast.name}…` : `Adding ${toast.name}…`)}
           {toast.status === "success" &&
-            (toast.kind === "ipa" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
+            (toast.kind === "app" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
           {isError && `${toast.name}: ${toast.message ?? "Upload failed"}`}
         </span>
       </div>

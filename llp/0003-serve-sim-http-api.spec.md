@@ -522,6 +522,10 @@ before uploading. Device `.ipa` builds and `.zip` archives are refused with an
 actionable Simulator-build error before installation. Regular files without a
 gzip header are also refused, including extensionless staged ZIP uploads.
 
+The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them through
+`upload.append`, calls `app.install`, and removes the staged source on success or
+failure. Device `.ipa`/`.zip` drops are rejected before upload.
+
 The preparation worker uses `multitars` after a bounded TAR-header gate. The gate
 rejects special entries that the parser would otherwise skip and caps individual
 PAX/GNU metadata records at 1 MiB before buffering them. Ambiguous numeric fields
