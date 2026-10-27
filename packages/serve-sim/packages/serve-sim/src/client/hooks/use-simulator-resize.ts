@@ -399,16 +399,16 @@ export function useSimulatorResize({
       if (direction === 0) return;
       event.preventDefault();
       const step = event.shiftKey ? 80 : 24;
-      const next = roundToDevicePixel(
-        clampSimulatorFrameWidth(
-          committedWidth + direction * step,
-          defaultWidth,
-          viewportWidth,
-          viewportHeight,
-          aspectRatio,
-          reservedForChrome,
-        ),
+      const clampedWidth = clampSimulatorFrameWidth(
+        committedWidth + direction * step,
+        defaultWidth,
+        viewportWidth,
+        viewportHeight,
+        aspectRatio,
+        reservedForChrome,
       );
+      if (clampedWidth === committedWidth) return;
+      const next = roundToDevicePixel(clampedWidth);
       if (next === committedWidth) return;
       cancelTween();
       if (dragStartRef.current) {

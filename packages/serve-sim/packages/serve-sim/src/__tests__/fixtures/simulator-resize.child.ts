@@ -23,20 +23,20 @@ Object.assign(globalThis, {
 });
 let model: ReturnType<typeof useSimulatorResize>;
 let renderer: ReactTestRenderer | undefined;
-function Frame({ width }: { width: number }) {
+function Frame({ width, height }: { width: number; height: number }) {
   model = useSimulatorResize({
     defaultWidth: 320,
     viewportWidth: width,
-    viewportHeight: 900,
+    viewportHeight: height,
     aspectRatio: 2,
     onStart() {},
   });
   return null;
 }
-async function render(width: number) {
+async function render(width: number, height = 900) {
   await act(async () => {
-    if (renderer) renderer.update(createElement(Frame, { width }));
-    else renderer = create(createElement(Frame, { width }));
+    if (renderer) renderer.update(createElement(Frame, { width, height }));
+    else renderer = create(createElement(Frame, { width, height }));
   });
 }
 beforeEach(() => {
@@ -162,6 +162,20 @@ for (const pointerMotion of ["none", "stationary", "out-and-back"] as const) {
 }
 
 for (const key of ["ArrowRight", "ArrowDown"]) {
+  test(`a height-constrained ${key} preserves the preference at a fractional limit`, async () => {
+    await render(1280);
+    await render(1280, 315.54);
+    expect(model.width).toBeCloseTo(359.08);
+    await act(async () => model.onKeyDown({ key, shiftKey: false, preventDefault() {} } as never));
+    expect(model.width).toBeCloseTo(359.08);
+    windowEvents.dispatchEvent(new Event("pagehide"));
+    expect(Number(storage.get(SIMULATOR_RESIZE_SCALE_STORAGE_KEY))).toBe(700 / 320);
+    await render(1280);
+    expect(model.width).toBe(700);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(Number(storage.get(SIMULATOR_RESIZE_SCALE_STORAGE_KEY))).toBe(700 / 320);
+  });
+
   test(`a constrained ${key} preserves the saved preference when no size change is possible`, async () => {
     await render(1280);
     await render(508);
