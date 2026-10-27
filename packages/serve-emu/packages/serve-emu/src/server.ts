@@ -1832,7 +1832,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               width: requestContext.screen.width,
               height: requestContext.screen.height,
             },
-            orientation: displayOrientationReader(requestContext.serial).current(),
+            orientation: await displayOrientationReader(requestContext.serial).fresh(),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,

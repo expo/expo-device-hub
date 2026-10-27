@@ -1293,7 +1293,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
-          orientation: displayOrientationReader(opts.serial).current(),
+          orientation: await displayOrientationReader(opts.serial).fresh(),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
