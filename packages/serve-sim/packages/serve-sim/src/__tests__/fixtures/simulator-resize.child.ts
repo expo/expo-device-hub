@@ -160,3 +160,16 @@ for (const pointerMotion of ["none", "stationary", "out-and-back"] as const) {
     expect(Number(storage.get(SIMULATOR_RESIZE_SCALE_STORAGE_KEY))).toBe(700 / 320);
   });
 }
+
+for (const key of ["ArrowRight", "ArrowDown"]) {
+  test(`a constrained ${key} preserves the saved preference when no size change is possible`, async () => {
+    await render(1280);
+    await render(508);
+    expect(model.width).toBe(460);
+    await act(async () => model.onKeyDown({ key, shiftKey: false, preventDefault() {} } as never));
+    windowEvents.dispatchEvent(new Event("pagehide"));
+    expect(Number(storage.get(SIMULATOR_RESIZE_SCALE_STORAGE_KEY))).toBe(700 / 320);
+    await render(1280);
+    expect(model.width).toBe(700);
+  });
+}

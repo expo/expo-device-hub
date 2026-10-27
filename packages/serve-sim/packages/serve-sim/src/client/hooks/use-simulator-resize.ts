@@ -398,7 +398,6 @@ export function useSimulatorResize({
             : 0;
       if (direction === 0) return;
       event.preventDefault();
-      cancelTween();
       const step = event.shiftKey ? 80 : 24;
       const next = roundToDevicePixel(
         clampSimulatorFrameWidth(
@@ -410,6 +409,8 @@ export function useSimulatorResize({
           reservedForChrome,
         ),
       );
+      if (next === committedWidth) return;
+      cancelTween();
       if (dragStartRef.current) {
         dragStartRef.current.currentWidth = next;
         setDragWidth(next);
