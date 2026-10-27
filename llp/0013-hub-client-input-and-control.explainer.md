@@ -168,7 +168,9 @@ passes serve-sim's single-device policy through without bypassing either token
 gate. The Android adapter pins omitted `device` parameters, rejects conflicting
 ones, and closes its fleet listing, selection and AVD launch/stop routes before
 calling the backend. AVD names are not accepted as lifecycle replacements for an
-adb serial. An iOS simulator may boot again under the original UUID; Android
+adb serial. The missing-device view offers Start for the pinned iOS simulator, including
+when discovery has no recent entry. It uses the same pending/error presentation
+as the empty state and cannot select or create a different simulator. Android
 may reconnect under its original serial
 [observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`].
 
