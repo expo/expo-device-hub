@@ -247,7 +247,9 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
-    trackAddedDevice(device, replacedIds);
+    // Pinned sessions follow discovery, including shutdowns outside this UI.
+    // An optimistic entry would otherwise keep the stopped device selected.
+    if (!singleDevice) trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
