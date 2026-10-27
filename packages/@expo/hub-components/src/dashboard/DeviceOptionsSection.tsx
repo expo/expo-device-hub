@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 
-import { type DeviceClient, type DeviceSettingKey } from "@expo/hub-client";
+import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { KeyboardSection } from "./KeyboardSection";
@@ -69,6 +69,20 @@ const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
   { value: "large", label: "L" },
   { value: "extra-large", label: "XL" },
 ];
+
+const ORIENTATION_OPTIONS: ReadonlyArray<SelectOption<DeviceOrientation>> = [
+  { value: "portrait", label: "Portrait" },
+  { value: "landscape_left", label: "Landscape left" },
+  { value: "landscape_right", label: "Landscape right" },
+  { value: "portrait_upside_down", label: "Upside down" },
+];
+
+// Android streams report no orientation, and serve-emu can only turn the
+// emulator to `landscape_left`, so a landscape frame shows as that.
+function currentOrientation(screen: DeviceClient["screen"]): DeviceOrientation {
+  if (!screen) return "portrait";
+  return screen.orientation ?? (screen.width > screen.height ? "landscape_left" : "portrait");
+}
 
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: "reduce-motion", label: "Reduce motion" },
@@ -165,6 +179,9 @@ export function DeviceOptionsSection({
   }
 
   const keyboardVisible = showDeviceSettings && client?.platform === "ios";
+  const orientationOptions = ORIENTATION_OPTIONS.filter(({ value }) =>
+    client?.orientations.includes(value),
+  );
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
@@ -241,6 +258,19 @@ export function DeviceOptionsSection({
             label="Force on-screen keyboard"
             descriptionId={onscreenKeyboardDescriptionId}
             onChange={(checked) => setValue("onscreen-keyboard", checked ? "on" : "off")}
+          />
+        </SidebarRow>
+      )}
+
+      {client && orientationOptions.length > 0 && (
+        <SidebarRow label="Orientation">
+          <Select
+            ariaLabel="Orientation"
+            options={orientationOptions}
+            value={currentOrientation(client.screen)}
+            disabled={recordingControlsLocked || client.status !== "streaming"}
+            disabledReason={recordingDisabledReason}
+            onChange={client.setOrientation}
           />
         </SidebarRow>
       )}
