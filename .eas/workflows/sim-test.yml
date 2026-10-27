@@ -8,6 +8,8 @@ on:
     if: ${{ !github.event.pull_request.draft || contains(toJSON(github.event.pull_request.labels), 'ci-ready') }}
     paths:
       - packages/serve-sim/**
+      - packages/expo-device-hub/scripts/vendor.ts
+      - packages/expo-device-hub/package.json
       - .eas/workflows/sim-test.yml
       - .eas/functions/restore-sim-test-build/**
       - .eas/functions/test-sim-runtime/**
