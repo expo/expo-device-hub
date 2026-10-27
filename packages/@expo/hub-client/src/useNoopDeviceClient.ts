@@ -53,6 +53,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   ...NO_CLIPBOARD,
   streamCapabilities: null,
   screenRecording: null,
+  recordingControlsLocked: false,
   streamSettings: null,
   streamSettingsPending: false,
   updateStreamSettings: () => {},

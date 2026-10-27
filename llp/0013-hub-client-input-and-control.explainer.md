@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-29 (orientation)
+**Revised:** 2026-10-29 (orientation; recording lock)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -187,6 +187,12 @@ may reconnect under its original serial
 The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
 explains helper and control-channel restrictions. A single-device session is
 an application policy layered on authentication, not host-wide device isolation.
+
+## Recording lock
+
+On Android, turning the device or changing the stream restarts serve-emu's encoder, and that ends the host screen recording [inferred: the Hub disabled Rotate and the stream controls while recording before this lock moved into the client]. `DeviceClient.recordingControlsLocked` is true while the recording status is unknown, waiting, recording or finalizing. `rotate`, `setOrientation`, `updateStreamSettings`, `setStreamSource` and the three gRPC setters do nothing meanwhile, so the Hub and the website disable their controls from one value instead of each checking the status [observed: `useAndroidDevice.ts`]. iOS reports no recording and never locks.
+
+The lock is temporary. The team plans to record the screen in a way that survives rotation and stream changes; then this lock can go [confirmed: Krystof Woldrich, 2026-10-27].
 
 ## Hub shutdown
 
