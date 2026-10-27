@@ -24,9 +24,9 @@ import {
   setReduceMotion,
   setSoftwareKeyboard,
   setUserRotation,
-  type OrientationMode,
   type NightModeStatus,
 } from "./adb.ts";
+import { displayOrientationReader } from "./display-orientation.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
@@ -121,6 +121,8 @@ import {
   INPUT_SOURCES,
   isGrpcImageMode,
   isInputSource,
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
   parseFontScale,
   parseStreamModeRequest,
@@ -491,6 +493,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     grpcCapture: session.diagnostics?.().grpcCapture ?? null,
     codec: session.meta.codecId,
     size: { width: screen.width, height: screen.height },
+    orientation: displayOrientationReader(opts.serial).current(),
     clients: clients.size,
     videoClients: Array.from(clients).filter((client) => client.video).length,
     frames: frameCount,
@@ -1292,6 +1295,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
+          orientation: displayOrientationReader(opts.serial).current(),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
@@ -1737,13 +1741,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("orientation payload must be an object");
           }
           const orientation = (payload as Record<string, unknown>).orientation;
-          if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
-            throw new Error("orientation must be auto, portrait, or landscape");
-          }
-          return Response.json({
-            ok: true,
-            orientation: await setUserRotation(opts.serial, orientation as OrientationMode),
-          });
+          if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
+          const status = await setUserRotation(opts.serial, orientation);
+          void displayOrientationReader(opts.serial).refresh();
+          return Response.json({ ok: true, orientation: status });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },

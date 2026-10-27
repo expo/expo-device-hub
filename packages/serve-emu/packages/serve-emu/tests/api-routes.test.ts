@@ -594,7 +594,7 @@ describe("domain API failures", () => {
       response,
       400,
       "invalid_request",
-      "orientation must be auto, portrait, or landscape",
+      "orientation must be one of auto, landscape, portrait, landscape_left, portrait_upside_down, landscape_right",
     );
 
     const fold = await router.handle(
