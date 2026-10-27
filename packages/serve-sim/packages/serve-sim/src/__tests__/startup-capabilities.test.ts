@@ -634,6 +634,8 @@ test("registry capture prepares, publishes, reuses, and removes the same runtime
     expect(runtime.metaFor(UDID).attachment).toBe("capturing");
     expect(env().SIMNET_PROXY_PORT_FILE).toBeUndefined();
     expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
+    // An unchanged insert is not set again, so clear it (as a reboot does) to make publish write it.
+    writeFileSync(envPath, JSON.stringify({ ...env(), DYLD_INSERT_LIBRARIES: "/other.dylib" }));
     writeFileSync(failurePath, "");
     await expect(
       setCapabilityEnabled(UDID, "networkCapture", { enabled: true, relaunch: false }),

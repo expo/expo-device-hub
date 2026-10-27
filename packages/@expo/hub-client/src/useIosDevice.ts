@@ -1229,12 +1229,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!useWebRtc) return;
     if (webRtcError || webRtcCodecsExhausted) {
       setStatus("error");
-      setError(webRtcError ?? "No supported WebRTC codec could establish a video stream.");
+      setError(
+        webRtcError ??
+          (streamTransportLocked
+            ? "No supported WebRTC codec could establish a video stream. Retrying..."
+            : "No supported WebRTC codec could establish a video stream."),
+      );
     } else if (!webRtcStream) {
       setStatus("connecting");
       setError(null);
     }
-  }, [useWebRtc, webRtcError, webRtcStream, webRtcCodecsExhausted]);
+  }, [useWebRtc, webRtcError, webRtcStream, webRtcCodecsExhausted, streamTransportLocked]);
 
   // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — surface remounts keep the peer
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { DEFAULT_IDLE_REPEAT_MS } from "./grpc-session.ts";
 import {
   getFontWeight,
   getDisplayDensity,
@@ -2737,6 +2738,10 @@ export function createRouter(
     ok: true,
     serial,
     mode: streamSessionForApp(app).mode,
+    repeatFrameMs:
+      streamSessionForApp(app).mode === "grpc-screenshot"
+        ? DEFAULT_IDLE_REPEAT_MS
+        : SCRCPY_DEFAULTS.repeatFrameMs,
     grpcImageMode: grpcImageModeForApp(
       app,
       grpcImageModeOverrides.get(serial) ?? defaults.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,
