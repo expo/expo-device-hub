@@ -35,8 +35,8 @@ import {
   setSoftwareKeyboard,
   setUserRotation,
   type NightMode,
-  type OrientationMode,
 } from "./adb.ts";
+import { displayOrientationReader } from "./display-orientation.ts";
 import {
   findAccessibilityNode,
   getAccessibilitySnapshot,
@@ -151,6 +151,8 @@ import {
   isGrpcImageMode,
   isInputSource,
   isStreamMode,
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
   parseFontScale,
   parseStreamModeRequest,
@@ -631,6 +633,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       inputSource: context.stream.inputSource,
       grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
       size: { width: context.screen.width, height: context.screen.height },
+      orientation: displayOrientationReader(context.serial).current(),
       clients: context.clients.size,
       videoClients: Array.from(context.clients).filter((client) => client.video).length,
       stream: redactedStreamSettings(streamSettings),
@@ -1829,6 +1832,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               width: requestContext.screen.width,
               height: requestContext.screen.height,
             },
+            orientation: displayOrientationReader(requestContext.serial).current(),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -2152,18 +2156,14 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               throw new Error("orientation payload must be an object");
             }
             const orientation = (payload as Record<string, unknown>).orientation;
-            if (
-              orientation !== "auto" &&
-              orientation !== "portrait" &&
-              orientation !== "landscape"
-            ) {
-              throw new Error("orientation must be auto, portrait, or landscape");
-            }
+            if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
             return Response.json({
               ok: true,
-              orientation: await runForContext(requestContext, (context) =>
-                setUserRotation(context.serial, orientation as OrientationMode),
-              ),
+              orientation: await runForContext(requestContext, async (context) => {
+                const status = await setUserRotation(context.serial, orientation);
+                void displayOrientationReader(context.serial).refresh();
+                return status;
+              }),
             });
           } catch (err) {
             return errorResponse(err);

@@ -215,7 +215,30 @@ export type AvdStartResponse = ApiSuccess<{
 
 export type AvdStopResponse = ApiSuccess<{ serial: string }>;
 
-export type OrientationMode = "auto" | "portrait" | "landscape";
+/**
+ * How the display faces, named as on iOS. Each step turns the device a quarter turn
+ * counterclockwise: portrait, landscape_left, portrait_upside_down, landscape_right.
+ */
+export type ScreenOrientation = (typeof SCREEN_ORIENTATIONS)[number];
+export const SCREEN_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const;
+/** `landscape` is `landscape_left`. `auto` follows the device sensor again. */
+export type OrientationMode = "auto" | "landscape" | ScreenOrientation;
+export const ORIENTATION_MODES: readonly OrientationMode[] = [
+  "auto",
+  "landscape",
+  ...SCREEN_ORIENTATIONS,
+];
+export const ORIENTATION_MODE_ERROR = `orientation must be one of ${ORIENTATION_MODES.join(", ")}`;
+
+export function isOrientationMode(value: unknown): value is OrientationMode {
+  return (ORIENTATION_MODES as readonly unknown[]).includes(value);
+}
+
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
@@ -561,6 +584,8 @@ export type ApiInfoResponse = {
   stream: StreamSettings;
   /** Viewer-local transport choices. Optional while older servers remain supported. */
   viewerTransports?: ViewerTransports;
+  /** How the display faces now, or null until it is read. Absent on older servers. */
+  orientation?: ScreenOrientation | null;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -938,6 +963,14 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.viewerTransports === undefined
       ? {}
       : { viewerTransports: parseViewerTransports(root.viewerTransports) }),
+    ...(root.orientation === undefined
+      ? {}
+      : {
+          orientation:
+            root.orientation === null
+              ? null
+              : oneOf(root.orientation, SCREEN_ORIENTATIONS, "API info response.orientation"),
+        }),
   };
 }
 

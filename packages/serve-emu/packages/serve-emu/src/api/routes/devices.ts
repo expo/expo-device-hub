@@ -3,6 +3,8 @@ import type { ContractApiRoute } from "./types.ts";
 import { readJsonBody } from "../body.ts";
 import { isEmulatorSerial } from "../../device-capabilities.ts";
 import {
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
   parseFontScale,
   parseStreamModeRequest,
@@ -113,9 +115,7 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "orientation payload");
         const orientation = body.orientation;
-        if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
-          invalid("orientation must be auto, portrait, or landscape");
-        }
+        if (!isOrientationMode(orientation)) invalid(ORIENTATION_MODE_ERROR);
         return Response.json({
           ok: true,
           orientation: await downstream("set orientation", () => deps.setOrientation(orientation)),

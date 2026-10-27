@@ -1,5 +1,12 @@
 import { spawn } from "node:child_process";
 import { execBuffer, execText, type ExecResult } from "./exec.ts";
+import {
+  SCREEN_ORIENTATIONS,
+  type OrientationMode,
+  type ScreenOrientation,
+} from "./shared/api-contracts.ts";
+
+export type { OrientationMode, ScreenOrientation };
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
 const ADB_MUTATION_TIMEOUT_MS = 5_000;
@@ -7,7 +14,6 @@ const ADB_SCREENSHOT_TIMEOUT_MS = 8_000;
 const EMU_CONSOLE_TIMEOUT_MS = 5_000;
 
 export type Device = { serial: string; state: string };
-export type OrientationMode = "auto" | "portrait" | "landscape";
 export type NightMode = "auto" | "dark" | "light";
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
@@ -266,15 +272,38 @@ export async function getUserRotation(
   return { mode, rotation, orientation: orientationFromRotation(mode, rotation), raw };
 }
 
+/**
+ * Android rotation N turns the display N quarter turns counterclockwise from its natural
+ * orientation. A display that is wider than tall at rotation 0, like a tablet, starts as
+ * `landscape_left`, so every device names the same physical pose the same way.
+ */
+export function screenOrientationForRotation(
+  rotation: DisplayRotation,
+  natural: { width: number; height: number },
+): ScreenOrientation {
+  const start = natural.width > natural.height ? 1 : 0;
+  return SCREEN_ORIENTATIONS[(start + rotation) % 4];
+}
+
+export function rotationForScreenOrientation(
+  orientation: ScreenOrientation,
+  natural: { width: number; height: number },
+): DisplayRotation {
+  const start = natural.width > natural.height ? 1 : 0;
+  return ((SCREEN_ORIENTATIONS.indexOf(orientation) - start + 4) % 4) as DisplayRotation;
+}
+
 export async function setUserRotation(
   serial: string,
   orientation: OrientationMode,
   runExec: typeof execText = execText,
 ): Promise<OrientationStatus> {
-  const args =
-    orientation === "auto"
-      ? ["cmd", "window", "user-rotation", "free"]
-      : ["cmd", "window", "user-rotation", "lock", orientation === "portrait" ? "0" : "1"];
+  let args = ["cmd", "window", "user-rotation", "free"];
+  if (orientation !== "auto") {
+    const pose = orientation === "landscape" ? "landscape_left" : orientation;
+    const rotation = rotationForScreenOrientation(pose, await getDeviceSize(serial, runExec));
+    args = ["cmd", "window", "user-rotation", "lock", String(rotation)];
+  }
   const r = await runExec("adb", ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
