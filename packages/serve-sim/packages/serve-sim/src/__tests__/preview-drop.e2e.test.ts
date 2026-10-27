@@ -1,8 +1,18 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { c as createTar } from "tar";
 import { CHROME, startTestBrowser } from "./browser-e2e";
 import { parseDetachState } from "./detach-state";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
@@ -10,9 +20,12 @@ import { freePortAsync } from "./helpers";
 import type { ServeSimDeviceState } from "../state";
 
 const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
+const FIXTURE = join(import.meta.dir, "../../dist/capability-loader/ServeSimLaunchFixture.app");
+const APP = "dev.expo.serve-sim.drop-fixture";
 const sourceUdid = e2eDevice();
 let udid: string | undefined;
 const ready = sourceUdid !== null && existsSync(CLI) && existsSync(CHROME);
+const fixtureReady = existsSync(FIXTURE);
 requireE2E("preview file drops (requires Chrome)", ready);
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRz0AAAAASUVORK5CYII=",
@@ -40,7 +53,11 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
       if (await check()) return;
       await Bun.sleep(100);
     }
-    const body = browser ? await browser.cdp.evaluate<string>("document.body.innerText") : "";
+    const body = browser
+      ? await browser.cdp.evaluate<string>(
+          "[...document.querySelectorAll('[data-testid=upload-toast]')].map(el => el.textContent).join('\\n')",
+        )
+      : "";
     throw new Error(
       `${message}: ${JSON.stringify({ body, requests: sent.map(({ id, action }) => ({ action, reply: replies.get(id) })) })}`,
     );
@@ -78,6 +95,20 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
         ...point,
         data: { items: [], files: paths, dragOperationsMask: 1 },
       });
+      if (type === "dragOver") {
+        await until(
+          () =>
+            browser.cdp.evaluate<boolean>(
+              "document.body.textContent.includes('Drop media or a Simulator app')",
+            ),
+          "Preview did not show the Simulator app drop label",
+        );
+        const screenshot = process.env.SERVE_SIM_DROP_SCREENSHOT;
+        if (screenshot) {
+          const result = await browser.cdp.send("Page.captureScreenshot", { format: "png" });
+          writeFileSync(screenshot, Buffer.from(result.data as string, "base64"));
+        }
+      }
     }
   }
 
@@ -140,7 +171,12 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
       if (response.opcode !== 1) return;
       try {
         const message = JSON.parse(response.payloadData);
-        if (method.endsWith("Sent") && typeof message.action === "string") sent.push(message);
+        if (
+          method.endsWith("Sent") &&
+          typeof message.action === "string" &&
+          /^(upload\.|media\.add$|app\.install$)/.test(message.action)
+        )
+          sent.push(message);
         if (method.endsWith("Received") && typeof message.id === "number")
           replies.set(message.id, message);
       } catch {
@@ -179,6 +215,28 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
         if (root) rmSync(root, { recursive: true, force: true });
       }
     }
+  }, 60000);
+
+  test("a device IPA shows Simulator-build guidance without uploading", async () => {
+    await drop([
+      {
+        name: "device-build.ipa",
+        bytes: Buffer.from("reject this file before reading its contents"),
+      },
+    ]);
+    await until(
+      () =>
+        browser.cdp.evaluate<boolean>(
+          "[...document.querySelectorAll('[data-testid=upload-toast]')].some(el => el.textContent.includes('device-build.ipa:'))",
+        ),
+      "Preview did not report the unsupported IPA",
+    );
+    const message = await browser.cdp.evaluate<string>(
+      "[...document.querySelectorAll('[data-testid=upload-toast]')].find(el => el.textContent.includes('device-build.ipa:'))?.textContent ?? ''",
+    );
+    expect(message).toContain("Simulator .app bundle or .tar.gz/.tgz archive");
+    expect(message).toContain("Device .ipa builds and .zip archives are not supported");
+    expect(sent).toEqual([]);
   }, 60000);
 
   test("a PNG reaches Photos and its staged upload is removed", async () => {
@@ -225,4 +283,68 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     expect(photoCount()).toBe(before);
     await removedUpload();
   }, 60000);
+
+  requireE2E("preview app archive drops (requires app fixture)", fixtureReady);
+  test.skipIf(!fixtureReady).each(["browser-app.tar.gz", "browser-app.tgz"])(
+    "%s installs and launches the app through the preview",
+    async (name) => {
+      try {
+        simctl("uninstall", udid!, APP);
+      } catch {
+        /* It may not be installed. */
+      }
+      const folder = name.endsWith(".tgz") ? "Café.app" : "Browser.app";
+      const bundle = join(root, folder);
+      cpSync(FIXTURE, bundle, { recursive: true });
+      // A 91–100 byte archive path exercises macOS tar's PAX-header prefix.
+      const asset = `assets/${"x".repeat(72)}.txt`;
+      mkdirSync(join(bundle, "assets"), { recursive: true });
+      writeFileSync(join(bundle, asset), "archive asset");
+      execFileSync("plutil", [
+        "-replace",
+        "CFBundleIdentifier",
+        "-string",
+        APP,
+        join(bundle, "Info.plist"),
+      ]);
+      execFileSync("codesign", ["--force", "--sign", "-", "--timestamp=none", bundle], {
+        stdio: "pipe",
+      });
+      const archive = join(root, name);
+      if (name.endsWith(".tgz")) {
+        // The CLI/EAS node-tar producer emits PAX headers for Unicode paths.
+        await createTar({ cwd: root, gzip: true, file: archive }, [folder]);
+      } else {
+        execFileSync("tar", ["-czf", archive, "-C", root, folder]);
+      }
+      await drop([{ name, bytes: readFileSync(archive) }]);
+      await until(
+        () => sent.some(({ id, action }) => action === "app.install" && replies.has(id)),
+        "Archive drop did not reach app.install",
+      );
+      const request = sent.find((message) => message.action === "app.install")!;
+      expect(replies.get(request.id)?.exitCode, replies.get(request.id)?.stderr).toBe(0);
+      await until(
+        () =>
+          browser.cdp.evaluate<boolean>(
+            `document.body.textContent.includes(${JSON.stringify("Installed ")} + ${JSON.stringify(name)})`,
+          ),
+        "Preview did not report installation",
+      );
+      await removedUpload();
+      const installed = simctl("get_app_container", udid!, APP, "app").trim();
+      expect(readFileSync(join(installed, asset), "utf8")).toBe("archive asset");
+      const container = simctl("get_app_container", udid!, APP, "data").trim();
+      simctl("launch", udid!, APP, "-DropE2E", name);
+      await until(() => {
+        try {
+          return readFileSync(join(container, "Documents/launches.tsv"), "utf8").includes(name);
+        } catch {
+          return false;
+        }
+      }, "Installed app did not launch with the test argument");
+      simctl("terminate", udid!, APP);
+    },
+    90000,
+  );
 });
