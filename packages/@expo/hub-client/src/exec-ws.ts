@@ -49,7 +49,7 @@ type ExecReply = { ready?: boolean; id?: number; error?: string } & Partial<Host
   UiRequestResult;
 
 const ACTION_TIMEOUT_MS = 10_000;
-// Allow a reply after the default 120s host action timeout; queue waits can outlast this.
+// @ref LLP 0013#app-permissions — reply budget includes the default host execution timeout
 const PERMISSIONS_TIMEOUT_MS = 125_000;
 const UI_TIMEOUT_MS = 5_000;
 

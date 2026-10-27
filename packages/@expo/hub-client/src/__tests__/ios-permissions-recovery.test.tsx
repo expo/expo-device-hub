@@ -68,7 +68,7 @@ test("a slow permission reset keeps controls pending through the host deadline a
   await act(async () => client.refreshPermissions());
   await act(async () => client.resetPermissions());
   await act(async () => {
-    now = 11_000;
+    now = 121_000;
     for (const request of pending)
       if (now >= request.deadline) request.reject(new Error("exec-ws timeout"));
   });
