@@ -2,7 +2,7 @@
 
 **Type:** Decision
 **Status:** Draft
-**Systems:** ServeSim, CI, Release
+**Systems:** ServeSim, CI, Release, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-17
 **Related:** LLP 0000, LLP 0004, LLP 0010
@@ -27,6 +27,11 @@ serve-sim is published from an Xcode 26 build and supports Xcode 26 and Xcode 27
 The release build uses the image above, not `image: latest`. With `latest`, an EAS image update changed the SDK that compiles serve-sim's native code without a change in this repository [observed: `main`'s `sim-test.yml` used `image: latest`, which became the Xcode 27 image, 2026-10-17]. The pinned EAS builder runs `bun run build --force` to write fresh cache entries. The Ubuntu release job waits for that build and reads those entries with normal `bun run build` [observed: `.eas/workflows/build-release-cache.yml`, `.github/workflows/release.yml`]. `RELEASING.md` says how to move releases to a new image.
 
 ## When CI runs
+
+Hub’s vendor script and package manifest also trigger the serve-sim workflow,
+because the packaged middleware regression exercises those files and must run
+when Hub-only changes affect CLI dispatch. [observed: `.eas/workflows/sim-test.yml`;
+`packages/serve-sim/packages/serve-sim/src/__tests__/bundle-portability.test.ts`]
 
 - **Checks** (lint and typecheck) run on every PR push [observed: `.eas/workflows/checks.yml`].
 - **serve-sim tests** run on every push to a PR that is ready for review, and when a draft becomes ready. A draft runs them only with the `ci-ready` label: adding the label starts a run, and each later push runs again while the label stays. Iterate on a draft without the label [confirmed: Gabe Debes, 2026-10-17; observed: the `types` and `if` of the `pull_request` trigger in `.eas/workflows/sim-test.yml`]. A run builds the package and fixtures once with Xcode 26, then runs the unit shards and two Simulator jobs on each runtime: one job runs `*.slow.e2e.test.ts`, the other runs the rest. `.eas/functions/test-sim-runtime` selects each group.
