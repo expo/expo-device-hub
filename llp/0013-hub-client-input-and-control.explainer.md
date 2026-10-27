@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub, ServeSim, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes), 2026-11-27 (permission readback, recovery and ordered Android requests)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich), 2026-11-09 (observed ordinary-device pose, Codex directed by Gabe Debes), 2026-11-10 (an unknown observed pose keeps the legacy orientation controls; Claude Code, directed by Gabe Debes), 2026-11-11 (a recording that follows folds leaves fold commands free; Claude Code, directed by Krystof Woldrich), 2026-11-17 (the dashboard keeps the Orientation row and locks it; Claude Code, directed by Krystof Woldrich), 2026-11-18 (optional screenshot image controls; Codex directed by Gabe Debes), 2026-11-27 (iOS permission controls, readback, recovery and ordered Android requests)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -229,6 +229,19 @@ The lock is temporary. The team plans to record the screen in a way that survive
 
 ## App permissions
 
+Both iOS UIs read `permissions.list` when their permission section opens, after a
+write, on focus, and every five seconds while the section is open. The Hub also reads when its shared control
+channel reconnects; the standalone preview retries through its existing control
+socket. Writes never set an optimistic granted/denied state. A page reload or
+helper replacement reads the services again. Request generations reject reads
+for an old target and reads that overlap newer writes. Pending writes stay owned by
+the device/app across target changes and control-channel reconnection until their
+readback finishes. Backend replacement invalidates cached rows and reads while
+retaining pending writes. iOS ownership includes the middleware URL as well as
+the Simulator and app, so equal UDIDs on different hosts remain independent. [observed:
+`ios-permissions.ts`, `useIosDevice.ts`, `useAppPermissions.ts`; serve-sim
+`client/components/app-permissions-tool.tsx`]
+
 The standalone preview reads `permissions.list` when its permission section opens,
 after a write, on focus and every five seconds while open. It reads services again
 after reload instead of treating the command acknowledgement as state. A poll or
@@ -249,15 +262,11 @@ Closing the whole Tools panel unmounts the section and discards its local state.
 Expanding the permission section after reopening reads behind any earlier server-queued write. [observed: serve-sim
 `client/components/tools-panel.tsx`, `host-actions.ts`]
 
-Native services, caching and notification initialization limits are described in
-[LLP 0003.000](0003.000-simulator-permissions.explainer.md).
-
-The shared Hub permission hook retains pending writes per target/app through
-backend replacement, target changes and lost replies. Generations and per-row
-versions reject stale reads; a successful ordered read releases unresolved write
-ownership. Android target identity includes the host and device. The iOS Hub
-backend remains absent until its adapter is enabled. [observed:
-`useAppPermissions.ts`, `useAndroidDevice.ts`, `useIosDevice.ts`]
+The backend services, persistence boundaries and notification startup limitation
+are described in [LLP 0003.000](0003.000-simulator-permissions.explainer.md). The Hub exposes iOS
+permission controls only when an active client has the typed host-action channel.
+An older serve-sim without normalized permission readback reports an update error.
+[observed: `useIosDevice.ts`, `ios-permissions.ts`]
 
 A poll keeps the pending-write IDs it saw when it began, even after those writes
 finish, so a stale snapshot cannot revert their confirmed state. One poll runs per
@@ -276,7 +285,7 @@ visible. The section refreshes on interval and focus while open. Android
 permission requests have a 60-second browser deadline so a lost response cannot
 prevent further reads. The server still orders recovery behind earlier writes.
 [observed: `useAppPermissions.ts`, `android-permissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
-coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
+coverage in `__tests__/use-app-permissions.test.tsx`, `__tests__/ios-permissions-recovery.test.tsx`, and serve-sim's
 `__tests__/fixtures/permissions-ui.child.ts`;
 `packages/@expo/hub-components/src/dashboard/PermissionsSection.tsx`;
 `packages/@expo/hub-client/src/__tests__/android-permission-ordering.test.tsx`]

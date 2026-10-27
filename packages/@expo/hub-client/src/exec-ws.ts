@@ -49,6 +49,8 @@ type ExecReply = { ready?: boolean; id?: number; error?: string } & Partial<Host
   UiRequestResult;
 
 const ACTION_TIMEOUT_MS = 10_000;
+// Allow a reply after the default 120s host action timeout; queue waits can outlast this.
+const PERMISSIONS_TIMEOUT_MS = 125_000;
 const UI_TIMEOUT_MS = 5_000;
 
 /**
@@ -131,7 +133,7 @@ export async function runHostAction(
       execWsUrl,
       execToken,
       { action, params },
-      ACTION_TIMEOUT_MS,
+      action.startsWith("permissions.") ? PERMISSIONS_TIMEOUT_MS : ACTION_TIMEOUT_MS,
       protocols,
       channel,
     );
