@@ -1176,6 +1176,57 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
+test("offers the orientations the client can set and shows the one the stream reports", () => {
+  const ios = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("ios"),
+        orientations: ["portrait", "landscape_left", "landscape_right", "portrait_upside_down"],
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
+      }}
+    />,
+  );
+  expect(selectOptionLabels(ios, "Orientation")).toEqual([
+    "Portrait",
+    "Landscape left",
+    "Landscape right",
+    "Upside down",
+  ]);
+  expect(selectValue(ios, "Orientation")).toBe("Landscape right");
+
+  // serve-emu reports no orientation, so a landscape frame shows its only landscape option.
+  const android = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        orientations: ["portrait", "landscape_left"],
+        screen: { width: 844, height: 390 },
+      }}
+    />,
+  );
+  expect(selectOptionLabels(android, "Orientation")).toEqual(["Portrait", "Landscape left"]);
+  expect(selectValue(android, "Orientation")).toBe("Landscape left");
+
+  const noSetter = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(noSetter).not.toContain('aria-label="Orientation"');
+});
+
+test("locks the orientation select like Rotate while recording or not streaming", () => {
+  const client = {
+    ...inspectorClient("ios"),
+    orientations: ["portrait", "landscape_left"] as const,
+  };
+  for (const [overrides, locked] of [
+    [{}, false],
+    [{ screenRecording: "recording" as const }, true],
+    [{ screenRecording: "unknown" as const }, true],
+    [{ status: "connecting" as const }, true],
+  ] as const) {
+    const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
+    expect(selectMarkup(html, "Orientation").includes('disabled=""')).toBe(locked);
+  }
+});
+
 test("renders the Android display-size control the backend reports", () => {
   const client = {
     ...inspectorClient("android"),
