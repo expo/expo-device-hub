@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
-import { useTempStateDir } from "./helpers";
+import { installShims, useTempStateDir } from "./helpers";
 import {
   cpSync,
   existsSync,
@@ -150,6 +150,64 @@ describeIfBuilt("bundle portability", () => {
       }
     },
   );
+
+  test("permission read failures report the service error without bundle source or host paths", () => {
+    const shim = installShims({
+      xcrun: readFileSync(join(import.meta.dir, "fixtures/native-api-unavailable.sh"), "utf8"),
+    });
+    try {
+      const result = spawnSync(
+        "node",
+        [
+          join(PKG_DIR, "dist/serve-sim.js"),
+          "permissions",
+          "list",
+          "dev.expo.test",
+          "-d",
+          "00000000-0000-0000-0000-000000000001",
+        ],
+        {
+          encoding: "utf8",
+          timeout: 30_000,
+          env: { ...process.env, PATH: `${shim.dir}:${process.env.PATH ?? ""}` },
+        },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr.trim()).toBe("native API unavailable");
+    } finally {
+      shim.restore();
+    }
+  });
+
+  test.each([
+    ["camera", "Simulator permissions helper timed out"],
+    ["location", "simctl privacy grant location failed: timed out"],
+  ])("reports a %s permission timeout with empty stderr", (service, expected) => {
+    const state = useTempStateDir();
+    const preload = join(import.meta.dir, "fixtures/permission-timeout-preload.child.cjs");
+    try {
+      const result = spawnSync(
+        "node",
+        [
+          "--require",
+          preload,
+          join(PKG_DIR, "dist/serve-sim.js"),
+          "permissions",
+          "grant",
+          service,
+          "dev.expo.test",
+          "-d",
+          "00000000-0000-0000-0000-000000000001",
+        ],
+        { encoding: "utf8", env: { ...process.env }, timeout: 5000 },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr.trim()).toBe(expected);
+    } finally {
+      state.restore();
+    }
+  });
 
   test("the public state export uses runnable JavaScript", () => {
     const pkg = JSON.parse(readFileSync(join(PKG_DIR, "package.json"), "utf8"));
