@@ -223,6 +223,8 @@ client.rotate();
 // Turn to one orientation listed in client.capabilities.orientation, and read the current one
 // from client.screen?.orientation (iOS, and Android servers that report it).
 client.setOrientation("landscape_left");
+// While an Android recording could break, client.recordingControlsLocked is true and rotate,
+// setOrientation and the stream setters do nothing. Disable those controls from it.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
