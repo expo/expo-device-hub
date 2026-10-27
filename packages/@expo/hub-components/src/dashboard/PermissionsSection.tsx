@@ -27,7 +27,14 @@ export function PermissionsSection({
   const appId = client.foregroundApp?.id ?? null;
 
   useEffect(() => {
-    if (open && appId) refreshPermissions();
+    if (!open || !appId) return;
+    refreshPermissions();
+    const timer = setInterval(refreshPermissions, 5000);
+    window.addEventListener("focus", refreshPermissions);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refreshPermissions);
+    };
   }, [open, appId, refreshPermissions]);
 
   return (
@@ -35,15 +42,7 @@ export function PermissionsSection({
       {appId === null ? (
         <SectionNote>No app is in the foreground.</SectionNote>
       ) : permissions === null ? (
-        permissionsError ? (
-          <div style={{ padding: "0 0 12px" }}>
-            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <SectionNote>Reading permissions…</SectionNote>
-        )
+        !permissionsError && <SectionNote>Reading permissions…</SectionNote>
       ) : permissions.length === 0 ? (
         <SectionNote>This app declares no runtime permissions.</SectionNote>
       ) : (
@@ -89,7 +88,16 @@ export function PermissionsSection({
           </div>
         </>
       )}
-      {permissionsError && <SectionNote role="alert">{permissionsError}</SectionNote>}
+      {permissionsError && (
+        <>
+          <SectionNote role="alert">{permissionsError}</SectionNote>
+          <div style={{ padding: "0 0 12px" }}>
+            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
+              Retry
+            </Button>
+          </div>
+        </>
+      )}
     </CollapsibleSection>
   );
 }
