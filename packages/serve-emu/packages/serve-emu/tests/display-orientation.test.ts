@@ -58,4 +58,13 @@ describe("display orientation reader", () => {
     const { instance } = reader([0], { width: 2560, height: 1600 });
     await expect(instance.refresh()).resolves.toBe("landscape_left");
   });
+
+  test("waits for a new reading once the last one is stale, but only for a moment", async () => {
+    const { instance, advance, reads } = reader([0, 1]);
+    await expect(instance.fresh()).resolves.toBe("portrait");
+    await expect(instance.fresh()).resolves.toBe("portrait");
+    expect(reads().rotationReads).toBe(1);
+    advance(1_001);
+    await expect(instance.fresh()).resolves.toBe("landscape_left");
+  });
 });
