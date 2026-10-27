@@ -281,3 +281,33 @@ test("a target change clears the previous app's mutation error", async () => {
   await reply("undetermined");
   expect(JSON.stringify(renderer.toJSON())).not.toContain("old app grant failed");
 });
+
+test("a failed permission read clears stale rows and a later refresh clears its error", async () => {
+  await mount();
+  await reply("granted");
+  await act(async () => focus?.());
+  await act(async () =>
+    requests.shift()!.resolve({ exitCode: 1, stdout: "", stderr: "permission read failed" }),
+  );
+  expect(JSON.stringify(renderer.toJSON())).toContain("permission read failed");
+  for (const title of ["Allow", "Deny", "Reset"])
+    expect(pressed(title).props["aria-pressed"]).toBe(false);
+  await act(async () => focus?.());
+  await reply("denied");
+  expect(pressed("Deny").props["aria-pressed"]).toBe(true);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain("permission read failed");
+});
+
+test("a failed old-target read cannot clear the new app's confirmed rows", async () => {
+  await mount();
+  const oldRead = requests.shift()!;
+  await act(async () =>
+    renderer.update(createElement(AppPermissionsTool, { udid: "two", bundleId: "other" })),
+  );
+  await reply("granted");
+  await act(async () =>
+    oldRead.resolve({ exitCode: 1, stdout: "", stderr: "old target read failed" }),
+  );
+  expect(pressed("Allow").props["aria-pressed"]).toBe(true);
+  expect(JSON.stringify(renderer.toJSON())).not.toContain("old target read failed");
+});

@@ -215,10 +215,10 @@ when the permission section is collapsed and reopened. Mutation errors clear on 
 or a new write, while a successful refresh clears only read errors.
 Location Always has a separate selection, including Reset for undetermined state.
 [observed: serve-sim `client/components/app-permissions-tool.tsx`;
-`__tests__/fixtures/permissions-ui.child.ts`]
+serve-sim `__tests__/fixtures/permissions-ui.child.ts`]
 
 Closing the whole Tools panel unmounts the section and discards its local state.
-Reopening reads behind any earlier server-queued write. [observed: serve-sim
+Expanding the permission section after reopening reads behind any earlier server-queued write. [observed: serve-sim
 `client/components/tools-panel.tsx`, `host-actions.ts`]
 
 Native services, caching and notification initialization limits are described in
