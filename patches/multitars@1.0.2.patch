@@ -1,0 +1,62 @@
+diff --git a/dist/multitars.js b/dist/multitars.js
+index 4ccc7e316ae845b5acaf03d946a2051584578f17..0d0da080911f23e5cdaa13ce0aed0acb7429a0e1 100644
+--- a/dist/multitars.js
++++ b/dist/multitars.js
+@@ -925,22 +925,22 @@ async function decodeHeader(e, t) {
+     switch (getTypeFlag(n)) {
+      case 76:
+      case 78:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       i._longName = await decodeLongString(e, i.size);
+       continue;
+ 
+      case 75:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       i._longLinkName = await decodeLongString(e, i.size);
+       continue;
+ 
+      case 103:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       await decodePax(e, t, i);
+       continue;
+ 
+      case 120:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       await decodePax(e, null, i);
+       continue;
+ 
+diff --git a/dist/multitars.mjs b/dist/multitars.mjs
+index 0597df1e0b9fc2305bc68a858919e1acb62eda1e..2b547f1a866ce657f6a07a470cdca1518c709738 100644
+--- a/dist/multitars.mjs
++++ b/dist/multitars.mjs
+@@ -1090,22 +1090,22 @@ async function decodeHeader(e, t) {
+     switch (getTypeFlag(n)) {
+      case 76:
+      case 78:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       i._longName = await decodeLongString(e, i.size);
+       continue;
+ 
+      case 75:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       i._longLinkName = await decodeLongString(e, i.size);
+       continue;
+ 
+      case 103:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       await decodePax(e, t, i);
+       continue;
+ 
+      case 120:
+-      decodeBase(i, n);
++      i.size = decodeOctal(n, 124, 136);
+       await decodePax(e, null, i);
+       continue;
+ 

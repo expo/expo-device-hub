@@ -74,7 +74,8 @@ import { killOwnListeners } from "./ports";
 import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice, resolveDeviceMatches } from "./device";
 import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
-import { installAppInvocation, runInvocation } from "./host-actions-utils";
+import { installAppInvocation, redactHostPaths, runInvocation } from "./host-actions-utils";
+import { prepareAppInstall } from "./app-install-worker";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
@@ -2332,6 +2333,17 @@ program.hook("preAction", (_command, actionCommand) => {
     throw new InvalidArgumentError("--adopt/--orphan cannot be used with a subcommand.");
   }
 });
+
+program
+  .command("_prepare-app-install <source> <directory>", { hidden: true })
+  .action(async (source: string, directory: string) => {
+    try {
+      console.log(JSON.stringify(await prepareAppInstall(source, directory)));
+    } catch (error) {
+      console.error(redactHostPaths(error instanceof Error ? error.message : String(error)));
+      process.exitCode = 1;
+    }
+  });
 
 program
   .name("serve-sim")

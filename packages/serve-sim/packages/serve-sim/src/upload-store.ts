@@ -62,7 +62,10 @@ async function pruneStagingAsync(): Promise<number> {
       await rm(full, { recursive: true, force: true }).catch(() => {});
       continue;
     }
-    held += await pruneStaleEntriesAsync(full, MAX_UPLOAD_AGE_MS);
+    held += await pruneStaleEntriesAsync(full, MAX_UPLOAD_AGE_MS, (entry) => {
+      const deadline = /^\.install-extract-(\d+)-/.exec(entry)?.[1];
+      return deadline === undefined || Number(deadline) <= Date.now();
+    });
   }
   // Files that earlier versions staged directly in the root.
   return (
