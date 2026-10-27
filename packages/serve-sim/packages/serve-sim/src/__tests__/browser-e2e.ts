@@ -98,8 +98,22 @@ export class Cdp {
   }
 }
 
+class ChromeStartupTimeout extends Error {}
+
+/** Retry a stalled launch once, after removing its process and private profile. */
+export async function startTestBrowser(startupTimeoutMs = 15000) {
+  try {
+    return await startBrowserAttempt(startupTimeoutMs);
+  } catch (error) {
+    if (!(error instanceof ChromeStartupTimeout)) throw error;
+    return await startBrowserAttempt(startupTimeoutMs);
+  }
+}
+
 /** Each test owns its Chrome profile and process; never attach to a user's browser. */
-export async function startTestBrowser(): Promise<{ cdp: Cdp; close(): Promise<void> }> {
+async function startBrowserAttempt(
+  startupTimeoutMs: number,
+): Promise<{ cdp: Cdp; close(): Promise<void> }> {
   const profile = mkdtempSync(join(tmpdir(), "serve-sim-chrome-"));
   let chrome: ChildProcess | undefined;
   let cdp: Cdp | undefined;
@@ -128,13 +142,18 @@ export async function startTestBrowser(): Promise<{ cdp: Cdp; close(): Promise<v
       { stdio: ["ignore", "ignore", "pipe"] },
     );
     const browserUrl = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error("Chrome did not open a debugging port")),
-        15000,
-      );
       let output = "";
+      const timer = setTimeout(
+        () =>
+          reject(
+            new ChromeStartupTimeout(
+              `Chrome did not open a debugging port within ${startupTimeoutMs}ms: ${output || "(no stderr)"}`,
+            ),
+          ),
+        startupTimeoutMs,
+      );
       chrome!.stderr!.on("data", (chunk) => {
-        output += chunk;
+        output = (output + chunk).slice(-8192);
         const match = output.match(/ws:\/\/\S+/);
         if (match) {
           clearTimeout(timer);
