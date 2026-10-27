@@ -7,13 +7,19 @@ import {
 } from "./adb.ts";
 
 const MAX_AGE_MS = 1_000;
+const FRESH_WAIT_MS = 300;
 
 export type DisplayOrientationReader = {
   /**
    * The last reading, or null before the first one. Starts a new reading in the background
-   * when this one is older than a second, so `/api` stays synchronous and cheap.
+   * when this one is older than a second, for the synchronous `/health` snapshot.
    */
   current(): ScreenOrientation | null;
+  /**
+   * The reading for `/api`: a stale one waits up to 300 ms for a new query, so a client that
+   * polls after a turn sees the new pose instead of the one before it.
+   */
+  fresh(): Promise<ScreenOrientation | null>;
   /** Read now. Concurrent calls share one adb query; a failure keeps the last reading. */
   refresh(): Promise<ScreenOrientation | null>;
 };
@@ -61,6 +67,18 @@ export function createDisplayOrientationReader(
     current() {
       if (now() - readAt > MAX_AGE_MS) void refresh();
       return orientation;
+    },
+    async fresh() {
+      if (now() - readAt <= MAX_AGE_MS) return orientation;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<ScreenOrientation | null>((resolve) => {
+        timer = setTimeout(() => resolve(orientation), FRESH_WAIT_MS);
+      });
+      try {
+        return await Promise.race([refresh(), timeout]);
+      } finally {
+        clearTimeout(timer);
+      }
     },
     refresh,
   };
