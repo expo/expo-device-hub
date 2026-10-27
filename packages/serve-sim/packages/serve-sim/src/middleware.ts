@@ -1581,6 +1581,8 @@ function buildMemoryReport(): MemoryReport {
 export interface SimMiddlewareOptions {
   /** Standalone process handoff; omitted by embedded servers. */
   configureResources?: (configuration: SessionConfiguration) => Promise<void>;
+  /** Keep an orphan restricted to its startup device until its private ownership claim. */
+  prepareForAdoption?: boolean;
   /** Base path to serve the preview at. Default: "/.sim" */
   basePath?: string;
   /** Pin this preview server to a specific simulator UDID. */
@@ -2014,14 +2016,20 @@ export async function handleCaptureEntriesRequest(
 }
 
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
-  const policy =
+  const initialPolicy =
     options?.singleDevice === undefined ? null : new SingleDevicePolicy(options.singleDevice);
+  let policy = initialPolicy;
+  if (options?.prepareForAdoption) {
+    if (!options.device) throw new Error("Prepared adoption requires one device");
+    policy ??= new SingleDevicePolicy(options.device);
+  }
   if (policy && options?.device) policy.resolveTarget(options.device);
   const readSessionGridSnapshot = async (selectedDevice: string | null) => {
-    const snapshot = await readGridSnapshot(selectedDevice, policy?.device);
-    if (policy)
+    const sessionDevice = policy?.device;
+    const snapshot = await readGridSnapshot(selectedDevice, sessionDevice);
+    if (sessionDevice)
       snapshot.simulators = snapshot.simulators.filter(
-        (d) => d.udid.toUpperCase() === policy.device,
+        (d) => d.udid.toUpperCase() === sessionDevice,
       );
     return snapshot;
   };
@@ -3503,7 +3511,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
     serveSimBinPath: serveSimBinPath(),
-    singleDevicePolicy: policy ?? undefined,
+    get singleDevicePolicy() {
+      return policy ?? undefined;
+    },
     deviceName: bootedDeviceName,
     onActionResult: (action, params, result) => recordActionEvent(action, params, result),
     onSseRequest(path, websocketRequest) {
@@ -3569,6 +3579,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (sessionConfigured || !options?.configureResources || streamSettings?.transport !== "webrtc")
       throw new Error("Session cannot be configured");
     sessionConfigured = true;
+    const adoptedPolicy =
+      configuration.singleDevice === undefined
+        ? initialPolicy
+        : new SingleDevicePolicy(configuration.singleDevice);
+    if (adoptedPolicy) {
+      if (!options.device) throw new Error("Single-device adoption requires one startup device");
+      adoptedPolicy.resolveTarget(options.device);
+      initialPolicy?.resolveTarget(adoptedPolicy.device);
+    }
+    // Preparation admitted only the startup device. Apply the owner's final
+    // restriction before awaiting resources; existing exec sockets read it per message.
+    policy = adoptedPolicy;
     await options.configureResources(configuration);
     if (options.device)
       await peekDeviceSession(options.device)?.updateStreamSettings(configuration.stream);

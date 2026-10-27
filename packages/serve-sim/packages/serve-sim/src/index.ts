@@ -2057,6 +2057,7 @@ async function serve(
           }
         },
         device: targetDevice,
+        prepareForAdoption: options.orphan,
         singleDevice: options.singleDevice,
         streamSettings: options.stream,
         proxyHelpers: true,
@@ -2548,14 +2549,13 @@ Examples:
         for (const device of devices) policy.resolveTarget(device);
         if (
           opts.detach ||
-          opts.adopt ||
           opts.orphan ||
           opts.preview === false ||
           opts.list !== undefined ||
           opts.kill !== undefined
         ) {
           throw new Error(
-            "--single-device requires the preview server; drop --detach/--adopt/--orphan/--no-preview/--list/--kill.",
+            "--single-device requires the preview server; drop --detach/--orphan/--no-preview/--list/--kill.",
           );
         }
         opts.singleDevice = policy.device;
@@ -2853,6 +2853,7 @@ Examples:
         if (!!opts.recordingOutput !== !!opts.recordingId)
           throw new Error("Pass both --recording-output and --recording-id");
         const configuration = sessionConfigurationSchema.parse({
+          singleDevice: opts.singleDevice,
           stream: { ...stream, ...normalizeStreamEncoderSettings(stream) },
           corsOrigins: opts.corsOrigin,
           frameAncestors: opts.frameAncestor,
