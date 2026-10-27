@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient
+**Systems:** HubClient, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-14 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-16 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -28,19 +28,21 @@ HubClient must recover from WebRTC failures the same way as the serve-sim browse
 ## Signaling deadlines
 
 - A close request (`POST /webrtc/close`) stops waiting after 2 s. A close that never answers must not block the next codec attempt. Page-unload closes use `sendBeacon` or `keepalive` and have no deadline [observed: `closeWebRtcSession` in `webrtc-negotiation.ts`].
-- A `409` from `/webrtc/offer` is retried only when it means that offer setup is busy: `webrtc_session_busy` in `code` or `error`, or a `409` with no named error from an older server. Every other named `409` goes back to the caller at once, because retrying cannot clear it [observed: `isSignalingBusy` in `webrtc-negotiation.ts`].
-- serve-sim names the busy state in `error`, and serve-emu names it in `code`. Both are accepted [observed: `device-session.ts` in serve-sim, `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
+- A `409` from `/webrtc/offer` retries when `code` or `error` names temporary offer contention (`webrtc_session_busy`), capture changing during publisher setup (`webrtc_stream_changed`), or a device-session generation change (`session_changed`). Older unnamed conflicts retain the legacy retry behavior. Other named conflicts return unchanged to the caller. Retries share the existing finite budget and teardown cancellation [observed: `isRetryableOfferConflict` and `postWebRtcOffer` in `webrtc-negotiation.ts`].
+- serve-sim and the serve-emu middleware mounted by Device Hub put the busy name in `error`; standalone serve-emu uses `code` alongside a human-readable `error`. Both fields are accepted [observed: `device-session.ts` in serve-sim, `middleware.ts` and `server.ts` in serve-emu, `webrtc-negotiation.test.ts`].
+- Standalone serve-emu refuses an offer whose explicit `device` selector differs from its active serial with `409 device_mismatch`. A retry after a device switch cannot negotiate video for that different device; offers without a selector continue to use the active device [observed: `/webrtc/offer` in `packages/serve-emu/packages/serve-emu/src/server.ts`].
 - Reading the `409` body stays inside the offer deadline, because a body can stall after its headers arrive [observed: `postWebRtcOffer`].
 
-serve-sim's client uses the same 2 s close deadline and the same busy rule [observed: `webrtc-negotiation.ts`].
+serve-sim's client uses the same 2 s close deadline, but its conflict classifier checks only `error` and retries only `webrtc_session_busy` or unnamed errors. HubClient also reads `code`, so an unknown named code without an `error` is final here, and it accepts the two temporary Android restart codes above [observed: `webrtc-negotiation.ts` in both clients].
 
 ## Locked transport
 
 serve-sim locks a WebRTC server to WebRTC and refuses its HTTP streams with `409 stream_transport_locked` (LLP 0002). The iOS client treats a session whose `/api` advertises `streamSettings.transport: "webrtc"` as locked [observed: `transportLocked` in `useIosDevice.ts`].
 
 - A locked session never uses an HTTP stream [observed: `iosStreamCapabilities` in `useIosDevice.ts`].
-- When the codec ladder is exhausted, the client shows the error "No supported WebRTC codec…" and also starts the ladder again from the requested codec. The wait starts at 2 s, doubles up to 30 s, and resets after 90 s without a codec failure. Every codec failure counts, not only an exhausted ladder [observed: `createLadderBackoff` in `webrtc-fallback.ts`, the failure effect in `useIosDevice.ts`].
+- When the codec ladder is exhausted, the client shows the error "No supported WebRTC codec… Retrying..." and also starts the ladder again from the requested codec. The wait starts at 2 s, doubles up to 30 s, and resets after 90 s without a codec failure. Every codec failure counts, not only an exhausted ladder [observed: `createLadderBackoff` in `webrtc-fallback.ts`, the failure effect in `useIosDevice.ts`].
 - A `404` from `/webrtc/offer` is retried as temporary on a locked session, because the session has no other transport [observed: `isRetryableWebRtcOfferStatus` in `useWebRtcStream.ts`].
+- Unlike serve-sim, which retries offer `404`s on every session, HubClient returns an unlocked session's `404` as a permanent WebRTC failure and permits its existing HTTP fallback. Locked sessions retain WebRTC and retry [observed: `isRetryableWebRtcOfferStatus` in `useWebRtcStream.ts`, `webRtcFallbackDecision` in `webrtc-fallback.ts`, and `offerFailureIsTransient` in serve-sim's `webrtc-failure-policy.ts`].
 - Choosing a codec again resets the backoff [observed: `setWebRtcCodec` in `useIosDevice.ts`].
 
 serve-sim's client restarts the ladder with the same backoff, and it also counts every codec failure [observed: `hooks/use-ladder-restart.ts`, `client.tsx`].
@@ -70,7 +72,7 @@ One poll per peer reads stats once a second. The watchdog and the stats panel sh
 
 - The watchdog judges only a connected peer that has shown a frame, in a visible tab.
 - It resets on `visibilitychange`, and after a poll gap longer than 8 s, because sleep does not always send `visibilitychange`.
-- An idle Android stream may send no frames. serve-emu's scrcpy source repeats no frames by default, while its gRPC screenshot source repeats the last frame every 500 ms. The Android adapter sets `expectContinuousFrames: false`, so an idle stream is not a stall with either source [observed: `useAndroidDevice.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`].
+- Android sets `expectContinuousFrames` from its active source: `true` for `grpc-screenshot` when its advertised effective `repeatFrameMs` is positive and at most half the 8 s stall window (4 s), reserving the other half for capture-timer quantization and encode/delivery latency; `false` for scrcpy, slow custom repeats, or missing/invalid cadence metadata. gRPC defaults to 500 ms; scrcpy repeats no frames by default. Idle scrcpy remains valid; a gRPC stream with no new frames receives the normal stall recovery. A source-policy change updates the existing watchdog and invalidates its samples and pending verdicts without renegotiating the peer. During a switch the adapter uses the committed pending source; a late HTTP response or later sidebar update cannot replace an already healthy peer [observed: `useAndroidDevice.ts`, the layout effect in `useWebRtcStream.ts` and `setExpectContinuousFrames` in `playback-stall-watchdog.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`, and `/api/stream-mode` in serve-emu `middleware.ts` and `server.ts`].
 - During automatic recovery, Android keeps the last frame as a poster, but only on the video element that the adapter attached [observed: `preserveWebRtcFrame` in `useAndroidDevice.ts`].
 
 serve-sim's client has the same watchdog [observed: `hooks/playback-stall-watchdog.ts`].

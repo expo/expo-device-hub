@@ -390,9 +390,29 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onClipboardFallback={handleClipboardFallback}
         />
       ) : singleDevice ? (
-        <div role="status" style={{ margin: "auto" }}>
-          The session device is unavailable. Reconnect the same device to continue.
-        </div>
+        <EmptyState
+          platform={platform}
+          framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
+          singleDevice
+          onStart={
+            platform === "ios"
+              ? () =>
+                  handleAddDevice({
+                    kind: "recent",
+                    device: recent.simulators.find((device) => device.id === singleDevice) ?? {
+                      id: singleDevice,
+                      platform: "ios",
+                      name: "Session Simulator",
+                      version: "iOS",
+                      booted: false,
+                      physical: false,
+                      supported: true,
+                      deviceFrame: null,
+                    },
+                  })
+              : undefined
+          }
+        />
       ) : (
         <EmptyState
           platform={platform}

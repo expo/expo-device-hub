@@ -51,6 +51,9 @@ jobs:
       - name: Typecheck
         run: bunx turbo run typecheck --only
 
+      - name: Typecheck client E2E harness
+        run: bun run --filter expo-device-hub typecheck:e2e:client
+
       # --retry=1 runs a failed test once more. A failed beforeAll and a file that
       # fails to load stay red.
       - name: Test
@@ -63,3 +66,15 @@ jobs:
         run: |
           bun run --filter serve-emu docs:check
           bun run --filter serve-emu test:package
+
+      - name: Hub npm install
+        run: |
+          hub_tarball=$(npm pack ./packages/expo-device-hub --ignore-scripts --pack-destination /tmp --silent)
+          cd "$(mktemp -d)"
+          npm install "/tmp/$hub_tarball"
+
+      - name: Hub pnpm install
+        run: |
+          hub_tarball=$(npm pack ./packages/expo-device-hub --ignore-scripts --pack-destination /tmp --silent)
+          cd "$(mktemp -d)"
+          npm exec --yes --package=pnpm@11.0.0 -- pnpm add "/tmp/$hub_tarball"

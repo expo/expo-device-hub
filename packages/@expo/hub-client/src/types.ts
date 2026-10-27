@@ -196,6 +196,8 @@ export type DeviceInputSource = "scrcpy" | "grpc";
 
 /** Authoritative source state for the selected Android device session. */
 export interface DeviceStreamSourceStatus {
+  /** Effective idle frame repeat interval; omitted by older Android servers. Zero disables repeats. */
+  repeatFrameMs?: number;
   mode: DeviceStreamSource;
   grpcImageMode: DeviceGrpcImageMode;
   encoder: DeviceGrpcEncoder;

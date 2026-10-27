@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -151,6 +151,48 @@ plus its page gutters. Presentation mode uses the full viewport. Soft-keyboard
 height handling remains owned by the existing viewport logic
 [observed: `src/client/utils/simulator-viewport.ts`,
 `src/client/hooks/use-simulator-resize.ts`, `src/client/client.tsx`].
+
+## Prepared process handoff
+
+Only servers started with `--orphan` offer process ownership to the local
+`serve-sim <udid> --adopt` CLI. Matching preview settings alone do not opt in
+[confirmed: Gabe Debes, 2026-10-26]. HTTP and `/exec-ws` do not expose ownership or reconfiguration, even to a
+preview-token holder. The CLI uses a private Unix socket, not the preview server
+[observed: `src/session-owner.ts`, `src/middleware.ts`].
+
+The server creates its owner socket and separate random authority in a private
+0700 directory under canonical `/tmp`, with 0600 socket and authority files. This
+directory is outside the host actions' file roots regardless of custom state or
+temporary directories. Local discovery state contains only the owning PID and
+directory reference; neither owner state nor authority enters public preview
+state. The CLI checks file type, OS user, permissions, process identity and startup
+compatibility before claiming the process. The preview bearer token is not owner
+authority [observed: `src/session-owner.ts`, `src/host-paths.ts`].
+
+A compatible local claim consumes the handoff before native configuration starts.
+The server closes its owner listener and removes the authority, rejecting concurrent
+or later claims. Invalid owner credentials or incompatible identity do not consume
+it; malformed configuration or failed native setup does. The caller must replace
+the process after a failed claim [observed: `src/session-owner.ts`].
+
+Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screenshot
+artifacts, and network capture fields/upstream before the CLI reports success.
+Existing captures stop before the job's upstream is applied; requested capture must
+be active before success, and app installation/launch follows through normal typed
+`/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff.
+
+The paired adoption flags `--recording-output <absolute-directory>` and
+`--recording-id <id>` optionally start the existing native video writer after
+stream reconfiguration and before success. The startup JSON then confirms
+`recording: { output, recordingId }`. Warmup and adoption without these flags do
+not start video. This private owner recording lasts until its exact-ID stop or
+server shutdown; it needs no recorder child or lease heartbeat. Existing
+`record-video` client leases retain their expiry behavior. The normal authenticated
+`DELETE /helper/<udid>/recording/video` with `x-recording-id` waits for native
+finalization and returns `{ manifest }`; retrying the same finished ID returns the
+same manifest. A disconnected adoption drains in-flight recording startup before
+configuration settles; failed adoption still consumes the private claim
+[observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 ## Preview sharing
 
@@ -410,12 +452,15 @@ concurrent input [observed: `src/__tests__/raw-hid-socket.test.ts`].
 ### Launching an installed app
 
 An authenticated `/exec-ws` client can launch an installed app with
-`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?}}`.
+`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?, restart?}}`.
 Use a Simulator UDID. The action restarts the app with the supplied arguments,
 preserves the session's active capabilities, then pre-approves and opens the
-optional deep link. Pre-approval is best effort. Launch arguments are limited
-to 256 arguments of 8,192 characters each and 128 KiB total UTF-8 bytes,
-including terminators. The action replies with
+optional deep link. `restart: false` skips the stop, for a caller that knows the
+app is not running, such as right after installation. An app that is already
+running then keeps its process and its previous arguments. If a `simctl` call
+times out, the action runs the whole launch once more; other failures and a
+second timeout fail it. Pre-approval is best effort. Launch arguments are limited to 256 arguments of 8,192 characters each
+and 128 KiB total UTF-8 bytes, including terminators. The action replies with
 `{id, stdout, stderr, exitCode}`; invalid parameters and unsupported actions
 reply with `{id, error}`. Installation stays a separate operation. Setup finishes
 before the app stops. If the stop or the launch fails, the action restores the

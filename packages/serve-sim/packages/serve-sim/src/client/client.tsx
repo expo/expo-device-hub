@@ -105,6 +105,7 @@ import {
   mjpegStreamUrlFrom,
   simEndpoint,
   streamConfigFrom,
+  sameSimulator,
   webrtcCloseUrlFrom,
   webrtcOfferUrlFrom,
   webrtcStatsUrlFrom,
@@ -254,7 +255,7 @@ function App() {
   // a helper, so its config lands as soon as it boots rather than waiting on the
   // next filesystem-watch tick — the stream appears sooner after boot.
   const selectedHasHelper = !!(
-    selectedUdid && gridDevices?.find((d) => d.device === selectedUdid)?.helper
+    selectedUdid && gridDevices?.find((d) => sameSimulator(d.device, selectedUdid))?.helper
   );
 
   const selectDevice = useCallback((udid: string) => {
@@ -316,7 +317,8 @@ function App() {
           endpoint.searchParams.set("device", udid);
           const res = await fetch(endpoint, { cache: "no-store" });
           const json = await res.json();
-          if ((json.statuses ?? []).some((d: any) => d.device === udid && d.helper)) return true;
+          if ((json.statuses ?? []).some((d: any) => sameSimulator(d.device, udid) && d.helper))
+            return true;
         } catch {}
         await new Promise((r) => setTimeout(r, 400));
       }
@@ -405,8 +407,12 @@ function App() {
         } else if (window.__SIM_PREVIEW__) {
           // Keep the minimal injection: the empty state still routes through
           // simEndpoint (basePath) and authenticates /exec (execToken).
-          const { basePath, execToken } = window.__SIM_PREVIEW__;
-          window.__SIM_PREVIEW__ = { basePath, execToken } as Window["__SIM_PREVIEW__"];
+          const { basePath, execToken, singleDevice } = window.__SIM_PREVIEW__;
+          window.__SIM_PREVIEW__ = {
+            basePath,
+            execToken,
+            singleDevice,
+          } as Window["__SIM_PREVIEW__"];
         }
         return next;
       });
@@ -503,13 +509,14 @@ function App() {
   // Selection drives the view: stream when the selected device's helper config
   // has arrived, otherwise a placeholder (connecting / boot-and-start).
   const effectiveUdid = selectedUdid ?? config?.device ?? null;
-  const selectedDevice = gridDevices?.find((d) => d.device === effectiveUdid) ?? null;
+  const selectedDevice = gridDevices?.find((d) => sameSimulator(d.device, effectiveUdid)) ?? null;
   // The catalog is a fetch behind the inlined config, so until it lands the
   // device would lay out at the bare screen aspect and then reflow into its bezel.
   // Once available, prefer the catalog's complete cover/inner display variants.
-  const inlineChrome =
-    injectedConfig?.device === effectiveUdid ? (injectedConfig.chrome ?? null) : null;
-  const isStreaming = !!config && config.device === effectiveUdid;
+  const inlineChrome = sameSimulator(injectedConfig?.device, effectiveUdid)
+    ? (injectedConfig?.chrome ?? null)
+    : null;
+  const isStreaming = !!config && sameSimulator(config.device, effectiveUdid);
 
   let mainView: ReactNode;
   if (isStreaming && config) {

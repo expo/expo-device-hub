@@ -1,5 +1,5 @@
 import { raiseH264OfferLevel } from "./webrtc-sdp-level";
-import { startPlaybackStallWatchdog } from "./playback-stall-watchdog";
+import { startPlaybackStallWatchdog, type PlaybackStallWatchdog } from "./playback-stall-watchdog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { readStatsBeforeDeadline } from "./bounded-webrtc-stats";
 
@@ -200,6 +200,13 @@ export function useWebRtcStream({
   const transportRetryAttemptRef = useRef(0);
   const stallReconnectAtRef = useRef<number | null>(null);
   const beforeDisconnectRef = useRef(onBeforeDisconnect);
+  const expectContinuousFramesRef = useRef(expectContinuousFrames);
+  const playbackWatchdogRef = useRef<PlaybackStallWatchdog | null>(null);
+  // Source metadata can arrive after a healthy replacement peer has painted.
+  useLayoutEffect(() => {
+    expectContinuousFramesRef.current = expectContinuousFrames;
+    playbackWatchdogRef.current?.setExpectContinuousFrames(expectContinuousFrames);
+  }, [expectContinuousFrames]);
   // A media node remount changes the capture target, not the negotiated peer.
   useLayoutEffect(() => {
     beforeDisconnectRef.current = onBeforeDisconnect;
@@ -471,9 +478,10 @@ export function useWebRtcStream({
       failCodec: () =>
         allowCodecFallback ? failCodec() : retryTransport("WebRTC playback stalled."),
       retryTransport,
-      expectContinuousFrames,
+      expectContinuousFrames: expectContinuousFramesRef.current,
       capturePaused: async () => (await readSenderStats())?.capture?.rebooting === true,
     });
+    playbackWatchdogRef.current = stall;
 
     // Like serve-sim, a used grace stays used across tab switches.
     const onVisibilityChange = () => {
@@ -606,6 +614,7 @@ export function useWebRtcStream({
     return () => {
       stopped = true;
       stall.stop();
+      if (playbackWatchdogRef.current === stall) playbackWatchdogRef.current = null;
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", releaseOnPageHide);
       window.removeEventListener("beforeunload", releaseOnPageHide);
@@ -625,7 +634,6 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
-    expectContinuousFrames,
     onKeyframeNeeded,
     retryGeneration,
     fetchImpl,

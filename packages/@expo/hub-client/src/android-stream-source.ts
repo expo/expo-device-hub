@@ -108,6 +108,11 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   }
   return {
     mode: candidate.mode,
+    ...(typeof candidate.repeatFrameMs === "number" &&
+    Number.isFinite(candidate.repeatFrameMs) &&
+    candidate.repeatFrameMs >= 0
+      ? { repeatFrameMs: candidate.repeatFrameMs }
+      : {}),
     grpcImageMode: candidate.grpcImageMode,
     encoder,
     encoderName,
