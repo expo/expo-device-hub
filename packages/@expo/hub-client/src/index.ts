@@ -14,6 +14,13 @@
 
 export * from "./types";
 export { resolveDeviceStreamMode } from "./stream-mode";
+export {
+  HINGE_POSES,
+  type HingeControlCommand,
+  type HingePhysicalOrientation,
+  type HingePose,
+  type ObservedHingeState,
+} from "./hinge-control";
 export { areRecordingControlsLocked } from "./screen-recording";
 export { DeviceScreen } from "./DeviceScreen";
 export {

@@ -2,10 +2,12 @@
 export const WS_MSG_CONFIG = 0x82;
 export const WS_MSG_INPUT_ADMITTED = 0x83;
 /** Replies to the requests below: `[tag][{"requestId","ok",…}]`. */
+export const WS_MSG_HINGE_CONTROL_DONE = 0x90;
 export const WS_MSG_INPUT_BARRIER_DONE = 0x91;
 export const WS_MSG_PASTE_DONE = 0x92;
 
 /** Client requests that serve-sim answers with the same request ID. */
+export const WS_MSG_HINGE_CONTROL = 0x10;
 export const WS_MSG_INPUT_BARRIER = 0x11;
 export const WS_MSG_PASTE = 0x12;
 /** serve-sim closes an input socket that sends a larger frame. */
