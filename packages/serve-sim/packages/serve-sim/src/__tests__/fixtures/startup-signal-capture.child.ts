@@ -30,6 +30,8 @@ const simctlModule = await import("../../simctl");
 mock.module("../../simctl", () => ({
   ...simctlModule,
   simctl: async (args: string[]) => {
+    if (args.join(" ") === "list devices -j")
+      return JSON.stringify({ devices: { iOS: [{ udid: device, state: "Booted" }] } });
     if (args.join(" ") === `bootstatus ${device} -b`) return "";
     throw new Error(`Unexpected host command: ${args.join(" ")}`);
   },
