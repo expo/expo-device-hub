@@ -112,6 +112,8 @@ export type ButtonProps = {
   href?: string;
   target?: string;
   onClick?: () => void;
+  /** Accessible name when the visible label alone is ambiguous, such as several "Delete" buttons. */
+  ariaLabel?: string;
   className?: string;
   style?: CSSProperties;
 };
@@ -128,6 +130,7 @@ export function Button({
   href,
   target,
   onClick,
+  ariaLabel,
   className,
   style,
 }: ButtonProps) {
@@ -181,6 +184,7 @@ export function Button({
       <a
         href={disabled ? undefined : href}
         target={target}
+        aria-label={ariaLabel}
         className={className}
         style={baseStyle}
         onClick={disabled ? undefined : onClick}
@@ -194,6 +198,7 @@ export function Button({
   return (
     <button
       type={type}
+      aria-label={ariaLabel}
       className={className}
       style={baseStyle}
       disabled={disabled}
