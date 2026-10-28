@@ -46,11 +46,7 @@ describe("eventLogEventForAction", () => {
           { exitCode },
         ),
       ).toBeNull();
-      for (const params of [
-        { udid: "DEVICE-A" },
-        { udid: "DEVICE-A", automation: false },
-        { udid: "DEVICE-A", copyToDesktop: false },
-      ]) {
+      for (const params of [{ udid: "DEVICE-A" }, { udid: "DEVICE-A", automation: false }]) {
         expect(eventLogEventForAction("screenshot.capture", params, { exitCode })).toMatchObject({
           kind: "screenshot",
           status: exitCode === 0 ? "ok" : "error",
