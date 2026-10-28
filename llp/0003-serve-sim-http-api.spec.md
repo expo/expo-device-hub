@@ -733,6 +733,9 @@ action stderr. [observed: `packages/expo-device-hub/scripts/vendor.ts`,
 `permissions.set` keeps `{udid, action, service, bundleId}`, where action is
 `grant`, `revoke` (denial), or `reset` (not determined). `permissions.resetAll`
 resets each permission family. Failure may leave earlier families changed.
+Within a host control server, permission requests for the same device/app run
+in order, including reads. Losing the requesting socket does not cancel native
+work; a reconnect read waits for the outstanding request before reporting state.
 `permissions.list` retains `tcc`, `location`, and `notifications` and, for an
 app-scoped read, adds `permissions: [{id, label, state}]` for the two browser UIs.
 [observed: `src/host-actions.ts`, `src/permissions.ts`]
@@ -745,7 +748,7 @@ service result; browser consumers must list authoritative state after writes.
 [observed: `src/permissions.ts`; `Sources/SimPermissions/sim-permissions.m`]
 
 [LLP 0003.000](0003.000-simulator-permissions.explainer.md) explains the native
-services, denial/reset semantics, browser readback, separate
+services, denial/reset semantics, request ordering, browser readback, separate
 persistence boundaries, production helper versus test fixture, packaging and
 validation limits.
 

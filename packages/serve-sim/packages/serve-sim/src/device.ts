@@ -62,24 +62,37 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
 
 /** Canonical device identity for native capture, without exiting a middleware host. */
 export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
+  return resolveDeviceAsync(nameOrUDID, true);
+}
+
+/** Resolve aliases without exiting the host; prefer a booted match when names repeat. */
+export async function resolveDeviceAsync(nameOrUDID: string, bootedOnly = false): Promise<string> {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID))
     return nameOrUDID.toUpperCase();
-  const { devices } = JSON.parse(await simctl(["list", "devices", "booted", "-j"])) as {
+  const { devices } = JSON.parse(
+    await simctl(["list", "devices", ...(bootedOnly ? ["booted"] : []), "-j"]),
+  ) as {
     devices: Record<string, Array<{ udid: string; name: string; state: string }>>;
   };
-  const matches = Object.values(devices)
+  const named = Object.values(devices)
     .flat()
     .filter(
       (device) =>
-        device.state === "Booted" &&
-        (nameOrUDID.toLowerCase() === "booted" ||
-          device.name.toLowerCase() === nameOrUDID.toLowerCase()),
+        nameOrUDID.toLowerCase() === "booted" ||
+        device.name.toLowerCase() === nameOrUDID.toLowerCase(),
     );
+  const booted = named.filter((device) => device.state === "Booted");
+  const matches =
+    bootedOnly || nameOrUDID.toLowerCase() === "booted" || booted.length ? booted : named;
   if (matches.length !== 1)
     throw new Error(
       matches.length
-        ? "Several booted simulators match; specify a simulator UDID."
-        : "No booted simulator matches that device name.",
+        ? bootedOnly
+          ? "Several booted simulators match; specify a simulator UDID."
+          : "Several simulators match; specify a simulator UDID."
+        : bootedOnly
+          ? "No booted simulator matches that device name."
+          : "No simulator matches that device name.",
     );
   return matches[0]!.udid.toUpperCase();
 }

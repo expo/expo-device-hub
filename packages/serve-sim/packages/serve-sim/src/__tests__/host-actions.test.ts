@@ -1,6 +1,15 @@
 import { describe, expect, it, spyOn } from "bun:test";
 
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { randomUUID } from "crypto";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
@@ -13,6 +22,22 @@ import { SCREENSHOT_DIR, UPLOAD_DIR } from "../host-paths";
 const BIN = "true";
 
 describe("runHostActionAsync validation", () => {
+  it("preserves the error when a permission target cannot be resolved", async () => {
+    const device = await import("../device");
+    const resolve = spyOn(device, "resolveDeviceAsync").mockRejectedValue(
+      new Error("No booted simulator matches that device name."),
+    );
+    try {
+      const result = runHostActionAsync(
+        { action: "permissions.list", params: { udid: "missing-device" } },
+        BIN,
+      );
+      await expect(result).rejects.toBeInstanceOf(InvalidHostActionError);
+      await expect(result).rejects.toThrow("No booted simulator matches that device name.");
+    } finally {
+      resolve.mockRestore();
+    }
+  });
   it("refuses an unknown action", async () => {
     await expect(runHostActionAsync({ action: "shell.run" }, BIN)).rejects.toBeInstanceOf(
       InvalidHostActionError,
@@ -95,7 +120,7 @@ describe("runHostActionAsync validation", () => {
     const result = await runHostActionAsync(
       {
         action: "permissions.set",
-        params: { udid: "U", bundleId: "com.example.app", action: "grant", service: "camera" },
+        params: { udid: UDID, bundleId: "com.example.app", action: "grant", service: "camera" },
       },
       "echo",
     );
@@ -562,5 +587,152 @@ it("logs failed app actions with the validated device and cached name", async ()
     }
   } finally {
     log.mockRestore();
+  }
+});
+
+it("device-wide permission reads wait for apps and block later app writes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "permission-device-order-"));
+  const script = join(dir, "serve-sim.js");
+  const events = join(dir, "events");
+  cpSync(join(import.meta.dir, "fixtures/permission-order.child.cjs"), script);
+  writeFileSync(join(dir, "block-list"), "");
+  const udid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const waitFor = async (count: number) => {
+    const end = Date.now() + 3000;
+    while (
+      (!existsSync(events) || readFileSync(events, "utf8").trim().split("\n").length < count) &&
+      Date.now() < end
+    )
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(readFileSync(events, "utf8").trim().split("\n")).toHaveLength(count);
+  };
+  const first = runHostActionAsync(
+    { action: "permissions.resetAll", params: { udid, bundleId: "test.first" } },
+    script,
+  );
+  const second = runHostActionAsync(
+    { action: "permissions.resetAll", params: { udid, bundleId: "test.second" } },
+    script,
+  );
+  let read: Promise<unknown> | undefined;
+  let grant: Promise<unknown> | undefined;
+  try {
+    await waitFor(2); // Unrelated apps still run concurrently.
+    read = runHostActionAsync({ action: "permissions.list", params: { udid } }, script);
+    grant = runHostActionAsync(
+      {
+        action: "permissions.set",
+        params: { udid, bundleId: "test.third", action: "grant", service: "camera" },
+      },
+      script,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(2);
+    writeFileSync(join(dir, "release"), "");
+    await waitFor(3);
+    expect(readFileSync(events, "utf8").trim().split("\n")).toEqual(["reset", "reset", "list"]);
+    writeFileSync(join(dir, "release-list"), "");
+    await Promise.all([first, second, read, grant]);
+    expect(readFileSync(events, "utf8").trim().split("\n")).toEqual([
+      "reset",
+      "reset",
+      "list",
+      "grant",
+    ]);
+  } finally {
+    writeFileSync(join(dir, "release"), "");
+    writeFileSync(join(dir, "release-list"), "");
+    await Promise.allSettled([first, second, read, grant]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("unscoped permission listing resolves shutdown names and prefers a unique booted match", async () => {
+  const sim = await import("../simctl");
+  const device = await import("../device");
+  const shutdown = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const booted = "BBBBBBBB-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const lookup = spyOn(sim, "simctl").mockResolvedValue(
+    JSON.stringify({
+      devices: {
+        runtime: [
+          { name: "Shared name", udid: shutdown, state: "Shutdown" },
+          { name: "Offline phone", udid: shutdown, state: "Shutdown" },
+          { name: "Shared name", udid: booted, state: "Booted" },
+        ],
+      },
+    }),
+  );
+  try {
+    expect(
+      (
+        await runHostActionAsync(
+          { action: "permissions.list", params: { udid: "Offline phone" } },
+          BIN,
+        )
+      ).exitCode,
+    ).toBe(0);
+    expect(lookup.mock.calls[0]?.[0]).toEqual(["list", "devices", "-j"]);
+    expect(await device.resolveDeviceAsync("Shared name")).toBe(booted);
+  } finally {
+    lookup.mockRestore();
+  }
+});
+
+it("permission readback and later writes wait for an outstanding host mutation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "permission-order-"));
+  const events = join(dir, "events");
+  const release = join(dir, "release");
+  const script = join(dir, "serve-sim.js");
+  cpSync(join(import.meta.dir, "fixtures/permission-order.child.cjs"), script);
+  const params = { udid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", bundleId: "test.app" };
+  const device = await import("../device");
+  let admit!: (udid: string) => void;
+  const identity = new Promise<string>((resolve) => {
+    admit = resolve;
+  });
+  const resolve = spyOn(device, "resolveBootedDeviceAsync").mockImplementation(async (value) =>
+    value === "delayed-alias"
+      ? identity
+      : value === "ordered-alias"
+        ? params.udid
+        : value.toUpperCase(),
+  );
+  const reset = runHostActionAsync(
+    { action: "permissions.resetAll", params: { ...params, udid: "delayed-alias" } },
+    script,
+  );
+  const waitFor = async (check: () => boolean) => {
+    const end = Date.now() + 3000;
+    while (!check() && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+    expect(check()).toBe(true);
+  };
+  try {
+    const read = runHostActionAsync(
+      { action: "permissions.list", params: { ...params, udid: params.udid.toLowerCase() } },
+      script,
+    );
+    const grant = runHostActionAsync(
+      {
+        action: "permissions.set",
+        params: { ...params, udid: "ordered-alias", action: "grant", service: "camera" },
+      },
+      script,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(events)).toBe(false);
+    admit(params.udid);
+    await waitFor(() => existsSync(events));
+    expect(readFileSync(events, "utf8").trim()).toBe("reset");
+    writeFileSync(release, "done");
+    const results = await Promise.all([reset, read, grant]);
+    expect(results.every((r) => r.exitCode === 0)).toBe(true);
+    expect(readFileSync(events, "utf8").trim().split("\n")).toEqual(["reset", "list", "grant"]);
+  } finally {
+    admit(params.udid);
+    writeFileSync(release, "done");
+    await reset;
+    resolve.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

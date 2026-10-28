@@ -1018,7 +1018,7 @@ async function runProcedureAsync(
   }
 }
 
-export async function runHostActionAsync(
+async function runHostActionUnqueuedAsync(
   msg: HostActionRequest,
   binPath: string,
   streamSettings?: StreamSettings,
@@ -1046,4 +1046,67 @@ export async function runHostActionAsync(
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;
   return { stdout, stderr, exitCode };
+}
+
+// @ref LLP 0003.000#ordered-requests-and-authoritative-browser-state — reconnect reads wait for native writes that outlive their socket
+const permissionRequests = new Map<string, Map<string | undefined, Promise<unknown>>>();
+let permissionAdmission = Promise.resolve();
+export async function runHostActionAsync(
+  msg: HostActionRequest,
+  binPath: string,
+  streamSettings?: StreamSettings,
+  deviceName?: (udid: string) => string | undefined,
+): Promise<HostActionResult> {
+  const run = () => runHostActionUnqueuedAsync(msg, binPath, streamSettings, deviceName);
+  if (
+    msg.action !== "permissions.set" &&
+    msg.action !== "permissions.resetAll" &&
+    msg.action !== "permissions.list"
+  )
+    return run();
+  const params = parseParams(msg.action, msg.params);
+  const admission = permissionAdmission.then(async () => {
+    // Resolve aliases in arrival order; a fast UUID lookup must not overtake an
+    // earlier name lookup. Only admission is global, execution stays per app.
+    const device = await import("./device");
+    // An unscoped list reads persisted TCC state and also works for shutdown devices.
+    const resolve =
+      msg.action === "permissions.list" && !params.bundleId
+        ? device.resolveDeviceAsync
+        : device.resolveBootedDeviceAsync;
+    const udid = await resolve(params.udid).catch((error: unknown) => {
+      throw new InvalidHostActionError(
+        error instanceof Error ? error.message : "Could not resolve the Simulator device.",
+      );
+    });
+    const key = params.bundleId;
+    const requests =
+      permissionRequests.get(udid) ?? new Map<string | undefined, Promise<unknown>>();
+    // Device-wide reads form a barrier across apps; otherwise unrelated apps stay concurrent.
+    const previous =
+      key === undefined ? [...requests.values()] : [requests.get(key), requests.get(undefined)];
+    const current = Promise.all(previous.map((request) => request?.catch(() => {}))).then(() =>
+      runHostActionUnqueuedAsync(
+        { ...msg, params: { ...params, udid } },
+        binPath,
+        streamSettings,
+        deviceName,
+      ),
+    );
+    requests.set(key, current);
+    permissionRequests.set(udid, requests);
+    return { udid, requests, key, current };
+  });
+  permissionAdmission = admission.then(
+    () => {},
+    () => {},
+  );
+  const { udid, requests, key, current } = await admission;
+  try {
+    return await current;
+  } finally {
+    if (requests.get(key) === current) requests.delete(key);
+    if (requests.size === 0 && permissionRequests.get(udid) === requests)
+      permissionRequests.delete(udid);
+  }
 }
