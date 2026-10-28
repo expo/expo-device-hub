@@ -439,7 +439,10 @@ const ACTION_SCHEMAS = {
   "file.readBase64": z
     .object({ path: ConfinedPath })
     .meta({ description: "Download a file from the simulator host.", output: "base64" }),
-  "screenshot.capture": ScreenshotParams.meta({
+  "screenshot.capture": ScreenshotParams.extend({
+    copyToDesktop: z.boolean().default(true),
+    purpose: z.literal("session-preview").optional(),
+  }).meta({
     description: "Take a screenshot of the active display, or the specified simctl display ID.",
     output: "path",
   }),
@@ -981,7 +984,12 @@ async function runProcedureAsync(
           native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
         ) =>
           captureScreenshotAsync(
-            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            {
+              udid: p.udid,
+              fileName: p.fileName ?? newScreenshotName(),
+              display,
+              copyToDesktop: p.copyToDesktop,
+            },
             read,
             native,
           );
