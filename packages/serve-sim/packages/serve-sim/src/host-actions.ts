@@ -425,7 +425,6 @@ const ACTION_SCHEMAS = {
       udid: Device,
       fileName: ScreenshotName.optional(),
       display: ScreenshotDisplay.optional(),
-      copyToDesktop: z.boolean().default(true),
       automation: z.boolean().default(false),
     })
     .meta({
@@ -949,7 +948,6 @@ async function runProcedureAsync(
               udid: p.udid,
               fileName: p.fileName ?? newScreenshotName(),
               display,
-              copyToDesktop: p.copyToDesktop,
             },
             read,
           );

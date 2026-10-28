@@ -59,17 +59,15 @@ async function capture(extra = {}) {
   );
 }
 
-test("catalog advertises optional Desktop-copy and automation fields", async () => {
+test("catalog advertises the optional automation field", async () => {
   const result = await runHostActionAsync({ action: "actions.describe", params: {} }, "true");
   const schema = JSON.parse(result.stdout)["screenshot.capture"];
-  expect(schema.properties.copyToDesktop).toMatchObject({ type: "boolean", default: true });
   expect(schema.properties.automation).toMatchObject({ type: "boolean", default: false });
-  expect(schema.required).not.toContain("copyToDesktop");
   expect(schema.required).not.toContain("automation");
 });
 
-test("omitted or true copyToDesktop preserves the manual Desktop copy", async () => {
-  for (const extra of [{}, { copyToDesktop: true }, { automation: true }]) {
+test("manual and automated captures preserve the existing Desktop copy", async () => {
+  for (const extra of [{}, { automation: false }, { automation: true }]) {
     calls.length = 0;
     const result = await capture(extra);
     expect(result.exitCode).toBe(0);
@@ -78,28 +76,29 @@ test("omitted or true copyToDesktop preserves the manual Desktop copy", async ()
   }
 });
 
-test("false skips Desktop copying while preserving active-panel capture and staged PNG", async () => {
+test("automated captures preserve active-panel selection and staged PNG", async () => {
   displays = [1, 3, 3];
-  const result = await capture({ copyToDesktop: false, automation: true });
+  const result = await capture({ automation: true });
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(readFileSync(result.stdout)).toEqual(png);
-  expect(calls.map((call) => call.file)).toEqual(["xcrun", "xcrun"]);
-  expect(calls.map((call) => call.args.find((arg) => arg.startsWith("--display=")))).toEqual([
-    "--display=1",
-    "--display=3",
-  ]);
+  expect(calls.map((call) => call.file)).toEqual(["xcrun", "xcrun", "cp"]);
+  expect(
+    calls
+      .filter((call) => call.file === "xcrun")
+      .map((call) => call.args.find((arg) => arg.startsWith("--display="))),
+  ).toEqual(["--display=1", "--display=3"]);
 });
 
 test("failed background captures do not copy or leave an empty reservation", async () => {
   fail = true;
-  expect((await capture({ copyToDesktop: false })).exitCode).toBe(1);
+  expect((await capture({ automation: true })).exitCode).toBe(1);
   expect(calls.some((call) => call.file === "cp")).toBe(false);
   expect(existsSync(join(SCREENSHOT_DIR, names.at(-1)!))).toBe(false);
 });
 
 test("invalid boolean flags are refused before capture", async () => {
-  for (const extra of [{ copyToDesktop: "false" }, { automation: "true" }, { automation: 1 }]) {
+  for (const extra of [{ automation: "true" }, { automation: 1 }]) {
     await expect(capture(extra)).rejects.toThrow();
   }
   expect(calls).toEqual([]);
