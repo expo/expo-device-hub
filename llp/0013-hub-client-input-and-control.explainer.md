@@ -237,7 +237,9 @@ permission poll runs at a time. Refresh skips targets with an active write: its
 backend lists state after the mutation, so an extra poll would duplicate that
 readback. Once all active writes finish, any lost write reply gets an ordered
 recovery read before its controls unlock. Read errors clear after a successful
-read; write errors survive background refreshes until a new mutation. Changing
+read; write errors survive background refreshes until a new mutation. If recovery
+also fails, both the write error and the readback error are shown so the pending
+state has an explanation. Changing
 targets hides the old target's error; returning to a target with an unresolved
 write restores its retained error.
 The shared Permissions section offers Retry for errors even with existing rows

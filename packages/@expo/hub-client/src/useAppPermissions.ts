@@ -182,7 +182,10 @@ export function useAppPermissions({ active, backend, appId, targetId }: UseAppPe
   return {
     permissions,
     permissionsPending: target ? new Set(target.state.writes.keys()) : NO_PENDING_PERMISSION_WRITES,
-    permissionsError: target ? (target.state.writeError ?? target.state.readError) : null,
+    permissionsError: target
+      ? [target.state.writeError, target.state.readError].filter(Boolean).join("\nReadback: ") ||
+        null
+      : null,
     setPermission,
     resetPermissions,
     refreshPermissions,
