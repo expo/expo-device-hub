@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub, ServeSim, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-26 (permission recovery and ordered Android requests)
+**Revised:** 2026-10-26 (permission refresh, recovery and queue deadlines)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -187,29 +187,38 @@ an application policy layered on authentication, not host-wide device isolation.
 
 ## App permissions
 
-The standalone preview reads `permissions.list` when its permission section opens,
-after a write, on focus and every five seconds while open. It reads services again
-after reload instead of treating the command acknowledgement as state. It rejects
-retired reads, coalesces reads per target and keeps mutation failures visible
-when the permission section is collapsed and reopened. Mutation errors clear on target changes
-or a new write, while a successful refresh clears only read errors.
-Location Always has a separate selection, including Reset for undetermined state.
-[observed: serve-sim `client/components/app-permissions-tool.tsx`;
-serve-sim `__tests__/fixtures/permissions-ui.child.ts`]
+Both iOS UIs read `permissions.list` when their permission section opens, after a
+write, on focus, and every five seconds while the section is open. The Hub also reads when its shared control
+channel reconnects; the standalone preview retries through its existing control
+socket. Writes never set an optimistic granted/denied state. A page reload or
+helper replacement reads the services again. Request generations reject reads
+for an old target and reads that overlap newer writes. Pending writes stay owned by
+the device/app across target changes and control-channel reconnection until their
+readback finishes. Backend replacement invalidates cached rows and reads while
+retaining pending writes. iOS ownership includes the middleware URL as well as
+the Simulator and app, so equal UDIDs on different hosts remain independent. [observed:
+`ios-permissions.ts`, `useIosDevice.ts`, `useAppPermissions.ts`; serve-sim
+`client/components/app-permissions-tool.tsx`]
+
+Collapsing and reopening the standalone permission section preserves mutation errors. A target
+change or a new write clears them; successful refreshes clear only read errors.
+[observed: serve-sim `client/components/app-permissions-tool.tsx`]
 
 Closing the whole Tools panel unmounts the section and discards its local state.
 Expanding the permission section after reopening reads behind any earlier server-queued write. [observed: serve-sim
 `client/components/tools-panel.tsx`, `host-actions.ts`]
 
-Native services, caching and notification initialization limits are described in
-[LLP 0003.000](0003.000-simulator-permissions.explainer.md).
+The backend services, persistence boundaries and notification startup limitation
+are described in [LLP 0003.000](0003.000-simulator-permissions.explainer.md). The Hub exposes iOS
+permission controls only when an active client has the typed host-action channel.
+An older serve-sim without normalized permission readback reports an update error.
+[observed: `useIosDevice.ts`, `ios-permissions.ts`]
 
-The shared Hub permission hook retains pending writes per target/app through
-backend replacement, target changes and lost replies. Generations and per-row
-versions reject stale reads; a successful ordered read releases unresolved write
-ownership. Android target identity includes the host and device. The iOS Hub
-backend remains absent until its adapter is enabled. [observed:
-`useAppPermissions.ts`, `useAndroidDevice.ts`, `useIosDevice.ts`]
+The Hub allows 125 seconds for permission replies, covering serve-sim's default
+120-second execution budget. Queue waits or a raised `SERVE_SIM_ACTION_TIMEOUT_MS`
+can exceed it; the standalone preview has no corresponding client deadline.
+Lost replies retain pending ownership until a successful ordered readback.
+[observed: `exec-ws.ts`; serve-sim `host-actions-utils.ts`; `useAppPermissions.ts`]
 
 A poll keeps the pending-write IDs it saw when it began, even after those writes
 finish, so a stale snapshot cannot revert their confirmed state. Only one Hub
@@ -226,7 +235,7 @@ The shared Permissions section offers Retry for errors even with existing rows
 and held writes. The shared section refreshes on interval and focus only while it
 is open; recovery can also use Retry without waiting for a poll.
 [observed: `useAppPermissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
-coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
+coverage in `__tests__/use-app-permissions.test.tsx`, `__tests__/ios-permissions-recovery.test.tsx` and serve-sim's
 `__tests__/fixtures/permissions-ui.child.ts`;
 `packages/@expo/hub-components/src/dashboard/PermissionsSection.tsx`;
 `packages/@expo/hub-client/src/__tests__/android-permission-ordering.test.tsx`]

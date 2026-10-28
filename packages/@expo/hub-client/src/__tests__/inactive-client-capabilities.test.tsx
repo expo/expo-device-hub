@@ -24,10 +24,10 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-// serve-sim serves no permissions route, so iOS reports the capability off either way.
+// iOS needs an exec channel; both platforms expose permissions only while enabled.
 const clients = {
   android: { useClient: useAndroidDeviceClient, whenEnabled: true },
-  ios: { useClient: useIosDeviceClient, whenEnabled: false },
+  ios: { useClient: useIosDeviceClient, whenEnabled: true },
 } satisfies Record<
   string,
   { useClient: (options: DeviceConnectionOptions) => DeviceClient; whenEnabled: boolean }
@@ -37,6 +37,7 @@ for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
   test(`${platform} client reports no permissions capability while disabled`, async () => {
     stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     stubGlobal("window", {
+      location: { href: "https://hub.test/" },
       addEventListener() {},
       removeEventListener() {},
       setTimeout,
@@ -46,7 +47,11 @@ for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
     stubGlobal("WebSocket", Socket);
     stubGlobal("fetch", async (url: string) => {
       if (new URL(url).pathname === "/api") {
-        return Response.json({ url: "https://hub.test/helper/device-1", device: "device-1" });
+        return Response.json({
+          url: "https://hub.test/helper/device-1",
+          device: "device-1",
+          execToken: "test-token",
+        });
       }
       return Response.json({}, { status: 404 });
     });
