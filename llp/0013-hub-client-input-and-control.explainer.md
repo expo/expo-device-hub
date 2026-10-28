@@ -2,9 +2,10 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient, HubComponents, Hub
+**Systems:** HubClient, HubComponents, Hub, ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-25 (permission readback)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -183,6 +184,25 @@ an application policy layered on authentication, not host-wide device isolation.
 - On `SIGINT` and `SIGTERM`, the `expo-device-hub` CLI stops Android recording and calls serve-sim's `dispose()` at the same time. It exits after both, within its 60 s shutdown deadline [observed: `shutdownServeSim` in `packages/expo-device-hub/src/server/serve-sim.ts`, `packages/expo-device-hub/src/server/cli.ts`].
 - `dispose()` first waits for a clipboard setup that is still running, then releases what the preview set up. So a device does not keep the capability loader after the CLI stops. A failed release is logged and does not change the exit code: serve-sim's own `exit` listener tries again (LLP 0010), and a deleted simulator also fails here with nothing left to release. Only a failed Android stop exits 1.
 - Under `expo start`, the host owns the signals and exits at once, so nothing calls `dispose()`. Only serve-sim's `exit` listener runs, and a setup that is still running at that moment is not released.
+
+## App permissions
+
+The standalone preview reads `permissions.list` when its permission section opens,
+after a write, on focus and every five seconds while open. It reads services again
+after reload instead of treating the command acknowledgement as state. It rejects
+retired reads, coalesces reads per target and keeps mutation failures visible
+when the permission section is collapsed and reopened. Mutation errors clear on target changes
+or a new write, while a successful refresh clears only read errors.
+Location Always has a separate selection, including Reset for undetermined state.
+[observed: serve-sim `client/components/app-permissions-tool.tsx`;
+serve-sim `__tests__/fixtures/permissions-ui.child.ts`]
+
+Closing the whole Tools panel unmounts the section and discards its local state.
+Expanding the permission section after reopening reads behind any earlier server-queued write. [observed: serve-sim
+`client/components/tools-panel.tsx`, `host-actions.ts`]
+
+Native services, caching and notification initialization limits are described in
+[LLP 0003.000](0003.000-simulator-permissions.explainer.md).
 
 ## Open questions
 
