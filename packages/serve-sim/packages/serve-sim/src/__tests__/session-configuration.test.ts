@@ -295,7 +295,7 @@ describe("prepared process session configuration", () => {
 test("prepared handoff updates the live encoder rather than only its metadata", async () => {
   const { runChildSuite } = await import("./fixtures/run-child-suite");
   const { exitCode, output } = await runChildSuite("prepared-session.child.ts");
-  expect(output).toContain("3 pass");
+  expect(output).toContain("4 pass");
   expect(exitCode).toBe(0);
 }, 30_000);
 
@@ -307,3 +307,9 @@ test("the preview token cannot claim a server through HTTP", async () => {
   expect((await request("POST", {}, configuration)).status).toBe(404);
   expect(calls).toBe(0);
 });
+
+test("adoption rejects boot-list results sampled before the selected boot", async () => {
+  const { runChildSuite } = await import("./fixtures/run-child-suite");
+  const result = await runChildSuite("adoption-device-state.child.ts");
+  expect(result.exitCode, result.output).toBe(0);
+}, 30_000);

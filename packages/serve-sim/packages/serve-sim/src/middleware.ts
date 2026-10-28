@@ -58,6 +58,7 @@ import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from ".
 import {
   closeDeviceSession,
   retireDeviceSession,
+  startDeviceSession,
   getDeviceSession,
   withScreenshotDeviceSession,
   peekDeviceSession,
@@ -352,6 +353,7 @@ export function matchInstalledAppByDisplayName(
 // The middleware runs inside the user's dev server (Metro etc.) and
 // The window has to outlast the logs drawer's poll interval.
 const BOOTED_CACHE_TTL_MS = 5_000;
+let bootedGeneration = 0;
 let bootedSnapshot: {
   at: number;
   booted: Set<string> | null;
@@ -364,6 +366,7 @@ let bootedSnapshot: {
   deviceTypes: new Map(),
 };
 async function getBootedUdids(): Promise<Set<string> | null> {
+  const generation = bootedGeneration;
   const now = Date.now();
   if (bootedSnapshot.booted && now - bootedSnapshot.at < BOOTED_CACHE_TTL_MS) {
     return bootedSnapshot.booted;
@@ -383,6 +386,7 @@ async function getBootedUdids(): Promise<Set<string> | null> {
         },
       );
     });
+    if (generation !== bootedGeneration) return getBootedUdids();
     const data = JSON.parse(stdout) as SimctlBootedList;
     const booted = new Set<string>();
     const names = new Map<string, string>();
@@ -2020,6 +2024,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const initialPolicy =
     options?.singleDevice === undefined ? null : new SingleDevicePolicy(options.singleDevice);
   let policy = initialPolicy;
+  let selectedSessionDevice = options?.device;
   let configuringSession = false;
   let awaitingAdoption = !!options?.prepareForAdoption;
   const execSockets = new Set<UpgradeHandlerWebSocket>();
@@ -2234,7 +2239,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
     const requestedDevice = policy?.device ?? queryDevice(rawUrl);
-    const selectedDevice = requestedDevice ?? options?.device ?? null;
+    const selectedDevice = requestedDevice ?? selectedSessionDevice ?? null;
     const devtoolsFrontendBase = base === "/" ? "/devtools-frontend" : `${base}/devtools-frontend`;
 
     const probe =
@@ -2588,6 +2593,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         closeDeviceSession(udid);
         // Drop the snapshot so the next status sample re-queries simctl
         // and prunes any helper bound to this now-shutdown device.
+        bootedGeneration++;
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
         execFile(
           "xcrun",
@@ -3478,7 +3484,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       socket.destroy();
       return;
     }
-    const selectedDevice = policy?.device ?? queryDevice(rawUrl) ?? options?.device ?? null;
+    const selectedDevice = policy?.device ?? queryDevice(rawUrl) ?? selectedSessionDevice ?? null;
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
     const devtoolsTarget = devtoolsProxyTarget(rawUrl, devtoolsPrefix);
     if (devtoolsTarget) {
@@ -3588,7 +3594,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (
       claimHelperHidSocket(request, websocket, {
         helperProxyTarget: (rawUrl) => helperProxyTarget(rawUrl, helperPrefix),
-        fallbackDevice: policy?.device ?? options?.device ?? null,
+        fallbackDevice: policy?.device ?? selectedSessionDevice ?? null,
         resolveSession: (device) => getDeviceSession(device, streamSettings),
       })
     )
@@ -3607,26 +3613,48 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       throw new Error("Session cannot be configured");
     sessionConfigured = true;
     configuringSession = true;
+    const selectedDevice = configuration.device
+      ? new SingleDevicePolicy(configuration.device).device
+      : selectedSessionDevice;
+    if (
+      configuration.device &&
+      selectedDevice !== selectedSessionDevice &&
+      !options.prepareForAdoption
+    )
+      throw new Error("Selecting another Simulator requires an orphan server");
+    if (selectedDevice) {
+      // Explicit startup restrictions remain immutable. The orphan's temporary
+      // warm-device restriction is replaced only by the authenticated job owner.
+      initialPolicy?.resolveTarget(selectedDevice);
+    }
     const adoptedPolicy =
       configuration.singleDevice === undefined
         ? initialPolicy
         : new SingleDevicePolicy(configuration.singleDevice);
-    if (adoptedPolicy) {
-      if (!options.device) throw new Error("Single-device adoption requires one startup device");
-      adoptedPolicy.resolveTarget(options.device);
-      initialPolicy?.resolveTarget(adoptedPolicy.device);
-    }
-    // Preparation admitted only the startup device. Apply the owner's final
-    // restriction before awaiting resources; existing exec sockets read it per message.
+    if (selectedDevice) adoptedPolicy?.resolveTarget(selectedDevice);
     policy = adoptedPolicy;
     for (const socket of execSockets) socket.close();
     await Promise.allSettled(pendingActions);
     signal?.throwIfAborted();
-    if (options.device) await peekDeviceSession(options.device)?.retireInputConsumers();
+    if (selectedSessionDevice) {
+      if (selectedDevice !== selectedSessionDevice)
+        await retireDeviceSession(selectedSessionDevice);
+      else await peekDeviceSession(selectedSessionDevice)?.retireInputConsumers();
+    }
     signal?.throwIfAborted();
     await options.configureResources(configuration, signal);
-    if (options.device)
-      await peekDeviceSession(options.device)?.updateStreamSettings(configuration.stream);
+    signal?.throwIfAborted();
+    // Reject both cached and still-running probes from before the selected device booted.
+    bootedGeneration++;
+    bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
+    selectedSessionDevice = selectedDevice;
+    // The owner has prepared boot/dylibs before capture can start on a new target.
+    if (selectedDevice && configuration.device) {
+      const session = await startDeviceSession(selectedDevice, configuration.stream, signal);
+      await session.updateStreamSettings(configuration.stream);
+    } else if (selectedDevice) {
+      await peekDeviceSession(selectedDevice)?.updateStreamSettings(configuration.stream);
+    }
     Object.assign(streamSettings, configuration.stream);
     streamSettings.iceServers = configuration.stream.iceServers;
     corsOrigins.splice(0, corsOrigins.length, ...configuration.corsOrigins);
@@ -3638,9 +3666,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     networkCapture = configuration.networkCapture;
     signal?.throwIfAborted();
     if (configuration.videoRecording) {
-      if (!options.device) throw new Error("Video recording requires one device");
+      if (!selectedDevice) throw new Error("Video recording requires one device");
       const { output, recordingId } = configuration.videoRecording;
-      await getDeviceSession(options.device, streamSettings).startAdoptedRecording(
+      await getDeviceSession(selectedDevice, streamSettings).startAdoptedRecording(
         output,
         recordingId,
         signal,

@@ -414,8 +414,8 @@ reject other device targets, including `all` and `booted`. The same simulator
 can reboot or reconnect without changing the session's device. This option
 requires the preview server and cannot be combined with `--detach`, `--orphan`,
 `--no-preview`, `--list`, or `--kill`. It can accompany `--adopt` when its UDID
-matches the prepared server's startup device. The private handoff applies the
-restriction before reporting success; it does not boot another Simulator.
+matches the requested job device. The private handoff can select another device
+or boot it inside the same server, then applies the restriction before success.
 
 Embedded hosts can set `simMiddleware({ singleDevice: udid })`. This also enables
 same-origin helper proxies; forward WebSocket upgrades as described below.
@@ -425,6 +425,22 @@ it does not prevent host tools or separately running servers from using devices.
 Path-based `file.readBase64` and `app.infoPlist` actions remain host-scoped within
 their existing allowed roots. They can read files belonging to another Simulator;
 single-device mode is not a filesystem sandbox.
+
+## Warm a server before a job
+
+```sh
+npx @expo/serve-sim <default-udid> <optional-second-udid> --orphan --port 3200 --require-token --transport webrtc
+npx @expo/serve-sim <job-udid> --adopt --port 3200 --single-device <job-udid> --require-token --transport webrtc
+```
+
+The first device becomes ready before additional devices warm in the background.
+Until adoption succeeds, an orphan accepts only health, readiness and authenticated
+state probes; preview actions, input and subscriptions wait for its private owner.
+Adoption keeps the server PID and port, selects or boots the exact job device, and
+waits for its native stream and requested capture/recording setup. A claim stops
+future background warmup. An unrelated boot already in progress remains owned
+background work; shutdown still waits for it. A failed claim is consumed and
+requires stopping that server before a cold start.
 
 ## Embed in your dev server
 

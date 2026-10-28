@@ -48,7 +48,7 @@ import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
-import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   capabilitiesToApply,
@@ -103,7 +103,12 @@ import { adoptSession, bootSession, sessionEnvironment, startSessionOwner } from
 import { parseHingeAngle } from "./hinge-angle";
 import { CA_DEBUG_ALIASES, CA_DEBUG_FLAGS } from "./ca-debug";
 import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
-import { finishDeviceRecordingsForShutdown, getDeviceSession } from "./device-session";
+import {
+  finishDeviceRecordingsForShutdown,
+  getDeviceSession,
+  retireDeviceSession,
+  startDeviceSession,
+} from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
 
@@ -411,9 +416,9 @@ function readDeviceNamesByUdid(): Map<string, string> {
   return names;
 }
 
-function isDeviceBooted(udid: string): boolean {
+async function isDeviceBooted(udid: string): Promise<boolean> {
   try {
-    const output = execSync("xcrun simctl list devices -j", { encoding: "utf-8" });
+    const output = await simctl(["list", "devices", "-j"], 5000);
     const data = JSON.parse(output) as {
       devices: Record<string, Array<{ udid: string; name?: string; state: string }>>;
     };
@@ -438,14 +443,10 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function bootDevice(udid: string): void {
-  if (!isDeviceBooted(udid)) {
+async function bootDevice(udid: string, openHost: boolean): Promise<void> {
+  if (!(await isDeviceBooted(udid))) {
     try {
-      execFileSync("xcrun", ["simctl", "boot", udid], {
-        encoding: "utf-8",
-        stdio: "pipe",
-        env: simulatorBootEnv(udid),
-      });
+      await simctl(["boot", udid], BOOT_TIMEOUT_MS);
     } catch (err: any) {
       const msg = (err.stderr ?? err.message ?? "").toLowerCase();
       if (!msg.includes("booted") && !msg.includes("current state")) {
@@ -456,7 +457,7 @@ function bootDevice(udid: string): void {
   // Open the selected Xcode's Simulator or Device Hub in the background.
   // Ignore failure: `open` can hang or miss a window server on headless hosts.
   try {
-    openSimulatorHost(udid);
+    if (openHost) openSimulatorHost(udid);
   } catch {}
 }
 
@@ -479,8 +480,8 @@ async function findAvailablePort(start: number): Promise<number> {
   throw new Error(`No available port found in range ${start}-${start + 99}`);
 }
 
-async function ensureBooted(udid: string): Promise<void> {
-  await timeStartup("simulator-boot", () => bootDevice(udid), udid);
+async function ensureBooted(udid: string, openHost = true): Promise<void> {
+  await timeStartup("simulator-boot", () => bootDevice(udid, openHost), udid);
   // @ref LLP 0011#boot-is-a-readiness-barrier — Booted can still be starting services; a failed wait stops startup.
   try {
     await timeStartup(
@@ -1984,6 +1985,8 @@ async function serve(
     debugStreamPath?: string;
     requireToken?: boolean;
     orphan?: boolean;
+    warmDevices?: string[];
+    capabilities?: { enable: string[]; disable: string[] };
     quiet?: boolean;
     singleDevice?: string;
     networkCapture?: boolean;
@@ -1997,6 +2000,51 @@ async function serve(
     process.exit(1);
   };
   const targetDevice = targetDevices[0];
+  const preparedDevices = new Set(targetDevices);
+  const warmupCancellation = new AbortController();
+  let warmupTask = Promise.resolve();
+  let warmingDevice: string | undefined;
+  let warmupSetup: Promise<void> | undefined;
+  let backgroundFailure: unknown;
+  const backgroundCancellation = new AbortController();
+  const retirements = new Set<Promise<void>>();
+  const observeRetirement = (task: Promise<void>) => {
+    retirements.add(task);
+    void task
+      .catch((error) => {
+        backgroundFailure ??= error;
+        backgroundCancellation.abort(error);
+        console.error(`Warm Simulator cleanup failed: ${startupErrorMessage(error)}`);
+        process.kill(process.pid, "SIGTERM");
+      })
+      .finally(() => retirements.delete(task));
+  };
+  const prepareDevice = async (udid: string, signal?: AbortSignal, background = false) => {
+    signal?.throwIfAborted();
+    if (sessionStopping) throw new Error("Session is stopping");
+    if (!targetDevices.includes(udid)) targetDevices.push(udid);
+    if (!preparedDevices.has(udid) || !(await isDeviceBooted(udid))) {
+      // Server-owned preparation stays headless; only foreground CLI startup opens a GUI host.
+      await ensureBooted(udid, false);
+      signal?.throwIfAborted();
+      if (sessionStopping) throw new Error("Session is stopping");
+      const setup = (async () => {
+        await armCapabilityLoader(udid);
+        if (signal?.aborted) return;
+        const overrides = options.capabilities ?? { enable: [], disable: [] };
+        const applied = await applyDefaultCapabilities(udid, null, overrides);
+        const missing = missingCapabilities(overrides, applied);
+        if (missing.length > 0)
+          throw new Error(
+            `Could not prepare requested capabilities on ${udid}: ${missing.join(", ")}`,
+          );
+      })();
+      if (background) warmupSetup = setup;
+      await setup;
+      signal?.throwIfAborted();
+      preparedDevices.add(udid);
+    }
+  };
 
   const capture = await timeStartup("capture-module", () => import("./capture"));
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
@@ -2022,8 +2070,27 @@ async function serve(
     middleware = await timeStartup("preview-middleware", () =>
       simMiddleware({
         basePath: "/",
-        configureResources: async (configuration) => {
+        configureResources: async (configuration, signal) => {
+          signal?.throwIfAborted();
+          const selectedDevice = configuration.device ?? targetDevice;
+          if (!selectedDevice) throw new Error("Adoption requires a Simulator UDID");
+          // Join only the selected boot. An unrelated warm boot stays owned background work;
+          // any already-started capability update must settle before job-wide capture changes.
+          if (warmingDevice === selectedDevice) await warmupTask;
+          else
+            await warmupSetup?.catch((error) => {
+              if (error instanceof AggregateError) throw error;
+            });
+          signal?.throwIfAborted();
+          await prepareDevice(selectedDevice, signal);
+          signal?.throwIfAborted();
           if (sessionStopping) throw new Error("Session is stopping");
+          for (const udid of targetDevices) {
+            if (udid !== selectedDevice) {
+              observeRetirement(retireDeviceSession(udid));
+              clearServeSimState(udid, process.pid);
+            }
+          }
           // An active capture keeps its old upstream; stop it before applying the job proxy.
           await Promise.all(
             targetDevices.map((udid) => capture.captureRuntime.disableForDevice(udid)),
@@ -2031,25 +2098,25 @@ async function serve(
           capture.captureRuntime.setUpstream(parseCaptureProxy(configuration.networkCaptureProxy));
           captureStarter = undefined;
           await startNetworkCapture(
-            configuration.networkCapture ? targetDevices : [],
+            configuration.networkCapture ? [selectedDevice] : [],
             configuration.networkCaptureFields,
             quiet,
           );
           if (sessionStopping) throw new Error("Session is stopping");
           if (
             configuration.networkCapture &&
-            targetDevices.some(
-              (udid) => capture.captureRuntime.metaFor(udid).attachment !== "capturing",
-            )
+            capture.captureRuntime.metaFor(selectedDevice).attachment !== "capturing"
           ) {
             throw new Error("Network capture could not be configured");
           }
+          if (backgroundFailure) throw backgroundFailure;
           if (configuration.screenshotsDirectory) {
             process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = configuration.screenshotsDirectory;
           } else {
             delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
           }
-          for (const udid of targetDevices) {
+          signal?.throwIfAborted();
+          for (const udid of [selectedDevice]) {
             writeState({
               ...inProcessServeSimState(udid, boundPort, "/", host, configuration.stream),
               token: previewToken,
@@ -2143,7 +2210,12 @@ async function serve(
           temporaryDirectory: resolve(tmpdir()),
           environment: startupEnvironment,
         }),
-        (configuration, signal) => middleware.configureSession(configuration, signal),
+        (configuration, signal) =>
+          middleware.configureSession(
+            configuration,
+            AbortSignal.any([signal, backgroundCancellation.signal]),
+          ),
+        () => warmupCancellation.abort(),
       );
     }
   } catch (error) {
@@ -2238,6 +2310,34 @@ async function serve(
     console.log("");
   }
 
+  // Default readiness is already published. Extra devices warm in this same process
+  // without delaying its first job, and a claim prevents any later warmup from starting.
+  warmupTask = (async () => {
+    for (const udid of options.warmDevices ?? []) {
+      if (warmupCancellation.signal.aborted || sessionStopping) break;
+      try {
+        warmingDevice = udid;
+        await prepareDevice(udid, warmupCancellation.signal, true);
+        warmupCancellation.signal.throwIfAborted();
+        await startDeviceSession(udid, options.stream, warmupCancellation.signal);
+        warmupCancellation.signal.throwIfAborted();
+        writeState({
+          ...inProcessServeSimState(udid, boundPort, "/", host, options.stream),
+          token: previewToken,
+        });
+      } catch (error) {
+        if (error instanceof AggregateError) {
+          backgroundFailure ??= error;
+          backgroundCancellation.abort(error);
+          console.error(`Warm Simulator cleanup failed: ${startupErrorMessage(error)}`);
+          process.kill(process.pid, "SIGTERM");
+        } else if (!warmupCancellation.signal.aborted && !sessionStopping) {
+          console.error(`Could not warm Simulator ${udid}: ${startupErrorMessage(error)}`);
+        }
+      }
+    }
+  })();
+
   let shuttingDown = false;
   // Capture and capability teardown share one shutdown budget, but capture gets only part of it:
   // a stalled capture step must not use up the time disarming the devices needs.
@@ -2245,7 +2345,10 @@ async function serve(
     if (shuttingDown) return;
     shuttingDown = true;
     sessionStopping = true;
-    owner?.close();
+    backgroundCancellation.abort(new Error("Session is stopping"));
+    const ownerStopping = owner?.close();
+    warmupCancellation.abort();
+    await Promise.allSettled([ownerStopping, warmupTask, ...retirements]);
     foregroundTracker.stopAll();
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
@@ -2261,7 +2364,8 @@ async function serve(
         console.error(error);
       },
       completeShutdown: async (recordingsFinished) => {
-        if (!recordingsFinished) {
+        const cleanupConfirmed = recordingsFinished && !backgroundFailure;
+        if (!cleanupConfirmed) {
           try {
             writeFileSync(
               recordingShutdownFailureFile(process.pid),
@@ -2277,7 +2381,7 @@ async function serve(
         }
         await disposeSessionResources();
         clearAll();
-        process.exit(recordingsFinished ? 0 : 1);
+        process.exit(cleanupConfirmed ? 0 : 1);
       },
     });
   };
@@ -2572,13 +2676,14 @@ Examples:
         opts.kill !== undefined ||
         opts.detach ||
         opts.preview === false ||
-        devices.length !== 1 ||
+        devices.length < 1 ||
+        new Set(devices.map((device) => device.toUpperCase())).size !== devices.length ||
         !opts.requireToken ||
         !isLoopbackHost(opts.host) ||
         opts.transport !== "webrtc")
     ) {
       printStartupError(
-        "--orphan requires one device, a loopback preview, --require-token and --transport webrtc; cannot combine with --adopt, --list, --kill or --detach",
+        "--orphan requires at least one device, a loopback preview, --require-token and --transport webrtc; cannot combine with --adopt, --list, --kill or --detach",
         !!opts.quiet,
       );
       process.exit(1);
@@ -2882,6 +2987,7 @@ Examples:
       return;
     }
     let targets = devices;
+    let warmDevices: string[] = [];
     const defaultsInitialized = new Set<string>();
     // A preview with no app startup or capture; those keep arming and defaults separate.
     const plainPreview =
@@ -2906,6 +3012,11 @@ Examples:
           `[startup] ${JSON.stringify({ phase: "cli", version: program.version() })}\n`,
         );
         targets = await timeStartup("device-resolution", () => resolveTargetDevices(devices));
+        if (opts.orphan) {
+          targets = [...new Set(targets)];
+          warmDevices = targets.slice(1);
+          targets = targets.slice(0, 1);
+        }
         // The capability loader is armed for the whole session, not when a capability
         // turns on: an app only carries it if it was inserted at launch, so
         // arming late means the app it was armed for cannot receive anything
@@ -3050,6 +3161,8 @@ Examples:
         singleDevice: opts.singleDevice,
         requireToken: !!opts.requireToken,
         orphan: !!opts.orphan,
+        warmDevices,
+        capabilities,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,

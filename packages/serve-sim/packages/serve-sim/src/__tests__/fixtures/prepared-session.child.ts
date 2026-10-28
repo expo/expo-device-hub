@@ -112,6 +112,60 @@ test("adoption changes the already running native encoder and future viewer sett
   }
 });
 
+test("adoption selects a different Simulator and fences actions until native readiness", async () => {
+  const selected = "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB";
+  const state = useTempStateDir();
+  let release!: () => void;
+  const preparing = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const stream = { transport: "webrtc" as const, codec: "h264" as const };
+  const middleware = simMiddleware({
+    device: UDID,
+    prepareForAdoption: true,
+    streamSettings: stream,
+    execToken: "owner-token",
+    requirePreviewToken: true,
+    configureResources: async (value) => {
+      expect(value.device).toBe(selected);
+      await preparing;
+    },
+  });
+  try {
+    await getDeviceSession(UDID, stream).start();
+    const adoption = middleware.configureSession({
+      device: selected,
+      singleDevice: selected,
+      stream: { ...stream, ...DEFAULT_STREAM_ENCODER_SETTINGS },
+      corsOrigins: [],
+      frameAncestors: [],
+      disableShare: true,
+      networkCapture: false,
+      networkCaptureFields: [],
+    });
+    const response = await middleware(
+      new Request(`http://127.0.0.1/.sim/readyz?device=${selected}`),
+    );
+    expect(response?.status).toBe(503);
+    expect(starts.filter((value) => value === selected)).toHaveLength(0);
+    release();
+    await adoption;
+    expect(stops).toContain(UDID);
+    expect(starts).toContain(selected);
+    const old = await middleware(
+      new Request(`http://127.0.0.1/.sim/api?device=${UDID}`, {
+        headers: { Authorization: "Bearer owner-token" },
+      }),
+    );
+    expect(old?.status).toBe(403);
+  } finally {
+    release();
+    closeDeviceSession(UDID);
+    closeDeviceSession(selected);
+    state.restore();
+  }
+});
+
 test("an unclaimed orphan admits only read-only probes, not streams or device work", async () => {
   const stream = { transport: "webrtc" as const, codec: "h264" as const };
   const middleware = simMiddleware({
