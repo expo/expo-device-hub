@@ -224,6 +224,8 @@ test("failed recovery keeps ownership until a later successful read", async () =
   await act(async () => client.resetPermissions());
   await act(async () => reset.reject(new Error("write disconnected")));
   expect(client.permissionsPending.has("camera")).toBe(true);
+  expect(client.permissionsError).toContain("write disconnected");
+  expect(client.permissionsError).toContain("Readback: read disconnected");
   await act(async () => client.setPermission("camera", "grant"));
   expect(writes).toBe(0);
   await act(async () => client.refreshPermissions());
