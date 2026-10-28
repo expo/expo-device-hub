@@ -289,6 +289,21 @@ function deviceUnavailable(result: AdbCommandResult): boolean {
   return /\b(?:device offline|device .* not found|no devices?|closed)\b/i.test(detail);
 }
 
+/**
+ * adb cannot reach the device: it is offline, unauthorized, or not attached. A closed shell
+ * channel is not in this list; it is a transport race that a poll can try again.
+ */
+function deviceUnreachable(result: AdbCommandResult): boolean {
+  const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
+  return /\b(offline|unauthorized|not found|no devices?)\b/i.test(detail);
+}
+
+/** adb itself did not start: the binary is missing or cannot run. */
+function adbDidNotStart(result: AdbCommandResult): boolean {
+  const code = (result.error as NodeJS.ErrnoException | null | undefined)?.code;
+  return code === "ENOENT" || code === "EACCES";
+}
+
 async function runAdbRaw(
   runtime: ScrcpyRuntime,
   serial: string,
@@ -345,13 +360,9 @@ export async function waitForDeviceBoot(
       while (true) {
         const result = await runAdbRaw(runtime, serial, args, BOOT_POLL_TIMEOUT_MS, signal);
         if (result.status === 0 && result.stdout.trim() === "1") return;
-        // A closed shell channel is a transport race while the device boots;
-        // a device adb cannot reach fails the start at once.
-        if (
-          result.status !== 0 &&
-          deviceUnavailable(result) &&
-          !/\bclosed\b/i.test(result.stderr ?? "")
-        ) {
+        // A closed shell channel is a transport race while the device boots. A device
+        // adb cannot reach, or an adb that cannot start, fails the start at once.
+        if (result.status !== 0 && (deviceUnreachable(result) || adbDidNotStart(result))) {
           throw commandFailure(serial, args, result);
         }
         await runtime.sleep(BOOT_POLL_INTERVAL_MS, signal);
@@ -557,8 +568,7 @@ async function waitForAbstractSocketAsync(
       signal,
     );
     if (result.status === 0 && result.stdout.includes(`@${name}`)) return;
-    const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
-    if (/\b(offline|unauthorized|not found|no devices?)\b/i.test(detail)) {
+    if (deviceUnreachable(result)) {
       throw commandFailure(serial, ["shell", "cat", "/proc/net/unix"], result);
     }
     await runtime.sleep(100, signal);

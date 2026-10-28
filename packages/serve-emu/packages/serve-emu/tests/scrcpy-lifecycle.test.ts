@@ -781,9 +781,27 @@ describe("waiting for the device to boot", () => {
     );
   });
 
-  test("a device adb cannot reach fails at once instead of waiting", async () => {
-    const harness = createHarness({ bootResults: [failed("adb: device offline")] });
-    await expect(waitWith(harness)).rejects.toThrow("device offline");
+  test.each([
+    ["offline", "adb: device offline", "device offline"],
+    [
+      "unauthorized",
+      "adb: device unauthorized.\nThis adb server's $ADB_VENDOR_KEYS is not set",
+      "device unauthorized",
+    ],
+  ])("an %s device fails at once instead of waiting", async (_state, stderr, message) => {
+    const harness = createHarness({ bootResults: [failed(stderr)] });
+    await expect(waitWith(harness)).rejects.toThrow(message);
+    expect(harness.state.events).toEqual([BOOT_PROBE]);
+  });
+
+  test("an adb that cannot start fails at once instead of waiting", async () => {
+    const spawnError = Object.assign(new Error('Executable not found in $PATH: "adb"'), {
+      code: "ENOENT",
+    });
+    const harness = createHarness({
+      bootResults: [{ status: -2, stdout: "", stderr: "", timedOut: false, error: spawnError }],
+    });
+    await expect(waitWith(harness)).rejects.toThrow("Executable not found");
     expect(harness.state.events).toEqual([BOOT_PROBE]);
   });
 
