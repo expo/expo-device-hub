@@ -38,6 +38,7 @@ static NSString *authorizationName(NSInteger value) {
 
 @implementation Probe
 - (void)event:(NSDictionary *)event {
+  NSAssert(NSThread.isMainThread, @"Permission fixture events belong to the main thread");
   NSMutableDictionary *entry = [event mutableCopy];
   entry[@"timestamp"] = @([NSDate date].timeIntervalSince1970);
   [self.events addObject:entry];
@@ -166,7 +167,9 @@ static NSString *authorizationName(NSInteger value) {
   config.delegateClass = ProbeScene.class; return config;
 }
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center willPresentNotification:(UNNotification *)notification withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completion {
-  [self event:@{@"event":@"willPresent", @"tag":notification.request.identifier}];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self event:@{@"event":@"willPresent", @"tag":notification.request.identifier}];
+  });
   completion(UNNotificationPresentationOptionBanner | UNNotificationPresentationOptionList | UNNotificationPresentationOptionSound);
 }
 @end
