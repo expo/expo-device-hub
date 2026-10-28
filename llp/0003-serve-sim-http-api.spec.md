@@ -719,3 +719,8 @@ private handoff succeeds. The handoff retires existing input before configuring
 resources. Pending capture startup is
 cancelled through native stop, and owner shutdown waits for configuration to drain
 [observed: `src/middleware.ts`, `src/device-session.ts`, `src/session-owner.ts`].
+
+With an explicit port, local adoption discovers the private orphan owner by that
+port. Its immutable identity includes the original startup device; the requested
+job device is a separate configuration field. Without a port, discovery uses
+existing device state [observed: `src/session-owner.ts`].

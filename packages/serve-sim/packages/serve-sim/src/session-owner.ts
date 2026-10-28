@@ -28,6 +28,8 @@ import {
 import { isLoopbackHost } from "./middleware-utils";
 
 const MAX_MESSAGE_BYTES = 64 * 1024;
+// Adoption may drain a background boot and then boot the selected device.
+const CONFIGURATION_TIMEOUT_MS = 360_000;
 // Kept outside HTTP host-action roots, even when TMPDIR or SERVE_SIM_STATE_DIR is overridden.
 // A short canonical path also stays below Darwin's Unix socket path limit.
 const OWNER_ROOT = realpathSync("/tmp");
@@ -69,8 +71,8 @@ export function bootSession(): string {
   return value;
 }
 
-export function sessionOwnerFile(device: string): string {
-  return join(stateDir(), `owner-${device}.json`);
+export function sessionOwnerFile(port: number): string {
+  return join(stateDir(), `owner-port-${port}.json`);
 }
 
 function readOwnerFile(file: string): string {
@@ -113,8 +115,8 @@ export async function startSessionOwner(
   // mkdtemp uses 0700; do not use a directory under the configurable upload/state roots.
   const socketPath = join(directory, "control.sock");
   const secret = randomBytes(32).toString("hex");
-  const metadata = JSON.stringify({ pid: process.pid, directory });
-  const file = sessionOwnerFile(device);
+  const metadata = JSON.stringify({ pid: process.pid, directory, device });
+  const file = sessionOwnerFile(identity().port);
   const sockets = new Set<Socket>();
   let claimed = false;
   let closed = false;
@@ -186,7 +188,7 @@ export async function startSessionOwner(
         for (const other of sockets) if (other !== socket) other.destroy();
         removeAuthority();
         onClaim?.();
-        socket.setTimeout(120_000, () => socket.destroy());
+        socket.setTimeout(CONFIGURATION_TIMEOUT_MS, () => socket.destroy());
         const configuration = sessionConfigurationSchema.parse(request.configuration);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
@@ -253,7 +255,10 @@ function localOwnerRequest(
       if (error) reject(error);
       else resolve(result!);
     };
-    const timer = setTimeout(() => finish(new Error("Local session owner timed out")), 120_000);
+    const timer = setTimeout(
+      () => finish(new Error("Local session owner timed out")),
+      CONFIGURATION_TIMEOUT_MS,
+    );
     socket.on("error", (error) => finish(error));
     socket.on("close", () => finish(new Error("Local session owner closed before confirmation")));
     socket.once("connect", () => socket.write(JSON.stringify({ ...request, secret }) + "\n"));
@@ -288,12 +293,35 @@ export async function adoptSession(
     throw new Error("--adopt requires exactly one Simulator UDID");
   }
   device = device.toUpperCase();
-  const state = JSON.parse(readFileSync(stateFileForDevice(device), "utf8")) as ServeSimDeviceState;
+  const serverPort =
+    port ??
+    (JSON.parse(readFileSync(stateFileForDevice(device), "utf8")) as ServeSimDeviceState).port;
+  if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535)
+    throw new Error("--adopt requires a valid server port");
+  let owner;
+  try {
+    owner = JSON.parse(readOwnerFile(sessionOwnerFile(serverPort)));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new Error(
+        `No adoptable serve-sim on port ${serverPort}: start it with --orphan, or it was already claimed.`,
+        { cause: error },
+      );
+    throw error;
+  }
+  if (
+    typeof owner.device !== "string" ||
+    !/^[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}$/.test(owner.device)
+  )
+    throw new Error("Prepared serve-sim has no compatible startup device");
+  const state = JSON.parse(
+    readFileSync(stateFileForDevice(owner.device), "utf8"),
+  ) as ServeSimDeviceState;
   const url = new URL(state.url);
   if (
     !Number.isSafeInteger(state.pid) ||
     state.pid <= 0 ||
-    state.device !== device ||
+    state.device !== owner.device ||
     !state.token ||
     !isLoopbackHost(url.hostname) ||
     url.protocol !== "http:" ||
@@ -303,22 +331,11 @@ export async function adoptSession(
     url.search ||
     url.hash ||
     Number(url.port || 80) !== state.port ||
-    (port !== undefined && port !== state.port)
+    serverPort !== state.port
   ) {
     throw new Error("Prepared serve-sim state does not match the requested device or port");
   }
   process.kill(state.pid, 0);
-  let owner;
-  try {
-    owner = JSON.parse(readOwnerFile(sessionOwnerFile(device)));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      throw new Error(
-        `No adoptable serve-sim for ${device}: start it with --orphan, or it was already claimed.`,
-        { cause: error },
-      );
-    throw error;
-  }
   if (
     owner.pid !== state.pid ||
     typeof owner.directory !== "string" ||
@@ -344,7 +361,7 @@ export async function adoptSession(
   const expected: SessionIdentity = {
     version,
     pid: state.pid,
-    device,
+    device: owner.device,
     bootSession: bootSession(),
     host,
     port: state.port,
@@ -361,13 +378,24 @@ export async function adoptSession(
   const result = await localOwnerRequest(socketPath, secret, {
     method: "configure",
     identity: expected,
-    configuration: sessionConfigurationSchema.parse(configuration),
+    configuration: sessionConfigurationSchema.parse({ ...configuration, device }),
   });
   if (result.version !== version) throw new Error("Prepared serve-sim did not confirm adoption");
   if (JSON.stringify(result.recording) !== JSON.stringify(configuration.videoRecording))
     throw new Error("Prepared serve-sim did not confirm requested recording");
+  const selected = JSON.parse(
+    readFileSync(stateFileForDevice(device), "utf8"),
+  ) as ServeSimDeviceState;
+  if (
+    selected.device !== device ||
+    selected.pid !== state.pid ||
+    selected.port !== state.port ||
+    selected.token !== state.token ||
+    selected.url !== state.url
+  )
+    throw new Error("Prepared serve-sim did not confirm the selected Simulator on the same server");
   return {
-    ...previewStartupPayload([state], state.token),
+    ...previewStartupPayload([selected], selected.token),
     ...(configuration.videoRecording ? { recording: configuration.videoRecording } : {}),
   };
 }
