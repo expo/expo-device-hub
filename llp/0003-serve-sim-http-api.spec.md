@@ -713,3 +713,9 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+An orphan permits only read-only health, readiness and state probes until its
+private handoff succeeds. The handoff retires existing input before configuring
+resources. Pending capture startup is
+cancelled through native stop, and owner shutdown waits for configuration to drain
+[observed: `src/middleware.ts`, `src/device-session.ts`, `src/session-owner.ts`].

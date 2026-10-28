@@ -57,6 +57,7 @@ import {
 import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
+  retireDeviceSession,
   getDeviceSession,
   withScreenshotDeviceSession,
   peekDeviceSession,
@@ -1580,7 +1581,7 @@ function buildMemoryReport(): MemoryReport {
 
 export interface SimMiddlewareOptions {
   /** Standalone process handoff; omitted by embedded servers. */
-  configureResources?: (configuration: SessionConfiguration) => Promise<void>;
+  configureResources?: (configuration: SessionConfiguration, signal?: AbortSignal) => Promise<void>;
   /** Keep an orphan restricted to its startup device until its private ownership claim. */
   prepareForAdoption?: boolean;
   /** Base path to serve the preview at. Default: "/.sim" */
@@ -2019,6 +2020,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const initialPolicy =
     options?.singleDevice === undefined ? null : new SingleDevicePolicy(options.singleDevice);
   let policy = initialPolicy;
+  let configuringSession = false;
+  let awaitingAdoption = !!options?.prepareForAdoption;
+  const execSockets = new Set<UpgradeHandlerWebSocket>();
+  const pendingActions = new Set<Promise<unknown>>();
   if (options?.prepareForAdoption) {
     if (!options.device) throw new Error("Prepared adoption requires one device");
     policy ??= new SingleDevicePolicy(options.device);
@@ -2232,6 +2237,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     const selectedDevice = requestedDevice ?? options?.device ?? null;
     const devtoolsFrontendBase = base === "/" ? "/devtools-frontend" : `${base}/devtools-frontend`;
 
+    const probe =
+      ["GET", "HEAD"].includes(req.method ?? "GET") &&
+      (url === base + "/healthz" ||
+        (!configuringSession && [base + "/readyz", base + "/api"].includes(url)));
+    if ((configuringSession || awaitingAdoption) && !probe) {
+      res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({ error: "The Simulator session is being configured" }));
+      return;
+    }
+
     // Gated as a whole rather than per route, so a new route is protected by default.
     if (
       !UNGATED_PATHS.some((path) => url === base + path) &&
@@ -2320,7 +2335,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base || url === base + "/") {
       const states = await readServeSimStates(policy?.device);
       const state = selectServeSimState(states, selectedDevice);
-      if (state) void initializeClipboard(state.device);
+      if (state && !awaitingAdoption) void initializeClipboard(state.device);
       let html = loadHtml();
 
       if (!state) {
@@ -2811,7 +2826,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api") {
       const states = await readServeSimStates(policy?.device);
       const state = selectServeSimState(states, selectedDevice);
-      if (state) void initializeClipboard(state.device);
+      if (state && !awaitingAdoption) void initializeClipboard(state.device);
       // The web UI polls /api every ~2s, so logging every hit floods the
       // debug stream with identical lines. Only log when the selection
       // result changes.
@@ -3150,7 +3165,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const computeConfig = async (): Promise<string> => {
         const states = await readServeSimStates(policy?.device);
         const state = selectServeSimState(states, selectedDevice);
-        if (state) void initializeClipboard(state.device);
+        if (state && !awaitingAdoption) void initializeClipboard(state.device);
         const remoteState = state
           ? rewriteStateForRequestHost(
               state,
@@ -3448,6 +3463,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Upgrades skip the HTTP request path, and the HID and devtools sockets carry no token of
     // their own, so gate them here too.
     if (
+      configuringSession ||
+      awaitingAdoption ||
       !upgradeHostAllowed(req.headers.host) ||
       !assertUpgradeAccess(upgradeAuthHeaders(req.headers), execToken, {
         required: requirePreviewToken,
@@ -3510,6 +3527,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
+    get unavailable() {
+      return configuringSession || awaitingAdoption;
+    },
+    pendingActions,
     serveSimBinPath: serveSimBinPath(),
     get singleDevicePolicy() {
       return policy ?? undefined;
@@ -3545,6 +3566,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
     // re-checks the token itself; the helper HID socket does not.
     if (
+      configuringSession ||
+      awaitingAdoption ||
       !upgradeHostAllowed(request.headers.get("host")) ||
       !assertUpgradeAccess(upgradeAuthHeaders(request), execToken, {
         required: requirePreviewToken,
@@ -3557,7 +3580,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       websocket.close();
       return true;
     }
-    if (execWebSocketHandler(request, websocket)) return true;
+    if (execWebSocketHandler(request, websocket)) {
+      execSockets.add(websocket);
+      websocket.on("close", () => execSockets.delete(websocket));
+      return true;
+    }
     if (
       claimHelperHidSocket(request, websocket, {
         helperProxyTarget: (rawUrl) => helperProxyTarget(rawUrl, helperPrefix),
@@ -3579,6 +3606,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (sessionConfigured || !options?.configureResources || streamSettings?.transport !== "webrtc")
       throw new Error("Session cannot be configured");
     sessionConfigured = true;
+    configuringSession = true;
     const adoptedPolicy =
       configuration.singleDevice === undefined
         ? initialPolicy
@@ -3591,7 +3619,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Preparation admitted only the startup device. Apply the owner's final
     // restriction before awaiting resources; existing exec sockets read it per message.
     policy = adoptedPolicy;
-    await options.configureResources(configuration);
+    for (const socket of execSockets) socket.close();
+    await Promise.allSettled(pendingActions);
+    signal?.throwIfAborted();
+    if (options.device) await peekDeviceSession(options.device)?.retireInputConsumers();
+    signal?.throwIfAborted();
+    await options.configureResources(configuration, signal);
     if (options.device)
       await peekDeviceSession(options.device)?.updateStreamSettings(configuration.stream);
     Object.assign(streamSettings, configuration.stream);
@@ -3613,6 +3646,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         signal,
       );
     }
+    signal?.throwIfAborted();
+    awaitingAdoption = false;
+    configuringSession = false;
   };
   fetchMiddleware.dispose = async () => {
     await clipboard?.dispose();

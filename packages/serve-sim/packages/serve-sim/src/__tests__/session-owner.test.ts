@@ -79,7 +79,7 @@ async function fixture(
       adopt: () => adoptSession(UDID, "fixture", "127.0.0.1", 3200, configuration),
     });
   } finally {
-    owner.close();
+    await owner.close();
     rmSync(discoveryDirectory, { recursive: true, force: true });
     state.restore();
   }
@@ -231,4 +231,57 @@ test("HTTP file paths deny authority even when a staging root resolves to /tmp",
   const { runChildSuite } = await import("./fixtures/run-child-suite");
   const { exitCode, output } = await runChildSuite("session-owner-paths.child.ts");
   expect(exitCode, output).toBe(0);
+});
+
+test("owner shutdown cancels and drains in-flight configuration before returning", async () => {
+  const state = useTempStateDir();
+  let entered!: () => void, finish!: () => void;
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let signal: AbortSignal | undefined;
+  const identity: SessionIdentity = {
+    version: "fixture",
+    pid: process.pid,
+    device: UDID,
+    bootSession: bootSession(),
+    host: "127.0.0.1",
+    port: 3200,
+    stateDirectory: resolve(stateDir()),
+    temporaryDirectory: resolve(tmpdir()),
+    environment: sessionEnvironment(),
+  };
+  const owner = await startSessionOwner(
+    UDID,
+    () => identity,
+    async (_value, cancellation) => {
+      signal = cancellation;
+      entered();
+      await pending;
+    },
+  );
+  writeServeSimState({ ...inProcessServeSimState(UDID, 3200), token: "preview-token" });
+  const adoption = adoptSession(UDID, "fixture", "127.0.0.1", 3200, configuration);
+  const refused = adoption.catch((error: unknown) => error);
+  try {
+    await running;
+    let stopped = false;
+    const stopping = owner.close().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(signal?.aborted).toBe(true);
+    expect(stopped).toBe(false);
+    finish();
+    await stopping;
+    expect(await refused).toBeInstanceOf(Error);
+    expect(stopped).toBe(true);
+  } finally {
+    finish();
+    await owner.close();
+    state.restore();
+  }
 });

@@ -107,7 +107,8 @@ export async function startSessionOwner(
   device: string,
   identity: () => SessionIdentity,
   configure: (configuration: SessionConfiguration, signal: AbortSignal) => Promise<void>,
-): Promise<{ close(): void }> {
+  onClaim?: () => void,
+): Promise<{ close(): Promise<void> }> {
   const directory = mkdtempSync(join(OWNER_ROOT, "serve-sim-owner-"));
   // mkdtemp uses 0700; do not use a directory under the configurable upload/state roots.
   const socketPath = join(directory, "control.sock");
@@ -117,19 +118,24 @@ export async function startSessionOwner(
   const sockets = new Set<Socket>();
   let claimed = false;
   let closed = false;
+  let configurationTask: Promise<void> | undefined;
   const removeAuthority = () => {
     try {
       if (readOwnerFile(file) === metadata) unlinkSync(file);
     } catch {}
     rmSync(directory, { recursive: true, force: true });
   };
-  const close = () => {
-    if (closed) return;
+  const close = async () => {
+    if (closed) {
+      await configurationTask?.catch(() => {});
+      return;
+    }
     closed = true;
     server.close();
     for (const socket of sockets) socket.destroy();
     removeAuthority();
     process.off("exit", close);
+    await configurationTask?.catch(() => {});
   };
   const server = createServer((socket) => {
     if (claimed || closed) {
@@ -179,13 +185,15 @@ export async function startSessionOwner(
         server.close();
         for (const other of sockets) if (other !== socket) other.destroy();
         removeAuthority();
+        onClaim?.();
         socket.setTimeout(120_000, () => socket.destroy());
         const configuration = sessionConfigurationSchema.parse(request.configuration);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         socket.once("close", cancel);
         try {
-          await configure(configuration, cancellation.signal);
+          configurationTask = configure(configuration, cancellation.signal);
+          await configurationTask;
           cancellation.signal.throwIfAborted();
           if (!closed)
             respond({

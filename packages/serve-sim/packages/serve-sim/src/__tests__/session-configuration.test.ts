@@ -75,6 +75,7 @@ describe("prepared process session configuration", () => {
         prepareForAdoption: true,
       });
       let receive!: (data: string) => void;
+      let closed = false;
       const replies: { error?: string }[] = [];
       const socket: UpgradeHandlerWebSocket = {
         OPEN: 1,
@@ -85,7 +86,9 @@ describe("prepared process session configuration", () => {
         on(event, handler) {
           if (event === "message") receive = handler as typeof receive;
         },
-        close() {},
+        close() {
+          closed = true;
+        },
       };
       middleware.handleWebSocket?.(
         new Request("http://127.0.0.1:3200/exec-ws", {
@@ -95,9 +98,14 @@ describe("prepared process session configuration", () => {
       );
       const subscribe = (sub: number) =>
         receive(JSON.stringify({ sub, path: `/not-allowed?device=${OTHER}` }));
-      subscribe(1);
-      expect(replies.at(-1)?.error).toContain("single-device");
+      expect(closed).toBe(true);
       await configure({ ...configuration, singleDevice });
+      middleware.handleWebSocket?.(
+        new Request("http://127.0.0.1:3200/exec-ws", {
+          headers: { "Sec-WebSocket-Protocol": "serve-sim.token.owner-token" },
+        }),
+        socket,
+      );
       subscribe(2);
       expect(replies.at(-1)?.error).toContain(singleDevice ? "single-device" : "path not allowed");
     });
@@ -287,7 +295,7 @@ describe("prepared process session configuration", () => {
 test("prepared handoff updates the live encoder rather than only its metadata", async () => {
   const { runChildSuite } = await import("./fixtures/run-child-suite");
   const { exitCode, output } = await runChildSuite("prepared-session.child.ts");
-  expect(output).toContain("1 pass");
+  expect(output).toContain("3 pass");
   expect(exitCode).toBe(0);
 }, 30_000);
 
