@@ -430,7 +430,7 @@ single-device mode is not a filesystem sandbox.
 
 ```sh
 npx @expo/serve-sim <default-udid> <optional-second-udid> --orphan --port 3200 --require-token --transport webrtc
-npx @expo/serve-sim <job-udid> --adopt --port 3200 --single-device <job-udid> --require-token --transport webrtc
+npx @expo/serve-sim <device-udid> --adopt --port 3200 --single-device <device-udid> --require-token --transport webrtc
 ```
 
 The first device becomes ready before additional devices warm in the background.
