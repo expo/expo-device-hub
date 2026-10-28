@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   applyPermissionsRead,
@@ -7,92 +7,159 @@ import {
   type PermissionWriteVersions,
   heldPermissionIds,
 } from "./app-permissions";
-import { KeyedWriteTracker } from "./keyed-write-tracker";
 import { type AppPermission, type AppPermissionAction } from "./types";
 
 interface UseAppPermissionsOptions {
   active: boolean;
   appId: string | null;
   backend: PermissionsBackend | null;
+  targetId: string | null;
+}
+type Write = { needsReadback: boolean };
+function createTargetState() {
+  return {
+    writes: new Map<string, Write>(),
+    versions: {} as PermissionWriteVersions,
+    backend: null as PermissionsBackend | null,
+    generation: 0,
+    read: null as object | null,
+    permissions: null as readonly AppPermission[] | null,
+    readError: null as string | null,
+    writeError: null as string | null,
+  };
+}
+type TargetState = ReturnType<typeof createTargetState>;
+type Target = { appId: string; state: TargetState };
+function applyRead(
+  state: TargetState,
+  next: AppPermission[],
+  generation: number,
+  versions: PermissionWriteVersions,
+  pending: ReadonlySet<string>,
+  ownIds: readonly string[],
+) {
+  if (state.generation !== generation) return false;
+  state.permissions = applyPermissionsRead(
+    state.permissions,
+    next,
+    heldPermissionIds(
+      new Set([...pending, ...state.writes.keys()]),
+      versions,
+      state.versions,
+      ownIds,
+    ),
+  );
+  state.readError = null;
+  return true;
 }
 
-type ListRequest = (backend: PermissionsBackend, appId: string) => Promise<AppPermission[]>;
-
-export function useAppPermissions({ active, backend, appId }: UseAppPermissionsOptions) {
-  const [permissions, setPermissions] = useState<readonly AppPermission[] | null>(null);
-  const [permissionsPending, setPermissionsPending] = useState<ReadonlySet<string>>(
-    NO_PENDING_PERMISSION_WRITES,
-  );
-  const [permissionsError, setPermissionsError] = useState<string | null>(null);
-  const trackerRef = useRef(new KeyedWriteTracker<string>());
-  const versionsRef = useRef<PermissionWriteVersions>({});
-  const target = useMemo(
-    () => (active && backend && appId ? { backend, appId } : null),
-    [active, backend, appId],
-  );
+export function useAppPermissions({ active, backend, appId, targetId }: UseAppPermissionsOptions) {
+  // @ref LLP 0013#app-permissions — retain ownership until authoritative readback, including after disconnects
+  const states = useRef(new Map<string, TargetState>());
+  const [, render] = useState(0);
+  const target = useMemo(() => {
+    if (!active || !backend || !appId || !targetId) return null;
+    const key = JSON.stringify([targetId, appId]);
+    let state = states.current.get(key);
+    if (!state) {
+      state = createTargetState();
+      states.current.set(key, state);
+    }
+    if (state.backend !== backend) {
+      state.backend = backend;
+      state.generation++;
+      state.read = null;
+      state.permissions = null;
+      state.readError = null;
+    }
+    for (const [otherKey, other] of states.current)
+      if (otherKey !== key && other.writes.size === 0) states.current.delete(otherKey);
+    return { appId, state };
+  }, [active, backend, appId, targetId]);
   const targetRef = useRef(target);
+  targetRef.current = target;
+  const publish = useCallback((state: TargetState) => {
+    if (targetRef.current?.state === state) render((version) => version + 1);
+  }, []);
 
-  useEffect(() => {
-    targetRef.current = target;
-    trackerRef.current.reset();
-    versionsRef.current = {};
-    setPermissions(null);
-    setPermissionsPending(NO_PENDING_PERMISSION_WRITES);
-    setPermissionsError(null);
-  }, [target]);
-
-  const publishPending = (tracker: KeyedWriteTracker<string>) => {
-    const pending = tracker.pending;
-    setPermissionsPending(pending.size === 0 ? NO_PENDING_PERMISSION_WRITES : pending);
-  };
-
-  const request = useCallback(
-    (ownIds: readonly string[], run: ListRequest): Promise<void> => {
-      if (!target) return Promise.resolve();
-      const tracker = trackerRef.current;
-      const versionsAtStart = versionsRef.current;
-      return run(target.backend, target.appId).then(
-        (next) => {
-          if (target !== targetRef.current) return;
-          const held = heldPermissionIds(
-            tracker.pending,
-            versionsAtStart,
-            versionsRef.current,
-            ownIds,
-          );
-          setPermissions((current) => applyPermissionsRead(current, next, held));
-          setPermissionsError(null);
-        },
-        (error: unknown) => {
-          if (target !== targetRef.current) return;
-          setPermissionsError(error instanceof Error ? error.message : "Permission request failed");
-        },
-      );
+  const refreshTarget = useCallback(
+    async function refreshTarget({ appId, state }: Target): Promise<void> {
+      // Active writes already request readback; another poll would duplicate it.
+      if (
+        state.read ||
+        !state.backend ||
+        [...state.writes.values()].some((write) => !write.needsReadback)
+      )
+        return;
+      const token = {};
+      state.read = token;
+      const generation = state.generation;
+      const versions = state.versions;
+      const pending = new Set(state.writes.keys());
+      const recovering = new Map([...state.writes].filter(([, write]) => write.needsReadback));
+      try {
+        const next = await state.backend.list(appId);
+        if (applyRead(state, next, generation, versions, pending, [...recovering.keys()])) {
+          for (const [id, write] of recovering)
+            if (state.writes.get(id) === write) state.writes.delete(id);
+          publish(state);
+        }
+      } catch (error) {
+        if (generation === state.generation) {
+          state.readError = error instanceof Error ? error.message : "Permission read failed";
+          publish(state);
+        }
+      } finally {
+        if (state.read === token) {
+          state.read = null;
+          // A write may have lost its reply while this earlier read was pending.
+          if ([...state.writes].some(([id, write]) => write.needsReadback && !recovering.has(id)))
+            void refreshTarget({ appId, state });
+        }
+      }
     },
-    [target],
+    [publish],
   );
 
   const write = useCallback(
-    (ids: readonly string[], run: ListRequest) => {
-      const tracker = trackerRef.current;
-      const pending = tracker.pending;
-      if (ids.length === 0 || ids.some((id) => pending.has(id))) return;
-      const tokens = ids.flatMap((id) => {
-        const token = tracker.start(id);
-        return token ? [token] : [];
-      });
-      const versions = { ...versionsRef.current };
+    (
+      ids: readonly string[],
+      run: (backend: PermissionsBackend, app: string) => Promise<AppPermission[]>,
+    ) => {
+      if (!target || !target.state.backend || ids.length === 0) return;
+      const { state, appId } = target;
+      if (ids.some((id) => state.writes.has(id))) return;
+      const tokens = new Map(ids.map((id) => [id, { needsReadback: false }]));
+      for (const [id, token] of tokens) state.writes.set(id, token);
+      const versions = { ...state.versions };
       for (const id of ids) versions[id] = (versions[id] ?? 0) + 1;
-      versionsRef.current = versions;
-      setPermissionsError(null);
-      publishPending(tracker);
-      void request(ids, run).finally(() => {
-        let changed = false;
-        for (const token of tokens) changed = tracker.finish(token) || changed;
-        if (changed) publishPending(tracker);
-      });
+      state.versions = versions;
+      const generation = state.generation;
+      const pending = new Set(state.writes.keys());
+      state.readError = null;
+      state.writeError = null;
+      publish(state);
+      void (async () => {
+        let confirmed = false;
+        try {
+          const next = await run(state.backend!, appId);
+          confirmed = applyRead(state, next, generation, versions, pending, ids);
+        } catch (error) {
+          state.writeError = error instanceof Error ? error.message : "Permission request failed";
+        }
+        for (const [id, token] of tokens) {
+          if (state.writes.get(id) !== token) continue;
+          if (confirmed) state.writes.delete(id);
+          else token.needsReadback = true;
+        }
+        publish(state);
+        // The host orders this read after native work even if the original socket closed.
+        // A failed read keeps controls pending until a later refresh confirms the result.
+        if ([...state.writes.values()].some((write) => write.needsReadback))
+          void refreshTarget(target);
+      })();
     },
-    [request],
+    [target, publish, refreshTarget],
   );
 
   const setPermission = useCallback(
@@ -100,7 +167,7 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
       write([id], (current, app) => current.write(app, id, action)),
     [write],
   );
-
+  const permissions = target?.state.permissions ?? null;
   const resetPermissions = useCallback(
     () =>
       write(
@@ -109,15 +176,16 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
       ),
     [write, permissions],
   );
-
   const refreshPermissions = useCallback(() => {
-    void request([], (current, app) => current.list(app));
-  }, [request]);
-
+    if (target) void refreshTarget(target);
+  }, [target, refreshTarget]);
   return {
     permissions,
-    permissionsPending,
-    permissionsError,
+    permissionsPending: target ? new Set(target.state.writes.keys()) : NO_PENDING_PERMISSION_WRITES,
+    permissionsError: target
+      ? [target.state.writeError, target.state.readError].filter(Boolean).join("\nReadback: ") ||
+        null
+      : null,
     setPermission,
     resetPermissions,
     refreshPermissions,

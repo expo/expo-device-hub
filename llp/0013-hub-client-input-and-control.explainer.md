@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub, ServeSim, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-27 (ordered Android permission requests)
+**Revised:** 2026-10-26 (permission recovery and ordered Android requests)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -203,6 +203,33 @@ Expanding the permission section after reopening reads behind any earlier server
 
 Native services, caching and notification initialization limits are described in
 [LLP 0003.000](0003.000-simulator-permissions.explainer.md).
+
+The shared Hub permission hook retains pending writes per target/app through
+backend replacement, target changes and lost replies. Generations and per-row
+versions reject stale reads; a successful ordered read releases unresolved write
+ownership. Android target identity includes the host and device. The iOS Hub
+backend remains absent until its adapter is enabled. [observed:
+`useAppPermissions.ts`, `useAndroidDevice.ts`, `useIosDevice.ts`]
+
+A poll keeps the pending-write IDs it saw when it began, even after those writes
+finish, so a stale snapshot cannot revert their confirmed state. Only one Hub
+permission poll runs at a time. Refresh skips targets with an active write: its
+backend lists state after the mutation, so an extra poll would duplicate that
+readback. Once all active writes finish, any lost write reply gets an ordered
+recovery read before its controls unlock. Read errors clear after a successful
+read; write errors survive background refreshes until a new mutation. If recovery
+also fails, both the write error and the readback error are shown so the pending
+state has an explanation. Changing
+targets hides the old target's error; returning to a target with an unresolved
+write restores its retained error.
+The shared Permissions section offers Retry for errors even with existing rows
+and held writes. The shared section refreshes on interval and focus only while it
+is open; recovery can also use Retry without waiting for a poll.
+[observed: `useAppPermissions.ts`; serve-sim `app-permissions-tool.tsx`; regression
+coverage in `__tests__/use-app-permissions.test.tsx` and serve-sim's
+`__tests__/fixtures/permissions-ui.child.ts`;
+`packages/@expo/hub-components/src/dashboard/PermissionsSection.tsx`;
+`packages/@expo/hub-client/src/__tests__/android-permission-ordering.test.tsx`]
 
 Android's server serializes permission grants, revokes, resets and reads per
 serial/package. Reset holds its slot across both its initial read and its final

@@ -708,15 +708,18 @@ export interface DeviceClient {
 
   /** Permissions of the foreground app, or null while unknown or without a foreground app. */
   permissions: readonly AppPermission[] | null;
-  /** Permission ids with a write in flight. A reset holds every id. */
+  /** Permission ids awaiting confirmed readback, including lost replies. A reset holds every id. */
   permissionsPending: ReadonlySet<string>;
-  /** Last failed permission request, cleared when the next write starts or a read succeeds. */
+  /** Permission error; failed writes remain visible until the next write starts. */
   permissionsError: string | null;
   /** Grant or revoke one permission of the foreground app. */
   setPermission: (id: string, action: AppPermissionAction) => void;
   /** Return every permission of the foreground app to its default. */
   resetPermissions: () => void;
-  /** Read the list again, for example when the section opens. */
+  /**
+   * Read on open and while controls are visible so unresolved writes can recover. Calls coalesce
+   * with an existing read and skip active writes, whose backend supplies its own readback.
+   */
   refreshPermissions: () => void;
 
   /**
