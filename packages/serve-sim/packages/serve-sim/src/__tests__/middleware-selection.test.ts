@@ -120,6 +120,21 @@ describe("previewConfigForState", () => {
       ).shareUrl,
     ).toBe("https://expo.dev/simulator-preview/abc");
     expect("shareUrl" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
+    expect("keychain" in previewConfigForState(states[0]!, "/preview", "token-xyz")).toBe(false);
+    expect(
+      previewConfigForState(
+        states[0]!,
+        "/preview",
+        "token-xyz",
+        undefined,
+        false,
+        false,
+        undefined,
+        false,
+        undefined,
+        true,
+      ).keychain,
+    ).toBe(true);
   });
 
   test("keeps sharing disabled in device configs, including a supplied public share URL", () => {
