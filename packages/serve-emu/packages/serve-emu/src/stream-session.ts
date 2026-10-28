@@ -2,7 +2,13 @@ import { ControlInputQueue } from "./control-input-queue.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
-import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
+import {
+  startScrcpy,
+  waitForDeviceBoot,
+  type ScrcpySession,
+  type StartOpts,
+  type VideoPacket,
+} from "./scrcpy.ts";
 import type {
   GrpcCaptureDiagnostics,
   GrpcEncoder,
@@ -64,13 +70,18 @@ export type StartEmuSessionOptions = StartOpts & {
   inputSource: InputSource;
 };
 
-export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
+export async function startEmuSession(
+  options: StartEmuSessionOptions,
+  dependencies: { waitForBoot?: typeof waitForDeviceBoot } = {},
+): Promise<EmuSession> {
+  const waitForBoot = dependencies.waitForBoot ?? waitForDeviceBoot;
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {
       throw new Error(
         `grpc-screenshot requires an Android Emulator serial; received ${options.serial}`,
       );
     }
+    await waitForBoot({ serial: options.serial, signal: options.signal });
     return startGrpcSession(options);
   }
   if (options.mode !== "scrcpy") {
@@ -80,6 +91,7 @@ export async function startEmuSession(options: StartEmuSessionOptions): Promise<
   if (options.inputSource !== "scrcpy") {
     throw new Error("scrcpy streaming requires scrcpy input");
   }
+  await waitForBoot({ serial: options.serial, signal: options.signal });
   const { encoder: _encoder, ...scrcpyOptions } = options;
   return prepareDecodableScrcpySession(await startScrcpy(scrcpyOptions), options.signal);
 }

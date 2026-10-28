@@ -318,6 +318,48 @@ async function runAdbChecked(
   return result.stdout;
 }
 
+const BOOT_TIMEOUT_MS = 120_000;
+const BOOT_POLL_TIMEOUT_MS = 5_000;
+const BOOT_POLL_INTERVAL_MS = 500;
+
+/**
+ * adb lists a device as soon as adbd runs, seconds before Android starts its
+ * system services. A session started in that window fails: scrcpy's Controller
+ * finds no input service (a NullPointerException in KeyCharacterMap.load), and
+ * the gRPC session's wakeup finds no power service. Wait until the device
+ * reports `sys.boot_completed=1`.
+ */
+export async function waitForDeviceBoot(
+  opts: { serial: string; signal?: AbortSignal; timeoutMs?: number },
+  deps: ScrcpyDependencies = {},
+): Promise<void> {
+  const runtime = runtimeFor(deps);
+  const { serial } = opts;
+  const args = ["shell", "getprop", "sys.boot_completed"];
+  await withDeadline(
+    runtime,
+    opts.signal,
+    opts.timeoutMs ?? BOOT_TIMEOUT_MS,
+    `waiting for ${serial} to finish booting`,
+    async (signal) => {
+      while (true) {
+        const result = await runAdbRaw(runtime, serial, args, BOOT_POLL_TIMEOUT_MS, signal);
+        if (result.status === 0 && result.stdout.trim() === "1") return;
+        // A closed shell channel is a transport race while the device boots;
+        // a device adb cannot reach fails the start at once.
+        if (
+          result.status !== 0 &&
+          deviceUnavailable(result) &&
+          !/\bclosed\b/i.test(result.stderr ?? "")
+        ) {
+          throw commandFailure(serial, args, result);
+        }
+        await runtime.sleep(BOOT_POLL_INTERVAL_MS, signal);
+      }
+    },
+  );
+}
+
 function forwardedPorts(output: string, serial: string, target: string): number[] {
   const ports: number[] = [];
   for (const line of output.split("\n")) {

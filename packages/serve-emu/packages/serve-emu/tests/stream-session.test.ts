@@ -53,6 +53,56 @@ describe("stream session", () => {
     },
   );
 
+  test("waits for the device to boot before it starts gRPC or scrcpy", async () => {
+    const waits: { serial: string; signal?: AbortSignal }[] = [];
+    const stillBooting = async (opts: { serial: string; signal?: AbortSignal }) => {
+      waits.push(opts);
+      throw new Error("still booting");
+    };
+    const signal = new AbortController().signal;
+    await expect(
+      startEmuSession(
+        {
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "scrcpy",
+          serial: "emulator-5554",
+          signal,
+        },
+        { waitForBoot: stillBooting },
+      ),
+    ).rejects.toThrow("still booting");
+    await expect(
+      startEmuSession(
+        {
+          mode: "scrcpy",
+          grpcImageMode: "rgb888",
+          inputSource: "scrcpy",
+          serial: "physical-device",
+        },
+        { waitForBoot: stillBooting },
+      ),
+    ).rejects.toThrow("still booting");
+    expect(waits).toEqual([
+      { serial: "emulator-5554", signal },
+      { serial: "physical-device", signal: undefined },
+    ]);
+
+    // An invalid selection fails before any device command.
+    await expect(
+      startEmuSession(
+        {
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+          serial: "physical-device",
+        },
+        { waitForBoot: stillBooting },
+      ),
+    ).rejects.toThrow("requires an Android Emulator serial");
+    expect(waits).toHaveLength(2);
+  });
+
   test("adapts scrcpy controls, failures, and void cleanup", async () => {
     const packets: Buffer[] = [];
     let writerClosed = false;
