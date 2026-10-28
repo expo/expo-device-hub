@@ -438,9 +438,10 @@ Until adoption succeeds, an orphan accepts only health, readiness and authentica
 state probes; preview actions, input and subscriptions wait for its private owner.
 Adoption keeps the server PID and port, selects or boots the exact job device, and
 waits for its native stream and requested capture/recording setup. A claim stops
-future background warmup. An unrelated boot already in progress remains owned
-background work; shutdown still waits for it. A failed claim is consumed and
-requires stopping that server before a cold start.
+future background warmup and drains preparation already in progress. It shuts down
+unused devices before confirming the selection, using the same internal device
+lifecycle as the UI. A failed claim is consumed and requires stopping that server
+before a cold start.
 
 ## Embed in your dev server
 

@@ -177,9 +177,16 @@ an explicit startup choice instead of inferring it from unrelated preview settin
 The flag requires at least one device and a loopback, token-protected WebRTC preview.
 The first target boots before server startup; additional targets warm in that same
 process after its initial state is published, without delaying the first target.
-A private claim cancels future warmup. It joins preparation of the selected device
-and any capability update already started; an unrelated boot remains owned
-background work until shutdown
+A private claim cancels future warmup and joins already-started preparation before
+retiring unused devices. It drains their native input/video and network capture,
+releases this process’s capability ownership, then shuts down the exact unused
+UDIDs and confirms their stopped state before preparing the selected target.
+Adoption refuses foreign live or persistent ownership. The UI grid retains its
+explicit user shutdown contract, including a separate detached helper, and its
+legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
+successful bootstatus instead [observed: `src/device-lifecycle.ts`, `src/device.ts`]. Adoption therefore waits
+for already-started warmup and retirement; this is distinct from publishing the
+first warm device’s initial readiness
 [confirmed: Gabe Debes, 2026-10-28, keep the server and select or boot internally].
 It cannot accompany `--adopt`, list/kill, `--detach`, `--no-preview` or subcommands
 [observed: `packages/serve-sim/packages/serve-sim/src/index.ts`].

@@ -30,6 +30,8 @@ const simctlModule = await import("../../simctl");
 mock.module("../../simctl", () => ({
   ...simctlModule,
   simctl: async (args: string[]) => {
+    if (args.join(" ") === `boot ${device}`)
+      throw new Error("Unable to boot device in current state: Booted");
     if (args.join(" ") === "list devices -j")
       return JSON.stringify({ devices: { iOS: [{ udid: device, state: "Booted" }] } });
     if (args.join(" ") === `bootstatus ${device} -b`) return "";

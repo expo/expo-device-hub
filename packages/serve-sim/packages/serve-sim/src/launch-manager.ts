@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "fs";
-import { basename } from "path";
+import { basename, join } from "path";
+import { stateDir, stateFileForDevice } from "./state";
 import {
   capabilitiesToApply,
   capabilityDefinition,
@@ -36,7 +37,7 @@ import {
   waitForLaunchUpdates,
   LOCK_POLL_MS,
 } from "./launch-state-lock";
-import { isDeviceNotBooted } from "./device";
+import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "./device";
 import { simctl, simctlSync } from "./simctl";
 import { timeStartup } from "./startup-timing";
 import { additionalDylibs } from "./additional-dylibs";
@@ -117,13 +118,49 @@ export async function releaseSession(
   udid: string,
   ownerPid: number,
   onRelease: (capability: RecordedCapability) => void,
+  options: { shutdown?: boolean } = {},
 ): Promise<void> {
   await waitForLaunchUpdates();
   await withLaunchStateLock(udid, async () => {
+    if (options.shutdown) {
+      // Hold the existing device lock across ownership checks, release and shutdown.
+      const launchFile = join(stateDir(), `launch-${udid}.json`);
+      const raw = existsSync(launchFile) ? JSON.parse(readFileSync(launchFile, "utf8")) : {};
+      if (
+        !raw ||
+        typeof raw !== "object" ||
+        Array.isArray(raw) ||
+        (raw.sessionPids !== undefined && !Array.isArray(raw.sessionPids)) ||
+        (raw.capabilities !== undefined &&
+          (!raw.capabilities ||
+            typeof raw.capabilities !== "object" ||
+            Array.isArray(raw.capabilities)))
+      ) {
+        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+      }
+      const previewFile = stateFileForDevice(udid);
+      const preview = existsSync(previewFile)
+        ? JSON.parse(readFileSync(previewFile, "utf8"))
+        : undefined;
+      const owners = [
+        ...(raw.sessionPids ?? []),
+        ...Object.values(raw.capabilities ?? {}).map((record: any) => record?.ownerPid),
+      ];
+      if (preview !== undefined) owners.push(preview?.pid);
+      if (owners.some((pid) => pid !== null && (!Number.isInteger(pid) || pid <= 1)))
+        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+      if (owners.some((pid) => pid !== ownerPid && !ownerIsGone(pid)))
+        throw new Error(`Cannot shut down Simulator ${udid}: another session still owns it.`);
+    }
     const previousStartup = managedStartupDylibs(udid);
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     else removeReleasedStartupSync(udid, previousStartup);
+    if (options.shutdown) {
+      await shutdownDevice(udid);
+      if ((await getDeviceState(udid)) !== "Shutdown")
+        throw new Error(`Simulator ${udid} did not shut down.`);
+    }
     armedHere.delete(udid);
   });
 }

@@ -364,3 +364,32 @@ test("real CLI selects an unserved device through the existing server port", asy
     expect(bodies[0]).toMatchObject({ device: selected, singleDevice: selected });
   });
 });
+
+test("multiple orphan devices reject app startup flags before native startup", async () => {
+  const child = Bun.spawn(
+    [
+      "node",
+      entrypoint,
+      UDID,
+      "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+      "--orphan",
+      "--require-token",
+      "--transport",
+      "webrtc",
+      "--launch-app-identifier",
+      "com.example.test",
+      "--quiet",
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [stdout, stderr, exit] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect(exit).toBe(1);
+  expect(JSON.parse(stdout).error).toContain(
+    "Multiple orphan devices cannot be combined with app startup flags",
+  );
+  expect(stderr).not.toContain('"phase":"simulator-boot"');
+});

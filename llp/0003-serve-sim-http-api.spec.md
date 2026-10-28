@@ -191,7 +191,12 @@ PID and port [confirmed: Gabe Debes, 2026-10-28]. An unclaimed orphan permits on
 succeeds, so old preview streams cannot survive a device selection. Its state
 probe has no clipboard initialization side effect. Consuming a private claim
 synchronously cancels future background warmup, even if parsing or later setup
-fails. The middleware retires prior native input before selection.
+fails. The middleware retires prior native input before selection. UI selection and private
+adoption share the in-process device lifecycle (`src/device-lifecycle.ts`), using
+the existing `src/device.ts` boot/shutdown commands. The owner joins already-started
+warmup, drains unused native/capture sessions, releases its capabilities and confirms
+unused Simulators are shut down before success. Foreign or unreadable ownership
+refuses shutdown; cleanup failure keeps the consumed claim unavailable.
 The selected native session, capture and optional recording must be ready before
 success. Shutdown joins the private configuration task before resource teardown. Without
 the flag, adoption restores normal multi-device behavior; an explicit startup

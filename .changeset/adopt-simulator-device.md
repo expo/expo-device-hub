@@ -2,4 +2,4 @@
 "@expo/serve-sim": minor
 ---
 
-Select or boot the requested Simulator inside an existing orphan server during adoption. Additional startup devices warm in the background after the first device is ready.
+Adopt a running serve-sim with a different Simulator while keeping the server and respecting `--single-device`. Adoption reuses the UI device lifecycle and waits for unused devices to shut down and the selected device to become ready.

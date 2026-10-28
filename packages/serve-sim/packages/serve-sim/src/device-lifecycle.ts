@@ -1,0 +1,49 @@
+import { bootDevice, shutdownDevice } from "./device";
+import { retireDeviceSession } from "./device-session";
+import { captureRuntime } from "./capture";
+import { releaseSession } from "./launch-manager";
+import { stopCameraHelper } from "./camera-helper";
+import {
+  clearServeSimState,
+  gridDeviceState,
+  writeServeSimState,
+  type StreamSettings,
+} from "./state";
+
+/** Shared by UI device selection and private adoption; callbacks supply session-specific setup. */
+export async function startDeviceInProcess(
+  udid: string,
+  port: number,
+  base: string,
+  streamSettings?: StreamSettings,
+  sessionToken?: string,
+  onBoot?: () => Promise<void>,
+  options: { signal?: AbortSignal; requireReady?: boolean } = {},
+): Promise<void> {
+  const { signal } = options;
+  signal?.throwIfAborted();
+  await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
+  signal?.throwIfAborted();
+  await onBoot?.();
+  signal?.throwIfAborted();
+  writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
+}
+
+/** Stop local consumers and the device; private adoption also checks and releases its ownership. */
+export async function stopDeviceInProcess(udid: string, ownerPid?: number): Promise<void> {
+  await retireDeviceSession(udid);
+  // The grid keeps its existing capture-cleanup retry; private adoption must drain before shutdown.
+  if (ownerPid === undefined) await shutdownDevice(udid);
+  else {
+    await captureRuntime.disableForDevice(udid);
+    await releaseSession(
+      udid,
+      ownerPid,
+      (capability) => {
+        if (capability.name === "camera") stopCameraHelper(udid);
+      },
+      { shutdown: true },
+    );
+  }
+  clearServeSimState(udid, ownerPid ?? process.pid);
+}

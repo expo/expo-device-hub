@@ -137,3 +137,15 @@ export function listStateFiles(): string[] {
     return [];
   }
 }
+
+/** Carries the session token like the primary device's does, or its readers start failing. */
+export function gridDeviceState(
+  udid: string,
+  port: number,
+  base: string,
+  streamSettings?: StreamSettings,
+  sessionToken?: string,
+): ServeSimDeviceState {
+  const state = inProcessServeSimState(udid, port, base, "127.0.0.1", streamSettings);
+  return sessionToken ? { ...state, token: sessionToken } : state;
+}

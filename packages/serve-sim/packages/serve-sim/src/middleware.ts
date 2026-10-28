@@ -1,3 +1,6 @@
+import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
+export { startDeviceInProcess } from "./device-lifecycle";
+export { gridDeviceState } from "./state";
 import { SingleDevicePolicy } from "./single-device";
 import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
 import {
@@ -9,7 +12,7 @@ import { createReadinessReporter } from "./startup-timing";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
-import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   createReadStream,
   readdirSync,
@@ -81,13 +84,7 @@ import {
   recordEventLogEvent,
   subscribeEventLog,
 } from "./event-log";
-import {
-  inProcessServeSimState,
-  stateDir,
-  writeServeSimState,
-  type ServeSimDeviceState,
-  type StreamSettings,
-} from "./state";
+import { stateDir, type ServeSimDeviceState, type StreamSettings } from "./state";
 import { debugMw } from "./debug";
 import {
   resolveDevicePlaceholderAsset,
@@ -858,12 +855,6 @@ function serveHelperInProcess(
 }
 
 /**
- * Boot a simulator (if needed) and record its in-process state so the grid /
- * preview enumerate it. Replaces spawning `serve-sim --detach <udid>`; the
- * preview server itself serves the device's /helper routes in-process. Resolves
- * to an error string on boot failure, or null on success.
- */
-/**
  * The token a grid device's state file carries: the standalone server's rule, written only where
  * capture commands can use it (under the token gate, or on loopback; a public ungated host refuses
  * capture).
@@ -873,66 +864,6 @@ export function gridStateToken(
   opts: { requirePreviewToken: boolean; loopbackOnly?: boolean },
 ): string | undefined {
   return opts.requirePreviewToken || opts.loopbackOnly ? execToken : undefined;
-}
-
-/** Carries the session token like the primary device's does, or its readers start failing. */
-export function gridDeviceState(
-  udid: string,
-  port: number,
-  base: string,
-  streamSettings?: StreamSettings,
-  sessionToken?: string,
-): ServeSimDeviceState {
-  const state = inProcessServeSimState(udid, port, base, "127.0.0.1", streamSettings);
-  return sessionToken ? { ...state, token: sessionToken } : state;
-}
-
-export async function startDeviceInProcess(
-  udid: string,
-  port: number,
-  base: string,
-  streamSettings?: StreamSettings,
-  /** Session token, when the server runs gated or on loopback, where capture commands read it. */
-  sessionToken?: string,
-  onBoot?: () => Promise<void>,
-): Promise<string | null> {
-  // `simctl boot` errors when already booted — ignore and let bootstatus confirm.
-  await new Promise<void>((resolve) =>
-    execFile("xcrun", ["simctl", "boot", udid], { env: simulatorBootEnv(udid) }, () => resolve()),
-  );
-  const ready = await new Promise<boolean>((resolve) => {
-    execFile(
-      "xcrun",
-      ["simctl", "bootstatus", udid, "-b"],
-      { timeout: 180_000, env: simulatorBootEnv(udid) },
-      (err) => resolve(!err),
-    );
-  });
-  if (!ready) {
-    // bootstatus can exit non-zero even when the device is actually ready;
-    // confirm against the real state before reporting failure.
-    const booted = await new Promise<boolean>((resolve) => {
-      execFile("xcrun", ["simctl", "list", "devices", "-j"], (err, stdout) => {
-        if (err) return resolve(false);
-        try {
-          const data = JSON.parse(stdout) as {
-            devices: Record<string, Array<{ udid: string; state: string }>>;
-          };
-          resolve(
-            Object.values(data.devices)
-              .flat()
-              .some((d) => d.udid === udid && d.state === "Booted"),
-          );
-        } catch {
-          resolve(false);
-        }
-      });
-    });
-    if (!booted) return `Device ${udid} failed to reach booted state`;
-  }
-  await onBoot?.();
-  writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
-  return null;
 }
 
 export async function enableNetworkCaptureForStartedDevice(
@@ -2587,34 +2518,24 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("end", async () => {
         const udid = resolveLifecycleDevice(body, res);
         if (udid === null) return;
-        // Stop our own in-process capture for this device first (no-op if it
-        // isn't streamed here). This frees the native session immediately
-        // rather than waiting for the next poll's reaper to notice.
-        closeDeviceSession(udid);
-        // Drop the snapshot so the next status sample re-queries simctl
-        // and prunes any helper bound to this now-shutdown device.
         bootedGeneration++;
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
-        execFile(
-          "xcrun",
-          ["simctl", "shutdown", udid],
-          { timeout: 30_000 },
-          async (err, _stdout, stderr) => {
-            if (err) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(
-                JSON.stringify({
-                  ok: false,
-                  error: stderr?.toString().trim() || err.message,
-                }),
-              );
-              return;
-            }
-            await disableNetworkCaptureForStoppedDevice(udid);
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: true }));
-          },
-        );
+        try {
+          await stopDeviceInProcess(udid);
+          await disableNetworkCaptureForStoppedDevice(udid);
+          bootedGeneration++;
+          bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (error) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
       });
       return;
     }
@@ -2641,15 +2562,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             await enableNetworkCaptureForStartedDevice(udid, networkCapture);
           },
         )
-          .then((error) => {
+          .then(() => {
             if (res.writableEnded || res.destroyed) return;
-            if (error) {
-              res.writeHead(500, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ ok: false, error }));
-            } else {
-              res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ ok: true }));
-            }
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: true }));
           })
           .catch((error: unknown) => {
             if (res.writableEnded || res.destroyed) return;

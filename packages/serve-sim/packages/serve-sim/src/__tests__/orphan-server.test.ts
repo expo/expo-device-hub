@@ -7,10 +7,16 @@ import { adoptSession } from "../session-owner";
 import { DEFAULT_STREAM_ENCODER_SETTINGS } from "../stream-settings";
 import { useTempStateDir } from "./helpers";
 
-const device = "00000000-0000-0000-0000-000000000288";
-test.each([false, true])(
-  "only explicit orphans offer adoption: orphan=%s",
-  async (orphan) => {
+test.each([
+  { orphan: false, lowercase: false },
+  { orphan: true, lowercase: false },
+  { orphan: true, lowercase: true },
+])(
+  "only explicit orphans offer adoption: %o",
+  async ({ orphan, lowercase }) => {
+    const device = lowercase
+      ? "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+      : "00000000-0000-0000-0000-000000000288";
     const state = useTempStateDir();
     const directory = state.dir;
     const child = spawn(
@@ -18,7 +24,13 @@ test.each([false, true])(
       [join(import.meta.dir, "fixtures/orphan-server.child.ts")],
       {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, SERVE_SIM_STATE_DIR: directory, ORPHAN_TEST: orphan ? "1" : "0" },
+        env: {
+          ...process.env,
+          SERVE_SIM_STATE_DIR: directory,
+          ORPHAN_TEST: orphan ? "1" : "0",
+          ORPHAN_DEVICE: device,
+          ORPHAN_LOWERCASE: lowercase ? "1" : "0",
+        },
       },
     );
     let stdout = "";

@@ -80,7 +80,11 @@ if (args[1] === 'boot') fs.unlinkSync(${JSON.stringify(guard)});
                   .split("\n")
                   .map((line) => JSON.parse(line))
               : [];
-            expect(calls).toEqual(
+            expect(
+              timing === "before boot"
+                ? calls
+                : calls.filter((args: string[]) => args.join(" ") !== "simctl list devices -j"),
+            ).toEqual(
               timing === "before boot"
                 ? []
                 : [["simctl", "boot", "11111111-2222-3333-4444-555555555555"]],
