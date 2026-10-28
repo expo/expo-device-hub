@@ -82,6 +82,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { clipboardCapability } from "./sim-pasteboard-reader";
+import { keychainCapability } from "./sim-keychain";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -3473,6 +3474,7 @@ program
   .action((args: string[]) => uiSettings(args));
 
 registerCapability(clipboardCapability);
+registerCapability(keychainCapability);
 registerCapability(captureRuntime.capability);
 
 {

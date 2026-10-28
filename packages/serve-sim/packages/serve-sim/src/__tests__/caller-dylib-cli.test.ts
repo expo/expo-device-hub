@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
 
 function expectStartupDiagnostics(stderr: string) {
@@ -40,6 +40,7 @@ test.each(["none", "publish", "stop", "missing-loader", "lock-timeout", "rollbac
     const artifacts = join(bundleDir, "dist", "capability-loader");
     const loader = join(artifacts, "libServeSimCapabilityLoader.dylib");
     const clipboard = join(state.dir, "libSimPasteboardReader.dylib");
+    const keychain = join(bundleDir, "dist", "simkc", "libSimKeychain.dylib");
     const environment = join(state.dir, "env.json");
     const calls = join(state.dir, "calls.jsonl");
     const failure = join(state.dir, "fail-once");
@@ -68,6 +69,8 @@ Date.now = () => new Error().stack.includes('withStateLock') ? (lockTime += 9000
     mkdirSync(artifacts, { recursive: true });
     if (failureMode !== "missing-loader") writeFileSync(loader, "");
     writeFileSync(clipboard, "");
+    mkdirSync(dirname(keychain), { recursive: true });
+    writeFileSync(keychain, "");
     writeFileSync(environment, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/foreign.dylib" }));
     // The rollback mode fails the insert write and then its restore.
     if (failFirst) writeFileSync(failure, failureMode === "rollback" ? "2" : "1");
@@ -169,6 +172,7 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
             const launch = JSON.parse(readFileSync(join(state.dir, `launch-${UDID}.json`), "utf8"));
             expect(launch.sessionPids).toEqual([child.pid]);
             expect(launch.capabilities.clipboard.ownerPid).toBe(child.pid);
+            expect(launch.capabilities.keychain.ownerPid).toBe(child.pid);
             const trace: string[][] = readFileSync(calls, "utf8")
               .trim()
               .split("\n")
@@ -350,9 +354,10 @@ if (args[3] === 'launchctl') {
 `,
       },
       async () => {
-        // This bundle has no clipboard reader next to it, and its warning would reach stderr.
+        // This bundle has no clipboard reader or keychain library next to it, and their warnings
+        // would reach stderr.
         const result = await runCLI(
-          [UDID, "--quiet", "--port", "0", "--disable", "clipboard"],
+          [UDID, "--quiet", "--port", "0", "--disable", "clipboard", "--disable", "keychain"],
           {
             SERVE_SIM_ADDITIONAL_DYLIBS: guard,
             SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
@@ -429,7 +434,8 @@ if (args[1] === 'list') {
       },
       async () => {
         const port = await freePortAsync();
-        // This bundle has no clipboard reader next to it, and its warning would reach stderr.
+        // This bundle has no clipboard reader or keychain library next to it, and their warnings
+        // would reach stderr.
         const child = Bun.spawn(
           [
             "node",
@@ -445,6 +451,8 @@ if (args[1] === 'list') {
             "127.0.0.1",
             "--disable",
             "clipboard",
+            "--disable",
+            "keychain",
           ],
           {
             env: {

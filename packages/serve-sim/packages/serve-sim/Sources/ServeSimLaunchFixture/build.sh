@@ -19,6 +19,8 @@ xcrun --sdk iphonesimulator clang \
     -O2 \
     -Wall -Wextra -Werror -Wconversion -Wshadow \
     -framework UIKit -framework Foundation -framework AVFoundation -framework CoreGraphics \
+    -framework Security \
+    -Wl,-sectcreate,__TEXT,__entitlements,"$HERE/Entitlements.plist" \
     -o "$APP/ServeSimLaunchFixture" \
     "$HERE/serve-sim-launch-fixture.m"
 

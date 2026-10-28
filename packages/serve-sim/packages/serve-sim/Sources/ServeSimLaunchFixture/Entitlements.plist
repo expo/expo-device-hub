@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Xcode embeds this for simulator builds. Without it the app has no keychain access group. -->
+	<key>application-identifier</key>
+	<string>SERVESIMFIX.dev.expo.serve-sim.launch-fixture</string>
+</dict>
+</plist>

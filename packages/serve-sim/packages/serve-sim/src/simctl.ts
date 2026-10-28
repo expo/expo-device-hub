@@ -14,6 +14,14 @@ function commandOutput(args: string[], stdout: string): string {
   return insert ? stdout.replace(/\n$/, "") : stdout.trim();
 }
 
+// What `simctl get_app_container` prints for a bundle id the device does not have (ENOENT).
+export const APP_NOT_INSTALLED = "domain=NSPOSIXErrorDomain, code=2";
+
+/** A real `get_app_container` path, not "(null)" and not a relative path we would write into cwd. */
+export function isContainerPath(container: string): boolean {
+  return container.startsWith("/");
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_BUFFER = 4 * 1024 * 1024;
 
