@@ -59,17 +59,17 @@ async function capture(extra = {}) {
   );
 }
 
-test("catalog advertises optional Desktop-copy and session-preview purpose fields", async () => {
+test("catalog advertises optional Desktop-copy and automation fields", async () => {
   const result = await runHostActionAsync({ action: "actions.describe", params: {} }, "true");
   const schema = JSON.parse(result.stdout)["screenshot.capture"];
   expect(schema.properties.copyToDesktop).toMatchObject({ type: "boolean", default: true });
-  expect(schema.properties.purpose).toMatchObject({ type: "string", const: "session-preview" });
+  expect(schema.properties.automation).toMatchObject({ type: "boolean", default: false });
   expect(schema.required).not.toContain("copyToDesktop");
-  expect(schema.required).not.toContain("purpose");
+  expect(schema.required).not.toContain("automation");
 });
 
 test("omitted or true copyToDesktop preserves the manual Desktop copy", async () => {
-  for (const extra of [{}, { copyToDesktop: true }, { purpose: "session-preview" }]) {
+  for (const extra of [{}, { copyToDesktop: true }, { automation: true }]) {
     calls.length = 0;
     const result = await capture(extra);
     expect(result.exitCode).toBe(0);
@@ -80,7 +80,7 @@ test("omitted or true copyToDesktop preserves the manual Desktop copy", async ()
 
 test("false skips Desktop copying while preserving active-panel capture and staged PNG", async () => {
   displays = [1, 3, 3];
-  const result = await capture({ copyToDesktop: false, purpose: "session-preview" });
+  const result = await capture({ copyToDesktop: false, automation: true });
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(readFileSync(result.stdout)).toEqual(png);
@@ -98,8 +98,8 @@ test("failed background captures do not copy or leave an empty reservation", asy
   expect(existsSync(join(SCREENSHOT_DIR, names.at(-1)!))).toBe(false);
 });
 
-test("invalid flags and purposes are refused before capture", async () => {
-  for (const extra of [{ copyToDesktop: "false" }, { purpose: "manual" }, { purpose: false }]) {
+test("invalid boolean flags are refused before capture", async () => {
+  for (const extra of [{ copyToDesktop: "false" }, { automation: "true" }, { automation: 1 }]) {
     await expect(capture(extra)).rejects.toThrow();
   }
   expect(calls).toEqual([]);

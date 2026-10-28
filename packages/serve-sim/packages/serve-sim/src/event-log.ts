@@ -434,7 +434,7 @@ export function eventLogEventForAction(
       };
     case "screenshot.capture":
       // @ref LLP 0003#action-catalog — background previews must not extend session idle time.
-      if (params?.purpose === "session-preview") return null;
+      if (params?.automation === true) return null;
       return {
         device,
         source: "exec",
