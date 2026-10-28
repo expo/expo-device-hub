@@ -2,10 +2,10 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, HubClient
+**Systems:** ServeSim, HubClient, Hub
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-26 (CLI entry selection and ESM scope; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -713,3 +713,17 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+## CLI entry selection
+
+The build selects the CLI entry used by mounted middleware: Node bundles use
+sibling `serve-sim.js`, compiled executables use `process.execPath`, and source
+execution uses `index.ts`. Middleware consumes that path without inspecting its
+host's entry script or Bun virtual paths. The Node middleware and CLI must ship
+as siblings. [observed: `build.ts`, `src/cli-path.ts`, `src/middleware.ts`]
+
+Hub's vendored Node CLI retains a type-only `vendor/serve-sim/package.json`
+with `type: module`, included in Hub's published files. This preserves its ESM
+scope after other package metadata is removed, avoiding module-type warnings in
+action stderr. [observed: `packages/expo-device-hub/scripts/vendor.ts`,
+`packages/expo-device-hub/package.json`]

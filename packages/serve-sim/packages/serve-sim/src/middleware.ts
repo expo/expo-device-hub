@@ -22,6 +22,7 @@ import {
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
+import { serveSimCliPath } from "./cli-path";
 import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -1288,18 +1289,6 @@ function devtoolsFrontendUrl(
 }
 
 let _html: string | null = null;
-/**
- * Best-effort absolute path to the running serve-sim entry script. Used so
- * the in-page Camera tool can `node <path> camera ...` regardless of PATH.
- * Falls back to the literal `serve-sim` if we can't determine a usable path.
- */
-function serveSimBinPath(): string {
-  try {
-    const argv = process.argv;
-    if (argv[1] && existsSync(argv[1])) return argv[1];
-  } catch {}
-  return "serve-sim";
-}
 
 function loadHtml(): string {
   if (!_html) {
@@ -3510,7 +3499,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
-    serveSimBinPath: serveSimBinPath(),
+    serveSimBinPath: serveSimCliPath(),
     get singleDevicePolicy() {
       return policy ?? undefined;
     },

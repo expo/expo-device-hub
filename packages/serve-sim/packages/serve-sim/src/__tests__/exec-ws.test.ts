@@ -93,6 +93,18 @@ describe("exec-ws control channel", () => {
     channel.close();
   });
 
+  test("CLI-backed actions use serve-sim when middleware runs inside another entry point", async () => {
+    const channel = await connect(TOKEN);
+    await channel.next();
+    const udid = "00000000-0000-0000-0000-000000000001";
+    channel.send({ id: 10, action: "permissions.list", params: { udid } });
+    const reply = await channel.next();
+    channel.close();
+    expect(reply.error).toBeUndefined();
+    expect(reply.exitCode).toBe(0);
+    expect(JSON.parse(reply.stdout!)).toMatchObject({ udid, bundleId: null, tcc: {} });
+  });
+
   test("refuses a free-form shell command, which the protocol no longer carries", async () => {
     const channel = await connect(TOKEN);
     await channel.next(); // ready

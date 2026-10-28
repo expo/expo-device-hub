@@ -1,7 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { execFileSync } from "child_process";
-import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { execFileSync, spawnSync } from "child_process";
+import { useTempStateDir } from "./helpers";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
+import { tmpdir } from "os";
+import { join, resolve } from "path";
 
 // The published bundles must locate sibling artifacts (dist/simax,
 // dist/simcam) relative to wherever npm installed them. Bun's bundler
@@ -54,6 +65,75 @@ describeIfBuilt("bundle portability", () => {
     const js = readFileSync(join(PKG_DIR, bundle), "utf-8");
     expect(js).not.toContain(SRC_DIR);
   });
+
+  test.each(["package", "vendor"])(
+    "the shipped Node middleware dispatches without warnings in %s layout",
+    (layout) => {
+      const state = useTempStateDir();
+      let fixture: string | undefined;
+      try {
+        let cwd = PKG_DIR;
+        let middleware = "./dist/middleware.js";
+        if (layout === "vendor") {
+          const hub = JSON.parse(
+            readFileSync(join(PKG_DIR, "../../../expo-device-hub/package.json"), "utf8"),
+          );
+          expect(hub.files).toContain("vendor/serve-sim/package.json");
+          fixture = mkdtempSync(join(tmpdir(), "serve-sim-vendor-"));
+          const scripts = join(fixture, "scripts");
+          const source = join(fixture, "node_modules/@expo/serve-sim");
+          mkdirSync(scripts, { recursive: true });
+          mkdirSync(join(source, "dist"), { recursive: true });
+          cpSync(
+            join(PKG_DIR, "../../../expo-device-hub/scripts/vendor.ts"),
+            join(scripts, "vendor.ts"),
+          );
+          for (const file of ["middleware.js", "serve-sim.js"])
+            cpSync(join(PKG_DIR, "dist", file), join(source, "dist", file));
+          writeFileSync(
+            join(source, "package.json"),
+            JSON.stringify({
+              name: "@expo/serve-sim",
+              version: "0.0.0",
+              type: "module",
+              files: ["dist"],
+            }),
+          );
+          writeFileSync(
+            join(fixture, "package.json"),
+            JSON.stringify({
+              name: "hub-vendor-test",
+              vendorDependencies: { "@expo/serve-sim": "workspace:*" },
+            }),
+          );
+          symlinkSync(join(PKG_DIR, "node_modules/ws"), join(fixture, "node_modules/ws"), "dir");
+          const vendor = spawnSync(process.execPath, [join(scripts, "vendor.ts")], {
+            cwd: fixture,
+            env: { ...process.env },
+            encoding: "utf8",
+            timeout: 20_000,
+          });
+          expect(vendor.status, vendor.stderr).toBe(0);
+          cwd = fixture;
+          middleware = "./vendor/serve-sim/dist/middleware.js";
+        }
+        const result = spawnSync(
+          "node",
+          [
+            join(import.meta.dir, "fixtures/packaged-middleware-dispatch.child.mjs"),
+            resolve(cwd, middleware),
+          ],
+          { cwd, env: { ...process.env }, encoding: "utf8", timeout: 15_000 },
+        );
+        expect(result.error).toBeUndefined();
+        expect(result.status, result.stderr).toBe(0);
+        expect(result.stderr).toBe("");
+      } finally {
+        if (fixture) rmSync(fixture, { recursive: true, force: true });
+        state.restore();
+      }
+    },
+  );
 
   test("the public state export uses runnable JavaScript", () => {
     const pkg = JSON.parse(readFileSync(join(PKG_DIR, "package.json"), "utf8"));
