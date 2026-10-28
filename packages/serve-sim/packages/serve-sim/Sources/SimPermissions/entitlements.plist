@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.bulletinboard.settings</key>
+	<true/>
+	<key>com.apple.private.tcc.manager.access.delete</key>
+	<array>
+		<string>kTCCServiceCamera</string>
+		<string>kTCCServiceMicrophone</string>
+		<string>kTCCServicePhotos</string>
+		<string>kTCCServicePhotosAdd</string>
+		<string>kTCCServiceAddressBook</string>
+		<string>kTCCServiceCalendar</string>
+		<string>kTCCServiceReminders</string>
+		<string>kTCCServiceMotion</string>
+		<string>kTCCServiceMediaLibrary</string>
+		<string>kTCCServiceSiri</string>
+		<string>kTCCServiceSpeechRecognition</string>
+		<string>kTCCServiceFaceID</string>
+		<string>kTCCServiceUserTracking</string>
+		<string>kTCCServiceWillow</string>
+	</array>
+	<key>com.apple.private.tcc.manager.access.modify</key>
+	<array>
+		<string>kTCCServiceCamera</string>
+		<string>kTCCServiceMicrophone</string>
+		<string>kTCCServicePhotos</string>
+		<string>kTCCServicePhotosAdd</string>
+		<string>kTCCServiceAddressBook</string>
+		<string>kTCCServiceCalendar</string>
+		<string>kTCCServiceReminders</string>
+		<string>kTCCServiceMotion</string>
+		<string>kTCCServiceMediaLibrary</string>
+		<string>kTCCServiceSiri</string>
+		<string>kTCCServiceSpeechRecognition</string>
+		<string>kTCCServiceFaceID</string>
+		<string>kTCCServiceUserTracking</string>
+		<string>kTCCServiceWillow</string>
+	</array>
+</dict>
+</plist>
