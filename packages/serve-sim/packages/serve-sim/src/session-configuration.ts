@@ -10,10 +10,11 @@ const absoluteDirectory = z
   .max(4096)
   .refine((value) => value.startsWith("/") && !value.includes("\0"));
 
-const origin = z
+const frameAncestor = z
   .string()
   .max(2048)
   .refine((value) => frameAncestorsPolicy([value]) !== "frame-ancestors 'self'");
+const corsOrigin = frameAncestor.refine((value) => /^https?:\/\//i.test(value.trim()));
 const iceServers = z
   .array(
     z
@@ -50,8 +51,8 @@ export const sessionConfigurationSchema = z
         h264Fps: z.number().int().min(1).max(MAX_VIDEO_STREAM_FPS),
       })
       .strict(),
-    corsOrigins: z.array(origin).max(32),
-    frameAncestors: z.array(origin).max(32),
+    corsOrigins: z.array(corsOrigin).max(32),
+    frameAncestors: z.array(frameAncestor).max(32),
     shareUrl: z
       .url()
       .refine((value) => ["http:", "https:"].includes(new URL(value).protocol))

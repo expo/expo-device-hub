@@ -4,6 +4,7 @@ import {
   accessCookieName,
   authorizeRequest,
   authorizeUpgrade,
+  corsHeadersFor,
   frameAncestorsPolicy,
 } from "../session-auth";
 
@@ -211,6 +212,40 @@ describe("authorizeUpgrade", () => {
 });
 
 describe("frameAncestorsPolicy", () => {
+  test("a Codex frame ancestor never becomes a CORS origin", () => {
+    const origin = "codex-sandbox://mcp-app-abc.web-sandbox.oaiusercontent.com";
+    const request = new Request(`${ORIGIN}/api/devices`, { headers: { Origin: origin } });
+    expect(corsHeadersFor(request, () => true)).toEqual({ Vary: "Origin" });
+  });
+
+  test.each([
+    "codex-sandbox://*.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://mcp-app-abc.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://one.two.web-sandbox.oaiusercontent.com",
+  ])("preserves the custom scheme of a Codex sandbox: %s", (origin) => {
+    expect(frameAncestorsPolicy([origin.toUpperCase() + "/"])).toBe(
+      `frame-ancestors 'self' ${origin}`,
+    );
+  });
+
+  test.each([
+    "codex-sandbox://web-sandbox.oaiusercontent.com",
+    "codex-sandbox://evil-web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com.evil.test",
+    "codex-sandbox://*.oaiusercontent.com",
+    "codex-sandbox://*.app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://-app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app..web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com:443",
+    "codex-sandbox://user@app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com/path",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com?query=1",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com#fragment",
+    "other-sandbox://app.web-sandbox.oaiusercontent.com",
+  ])("drops an untrusted or non-origin custom scheme: %s", (origin) => {
+    expect(frameAncestorsPolicy([origin])).toBe("frame-ancestors 'self'");
+  });
+
   test("allows only the Hub itself by default", () => {
     expect(frameAncestorsPolicy([])).toBe("frame-ancestors 'self'");
   });

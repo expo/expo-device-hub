@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
 import { timeStartup } from "../startup-timing";
-import { type SessionConfiguration } from "../session-configuration";
+import { type SessionConfiguration, sessionConfigurationSchema } from "../session-configuration";
 import { type StreamSettings } from "../stream-settings";
 import { type UpgradeHandlerWebSocket } from "../socket/types";
 import { recordState, useTempStateDir } from "./helpers";
@@ -62,6 +62,16 @@ async function host(
 }
 
 describe("prepared process session configuration", () => {
+  test("accepts Codex framing without granting cross-origin API access", () => {
+    const origin = "codex-sandbox://*.web-sandbox.oaiusercontent.com";
+    expect(
+      sessionConfigurationSchema.safeParse({ ...configuration, frameAncestors: [origin] }).success,
+    ).toBe(true);
+    expect(
+      sessionConfigurationSchema.safeParse({ ...configuration, corsOrigins: [origin] }).success,
+    ).toBe(false);
+  });
+
   let state: ReturnType<typeof useTempStateDir>;
   beforeAll(() => {
     state = useTempStateDir();

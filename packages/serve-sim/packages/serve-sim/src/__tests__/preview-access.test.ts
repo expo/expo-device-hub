@@ -28,6 +28,21 @@ function gated(requirePreviewToken: boolean, frameAncestors: string[] = []) {
 }
 
 describe("preview access with --require-token", () => {
+  test("allows the configured Codex frame while still requiring its preview token", async () => {
+    const origin = "codex-sandbox://*.web-sandbox.oaiusercontent.com";
+    const request = gated(true, [origin]);
+    const response = await request("/", { headers: { "sec-fetch-dest": "iframe" } });
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-security-policy")).toBe(
+      `frame-ancestors 'self' ${origin}`,
+    );
+    expect(await response.text()).not.toContain(TOKEN);
+    const authorized = await request("/api", {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(authorized.status).toBe(200);
+  });
+
   test("refuses /api, so the token cannot be fetched by whoever asks first", async () => {
     const response = await gated(true)("/api");
 

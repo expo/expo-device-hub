@@ -23,8 +23,9 @@ const TOKEN = "hub-gate-token";
 const ORIGIN = "http://192.168.1.20:3400";
 const cookie = `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`;
 const SAME_ORIGIN = { cookie, "sec-fetch-site": "same-origin" };
-// The policy for the `--frame-ancestor` origin the CLI hands over below.
-const FRAME_POLICY = "frame-ancestors 'self' https://*.expo.dev";
+// The policy for the `--frame-ancestor` origins the CLI hands over below.
+const CODEX_ORIGIN = "codex-sandbox://*.web-sandbox.oaiusercontent.com";
+const FRAME_POLICY = `frame-ancestors 'self' https://*.expo.dev ${CODEX_ORIGIN}`;
 // The `--cors-origin` page the CLI hands over below.
 const PAGE = "https://page.example";
 
@@ -114,7 +115,7 @@ mock.module("../devices", () => ({
 const previousEnv = { ...process.env };
 process.env.EXPO_DEVICE_HUB_BASE_PATH = "";
 process.env.EXPO_DEVICE_HUB_SESSION_TOKEN = TOKEN;
-process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(["https://*.expo.dev"]);
+process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(["https://*.expo.dev", CODEX_ORIGIN]);
 process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN = "recording-token";
 process.env.EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS = JSON.stringify({ corsOrigins: [PAGE] });
 process.env.EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS = JSON.stringify({ allowedOrigins: [PAGE] });
@@ -164,7 +165,7 @@ describe("the Hub under a session token", () => {
     expect(simOptions).toMatchObject({
       execToken: TOKEN,
       requirePreviewToken: true,
-      frameAncestors: ["https://*.expo.dev"],
+      frameAncestors: ["https://*.expo.dev", CODEX_ORIGIN],
     });
     expect(emuOptions).toMatchObject({ sessionToken: TOKEN });
   });

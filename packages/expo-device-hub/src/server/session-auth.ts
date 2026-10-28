@@ -240,6 +240,8 @@ export function withBearerToken(request: Request, token: string): Request {
 // serve-sim's rule: a subdomain wildcard needs two labels after the star, so `*.com` is dropped.
 const FRAMEABLE_ORIGIN =
   /^https?:\/\/(?:\[[0-9a-f:.]+\]|[a-z0-9.-]+|\*\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)(?::\d+)?$/i;
+const CODEX_SANDBOX_ORIGIN =
+  /^codex-sandbox:\/\/(?:\*|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*)\.web-sandbox\.oaiusercontent\.com\/?$/i;
 
 /**
  * Who may frame the gated Hub. Browsers that ignore the Partitioned cookie attribute would
@@ -248,7 +250,12 @@ const FRAMEABLE_ORIGIN =
 export function frameAncestorsPolicy(allowedOrigins: readonly string[]): string {
   const origins = allowedOrigins.flatMap((allowed) => {
     try {
-      const { origin } = new URL(allowed);
+      const url = new URL(allowed);
+      if (CODEX_SANDBOX_ORIGIN.test(allowed.trim())) {
+        // URL.origin is "null" for Codex's custom scheme; keep its named host in CSP.
+        return [`${url.protocol}//${url.hostname.toLowerCase()}`];
+      }
+      const { origin } = url;
       return FRAMEABLE_ORIGIN.test(origin) ? [origin] : [];
     } catch {
       return [];

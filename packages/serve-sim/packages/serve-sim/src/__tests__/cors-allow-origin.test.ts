@@ -3,6 +3,14 @@ import { describe, expect, test } from "bun:test";
 import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "../middleware-utils";
 
 describe("corsAllowOriginHeaders", () => {
+  test("never grants CORS to a configured Codex frame ancestor", () => {
+    const origin = "codex-sandbox://mcp-app-abc.web-sandbox.oaiusercontent.com";
+    expect(corsAllowOriginHeaders(origin, [origin])).toEqual({});
+    expect(isAllowedOrigin(origin, "mcp-app-abc.web-sandbox.oaiusercontent.com", [origin])).toBe(
+      false,
+    );
+  });
+
   test("echoes an allowlisted origin", () => {
     expect(corsAllowOriginHeaders("https://expo.dev", ["https://expo.dev"])).toEqual({
       "Access-Control-Allow-Origin": "https://expo.dev",
@@ -104,6 +112,34 @@ describe("corsAllowOriginHeaders", () => {
 });
 
 describe("frameAncestorsPolicy", () => {
+  test.each([
+    "codex-sandbox://*.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://mcp-app-abc.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://one.two.web-sandbox.oaiusercontent.com",
+  ])("preserves the custom scheme of a Codex sandbox: %s", (origin) => {
+    expect(frameAncestorsPolicy([origin.toUpperCase() + "/"])).toBe(
+      `frame-ancestors 'self' ${origin}`,
+    );
+  });
+
+  test.each([
+    "codex-sandbox://web-sandbox.oaiusercontent.com",
+    "codex-sandbox://evil-web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com.evil.test",
+    "codex-sandbox://*.oaiusercontent.com",
+    "codex-sandbox://*.app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://-app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app..web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com:443",
+    "codex-sandbox://user@app.web-sandbox.oaiusercontent.com",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com/path",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com?query=1",
+    "codex-sandbox://app.web-sandbox.oaiusercontent.com#fragment",
+    "other-sandbox://app.web-sandbox.oaiusercontent.com",
+  ])("drops an untrusted or non-origin custom scheme: %s", (origin) => {
+    expect(frameAncestorsPolicy([origin])).toBe("frame-ancestors 'self'");
+  });
+
   test("names the origin allowed to embed the preview", () => {
     expect(frameAncestorsPolicy(["https://expo.dev"])).toBe(
       "frame-ancestors 'self' https://expo.dev",
