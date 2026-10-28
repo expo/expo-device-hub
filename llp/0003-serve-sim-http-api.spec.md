@@ -5,8 +5,8 @@
 **Systems:** ServeSim, HubClient, Hub
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (CLI entry selection and ESM scope; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
-**Related:** LLP 0001, LLP 0002
+**Revised:** 2026-10-26 (native permission services, fresh notification initialization boundary and CLI entry selection/ESM scope; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Related:** LLP 0001, LLP 0002, LLP 0003.000
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -727,3 +727,37 @@ with `type: module`, included in Hub's published files. This preserves its ESM
 scope after other package metadata is removed, avoiding module-type warnings in
 action stderr. [observed: `packages/expo-device-hub/scripts/vendor.ts`,
 `packages/expo-device-hub/package.json`]
+
+## App permissions
+
+`permissions.set` keeps `{udid, action, service, bundleId}`, where action is
+`grant`, `revoke` (denial), or `reset` (not determined). `permissions.resetAll`
+resets each permission family. Failure may leave earlier families changed.
+`permissions.list` retains `tcc`, `location`, and `notifications` and, for an
+app-scoped read, adds `permissions: [{id, label, state}]` for the two browser UIs.
+[observed: `src/host-actions.ts`, `src/permissions.ts`]
+
+Notification writes and reads use BulletinBoard's running service; TCC writes use
+its daemon with no-kill, with read-only SQLite status; location uses `simctl
+privacy` and persisted locationd confirmation. These mechanisms have distinct
+runtime availability and app-framework caching limits. The helper confirms its
+service result; browser consumers must list authoritative state after writes.
+[observed: `src/permissions.ts`; `Sources/SimPermissions/sim-permissions.m`]
+
+[LLP 0003.000](0003.000-simulator-permissions.explainer.md) explains the native
+services, denial/reset semantics, browser readback, separate
+persistence boundaries, production helper versus test fixture, packaging and
+validation limits.
+
+### Fresh notification initialization boundary
+
+A service grant confirms authorization, not delivery readiness. A fresh app on iOS
+27.1 could report authorized but fail local scheduling until it made its normal
+notification request. Waiting, app relaunch and `pushSettings=63` did not fix that
+case. No service-only initialization fix or remote APNs delivery is claimed.
+The fresh pre-grant test makes the normal app request before checking delivery.
+[observed: [local permission validation](https://github.com/expo/expo-device-hub/pull/447#issuecomment-6377205261);
+`src/__tests__/permissions.e2e.test.ts`]
+
+See [LLP 0003.000's initialization boundary](0003.000-simulator-permissions.explainer.md#fresh-notification-initialization-boundary)
+for the observations, negative result and exact scope of the passing test.
