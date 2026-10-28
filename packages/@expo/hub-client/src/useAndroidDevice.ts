@@ -52,6 +52,7 @@ import { androidStreamSettingsPatch, parseAndroidStreamSettings } from "./androi
 import { androidStreamSourceErrorMessage, parseAndroidStreamSource } from "./android-stream-source";
 import { androidTouchMessage } from "./android-touch";
 import { NO_CLIPBOARD } from "./device-clipboard";
+import { NO_KEYCHAIN } from "./device-keychain";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from "./h264";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
@@ -2251,6 +2252,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       clipboard: false,
       orientation: orientationCapabilities,
       fold: foldCapabilities,
+      keychain: false,
     }),
     [
       cameraSupported,
@@ -2315,6 +2317,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     clearLocation,
     ...appPermissions,
     ...NO_CLIPBOARD,
+    ...NO_KEYCHAIN,
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
