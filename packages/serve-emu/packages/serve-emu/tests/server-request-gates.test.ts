@@ -1,3 +1,5 @@
+import { DEFAULT_EXEC_MAX_QUEUED, ExecError } from "../src/exec.ts";
+import { runPermissionRequest } from "../src/permission-requests.ts";
 import { EventEmitter } from "node:events";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -934,5 +936,50 @@ describe("server shutdown and errors", () => {
       lastErrorCode: "truncated-payload",
       lastErrorMeta: { expected: 128, received: 64 },
     });
+  });
+});
+
+describe("permission queue HTTP errors", () => {
+  test("returns overload from the real grant route without dispatching ADB", async () => {
+    const harness = await createHarness();
+    const blocked = deferred<void>();
+    const requests = Array.from({ length: DEFAULT_EXEC_MAX_QUEUED }, () =>
+      runPermissionRequest("http-queue-test", "com.example.test", () => blocked.promise),
+    );
+    try {
+      const res = await response(
+        harness.request("/api/apps/grant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            packageName: "com.example.test",
+            permission: "android.permission.CAMERA",
+          }),
+        }),
+      );
+      expect(res.status).toBe(429);
+      expect(await res.json()).toMatchObject({ ok: false, code: "queue-full" });
+    } finally {
+      blocked.resolve();
+      await Promise.all(requests);
+    }
+  });
+
+  test("the shared HTTP error handler returns a structured deadline response", async () => {
+    // Use the upload dependency to reach the shared error handler without an ADB call or a real-time wait.
+    const harness = await createHarness(
+      {},
+      {
+        stageMultipartUpload: async () => {
+          throw new ExecError(
+            "deadline-exceeded",
+            "permission request timed out waiting after 10000ms",
+          );
+        },
+      },
+    );
+    const res = await response(harness.request("/api/apps/install", { method: "POST" }));
+    expect(res.status).toBe(504);
+    expect(await res.json()).toMatchObject({ ok: false, code: "deadline-exceeded" });
   });
 });

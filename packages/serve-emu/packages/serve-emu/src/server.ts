@@ -10,7 +10,7 @@ import {
   readCameraWiring,
 } from "./camera.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
-import { getExecSnapshot } from "./exec.ts";
+import { ExecError, getExecSnapshot } from "./exec.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
@@ -878,6 +878,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       } as const;
       status = mapped[err.code].status;
       code = mapped[err.code].code;
+    } else if (
+      err instanceof ExecError &&
+      (err.code === "deadline-exceeded" || err.code === "queue-full")
+    ) {
+      status = err.code === "queue-full" ? 429 : 504;
+      code = err.code;
     } else if (err instanceof AppManagementError) {
       status = err.code === "adb-timeout" ? 504 : 502;
       code = err.code;

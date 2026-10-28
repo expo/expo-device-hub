@@ -634,6 +634,12 @@ curl -X POST "$BASE/api/files/import" \
 curl "$BASE/api/apps/icon?packageName=com.example.app"
 ```
 
+Permission changes and status reads run in order for each emulator/app. A change
+waiting more than ten seconds fails and never runs later; status reads wait for
+earlier work and retain their existing ADB timeout. The standalone server returns
+HTTP 504 (`deadline-exceeded`) for an expired change and 429 (`queue-full`) when
+the permission queue is full. The Hub mount returns HTTP 400 with the same message.
+
 `GET /api/apps/icon` returns the package's launcher bitmap as
 `{"ok":true,"packageName":"…","icon":{"mimeType":"image/png","data":"<base64>"}}`.
 It pulls the base APK and reads it with `aapt2` from the Android SDK build-tools,

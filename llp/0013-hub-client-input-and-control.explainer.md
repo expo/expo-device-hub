@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient, HubComponents, Hub, ServeSim
+**Systems:** HubClient, HubComponents, Hub, ServeSim, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-25 (permission readback)
+**Revised:** 2026-10-27 (ordered Android permission requests)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -203,6 +203,28 @@ Expanding the permission section after reopening reads behind any earlier server
 
 Native services, caching and notification initialization limits are described in
 [LLP 0003.000](0003.000-simulator-permissions.explainer.md).
+
+Android's server serializes permission grants, revokes, resets and reads per
+serial/package. Reset holds its slot across both its initial read and its final
+mutation. A lost HTTP response does not cancel the operation, so a later recovery
+read waits for earlier work instead of unlocking controls with pre-write state.
+Different targets can run concurrently; the operation queue is bounded to the ADB
+executor's queue limit. A mutation waiting for its turn fails after ten seconds
+and never executes. Timer expiry is final even if the timer fires before the
+monotonic deadline; the deadline also rejects overdue work when the timer callback
+is delayed. Status reads share the same ordering and capacity limit but have no
+queue-wait deadline: a readback must wait behind another active mutation instead
+of turning an acknowledged write into a persistent timeout error. Its ADB call
+still has the existing ten-second timeout, including executor queue time.
+The standalone HTTP API returns `504` with `deadline-exceeded` for mutation
+queue expiry and `429` with `queue-full` for overload. The Hub middleware retains
+its existing `400` response with the error message. An expired mutation keeps
+its slot until earlier work finishes, so callers cannot bypass a running mutation
+or grow an unbounded chain. Each ADB call retains its existing timeout. This order
+is local to the server process and does not survive a server restart. [observed:
+serve-emu `src/permission-requests.ts`, `src/server.ts`, `src/app-management.ts`,
+`src/app-permissions.ts`, `src/middleware.ts`; production call classification
+coverage in serve-emu `tests/permission-requests.test.ts`]
 
 ## Open questions
 

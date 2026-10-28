@@ -4,6 +4,8 @@ import {
   parseRuntimePermissions,
   resetPermissions,
 } from "../src/app-permissions.ts";
+import { grantPermission, revokePermission } from "../src/app-management.ts";
+import { DEFAULT_EXEC_MAX_QUEUED } from "../src/exec.ts";
 import type { ExecOpts, ExecResult, execText } from "../src/exec.ts";
 
 const DUMP = `
@@ -126,5 +128,215 @@ describe("resetPermissions", () => {
     await expect(
       resetPermissions("emulator-5554", "com.example.app", { execText }),
     ).rejects.toThrow("pm revoke com.example.app android.permission.CAMERA");
+  });
+});
+
+function gate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+describe("permission request ordering", () => {
+  test("readback waits for an unfinished write before a later revoke", async () => {
+    const blocked = gate();
+    const calls: string[] = [];
+    let granted = false;
+    const exec: typeof execText = async (_cmd, args) => {
+      const action = args[3] === "pm" ? args[4]! : args[3]!;
+      calls.push(action);
+      if (action === "grant") {
+        await blocked.promise;
+        granted = true;
+      }
+      if (action === "revoke") granted = false;
+      return recordingExec(
+        [],
+        `runtime permissions:
+  android.permission.CAMERA: granted=${granted}`,
+      )(_cmd, args);
+    };
+    // Dropping the HTTP response does not cancel the server's mutation promise.
+    const write = grantPermission(
+      "ordered-device",
+      "com.example.app",
+      "android.permission.CAMERA",
+      { execText: exec },
+    );
+    await Bun.sleep(0);
+    const read = listPermissions("ordered-device", "com.example.app", { execText: exec });
+    const revoke = revokePermission(
+      "ordered-device",
+      "com.example.app",
+      "android.permission.CAMERA",
+      { execText: exec },
+    );
+    try {
+      await Bun.sleep(0);
+      expect(calls).toEqual(["grant"]);
+    } finally {
+      blocked.release();
+    }
+    await write;
+    expect((await read).permissions[0]?.granted).toBe(true);
+    await revoke;
+    expect(calls).toEqual(["grant", "dumpsys", "revoke"]);
+  });
+
+  test("an HTTP disconnect does not let recovery read ahead of native work", async () => {
+    const started = gate();
+    const blocked = gate();
+    let granted = false;
+    const deps = {
+      execText: (async (cmd, args) => {
+        if (args[4] === "grant") {
+          started.release();
+          await blocked.promise;
+          granted = true;
+        }
+        return recordingExec(
+          [],
+          `runtime permissions:\n  android.permission.CAMERA: granted=${granted}`,
+        )(cmd, args);
+      }) as typeof execText,
+    };
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const result =
+          request.method === "POST"
+            ? await grantPermission(
+                "http-device",
+                "com.example.app",
+                "android.permission.CAMERA",
+                deps,
+              )
+            : await listPermissions("http-device", "com.example.app", deps);
+        return Response.json(result);
+      },
+    });
+    try {
+      const controller = new AbortController();
+      const write = fetch(server.url, { method: "POST", signal: controller.signal }).catch(
+        () => null,
+      );
+      await started.promise;
+      controller.abort();
+      expect(await write).toBeNull();
+      let readCompleted = false;
+      const recovery = fetch(server.url).then(async (response) => {
+        readCompleted = true;
+        return response.json();
+      });
+      await Bun.sleep(10);
+      expect(readCompleted).toBe(false);
+      blocked.release();
+      expect((await recovery).permissions[0].granted).toBe(true);
+    } finally {
+      blocked.release();
+      server.stop(true);
+    }
+  });
+
+  test("reset holds ownership through its initial list and final mutation", async () => {
+    const initialRead = gate();
+    const mutation = gate();
+    const calls: string[] = [];
+    const exec: typeof execText = async (cmd, args) => {
+      calls.push(args[3]!);
+      if (calls.length === 1) await initialRead.promise;
+      else if (args[3]!.startsWith("pm ")) await mutation.promise;
+      return recordingExec([], RESET_DUMP)(cmd, args);
+    };
+    const reset = resetPermissions("reset-device", "com.example.app", { execText: exec });
+    await Bun.sleep(0);
+    const read = listPermissions("reset-device", "com.example.app", { execText: exec });
+    try {
+      await Bun.sleep(0);
+      expect(calls).toEqual(["dumpsys"]);
+      initialRead.release();
+      await Bun.sleep(0);
+      expect(calls).toHaveLength(2);
+      expect(calls[1]).toContain("appops reset");
+    } finally {
+      initialRead.release();
+      mutation.release();
+    }
+    await Promise.all([reset, read]);
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toBe("dumpsys");
+  });
+
+  test("failed writes release the queue so a recovery read can complete", async () => {
+    const failed = grantPermission(
+      "failed-device",
+      "com.example.app",
+      "android.permission.CAMERA",
+      {
+        execText: async () => {
+          throw new Error("adb unavailable");
+        },
+      },
+    ).catch((error: Error) => error);
+    const read = listPermissions("failed-device", "com.example.app", {
+      execText: recordingExec([]),
+    });
+    expect(await failed).toBeInstanceOf(Error);
+    expect((await read).ok).toBe(true);
+  });
+
+  test("different devices and packages do not wait for each other", async () => {
+    const blocked = gate();
+    const write = grantPermission(
+      "parallel-device",
+      "com.example.app",
+      "android.permission.CAMERA",
+      {
+        execText: async (cmd, args) => {
+          await blocked.promise;
+          return recordingExec([])(cmd, args);
+        },
+      },
+    );
+    try {
+      const deps = { execText: recordingExec([]) };
+      const reads = Promise.all([
+        listPermissions("parallel-device", "com.other.app", deps),
+        listPermissions("other-device", "com.example.app", deps),
+      ]);
+      expect(
+        await Promise.race([reads.then(() => "read"), Bun.sleep(100).then(() => "timeout")]),
+      ).toBe("read");
+    } finally {
+      blocked.release();
+      await write;
+    }
+  });
+  test("rejects overload without retaining slots after completion", async () => {
+    const blocked = gate();
+    const deps = {
+      execText: async (cmd: string, args: string[]) => {
+        await blocked.promise;
+        return recordingExec([])(cmd, args);
+      },
+    };
+    const writes = Array.from({ length: DEFAULT_EXEC_MAX_QUEUED }, () =>
+      grantPermission("capacity-device", "com.example.app", "android.permission.CAMERA", deps),
+    );
+    try {
+      await expect(listPermissions("capacity-device", "com.example.app", deps)).rejects.toThrow(
+        "permission request queue is full",
+      );
+    } finally {
+      blocked.release();
+      await Promise.all(writes);
+    }
+    expect(
+      (await listPermissions("capacity-device", "com.example.app", { execText: recordingExec([]) }))
+        .ok,
+    ).toBe(true);
   });
 });
