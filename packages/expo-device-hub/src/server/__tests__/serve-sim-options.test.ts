@@ -25,6 +25,13 @@ describe("standaloneServeSimOptions", () => {
     ).toBe(false);
   });
 
+  test("passes each --disable capability to serve-sim as false", () => {
+    expect(
+      standaloneServeSimOptions(parseCliOptions(["--disable", "keychain", "--disable=clipboard"])),
+    ).toMatchObject({ keychain: false, clipboard: false });
+    expect(standaloneServeSimOptions(parseCliOptions([]))).not.toHaveProperty("keychain");
+  });
+
   test("maps Hub HTTP transports with the default 60 FPS to serve-sim", () => {
     expect(standaloneServeSimOptions(parseCliOptions([]))).toEqual({
       loopbackOnly: true,

@@ -23,6 +23,9 @@ export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = "rgb888";
 export const GRPC_ENCODERS = ["software", "hardware"] as const;
 export type GrpcEncoder = (typeof GRPC_ENCODERS)[number];
 export const DEFAULT_GRPC_ENCODER: GrpcEncoder = "software";
+/** serve-sim capabilities the Hub sets up on each iOS simulator it opens. */
+export const HUB_CAPABILITIES = ["clipboard", "keychain"] as const;
+export type HubCapability = (typeof HUB_CAPABILITIES)[number];
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
@@ -58,6 +61,8 @@ Options:
       --hide-sidebar         Hide the device list and inspector sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown
+      --disable <capability> Do not set up this serve-sim capability on iOS simulators:
+                             ${HUB_CAPABILITIES.join(", ")} (repeatable)
   -h, --help                 Show this help
 `;
 
@@ -91,6 +96,8 @@ export type CliOptions = {
   /** Origins, or `*.` subdomain wildcards, whose pages may call serve-sim and serve-emu. */
   corsOrigins?: string[];
   androidRecordingDirectory?: string;
+  /** `--disable`: capabilities serve-sim's middleware gets as `false`, so it does not set them up. */
+  disabledCapabilities?: HubCapability[];
   help: boolean;
 };
 
@@ -193,6 +200,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     "frame-ancestor": string[];
     "cors-origin": string[];
     "android-recording-directory"?: string;
+    disable: string[];
     help: boolean;
   };
   try {
@@ -231,6 +239,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         "frame-ancestor": { type: "string", multiple: true, default: [] },
         "cors-origin": { type: "string", multiple: true, default: [] },
         "android-recording-directory": { type: "string" },
+        disable: { type: "string", multiple: true, default: [] },
         help: { type: "boolean", short: "h", default: false },
       },
     }));
@@ -350,6 +359,15 @@ export function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`--webrtc-ice-policy relay requires --turn-url.\n\n${HELP}`);
   }
   const corsOrigins = values["cors-origin"].map(parseCorsOrigin);
+  const disabledCapabilities = values.disable.map((value) => {
+    const name = value.toLowerCase();
+    if (!HUB_CAPABILITIES.includes(name as HubCapability)) {
+      throw new Error(
+        `Invalid --disable: ${value} (expected ${HUB_CAPABILITIES.join(" or ")})\n\n${HELP}`,
+      );
+    }
+    return name as HubCapability;
+  });
 
   return {
     port,
@@ -377,6 +395,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     frameAncestors: values["frame-ancestor"],
     corsOrigins,
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),
+    ...(disabledCapabilities.length > 0 ? { disabledCapabilities } : {}),
     help: false,
   };
 }
