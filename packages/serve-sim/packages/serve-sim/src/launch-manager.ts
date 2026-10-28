@@ -123,7 +123,7 @@ export async function releaseSession(
   await waitForLaunchUpdates();
   await withLaunchStateLock(udid, async () => {
     if (options.shutdown) {
-      // Hold the existing device lock across ownership checks, release and shutdown.
+      // Keep ownership and configuration until native shutdown is confirmed under this lock.
       const launchFile = join(stateDir(), `launch-${udid}.json`);
       const raw = existsSync(launchFile) ? JSON.parse(readFileSync(launchFile, "utf8")) : {};
       if (
@@ -151,16 +151,18 @@ export async function releaseSession(
         throw new Error(`Cannot read ownership for Simulator ${udid}.`);
       if (owners.some((pid) => pid !== ownerPid && !ownerIsGone(pid)))
         throw new Error(`Cannot shut down Simulator ${udid}: another session still owns it.`);
-    }
-    const previousStartup = managedStartupDylibs(udid);
-    const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
-    if (!othersRemain) removeCapabilityLoaderSync(udid);
-    else removeReleasedStartupSync(udid, previousStartup);
-    if (options.shutdown) {
       await shutdownDevice(udid);
       if ((await getDeviceState(udid)) !== "Shutdown")
         throw new Error(`Simulator ${udid} did not shut down.`);
     }
+    const previousStartup = managedStartupDylibs(udid);
+    const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
+    if (options.shutdown) {
+      // launchd's environment died with the device; only local ownership files remain.
+      writeManagedStartupDylibs(udid, []);
+      rmSync(capabilityConfigPath(udid), { force: true });
+    } else if (!othersRemain) removeCapabilityLoaderSync(udid);
+    else removeReleasedStartupSync(udid, previousStartup);
     armedHere.delete(udid);
   });
 }

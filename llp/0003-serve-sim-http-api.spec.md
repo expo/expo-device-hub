@@ -194,8 +194,9 @@ synchronously cancels future background warmup, even if parsing or later setup
 fails. The middleware retires prior native input before selection. UI selection and private
 adoption share the in-process device lifecycle (`src/device-lifecycle.ts`), using
 the existing `src/device.ts` boot/shutdown commands. The owner joins already-started
-warmup, drains unused native/capture sessions, releases its capabilities and confirms
-unused Simulators are shut down before success. Foreign or unreadable ownership
+warmup, drains unused native/capture sessions and confirms unused Simulators are shut
+down before releasing its capabilities and reporting success. A failed or unconfirmed
+shutdown preserves capability ownership and configuration. Foreign or unreadable ownership
 refuses shutdown; cleanup failure keeps the consumed claim unavailable.
 The selected native session, capture and optional recording must be ready before
 success. Shutdown joins the private configuration task before resource teardown. Without

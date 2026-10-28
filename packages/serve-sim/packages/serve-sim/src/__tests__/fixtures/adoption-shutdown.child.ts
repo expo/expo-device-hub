@@ -1,5 +1,5 @@
 import { expect, mock, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { useTempStateDir } from "../helpers";
 import * as commands from "../../simctl";
@@ -10,7 +10,10 @@ let bootstatusFails = false;
 let stop: () => Promise<void> = async () => {};
 mock.module("../../simctl", () => ({
   ...commands,
-  simctlSync: () => "",
+  simctlSync: (args: string[]) => {
+    calls.push(args.join(" "));
+    return "";
+  },
   simctl: async (args: string[]) => {
     calls.push(args.join(" "));
     if (args.join(" ") === "boot owned") return "";
@@ -39,8 +42,21 @@ async function fixture(run: (dir: string) => Promise<void>) {
   };
   writeFileSync(
     join(state.dir, "launch-owned.json"),
-    JSON.stringify({ sessionPids: [process.pid], launchArgs: [], capabilities: {} }),
+    JSON.stringify({
+      sessionPids: [process.pid],
+      launchArgs: [],
+      capabilities: {
+        clipboard: {
+          name: "clipboard",
+          dylib: "/owned/clipboard.dylib",
+          scope: "allApps",
+          ownerPid: process.pid,
+        },
+      },
+    }),
   );
+  writeFileSync(join(state.dir, "capabilities-owned.conf"), "original capability config");
+  writeFileSync(join(state.dir, "capability-inserts-owned.json"), '["/owned/clipboard.dylib"]');
   try {
     await run(state.dir);
   } finally {
@@ -68,31 +84,63 @@ test("adoption release waits for native shutdown and confirms the stopped device
       complete = true;
     });
     await entering;
-    expect(complete).toBe(false);
+    try {
+      expect(complete).toBe(false);
+      expect(existsSync(join(dir, "launch-owned.json"))).toBe(true);
+      expect(readFileSync(join(dir, "capabilities-owned.conf"), "utf8")).toBe(
+        "original capability config",
+      );
+      expect(calls).toEqual(["shutdown owned"]);
+    } finally {
+      finish();
+      await release;
+    }
     expect(existsSync(join(dir, "launch-owned.json"))).toBe(false);
-    finish();
-    await release;
+    expect(existsSync(join(dir, "capabilities-owned.conf"))).toBe(false);
+    expect(readFileSync(join(dir, "capability-inserts-owned.json"), "utf8")).toBe("[]");
     expect(calls).toEqual(["shutdown owned", "list devices -j"]);
   });
 });
 
 test("adoption refuses successful shutdown commands that leave the device booted", async () => {
-  await fixture(async () => {
+  await fixture(async (dir) => {
+    const before = [
+      "launch-owned.json",
+      "capabilities-owned.conf",
+      "capability-inserts-owned.json",
+    ].map((name) => readFileSync(join(dir, name), "utf8"));
     stop = async () => {};
     await expect(
       releaseSession("owned", process.pid, () => {}, { shutdown: true }),
     ).rejects.toThrow("did not shut down");
+    expect(
+      ["launch-owned.json", "capabilities-owned.conf", "capability-inserts-owned.json"].map(
+        (name) => readFileSync(join(dir, name), "utf8"),
+      ),
+    ).toEqual(before);
+    expect(calls).toEqual(["shutdown owned", "list devices -j"]);
   });
 });
 
 test("adoption propagates a native shutdown failure", async () => {
-  await fixture(async () => {
+  await fixture(async (dir) => {
+    const before = [
+      "launch-owned.json",
+      "capabilities-owned.conf",
+      "capability-inserts-owned.json",
+    ].map((name) => readFileSync(join(dir, name), "utf8"));
     stop = async () => {
       throw new Error("shutdown rejected");
     };
     await expect(
       releaseSession("owned", process.pid, () => {}, { shutdown: true }),
     ).rejects.toThrow("shutdown rejected");
+    expect(
+      ["launch-owned.json", "capabilities-owned.conf", "capability-inserts-owned.json"].map(
+        (name) => readFileSync(join(dir, name), "utf8"),
+      ),
+    ).toEqual(before);
+    expect(calls).toEqual(["shutdown owned"]);
   });
 });
 

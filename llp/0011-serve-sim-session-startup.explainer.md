@@ -179,8 +179,10 @@ The first target boots before server startup; additional targets warm in that sa
 process after its initial state is published, without delaying the first target.
 A private claim cancels future warmup and joins already-started preparation before
 retiring unused devices. It drains their native input/video and network capture,
-releases this process’s capability ownership, then shuts down the exact unused
-UDIDs and confirms their stopped state before preparing the selected target.
+shuts down the exact unused UDIDs and confirms their stopped state before releasing
+this process’s capability ownership and preparing the selected target. Ownership and
+capability configuration stay unchanged if shutdown fails or cannot be confirmed
+[observed: `src/launch-manager.ts` `releaseSession`].
 Adoption refuses foreign live or persistent ownership. The UI grid retains its
 explicit user shutdown contract, including a separate detached helper, and its
 legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
