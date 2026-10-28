@@ -387,7 +387,32 @@ export interface DeviceCapabilities {
   permissions: boolean;
   /** Text clipboard actions, in order with keyboard input. */
   clipboard: DeviceClipboardCapabilities;
+  /** Keychain values of installed apps that the backend can set, delete, and list by key. */
+  keychain: boolean;
 }
+
+/** Where an app's values live: expo-secure-store's layout, with its `keychainService` option. */
+export interface KeychainOptions {
+  /** expo-secure-store's `keychainService`; `app` when omitted. */
+  service?: string;
+}
+
+export interface KeychainWriteOptions extends KeychainOptions {
+  /** Restart the app after the write, so it reads the values at launch. */
+  relaunch?: boolean;
+}
+
+/** One key's outcome. `status` is the iOS keychain status, and `message` describes it. */
+export interface KeychainKeyResult {
+  key: string;
+  status: number;
+  /** The key is set, or deleted; a delete of a key that did not exist counts. */
+  ok: boolean;
+  message: string;
+}
+
+/** Per-key results, or not applied when the app was closed and applies the change at its next launch. */
+export type KeychainWriteResult = { applied: true; keys: KeychainKeyResult[] } | { applied: false };
 
 /** How the device answers one permission of the foreground app. */
 export type AppPermissionState = "granted" | "denied" | "limited" | "undetermined";
@@ -718,6 +743,20 @@ export interface DeviceClient {
   resetPermissions: () => void;
   /** Read the list again, for example when the section opens. */
   refreshPermissions: () => void;
+  /** Keys an installed app stored in its keychain. Values are never read back. */
+  listKeychainKeys: (appId: string, options?: KeychainOptions) => Promise<string[]>;
+  /** Set keychain values an installed app reads, such as sign-in tokens. */
+  setKeychainValues: (
+    appId: string,
+    values: Readonly<Record<string, string>>,
+    options?: KeychainWriteOptions,
+  ) => Promise<KeychainWriteResult>;
+  /** Delete keychain values of an installed app. A key that did not exist counts as deleted. */
+  deleteKeychainValues: (
+    appId: string,
+    keys: readonly string[],
+    options?: KeychainWriteOptions,
+  ) => Promise<KeychainWriteResult>;
 
   /**
    * Paste text into the focused field of the device app. Keys typed after the call wait until the
