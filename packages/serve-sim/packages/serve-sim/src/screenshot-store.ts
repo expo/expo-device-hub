@@ -104,6 +104,7 @@ export async function captureScreenshotAsync(
     udid: string;
     fileName: string;
     display: number;
+    copyToDesktop?: boolean;
   },
   readActiveDisplay?: () => Promise<number>,
 ): Promise<HostActionResult> {
@@ -157,6 +158,7 @@ export async function captureScreenshotAsync(
     await removeEmptyReservationAsync(staged);
     return shot;
   }
+  if (p.copyToDesktop === false) return ok(staged);
   const kept = `stays staged at ${staged} for at least ${hours} hours`;
   if (desktopCopiesMade >= MAX_DESKTOP_COPIES_PER_RUN) {
     return {

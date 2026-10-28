@@ -37,6 +37,31 @@ describe("eventLogEventForAction", () => {
     }
   });
 
+  test("session-preview screenshots do not count as activity, including failures", () => {
+    for (const exitCode of [0, 1]) {
+      expect(
+        eventLogEventForAction(
+          "screenshot.capture",
+          { udid: "DEVICE-A", purpose: "session-preview" },
+          { exitCode },
+        ),
+      ).toBeNull();
+      for (const params of [{ udid: "DEVICE-A" }, { udid: "DEVICE-A", copyToDesktop: false }]) {
+        expect(eventLogEventForAction("screenshot.capture", params, { exitCode })).toMatchObject({
+          kind: "screenshot",
+          status: exitCode === 0 ? "ok" : "error",
+        });
+      }
+      expect(
+        eventLogEventForAction(
+          "app.install",
+          { udid: "DEVICE-A", purpose: "session-preview" },
+          { exitCode },
+        ),
+      ).not.toBeNull();
+    }
+  });
+
   test("records an install", () => {
     expect(
       eventLogEventForAction("app.install", { udid: "DEVICE-A" }, { exitCode: 0 }),

@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-28 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots, observed hinge readback, and background preview capture)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -655,7 +655,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, copyToDesktop?, purpose?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -686,6 +686,24 @@ cleanup share the reservation queue so a failed capture cannot delete a
 concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
+
+`copyToDesktop` defaults to `true`. Set it to `false` to keep only the staged
+PNG and skip the Desktop copy and its copy-count limit. The staging budget,
+active-display validation, and atomic publication still apply. The caller owns
+reading and removing its uniquely named staged file; a client timeout or closed
+exec socket does not cancel the host action, so it must wait for completion or
+host shutdown before removing a file the action may still write.
+[observed: `src/host-actions.ts`, `src/screenshot-store.ts`,
+`src/socket/server-control.ts`]
+
+The optional `purpose` accepts only `"session-preview"`. It suppresses the
+screenshot activity event on both success and failure, so periodic background
+thumbnails do not refresh the session's idle deadline. Manual screenshots keep
+their existing events, including when `copyToDesktop` is `false`. Purpose does
+not change Desktop copying: background callers send both `copyToDesktop: false`
+and `purpose: "session-preview"`. Both fields are exposed by `actions.describe`
+so callers can check support before sending a capture.
+[observed: `src/host-actions.ts`, `src/event-log.ts`]
 
 Native screenshot startup and active-display reads use the configured host-action
 deadline. A timed-out one-shot releases its temporary session and stops native

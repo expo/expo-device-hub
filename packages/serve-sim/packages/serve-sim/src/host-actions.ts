@@ -425,6 +425,8 @@ const ACTION_SCHEMAS = {
       udid: Device,
       fileName: ScreenshotName.optional(),
       display: ScreenshotDisplay.optional(),
+      copyToDesktop: z.boolean().default(true),
+      purpose: z.literal("session-preview").optional(),
     })
     .meta({
       description: "Take a screenshot of the active display, or the specified simctl display ID.",
@@ -943,7 +945,12 @@ async function runProcedureAsync(
         p.udid = await resolveBootedDeviceAsync(p.udid);
         const capture = (display: number, read?: () => Promise<number>) =>
           captureScreenshotAsync(
-            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            {
+              udid: p.udid,
+              fileName: p.fileName ?? newScreenshotName(),
+              display,
+              copyToDesktop: p.copyToDesktop,
+            },
             read,
           );
         failure = "Could not capture the screenshot. Check the host logs for details.";
