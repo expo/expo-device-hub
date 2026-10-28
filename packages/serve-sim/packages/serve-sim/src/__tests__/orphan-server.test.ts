@@ -34,7 +34,8 @@ test.each([false, true])(
       for (let i = 0; i < 300 && !stdout.includes('"port"') && child.exitCode === null; i++)
         await Bun.sleep(10);
       expect(stdout, stderr).toContain('"port"');
-      expect(existsSync(join(directory, `owner-${device}.json`))).toBe(orphan);
+      const { port } = JSON.parse(stdout);
+      expect(existsSync(join(directory, `owner-port-${port}.json`))).toBe(orphan);
       const adopt = () =>
         adoptSession(
           device,
@@ -52,11 +53,11 @@ test.each([false, true])(
         );
       if (orphan) expect(await adopt()).toMatchObject({ device });
       await expect(adopt()).rejects.toThrow(
-        `No adoptable serve-sim for ${device}: start it with --orphan, or it was already claimed.`,
+        `No adoptable serve-sim on port ${port}: start it with --orphan, or it was already claimed.`,
       );
       child.kill("SIGTERM");
       expect(await exited).toEqual([0, null]);
-      expect(existsSync(join(directory, `owner-${device}.json`))).toBe(false);
+      expect(existsSync(join(directory, `owner-port-${port}.json`))).toBe(false);
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill("SIGTERM");
