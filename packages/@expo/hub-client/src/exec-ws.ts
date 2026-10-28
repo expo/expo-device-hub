@@ -23,12 +23,21 @@ export interface HostActionResult {
   exitCode: number;
 }
 
-export type HostActionParams = Record<string, string | number | boolean | string[] | undefined>;
+export type HostActionParams = Record<
+  string,
+  string | number | boolean | string[] | Readonly<Record<string, string>> | undefined
+>;
+
+export interface HostActionOptions {
+  /** How long to wait for the reply; defaults to 10 s. */
+  timeoutMs?: number;
+}
 
 /** Runs one typed serve-sim host action and resolves its output. */
 export type RunHostAction = (
   action: string,
   params?: HostActionParams,
+  options?: HostActionOptions,
 ) => Promise<HostActionResult>;
 
 export interface UiRequestPayload {
@@ -124,6 +133,7 @@ export async function runHostAction(
   /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
   protocols?: string[],
   channel?: ControlSocket,
+  timeoutMs = ACTION_TIMEOUT_MS,
 ): Promise<HostActionResult> {
   let reply: ExecReply;
   try {
@@ -131,7 +141,7 @@ export async function runHostAction(
       execWsUrl,
       execToken,
       { action, params },
-      ACTION_TIMEOUT_MS,
+      timeoutMs,
       protocols,
       channel,
     );
@@ -151,7 +161,21 @@ export async function runHostAction(
 // Transport failures use these exact messages (see execWsRequest); anything
 // else came back from the server as an `{id, error}` reply.
 function isActionRejection(message: string): boolean {
-  return !["exec-ws timeout", "exec-ws error", "exec-ws closed"].includes(message);
+  return !isTransportFailure(message);
+}
+
+/** The reply never arrived: the connection dropped or timed out, and the server may still act. */
+export function isTransportFailure(message: string): boolean {
+  return ["exec-ws timeout", "exec-ws error", "exec-ws closed"].includes(message);
+}
+
+/** The last non-empty line of a failed action's stderr, which holds its reason. */
+export function lastStderrLine(result: HostActionResult, fallback: string): string {
+  const lines = result.stderr
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines.at(-1) ?? fallback;
 }
 
 /**
