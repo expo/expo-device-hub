@@ -20,6 +20,8 @@
 	<string>15.0</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Tests Simulator permission changes.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Tests Simulator permission changes.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Tests Simulator permission changes.</string>
 	<key>NSContactsUsageDescription</key>
@@ -35,6 +37,8 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Tests Simulator permission changes.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Tests Simulator permission changes.</string>
+	<key>NSRemindersUsageDescription</key>
 	<string>Tests Simulator permission changes.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
