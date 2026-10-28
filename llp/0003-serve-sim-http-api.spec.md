@@ -655,7 +655,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?, copyToDesktop?, purpose?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, copyToDesktop?, automation?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -696,12 +696,12 @@ host shutdown before removing a file the action may still write.
 [observed: `src/host-actions.ts`, `src/screenshot-store.ts`,
 `src/socket/server-control.ts`]
 
-The optional `purpose` accepts only `"session-preview"`. It suppresses the
+The optional `automation` flag defaults to `false`. Setting it to `true` suppresses the
 screenshot activity event on both success and failure, so periodic background
 thumbnails do not refresh the session's idle deadline. Manual screenshots keep
-their existing events, including when `copyToDesktop` is `false`. Purpose does
+their existing events, including when `copyToDesktop` is `false` or `automation` is `false`. Automation does
 not change Desktop copying: background callers send both `copyToDesktop: false`
-and `purpose: "session-preview"`. Both fields are exposed by `actions.describe`
+and `automation: true`. Both fields are exposed by `actions.describe`
 so callers can check support before sending a capture.
 [observed: `src/host-actions.ts`, `src/event-log.ts`]
 

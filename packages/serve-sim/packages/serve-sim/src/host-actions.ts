@@ -426,7 +426,7 @@ const ACTION_SCHEMAS = {
       fileName: ScreenshotName.optional(),
       display: ScreenshotDisplay.optional(),
       copyToDesktop: z.boolean().default(true),
-      purpose: z.literal("session-preview").optional(),
+      automation: z.boolean().default(false),
     })
     .meta({
       description: "Take a screenshot of the active display, or the specified simctl display ID.",
