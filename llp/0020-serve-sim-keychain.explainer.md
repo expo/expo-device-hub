@@ -49,9 +49,13 @@ A closed app gets a set or single-item delete queued at once. An alias delete ne
 
 The dylib loads on the app's main queue after launch. A read in `application(_:didFinishLaunchingWithOptions:)` can run before a queued write [observed: spike, iOS 26.5, 2026-10-27]. An Expo app read the queued value on its first JS mount, and a value written while it ran on its next `getItemAsync` [observed: SDK 58 Release build, iOS 26.5, 2026-10-27]. An app that caches its login state after the first read needs a relaunch to see a new value.
 
+## Who sets it up
+
+A standalone `serve-sim` session enables the capability with its other defaults. A host that mounts `simMiddleware`, such as the Hub, gets the same setup as the clipboard reader: the middleware enables `keychain` on each device it opens or starts, checks it again at most every 30 s, and releases it on `dispose()` or at exit. Both use one capability session, `createCapabilitySession` in `src/capability-session.ts` ([LLP 0010](0010-serve-sim-clipboard.explainer.md)). `keychain: false` (`--disable keychain`) removes it, and `"unmanaged"`, which stream helpers pass, leaves it alone.
+
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
-## Formats and the CLI
+## Formats, the CLI, and host actions
 
 `serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON file input validates own entries without rebuilding an object, so credential names such as `__proto__` survive and every non-string value is refused before publication [observed: `parseKeychainEntries` in `src/keychain-cli.ts`]:
 
@@ -62,8 +66,10 @@ The CLI selects a single booted iOS Simulator. When several booted iOS Simulator
 
 `--relaunch` holds the device launch lock while stopping the app, publishing the request, and restarting the app with its recorded arguments. It releases the lock before waiting for the helper's answer. If publishing fails after the app stops, serve-sim attempts to restart it and reports the publication failure. It reports both errors if restarting also fails. An app that cached a read in an early native launch callback needs another restart after acknowledgement. If the app does not claim the request, serve-sim withdraws it and the command fails. A lost answer after the app claimed the request leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
 
+The `keychain.set`, `keychain.delete`, and `keychain.list` host actions run the same functions in the server process, so values never reach a child process's arguments ([LLP 0003](0003-serve-sim-http-api.spec.md#keychain-actions)).
+
 ## Not there yet
 
-- No host action or UI yet.
+- No Hub UI yet.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.
