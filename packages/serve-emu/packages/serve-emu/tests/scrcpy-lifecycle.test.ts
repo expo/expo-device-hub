@@ -158,8 +158,11 @@ type ConnectCall = {
 };
 
 type HarnessOptions = {
-  /** `getprop sys.boot_completed` results returned, in order, before "1". */
-  bootResults?: AdbCommandResult[];
+  /**
+   * `getprop sys.boot_completed` results returned, in order, before "1". A "hang" probe
+   * never settles until aborted.
+   */
+  bootResults?: (AdbCommandResult | "hang")[];
   /** `getprop sys.boot_completed` never settles until aborted. */
   bootHangs?: boolean;
   cacheInitially?: boolean;
@@ -220,10 +223,13 @@ function createHarness(options: HarnessOptions = {}) {
     state.events.push(`adb:${args.join(" ")}`);
 
     if (args[0] === "shell" && args[1] === "getprop" && args[2] === "sys.boot_completed") {
-      if (options.bootHangs) {
+      const next = options.bootHangs
+        ? "hang"
+        : (options.bootResults?.[state.bootAttempt++] ?? ok("1\n"));
+      if (next === "hang") {
         return waitForDeferred(deferred<AdbCommandResult>(), commandOptions.signal);
       }
-      return options.bootResults?.[state.bootAttempt++] ?? ok("1\n");
+      return next;
     }
 
     if (args[0] === "shell" && args[1] === "test" && args[2] === "-f") {
@@ -772,6 +778,18 @@ describe("waiting for the device to boot", () => {
     await waitWith(harness);
     expect(harness.state.events).toEqual([BOOT_PROBE]);
     expect(harness.state.sleepCalls).toHaveLength(0);
+  });
+
+  test("a probe that hangs past its deadline is tried again", async () => {
+    const harness = createHarness({ bootResults: ["hang"] });
+    // Fire each probe's 5 s deadline at once. The 120 s boot deadline keeps its length.
+    const setTimer = harness.deps.setTimer!;
+    await waitForDeviceBoot(
+      { serial: SERIAL },
+      { ...harness.deps, setTimer: (callback, ms) => setTimer(callback, ms === 5_000 ? 0 : ms) },
+    );
+    expect(harness.state.events).toEqual([BOOT_PROBE, BOOT_PROBE]);
+    expect(harness.state.sleepCalls.map((call) => call.ms)).toEqual([500]);
   });
 
   test("a device that never finishes booting times out", async () => {

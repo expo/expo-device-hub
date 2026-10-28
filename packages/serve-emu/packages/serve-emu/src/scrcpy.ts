@@ -358,11 +358,22 @@ export async function waitForDeviceBoot(
     `waiting for ${serial} to finish booting`,
     async (signal) => {
       while (true) {
-        const result = await runAdbRaw(runtime, serial, args, BOOT_POLL_TIMEOUT_MS, signal);
-        if (result.status === 0 && result.stdout.trim() === "1") return;
+        const result = await runAdbRaw(runtime, serial, args, BOOT_POLL_TIMEOUT_MS, signal).catch(
+          (error: unknown) => {
+            // One probe can hang past its own deadline while adbd restarts during boot.
+            // Try again; only the boot deadline or the caller's abort ends the wait.
+            if (signal.aborted) throw error;
+            return null;
+          },
+        );
+        if (result?.status === 0 && result.stdout.trim() === "1") return;
         // A closed shell channel is a transport race while the device boots. A device
         // adb cannot reach, or an adb that cannot start, fails the start at once.
-        if (result.status !== 0 && (deviceUnreachable(result) || adbDidNotStart(result))) {
+        if (
+          result &&
+          result.status !== 0 &&
+          (deviceUnreachable(result) || adbDidNotStart(result))
+        ) {
           throw commandFailure(serial, args, result);
         }
         await runtime.sleep(BOOT_POLL_INTERVAL_MS, signal);
