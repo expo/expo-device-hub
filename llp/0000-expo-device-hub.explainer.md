@@ -188,6 +188,7 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 | serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md)                     |
 | serve-emu hardware H.264 encoder spike                     | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md)   |
 | serve-sim clipboard: pasteboard API, Paste, Copy           | [LLP 0010](0010-serve-sim-clipboard.explainer.md)               |
+| serve-sim keychain: writing items inside an app            | [LLP 0017](0017-serve-sim-keychain.explainer.md) (Draft)        |
 | Hub UI rules and tokens                                    | `packages/expo-device-hub/AGENTS.md`                            |
 | serve-sim commands, tests, definition of done              | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md`  |
 | serve-emu layout and auth                                  | `packages/serve-emu/AGENTS.md`                                  |
