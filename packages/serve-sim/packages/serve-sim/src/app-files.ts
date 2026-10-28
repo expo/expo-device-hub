@@ -17,6 +17,12 @@ export const AppRelativePath = z
       !/[\\\p{Cc}]/u.test(value) &&
       value.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
     "must be a relative app path without traversal or empty components",
+  )
+  // The keychain mailbox holds values in transit; only the keychain actions use it. The data
+  // container's volume ignores case.
+  .refine(
+    (value) => !/^tmp\/serve-sim-keychain(\/|$)/i.test(value),
+    "must be outside serve-sim's keychain mailbox",
   );
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
