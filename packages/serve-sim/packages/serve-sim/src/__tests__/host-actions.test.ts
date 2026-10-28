@@ -24,7 +24,7 @@ const BIN = "true";
 describe("runHostActionAsync validation", () => {
   it("preserves the error when a permission target cannot be resolved", async () => {
     const device = await import("../device");
-    const resolve = spyOn(device, "resolveBootedDeviceAsync").mockRejectedValue(
+    const resolve = spyOn(device, "resolveDeviceAsync").mockRejectedValue(
       new Error("No booted simulator matches that device name."),
     );
     try {
@@ -587,6 +587,95 @@ it("logs failed app actions with the validated device and cached name", async ()
     }
   } finally {
     log.mockRestore();
+  }
+});
+
+it("device-wide permission reads wait for apps and block later app writes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "permission-device-order-"));
+  const script = join(dir, "serve-sim.js");
+  const events = join(dir, "events");
+  cpSync(join(import.meta.dir, "fixtures/permission-order.child.cjs"), script);
+  writeFileSync(join(dir, "block-list"), "");
+  const udid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const waitFor = async (count: number) => {
+    const end = Date.now() + 3000;
+    while (
+      (!existsSync(events) || readFileSync(events, "utf8").trim().split("\n").length < count) &&
+      Date.now() < end
+    )
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(readFileSync(events, "utf8").trim().split("\n")).toHaveLength(count);
+  };
+  const first = runHostActionAsync(
+    { action: "permissions.resetAll", params: { udid, bundleId: "test.first" } },
+    script,
+  );
+  const second = runHostActionAsync(
+    { action: "permissions.resetAll", params: { udid, bundleId: "test.second" } },
+    script,
+  );
+  let read: Promise<unknown> | undefined;
+  let grant: Promise<unknown> | undefined;
+  try {
+    await waitFor(2); // Unrelated apps still run concurrently.
+    read = runHostActionAsync({ action: "permissions.list", params: { udid } }, script);
+    grant = runHostActionAsync(
+      {
+        action: "permissions.set",
+        params: { udid, bundleId: "test.third", action: "grant", service: "camera" },
+      },
+      script,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(2);
+    writeFileSync(join(dir, "release"), "");
+    await waitFor(3);
+    expect(readFileSync(events, "utf8").trim().split("\n")).toEqual(["reset", "reset", "list"]);
+    writeFileSync(join(dir, "release-list"), "");
+    await Promise.all([first, second, read, grant]);
+    expect(readFileSync(events, "utf8").trim().split("\n")).toEqual([
+      "reset",
+      "reset",
+      "list",
+      "grant",
+    ]);
+  } finally {
+    writeFileSync(join(dir, "release"), "");
+    writeFileSync(join(dir, "release-list"), "");
+    await Promise.allSettled([first, second, read, grant]);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("unscoped permission listing resolves shutdown names and prefers a unique booted match", async () => {
+  const sim = await import("../simctl");
+  const device = await import("../device");
+  const shutdown = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const booted = "BBBBBBBB-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+  const lookup = spyOn(sim, "simctl").mockResolvedValue(
+    JSON.stringify({
+      devices: {
+        runtime: [
+          { name: "Shared name", udid: shutdown, state: "Shutdown" },
+          { name: "Offline phone", udid: shutdown, state: "Shutdown" },
+          { name: "Shared name", udid: booted, state: "Booted" },
+        ],
+      },
+    }),
+  );
+  try {
+    expect(
+      (
+        await runHostActionAsync(
+          { action: "permissions.list", params: { udid: "Offline phone" } },
+          BIN,
+        )
+      ).exitCode,
+    ).toBe(0);
+    expect(lookup.mock.calls[0]?.[0]).toEqual(["list", "devices", "-j"]);
+    expect(await device.resolveDeviceAsync("Shared name")).toBe(booted);
+  } finally {
+    lookup.mockRestore();
   }
 });
 
