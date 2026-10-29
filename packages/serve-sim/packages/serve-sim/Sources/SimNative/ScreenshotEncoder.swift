@@ -4,22 +4,14 @@ import Foundation
 import ImageIO
 import CoreImage
 
-/// Screenshot encoding has its own queue so PNG compression never stalls video or HID.
+/// Keep CPU readback and PNG compression off the video capture actor.
 actor ScreenshotEncoder {
     private let queue = DispatchSerialQueue(label: "screenshot-encoder", qos: .userInitiated)
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
     private lazy var context = CIContext(options: [.useSoftwareRenderer: false])
 
     func encode(_ pixels: CVPixelBuffer, orientation: String? = nil) throws -> Data {
-        CVPixelBufferLockBaseAddress(pixels, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
-        guard let context = CGContext(
-            data: CVPixelBufferGetBaseAddress(pixels),
-            width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels),
-            bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(pixels),
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue
-        ), var image = context.makeImage() else { throw failure() }
+        var image = try copyImage(pixels)
         // Match the preview's display geometry: some runtimes rotate the surface itself,
         // others keep portrait pixels and publish orientation separately.
         let rotation: CGImagePropertyOrientation
@@ -40,6 +32,23 @@ actor ScreenshotEncoder {
         CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw failure() }
         return data as Data
+    }
+
+    private func copyImage(_ pixels: CVPixelBuffer) throws -> CGImage {
+        guard CVPixelBufferLockBaseAddress(pixels, .readOnly) == kCVReturnSuccess else { throw failure() }
+        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+        let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
+        guard let source = CVPixelBufferGetBaseAddress(pixels),
+              let context = CGContext(data: nil, width: width, height: height,
+                  bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
+              let destination = context.data else { throw failure() }
+        for row in 0..<height {
+            memcpy(destination.advanced(by: row * context.bytesPerRow),
+                   source.advanced(by: row * CVPixelBufferGetBytesPerRow(pixels)), width * 4)
+        }
+        guard let image = context.makeImage() else { throw failure() }
+        return image
     }
 
     private func failure() -> NSError {

@@ -123,6 +123,22 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         } catch { XCTAssertTrue(error is CancellationError) }
     }
 
+    func testScreenshotHandsOffRetainedSurfaceWithoutReadingPixelsOnCaptureActor() async throws {
+        var original: IOSurface? = surface(width: 17, height: 31, gray: 50)
+        let descriptor = FakeFramebufferDescriptor(original)
+        let (capture, _) = await capture(with: descriptor)
+        await capture.captureFrameForTesting(force: true)
+        let frame = try await capture.screenshotPixels(screenID: 1)
+        XCTAssertNotNil(CVPixelBufferGetIOSurface(frame.pixels), "Capture must hand off the shared surface; CPU readback belongs on the screenshot queue")
+        XCTAssertTrue(CVPixelBufferGetIOSurface(frame.pixels)?.takeUnretainedValue() === original)
+        descriptor.surface = nil
+        original = nil
+        await capture.stop()
+        XCTAssertNotNil(CVPixelBufferGetIOSurface(frame.pixels), "The handed-off buffer must retain the retired surface")
+        let png = try await ScreenshotEncoder().encode(frame.pixels)
+        XCTAssertFalse(png.isEmpty)
+    }
+
     func testFoldableProfileCannotFallBackToOneCachedDescriptor() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
         let capture = FrameCapture(readDisplayInfo: { _ in
