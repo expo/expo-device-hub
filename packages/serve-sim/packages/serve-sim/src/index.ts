@@ -1953,6 +1953,7 @@ async function serve(
     (options.preparedDevices ?? []).map((udid) => udid.toUpperCase()),
   );
   let otherDevicesRetirement = Promise.resolve();
+  let claimed = false;
   const prepareDevice = (udid: string, signal?: AbortSignal) =>
     prepareDeviceOnce(udid, preparedDevices, async () => {
       signal?.throwIfAborted();
@@ -2010,8 +2011,9 @@ async function serve(
           // Owned devices are uppercase UDIDs; the request may use any case.
           const selectedDevice = (configuration.device ?? targetDevice)?.toUpperCase();
           if (!selectedDevice) throw new Error("Adoption requires a Simulator UDID");
-          // A boot already started by warmup must drain before its device can shut down.
-          await warmupTask;
+          // Only an extra warm device's own warmup must finish before its adoption; warmup of the
+          // other devices drains before they shut down.
+          if (selectedDevice !== targetDevice?.toUpperCase()) await warmupTask;
           signal?.throwIfAborted();
           if (backgroundFailure) throw backgroundFailure;
           // A device this process already prepared is served as it is.
@@ -2049,6 +2051,7 @@ async function serve(
             ownedDevices.filter((udid) => udid.toUpperCase() !== selectedDevice),
             process.pid,
             preparedDevices,
+            warmupTask,
           );
           writeState({
             ...inProcessServeSimState(selectedDevice, boundPort, "/", host, configuration.stream),
@@ -2147,7 +2150,10 @@ async function serve(
             configuration,
             AbortSignal.any([signal, backgroundCancellation.signal]),
           ),
-        () => warmupCancellation.abort(),
+        () => {
+          claimed = true;
+          warmupCancellation.abort();
+        },
       );
     }
   } catch (error) {
@@ -2259,9 +2265,12 @@ async function serve(
       } catch (error) {
         if (error instanceof AggregateError) {
           backgroundFailure ??= error;
-          backgroundCancellation.abort(error);
           console.error(`Warm Simulator cleanup failed: ${startupErrorMessage(error)}`);
-          process.kill(process.pid, "SIGTERM");
+          // After a claim the job may already use its device; the session stop reports this.
+          if (!claimed) {
+            backgroundCancellation.abort(error);
+            process.kill(process.pid, "SIGTERM");
+          }
         } else if (!warmupCancellation.signal.aborted && !sessionStopping) {
           console.error(`Could not warm Simulator ${udid}: ${startupErrorMessage(error)}`);
         }

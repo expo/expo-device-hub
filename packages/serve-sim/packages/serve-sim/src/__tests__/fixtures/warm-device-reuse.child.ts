@@ -79,6 +79,8 @@ test("other devices are unpublished at once and shut down in the background", as
   try {
     const prepared = new Set(["CCCC", "DDDD"]);
     const retirement = retireDevicesInBackground(["CCCC", "DDDD"], 1, prepared);
+    expect(calls).toEqual(["unpublish CCCC", "unpublish DDDD"]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls).toEqual(["unpublish CCCC", "unpublish DDDD", "retire CCCC"]);
     expect([...prepared]).toEqual([]);
     // Each shutdown starts only after the previous one finished.
@@ -93,4 +95,23 @@ test("other devices are unpublished at once and shut down in the background", as
     console.error = error;
     failStop = undefined;
   }
+});
+
+test("other devices are unpublished at once but shut down only after a running warmup", async () => {
+  calls.length = 0;
+  let finishWarmup = () => {};
+  const warmup = new Promise<void>((resolve) => {
+    finishWarmup = resolve;
+  });
+  const retirement = retireDevicesInBackground(["FFFF"], 1, new Set(), warmup);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(calls).toEqual(["unpublish FFFF"]);
+  finishWarmup();
+  for (let step = 0; step < 20 && !calls.includes("shutdown FFFF"); step++) {
+    pendingStops.shift()?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  await retirement;
+  // stopDeviceInProcess also clears the state at its end.
+  expect(calls).toEqual(["unpublish FFFF", "retire FFFF", "shutdown FFFF", "unpublish FFFF"]);
 });

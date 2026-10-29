@@ -82,12 +82,15 @@ export function retireDevicesInBackground(
   udids: readonly string[],
   ownerPid: number,
   preparedDevices: Set<string>,
+  // A boot already started by warmup must finish before its device shuts down.
+  warmup: Promise<unknown> = Promise.resolve(),
 ): Promise<void> {
   for (const udid of udids) {
     preparedDevices.delete(udid.toUpperCase());
     clearServeSimState(udid, ownerPid);
   }
   return (async () => {
+    await warmup.catch(() => {});
     for (const udid of udids) {
       try {
         await stopDeviceInProcess(udid, ownerPid);
