@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { displayScreen } from "../orientation";
@@ -18,7 +18,10 @@ class Socket {
 }
 
 let renderer: ReactTestRenderer | undefined;
+let clock: ReturnType<typeof spyOn<typeof performance, "now">> | undefined;
 afterEach(async () => {
+  clock?.mockRestore();
+  clock = undefined;
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
   restoreGlobals();
@@ -46,6 +49,11 @@ async function mount(initialInfo: Record<string, unknown>) {
   const locks: Array<{ device: string | null; orientation: string }> = [];
   const pending: Array<() => void> = [];
   let holdLocks = false;
+  let holdApi = false;
+  const heldApi: Array<() => void> = [];
+  let offset = 0;
+  const realNow = performance.now.bind(performance);
+  clock = spyOn(performance, "now").mockImplementation(() => realNow() + offset);
   const silentDevices = new Set<string>();
   let answer = (orientation: string): LockAnswer => ({
     status: 200,
@@ -61,6 +69,7 @@ async function mount(initialInfo: Record<string, unknown>) {
       return Response.json(body, { status });
     }
     if (parsed.pathname === "/api") {
+      if (holdApi) await new Promise<void>((resolve) => heldApi.push(resolve));
       const device = parsed.searchParams.get("device");
       if (device && silentDevices.has(device)) return Response.json({}, { status: 503 });
       return Response.json(apiInfo);
@@ -94,6 +103,19 @@ async function mount(initialInfo: Record<string, unknown>) {
     silence: (device: string, silent: boolean) =>
       silent ? silentDevices.add(device) : silentDevices.delete(device),
     answerWith: (next: (orientation: string) => LockAnswer) => (answer = next),
+    holdApi: () => (holdApi = true),
+    releaseApi: async () => {
+      holdApi = false;
+      while (heldApi.length) heldApi.shift()!();
+      await settle();
+    },
+    startPoll: async (next: Record<string, unknown>) => {
+      apiInfo = { ...apiInfo, ...next };
+      await act(async () => {
+        for (const poll of metadataPolls) poll();
+      });
+    },
+    advance: (ms: number) => (offset += ms),
     report: async (next: Record<string, unknown>) => {
       apiInfo = { ...apiInfo, ...next };
       await act(async () => {
@@ -139,7 +161,7 @@ test("Android adds the reported pose to the screen only while it agrees with the
   expect(client().screen?.orientation).toBe("portrait");
 });
 
-test("Android shows a choice at once, then the server's answer, then the next report", async () => {
+test("Android shows a choice at once, then the server's answer, then a matching report", async () => {
   const { client, locks, hold, release, answerWith, report } = await mount({
     orientation: "portrait",
   });
@@ -149,14 +171,70 @@ test("Android shows a choice at once, then the server's answer, then the next re
   expect(client().orientation).toBe("landscape_right");
   expect(client().orientationPending).toBe(true);
 
-  // A tablet or an app can show another pose; the answer wins over the choice.
-  answerWith(() => ({ status: 200, body: { ok: true, orientation: { pose: "portrait" } } }));
+  // A report during the request does not replace the choice.
+  await report({ orientation: "portrait" });
+  expect(client().orientation).toBe("landscape_right");
+  expect(client().orientationPending).toBe(true);
+
+  // The answer's pose is the pose serve-emu locked; it replaces the choice.
+  answerWith(() => ({ status: 200, body: { ok: true, orientation: { pose: "landscape_left" } } }));
   await release();
   expect(client().orientationPending).toBe(false);
-  expect(client().orientation).toBe("portrait");
-
-  await report({ size: { width: 2400, height: 1080 }, orientation: "landscape_left" });
   expect(client().orientation).toBe("landscape_left");
+
+  // A report that shows the answered pose takes over, and later reports follow the device.
+  await report({ size: { width: 2400, height: 1080 }, orientation: "landscape_left" });
+  await report({ orientation: "landscape_right" });
+  expect(client().orientation).toBe("landscape_right");
+});
+
+test("Android keeps the answer over an older report until the readback grace ends", async () => {
+  const { client, hold, release, holdApi, releaseApi, startPoll, report, advance } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  // A poll starts before the answer and returns the pose from before the lock.
+  holdApi();
+  await startPoll({ orientation: "portrait" });
+  await release();
+  expect(client().orientation).toBe("landscape_left");
+  await releaseApi();
+  expect(client().orientation).toBe("landscape_left");
+
+  // A later report that still shows the old pose waits for the grace, then wins.
+  await report({ orientation: "portrait" });
+  expect(client().orientation).toBe("landscape_left");
+  advance(1_500);
+  await report({ orientation: "portrait" });
+  expect(client().orientation).toBe("portrait");
+});
+
+test("Android Rotate before the first /api answer locks the opposite of the frame's aspect", async () => {
+  const { client, locks, lockDevices, silence, switchDevice, settle } = await mount({
+    orientation: "portrait",
+  });
+  silence("emulator-5556", true);
+  await switchDevice("emulator-5556");
+  expect(client().capabilities.orientation).toBe(false);
+  await act(async () => client().rotate());
+  await settle();
+  expect(locks()).toEqual(["landscape"]);
+  expect(lockDevices()).toEqual(["emulator-5556"]);
+});
+
+test("Android sends one request at a time across a device change and shows only the new device's answer", async () => {
+  const { client, locks, lockDevices, hold, release, switchDevice } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  await switchDevice("emulator-5556");
+  await act(async () => client().rotate());
+  expect(locks()).toEqual(["landscape_left"]);
+  await release();
+  expect(lockDevices()).toEqual(["emulator-5554", "emulator-5556"]);
+  expect(client().orientationPending).toBe(false);
 });
 
 test("Android reports a refused orientation and clears the error with the next choice", async () => {
