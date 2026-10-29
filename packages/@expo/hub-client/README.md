@@ -220,9 +220,13 @@ and each backend ignores the buttons its platform does not have.
 client.pressButton("home");
 
 client.rotate();
-// Turn to one orientation listed in client.capabilities.orientation, and read the current one
-// from client.screen?.orientation (iOS, and Android servers that report it).
+// client.capabilities.orientation is false, or { orientations: DeviceOrientation[] } with the
+// poses that setOrientation accepts. client.orientation shows the choice at once, then the
+// backend's report; read client.orientationPending and client.orientationError like location.
 client.setOrientation("landscape_left");
+// client.screen.orientation is the pose of the shown frames. client.screen.framesUpright is
+// true when the backend already sends upright frames (serve-emu), so DeviceScreen never turns
+// them.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 

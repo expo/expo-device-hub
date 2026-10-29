@@ -854,19 +854,29 @@ export interface DeviceClient {
    */
   reload: () => void;
   /**
-   * Rotate the device. serve-sim sets the next orientation in the
-   * counterclockwise cycle over the helper's orientation channel; serve-emu
-   * locks the opposite portrait/landscape orientation via `POST
-   * /api/orientation`. A no-op if nothing is connected.
+   * Rotate the device to the next pose in `DEVICE_ORIENTATIONS` order. serve-sim sends it
+   * over the helper's orientation channel; serve-emu locks it via `POST /api/orientation`,
+   * like {@link setOrientation}. A serve-emu server that does not report its pose gets the
+   * opposite of the frame's portrait or landscape aspect. A no-op if nothing is connected.
    */
   rotate: () => void;
   /**
-   * Turn the device to one orientation. serve-sim sends it over the helper's orientation
-   * channel, and a later {@link rotate} continues the cycle from it; serve-emu locks the
-   * matching user rotation via `POST /api/orientation`, one request at a time, so the last
-   * choice wins. Ignores values missing from `capabilities.orientation`. A foreground app that
-   * does not support the orientation can keep its layout. Read the result from
-   * `screen.orientation`.
+   * The pose the device is turned to: the last choice from {@link setOrientation} while it is
+   * pending and until the backend reports again, then the backend's report. Null when the
+   * backend reports no pose. Unlike `screen.orientation`, it can lead the video frames.
+   */
+  orientation: DeviceOrientation | null;
+  /** True while a {@link setOrientation} choice has not been applied. */
+  orientationPending: boolean;
+  /** Last failed orientation change, cleared when the next one starts. */
+  orientationError: string | null;
+  /**
+   * Turn the device to one orientation, and show it in {@link orientation} at once.
+   * serve-sim sends it over the helper's orientation channel, and a later {@link rotate}
+   * continues the cycle from it; serve-emu locks the matching user rotation via
+   * `POST /api/orientation`, one request at a time, so the last choice wins and only its
+   * answer or failure is shown. Ignores values missing from `capabilities.orientation`. A
+   * foreground app that does not support the orientation can keep its layout.
    */
   setOrientation: (orientation: DeviceOrientation) => void;
   /**
