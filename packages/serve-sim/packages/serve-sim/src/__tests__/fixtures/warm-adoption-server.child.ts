@@ -22,6 +22,7 @@ mock.module("../../simctl", () => ({
   ...simctlModule,
   simctl: async (args: string[]) => {
     const [command, udid, flag] = args;
+    if (udid === extra) console.error(`native ${extra}: ${args.join(" ")}`);
     if (command === "boot") throw new Error("Unable to boot device in current state: Booted");
     if (args.join(" ") === "list devices -j") return listing;
     if (command === "bootstatus" && [first, extra].includes(udid!) && (!flag || flag === "-b"))

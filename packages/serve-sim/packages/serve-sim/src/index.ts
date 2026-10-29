@@ -69,6 +69,7 @@ import {
   disarmStaleCapabilityLoader,
   releaseSessionSync,
   releaseSession,
+  reserveDeviceSession,
   stopLaunchSession,
   waitForLaunchUpdates,
 } from "./launch-manager";
@@ -1958,6 +1959,7 @@ async function serve(
     prepareDeviceOnce(udid, preparedDevices, async () => {
       signal?.throwIfAborted();
       if (sessionStopping) throw new Error("Session is stopping");
+      await reserveDeviceSession(udid);
       if (!ownedDevices.includes(udid)) ownedDevices.push(udid);
       await startDeviceInProcess(
         udid,

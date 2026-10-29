@@ -29,7 +29,7 @@ mock.module("../../simctl", () => ({
     throw new Error(`Unexpected native command: ${args.join(" ")}`);
   },
 }));
-const { releaseSession } = await import("../../launch-manager");
+const { releaseSession, reserveDeviceSession } = await import("../../launch-manager");
 
 async function fixture(run: (dir: string) => Promise<void>) {
   const state = useTempStateDir();
@@ -144,27 +144,37 @@ test("adoption propagates a native shutdown failure", async () => {
   });
 });
 
-test.each(["foreign session", "persistent capability", "malformed ownership", "foreign preview"])(
-  "adoption preserves %s without native changes",
-  async (kind) => {
-    await fixture(async (dir) => {
-      const launch = join(dir, "launch-owned.json");
-      if (kind === "foreign session")
-        writeFileSync(launch, JSON.stringify({ sessionPids: [process.ppid], capabilities: {} }));
-      if (kind === "persistent capability")
-        writeFileSync(launch, JSON.stringify({ capabilities: { camera: { ownerPid: null } } }));
-      if (kind === "malformed ownership")
-        writeFileSync(launch, JSON.stringify({ sessionPids: "invalid" }));
-      if (kind === "foreign preview")
-        writeFileSync(join(dir, "server-owned.json"), JSON.stringify({ pid: process.ppid }));
-      await expect(
-        releaseSession("owned", process.pid, () => {}, { shutdown: true }),
-      ).rejects.toThrow();
-      expect(existsSync(launch)).toBe(true);
-      expect(calls).toEqual([]);
-    });
-  },
-);
+test.each([
+  "foreign session",
+  "persistent capability",
+  "malformed ownership",
+  "foreign preview",
+  "foreign reservation",
+  "malformed reservation",
+])("adoption preserves %s without native changes", async (kind) => {
+  await fixture(async (dir) => {
+    const launch = join(dir, "launch-owned.json");
+    if (kind === "foreign session")
+      writeFileSync(launch, JSON.stringify({ sessionPids: [process.ppid], capabilities: {} }));
+    if (kind === "persistent capability")
+      writeFileSync(launch, JSON.stringify({ capabilities: { camera: { ownerPid: null } } }));
+    if (kind === "malformed ownership")
+      writeFileSync(launch, JSON.stringify({ sessionPids: "invalid" }));
+    if (kind === "foreign preview")
+      writeFileSync(join(dir, "server-owned.json"), JSON.stringify({ pid: process.ppid }));
+    if (kind === "foreign reservation")
+      writeFileSync(launch, JSON.stringify({ exclusivePid: process.ppid }));
+    if (kind === "malformed reservation")
+      writeFileSync(launch, JSON.stringify({ exclusivePid: "invalid" }));
+    const before = readFileSync(launch, "utf8");
+    await expect(reserveDeviceSession("owned")).rejects.toThrow();
+    await expect(
+      releaseSession("owned", process.pid, () => {}, { shutdown: true }),
+    ).rejects.toThrow();
+    expect(readFileSync(launch, "utf8")).toBe(before);
+    expect(calls).toEqual([]);
+  });
+});
 
 let retire: () => Promise<void> = async () => {};
 const cleanupOrder: string[] = [];
@@ -181,7 +191,28 @@ mock.module("../../capture", () => ({
     },
   },
 }));
-const { startDeviceInProcess, stopDeviceInProcess } = await import("../../device-lifecycle");
+const { startDeviceInProcess, stopDeviceInProcess, retireDevicesInBackground } =
+  await import("../../device-lifecycle");
+const { gridDeviceState, writeServeSimState } = await import("../../state");
+
+test("warm reservation survives unpublication and rejects competing preview publication", async () => {
+  await fixture(async (dir) => {
+    const preview = { ...gridDeviceState("owned", 3240, "/"), pid: process.ppid };
+    // Ordinary sessions can still use a separate streaming helper.
+    writeServeSimState(preview);
+    writeFileSync(join(dir, "server-owned.json"), JSON.stringify({ pid: process.pid }));
+    await reserveDeviceSession("owned");
+    await startDeviceInProcess("owned", 3240, "/", undefined, undefined, undefined, {
+      requireReady: true,
+    });
+    const retirement = retireDevicesInBackground(["owned"], process.pid, new Set(["OWNED"]));
+    expect(existsSync(join(dir, "server-owned.json"))).toBe(false);
+    expect(() => writeServeSimState(preview)).toThrow("another session still owns it");
+    expect(await retirement).toEqual([]);
+    expect(existsSync(join(dir, "launch-owned.json"))).toBe(false);
+    writeServeSimState(preview);
+  });
+});
 
 test("shared UI/adoption stop joins pending native consumers before shutdown", async () => {
   await fixture(async () => {

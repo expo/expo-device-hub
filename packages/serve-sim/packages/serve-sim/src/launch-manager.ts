@@ -1,6 +1,5 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "fs";
-import { basename, join } from "path";
-import { stateDir, stateFileForDevice } from "./state";
+import { basename } from "path";
 import {
   capabilitiesToApply,
   capabilityDefinition,
@@ -30,6 +29,7 @@ import {
   clearLaunchState,
   writeLaunchState,
   ownerIsGone,
+  assertDeviceOwnership,
 } from "./launch-state";
 import {
   withLaunchStateLock,
@@ -74,10 +74,17 @@ function releaseLaunchStateUnlocked(
     Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
   );
   const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  const exclusivePid = previous.exclusivePid;
+  if (exclusivePid === ownerPid || (exclusivePid !== undefined && ownerIsGone(exclusivePid)))
+    delete previous.exclusivePid;
   for (const record of Object.values(previous.capabilities)) {
     if (record.ownerPid === ownerPid) onRelease?.(record);
   }
-  if (Object.keys(kept).length === 0 && !sessionPids?.length) {
+  if (
+    Object.keys(kept).length === 0 &&
+    !sessionPids?.length &&
+    previous.exclusivePid === undefined
+  ) {
     clearLaunchState(udid);
     return false;
   }
@@ -93,6 +100,20 @@ function releaseLaunchStateUnlocked(
 
 export function releaseLaunchState(udid: string, ownerPid: number): boolean {
   return withLaunchStateLockSync(udid, () => releaseLaunchStateUnlocked(udid, ownerPid));
+}
+
+/** Reserve before native preparation; publication and retirement honor the same device lock. */
+export async function reserveDeviceSession(udid: string): Promise<void> {
+  await withLaunchStateLock(udid, async () => {
+    assertDeviceOwnership(udid, process.pid);
+    const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
+    writeLaunchState(udid, {
+      ...previous,
+      exclusivePid: process.pid,
+      sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])],
+    });
+    armedHere.add(udid);
+  });
 }
 
 export function releaseSessionSync(
@@ -124,33 +145,7 @@ export async function releaseSession(
   await withLaunchStateLock(udid, async () => {
     if (options.shutdown) {
       // Keep ownership and configuration until native shutdown is confirmed under this lock.
-      const launchFile = join(stateDir(), `launch-${udid}.json`);
-      const raw = existsSync(launchFile) ? JSON.parse(readFileSync(launchFile, "utf8")) : {};
-      if (
-        !raw ||
-        typeof raw !== "object" ||
-        Array.isArray(raw) ||
-        (raw.sessionPids !== undefined && !Array.isArray(raw.sessionPids)) ||
-        (raw.capabilities !== undefined &&
-          (!raw.capabilities ||
-            typeof raw.capabilities !== "object" ||
-            Array.isArray(raw.capabilities)))
-      ) {
-        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
-      }
-      const previewFile = stateFileForDevice(udid);
-      const preview = existsSync(previewFile)
-        ? JSON.parse(readFileSync(previewFile, "utf8"))
-        : undefined;
-      const owners = [
-        ...(raw.sessionPids ?? []),
-        ...Object.values(raw.capabilities ?? {}).map((record: any) => record?.ownerPid),
-      ];
-      if (preview !== undefined) owners.push(preview?.pid);
-      if (owners.some((pid) => pid !== null && (!Number.isInteger(pid) || pid <= 1)))
-        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
-      if (owners.some((pid) => pid !== ownerPid && !ownerIsGone(pid)))
-        throw new Error(`Cannot shut down Simulator ${udid}: another session still owns it.`);
+      assertDeviceOwnership(udid, ownerPid);
       await shutdownDevice(udid);
       if ((await getDeviceState(udid)) !== "Shutdown")
         throw new Error(`Simulator ${udid} did not shut down.`);

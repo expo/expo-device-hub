@@ -1,7 +1,9 @@
 import { tmpdir } from "os";
 import { join } from "path";
-import { readdirSync, mkdirSync, writeFileSync, renameSync, readFileSync, unlinkSync } from "fs";
+import { readdirSync, writeFileSync, renameSync, readFileSync, unlinkSync } from "fs";
 import type { StreamSettings } from "./stream-settings";
+import { ownerIsGone, readLaunchState } from "./launch-state";
+import { withLaunchStateLockSync } from "./launch-state-lock";
 export type {
   HttpStreamCodec,
   StreamSettings,
@@ -104,12 +106,18 @@ export function serverBaseUrl(
  *  Writes atomically (temp file + rename) so a concurrent reader never observes
  *  a truncated or partially-written file. */
 export function writeServeSimState(state: ServeSimDeviceState): void {
-  mkdirSync(stateDir(), { recursive: true });
-  const file = stateFileForDevice(state.device);
-  const tmp = `${file}.${process.pid}.tmp`;
-  // Holds TURN credentials and, when gated, the session token.
-  writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-  renameSync(tmp, file);
+  withLaunchStateLockSync(state.device, () => {
+    const owner = readLaunchState(state.device)?.exclusivePid;
+    if (owner !== undefined && (!Number.isInteger(owner) || owner <= 1))
+      throw new Error(`Cannot read ownership for Simulator ${state.device}.`);
+    if (owner !== undefined && owner !== state.pid && !ownerIsGone(owner))
+      throw new Error(`Cannot publish Simulator ${state.device}: another session still owns it.`);
+    const file = stateFileForDevice(state.device);
+    const tmp = `${file}.${process.pid}.tmp`;
+    // Holds TURN credentials and, when gated, the session token.
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
+    renameSync(tmp, file);
+  });
 }
 
 export function clearServeSimState(udid: string, ownerPid: number): void {

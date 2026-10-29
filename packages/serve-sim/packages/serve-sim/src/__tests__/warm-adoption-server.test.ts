@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { adoptSession } from "../session-owner";
 import { DEFAULT_STREAM_ENCODER_SETTINGS } from "../stream-settings";
@@ -15,10 +15,13 @@ test.each([
   { failure: "warmup", log: "Warm Simulator cleanup failed", exitCode: 1 },
   { failure: "retire", log: `Could not shut down Simulator ${extra}`, exitCode: 1 },
   { failure: "warmup-during", log: "Warm Simulator cleanup failed", exitCode: 1 },
+  { failure: "foreign", log: "", exitCode: 0 },
 ])(
   "adopting the first warm device keeps it after a failure on the extra device: $failure",
   async ({ failure, log, exitCode }) => {
     const state = useTempStateDir();
+    const foreign = JSON.stringify({ pid: process.pid, device: extra });
+    if (failure === "foreign") writeFileSync(join(state.dir, `server-${extra}.json`), foreign);
     const child = spawn(
       process.execPath,
       [join(import.meta.dir, "fixtures/warm-adoption-server.child.ts")],
@@ -67,6 +70,11 @@ test.each([
       await waitFor(() => stderr.includes(log));
       // The server keeps running after the failure until its stop.
       await Bun.sleep(200);
+      if (failure === "foreign") {
+        expect(readFileSync(join(state.dir, `server-${extra}.json`), "utf8")).toBe(foreign);
+        expect(stderr).not.toContain(`native ${extra}`);
+        expect(stderr).not.toContain(`released ${extra}`);
+      }
       expect(child.exitCode).toBeNull();
       child.kill("SIGTERM");
       expect((await exited)[0], stderr).toBe(exitCode);

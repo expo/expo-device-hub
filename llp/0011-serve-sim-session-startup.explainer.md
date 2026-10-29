@@ -188,6 +188,10 @@ every shutdown
 [confirmed: Gabe Debes, 2026-10-29, hand over warm devices without repeated preparation]. Ownership and
 capability configuration stay unchanged if shutdown fails or cannot be confirmed
 [observed: `src/launch-manager.ts` `releaseSession`].
+Before preparing another target, adoption checks its preview and capability owners
+and reserves it under the device lock. Preview publication honors this reservation,
+which survives discovery unpublication until shutdown or session cleanup
+[observed: `src/launch-manager.ts` `reserveDeviceSession`, `src/state.ts`].
 Adoption refuses foreign live or persistent ownership. The UI grid retains its
 explicit user shutdown contract, including a separate detached helper, and its
 legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
