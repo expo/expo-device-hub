@@ -135,6 +135,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       accessibility: true,
       permissions: false,
       clipboard: false,
+      orientation: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -154,6 +155,10 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
+    orientation: null,
+    orientationPending: false,
+    orientationError: null,
+    setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",
     setAppearance: () => {},
