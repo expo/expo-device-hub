@@ -174,6 +174,19 @@ final class SharedH264PolicyTests: XCTestCase {
         XCTAssertEqual(wide, LetterboxPlacement(x: 0, y: 0, width: 1_000, height: 668))
     }
 
+    func testEdgeGuardCoversOnlyAFewColumnsPastThePicture() {
+        let cover = LetterboxPlacement.topLeft(sourceWidth: 1_398, sourceHeight: 2_034,
+                                               canvasWidth: 1_126, canvasHeight: 1_600)
+        XCTAssertEqual(cover, LetterboxPlacement(x: 0, y: 0, width: 1_100, height: 1_600))
+        XCTAssertEqual(cover.guarded(canvasWidth: 1_126, canvasHeight: 1_600),
+                       LetterboxPlacement(x: 0, y: 0, width: 1_108, height: 1_600))
+        // Never past the canvas, and nothing to guard when the picture fills it.
+        let narrow = LetterboxPlacement(x: 0, y: 0, width: 796, height: 1_136)
+        XCTAssertEqual(narrow.guarded(canvasWidth: 798, canvasHeight: 1_136), LetterboxPlacement(x: 0, y: 0, width: 798, height: 1_136))
+        let full = LetterboxPlacement(x: 0, y: 0, width: 736, height: 1_600)
+        XCTAssertEqual(full.guarded(canvasWidth: 736, canvasHeight: 1_600), full)
+    }
+
     func testSlowEncoderRetainsOnlyNewestWaitingFrame() {
         var backlog = SharedFrameBacklog()
         XCTAssertEqual(backlog.submit(1), .start)

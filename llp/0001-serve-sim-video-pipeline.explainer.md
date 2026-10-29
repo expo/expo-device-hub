@@ -156,9 +156,10 @@ The shared canvas can have another shape than the active panel: an iPhone Duo
 session sizes it for the inner screen, so the cover screen does not fill it
 [observed: `FrameCapture.computeWebRTCEncodeCanvasSize()`]. The resizer then
 draws the picture at its own proportions from the canvas's top-left corner
-(`LetterboxPlacement.topLeft`), rounds its size up to even numbers, and fills
-the unused columns on the right or rows at the bottom with the picture's last
-column or row. Clients show the screen with `object-fit: cover` and
+(`LetterboxPlacement.topLeft`) and rounds its size up to even numbers. The
+unused columns on the right or rows at the bottom are black bars, except a guard
+band of `LetterboxPlacement.edgeGuard` (8) pixels next to the picture that
+repeats its last column or row. Clients show the screen with `object-fit: cover` and
 `object-position: 0 0` in a box with the screen's proportions, so the unused
 area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
 
@@ -166,9 +167,16 @@ area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
   the client needs only the screen size to cut it. A centered picture has bars
   on both sides that rounding makes uneven, which a centered `cover` crop does
   not remove exactly.
-- A repeated edge, not black: a browser that draws the frame smaller mixes
-  pixels across the box edge. Black there showed as a dark line along the
-  screen's edge [observed: iPhone Duo cover screen in expo-device-hub].
+- A guard band, then black: a browser that draws the frame smaller mixes
+  pixels across the box edge. Black right next to the picture showed as a dark
+  line along the screen's edge [observed: iPhone Duo cover screen in
+  expo-device-hub]; 8 repeated pixels remove it. Repeating the edge over the
+  whole unused area changes it with every frame of a scroll, so it stays black
+  past the guard, as static as the old bars [confirmed: Krystof Woldrich,
+  2026-10-29, after a review flagged lower Duo throughput]. On EAS with a
+  recording running, the guard band matched `main`'s encoded frame rate on an
+  iPhone Duo, an iPhone 18 Pro and an iPad Pro 13-inch [observed: the
+  serve-sim perf workflow, three rounds per arm, five more on the Duo].
 - Metal needs an explicit `MPSScaleTransform`. With only a clip rect, MPS scales
   the source to the whole canvas and the clip cuts the picture's right edge
   [observed: 798 × 1136 frames lost 18 of 792 panel columns].
@@ -178,8 +186,8 @@ area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
   through unchanged. While a recording runs, or an MJPEG or AVCC viewer is
   attached, every device is resized; there the old centered placement left
   2–4 px bars and a Metal cut of the same size, and the new placement leaves at
-  most 2 rows of repeated edge [observed: placement math for iPhone and iPad
-  screens].
+  most 2 unused rows, inside the guard band [observed: placement math for
+  iPhone and iPad screens].
 
 ## Session recording
 

@@ -5,7 +5,8 @@ import MetalPerformanceShaders
 import StreamingPolicy
 
 /// Produces a frame of the requested size from a captured frame, aspect-fit from the
-/// top-left corner. Where the shapes differ, the picture's edge repeats to the right or bottom.
+/// top-left corner. Where the shapes differ, black bars fill the right or bottom, and the
+/// picture's edge repeats over a narrow guard band next to it.
 /// A backend does the pixel work; the resizer owns ordering, replacement, and counting.
 protocol ViewerResizeBackend: AnyObject {
     var name: String { get }
@@ -221,9 +222,11 @@ final class LetterboxResizeBackend: ViewerResizeBackend {
     }
 }
 
-/// Bilinear scale of the Y and CbCr planes on the GPU. When the shapes differ, the
-/// clamped edge of the picture fills the unused columns or rows, so a client that
-/// scales the frame down blends the picture's edge with itself, not with black.
+/// Bilinear scale of the Y and CbCr planes on the GPU. Bars, when the shapes
+/// differ, come from scaling a constant 2×2 plane over the whole output first.
+/// The bars are video-range black (Y 16), the range the capture copy uses. The
+/// picture's clamped edge covers `LetterboxPlacement.edgeGuard` pixels of them.
+/// @ref LLP 0001#viewer-frame-placement — black bars with an edge guard
 final class MetalResizeBackend: ViewerResizeBackend {
     let name = "metal"
     private(set) var poolDrops: UInt64 = 0
@@ -231,6 +234,8 @@ final class MetalResizeBackend: ViewerResizeBackend {
     private let commandQueue: MTLCommandQueue
     private let textureCache: CVMetalTextureCache
     private let scale: MPSImageBilinearScale
+    private let barsY: MTLTexture
+    private let barsCbCr: MTLTexture
     private let maxBuffers: Int
     private var pool: CVPixelBufferPool?
     private var poolDimensions = Dimensions(width: 0, height: 0)
@@ -247,13 +252,19 @@ final class MetalResizeBackend: ViewerResizeBackend {
         var cache: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(kCFAllocatorDefault, nil, device, nil, &cache) == kCVReturnSuccess,
               let cache else { return nil }
+        guard let barsY = Self.constantTexture(device: device, format: .r8Unorm, bytes: [16, 16, 16, 16], bytesPerRow: 2),
+              let barsCbCr = Self.constantTexture(device: device, format: .rg8Unorm,
+                                                  bytes: [128, 128, 128, 128, 128, 128, 128, 128], bytesPerRow: 4)
+        else { return nil }
         self.device = device
         self.commandQueue = commandQueue
         textureCache = cache
         scale = MPSImageBilinearScale(device: device)
         // Clamp, not zero: the default blends the outermost source pixels with black, and
-        // the clamped edge also fills the canvas past the picture.
+        // the clamped edge also fills the guard band past the picture.
         scale.edgeMode = .clamp
+        self.barsY = barsY
+        self.barsCbCr = barsCbCr
         self.maxBuffers = maxBuffers
     }
 
@@ -288,10 +299,20 @@ final class MetalResizeBackend: ViewerResizeBackend {
             completion(nil)
             return
         }
+        let fillsCanvas = placement.width == target.width && placement.height == target.height
+        if !fillsCanvas {
+            encodeScale(commandBuffer, from: barsY, to: outputY.texture,
+                        region: MTLRegionMake2D(0, 0, target.width, target.height), clip: nil)
+            encodeScale(commandBuffer, from: barsCbCr, to: outputCbCr.texture,
+                        region: MTLRegionMake2D(0, 0, target.width / 2, target.height / 2), clip: nil)
+        }
+        let guarded = placement.guarded(canvasWidth: target.width, canvasHeight: target.height)
         encodeScale(commandBuffer, from: sourceY.texture, to: outputY.texture,
-                    region: MTLRegionMake2D(placement.x, placement.y, placement.width, placement.height))
+                    region: MTLRegionMake2D(placement.x, placement.y, placement.width, placement.height),
+                    clip: MTLRegionMake2D(guarded.x, guarded.y, guarded.width, guarded.height))
         encodeScale(commandBuffer, from: sourceCbCr.texture, to: outputCbCr.texture,
-                    region: MTLRegionMake2D(placement.x / 2, placement.y / 2, placement.width / 2, placement.height / 2))
+                    region: MTLRegionMake2D(placement.x / 2, placement.y / 2, placement.width / 2, placement.height / 2),
+                    clip: MTLRegionMake2D(guarded.x / 2, guarded.y / 2, guarded.width / 2, guarded.height / 2))
         // The CVMetalTexture wrappers must outlive the GPU work.
         let retained = [sourceY, sourceCbCr, outputY, outputCbCr]
         commandBuffer.addCompletedHandler { buffer in
@@ -302,13 +323,13 @@ final class MetalResizeBackend: ViewerResizeBackend {
         commandBuffer.commit()
     }
 
-    /// Fits `source` into `region` of the destination and writes the whole destination, so the
-    /// clamped edge fills the rest. Without a scale transform, MPS scales the source to the whole
-    /// destination and the clip rect only limits what it writes, which stretches and cuts a
-    /// picture meant for a region.
+    /// Fits `source` into `region` of the destination and writes only `clip` (the whole
+    /// destination when nil); the clamped edge fills `clip` past `region`. Without a scale
+    /// transform, MPS scales the source to the whole destination and the clip rect only limits
+    /// what it writes, which stretches and cuts a picture meant for a region.
     private func encodeScale(_ commandBuffer: MTLCommandBuffer, from source: MTLTexture,
-                             to destination: MTLTexture, region target: MTLRegion) {
-        scale.clipRect = MTLRegionMake2D(0, 0, destination.width, destination.height)
+                             to destination: MTLTexture, region target: MTLRegion, clip: MTLRegion?) {
+        scale.clipRect = clip ?? MTLRegionMake2D(0, 0, destination.width, destination.height)
         var transform = MPSScaleTransform(
             scaleX: Double(target.size.width) / Double(source.width),
             scaleY: Double(target.size.height) / Double(source.height),
@@ -350,5 +371,17 @@ final class MetalResizeBackend: ViewerResizeBackend {
         poolDimensions = dimensions
         poolFormat = format
         return next
+    }
+
+    private static func constantTexture(device: MTLDevice, format: MTLPixelFormat,
+                                        bytes: [UInt8], bytesPerRow: Int) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: 2, height: 2, mipmapped: false)
+        descriptor.usage = .shaderRead
+        guard let texture = device.makeTexture(descriptor: descriptor) else { return nil }
+        bytes.withUnsafeBytes { raw in
+            texture.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                            withBytes: raw.baseAddress!, bytesPerRow: bytesPerRow)
+        }
+        return texture
     }
 }

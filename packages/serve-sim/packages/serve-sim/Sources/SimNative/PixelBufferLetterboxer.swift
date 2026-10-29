@@ -116,9 +116,10 @@ final class PixelBufferLetterboxer {
         return output
     }
 
-    /// Repeats the picture's last column and row into the unused canvas on the right and bottom,
-    /// so a client that scales the frame down blends the picture's edge with itself, not with
-    /// black. Only for a top-left placement, which leaves no unused area on the left or top.
+    /// Repeats the picture's last column and row over `LetterboxPlacement.edgeGuard` pixels of the
+    /// unused canvas on the right and bottom, so a client that scales the frame down blends the
+    /// picture's edge with itself, not with black. The rest stays black. Only for a top-left
+    /// placement, which leaves no unused area on the left or top.
     static func extendPictureEdges(_ buffer: CVPixelBuffer, placement: LetterboxPlacement) {
         let width = CVPixelBufferGetWidth(buffer)
         let height = CVPixelBufferGetHeight(buffer)
@@ -136,16 +137,19 @@ final class PixelBufferLetterboxer {
             let planeHeight = planar ? CVPixelBufferGetHeightOfPlane(buffer, plane) : height
             // Luma is 1 byte, interleaved CbCr 2 bytes at half size, BGRA 4 bytes.
             let bytesPerPixel = planar ? (plane == 0 ? 1 : 2) : 4
+            let guarded = placement.guarded(canvasWidth: width, canvasHeight: height)
             let right = placement.width * planeWidth / width
             let bottom = placement.height * planeHeight / height
+            let guardRight = guarded.width * planeWidth / width
+            let guardBottom = guarded.height * planeHeight / height
             guard right > 0, bottom > 0 else { continue }
-            for y in 0..<bottom where right < planeWidth {
+            for y in 0..<bottom where right < guardRight {
                 let row = base + y * stride
                 let edge = row + (right - 1) * bytesPerPixel
-                for x in right..<planeWidth { (row + x * bytesPerPixel).update(from: edge, count: bytesPerPixel) }
+                for x in right..<guardRight { (row + x * bytesPerPixel).update(from: edge, count: bytesPerPixel) }
             }
             let lastRow = base + (bottom - 1) * stride
-            for y in bottom..<planeHeight { (base + y * stride).update(from: lastRow, count: planeWidth * bytesPerPixel) }
+            for y in bottom..<guardBottom { (base + y * stride).update(from: lastRow, count: guardRight * bytesPerPixel) }
         }
     }
 
