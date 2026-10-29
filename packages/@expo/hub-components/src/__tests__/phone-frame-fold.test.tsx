@@ -49,7 +49,7 @@ const ModelScreen = ({ sizeMode }: { sizeMode?: string }) => (
 );
 
 describe("PhoneFrame with an iPhone Duo", () => {
-  test("uses serve-sim sizing for the flat cover and landscape inner display, with an animated handoff", () => {
+  test("sizes the flat cover and landscape inner display like other devices, with an animated handoff", () => {
     const render = (width: number, height: number) =>
       renderToStaticMarkup(
         <PhoneFrame
@@ -59,8 +59,8 @@ describe("PhoneFrame with an iPhone Duo", () => {
           displayScreen={(screen) => screen ?? null}
         />,
       );
-    expect(render(1398, 2034)).toContain("width:min(320px,");
-    expect(render(2853, 2007)).toContain("width:min(620px,");
+    expect(render(1398, 2034)).toContain("width:min(480px,");
+    expect(render(2853, 2007)).toContain("width:min(682.3318385650225px,");
     expect(render(2853, 2007)).toContain("aspect-ratio 250ms ease");
   });
   test("renders the injected 3D screen on a square stage without a screen clip", () => {
