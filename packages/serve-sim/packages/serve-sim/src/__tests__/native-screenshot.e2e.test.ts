@@ -20,8 +20,11 @@ describe.skipIf(!udid)("native full-resolution screenshots", () => {
     });
     try {
       await capture.start();
-      const display = await capture.activeScreenId();
       const screen = await capture.screenSize();
+      // This low-level export takes an explicit port ID. Default display election (including
+      // legacy single-screen profiles) is covered by the HTTP and host-action suites.
+      expect(screen.screenId).toBeGreaterThan(0);
+      const display = screen.screenId!;
       const screenshots = await Promise.all(
         Array.from({ length: 8 }, () => capture.screenshot(display)),
       );
@@ -42,12 +45,15 @@ describe.skipIf(!udid)("native full-resolution screenshots", () => {
     const capture = new NativeCapture(udid!);
     try {
       await capture.start();
-      const display = await capture.activeScreenId();
-      dimensions(await capture.screenshot(display));
+      const screen = await capture.screenSize();
+      expect(screen.screenId).toBeGreaterThan(0);
+      dimensions(await capture.screenshot(screen.screenId!));
       await capture.suspendForReboot();
-      await expect(capture.screenshot(display)).rejects.toThrow();
+      await expect(capture.screenshot(screen.screenId!)).rejects.toThrow();
       await capture.resumeAfterReboot();
-      dimensions(await capture.screenshot(await capture.activeScreenId()));
+      const resumed = await capture.screenSize();
+      expect(resumed.screenId).toBeGreaterThan(0);
+      dimensions(await capture.screenshot(resumed.screenId!));
     } finally {
       await capture.stop();
     }
