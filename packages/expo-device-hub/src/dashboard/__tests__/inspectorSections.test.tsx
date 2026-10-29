@@ -1247,7 +1247,8 @@ test("disables the orientation select with the same reason as Rotate", () => {
       { recordingControlsLocked: true, screenRecording: "unknown" },
       "Rotation is unavailable until recording status is known.",
     ],
-    [{ status: "connecting" }, "Rotation is unavailable until the device stream is live."],
+    [{ status: "reconnecting" }, "Rotation is unavailable until the simulator stream is live."],
+    [{ platform: "android", status: "reconnecting" }, null],
   ] as const) {
     const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
     const select = selectMarkup(html, "Orientation");

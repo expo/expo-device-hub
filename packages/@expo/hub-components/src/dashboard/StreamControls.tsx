@@ -2,6 +2,7 @@ import { type ReactNode } from "react";
 
 import {
   type ConnectionStatus,
+  type DevicePlatform,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
@@ -75,6 +76,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
+  platform,
   status = "streaming",
   recording = null,
   recordingControlsLocked = false,
@@ -97,7 +99,9 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** The client's connection status. Rotate waits for a live stream, like the Orientation select. */
+  /** The client's platform. On iOS, Rotate waits for a live stream, like the Orientation select. */
+  platform?: DevicePlatform;
+  /** The client's connection status. */
   status?: ConnectionStatus;
   /** Only picks the explanation; `recordingControlsLocked` decides whether Rotate is locked. */
   recording?: DeviceScreenRecordingStatus | null;
@@ -114,6 +118,7 @@ export function StreamControls({
 }) {
   const themeDisabled = appearanceDisabled || appearance === null;
   const rotateUnavailable = rotationUnavailableReason({
+    platform,
     status,
     recording,
     recordingControlsLocked,
