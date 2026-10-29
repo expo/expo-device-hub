@@ -30,7 +30,7 @@ Krystof Woldrich asked for this behavior on 2026-10-21, through the agent brief 
 
 A screen session is one connection with one surface and one media element kind [observed: `screenSessionKey` in `useIosDevice.ts` and `useAndroidDevice.ts`]:
 
-- the connection: server URL, device, and session token;
+- the connection: server URL, device, and session token. On iOS the device is the one `/api` resolved, or the requested one until `/api` answers, so a different simulator that `/api` picks when no device is requested is a new session [observed: `knownConfig?.device ?? targetDevice` in `useIosDevice.ts`];
 - the surface: the flat screen, or separate displays (iOS only; the 3D preview attaches them);
 - the media element: `img` (MJPEG), `canvas` (H.264), or `video` (WebRTC).
 
