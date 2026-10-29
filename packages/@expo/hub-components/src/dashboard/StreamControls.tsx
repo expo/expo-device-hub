@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 
 import {
-  areRecordingControlsLocked,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
@@ -70,6 +69,7 @@ export function StreamControls({
   onRotate,
   onSave,
   recording = null,
+  recordingControlsLocked = false,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -84,7 +84,10 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  /** Only picks the explanation; `recordingControlsLocked` decides whether Rotate is locked. */
   recording?: DeviceScreenRecordingStatus | null;
+  /** The client's `recordingControlsLocked`. */
+  recordingControlsLocked?: boolean;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -96,7 +99,6 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = areRecordingControlsLocked(recording);
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
@@ -181,11 +183,11 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            recording === "unknown"
-              ? "Rotation is unavailable until recording status is known."
-              : recordingControlsLocked
-                ? "Rotation is unavailable while recording."
-                : undefined
+            !recordingControlsLocked
+              ? undefined
+              : recording === "unknown"
+                ? "Rotation is unavailable until recording status is known."
+                : "Rotation is unavailable while recording."
           }
           aria-disabled={recordingControlsLocked || undefined}
           onClick={recordingControlsLocked ? undefined : onRotate}
