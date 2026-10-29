@@ -13,7 +13,12 @@ function buttonTags(markup: string) {
 describe("StreamControls", () => {
   test("locks Rotate and explains the pending recording check", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="unknown" />,
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        recording="unknown"
+        recordingControlsLocked
+      />,
     );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -21,7 +26,12 @@ describe("StreamControls", () => {
   });
   test("explains why Rotate is unavailable during recording without disabling app controls", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="recording" />,
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        recording="recording"
+        recordingControlsLocked
+      />,
     );
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
@@ -31,6 +41,23 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
+  test.each(["recording", "unknown"] as const)(
+    "follows the client's lock, not the %s status, and explains only a locked Rotate",
+    (recording) => {
+      const markup = renderToStaticMarkup(
+        <StreamControls
+          appearance="light"
+          onToggleAppearance={() => {}}
+          onRotate={() => {}}
+          recording={recording}
+          recordingControlsLocked={false}
+        />,
+      );
+      const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+      expect(rotate).not.toContain("aria-disabled");
+      expect(rotate).not.toContain("Rotation is unavailable");
+    },
+  );
   test("groups Save, Theme, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />,
@@ -136,6 +163,41 @@ describe("StreamControls", () => {
 });
 
 describe("StreamPanel", () => {
+  test("locks Rotate from the client's recordingControlsLocked, not from the recording status", () => {
+    const device: Device = {
+      id: "android",
+      name: "Pixel 9",
+      version: "Android 16",
+      platform: "android",
+      booted: true,
+      physical: false,
+      supported: true,
+      deviceFrame: null,
+    };
+    const rotate = (overrides: Partial<DeviceClient>) =>
+      buttonTags(
+        renderToStaticMarkup(
+          <StreamPanel
+            device={device}
+            client={
+              {
+                status: "streaming",
+                capabilities: { clipboard: false },
+                clipboardPending: null,
+                screenRecording: "recording",
+                recordingControlsLocked: false,
+                ...overrides,
+              } as DeviceClient
+            }
+            DeviceScreen={() => null}
+            displayScreen={() => null}
+          />,
+        ),
+      ).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate({})).not.toContain("aria-disabled");
+    expect(rotate({ recordingControlsLocked: true })).toContain('aria-disabled="true"');
+  });
+
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {
     let onCopy: DeviceScreenProps["onCopy"];
     let copies = 0;

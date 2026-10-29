@@ -79,7 +79,7 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { parseScreenRecordingStatus } from "./screen-recording";
+import { areRecordingControlsLocked, parseScreenRecordingStatus } from "./screen-recording";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { type WebRtcIceServer, useWebRtcStream } from "./useWebRtcStream";
@@ -136,6 +136,8 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+const RECORDING_LOCKED_MESSAGE =
+  "The orientation was not changed because a screen recording started. Change it after the recording.";
 // Servers that report `orientation` in `/api` lock every pose; older ones only portrait and
 // landscape (rotation 0 or 1; rotation 1 turns a phone counterclockwise, `landscape_right`).
 const ORIENTATION_CAPABILITIES: { orientations: readonly DeviceOrientation[] } = {
@@ -345,6 +347,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   if (recordingSnapshot.scope !== deviceScope) {
     setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
   }
+  const screenRecording =
+    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : active ? "unknown" : null;
+  // Turning the device or changing the stream can end the host recording, so those controls are
+  // locked while it could break (LLP 0013#recording-lock).
+  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
+  const recordingLockedRef = useRef(recordingControlsLocked);
+  useLayoutEffect(() => {
+    recordingLockedRef.current = recordingControlsLocked;
+  }, [recordingControlsLocked]);
   // Whether this server reports the display orientation, and its last report. Null until the
   // first `/api` answer for this device.
   const [orientationReport, setOrientationReport] = useState<{
@@ -513,6 +524,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         url: string;
         fetch: typeof sessionFetch;
       }) => {
+        // A choice queued behind another one must not go out once a recording starts.
+        if (recordingLockedRef.current) throw new Error(RECORDING_LOCKED_MESSAGE);
         const response = await request.fetch(request.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -589,7 +602,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Rotate continues the same four-pose cycle as iOS from the chosen or reported pose. Without
   // a pose (older servers), it locks the opposite of the streamed frame's aspect; locking
   // rather than `auto` turns the display even when auto-rotate is off.
-  // Before the first `/api` answer it also uses the aspect, which every server accepts.
+  // Before the first `/api` answer the recording lock ignores Rotate, because the recording
+  // status is still unknown (LLP 0013#recording-lock).
   const rotate = useCallback(() => {
     if (orientationCapabilities === ORIENTATION_CAPABILITIES && orientation) {
       sendOrientation(nextOrientation(orientation), nextOrientation(orientation));
@@ -2262,6 +2276,33 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ],
   );
 
+  // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
+  // Ignore the controls that can end the recording, in one place, while it could break.
+  const recordingSafeControls = useMemo(() => {
+    const unlessRecording =
+      <Args extends unknown[]>(control: (...args: Args) => void) =>
+      (...args: Args) => {
+        if (!recordingLockedRef.current) control(...args);
+      };
+    return {
+      rotate: unlessRecording(rotate),
+      setOrientation: unlessRecording(setOrientation),
+      updateStreamSettings: unlessRecording(updateStreamSettings),
+      setStreamSource: unlessRecording(setStreamSource),
+      setGrpcImageMode: unlessRecording(setGrpcImageMode),
+      setGrpcEncoder: unlessRecording(setGrpcEncoder),
+      setGrpcInputSource: unlessRecording(setGrpcInputSource),
+    };
+  }, [
+    rotate,
+    setOrientation,
+    updateStreamSettings,
+    setStreamSource,
+    setGrpcImageMode,
+    setGrpcEncoder,
+    setGrpcInputSource,
+  ]);
+
   return {
     platform: "android",
     // The transport can stay live while the server stages new stream settings.
@@ -2310,20 +2351,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
-    updateStreamSettings,
+    updateStreamSettings: recordingSafeControls.updateStreamSettings,
     streamSource,
-    screenRecording:
-      recordingSnapshot.scope === deviceScope
-        ? recordingSnapshot.status
-        : active
-          ? "unknown"
-          : null,
+    screenRecording,
+    recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
-    setStreamSource,
-    setGrpcImageMode,
-    setGrpcEncoder,
-    setGrpcInputSource,
+    setStreamSource: recordingSafeControls.setStreamSource,
+    setGrpcImageMode: recordingSafeControls.setGrpcImageMode,
+    setGrpcEncoder: recordingSafeControls.setGrpcEncoder,
+    setGrpcInputSource: recordingSafeControls.setGrpcInputSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: "h264",
@@ -2338,12 +2375,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendKey,
     pressButton,
     reload,
-    rotate,
+    rotate: recordingSafeControls.rotate,
     orientation,
     orientationPending: chosenOrientation?.answeredAt === null,
     orientationError:
       orientationFailureState?.scope === deviceScope ? orientationFailureState.message : null,
-    setOrientation,
+    setOrientation: recordingSafeControls.setOrientation,
     screenshot,
     appearance,
     setAppearance,

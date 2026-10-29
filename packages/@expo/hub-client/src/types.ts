@@ -631,6 +631,17 @@ export interface DeviceClient {
   inputError: string | null;
   /** Host recording status; unknown until metadata loads, null when no recording was requested. */
   screenRecording: DeviceScreenRecordingStatus | null;
+  /**
+   * True while a change could end the host recording: its status is unknown, waiting, recording
+   * or finalizing. Calls to `rotate`, `setOrientation`, `updateStreamSettings`,
+   * `setStreamSource`, `setGrpcImageMode`, `setGrpcEncoder` and `setGrpcInputSource` are
+   * silently ignored meanwhile, so UIs can disable those controls from this one value. Only
+   * Android reports recordings today.
+   *
+   * Temporary: Android's recording restarts with the encoder. Once recordings survive rotation
+   * and stream changes, this lock goes away.
+   */
+  recordingControlsLocked: boolean;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
   /** Best-effort frames-per-second (0 when unavailable). */

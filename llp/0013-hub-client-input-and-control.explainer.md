@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-29 (orientation)
+**Revised:** 2026-10-29 (orientation; recording lock)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -155,7 +155,7 @@ Clipboard fallbacks belong to the selected device and are discarded on a selecti
 
 - **iOS** sends the pose through the input queue, as Rotate does, so the rotation cursor records it only on delivery ([LLP 0003](0003-serve-sim-http-api.spec.md#rotation-readback)). The choice shows until the helper reports that pose or the 1.5 s readback grace ends. A choice that the queue has not sent after 2 s is reported as failed [observed: `useIosDevice.ts`].
 - **Android** sends `POST /api/orientation` one request at a time. A choice made while one is in flight replaces the queued one, so requests cannot reach serve-emu out of order, and only the newest request's answer or failure is shown [observed: `latest-writer.ts`]. One writer serves the hook's lifetime, and each request carries its own URL, so requests do not overlap across a device or token change either. The answer's `pose` replaces the choice. A `/api` report that started after the answer replaces it in turn once it shows that pose, or after the 1.5 s readback grace, because a poll can still return the pose from before the lock and an app can keep its own orientation [observed: `useAndroidDevice.ts`].
-- **Older serve-emu servers** do not send `orientation` in `GET /api`. HubClient then offers only `portrait` and `landscape_right` and sends them as `portrait` and `landscape`, which lock rotation 0 and 1. Rotate on those servers, and on any server before its first `/api` answer, locks the opposite of the frame's aspect [observed: `useAndroidDevice.ts`].
+- **Older serve-emu servers** do not send `orientation` in `GET /api`. HubClient then offers only `portrait` and `landscape_right` and sends them as `portrait` and `landscape`, which lock rotation 0 and 1. Rotate on those servers locks the opposite of the frame's aspect. Before a server's first `/api` answer, the recording status is unknown, so the [recording lock](#recording-lock) ignores Rotate until the status arrives [observed: `useAndroidDevice.ts`].
 - **`screen.framesUpright`**: serve-emu frames already show the display as it faces, so Android sets `framesUpright` and `DeviceScreen` never turns the video. serve-sim can send raw portrait frames for a turned simulator, which `DeviceScreen` turns [observed: `streamGeometry` in `orientation.ts`]. The reported pose comes from the 1.5 s `/api` poll, and the frame size changes first, so Android adds the pose to `screen` only while both show the same portrait or landscape shape [observed: `useAndroidDevice.ts`].
 
 ## Single-device sessions
@@ -187,6 +187,12 @@ may reconnect under its original serial
 The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
 explains helper and control-channel restrictions. A single-device session is
 an application policy layered on authentication, not host-wide device isolation.
+
+## Recording lock
+
+On Android, turning the device or changing the stream can end the host screen recording. The Hub README says that rotation invalidates the recording and that the recording continues across a capture restart only when the encoder configuration is unchanged, and the Device options section disabled these controls "because this would interrupt the recording" before this lock moved into the client [observed: `packages/expo-device-hub/README.md`, `DeviceOptionsSection.tsx` on `main` before this change]. `DeviceClient.recordingControlsLocked` is true while the recording status is unknown, waiting, recording or finalizing. `rotate`, `setOrientation`, `updateStreamSettings`, `setStreamSource` and the three gRPC setters are silently ignored meanwhile, so the Hub dashboard disables its controls from this one value instead of checking the status itself [observed: `useAndroidDevice.ts`, `DeviceOptionsSection.tsx`, `StreamControls.tsx`, `StreamOptionsSection.tsx`]. An orientation choice that waits behind another request is dropped, with `orientationError`, when a recording starts before it goes out [observed: `useAndroidDevice.ts`]. iOS reports no recording and never locks.
+
+The lock is temporary. The team plans to record the screen in a way that survives rotation and stream changes; then this lock can go [confirmed: Krystof Woldrich, 2026-10-27].
 
 ## Hub shutdown
 

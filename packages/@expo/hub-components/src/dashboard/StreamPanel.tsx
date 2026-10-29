@@ -164,6 +164,7 @@ export function StreamPanel({
           >
             <StreamControls
               recording={client.screenRecording}
+              recordingControlsLocked={client.recordingControlsLocked}
               appearance={appearance}
               appearanceDisabled={appearanceDisabled}
               onToggleAppearance={() => {

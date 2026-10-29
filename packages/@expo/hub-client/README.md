@@ -227,6 +227,8 @@ client.setOrientation("landscape_left");
 // client.screen.orientation is the pose of the shown frames. client.screen.framesUpright is
 // true when the backend already sends upright frames (serve-emu), so DeviceScreen never turns
 // them.
+// While an Android recording could break, client.recordingControlsLocked is true and rotate,
+// setOrientation and the stream setters are silently ignored. Disable those controls from it.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
