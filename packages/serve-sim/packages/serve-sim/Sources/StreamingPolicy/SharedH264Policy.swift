@@ -164,6 +164,20 @@ public struct LetterboxPlacement: Equatable {
         y = ((canvasHeight - height) / 2) & ~1
     }
 
+    /// Columns or rows past a top-left picture that repeat its edge. A client that scales the
+    /// frame down can blend this far past the picture's edge; the rest of the unused canvas
+    /// stays black, so it costs the encoder nothing while the picture changes.
+    public static let edgeGuard = 8
+
+    /// The picture with its edge guard, clipped to the canvas.
+    public func guarded(canvasWidth: Int, canvasHeight: Int) -> LetterboxPlacement {
+        LetterboxPlacement(
+            x: x, y: y,
+            width: width < canvasWidth ? min(canvasWidth - x, width + Self.edgeGuard) : width,
+            height: height < canvasHeight ? min(canvasHeight - y, height + Self.edgeGuard) : height
+        )
+    }
+
     public init(x: Int, y: Int, width: Int, height: Int) {
         self.x = x
         self.y = y

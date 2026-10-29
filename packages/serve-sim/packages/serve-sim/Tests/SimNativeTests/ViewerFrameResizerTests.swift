@@ -221,7 +221,7 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(counters.backend, "primary")
     }
 
-    func testMetalBackendScalesToTheCanvasAndRepeatsTheEdgeIntoUnusedColumns() throws {
+    func testMetalBackendScalesToTheCanvasAndLetterboxesWithAGuardedEdge() throws {
         guard let backend = MetalResizeBackend(maxBuffers: 4) else {
             throw XCTSkip("Metal is not available on this host")
         }
@@ -235,15 +235,17 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(luma(fit, x: 1, y: 1), 235, accuracy: 2)
         XCTAssertEqual(chroma(fit, x: 15, y: 30), 64, accuracy: 2)
 
-        // Wider canvas: the picture starts at the left edge; the unused columns on the right
-        // repeat its edge, so no black shows where a client's scaling reaches past the picture.
+        // Wider canvas: the picture starts at the left edge, its edge repeats over the guard
+        // band, and the rest of the unused columns are black bars.
         let boxed = try XCTUnwrap(resize(source, to: Dimensions(width: 160, height: 120), with: backend))
         XCTAssertEqual(boxed.dimensions, Dimensions(width: 160, height: 120))
         XCTAssertEqual(luma(boxed, x: 1, y: 60), 235, accuracy: 2, "picture at the left edge")
         XCTAssertEqual(luma(boxed, x: 58, y: 60), 235, accuracy: 2)
-        XCTAssertEqual(luma(boxed, x: 100, y: 60), 235, accuracy: 2, "unused columns repeat the edge")
+        XCTAssertEqual(luma(boxed, x: 64, y: 60), 235, accuracy: 2, "guard band repeats the edge")
+        XCTAssertEqual(luma(boxed, x: 100, y: 60), 16, accuracy: 1, "black bar past the guard")
         XCTAssertEqual(chroma(boxed, x: 15, y: 30), 64, accuracy: 2)
-        XCTAssertEqual(chroma(boxed, x: 60, y: 30), 64, accuracy: 2)
+        XCTAssertEqual(chroma(boxed, x: 32, y: 30), 64, accuracy: 2)
+        XCTAssertEqual(chroma(boxed, x: 60, y: 30), 128, accuracy: 1, "bars are neutral")
     }
 
     func testMetalBackendKeepsBothPictureEdges() throws {
@@ -298,14 +300,16 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(letterboxer.cpuFrames, 1)
         XCTAssertEqual(letterboxer.transferFrames, 0)
         XCTAssertEqual(luma(first, x: 780, y: 568), 235, accuracy: 3, "right edge kept")
-        XCTAssertEqual(luma(first, x: 790, y: 568), 235, accuracy: 3, "edge repeated, not centered bars")
+        XCTAssertEqual(luma(first, x: 785, y: 568), 235, accuracy: 3, "edge repeated over the guard band")
+        XCTAssertEqual(luma(first, x: 795, y: 568), 16, accuracy: 1, "black bar past the guard, on the right only")
+        XCTAssertEqual(luma(first, x: 2, y: 568), 128, accuracy: 3, "picture at the left edge")
 
         // Later frames skip VideoToolbox, top-left and centered alike.
         let second = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
         _ = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136))
         XCTAssertEqual(attempts, 1, "the failed transfer is not retried")
         XCTAssertEqual(letterboxer.cpuFrames, 3)
-        XCTAssertEqual(luma(second, x: 790, y: 568), 235, accuracy: 3)
+        XCTAssertEqual(luma(second, x: 785, y: 568), 235, accuracy: 3)
     }
 
     func testFailedTopLeftTransferWithoutCPUFallbackDropsFramesWithoutRetrying() {
@@ -344,9 +348,10 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(luma(output, x: 390, y: 568), 128, accuracy: 3, file: file, line: line)
         XCTAssertEqual(luma(output, x: 772, y: 568), 235, accuracy: 3, "right mark is kept", file: file, line: line)
         XCTAssertEqual(luma(output, x: 780, y: 568), 235, accuracy: 3, file: file, line: line)
-        XCTAssertEqual(luma(output, x: 790, y: 568), 235, accuracy: 3, "unused columns repeat the right edge", file: file, line: line)
-        XCTAssertEqual(luma(output, x: 797, y: 568), 235, accuracy: 3, file: file, line: line)
-        XCTAssertEqual(chroma(output, x: 396, y: 284), 128, accuracy: 2, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 785, y: 568), 235, accuracy: 3, "guard band repeats the right edge", file: file, line: line)
+        XCTAssertEqual(luma(output, x: 789, y: 568), 235, accuracy: 3, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 792, y: 568), 16, accuracy: 1, "black bar past the guard", file: file, line: line)
+        XCTAssertEqual(chroma(output, x: 397, y: 284), 128, accuracy: 2, file: file, line: line)
         XCTAssertEqual(luma(output, x: 390, y: 1_134), 128, accuracy: 3, "full height", file: file, line: line)
     }
 
