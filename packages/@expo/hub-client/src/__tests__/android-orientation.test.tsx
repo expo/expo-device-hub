@@ -225,17 +225,17 @@ test("Android ignores a report from a poll that started before the answer, also 
   expect(client().orientation).toBe("landscape_left");
 });
 
-test("Android Rotate before the first /api answer locks the opposite of the frame's aspect", async () => {
-  const { client, locks, lockDevices, silence, switchDevice, settle } = await mount({
+test("Android Rotate before the first /api answer waits, because the recording status is unknown", async () => {
+  const { client, locks, silence, switchDevice, settle } = await mount({
     orientation: "portrait",
   });
   silence("emulator-5556", true);
   await switchDevice("emulator-5556");
   expect(client().capabilities.orientation).toBe(false);
+  expect(client().recordingControlsLocked).toBe(true);
   await act(async () => client().rotate());
   await settle();
-  expect(locks()).toEqual(["landscape"]);
-  expect(lockDevices()).toEqual(["emulator-5556"]);
+  expect(locks()).toEqual([]);
 });
 
 test("Android sends one request at a time across a device change and shows only the new device's answer", async () => {
