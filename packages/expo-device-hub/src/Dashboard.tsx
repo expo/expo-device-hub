@@ -13,6 +13,8 @@ import {
 import {
   EmptyState,
   InspectorSections,
+  MOBILE_CORNER_BUTTON_TOP,
+  MOBILE_SIDEBAR_TOP_INSET,
   ResizeHandle,
   ServerConnectionOverlay,
   Sidebar,
@@ -44,7 +46,11 @@ import {
 } from "./dashboard/deviceVisibility";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDeviceLists } from "./dashboard/useDevices";
-import { FloatingSidebarToggle } from "./dashboard/FloatingSidebarToggle";
+import {
+  FloatingSidebarToggle,
+  floatingSidebarToggleVisible,
+} from "./dashboard/FloatingSidebarToggle";
+import { pageBackground } from "./dashboard/pageBackground";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
@@ -269,6 +275,24 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     return () => root.classList.remove("dark-theme");
   }, [scheme]);
 
+  // On a phone the dashboard fits the visible viewport, so the page behind it shows under
+  // the browser's translucent bottom bars. Paint it the color of the surface above.
+  const background = pageBackground({
+    mobile: viewport.mobile,
+    sidebarOverlay: sidebars.leftOverlay,
+  });
+  useEffect(() => {
+    if (!background) return;
+    const targets = [document.documentElement, document.body];
+    const previous = targets.map((element) => element.style.backgroundColor);
+    for (const element of targets) element.style.backgroundColor = background;
+    return () => {
+      targets.forEach((element, index) => {
+        element.style.backgroundColor = previous[index] ?? "";
+      });
+    };
+  }, [background]);
+
   // Keep a valid selection — default to the first device once the list loads.
   // Selecting a device streams it (its helper is attached on demand); the
   // sidebar lists only booted devices, so the default selection streams an
@@ -434,6 +458,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onToggle={sidebars.closeLeft}
           // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
           toggleIcon={viewport.mobile ? "close" : "sidebar"}
+          topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
           platform={platform}
           width={sidebarWidth}
         >
@@ -441,7 +466,17 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         </Sidebar>
       </SidebarOverlay>
 
-      {!sidebars.leftOpen && <FloatingSidebarToggle side="left" onClick={sidebars.openLeft} />}
+      {floatingSidebarToggleVisible({
+        sidebarOpen: sidebars.leftOpen,
+        mobile: viewport.mobile,
+        keyboardRaised: viewport.keyboardRaised,
+      }) && (
+        <FloatingSidebarToggle
+          side="left"
+          top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
+          onClick={sidebars.openLeft}
+        />
+      )}
       {connectionBlocked &&
         createPortal(
           <ServerConnectionOverlay

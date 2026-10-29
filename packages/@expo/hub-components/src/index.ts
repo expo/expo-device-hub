@@ -96,6 +96,7 @@ export { LogsSection } from "./dashboard/LogsSection";
 export { CollapsibleSection } from "./dashboard/CollapsibleSection";
 export { KeyboardSection } from "./dashboard/KeyboardSection";
 export { PhoneFrame } from "./dashboard/PhoneFrame";
+export { MOBILE_CORNER_BUTTON_TOP, MOBILE_SIDEBAR_TOP_INSET } from "./dashboard/cornerButtons";
 export {
   deviceFrameLayout,
   deviceFrameRotation,

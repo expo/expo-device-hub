@@ -25,7 +25,7 @@ import {
 } from "../primitives";
 
 const GROUP_PADDING = 4;
-const GROUP_GAP = 8;
+const GROUP_GAP = 16;
 const ICON_SIZE = 20;
 const ICON_STROKE = 1.67;
 
@@ -75,7 +75,6 @@ export function StreamControls({
   onPaste,
   onCopy,
   keyboard,
-  compact = false,
 }: {
   /** Press the device Home button. */
   onHome?: () => void;
@@ -96,8 +95,6 @@ export function StreamControls({
   onCopy?: () => void;
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
-  /** Show only the pill that holds the Keyboard toggle, to save room above a raised keyboard. */
-  compact?: boolean;
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
   const clipboardDisabled = clipboardPending !== null;
@@ -112,28 +109,26 @@ export function StreamControls({
         justifyContent: "center",
         alignItems: "center",
         columnGap: GROUP_GAP,
-        rowGap: 8,
+        rowGap: GROUP_GAP,
       }}
     >
-      {!compact && (
-        <ControlGroup>
-          <ControlButton
-            icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-            label="Save"
-            onClick={onSave}
-          />
-          <ControlButton
-            icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-            label="Home"
-            onClick={onHome}
-          />
-          <ControlButton
-            icon={<RefreshIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-            label="Reload"
-            onClick={onReload}
-          />
-        </ControlGroup>
-      )}
+      <ControlGroup>
+        <ControlButton
+          icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Save"
+          onClick={onSave}
+        />
+        <ControlButton
+          icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Home"
+          onClick={onHome}
+        />
+        <ControlButton
+          icon={<RefreshIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Reload"
+          onClick={onReload}
+        />
+      </ControlGroup>
       {(showClipboard || keyboard) && (
         <ControlGroup>
           {showClipboard && (
@@ -181,26 +176,24 @@ export function StreamControls({
           )}
         </ControlGroup>
       )}
-      {!compact && (
-        <ControlGroup>
-          <ControlButton
-            icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
-            label="Rotate"
-            tooltip={
-              recording === "unknown"
-                ? "Rotation is unavailable until recording status is known."
-                : recordingControlsLocked
-                  ? "Rotation is unavailable while recording."
-                  : undefined
-            }
-            aria-disabled={recordingControlsLocked || undefined}
-            onClick={recordingControlsLocked ? undefined : onRotate}
-            style={
-              recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
-            }
-          />
-        </ControlGroup>
-      )}
+      <ControlGroup>
+        <ControlButton
+          icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Rotate"
+          tooltip={
+            recording === "unknown"
+              ? "Rotation is unavailable until recording status is known."
+              : recordingControlsLocked
+                ? "Rotation is unavailable while recording."
+                : undefined
+          }
+          aria-disabled={recordingControlsLocked || undefined}
+          onClick={recordingControlsLocked ? undefined : onRotate}
+          style={
+            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+          }
+        />
+      </ControlGroup>
     </div>
   );
 }

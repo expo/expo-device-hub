@@ -51,6 +51,13 @@ describe("StreamControls", () => {
     );
   });
 
+  test("spaces the pills 16px apart, across and down", () => {
+    const markup = renderToStaticMarkup(<StreamControls />);
+
+    expect(markup).toContain("column-gap:16px");
+    expect(markup).toContain("row-gap:16px");
+  });
+
   test("shows one Clipboard menu before Rotate when the device offers either action", () => {
     const labels = (clipboard: { paste: boolean; copy: boolean } | false) =>
       buttonTags(renderToStaticMarkup(<StreamControls clipboard={clipboard} />)).map(
@@ -147,18 +154,6 @@ describe("StreamControls", () => {
 
     test("is absent unless the viewer passes it", () => {
       expect(labels(renderToStaticMarkup(<StreamControls />))).not.toContain("Keyboard");
-    });
-
-    test("compact mode keeps only the pill that holds Keyboard", () => {
-      const markup = renderToStaticMarkup(
-        <StreamControls compact clipboard={{ paste: true, copy: false }} keyboard={keyboard} />,
-      );
-
-      expect(labels(markup)).toEqual(["Clipboard", "Keyboard"]);
-    });
-
-    test("compact mode without Keyboard or Clipboard renders no buttons", () => {
-      expect(labels(renderToStaticMarkup(<StreamControls compact />))).toEqual([]);
     });
   });
 });

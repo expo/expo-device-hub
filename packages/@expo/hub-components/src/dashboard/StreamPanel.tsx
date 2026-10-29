@@ -9,6 +9,7 @@ import {
   type ScreenSize,
 } from "@expo/hub-client";
 import { bg, border, FloatingIconButton, FullScreenIcon, CloseIcon } from "../primitives";
+import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
@@ -163,12 +164,9 @@ export function StreamPanel({
       onCopy={() => void clipboard.copyFromSimulator()}
       keyboard={
         viewport.mobile && client.sendKeyEvents
-          ? { open: keyboardOpen && typing, onToggle: toggleKeyboard }
+          ? { open: keyboardOpen, onToggle: toggleKeyboard }
           : undefined
       }
-      // A raised keyboard hides everything but the pill that holds Keyboard. Full screen
-      // hides the whole bar, as in the serve-sim viewer.
-      compact={viewport.mobile && typing}
     />
   );
 
@@ -187,7 +185,7 @@ export function StreamPanel({
         display: "flex",
         flexDirection: "column",
         padding: viewport.mobile
-          ? `calc(${presenting ? 8 : 56}px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))`
+          ? `calc(${presenting || typing ? 8 : 56}px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))`
           : 40,
         ...(presenting
           ? ({
@@ -215,27 +213,29 @@ export function StreamPanel({
               onKeys={client.sendKeyEvents}
             />
           )}
-          <div
-            // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
-            // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
-            onMouseDownCapture={(event) => {
-              if (typing || keyboardOpen) event.preventDefault();
-            }}
-            style={{
-              position: "absolute",
-              top: "calc(28px + env(safe-area-inset-top, 0px))",
-              right: 24,
-              zIndex: 3,
-            }}
-          >
-            <FloatingIconButton
-              ref={fullScreenRef}
-              icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
-              label={presenting ? "Exit full screen" : "Full screen"}
-              aria-pressed={presenting}
-              onClick={() => setPresentation(!presenting)}
-            />
-          </div>
+          {!typing && (
+            <div
+              // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
+              // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
+              onMouseDownCapture={(event) => {
+                if (typing || keyboardOpen) event.preventDefault();
+              }}
+              style={{
+                position: "absolute",
+                top: `calc(${MOBILE_CORNER_BUTTON_TOP}px + env(safe-area-inset-top, 0px))`,
+                right: 24,
+                zIndex: 3,
+              }}
+            >
+              <FloatingIconButton
+                ref={fullScreenRef}
+                icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
+                label={presenting ? "Exit full screen" : "Full screen"}
+                aria-pressed={presenting}
+                onClick={() => setPresentation(!presenting)}
+              />
+            </div>
+          )}
         </>
       )}
       <div
@@ -328,9 +328,9 @@ export function StreamPanel({
           }}
           style={{
             flexShrink: 0,
-            // Full screen hides the bar. While typing, only the Keyboard pill stays, so the
-            // keyboard can be dismissed; without a Keyboard toggle there is nothing to keep.
-            display: presenting || (typing && !client.sendKeyEvents) ? "none" : "flex",
+            // Full screen and a raised keyboard hide the bar to give the device room; the
+            // phone's own keyboard controls dismiss the keyboard.
+            display: presenting || typing ? "none" : "flex",
             justifyContent: "center",
           }}
         >

@@ -29,6 +29,7 @@ export function Sidebar({
   onAddDevice,
   onToggle,
   toggleIcon = "sidebar",
+  topInset = 32,
   platform,
   width = 320,
   children,
@@ -55,6 +56,8 @@ export function Sidebar({
   onToggle?: () => void;
   /** Glyph of that toggle: `"close"` for a full-screen overlay that is dismissed. */
   toggleIcon?: "sidebar" | "close";
+  /** Space above the header in px. A phone passes less so the header lines up with its corner buttons. */
+  topInset?: number;
   /** Restrict the sidebar to one platform. Both sections render by default. */
   platform?: Platform;
   /** Column width in px, driven by the resize handle. Defaults to 320. */
@@ -71,7 +74,7 @@ export function Sidebar({
         flexShrink: 0,
         height: "var(--hub-viewport-height, 100vh)",
         boxSizing: "border-box",
-        padding: "32px 0 0",
+        padding: `${topInset}px 0 0`,
         backgroundColor: bg.default,
         overflow: "hidden",
       }}
