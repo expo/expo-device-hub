@@ -48,12 +48,15 @@ export type LogSidebarProps = {
   width?: number;
 };
 
+/** Props that feed the inspector sections, without the column chrome. */
+export type InspectorSectionsProps = Omit<LogSidebarProps, "onToggle" | "width">;
+
 /**
- * Right column: a compact inspector for the selected device, rendered directly
- * on the dashboard canvas so it matches the existing sidebar treatment.
+ * The inspector for the selected device: current app, device and stream options,
+ * and the other capability sections, ending with the logs. {@link LogSidebar}
+ * wraps it in a column; the dashboard's left sidebar embeds it below the device lists.
  */
-export function LogSidebar({
-  onToggle,
+export function InspectorSections({
   client,
   device,
   showDeviceFrame = true,
@@ -67,8 +70,7 @@ export function LogSidebar({
   onRemove,
   clipboardRequest,
   onClipboardRequestHandled,
-  width = 400,
-}: LogSidebarProps) {
+}: InspectorSectionsProps) {
   const deviceFrame = device
     ? {
         available: isDeviceFrameProfileId(device.deviceFrame),
@@ -79,6 +81,54 @@ export function LogSidebar({
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;
 
+  return (
+    <>
+      <CurrentAppSection client={client} />
+      {(client?.capabilities.deviceSettings ||
+        client?.platform === "android" ||
+        deviceFrame ||
+        (client && (onShutdown || onRemoveDevice))) && (
+        <DeviceOptionsSection
+          client={client}
+          deviceFrame={deviceFrame}
+          showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+          onShutdown={onShutdown}
+          onRemove={onRemoveDevice}
+        />
+      )}
+      {client?.streamCapabilities && (
+        <StreamOptionsSection
+          client={client}
+          streamMode={streamMode}
+          httpCodec={httpCodec}
+          streamModeAvailability={streamModeAvailability}
+          onStreamModeChange={onStreamModeChange}
+          onHttpCodecChange={onHttpCodecChange}
+        />
+      )}
+      {client?.capabilities.camera && <CameraSection client={client} />}
+      {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
+      {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
+      {client?.capabilities.permissions && <PermissionsSection client={client} />}
+      {client?.capabilities.clipboard && (
+        <ClipboardSection
+          key={`clipboard:${device?.id}`}
+          client={client}
+          request={clipboardRequest}
+          onRequestHandled={onClipboardRequestHandled}
+        />
+      )}
+      {client?.capabilities.events && <EventsSection client={client} />}
+      <LogsSection client={client} />
+    </>
+  );
+}
+
+/**
+ * A column that holds the inspector on its own, rendered directly on the
+ * dashboard canvas so it matches the existing sidebar treatment.
+ */
+export function LogSidebar({ onToggle, width = 400, ...inspector }: LogSidebarProps) {
   return (
     <aside
       style={{
@@ -115,43 +165,7 @@ export function LogSidebar({
           overflowY: "auto",
         }}
       >
-        <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings ||
-          client?.platform === "android" ||
-          deviceFrame ||
-          (client && (onShutdown || onRemoveDevice))) && (
-          <DeviceOptionsSection
-            client={client}
-            deviceFrame={deviceFrame}
-            showDeviceSettings={client?.capabilities.deviceSettings ?? false}
-            onShutdown={onShutdown}
-            onRemove={onRemoveDevice}
-          />
-        )}
-        {client?.streamCapabilities && (
-          <StreamOptionsSection
-            client={client}
-            streamMode={streamMode}
-            httpCodec={httpCodec}
-            streamModeAvailability={streamModeAvailability}
-            onStreamModeChange={onStreamModeChange}
-            onHttpCodecChange={onHttpCodecChange}
-          />
-        )}
-        {client?.capabilities.camera && <CameraSection client={client} />}
-        {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
-        {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
-        {client?.capabilities.permissions && <PermissionsSection client={client} />}
-        {client?.capabilities.clipboard && (
-          <ClipboardSection
-            key={`clipboard:${device?.id}`}
-            client={client}
-            request={clipboardRequest}
-            onRequestHandled={onClipboardRequestHandled}
-          />
-        )}
-        {client?.capabilities.events && <EventsSection client={client} />}
-        <LogsSection client={client} />
+        <InspectorSections {...inspector} />
       </div>
     </aside>
   );

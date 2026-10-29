@@ -8,16 +8,8 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import {
-  bg,
-  border,
-  radius,
-  ControlButton,
-  KeyboardIcon,
-  FullScreenIcon,
-  CloseIcon,
-  SidebarIcon,
-} from "../primitives";
+import { bg, border, FloatingIconButton, FullScreenIcon, CloseIcon } from "../primitives";
+import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
@@ -51,8 +43,6 @@ export function StreamPanel({
   showDeviceFrame = true,
   deviceFrameAssets,
   onClipboardFallback,
-  onToggleInspector,
-  inspectorOpen = false,
 }: {
   device: Device;
   client: DeviceClient;
@@ -72,9 +62,6 @@ export function StreamPanel({
   deviceFrameAssets?: DeviceFrameAssets;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
-  /** Put the dashboard inspector toggle in the mobile viewer toolbar. */
-  onToggleInspector?: () => void;
-  inspectorOpen?: boolean;
 }) {
   const viewport = useMobileViewport();
   const [presentation, setPresentation] = useState(false);
@@ -160,12 +147,6 @@ export function StreamPanel({
     return () => observer.disconnect();
   }, [viewport.mobile]);
   const captureScreenshot = useScreenshotToast(client, device.name);
-  const setting = client.deviceSettings?.appearance;
-  const appearance = setting === "dark" || setting === "light" ? setting : null;
-  const appearanceDisabled =
-    appearance === null ||
-    client.deviceSettingsStatus !== "ready" ||
-    client.deviceSettingsPending.has("appearance");
   const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
@@ -173,13 +154,6 @@ export function StreamPanel({
   const controls = (
     <StreamControls
       recording={client.screenRecording}
-      appearance={appearance}
-      appearanceDisabled={appearanceDisabled}
-      onToggleAppearance={() => {
-        if (!appearanceDisabled) {
-          client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
-        }
-      }}
       onHome={() => client.pressButton("home")}
       onReload={() => client.reload()}
       onRotate={() => client.rotate()}
@@ -188,6 +162,11 @@ export function StreamPanel({
       clipboardPending={client.clipboardPending}
       onPaste={() => void clipboard.pasteFromDevice()}
       onCopy={() => void clipboard.copyFromSimulator()}
+      keyboard={
+        viewport.mobile && client.sendKeyEvents
+          ? { open: keyboardOpen, onToggle: toggleKeyboard }
+          : undefined
+      }
     />
   );
 
@@ -206,7 +185,7 @@ export function StreamPanel({
         display: "flex",
         flexDirection: "column",
         padding: viewport.mobile
-          ? `calc(${presenting ? 8 : 56}px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))`
+          ? `calc(${presenting || typing ? 8 : 56}px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))`
           : 40,
         ...(presenting
           ? ({
@@ -234,60 +213,29 @@ export function StreamPanel({
               onKeys={client.sendKeyEvents}
             />
           )}
-          <div
-            role="group"
-            aria-label="Viewer controls"
-            onMouseDownCapture={(event) => {
-              if (typing || keyboardOpen) event.preventDefault();
-            }}
-            style={{
-              position: "absolute",
-              top: `calc(${presenting || typing ? 8 : 72}px + env(safe-area-inset-top, 0px))`,
-              maxHeight: `calc(100% - ${presenting || typing ? 16 : 80}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`,
-              overflowY: "auto",
-              overscrollBehavior: "contain",
-              boxSizing: "border-box",
-              right: 8,
-              zIndex: 3,
-              display: "flex",
-              flexDirection: "column",
-              backgroundColor: bg.element,
-              border: `1px solid ${border.default}`,
-              borderRadius: radius.xl,
-            }}
-          >
-            {client.sendKeyEvents && (
-              <ControlButton
-                icon={<KeyboardIcon />}
-                hideTooltip
-                label="Keyboard"
-                role="switch"
-                aria-checked={keyboardOpen && typing}
-                onClick={toggleKeyboard}
+          {!typing && (
+            <div
+              // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
+              // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
+              onMouseDownCapture={(event) => {
+                if (typing || keyboardOpen) event.preventDefault();
+              }}
+              style={{
+                position: "absolute",
+                top: `calc(${MOBILE_CORNER_BUTTON_TOP}px + env(safe-area-inset-top, 0px))`,
+                right: 24,
+                zIndex: 3,
+              }}
+            >
+              <FloatingIconButton
+                ref={fullScreenRef}
+                icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
+                label={presenting ? "Exit full screen" : "Full screen"}
+                aria-pressed={presenting}
+                onClick={() => setPresentation(!presenting)}
               />
-            )}
-            <ControlButton
-              hideTooltip
-              ref={fullScreenRef}
-              icon={presenting ? <CloseIcon /> : <FullScreenIcon />}
-              label={presenting ? "Exit full screen" : "Full screen"}
-              aria-pressed={presenting}
-              onClick={() => setPresentation(!presenting)}
-            />
-            {onToggleInspector && (
-              <ControlButton
-                hideTooltip
-                icon={<SidebarIcon style={{ transform: "scaleX(-1)" }} />}
-                label="Toggle inspector"
-                aria-pressed={inspectorOpen}
-                onClick={() => {
-                  // Presentation makes dashboard siblings inert; leave it before opening one.
-                  setPresentation(false);
-                  onToggleInspector();
-                }}
-              />
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
       <div
@@ -375,8 +323,13 @@ export function StreamPanel({
       </div>
       {viewport.mobile && (
         <div
+          onMouseDownCapture={(event) => {
+            if (typing || keyboardOpen) event.preventDefault();
+          }}
           style={{
             flexShrink: 0,
+            // Full screen and a raised keyboard hide the bar to give the device room; the
+            // phone's own keyboard controls dismiss the keyboard.
             display: presenting || typing ? "none" : "flex",
             justifyContent: "center",
           }}

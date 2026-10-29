@@ -530,15 +530,23 @@ export function ChevronsUpDownIcon({
   );
 }
 
+/** A keyboard with an arrow rising from it: the control brings the device keyboard up. */
 export function KeyboardIcon({ size = 20, color = "currentColor", strokeWidth = 1.67 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2" stroke={color} strokeWidth={strokeWidth} />
+      <rect x="3" y="11" width="18" height="10" rx="2" stroke={color} strokeWidth={strokeWidth} />
       <path
-        d="M7 9h1m3 0h1m3 0h1M7 12h1m3 0h1m3 0h1M8 16h8"
+        d="M7 14h1m3 0h1m3 0h1M8 18h8"
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
+      />
+      <path
+        d="M12 8V3M9.5 5.5 12 3l2.5 2.5"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );
