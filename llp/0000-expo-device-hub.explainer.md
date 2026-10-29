@@ -110,8 +110,8 @@ controls dismiss the keyboard. An in-page full-screen toggle is pinned to the to
 corner, opposite the sidebar toggle, and shows a close icon while active. On a phone the
 page behind the dashboard takes the color of the surface above the browser's bottom bars,
 so no lighter strip shows under them. A phone's open sidebar fills the screen. Full-screen controls
-preserve capture focus. Tablet and desktop layouts retain their existing title,
-padding, and controls. [observed: Hub `Dashboard.tsx`, HubComponents
+preserve capture focus. Tablet and desktop stream panels retain their existing title and
+padding. The shared toolbar and sidebar changes are described below. [observed: Hub `Dashboard.tsx`, HubComponents
 `StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
 [confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
 [confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
