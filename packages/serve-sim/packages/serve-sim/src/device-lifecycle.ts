@@ -1,4 +1,4 @@
-import { bootDevice, shutdownDevice } from "./device";
+import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
 import { releaseSession } from "./launch-manager";
@@ -46,4 +46,48 @@ export async function stopDeviceInProcess(udid: string, ownerPid?: number): Prom
     );
   }
   clearServeSimState(udid, ownerPid ?? process.pid);
+}
+
+/**
+ * Runs `prepare` unless this process already prepared `udid`. A prepared device only passes the
+ * boot readiness check again. Only a successful preparation counts.
+ */
+export async function prepareDeviceOnce(
+  udid: string,
+  preparedDevices: Set<string>,
+  prepare: () => Promise<void>,
+): Promise<void> {
+  const key = udid.toUpperCase();
+  if (preparedDevices.has(key)) {
+    await confirmDeviceBooted(udid);
+    return;
+  }
+  await prepare();
+  preparedDevices.add(key);
+}
+
+/**
+ * Unpublishes `udids` at once, then shuts them down in the background. Failures are logged:
+ * the launcher's stop confirms every shutdown.
+ */
+export function retireDevicesInBackground(
+  udids: readonly string[],
+  ownerPid: number,
+  preparedDevices: Set<string>,
+): Promise<void> {
+  for (const udid of udids) {
+    preparedDevices.delete(udid.toUpperCase());
+    clearServeSimState(udid, ownerPid);
+  }
+  return (async () => {
+    for (const udid of udids) {
+      try {
+        await stopDeviceInProcess(udid, ownerPid);
+      } catch (error) {
+        console.error(
+          `Could not shut down Simulator ${udid}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  })();
 }

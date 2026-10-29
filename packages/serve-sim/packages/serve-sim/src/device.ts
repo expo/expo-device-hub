@@ -150,3 +150,12 @@ export async function bootDevice(
     throw error;
   }
 }
+
+/** The readiness barrier alone, for a device that this process already booted and prepared. */
+export async function confirmDeviceBooted(udid: string): Promise<void> {
+  await timeStartup(
+    "simulator-bootstatus",
+    () => simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS),
+    udid,
+  );
+}

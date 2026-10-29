@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
+import {
+  prepareDeviceOnce,
+  retireDevicesInBackground,
+  startDeviceInProcess,
+} from "./device-lifecycle";
 import {
   RECORDING_FINALIZATION_WAIT_MS,
   RECORDING_RECONCILIATION_WAIT_MS,
@@ -1923,6 +1927,8 @@ async function serve(
     requireToken?: boolean;
     orphan?: boolean;
     warmDevices?: string[];
+    /** Devices that startup already booted and armed with their default capabilities. */
+    preparedDevices?: string[];
     capabilities?: { enable: string[]; disable: string[] };
     quiet?: boolean;
     singleDevice?: string;
@@ -1941,32 +1947,39 @@ async function serve(
   let warmupTask = Promise.resolve();
   let backgroundFailure: unknown;
   const backgroundCancellation = new AbortController();
-  const prepareDevice = async (udid: string, signal?: AbortSignal) => {
-    signal?.throwIfAborted();
-    if (sessionStopping) throw new Error("Session is stopping");
-    if (!ownedDevices.includes(udid)) ownedDevices.push(udid);
-    await startDeviceInProcess(
-      udid,
-      boundPort,
-      "/",
-      options.stream,
-      previewToken,
-      async () => {
-        await disarmStaleCapabilityLoader(udid);
-        signal?.throwIfAborted();
-        await armCapabilityLoader(udid);
-        signal?.throwIfAborted();
-        const overrides = options.capabilities ?? { enable: [], disable: [] };
-        const applied = await applyDefaultCapabilities(udid, null, overrides);
-        const missing = missingCapabilities(overrides, applied);
-        if (missing.length)
-          throw new Error(
-            `Could not prepare requested capabilities on ${udid}: ${missing.join(", ")}`,
-          );
-      },
-      { signal, requireReady: true },
-    );
-  };
+  // Booted, loader armed and default capabilities applied by this process. Adoption hands these
+  // over as they are; a stop or a failed preparation removes the device.
+  const preparedDevices = new Set(
+    (options.preparedDevices ?? []).map((udid) => udid.toUpperCase()),
+  );
+  let otherDevicesRetirement = Promise.resolve();
+  const prepareDevice = (udid: string, signal?: AbortSignal) =>
+    prepareDeviceOnce(udid, preparedDevices, async () => {
+      signal?.throwIfAborted();
+      if (sessionStopping) throw new Error("Session is stopping");
+      if (!ownedDevices.includes(udid)) ownedDevices.push(udid);
+      await startDeviceInProcess(
+        udid,
+        boundPort,
+        "/",
+        options.stream,
+        previewToken,
+        async () => {
+          await disarmStaleCapabilityLoader(udid);
+          signal?.throwIfAborted();
+          await armCapabilityLoader(udid);
+          signal?.throwIfAborted();
+          const overrides = options.capabilities ?? { enable: [], disable: [] };
+          const applied = await applyDefaultCapabilities(udid, null, overrides);
+          const missing = missingCapabilities(overrides, applied);
+          if (missing.length)
+            throw new Error(
+              `Could not prepare requested capabilities on ${udid}: ${missing.join(", ")}`,
+            );
+        },
+        { signal, requireReady: true },
+      );
+    });
 
   const capture = await timeStartup("capture-module", () => import("./capture"));
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
@@ -2000,16 +2013,7 @@ async function serve(
           await warmupTask;
           signal?.throwIfAborted();
           if (backgroundFailure) throw backgroundFailure;
-          try {
-            for (const udid of ownedDevices) {
-              if (udid === selectedDevice) continue;
-              await stopDeviceInProcess(udid, process.pid);
-            }
-          } catch (error) {
-            backgroundFailure ??= error;
-            throw error;
-          }
-          signal?.throwIfAborted();
+          // A device this process already prepared is served as it is.
           await prepareDevice(selectedDevice, signal);
           signal?.throwIfAborted();
           if (sessionStopping) throw new Error("Session is stopping");
@@ -2038,6 +2042,13 @@ async function serve(
             delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
           }
           signal?.throwIfAborted();
+          // The job sees only its device and does not wait for the others to shut down. The
+          // session stop drains this retirement.
+          otherDevicesRetirement = retireDevicesInBackground(
+            ownedDevices.filter((udid) => udid !== selectedDevice),
+            process.pid,
+            preparedDevices,
+          );
           writeState({
             ...inProcessServeSimState(selectedDevice, boundPort, "/", host, configuration.stream),
             token: previewToken,
@@ -2267,7 +2278,7 @@ async function serve(
     backgroundCancellation.abort(new Error("Session is stopping"));
     const ownerStopping = owner?.close();
     warmupCancellation.abort();
-    await Promise.allSettled([ownerStopping, warmupTask]);
+    await Promise.allSettled([ownerStopping, warmupTask, otherDevicesRetirement]);
     foregroundTracker.stopAll();
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
@@ -3075,6 +3086,7 @@ Examples:
     } else {
       await serve(startPort ?? 3200, targets, startPort !== undefined, opts.host, {
         stream,
+        preparedDevices: isStreamHelper ? [] : targets,
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
