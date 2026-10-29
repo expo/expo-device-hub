@@ -187,6 +187,7 @@ export function DeviceOptionsSection({
   const currentOrientation = client?.orientation ?? null;
   const rotationUnavailable = client
     ? rotationUnavailableReason({
+        platform: client.platform,
         status: client.status,
         recording: client.screenRecording,
         recordingControlsLocked: client.recordingControlsLocked,

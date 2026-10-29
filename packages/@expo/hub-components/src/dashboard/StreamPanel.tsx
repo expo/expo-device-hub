@@ -164,6 +164,7 @@ export function StreamPanel({
 
   const controls = (
     <StreamControls
+      platform={client.platform}
       status={client.status}
       recording={client.screenRecording}
       recordingControlsLocked={client.recordingControlsLocked}
