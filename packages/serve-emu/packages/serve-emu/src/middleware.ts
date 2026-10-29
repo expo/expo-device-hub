@@ -1745,7 +1745,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
           const status = await lockRotation(opts.serial, orientation);
-          void orientationReader(opts.serial).refresh();
+          orientationReader(opts.serial).locked(status.pose);
           return Response.json({ ok: true, orientation: status });
         } catch (err) {
           return Response.json(

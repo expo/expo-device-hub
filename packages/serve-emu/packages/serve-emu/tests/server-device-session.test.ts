@@ -411,7 +411,7 @@ describe("startServer device session lifecycle", () => {
     await started.stop();
   });
 
-  test("reports the display orientation in /api and /health and reads it again after a lock", async () => {
+  test("reports the display orientation in /api and /health and records the locked pose", async () => {
     const a = fakeScrcpy("A");
     const captured: CapturedServer = { options: null, stopCalls: 0 };
     const calls: string[] = [];
@@ -424,6 +424,7 @@ describe("startServer device session lifecycle", () => {
           current: () => (calls.push(`current ${serial}`), "portrait" as const),
           fresh: async () => (calls.push(`fresh ${serial}`), "landscape_right" as const),
           refresh: async () => (calls.push(`refresh ${serial}`), "landscape_right" as const),
+          locked: (pose) => calls.push(`locked ${serial} ${pose}`),
         }),
         setUserRotation: async (serial, orientation) => {
           calls.push(`lock ${serial} ${orientation}`);
@@ -454,7 +455,7 @@ describe("startServer device session lifecycle", () => {
         ok: true,
         orientation: { pose: "landscape_right" },
       });
-      expect(calls.slice(2)).toEqual(["lock A landscape_right", "refresh A"]);
+      expect(calls.slice(2)).toEqual(["lock A landscape_right", "locked A landscape_right"]);
     } finally {
       await started.stop();
     }

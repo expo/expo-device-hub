@@ -694,13 +694,14 @@ test("only announces video-session when the scrcpy session size changes", async 
   }
 });
 
-test("reports the display orientation in /api and /health and reads it again after a lock", async () => {
+test("reports the display orientation in /api and /health and records the locked pose", async () => {
   const { session } = fakeScrcpySession(0);
   const calls: string[] = [];
   const reader = {
     current: () => (calls.push("current"), "portrait" as const),
     fresh: async () => (calls.push("fresh"), "landscape_left" as const),
     refresh: async () => (calls.push("refresh"), "landscape_left" as const),
+    locked: (pose: string | null) => calls.push(`locked ${pose}`),
   };
   const app = await createApp(
     { serial: session.serial },
@@ -741,7 +742,7 @@ test("reports the display orientation in /api and /health and reads it again aft
       ok: true,
       orientation: { pose: "landscape_left" },
     });
-    expect(calls.slice(2)).toEqual(["lock landscape_left", "refresh"]);
+    expect(calls.slice(2)).toEqual(["lock landscape_left", "locked landscape_left"]);
   } finally {
     app.stop();
   }
