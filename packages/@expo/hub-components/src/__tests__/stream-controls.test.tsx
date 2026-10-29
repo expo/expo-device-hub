@@ -12,13 +12,17 @@ function buttonTags(markup: string) {
 
 describe("StreamControls", () => {
   test("locks Rotate and explains the pending recording check", () => {
-    const markup = renderToStaticMarkup(<StreamControls recordingLock="status-unknown" />);
+    const markup = renderToStaticMarkup(
+      <StreamControls recording="unknown" recordingControlsLocked />,
+    );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
     expect(rotate).toContain("Rotation is unavailable until recording status is known.");
   });
   test("explains why Rotate is unavailable during recording without disabling app controls", () => {
-    const markup = renderToStaticMarkup(<StreamControls recordingLock="recording" />);
+    const markup = renderToStaticMarkup(
+      <StreamControls recording="recording" recordingControlsLocked />,
+    );
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -27,16 +31,36 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
-  test("leaves Rotate enabled without a recording lock", () => {
+  test("locks Rotate from the recording status when the client's lock is not passed", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls onRotate={() => {}} recordingLock={null} />,
+      <StreamControls onRotate={() => {}} recording="recording" />,
     );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
-    expect(rotate).not.toContain("aria-disabled");
-    expect(rotate).not.toContain("Rotation is unavailable");
+    expect(rotate).toContain('aria-disabled="true"');
+  });
+  test.each(["recording", "unknown"] as const)(
+    "follows the client's lock, not the %s status, and explains only a locked Rotate",
+    (recording) => {
+      const markup = renderToStaticMarkup(
+        <StreamControls
+          onRotate={() => {}}
+          recording={recording}
+          recordingControlsLocked={false}
+        />,
+      );
+      const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+      expect(rotate).not.toContain("aria-disabled");
+      expect(rotate).not.toContain("Rotation is unavailable");
+    },
+  );
+  test("locks Rotate until the stream is live, with the same reason as the Orientation select", () => {
+    const markup = renderToStaticMarkup(<StreamControls onRotate={() => {}} status="connecting" />);
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+    expect(rotate).toContain("Rotation is unavailable until the device stream is live.");
   });
   test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
-    const markup = renderToStaticMarkup(<StreamControls recordingLock={null} />);
+    const markup = renderToStaticMarkup(<StreamControls />);
     const buttons = buttonTags(markup);
 
     expect(buttons.map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
@@ -60,7 +84,7 @@ describe("StreamControls", () => {
   });
 
   test("spaces the pills 16px apart, across and down", () => {
-    const markup = renderToStaticMarkup(<StreamControls recordingLock={null} />);
+    const markup = renderToStaticMarkup(<StreamControls />);
 
     expect(markup).toContain("column-gap:16px");
     expect(markup).toContain("row-gap:16px");
@@ -68,9 +92,9 @@ describe("StreamControls", () => {
 
   test("shows one Clipboard menu before Rotate when the device offers either action", () => {
     const labels = (clipboard: { paste: boolean; copy: boolean } | false) =>
-      buttonTags(
-        renderToStaticMarkup(<StreamControls recordingLock={null} clipboard={clipboard} />),
-      ).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
+      buttonTags(renderToStaticMarkup(<StreamControls clipboard={clipboard} />)).map(
+        (tag) => tag.match(/aria-label="([^"]+)"/)?.[1],
+      );
     const base = ["Save", "Home", "Reload"];
 
     expect(labels({ paste: true, copy: true })).toEqual([...base, "Clipboard", "Rotate"]);
@@ -79,9 +103,7 @@ describe("StreamControls", () => {
     expect(labels({ paste: false, copy: false })).toEqual([...base, "Rotate"]);
     expect(labels(false)).toEqual([...base, "Rotate"]);
 
-    const markup = renderToStaticMarkup(
-      <StreamControls recordingLock={null} clipboard={{ paste: true, copy: true }} />,
-    );
+    const markup = renderToStaticMarkup(<StreamControls clipboard={{ paste: true, copy: true }} />);
     expect([
       ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
     ]).toHaveLength(3);
@@ -91,11 +113,7 @@ describe("StreamControls", () => {
     "disables the Clipboard menu while %s is pending",
     (pending) => {
       const markup = renderToStaticMarkup(
-        <StreamControls
-          recordingLock={null}
-          clipboard={{ paste: true, copy: true }}
-          clipboardPending={pending}
-        />,
+        <StreamControls clipboard={{ paste: true, copy: true }} clipboardPending={pending} />,
       );
       for (const tag of buttonTags(markup)) {
         if (tag.includes('aria-label="Clipboard"')) {
@@ -111,7 +129,7 @@ describe("StreamControls", () => {
 
   test("shows every label as a tooltip above its button and exposes Keyboard as a switch", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls recordingLock={null} keyboard={{ open: true, onToggle: () => {} }} />,
+      <StreamControls keyboard={{ open: true, onToggle: () => {} }} />,
     );
     const tooltips = [...markup.matchAll(/<span role="tooltip"[^>]*>([^<]+)<\/span>/g)];
 
@@ -142,11 +160,7 @@ describe("StreamControls", () => {
 
     test("joins the Clipboard pill, after Clipboard", () => {
       const markup = renderToStaticMarkup(
-        <StreamControls
-          recordingLock={null}
-          clipboard={{ paste: true, copy: true }}
-          keyboard={keyboard}
-        />,
+        <StreamControls clipboard={{ paste: true, copy: true }} keyboard={keyboard} />,
       );
 
       expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Clipboard", "Keyboard", "Rotate"]);
@@ -162,9 +176,7 @@ describe("StreamControls", () => {
     });
 
     test("gets its own pill when the device has no clipboard actions", () => {
-      const markup = renderToStaticMarkup(
-        <StreamControls recordingLock={null} keyboard={keyboard} />,
-      );
+      const markup = renderToStaticMarkup(<StreamControls keyboard={keyboard} />);
 
       expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Keyboard", "Rotate"]);
       expect([
@@ -173,15 +185,13 @@ describe("StreamControls", () => {
     });
 
     test("is absent unless the viewer passes it", () => {
-      expect(labels(renderToStaticMarkup(<StreamControls recordingLock={null} />))).not.toContain(
-        "Keyboard",
-      );
+      expect(labels(renderToStaticMarkup(<StreamControls />))).not.toContain("Keyboard");
     });
   });
 });
 
 describe("StreamPanel", () => {
-  test("locks Rotate from the client's recordingLock, not from the recording status", () => {
+  test("locks Rotate from the client's recordingControlsLocked, not from the recording status", () => {
     const device: Device = {
       id: "android",
       name: "Pixel 9",
@@ -203,7 +213,7 @@ describe("StreamPanel", () => {
                 capabilities: { clipboard: false },
                 clipboardPending: null,
                 screenRecording: "recording",
-                recordingLock: null,
+                recordingControlsLocked: false,
                 ...overrides,
               } as DeviceClient
             }
@@ -213,7 +223,7 @@ describe("StreamPanel", () => {
         ),
       ).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate({})).not.toContain("aria-disabled");
-    expect(rotate({ recordingLock: "recording" })).toContain('aria-disabled="true"');
+    expect(rotate({ recordingControlsLocked: true })).toContain('aria-disabled="true"');
   });
 
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {

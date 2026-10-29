@@ -1,9 +1,11 @@
 import { type ReactNode } from "react";
 
 import {
+  areRecordingControlsLocked,
+  type ConnectionStatus,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
-  type DeviceRecordingLockReason,
+  type DeviceScreenRecordingStatus,
 } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
@@ -22,6 +24,7 @@ import {
   radius,
   text,
 } from "../primitives";
+import { rotationUnavailableReason } from "./rotation-availability";
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 16;
@@ -68,7 +71,9 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
-  recordingLock,
+  status = "streaming",
+  recording = null,
+  recordingControlsLocked: clientLocked,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -83,8 +88,12 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** The client's `recordingLock`. Locks Rotate and picks the explanation while it is set. */
-  recordingLock: DeviceRecordingLockReason | null;
+  /** The client's connection status. Rotate waits for a live stream, like the Orientation select. */
+  status?: ConnectionStatus;
+  /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
+  recording?: DeviceScreenRecordingStatus | null;
+  /** The client's `recordingControlsLocked`. Overrides the lock that `recording` implies. */
+  recordingControlsLocked?: boolean;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -96,7 +105,13 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = recordingLock !== null;
+  // Callers that pass only `recording` keep the lock it implied before this prop existed.
+  const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
+  const rotateUnavailable = rotationUnavailableReason({
+    status,
+    recording,
+    recordingControlsLocked,
+  });
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
@@ -180,17 +195,13 @@ export function StreamControls({
         <ControlButton
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
-          tooltip={
-            recordingLock === null
-              ? undefined
-              : recordingLock === "status-unknown"
-                ? "Rotation is unavailable until recording status is known."
-                : "Rotation is unavailable while recording."
-          }
-          aria-disabled={recordingControlsLocked || undefined}
-          onClick={recordingControlsLocked ? undefined : onRotate}
+          tooltip={rotateUnavailable}
+          aria-disabled={rotateUnavailable !== undefined || undefined}
+          onClick={rotateUnavailable === undefined ? onRotate : undefined}
           style={
-            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+            rotateUnavailable === undefined
+              ? undefined
+              : { color: text.tertiary, cursor: "not-allowed" }
           }
         />
       </ControlGroup>
