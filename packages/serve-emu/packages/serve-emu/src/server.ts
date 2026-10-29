@@ -330,6 +330,8 @@ export type ServerDependencies = {
   installApk?: typeof installApk;
   importMediaFile?: typeof importMediaFile;
   createWebRtcPublisher?: (options: WebRtcPublisherOptions) => Promise<WebRtcPublisherLike>;
+  displayOrientationReader?: typeof displayOrientationReader;
+  setUserRotation?: typeof setUserRotation;
 };
 
 function serverLimit(
@@ -370,6 +372,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
   }
   const defaultInputSource = requestedDefaultInputSource;
   const serve = dependencies.serve ?? Bun.serve;
+  const orientationReader = dependencies.displayOrientationReader ?? displayOrientationReader;
+  const lockRotation = dependencies.setUserRotation ?? setUserRotation;
   const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
   const listDevices = dependencies.listDevices ?? dependencies.listAllDevices ?? listAllDevices;
   const launchEmulator = dependencies.startEmulator ?? startEmulator;
@@ -633,7 +637,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       inputSource: context.stream.inputSource,
       grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
       size: { width: context.screen.width, height: context.screen.height },
-      orientation: displayOrientationReader(context.serial).current(),
+      orientation: orientationReader(context.serial).current(),
       clients: context.clients.size,
       videoClients: Array.from(context.clients).filter((client) => client.video).length,
       stream: redactedStreamSettings(streamSettings),
@@ -1832,7 +1836,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               width: requestContext.screen.width,
               height: requestContext.screen.height,
             },
-            orientation: await displayOrientationReader(requestContext.serial).fresh(),
+            orientation: await orientationReader(requestContext.serial).fresh(),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -2160,8 +2164,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             return Response.json({
               ok: true,
               orientation: await runForContext(requestContext, async (context) => {
-                const status = await setUserRotation(context.serial, orientation);
-                void displayOrientationReader(context.serial).refresh();
+                const status = await lockRotation(context.serial, orientation);
+                void orientationReader(context.serial).refresh();
                 return status;
               }),
             });

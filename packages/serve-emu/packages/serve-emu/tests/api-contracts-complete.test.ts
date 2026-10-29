@@ -287,6 +287,36 @@ describe("complete API success contracts", () => {
       parseOrientationResponse({
         ok: true,
         orientation: {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        },
+      }).orientation.pose,
+    ).toBe("landscape_left");
+    expect(
+      parseOrientationResponse({
+        ok: true,
+        orientation: { mode: "free", rotation: null, orientation: "auto", pose: null, raw: "free" },
+      }).orientation.pose,
+    ).toBeNull();
+    expect(() =>
+      parseOrientationResponse({
+        ok: true,
+        orientation: {
+          mode: "lock",
+          rotation: 1,
+          orientation: "landscape",
+          pose: "sideways",
+          raw: "",
+        },
+      }),
+    ).toThrow("orientation.pose is invalid");
+    expect(
+      parseOrientationResponse({
+        ok: true,
+        orientation: {
           mode: "unknown",
           rotation: null,
           orientation: "unknown",
@@ -616,6 +646,30 @@ describe("generic and detailed API contracts", () => {
     expect(parseApiSuccess("/api/screenshot", "POST", png)).toBe(png);
     expect(() => parseApiSuccess("/api/logcat", "GET", {})).toThrow(
       "streaming responses are not JSON API payloads",
+    );
+  });
+});
+
+describe("orientation in API info and health", () => {
+  const info = {
+    generation: 0,
+    serial: "emulator-5554",
+    device: "Pixel 8",
+    codec: "h264",
+    size: { width: 1080, height: 2400 },
+    status: "streaming",
+    clients: 0,
+    stream: { transport: "websocket" },
+  };
+
+  test("keeps a reported pose and null, and leaves it out for older servers", () => {
+    expect(parseApiInfoResponse({ ...info, orientation: "landscape_left" }).orientation).toBe(
+      "landscape_left",
+    );
+    expect(parseApiInfoResponse({ ...info, orientation: null }).orientation).toBeNull();
+    expect("orientation" in parseApiInfoResponse(info)).toBe(false);
+    expect(() => parseApiInfoResponse({ ...info, orientation: "landscape" })).toThrow(
+      "API info response.orientation is invalid",
     );
   });
 });

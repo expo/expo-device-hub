@@ -286,75 +286,151 @@ describe("ADB display controls", () => {
     await expect(getDeviceSize("device-1", failed)).rejects.toThrow("wm size failed: wm failed");
   });
 
-  test("maps free and locked rotations to logical orientations", async () => {
+  test("maps free and locked rotations to poses from the natural display", async () => {
+    const phone = "Physical size: 1080x2400";
+    const tablet = "Physical size: 2560x1600";
     const cases = [
-      { raw: "free\n", mode: "free", rotation: null, orientation: "auto" },
-      { raw: "free 3\n", mode: "free", rotation: 3, orientation: "auto" },
-      { raw: "lock 0\n", mode: "lock", rotation: 0, orientation: "portrait" },
-      { raw: "lock 2\n", mode: "lock", rotation: 2, orientation: "portrait" },
-      { raw: "lock 1\n", mode: "lock", rotation: 1, orientation: "landscape" },
-      { raw: "lock 3\n", mode: "lock", rotation: 3, orientation: "landscape" },
-      { raw: "lock\n", mode: "lock", rotation: null, orientation: "unknown" },
-      { raw: "unexpected\n", mode: "unknown", rotation: null, orientation: "unknown" },
+      { raw: "free\n", size: phone, mode: "free", rotation: null, orientation: "auto", pose: null },
+      { raw: "free 3\n", size: phone, mode: "free", rotation: 3, orientation: "auto", pose: null },
+      {
+        raw: "lock 0\n",
+        size: phone,
+        mode: "lock",
+        rotation: 0,
+        orientation: "portrait",
+        pose: "portrait",
+      },
+      {
+        raw: "lock 1\n",
+        size: phone,
+        mode: "lock",
+        rotation: 1,
+        orientation: "landscape",
+        pose: "landscape_right",
+      },
+      {
+        raw: "lock 2\n",
+        size: phone,
+        mode: "lock",
+        rotation: 2,
+        orientation: "portrait",
+        pose: "portrait_upside_down",
+      },
+      {
+        raw: "lock 3\n",
+        size: phone,
+        mode: "lock",
+        rotation: 3,
+        orientation: "landscape",
+        pose: "landscape_left",
+      },
+      // A tablet shows landscape at rotation 0 and portrait at rotation 3.
+      {
+        raw: "lock 0\n",
+        size: tablet,
+        mode: "lock",
+        rotation: 0,
+        orientation: "landscape",
+        pose: "landscape_right",
+      },
+      {
+        raw: "lock 3\n",
+        size: tablet,
+        mode: "lock",
+        rotation: 3,
+        orientation: "portrait",
+        pose: "portrait",
+      },
+      {
+        raw: "lock\n",
+        size: phone,
+        mode: "lock",
+        rotation: null,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "lock 1\n",
+        size: "size unavailable",
+        mode: "lock",
+        rotation: 1,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "unexpected\n",
+        size: phone,
+        mode: "unknown",
+        rotation: null,
+        orientation: "unknown",
+        pose: null,
+      },
     ] as const;
 
     for (const entry of cases) {
-      const runExec = (async () => result(entry.raw)) as typeof execText;
+      const runExec = (async (_command, args) =>
+        result(args.includes("wm") ? entry.size : entry.raw)) as typeof execText;
       await expect(getUserRotation("device-1", runExec)).resolves.toEqual({
         mode: entry.mode,
         rotation: entry.rotation,
         orientation: entry.orientation,
+        pose: entry.pose,
         raw: entry.raw.trim(),
       });
     }
   });
 
-  test("locks the rotation that shows the requested pose on the device's natural display", async () => {
+  test("locks the rotation that shows the requested pose and reads that pose back", async () => {
     const phone = "Physical size: 1080x2400";
     const tablet = "Physical size: 2560x1600";
     const cases = [
-      { size: phone, requested: "auto", command: "free" },
-      { size: phone, requested: "portrait", command: "lock 0" },
-      { size: phone, requested: "landscape", command: "lock 1" },
-      { size: phone, requested: "landscape_left", command: "lock 1" },
-      { size: phone, requested: "portrait_upside_down", command: "lock 2" },
-      { size: phone, requested: "landscape_right", command: "lock 3" },
-      // A tablet already shows landscape_left at rotation 0.
-      { size: tablet, requested: "landscape_left", command: "lock 0" },
-      { size: tablet, requested: "landscape", command: "lock 0" },
-      { size: tablet, requested: "portrait", command: "lock 3" },
+      { size: phone, requested: "auto", rotation: null, pose: null },
+      { size: phone, requested: "portrait", rotation: 0, pose: "portrait" },
+      // `landscape` keeps locking rotation 1 on a phone, as before the four poses.
+      { size: phone, requested: "landscape", rotation: 1, pose: "landscape_right" },
+      { size: phone, requested: "landscape_right", rotation: 1, pose: "landscape_right" },
+      { size: phone, requested: "portrait_upside_down", rotation: 2, pose: "portrait_upside_down" },
+      { size: phone, requested: "landscape_left", rotation: 3, pose: "landscape_left" },
+      { size: tablet, requested: "landscape", rotation: 0, pose: "landscape_right" },
+      { size: tablet, requested: "portrait", rotation: 3, pose: "portrait" },
+      { size: tablet, requested: "landscape_left", rotation: 2, pose: "landscape_left" },
     ] as const;
 
     for (const entry of cases) {
       const calls: string[] = [];
+      let locked = "free";
       const runExec = (async (_command, args) => {
         const call = args.slice(3).join(" ");
         calls.push(call);
         if (call === "wm size") return result(entry.size);
-        return result(call === "cmd window user-rotation" ? "lock 1" : "");
+        if (call === "cmd window user-rotation") return result(locked);
+        locked = call.replace("cmd window user-rotation ", "");
+        return result("");
       }) as typeof execText;
       const status = await setUserRotation("device-1", entry.requested, runExec);
+      const command = entry.rotation === null ? "free" : `lock ${entry.rotation}`;
       expect(calls.filter((call) => call !== "wm size")).toEqual([
-        `cmd window user-rotation ${entry.command}`,
+        `cmd window user-rotation ${command}`,
         "cmd window user-rotation",
       ]);
-      expect(status.raw).toBe("lock 1");
+      expect(status).toMatchObject({ rotation: entry.rotation, pose: entry.pose, raw: command });
     }
   });
 
   test("names display rotations from the natural display", () => {
     const phone = { width: 1080, height: 2400 };
     const tablet = { width: 2560, height: 1600 };
+    // Android rotation 1 turns the device counterclockwise, so its bottom is on the right.
     expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, phone))).toEqual([
       "portrait",
-      "landscape_left",
-      "portrait_upside_down",
       "landscape_right",
+      "portrait_upside_down",
+      "landscape_left",
     ]);
     expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, tablet))).toEqual([
-      "landscape_left",
-      "portrait_upside_down",
       "landscape_right",
+      "portrait_upside_down",
+      "landscape_left",
       "portrait",
     ]);
   });

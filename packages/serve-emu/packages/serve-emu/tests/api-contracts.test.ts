@@ -310,6 +310,14 @@ describe("API contracts", () => {
       streamMode: "grpc-screenshot",
       sessionGeneration: 4,
     });
+    expect("orientation" in parseHealthResponse(health)).toBe(false);
+    expect(parseHealthResponse({ ...health, orientation: null }).orientation).toBeNull();
+    expect(parseHealthResponse({ ...health, orientation: "portrait" }).orientation).toBe(
+      "portrait",
+    );
+    expect(() => parseHealthResponse({ ...health, orientation: 1 })).toThrow(
+      "health response.orientation is invalid",
+    );
     expect(() => parseHealthResponse({ ...health, clientsDetail: [{}] })).toThrow(
       "clientsDetail[0].id",
     );

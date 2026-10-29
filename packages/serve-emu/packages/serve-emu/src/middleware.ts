@@ -353,6 +353,8 @@ export type CreateAppDependencies = {
   createWebRtcPublisher?: typeof createWebRtcPublisher;
   clock?: AppClock;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  displayOrientationReader?: typeof displayOrientationReader;
+  setUserRotation?: typeof setUserRotation;
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -378,6 +380,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   }
   const openWebRtcPublisher = dependencies.createWebRtcPublisher ?? createWebRtcPublisher;
   const clock = dependencies.clock ?? SYSTEM_APP_CLOCK;
+  const orientationReader = dependencies.displayOrientationReader ?? displayOrientationReader;
+  const lockRotation = dependencies.setUserRotation ?? setUserRotation;
   const uploader = createMiddlewareUploader({
     serial: opts.serial,
     maxApkUploadBytes: opts.maxApkUploadBytes,
@@ -491,7 +495,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     grpcCapture: session.diagnostics?.().grpcCapture ?? null,
     codec: session.meta.codecId,
     size: { width: screen.width, height: screen.height },
-    orientation: displayOrientationReader(opts.serial).current(),
+    orientation: orientationReader(opts.serial).current(),
     clients: clients.size,
     videoClients: Array.from(clients).filter((client) => client.video).length,
     frames: frameCount,
@@ -1293,7 +1297,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
-          orientation: await displayOrientationReader(opts.serial).fresh(),
+          orientation: await orientationReader(opts.serial).fresh(),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
@@ -1740,8 +1744,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
-          const status = await setUserRotation(opts.serial, orientation);
-          void displayOrientationReader(opts.serial).refresh();
+          const status = await lockRotation(opts.serial, orientation);
+          void orientationReader(opts.serial).refresh();
           return Response.json({ ok: true, orientation: status });
         } catch (err) {
           return Response.json(

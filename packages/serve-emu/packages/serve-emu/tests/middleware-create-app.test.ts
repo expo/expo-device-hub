@@ -693,3 +693,56 @@ test("only announces video-session when the scrcpy session size changes", async 
     await app.stop();
   }
 });
+
+test("reports the display orientation in /api and /health and reads it again after a lock", async () => {
+  const { session } = fakeScrcpySession(0);
+  const calls: string[] = [];
+  const reader = {
+    current: () => (calls.push("current"), "portrait" as const),
+    fresh: async () => (calls.push("fresh"), "landscape_left" as const),
+    refresh: async () => (calls.push("refresh"), "landscape_left" as const),
+  };
+  const app = await createApp(
+    { serial: session.serial },
+    {
+      startSession: async () => adaptScrcpySession(session),
+      displayOrientationReader: (serial) => {
+        expect(serial).toBe(session.serial);
+        return reader;
+      },
+      setUserRotation: async (_serial, orientation) => {
+        calls.push(`lock ${orientation}`);
+        return {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        };
+      },
+    },
+  );
+
+  try {
+    const info = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await info.json()).toMatchObject({ orientation: "landscape_left" });
+    const health = await app.handleRequest(new Request("http://middleware.test/health"));
+    expect(await health.json()).toMatchObject({ orientation: "portrait" });
+    expect(calls).toEqual(["fresh", "current"]);
+
+    const locked = await app.handleRequest(
+      new Request("http://middleware.test/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape_left" }),
+      }),
+    );
+    expect(await locked.json()).toMatchObject({
+      ok: true,
+      orientation: { pose: "landscape_left" },
+    });
+    expect(calls.slice(2)).toEqual(["lock landscape_left", "refresh"]);
+  } finally {
+    app.stop();
+  }
+});
