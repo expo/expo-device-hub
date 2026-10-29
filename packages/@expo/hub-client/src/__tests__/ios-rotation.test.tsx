@@ -422,3 +422,35 @@ test("a queued iOS orientation choice is pending until the helper admits input",
   await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["portrait_upside_down", "landscape_right"]);
 });
+
+test("an iOS orientation choice that the input queue does not send in 2 s fails", async () => {
+  const { client, helper } = await mount({ inputAdmission: true });
+  await act(async () => client().setOrientation("landscape_left"));
+  expect(client().orientationPending).toBe(true);
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 2_100)));
+  expect(helper().rotations()).toEqual([]);
+  expect(client().orientationPending).toBe(false);
+  expect(client().orientationError).toContain("was not sent");
+  expect(client().orientation).toBe("portrait");
+});
+
+test("an iOS orientation choice fails at once when this client cannot send input", async () => {
+  await mount();
+  let disabled!: DeviceClient;
+  function Disabled() {
+    disabled = useIosDeviceClient({
+      baseUrl: "/sim",
+      device: "DEVICE-A",
+      enabled: false,
+      streamMode: "mjpeg",
+    });
+    return null;
+  }
+  await act(async () => {
+    renderer!.update(<Disabled />);
+  });
+  await act(async () => disabled.setOrientation("landscape_left"));
+  expect(disabled.orientationPending).toBe(false);
+  expect(disabled.orientation).toBeNull();
+  expect(disabled.orientationError).toContain("was not sent");
+});
