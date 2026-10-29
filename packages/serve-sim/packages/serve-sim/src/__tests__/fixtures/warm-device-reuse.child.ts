@@ -82,12 +82,12 @@ test("other devices are unpublished at once and shut down in the background", as
     expect(calls).toEqual(["unpublish CCCC", "unpublish DDDD", "retire CCCC"]);
     expect([...prepared]).toEqual([]);
     // Each shutdown starts only after the previous one finished.
-    while (!calls.includes("shutdown DDDD")) {
+    for (let step = 0; step < 20 && !calls.includes("shutdown DDDD"); step++) {
       pendingStops.shift()?.();
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    await retirement;
     expect(calls).toContain("shutdown DDDD");
+    await retirement;
     expect(errors.join("\n")).toContain("Could not shut down Simulator CCCC: shutdown failed");
   } finally {
     console.error = error;

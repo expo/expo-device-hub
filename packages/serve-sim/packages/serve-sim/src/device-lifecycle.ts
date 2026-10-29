@@ -63,7 +63,10 @@ export async function prepareDeviceOnce(
     try {
       await confirmDeviceBooted(udid);
       return;
-    } catch {
+    } catch (error) {
+      console.error(
+        `Simulator ${udid} failed its boot check; preparing it again: ${error instanceof Error ? error.message : String(error)}`,
+      );
       preparedDevices.delete(key);
     }
   }

@@ -2046,7 +2046,7 @@ async function serve(
           // The job sees only its device and does not wait for the others to shut down. The
           // session stop drains this retirement.
           otherDevicesRetirement = retireDevicesInBackground(
-            ownedDevices.filter((udid) => udid !== selectedDevice),
+            ownedDevices.filter((udid) => udid.toUpperCase() !== selectedDevice),
             process.pid,
             preparedDevices,
           );
