@@ -1,12 +1,26 @@
 import type { DeviceOrientation } from "./types";
 
-const READBACK_GRACE_MS = 1500;
+export const READBACK_GRACE_MS = 1500;
+
+/** The four poses in the order Rotate steps through them on iOS and Android. */
+export const DEVICE_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const satisfies readonly DeviceOrientation[];
+
 const ROTATE_LEFT_CYCLE: Record<DeviceOrientation, DeviceOrientation> = {
   portrait: "landscape_left",
   landscape_left: "portrait_upside_down",
   portrait_upside_down: "landscape_right",
   landscape_right: "portrait",
 };
+
+/** The pose that Rotate turns the device to next. */
+export function nextOrientation(orientation: DeviceOrientation): DeviceOrientation {
+  return ROTATE_LEFT_CYCLE[orientation];
+}
 
 // @ref LLP 0003#rotation-readback — advance requests independently of app readback
 export function createRotationCursor(
