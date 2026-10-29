@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 import { Logo, SidebarToggle, bg } from "../primitives";
+import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { DeviceSection } from "./DeviceSection";
 import {
   type AddDeviceOutcome,
@@ -10,12 +11,10 @@ import {
   type Platform,
 } from "./data";
 
-/** Horizontal inset of the header and the device lists. */
-const SIDEBAR_PADDING = 24;
-
 /**
  * Left column: simulators + emulators lists, then `children` below them. The
  * dashboard passes the device inspector as `children`, so it scrolls with the lists.
+ * The header, the lists and the inspector sections share {@link SIDEBAR_SECTION_INSET}.
  */
 export function Sidebar({
   simulators,
@@ -31,7 +30,7 @@ export function Sidebar({
   onToggle,
   toggleIcon = "sidebar",
   platform,
-  width = 400,
+  width = 320,
   children,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
@@ -58,7 +57,7 @@ export function Sidebar({
   toggleIcon?: "sidebar" | "close";
   /** Restrict the sidebar to one platform. Both sections render by default. */
   platform?: Platform;
-  /** Column width in px, driven by the resize handle. Defaults to 400. */
+  /** Column width in px, driven by the resize handle. Defaults to 320. */
   width?: number;
   /** Rendered below the device lists, edge to edge, in the same scrolling area. */
   children?: ReactNode;
@@ -83,7 +82,7 @@ export function Sidebar({
           alignItems: "center",
           justifyContent: "space-between",
           gap: 8,
-          padding: `0 ${SIDEBAR_PADDING}px 32px`,
+          padding: `0 ${SIDEBAR_SECTION_INSET}px 32px`,
         }}
       >
         <Logo />
@@ -104,7 +103,7 @@ export function Sidebar({
             display: "flex",
             flexDirection: "column",
             gap: 32,
-            padding: `0 ${SIDEBAR_PADDING}px ${SIDEBAR_PADDING}px`,
+            padding: `0 ${SIDEBAR_SECTION_INSET}px ${SIDEBAR_SECTION_INSET}px`,
           }}
         >
           {platform !== "android" && (
