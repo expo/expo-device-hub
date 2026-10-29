@@ -15,7 +15,6 @@ import { LogSidebar } from "../../../../@expo/hub-components/src/dashboard/LogSi
 import { PermissionsSection } from "../../../../@expo/hub-components/src/dashboard/PermissionsSection";
 import { StreamOptionsSection } from "../../../../@expo/hub-components/src/dashboard/StreamOptionsSection";
 import { StreamStatistics } from "../../../../@expo/hub-components/src/dashboard/StreamStatistics";
-import { StreamPanel } from "../../../../@expo/hub-components/src/dashboard/StreamPanel";
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === "ios";

@@ -100,16 +100,29 @@ in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
 Hub uses its own shared components, not the serve-sim viewer. Below 640px and
 on short touch landscape viewports, the dashboard and viewer share visual viewport
 bounds, including keyboard height and viewport panning. Mobile hides the title,
-keeps sidebars reachable, and fits the device above a normal-flow action bar.
+keeps the sidebar reachable, and fits the device above a normal-flow action bar.
 Mobile fitting does not wait for an observer to measure that bar.
-While typing, bottom controls hide. The mobile viewer provides a keyboard toggle
-when the client supports HID text events and an in-page full-screen toggle.
-The right inspector toggle joins that toolbar; the left device toggle stays separate.
-Opening the inspector leaves full screen so its dashboard panel is interactive.
-Full-screen controls preserve capture focus. Tablet and desktop layouts retain
-their existing title, padding, and controls. [observed: Hub `Dashboard.tsx`,
-HubComponents `StreamPanel.tsx`, HubClient `useMobileViewport.ts`]
+The mobile viewer provides a keyboard toggle when the client supports HID text
+events. It sits in the action bar's Clipboard pill. While typing or in full screen,
+the bar shows only that pill, so the toggle stays reachable and the device keeps
+its room. An in-page full-screen toggle is pinned to the top-right corner, opposite
+the sidebar toggle, and shows a close icon while active. Full-screen controls
+preserve capture focus. Tablet and desktop layouts retain their existing title,
+padding, and controls. [observed: Hub `Dashboard.tsx`, HubComponents
+`StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
 [confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
+[confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
+the top-right Full screen button]
+
+### Hub sidebar
+
+Hub has one sidebar, on the left. It lists the simulators and emulators, then shows the
+selected device's inspector below them in the same scrolling column. There is no right
+sidebar, so the stream panel uses the rest of the width. The toolbar has no Theme button;
+the device's appearance is the inspector's Appearance setting. [observed: Hub
+`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `LogSidebar.tsx` (`InspectorSections`),
+`StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
+into the left pane and removing the Theme button]
 
 ### DeviceKit hardware artwork
 

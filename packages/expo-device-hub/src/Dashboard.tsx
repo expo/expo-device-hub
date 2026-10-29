@@ -12,7 +12,7 @@ import {
 } from "@expo/hub-client";
 import {
   EmptyState,
-  LogSidebar,
+  InspectorSections,
   ResizeHandle,
   ServerConnectionOverlay,
   Sidebar,
@@ -44,10 +44,7 @@ import {
 } from "./dashboard/deviceVisibility";
 import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDeviceLists } from "./dashboard/useDevices";
-import {
-  FloatingSidebarToggle,
-  floatingSidebarToggleInset,
-} from "./dashboard/FloatingSidebarToggle";
+import { FloatingSidebarToggle } from "./dashboard/FloatingSidebarToggle";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
@@ -145,16 +142,15 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
   const sidebarWidth = useDashboardStore((state) => state.sidebarWidths.left);
-  const logsWidth = useDashboardStore((state) => state.sidebarWidths.right);
   const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
-  const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   // While a resize handle is dragged the docked sidebars must not ease toward
   // each new width, or they wobble behind the pointer.
   const [resizing, setResizing] = useState(false);
   const sidebars = useSidebarLayout({
     leftWidth: sidebarWidth,
-    rightWidth: logsWidth,
+    // The inspector lives in the left sidebar now, so no column is reserved on the right.
+    rightWidth: 0,
     minStreamWidth: MIN_STREAM_WIDTH,
   });
   // A toolbar Paste or Copy that the browser clipboard stopped, until the inspector takes it over.
@@ -170,7 +166,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    sidebars.openRight();
+    sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -310,6 +306,25 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
 
   const connectionBlocked = connectionStatus !== "connected";
 
+  // The device inspector sits in the left sidebar, below the device lists.
+  const inspector = (
+    <InspectorSections
+      device={selected}
+      client={client}
+      showDeviceFrame={showDeviceFrame}
+      onShowDeviceFrameChange={setShowDeviceFrame}
+      streamMode={streamMode}
+      httpCodec={httpCodec}
+      streamModeAvailability={selectedStreamModeAvailability}
+      onStreamModeChange={handleStreamModeChange}
+      onHttpCodecChange={setHttpCodec}
+      onShutdown={selected ? () => handleShutdown(selected) : undefined}
+      onRemove={selected ? () => handleRemove(selected) : undefined}
+      clipboardRequest={clipboardRequest}
+      onClipboardRequestHandled={() => setClipboardFallback(null)}
+    />
+  );
+
   return (
     <div
       ref={sidebars.containerRef}
@@ -360,7 +375,9 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
-        />
+        >
+          {inspector}
+        </Sidebar>
       </AnimatedDockedSidebar>
       {sidebars.leftDocked && (
         <ResizeHandle
@@ -372,13 +389,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           }}
           onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
-            resizeSidebar(
-              "left",
-              clampSidebarWidth(
-                sidebarWidthStart.current + delta,
-                sidebars.rightDocked ? logsWidth : 0,
-              ),
-            )
+            resizeSidebar("left", clampSidebarWidth(sidebarWidthStart.current + delta, 0))
           }
         />
       )}
@@ -394,8 +405,6 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
           onClipboardFallback={handleClipboardFallback}
-          onToggleInspector={sidebars.rightOpen ? sidebars.closeRight : sidebars.openRight}
-          inspectorOpen={sidebars.rightOpen}
         />
       ) : (
         <EmptyState
@@ -404,57 +413,11 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         />
       )}
 
-      {sidebars.rightDocked && (
-        <ResizeHandle
-          side="right"
-          offset={logsWidth}
-          onResizeStart={() => {
-            logsWidthStart.current = logsWidth;
-            setResizing(true);
-          }}
-          onResizeEnd={() => setResizing(false)}
-          onResize={(delta) =>
-            resizeSidebar(
-              "right",
-              clampSidebarWidth(
-                logsWidthStart.current + delta,
-                sidebars.leftDocked ? sidebarWidth : 0,
-              ),
-            )
-          }
-        />
-      )}
-      <AnimatedDockedSidebar
-        side="right"
-        width={logsWidth}
-        open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}
-        resizing={resizing}
-      >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
-      </AnimatedDockedSidebar>
-
       <SidebarOverlay
         side="left"
         open={sidebars.leftOverlay}
         sidebarOpen={sidebars.leftOpen}
-        topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
+        topmost
         onDismiss={sidebars.closeLeft}
       >
         <Sidebar
@@ -471,58 +434,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
-        />
+        >
+          {inspector}
+        </Sidebar>
       </SidebarOverlay>
 
-      <SidebarOverlay
-        side="right"
-        open={sidebars.rightOverlay}
-        sidebarOpen={sidebars.rightOpen}
-        topmost={sidebars.lastOpened === "right" || !sidebars.leftOverlay}
-        onDismiss={sidebars.closeRight}
-      >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
-      </SidebarOverlay>
-
-      {!sidebars.leftOpen && (
-        <FloatingSidebarToggle
-          side="left"
-          inset={floatingSidebarToggleInset(
-            sidebars.rightOverlay,
-            sidebars.containerWidth,
-            logsWidth,
-          )}
-          onClick={sidebars.openLeft}
-        />
-      )}
-
-      {!sidebars.rightOpen && !(viewport.mobile && selected) && (
-        <FloatingSidebarToggle
-          side="right"
-          inset={floatingSidebarToggleInset(
-            sidebars.leftOverlay,
-            sidebars.containerWidth,
-            sidebarWidth,
-          )}
-          onClick={sidebars.openRight}
-        />
-      )}
+      {!sidebars.leftOpen && <FloatingSidebarToggle side="left" onClick={sidebars.openLeft} />}
       {connectionBlocked &&
         createPortal(
           <ServerConnectionOverlay
