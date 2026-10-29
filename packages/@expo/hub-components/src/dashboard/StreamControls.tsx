@@ -3,6 +3,7 @@ import { type ReactNode } from "react";
 import {
   areRecordingControlsLocked,
   type ConnectionStatus,
+  type DevicePlatform,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
@@ -71,6 +72,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
+  platform,
   status = "streaming",
   recording = null,
   recordingControlsLocked: clientLocked,
@@ -88,7 +90,9 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** The client's connection status. Rotate waits for a live stream, like the Orientation select. */
+  /** The client's platform. On iOS, Rotate waits for a live stream, like the Orientation select. */
+  platform?: DevicePlatform;
+  /** The client's connection status. */
   status?: ConnectionStatus;
   /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
   recording?: DeviceScreenRecordingStatus | null;
@@ -108,6 +112,7 @@ export function StreamControls({
   // Callers that pass only `recording` keep the lock it implied before this prop existed.
   const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
   const rotateUnavailable = rotationUnavailableReason({
+    platform,
     status,
     recording,
     recordingControlsLocked,

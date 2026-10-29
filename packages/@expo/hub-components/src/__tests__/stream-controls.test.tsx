@@ -53,12 +53,22 @@ describe("StreamControls", () => {
       expect(rotate).not.toContain("Rotation is unavailable");
     },
   );
-  test("locks Rotate until the stream is live, with the same reason as the Orientation select", () => {
-    const markup = renderToStaticMarkup(<StreamControls onRotate={() => {}} status="connecting" />);
-    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
-    expect(rotate).toContain('aria-disabled="true"');
-    expect(rotate).toContain("Rotation is unavailable until the device stream is live.");
-  });
+  test.each(["connecting", "reconnecting", "error", "idle"] as const)(
+    "locks iOS Rotate while the stream is %s, but not Android Rotate, which uses HTTP",
+    (status) => {
+      const rotate = (platform: "ios" | "android") =>
+        buttonTags(
+          renderToStaticMarkup(
+            <StreamControls onRotate={() => {}} platform={platform} status={status} />,
+          ),
+        ).find((tag) => tag.includes('aria-label="Rotate"'));
+      expect(rotate("ios")).toContain('aria-disabled="true"');
+      expect(rotate("ios")).toContain(
+        "Rotation is unavailable until the simulator stream is live.",
+      );
+      expect(rotate("android")).not.toContain("aria-disabled");
+    },
+  );
   test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(<StreamControls />);
     const buttons = buttonTags(markup);
@@ -224,6 +234,9 @@ describe("StreamPanel", () => {
       ).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate({})).not.toContain("aria-disabled");
     expect(rotate({ recordingControlsLocked: true })).toContain('aria-disabled="true"');
+    // StreamPanel passes the client's platform and status: iOS Rotate waits for the stream.
+    expect(rotate({ status: "reconnecting" })).not.toContain("aria-disabled");
+    expect(rotate({ platform: "ios", status: "reconnecting" })).toContain('aria-disabled="true"');
   });
 
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {
