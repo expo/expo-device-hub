@@ -965,8 +965,10 @@ export interface DeviceClient {
 /**
  * iPhone Duo hinge state and controls. State comes from serve-sim's native
  * observation when it reports one, otherwise from its last successful command.
- * The state can lag a command: `pending` clears on the helper's reply, and the
- * state changes when the helper pushes the next screen config.
+ * serve-sim pushes the new screen config before its reply, so the command fields are
+ * current when `pending` clears. A native observation, when present, wins and can arrive
+ * later, so the state can show the previous pose for a moment after `pending` clears. A UI
+ * that animates a pick must keep its own preview until the state matches.
  */
 export interface DeviceHinge {
   /** Hinge angle in degrees from 0 (closed) to 180 (open); undefined while unknown. */

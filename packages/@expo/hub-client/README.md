@@ -259,9 +259,10 @@ in [`src/types.ts`](./src/types.ts).
 ### Fold an iPhone Duo
 
 `client.hinge` is set only for a simulator with a hinge that serve-sim can move. It reads the
-hinge from the screen config and sends commands over the input socket. `pending` clears on the
-helper's reply, and the state changes with the next screen config, so the state can show the
-previous pose for a moment after `pending` clears.
+hinge from the screen config and sends commands over the input socket. serve-sim sends the new
+config before its reply, but when the config has a native observation, the observation wins and
+can arrive later. The state can then show the previous pose for a moment after `pending` clears,
+so a UI that animates a pick must keep its own preview until the state matches.
 
 ```ts
 import { HINGE_POSES } from "@expo/hub-client";

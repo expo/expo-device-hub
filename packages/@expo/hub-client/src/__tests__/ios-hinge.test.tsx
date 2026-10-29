@@ -97,6 +97,8 @@ async function mount(
         streamUrl: `${helper}/stream.mjpeg`,
         wsUrl: `${helper.replace("http:", "ws:")}/ws`,
         inputAdmission,
+        pid: 1,
+        execToken: "exec-token",
       });
     }
     return Response.json({ devices: [] });
@@ -115,7 +117,23 @@ async function mount(
     act(async () => {
       renderer?.update(<Harness device={device} />);
     });
-  return { client: () => client, helper, switchDevice };
+  // A pushed config from the control socket can replace the helper at the same device.
+  const pushConfig = async (value: object) => {
+    const control = Socket.instances.find((socket) => socket.url.endsWith("/exec-ws"))!;
+    await act(async () => {
+      control.onopen?.();
+      control.onmessage?.({ data: JSON.stringify({ ready: true }) } as never);
+    });
+    const subscription = (control.sent as unknown[])
+      .map((data) => JSON.parse(String(data)) as { sub?: number; path?: string })
+      .find((message) => message.path?.includes("/api/events"))!;
+    await act(async () =>
+      control.onmessage?.({
+        data: JSON.stringify({ sub: subscription.sub, data: `data: ${JSON.stringify(value)}\n\n` }),
+      } as never),
+    );
+  };
+  return { client: () => client, helper, switchDevice, pushConfig };
 }
 
 const HINGE = { ...INNER, supportsHingeAngle: true, hingeAngle: 90, hingePose: "book" } as const;
@@ -329,4 +347,43 @@ test("a hinge command needs the admitted input socket", async () => {
     { requestId: expect.any(Number), command: { control: "angle", value: 120 } },
   ]);
   expect(client().hinge).toMatchObject({ pending: true, error: null });
+});
+
+test("a replaced helper fails the command that has no reply", async () => {
+  const { client, helper, pushConfig } = await mount();
+  const first = helper();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  await pushConfig({
+    device: "DUO",
+    pid: 2,
+    execToken: "exec-token",
+    inputAdmission: false,
+    url: "http://localhost:3200/sim/helper/DUO",
+    streamUrl: "http://localhost:3200/sim/helper/DUO/stream.mjpeg",
+    wsUrl: "ws://localhost:3200/sim/helper/DUO/ws",
+  });
+  expect(helper()).not.toBe(first);
+  await act(async () => helper().screen({ ...INNER, supportsHingeAngle: true }));
+  expect(client().hinge).toMatchObject({ pending: false, error: HINGE_DISCONNECTED_MESSAGE });
+  expect(helper().hingeRequests()).toEqual([]);
+});
+
+test("an observation that changes only Table Mode reaches the client", async () => {
+  const observed = { hingeAngle: 80, physicalOrientation: "facedown", tableMode: false } as const;
+  const { client, helper } = await mount({ ...HINGE, observedDeviceState: observed });
+  expect(client().hinge).toMatchObject({ tableMode: false, pose: null });
+  await act(async () =>
+    helper().screen({ ...HINGE, observedDeviceState: { ...observed, tableMode: true } }),
+  );
+  expect(client().hinge).toMatchObject({ tableMode: true, pose: "tent" });
+});
+
+test("a disconnect after the newest command succeeded does not report an older one", async () => {
+  const { client, helper } = await mount();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  const [, newest] = helper().hingeRequests();
+  await act(async () => helper().frame(0x90, { requestId: newest!.requestId, ok: true }));
+  await act(async () => helper().onclose?.({ code: 1006, reason: "" }));
+  expect(client().hinge).toMatchObject({ pending: false, error: null });
 });
