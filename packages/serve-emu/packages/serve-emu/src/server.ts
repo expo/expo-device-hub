@@ -2167,7 +2167,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               ok: true,
               orientation: await runForContext(requestContext, async (context) => {
                 const status = await lockRotation(context.serial, orientation);
-                void orientationReader(context.serial).refresh();
+                orientationReader(context.serial).locked(status.pose);
                 return status;
               }),
             });

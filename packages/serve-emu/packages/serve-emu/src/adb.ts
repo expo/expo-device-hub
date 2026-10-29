@@ -12,7 +12,7 @@ export type NightMode = "auto" | "dark" | "light";
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
-  orientation: OrientationMode | "unknown";
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
   pose: ScreenOrientation | null;
   raw: string;
 };

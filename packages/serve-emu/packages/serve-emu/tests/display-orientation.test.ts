@@ -89,4 +89,36 @@ describe("display orientation reader", () => {
     finish(1);
     await expect(instance.refresh()).resolves.toBe("landscape_right");
   });
+
+  test("a lock replaces the reading at once and discards a read that started before it", async () => {
+    let finishOld: (rotation: DisplayRotation) => void = () => {};
+    const old = new Promise<DisplayRotation>((resolve) => (finishOld = resolve));
+    const { instance, advance, reads } = reader([0, old]);
+    await instance.refresh();
+    advance(1_001);
+    const before = instance.refresh();
+    instance.locked("landscape_left");
+    // The pre-lock read answers later with the pre-lock rotation.
+    finishOld(0);
+    await before;
+    advance(200);
+    await expect(instance.fresh()).resolves.toBe("landscape_left");
+    expect(instance.current()).toBe("landscape_left");
+    expect(reads().rotationReads).toBe(2);
+  });
+
+  test("after a free rotation, the next read waits for an older read instead of sharing it", async () => {
+    let finishOld: (rotation: DisplayRotation) => void = () => {};
+    const old = new Promise<DisplayRotation>((resolve) => (finishOld = resolve));
+    const { instance, advance, reads } = reader([0, old, 1]);
+    await instance.refresh();
+    advance(1_001);
+    void instance.refresh();
+    instance.locked(null);
+    const next = instance.refresh();
+    expect(reads().rotationReads).toBe(2);
+    finishOld(0);
+    await expect(next).resolves.toBe("landscape_right");
+    expect(reads().rotationReads).toBe(3);
+  });
 });
