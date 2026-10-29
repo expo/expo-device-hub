@@ -432,6 +432,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onSelect={selectDevice}
           onAddDevice={hideBootDevice ? undefined : handleAddDevice}
           onToggle={sidebars.closeLeft}
+          // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
+          toggleIcon={viewport.mobile ? "close" : "sidebar"}
           platform={platform}
           width={sidebarWidth}
         >

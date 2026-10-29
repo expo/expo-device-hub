@@ -29,6 +29,7 @@ export function Sidebar({
   onSelect,
   onAddDevice,
   onToggle,
+  toggleIcon = "sidebar",
   platform,
   width = 400,
   children,
@@ -53,6 +54,8 @@ export function Sidebar({
   onAddDevice?: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
+  /** Glyph of that toggle: `"close"` for a full-screen overlay that is dismissed. */
+  toggleIcon?: "sidebar" | "close";
   /** Restrict the sidebar to one platform. Both sections render by default. */
   platform?: Platform;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
@@ -84,7 +87,7 @@ export function Sidebar({
         }}
       >
         <Logo />
-        {onToggle && <SidebarToggle onClick={onToggle} />}
+        {onToggle && <SidebarToggle icon={toggleIcon} onClick={onToggle} />}
       </div>
       <div
         style={{
