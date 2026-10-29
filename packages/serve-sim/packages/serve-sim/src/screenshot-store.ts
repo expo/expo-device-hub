@@ -76,21 +76,25 @@ export async function captureScreenshotFileAsync(
     timeoutMs?: number;
   },
   readActiveDisplay?: () => Promise<number>,
+  captureNative?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
 ): Promise<HostActionResult> {
   let display = p.display;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const shot = await runInvocation({
-      file: "xcrun",
-      args: [
-        "simctl",
-        "io",
-        p.udid,
-        "screenshot",
-        ...(display === undefined ? [] : [`--display=${display}`]),
-        p.file,
-      ],
-      timeoutMs: p.timeoutMs,
-    });
+    const shot =
+      captureNative && display !== undefined
+        ? await writeFile(p.file, await captureNative(display, p.timeoutMs)).then(() => ok(p.file))
+        : await runInvocation({
+            file: "xcrun",
+            args: [
+              "simctl",
+              "io",
+              p.udid,
+              "screenshot",
+              ...(display === undefined ? [] : [`--display=${display}`]),
+              p.file,
+            ],
+            timeoutMs: p.timeoutMs,
+          });
     if (shot.exitCode !== 0 || !readActiveDisplay) return shot;
     const current = await readActiveDisplay();
     if (current === display) return shot;
@@ -106,6 +110,7 @@ export async function captureScreenshotAsync(
     display: number;
   },
   readActiveDisplay?: () => Promise<number>,
+  captureNative?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
 ): Promise<HostActionResult> {
   const hours = MAX_SCREENSHOT_AGE_MS / 3_600_000;
   const staged = join(SCREENSHOT_DIR, p.fileName);
@@ -143,6 +148,7 @@ export async function captureScreenshotAsync(
     shot = await captureScreenshotFileAsync(
       { udid: p.udid, file: temporary, display: p.display },
       readActiveDisplay,
+      captureNative,
     );
     if (shot.exitCode === 0) await queueScreenshotAsync(() => rename(temporary, staged));
   } catch (error) {

@@ -11,6 +11,7 @@ import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-sta
 import { UDID, useTempStateDir } from "../helpers";
 
 const tempState = useTempStateDir();
+let screenshotRun: () => Promise<Uint8Array> = async () => new Uint8Array();
 afterAll(() => tempState.restore());
 
 let screen: NativeScreenInfo;
@@ -289,6 +290,9 @@ mock.module("../../native", () => ({
     return softwareKeyboardVisible;
   },
   NativeCapture: class {
+    screenshot() {
+      return screenshotRun();
+    }
     async start() {
       if (captureStartError) throw captureStartError;
     }
@@ -389,6 +393,7 @@ let ws: WebSocket | undefined;
 let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
+  screenshotRun = async () => new Uint8Array();
   deviceStateChanged = undefined;
   deviceStateSubscriptionGate = undefined;
   deviceStateUnsubscribeGate = undefined;
@@ -3650,5 +3655,76 @@ describe("physical hinge controls", () => {
     await waitUntil(() => controlResults.length === 3);
     expect(controlResults[2]).toMatchObject({ ok: true });
     expect(tableModes).toEqual([true]);
+  });
+});
+
+describe("native screenshots", () => {
+  test("timeouts keep native work serialized and skip expired queued captures", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let release!: () => void;
+    let calls = 0;
+    screenshotRun = async () => {
+      if (++calls === 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return new Uint8Array([calls]);
+    };
+    const results = Promise.allSettled([session!.screenshot(1, 100), session!.screenshot(1, 100)]);
+    try {
+      const timedOut = await Promise.race([
+        results,
+        Bun.sleep(1000).then(() => {
+          throw new Error("Screenshot callers did not time out");
+        }),
+      ]);
+      expect(timedOut.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+      expect(calls).toBe(1);
+    } finally {
+      release?.();
+    }
+    expect(await session!.screenshot(1)).toEqual(new Uint8Array([2]));
+    expect(calls).toBe(2);
+  });
+
+  test("serializes captures and recovers after a failed capture", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let active = 0,
+      maximum = 0,
+      calls = 0;
+    screenshotRun = async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      const call = ++calls;
+      try {
+        await Bun.sleep(10);
+        if (call === 1) throw new Error("surface unavailable");
+        return new Uint8Array([call]);
+      } finally {
+        active--;
+      }
+    };
+    const results = await Promise.allSettled([session!.screenshot(1), session!.screenshot(1)]);
+    expect(results[0]!.status).toBe("rejected");
+    expect(results[1]).toEqual({ status: "fulfilled", value: new Uint8Array([2]) });
+    expect(maximum).toBe(1);
+  });
+
+  test("shutdown rejects both in-flight and queued captures", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let release!: () => void;
+    let entered = false;
+    screenshotRun = async () => {
+      entered = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Uint8Array([1]);
+    };
+    const results = Promise.allSettled([session!.screenshot(1), session!.screenshot(1)]);
+    await waitUntil(() => entered);
+    session!.close();
+    release();
+    expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
   });
 });

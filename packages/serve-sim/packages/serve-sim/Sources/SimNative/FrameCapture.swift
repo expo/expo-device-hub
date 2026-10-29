@@ -291,7 +291,7 @@ actor FrameCapture {
 
     /// Fixed feeds select only their panel. Main capture prefers the
     /// authoritative active panel and retains its legacy largest-area fallback.
-    private func pickBestSurface(live: Bool) -> (key: ObjectIdentifier, surface: IOSurface)? {
+    private func pickBestSurface(live: Bool, screenID: UInt32? = nil) -> (key: ObjectIdentifier, surface: IOSurface)? {
         let surfaces = descriptors.compactMap { descriptor -> (key: ObjectIdentifier, surface: IOSurface)? in
             guard let surface = surface(for: descriptor, live: live) else { return nil }
             return (ObjectIdentifier(descriptor), surface)
@@ -304,7 +304,7 @@ actor FrameCapture {
         }
         guard let index = FramebufferSelectionPolicy.preferredIndex(
             in: candidates, activeScreenID: authoritativeDisplay?.screenID,
-            fixedScreenID: fixedScreenID
+            fixedScreenID: screenID ?? fixedScreenID
         ) else { return nil }
         return surfaces[index]
     }
@@ -520,6 +520,44 @@ actor FrameCapture {
 
     func frameCounts() -> (screen: UInt64, idle: UInt64) {
         (screen: screenFrameCount, idle: idleFrameCount)
+    }
+
+    /// Copy the current native surface, independently of video size, cadence and subscribers.
+    /// Selection and copy run on the capture actor; compression runs elsewhere.
+    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?) {
+        guard displayConfigurationReady else { throw makeError(10, "Simulator display is unavailable") }
+        // The producer maintains these surfaces through callbacks and bounded revalidation.
+        // A synchronous ROCKit lookup here can stall the same queue that delivers video.
+        guard let (key, surface) = pickBestSurface(live: false, screenID: screenID) else {
+            throw makeError(10, "Simulator display is unavailable")
+        }
+        let width = IOSurfaceGetWidth(surface), height = IOSurfaceGetHeight(surface)
+        var source: Unmanaged<CVPixelBuffer>?
+        guard CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, surface,
+            [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA] as CFDictionary,
+            &source) == kCVReturnSuccess, let source = source?.takeRetainedValue() else {
+            throw makeError(10, "Could not read simulator display")
+        }
+        var output: CVPixelBuffer?
+        guard CVPixelBufferCreate(kCFAllocatorDefault, width, height,
+            kCVPixelFormatType_32BGRA, nil, &output) == kCVReturnSuccess, let output else {
+            throw makeError(10, "Could not allocate screenshot")
+        }
+        CVPixelBufferLockBaseAddress(source, .readOnly)
+        CVPixelBufferLockBaseAddress(output, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(output, [])
+            CVPixelBufferUnlockBaseAddress(source, .readOnly)
+        }
+        guard let src = CVPixelBufferGetBaseAddress(source),
+              let dst = CVPixelBufferGetBaseAddress(output) else {
+            throw makeError(10, "Could not copy simulator display")
+        }
+        for row in 0..<height {
+            memcpy(dst.advanced(by: row * CVPixelBufferGetBytesPerRow(output)),
+                   src.advanced(by: row * CVPixelBufferGetBytesPerRow(source)), width * 4)
+        }
+        return (output, screenMetadata[key]?.applying(authoritativeDisplay).orientation)
     }
 
     private func captureFrame(force: Bool = false, allowLiveRevalidation: Bool = true) {

@@ -2908,14 +2908,20 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const file = join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
       try {
         const screenId = display?.data;
-        const capture = (id: number, read?: () => Promise<number>) =>
-          captureScreenshotFileAsync({ udid, file, display: id, timeoutMs: 5_000 }, read);
+        const capture = (
+          id: number,
+          read?: () => Promise<number>,
+          native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
+        ) =>
+          captureScreenshotFileAsync({ udid, file, display: id, timeoutMs: 5_000 }, read, native);
         const result =
           screenId !== undefined
             ? await capture(screenId)
             : await withScreenshotDeviceSession(udid, streamSettings, async (session) => {
                 const read = () => session.activeScreenId();
-                return await capture(await read(), read);
+                return await capture(await read(), read, (id, timeoutMs) =>
+                  session.screenshot(id, timeoutMs),
+                );
               }).catch(async (error) => {
                 // A sole integrated display needs no native panel election. Never
                 // fall back on an unknown profile or a multi-display device.
@@ -2924,7 +2930,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 if (ids?.length !== 1) throw error;
                 return await capture(ids[0]!);
               });
-        if (result.exitCode !== 0) throw new Error(result.stderr || "simctl screenshot failed");
+        if (result.exitCode !== 0) throw new Error(result.stderr || "Simulator screenshot failed");
         const png = await readFile(file);
         const artifact = await saveScreenshotArtifact(png);
         recordScreenshotEvent(udid, artifact);
@@ -2942,7 +2948,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (typeof stderr === "string" && stderr.trim()) ||
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
-        console.error(`simctl screenshot failed for ${udid}:`, message);
+        console.error(`Simulator screenshot failed for ${udid}:`, message);
         recordScreenshotEvent(udid, {
           status: "capture-failed",
           error: "simctl screenshot failed",

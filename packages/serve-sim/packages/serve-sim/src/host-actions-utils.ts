@@ -38,8 +38,11 @@ export class HostActionTimeoutError extends Error {
   }
 }
 
-export async function withHostActionDeadline<T>(work: Promise<T>, operation: string): Promise<T> {
-  const timeoutMs = actionTimeoutMs();
+export async function withHostActionDeadline<T>(
+  work: Promise<T>,
+  operation: string,
+  timeoutMs = actionTimeoutMs(),
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
