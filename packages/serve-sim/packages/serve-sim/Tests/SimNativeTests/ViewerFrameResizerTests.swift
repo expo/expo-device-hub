@@ -281,6 +281,48 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(backend.poolDrops, 3)
     }
 
+    func testFailedTopLeftTransferLatchesToTheCPUPathWithoutRetrying() throws {
+        var attempts = 0
+        let letterboxer = PixelBufferLetterboxer(transferImage: { _, _, _ in
+            attempts += 1
+            return -1
+        })
+        let source = makeBuffer(width: 1_398, height: 2_034,
+                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        fill(source, luma: 128, chroma: 128)
+        fillColumns(source, from: 1_374, to: 1_398, luma: 235)
+
+        // The first frame tries VideoToolbox once, then uses the CPU path, still top-left.
+        let first = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(letterboxer.cpuFrames, 1)
+        XCTAssertEqual(letterboxer.transferFrames, 0)
+        XCTAssertEqual(luma(first, x: 780, y: 568), 235, accuracy: 3, "right edge kept")
+        XCTAssertEqual(luma(first, x: 790, y: 568), 235, accuracy: 3, "edge repeated, not centered bars")
+
+        // Later frames skip VideoToolbox, top-left and centered alike.
+        let second = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        _ = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136))
+        XCTAssertEqual(attempts, 1, "the failed transfer is not retried")
+        XCTAssertEqual(letterboxer.cpuFrames, 3)
+        XCTAssertEqual(luma(second, x: 790, y: 568), 235, accuracy: 3)
+    }
+
+    func testFailedTopLeftTransferWithoutCPUFallbackDropsFramesWithoutRetrying() {
+        var attempts = 0
+        let letterboxer = PixelBufferLetterboxer(allowCPUFallback: false, transferImage: { _, _, _ in
+            attempts += 1
+            return -1
+        })
+        let source = makeBuffer(width: 1_398, height: 2_034,
+                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+
+        XCTAssertNil(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertNil(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertEqual(attempts, 1, "the failed transfer is not retried")
+        XCTAssertEqual(letterboxer.cpuFrames, 0)
+    }
+
     // MARK: - Helpers
 
     /// The iPhone Duo cover screen in the canvas sized for its inner screen. The source's left

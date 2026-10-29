@@ -16,10 +16,15 @@ final class PixelBufferLetterboxer {
     private(set) var transferFrames: UInt64 = 0
     private(set) var cpuFrames: UInt64 = 0
     private(set) var poolDrops: UInt64 = 0
+    typealias TransferImage = (VTPixelTransferSession, CVPixelBuffer, CVPixelBuffer) -> OSStatus
+    private let transferImage: TransferImage
 
     /// `preferCPU` skips the VideoToolbox transfer and scales with vImage from the start.
-    init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false) {
+    /// `transferImage` lets a test fail the VideoToolbox transfer.
+    init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false,
+         transferImage: @escaping TransferImage = { VTPixelTransferSessionTransferImage($0, from: $1, to: $2) }) {
         self.allowCPUFallback = allowCPUFallback
+        self.transferImage = transferImage
         allocationLimit = maxBuffers.map { [kCVPixelBufferPoolAllocationThresholdKey as String: $0] as CFDictionary }
         transferUnavailable = preferCPU && allowCPUFallback
     }
@@ -45,27 +50,34 @@ final class PixelBufferLetterboxer {
                                  canvasWidth: width, canvasHeight: height)
         guard let output = makeOutput(width: width, height: height, format: format) else { return nil }
 
-        if topLeft, !transferUnavailable {
-            // The plain letterbox mode always centers, so the aperture places the picture.
-            let geometry = PlacedGeometry(source: source.dimensions,
-                                          canvas: Dimensions(width: width, height: height),
-                                          placement: placement)
-            if let transfer = placedSession(geometry),
-               VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr {
-                transferFrames &+= 1
-                for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
-                            kCVImageBufferPixelAspectRatioKey] { CVBufferRemoveAttachment(output, key) }
-                Self.extendPictureEdges(output, placement: placement)
-                return output
+        if topLeft {
+            // The plain letterbox mode always centers, so the aperture places the picture. A
+            // top-left frame never uses the centered session, so a failure here falls to the CPU path.
+            if !transferUnavailable {
+                let geometry = PlacedGeometry(source: source.dimensions,
+                                              canvas: Dimensions(width: width, height: height),
+                                              placement: placement)
+                if let transfer = placedSession(geometry),
+                   transferImage(transfer, source, output) == noErr {
+                    transferFrames &+= 1
+                    for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
+                                kCVImageBufferPixelAspectRatioKey] { CVBufferRemoveAttachment(output, key) }
+                    Self.extendPictureEdges(output, placement: placement)
+                    return output
+                }
+                if let placedTransfer { VTPixelTransferSessionInvalidate(placedTransfer) }
+                placedTransfer = nil
+                placedGeometry = nil
+                placedTransferUnavailable = true
+                transferUnavailable = true
+                print("[stream] VideoToolbox letterbox transfer failed; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
             }
-            transferUnavailable = true
-            print("[stream] VideoToolbox letterbox transfer failed; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
         } else if let transfer = transferSession(),
-           VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr {
+           transferImage(transfer, source, output) == noErr {
             transferFrames &+= 1
             return output
         }
-        if let transfer {
+        if !topLeft, let transfer {
             VTPixelTransferSessionInvalidate(transfer)
             self.transfer = nil
             transferUnavailable = true
@@ -167,7 +179,7 @@ final class PixelBufferLetterboxer {
                                       placement: placement)
         guard let transfer = placedSession(geometry),
               let output = makeOutput(width: width, height: height, format: format),
-              VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr else { return nil }
+              transferImage(transfer, source, output) == noErr else { return nil }
         transferFrames &+= 1
         // The MP4 retains the full canvas and square pixels; cropping belongs to its timeline.
         for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
