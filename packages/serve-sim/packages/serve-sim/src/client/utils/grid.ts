@@ -1,3 +1,13 @@
+import type { DeviceKitChromeDescriptor } from "@expo/hub-client";
+export type {
+  DeviceKitChromeDescriptor,
+  DeviceKitChromeButton,
+  DeviceKitChromeSlice,
+  DeviceKitChromeSize as GridSize,
+  DeviceKitChromeRect as GridRect,
+  DeviceKitChromeInsets as GridInsets,
+} from "@expo/hub-client";
+
 export interface GridDevice {
   device: string;
   name: string;
@@ -67,68 +77,6 @@ export interface DevicePlaceholderAssetDescriptor {
   name: string;
   width: number;
   height: number;
-}
-
-export interface DeviceKitChromeDescriptor {
-  identifier: string;
-  screenId?: number;
-  displayVariants?: Record<number, DeviceKitChromeDescriptor>;
-  frame: GridSize;
-  body: GridRect;
-  screen: GridRect;
-  insets: GridInsets;
-  outerCornerRadius: number;
-  innerCornerRadius: number;
-  screenRadius: number;
-  screenCornerRadii?: {
-    topLeft: number;
-    topRight: number;
-    bottomRight: number;
-    bottomLeft: number;
-  };
-  compositeImage: string | null;
-  slice: DeviceKitChromeSlice | null;
-  corner: GridSize | null;
-  buttons: DeviceKitChromeButton[];
-}
-
-export interface DeviceKitChromeButton {
-  name: string;
-  image: string;
-  imageDown: string | null;
-  onTop: boolean;
-  frame: GridRect;
-  hover: { x: number; y: number };
-  usagePage: number | null;
-  usage: number | null;
-}
-
-export interface DeviceKitChromeSlice {
-  topLeft: string;
-  top: string;
-  topRight: string;
-  right: string;
-  bottomRight: string;
-  bottom: string;
-  bottomLeft: string;
-  left: string;
-}
-
-export interface GridSize {
-  width: number;
-  height: number;
-}
-
-export interface GridRect extends GridSize {
-  x: number;
-  y: number;
-}
-
-export interface GridInsets {
-  top: number;
-  left: number;
-  bottom: number;
-  right: number;
 }
 
 export interface MemoryReport {

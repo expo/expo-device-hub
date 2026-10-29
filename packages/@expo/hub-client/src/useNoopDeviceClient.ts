@@ -11,6 +11,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   error: null,
   inputError: null,
   screen: null,
+  chrome: null,
   fps: 0,
   devices: [],
   logs: [],

@@ -103,6 +103,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
+    "@expo/hub-client": "workspace:*",
     "@types/bun": "latest",
     "@types/debug": "^4.1.13",
     "@types/react": "^19.0.0",
