@@ -173,6 +173,10 @@ for (const [name, control, request] of CONTROLS) {
       expect(harness.client().recordingControlsLocked).toBe(true);
       await use(harness, control);
       expect(harness.writes).toEqual([]);
+      // Ignored silently: no pending choice and no error.
+      expect(harness.client().orientationPending).toBe(false);
+      expect(harness.client().orientationError).toBeNull();
+      expect(harness.client().orientation).toBe("portrait");
     },
   );
 }

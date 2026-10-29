@@ -163,6 +163,41 @@ describe("StreamControls", () => {
 });
 
 describe("StreamPanel", () => {
+  test("locks Rotate from the client's recordingControlsLocked, not from the recording status", () => {
+    const device: Device = {
+      id: "android",
+      name: "Pixel 9",
+      version: "Android 16",
+      platform: "android",
+      booted: true,
+      physical: false,
+      supported: true,
+      deviceFrame: null,
+    };
+    const rotate = (overrides: Partial<DeviceClient>) =>
+      buttonTags(
+        renderToStaticMarkup(
+          <StreamPanel
+            device={device}
+            client={
+              {
+                status: "streaming",
+                capabilities: { clipboard: false },
+                clipboardPending: null,
+                screenRecording: "recording",
+                recordingControlsLocked: false,
+                ...overrides,
+              } as DeviceClient
+            }
+            DeviceScreen={() => null}
+            displayScreen={() => null}
+          />,
+        ),
+      ).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate({})).not.toContain("aria-disabled");
+    expect(rotate({ recordingControlsLocked: true })).toContain('aria-disabled="true"');
+  });
+
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {
     let onCopy: DeviceScreenProps["onCopy"];
     let copies = 0;
