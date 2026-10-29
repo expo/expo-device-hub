@@ -701,9 +701,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The consumer streams the displays itself, so the flat stream parks meanwhile.
   const displayStreaming = isDuo && (panelElements[1] !== null || panelElements[3] !== null);
   // @ref LLP 0015#screen-sessions — a new device, server, token, surface, or media element loads again
+  // Without a requested device, `/api` picks one; another pick is another session.
   const screenSessionKey = connectionScope
     ? JSON.stringify([
         connectionScope,
+        knownConfig?.device ?? targetDevice,
         displayStreaming ? "displays" : "flat",
         useWebRtc ? "video" : useAvcc ? "canvas" : "img",
       ])

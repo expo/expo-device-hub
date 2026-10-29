@@ -285,6 +285,23 @@ test("a helper restart keeps a locked WebRTC stream's element and the Duo's 3D m
   expect(hub.client.displays).not.toBeNull();
 });
 
+test("a helper for another simulator, picked by /api without a requested device, loads again", async () => {
+  const hub = await iosClient({ device: undefined });
+  const visible = new FakeImage();
+  await act(async () => hub.client.attachVideo(visible as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => visible.paint());
+  expect(hub.client.status).toBe("streaming");
+
+  // The same transport, so only the resolved device tells the sessions apart.
+  await hub.loseHelper();
+  await hub.discover(helper({ url: "https://hub.test/helper/device-2", device: "device-2" }));
+  expect(hub.client.status).toBe("connecting");
+  expect(hub.client.framePresented).toBe(false);
+  expect(visible.src).not.toContain("/helper/device-1/");
+  expect(visible.style.backgroundImage ?? "").toBe("");
+});
+
 test("a new helper pid keeps the H.264 to MJPEG fallback", async () => {
   stubGlobal("VideoDecoder", class {});
   const hub = await iosClient({ streamMode: "h264" });
