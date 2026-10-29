@@ -210,6 +210,21 @@ test("Android keeps the answer over an older report until the readback grace end
   expect(client().orientation).toBe("portrait");
 });
 
+test("Android ignores a report from a poll that started before the answer, also after the grace", async () => {
+  const { client, hold, release, holdApi, releaseApi, startPoll, advance } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  holdApi();
+  await startPoll({ orientation: "portrait" });
+  await release();
+  // The old poll answers after the grace has passed; it still read the pre-lock pose.
+  advance(1_600);
+  await releaseApi();
+  expect(client().orientation).toBe("landscape_left");
+});
+
 test("Android Rotate before the first /api answer locks the opposite of the frame's aspect", async () => {
   const { client, locks, lockDevices, silence, switchDevice, settle } = await mount({
     orientation: "portrait",
