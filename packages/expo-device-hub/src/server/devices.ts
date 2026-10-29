@@ -84,6 +84,8 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const devices = await Promise.all(
     listed.value
       .filter((device) => device.platform === "iOS" && device.isAvailable)
+      // Hub lists only simulators with usage history, so read radii for those alone.
+      .filter((device) => latestTimestamp(device.lastUsedAt, device.lastBootedAt) !== undefined)
       .map(async (device): Promise<HubDevice> => {
         const platform = device.platform ?? "iOS";
 
@@ -103,7 +105,7 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
   );
 
   return {
-    devices: devices.filter((device) => device.lastUsedAt !== undefined),
+    devices,
     error: toSerializableError(listed.error),
   };
 }

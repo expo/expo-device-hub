@@ -1,9 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import plistImport from "@expo/plist";
 
-import { parseCornerRadii, readCornerRadii } from "../read-corner-radii";
+import { type PlistReader, parseCornerRadii, readCornerRadii } from "../read-corner-radii";
 
 const display = (overrides: Record<string, unknown>) => ({
   displayType: "integrated",
@@ -83,6 +86,18 @@ describe("parseCornerRadii", () => {
   });
 });
 
+// Workaround the Node CJS interop/Bun interop respecting __esModule.
+type ExpoPlist = typeof plistImport;
+const plistModule = plistImport as ExpoPlist | { default: ExpoPlist };
+const plist = "default" in plistModule ? plistModule.default : plistModule;
+
+/**
+ * Parses the XML fixtures below with `@expo/plist`, so these tests run without macOS. The
+ * production reader shells out to `plutil`, which also reads Apple's binary plists. One
+ * test at the end of this file covers that reader on macOS.
+ */
+const readXmlPlist: PlistReader = async (path) => plist.parse(await readFile(path, "utf8"));
+
 const PREFIX = "com.apple.CoreSimulator.SimDeviceType.";
 
 const xml = (body: string) =>
@@ -136,7 +151,7 @@ describe("readCornerRadii", () => {
       capabilities: capabilitiesPlist(60),
     });
 
-    const read = await readCornerRadii(`${PREFIX}iPhone-Test`, root);
+    const read = await readCornerRadii(`${PREFIX}iPhone-Test`, root, readXmlPlist);
 
     expect(read.error).toBeNull();
     expect(read.value?.topLeft).toBeCloseTo(60 / 402, 6);
@@ -149,7 +164,7 @@ describe("readCornerRadii", () => {
       capabilities: capabilitiesPlist(30),
     });
 
-    const read = await readCornerRadii(`${PREFIX}iPad-Pro-Test`, root);
+    const read = await readCornerRadii(`${PREFIX}iPad-Pro-Test`, root, readXmlPlist);
 
     expect(read.error).toBeNull();
     expect(read.value?.topLeft).toBeCloseTo(30 / 402, 6);
@@ -160,21 +175,26 @@ describe("readCornerRadii", () => {
       const root = makeRoot();
       writeBundle(root, "iPhone Test", { info: infoPlist(`${PREFIX}iPhone-Test`) });
 
-      expect(await readCornerRadii(`${PREFIX}Nope`, root)).toEqual({ value: null, error: null });
+      expect(await readCornerRadii(`${PREFIX}Nope`, root, readXmlPlist)).toEqual({
+        value: null,
+        error: null,
+      });
     });
 
     test("is a null value with no error when there is no capabilities.plist", async () => {
       const root = makeRoot();
       writeBundle(root, "iPhone Test", { info: infoPlist(`${PREFIX}iPhone-Test`) });
 
-      expect(await readCornerRadii(`${PREFIX}iPhone-Test`, root)).toEqual({
+      expect(await readCornerRadii(`${PREFIX}iPhone-Test`, root, readXmlPlist)).toEqual({
         value: null,
         error: null,
       });
     });
 
     test("is a null value with no error when the folder does not exist", async () => {
-      expect(await readCornerRadii(`${PREFIX}iPhone-Test`, join(makeRoot(), "missing"))).toEqual({
+      expect(
+        await readCornerRadii(`${PREFIX}iPhone-Test`, join(makeRoot(), "missing"), readXmlPlist),
+      ).toEqual({
         value: null,
         error: null,
       });
@@ -189,7 +209,7 @@ describe("readCornerRadii", () => {
         capabilities: "not a plist",
       });
 
-      const read = await readCornerRadii(`${PREFIX}iPhone-Test`, root);
+      const read = await readCornerRadii(`${PREFIX}iPhone-Test`, root, readXmlPlist);
 
       expect(read.value).toBeNull();
       expect(read.error).not.toBeNull();
@@ -204,12 +224,12 @@ describe("readCornerRadii", () => {
       });
 
       // This model could be the broken bundle's, so it is not proven missing.
-      const unknown = await readCornerRadii(`${PREFIX}Elsewhere`, root);
+      const unknown = await readCornerRadii(`${PREFIX}Elsewhere`, root, readXmlPlist);
       expect(unknown.value).toBeNull();
       expect(unknown.error).not.toBeNull();
 
       // A model that another bundle declares is still found.
-      const found = await readCornerRadii(`${PREFIX}iPad-Pro-Test`, root);
+      const found = await readCornerRadii(`${PREFIX}iPad-Pro-Test`, root, readXmlPlist);
       expect(found.error).toBeNull();
       expect(found.value?.topLeft).toBeCloseTo(30 / 402, 6);
     });
@@ -218,7 +238,7 @@ describe("readCornerRadii", () => {
       const root = makeRoot();
       writeBundle(root, "Flaky", { info: "not a plist" });
 
-      const first = await readCornerRadii(`${PREFIX}Flaky-Model`, root);
+      const first = await readCornerRadii(`${PREFIX}Flaky-Model`, root, readXmlPlist);
       expect(first.error).not.toBeNull();
 
       // The bundle becomes readable, as after a transient failure.
@@ -226,12 +246,62 @@ describe("readCornerRadii", () => {
         info: infoPlist(`${PREFIX}Flaky-Model`),
         capabilities: capabilitiesPlist(40),
       });
-      const second = await readCornerRadii(`${PREFIX}Flaky-Model`, root);
+      const second = await readCornerRadii(`${PREFIX}Flaky-Model`, root, readXmlPlist);
 
       expect(second.error).toBeNull();
       expect(second.value?.topLeft).toBeCloseTo(40 / 402, 6);
     });
   });
+
+  test("reads a bounded number of Info.plist files at once while scanning", async () => {
+    const root = makeRoot();
+    for (let index = 0; index < 30; index++) {
+      writeBundle(root, `Bundle ${index}`, { info: infoPlist(`${PREFIX}Other-${index}`) });
+    }
+    let inFlight = 0;
+    let peak = 0;
+    const slowReader: PlistReader = async (path) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return await readXmlPlist(path);
+      } finally {
+        inFlight -= 1;
+      }
+    };
+
+    // No bundle is named after this identifier, so every Info.plist is read to look for it.
+    const read = await readCornerRadii(`${PREFIX}Missing`, root, slowReader);
+
+    expect(read).toEqual({ value: null, error: null });
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  test.skipIf(process.platform !== "darwin")(
+    "reads Apple's binary plists with the real plutil",
+    async () => {
+      const root = makeRoot();
+      writeBundle(root, "iPhone Test", {
+        info: infoPlist(`${PREFIX}iPhone-Test`),
+        capabilities: capabilitiesPlist(60),
+      });
+      const contents = join(root, "iPhone Test.simdevicetype", "Contents");
+      for (const file of [
+        join(contents, "Info.plist"),
+        join(contents, "Resources", "capabilities.plist"),
+      ]) {
+        execFileSync("plutil", ["-convert", "binary1", file]);
+      }
+
+      // The default reader, not the XML one: this is the production path.
+      const read = await readCornerRadii(`${PREFIX}iPhone-Test`, root);
+
+      expect(read.error).toBeNull();
+      expect(read.value?.topLeft).toBeCloseTo(60 / 402, 6);
+    },
+  );
 
   describe("parseCornerRadii with several displays", () => {
     test("uses the first integrated display, as documented", () => {

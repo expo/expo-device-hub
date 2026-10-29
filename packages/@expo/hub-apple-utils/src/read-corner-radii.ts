@@ -12,6 +12,16 @@ const DEVICE_TYPES_ROOT = "/Library/Developer/CoreSimulator/Profiles/DeviceTypes
 const DEVICE_TYPE_ID_PREFIX = "com.apple.CoreSimulator.SimDeviceType.";
 const BUNDLE_SUFFIX = ".simdevicetype";
 
+/**
+ * Reads a plist file as plain data. The default shells out to `plutil`, because DeviceKit
+ * plists are binary and `@expo/plist` cannot read them. Tests pass their own, so they do
+ * not need macOS.
+ */
+export type PlistReader = (path: string) => Promise<unknown>;
+
+/** How many Info.plist files a scan reads at once. A cold scan covers every installed profile. */
+const SCAN_CONCURRENCY = 8;
+
 /** What scanning every bundle's Info.plist found: names by device type identifier. */
 interface BundleScan {
   names: Map<string, string>;
@@ -69,11 +79,12 @@ export function parseCornerRadii(capabilities: unknown): ScreenCornerRadii | nul
 export async function readCornerRadii(
   deviceTypeIdentifier: string | null,
   root: string = DEVICE_TYPES_ROOT,
+  readPlist: PlistReader = readPlistAsJson,
 ): Promise<AppleUtilsResult<ScreenCornerRadii | null>> {
   if (!deviceTypeIdentifier) return result(null);
 
   try {
-    const bundle = await bundleNameForIdentifier(root, deviceTypeIdentifier);
+    const bundle = await bundleNameForIdentifier(root, deviceTypeIdentifier, readPlist);
     if (!bundle) return result(null);
 
     const capabilitiesPath = join(
@@ -85,7 +96,7 @@ export async function readCornerRadii(
     );
     if (!(await fileExists(capabilitiesPath))) return result(null);
 
-    return result(parseCornerRadii(await readPlistAsJson(capabilitiesPath)));
+    return result(parseCornerRadii(await readPlist(capabilitiesPath)));
   } catch (error) {
     return result(
       null,
@@ -94,17 +105,21 @@ export async function readCornerRadii(
   }
 }
 
-async function bundleNameForIdentifier(root: string, identifier: string): Promise<string | null> {
+async function bundleNameForIdentifier(
+  root: string,
+  identifier: string,
+  readPlist: PlistReader,
+): Promise<string | null> {
   // Most bundles are named after the identifier ("iPhone-17-Pro" → "iPhone 17 Pro"),
   // so check that one first instead of reading every Info.plist.
   const guess = identifier.startsWith(DEVICE_TYPE_ID_PREFIX)
     ? identifier.slice(DEVICE_TYPE_ID_PREFIX.length).replaceAll("-", " ")
     : null;
-  if (guess && (await bundleIdentifier(root, guess)) === identifier) return guess;
+  if (guess && (await bundleIdentifier(root, guess, readPlist)) === identifier) return guess;
 
   let scan = scansByRoot.get(root);
   if (!scan) {
-    const started = scanBundleNames(root);
+    const started = scanBundleNames(root, readPlist);
     scan = started;
     scansByRoot.set(root, started);
     const forget = () => {
@@ -121,7 +136,7 @@ async function bundleNameForIdentifier(root: string, identifier: string): Promis
   return null;
 }
 
-async function scanBundleNames(root: string): Promise<BundleScan> {
+async function scanBundleNames(root: string, readPlist: PlistReader): Promise<BundleScan> {
   const scan: BundleScan = { names: new Map(), failures: [] };
   let entries: string[];
   try {
@@ -132,29 +147,50 @@ async function scanBundleNames(root: string): Promise<BundleScan> {
     throw error;
   }
 
-  await Promise.all(
-    entries
-      .filter((entry) => entry.endsWith(BUNDLE_SUFFIX))
-      .map(async (entry) => {
-        const name = entry.slice(0, -BUNDLE_SUFFIX.length);
-        try {
-          const identifier = await bundleIdentifier(root, name);
-          if (identifier) scan.names.set(identifier, name);
-        } catch (error) {
-          scan.failures.push(error);
-        }
-      }),
+  await forEachWithLimit(
+    entries.filter((entry) => entry.endsWith(BUNDLE_SUFFIX)),
+    SCAN_CONCURRENCY,
+    async (entry) => {
+      const name = entry.slice(0, -BUNDLE_SUFFIX.length);
+      try {
+        const identifier = await bundleIdentifier(root, name, readPlist);
+        if (identifier) scan.names.set(identifier, name);
+      } catch (error) {
+        scan.failures.push(error);
+      }
+    },
   );
   return scan;
 }
 
 /** The bundle's identifier, `null` when it has no Info.plist. Throws when the plist cannot be read. */
-async function bundleIdentifier(root: string, name: string): Promise<string | null> {
+async function bundleIdentifier(
+  root: string,
+  name: string,
+  readPlist: PlistReader,
+): Promise<string | null> {
   const path = join(root, `${name}${BUNDLE_SUFFIX}`, "Contents", "Info.plist");
   if (!(await fileExists(path))) return null;
 
-  const info = await readPlistAsJson(path);
+  const info = await readPlist(path);
   return isRecord(info) ? (asString(info.CFBundleIdentifier) ?? null) : null;
+}
+
+/** Run `task` over every item, with at most `limit` running at once. `task` must not throw. */
+async function forEachWithLimit<T>(
+  items: T[],
+  limit: number,
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next] as T;
+      next += 1;
+      await task(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 async function fileExists(path: string): Promise<boolean> {
