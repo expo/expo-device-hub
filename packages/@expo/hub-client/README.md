@@ -259,19 +259,24 @@ in [`src/types.ts`](./src/types.ts).
 ### Fold an iPhone Duo
 
 `client.hinge` is set only for a simulator with a hinge that serve-sim can move. It reads the
-hinge from the screen config and sends commands over the input socket.
+hinge from the screen config and sends commands over the input socket. `pending` clears on the
+helper's reply, and the state changes with the next screen config, so the state can show the
+previous pose for a moment after `pending` clears.
 
 ```ts
 import { HINGE_POSES } from "@expo/hub-client";
 
 if (client.hinge) {
+  // Each state field is undefined while serve-sim has not reported it.
   client.hinge.angle; // 0 closed to 180 open
   client.hinge.pose; // 'closed' | 'open' | 'laptop' | 'book' | 'tent', or null for another state
   client.hinge.activeScreenId; // 1 cover, 3 inner screen
+  client.hinge.tableModeAvailable; // whether { control: "table", value: true } can work now
+  client.hinge.supportsPhysicalOrientation; // whether "physical" commands work
   client.hinge.setControl({ control: "pose", value: "book" });
   client.hinge.setControl({ control: "angle", value: 120 });
   client.hinge.pending; // true until the helper replies
-  client.hinge.error; // why the last command failed
+  client.hinge.error; // why the newest command failed
 }
 ```
 

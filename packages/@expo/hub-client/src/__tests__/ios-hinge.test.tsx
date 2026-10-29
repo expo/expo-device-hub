@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import type { DeviceClient, ScreenSize } from "../types";
-import { HINGE_DISCONNECTED_MESSAGE, HINGE_NOT_CONNECTED_MESSAGE } from "../useIosHinge";
+import {
+  HINGE_DISCONNECTED_MESSAGE,
+  HINGE_INVALID_COMMAND_MESSAGE,
+  HINGE_NOT_CONNECTED_MESSAGE,
+} from "../useIosHinge";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
@@ -57,7 +61,10 @@ afterEach(async () => {
   Socket.instances = [];
 });
 
-async function mount(initialScreen: ScreenSize | null = { ...INNER, supportsHingeAngle: true }) {
+async function mount(
+  initialScreen: ScreenSize | null = { ...INNER, supportsHingeAngle: true },
+  { inputAdmission = false } = {},
+) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     location: {
@@ -89,23 +96,29 @@ async function mount(initialScreen: ScreenSize | null = { ...INNER, supportsHing
         url: helper,
         streamUrl: `${helper}/stream.mjpeg`,
         wsUrl: `${helper.replace("http:", "ws:")}/ws`,
-        inputAdmission: false,
+        inputAdmission,
       });
     }
     return Response.json({ devices: [] });
   });
   let client!: DeviceClient;
-  function Harness() {
-    client = useIosDeviceClient({ baseUrl: "/sim", device: "DUO", streamMode: "mjpeg" });
+  function Harness({ device }: { device: string }) {
+    client = useIosDeviceClient({ baseUrl: "/sim", device, streamMode: "mjpeg" });
     return null;
   }
   await act(async () => {
-    renderer = create(<Harness />);
+    renderer = create(<Harness device="DUO" />);
   });
   const helper = () => Socket.instances.filter((socket) => socket.url.includes("/helper/")).at(-1)!;
   if (initialScreen) await act(async () => helper().screen(initialScreen));
-  return { client: () => client, helper };
+  const switchDevice = (device: string) =>
+    act(async () => {
+      renderer?.update(<Harness device={device} />);
+    });
+  return { client: () => client, helper, switchDevice };
 }
+
+const HINGE = { ...INNER, supportsHingeAngle: true, hingeAngle: 90, hingePose: "book" } as const;
 
 test("a device without a hinge has no hinge controls", async () => {
   const { client } = await mount({ width: 1206, height: 2622, orientation: "portrait" });
@@ -228,4 +241,92 @@ test("a hinge command without an open input socket fails at once", async () => {
   await act(async () => client().hinge!.setControl({ control: "pose", value: "closed" }));
   expect(helper().hingeRequests()).toEqual([]);
   expect(client().hinge).toMatchObject({ pending: false, error: HINGE_NOT_CONNECTED_MESSAGE });
+});
+
+test("a display switch at the same size reaches the client", async () => {
+  const { client, helper } = await mount(HINGE);
+  expect(client().hinge?.activeScreenId).toBe(3);
+  await act(async () => helper().screen({ ...HINGE, screenId: 1 }));
+  expect(client().hinge?.activeScreenId).toBe(1);
+  await act(async () => helper().screen({ ...HINGE, screenId: undefined }));
+  expect(client().hinge?.activeScreenId).toBeUndefined();
+});
+
+test("an observation-only change reaches the client, with Table Mode availability", async () => {
+  const observed = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false } as const;
+  const { client, helper } = await mount({ ...HINGE, observedDeviceState: observed });
+  expect(client().hinge).toMatchObject({ angle: 90, pose: "book", tableModeAvailable: true });
+  await act(async () =>
+    helper().screen({
+      ...HINGE,
+      observedDeviceState: { ...observed, hingeAngle: 180 },
+      supportsPhysicalOrientation: false,
+    }),
+  );
+  expect(client().hinge).toMatchObject({
+    angle: 180,
+    pose: "open",
+    tableModeAvailable: true,
+    supportsPhysicalOrientation: false,
+  });
+  await act(async () =>
+    helper().screen({ ...HINGE, observedDeviceState: { ...observed, hingeAngle: 0 } }),
+  );
+  expect(client().hinge?.tableModeAvailable).toBe(false);
+});
+
+test("an invalid hinge command fails without a request", async () => {
+  const { client, helper } = await mount();
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 200 }));
+  await act(async () =>
+    client().hinge!.setControl({ control: "pose", value: "sideways" } as never),
+  );
+  expect(helper().hingeRequests()).toEqual([]);
+  expect(client().hinge).toMatchObject({ pending: false, error: HINGE_INVALID_COMMAND_MESSAGE });
+});
+
+test("two hinge commands stay pending until both reply, and only the newest failure shows", async () => {
+  const { client, helper } = await mount();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  const [first, second] = helper().hingeRequests();
+  expect(second!.requestId).toBeGreaterThan(first!.requestId);
+
+  await act(async () => helper().frame(0x90, { requestId: second!.requestId, ok: true }));
+  expect(client().hinge?.pending).toBe(true);
+  // The older command fails after the newer one succeeded; its error is not shown.
+  await act(async () =>
+    helper().frame(0x90, { requestId: first!.requestId, ok: false, error: "older failure" }),
+  );
+  expect(client().hinge).toMatchObject({ pending: false, error: null });
+});
+
+test("a device change clears a pending command and its error", async () => {
+  const { client, helper, switchDevice } = await mount();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  expect(client().hinge?.pending).toBe(true);
+  await switchDevice("DUO-2");
+  await act(async () => helper().screen({ ...INNER, supportsHingeAngle: true }));
+  expect(client().hinge).toMatchObject({ pending: false, error: null });
+});
+
+test("a hinge command needs the admitted input socket", async () => {
+  const { client, helper } = await mount(
+    { ...INNER, supportsHingeAngle: true },
+    {
+      inputAdmission: true,
+    },
+  );
+  helper().readyState = 1;
+  // Before the helper admits the socket, the command fails at once and is not queued.
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 90 }));
+  expect(helper().hingeRequests()).toEqual([]);
+  expect(client().hinge?.error).toBe(HINGE_NOT_CONNECTED_MESSAGE);
+
+  await act(async () => helper().onmessage?.({ data: new Uint8Array([0x83]).buffer }));
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 120 }));
+  expect(helper().hingeRequests()).toEqual([
+    { requestId: expect.any(Number), command: { control: "angle", value: 120 } },
+  ]);
+  expect(client().hinge).toMatchObject({ pending: true, error: null });
 });

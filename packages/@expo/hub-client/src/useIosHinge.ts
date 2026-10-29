@@ -32,6 +32,8 @@ interface IosHingeOptions {
 export function useIosHinge({ screen, identity, trySend }: IosHingeOptions) {
   const requestIdRef = useRef(0);
   const requestsRef = useRef(new Set<number>());
+  // Only the newest command's failure is shown, as an older reply can arrive later.
+  const latestRequestRef = useRef(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +55,7 @@ export function useIosHinge({ screen, identity, trySend }: IosHingeOptions) {
         return;
       }
       requestsRef.current.add(requestId);
+      latestRequestRef.current = requestId;
       setError(null);
       setPending(true);
     },
@@ -63,9 +66,11 @@ export function useIosHinge({ screen, identity, trySend }: IosHingeOptions) {
   const receive = useCallback((bytes: Uint8Array) => {
     if (bytes[0] !== WS_MSG_HINGE_CONTROL_DONE) return false;
     const reply = parseHingeControlReply(decoder.decode(bytes.subarray(1)));
-    // Replies to another client's or a previous socket's request are not ours.
+    // A reply to a request that this hook no longer tracks, after a reset or a disconnect, is ignored.
     if (!reply || !requestsRef.current.delete(reply.requestId)) return true;
-    if (!reply.ok) setError(reply.error ?? HINGE_FAILED_MESSAGE);
+    if (!reply.ok && reply.requestId === latestRequestRef.current) {
+      setError(reply.error ?? HINGE_FAILED_MESSAGE);
+    }
     setPending(requestsRef.current.size > 0);
     return true;
   }, []);
@@ -83,7 +88,9 @@ export function useIosHinge({ screen, identity, trySend }: IosHingeOptions) {
       screen?.supportsHingeAngle === true
         ? {
             ...screenHingeState(screen),
-            activeScreenId: screen.screenId === 1 ? 1 : 3,
+            activeScreenId:
+              screen.screenId === 1 || screen.screenId === 3 ? screen.screenId : undefined,
+            supportsPhysicalOrientation: screen.supportsPhysicalOrientation,
             pending,
             error,
             setControl,
