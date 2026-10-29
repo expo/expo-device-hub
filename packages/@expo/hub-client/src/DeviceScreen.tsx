@@ -98,6 +98,12 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
 
   return {
     ...style,
+    // @ref LLP 0001#viewer-frame-placement — the server draws the picture top-left
+    // serve-sim draws the picture from the frame's top-left corner. A frame shaped for another
+    // panel (iPhone Duo) has unused columns or rows only on the right or bottom, so pinning the
+    // frame there shows the whole screen. A rotated element pins its own top-left, which is the
+    // raw frame's top-left.
+    objectPosition: "0 0",
     userSelect: "none",
     WebkitUserSelect: "none",
     pointerEvents: "none",
