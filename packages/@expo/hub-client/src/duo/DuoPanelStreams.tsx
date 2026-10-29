@@ -99,6 +99,7 @@ function DuoPanelStream({
     markFrameDecoded,
     streamStats,
     setStreamStatsEnabled,
+    restart: restartWebRtc,
   } = useWebRtcStream({
     offerUrl: `${url}/webrtc/offer`,
     closeUrl: `${url}/webrtc/close`,
@@ -114,6 +115,15 @@ function DuoPanelStream({
     // panel's missing frames mean a codec or transport problem.
     judgeStalls: active,
   });
+
+  // A restart with an unchanged codec does not change the stream hook's inputs.
+  const restartGeneration = feeds.restartGeneration ?? 0;
+  const restartedGeneration = useRef(restartGeneration);
+  useEffect(() => {
+    if (restartedGeneration.current === restartGeneration) return;
+    restartedGeneration.current = restartGeneration;
+    if (mode === "webrtc") restartWebRtc();
+  }, [restartGeneration, mode, restartWebRtc]);
 
   const statsEnabled = active && (feeds.statsEnabled ?? false);
   useEffect(() => {
