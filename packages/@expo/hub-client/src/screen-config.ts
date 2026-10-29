@@ -5,7 +5,12 @@
  * even when the pixel size is unchanged.
  */
 
-import { type HingePhysicalOrientation, type HingePose, observedHingePose } from "./hinge-control";
+import {
+  type HingePhysicalOrientation,
+  type HingePose,
+  isTableModeAvailable,
+  observedHingePose,
+} from "./hinge-control";
 import { type ScreenSize } from "./types";
 
 export function screenConfigsEqual(a: ScreenSize | null, b: ScreenSize): boolean {
@@ -16,6 +21,7 @@ export function screenConfigsEqual(a: ScreenSize | null, b: ScreenSize): boolean
     a.orientation === b.orientation &&
     a.screenId === b.screenId &&
     a.supportsHingeAngle === b.supportsHingeAngle &&
+    a.supportsPhysicalOrientation === b.supportsPhysicalOrientation &&
     a.hingeAngle === b.hingeAngle &&
     a.hingePose === b.hingePose &&
     a.physicalOrientation === b.physicalOrientation &&
@@ -37,6 +43,7 @@ export function screenHingeState(screen: ScreenSize): {
   pose?: HingePose | null;
   physicalOrientation?: HingePhysicalOrientation;
   tableMode?: boolean;
+  tableModeAvailable?: boolean;
 } {
   const observed = screen.observedDeviceState;
   if (!observed) {
@@ -45,12 +52,15 @@ export function screenHingeState(screen: ScreenSize): {
       pose: screen.hingePose,
       physicalOrientation: screen.physicalOrientation,
       tableMode: screen.tableMode,
+      tableModeAvailable: screen.tableModeAvailable,
     };
   }
+  // As in serve-sim's `observedHingeState`, availability follows the observed state.
   return {
     angle: observed.hingeAngle,
     pose: observedHingePose(observed.hingeAngle, observed.physicalOrientation, observed.tableMode),
     physicalOrientation: observed.physicalOrientation,
     tableMode: observed.tableMode,
+    tableModeAvailable: isTableModeAvailable(observed.hingeAngle, observed.physicalOrientation),
   };
 }

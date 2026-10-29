@@ -37,7 +37,7 @@ export interface ObservedHingeState {
   tableMode?: boolean;
 }
 
-export function isHingeAngle(value: unknown): value is number {
+function isHingeAngle(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 180;
 }
 
@@ -53,7 +53,7 @@ export function isHingeControlCommand(value: unknown): value is HingeControlComm
         : command.control === "pose" && HINGE_POSES.some((pose) => pose.id === command.value);
 }
 
-export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation {
+function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation {
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
 }
 
@@ -72,6 +72,17 @@ export function observedHingePose(
         (pose.id === "tent") === tableMode,
     )?.id ?? null
   );
+}
+
+/** Device Hub gates Table Mode by hinge angle and physical (not app) orientation. */
+export function isTableModeAvailable(
+  angle: number | undefined,
+  orientation: HingePhysicalOrientation | undefined,
+): boolean | undefined {
+  if (angle === undefined || orientation === undefined) return undefined;
+  if (angle === 0) return orientation === "landscape-left" || orientation === "landscape-right";
+  if (angle === 180) return orientation === "portrait";
+  return orientation !== "faceup";
 }
 
 /** The helper's `0x90` reply to one hinge command. */

@@ -67,6 +67,8 @@ export interface ScreenSize {
   screenId?: number;
   /** Whether this simulator has a hinge that serve-sim can move (iPhone Duo). */
   supportsHingeAngle?: boolean;
+  /** Whether serve-sim can set the physical face up or face down orientation. */
+  supportsPhysicalOrientation?: boolean;
   /** Hinge angle of serve-sim's last successful command, in degrees from 0 to 180. */
   hingeAngle?: number;
   /** Pose preset of serve-sim's last successful command; null after a custom angle or rotation. */
@@ -963,19 +965,27 @@ export interface DeviceClient {
 /**
  * iPhone Duo hinge state and controls. State comes from serve-sim's native
  * observation when it reports one, otherwise from its last successful command.
+ * The state can lag a command: `pending` clears on the helper's reply, and the
+ * state changes when the helper pushes the next screen config.
  */
 export interface DeviceHinge {
   /** Hinge angle in degrees from 0 (closed) to 180 (open); undefined while unknown. */
   angle?: number;
   /** The pose preset that the state matches; null for any other state, undefined while unknown. */
   pose?: HingePose | null;
+  /** Physical (not app) orientation; undefined while unknown. */
   physicalOrientation?: HingePhysicalOrientation;
+  /** Table Mode; undefined while unknown. */
   tableMode?: boolean;
-  /** The display that serve-sim streams: 1 for the cover, 3 for the inner screen. */
-  activeScreenId: 1 | 3;
+  /** Whether a `table` command can turn Table Mode on now; undefined while unknown. */
+  tableModeAvailable?: boolean;
+  /** Whether a `physical` command is supported; undefined while unknown. */
+  supportsPhysicalOrientation?: boolean;
+  /** The display that serve-sim streams: 1 for the cover, 3 for the inner screen; undefined while unknown. */
+  activeScreenId?: 1 | 3;
   /** A hinge command waits for the helper's reply. */
   pending: boolean;
-  /** Why the last hinge command failed; cleared when the next one is sent. */
+  /** Why the newest hinge command failed; cleared when the next one is sent. */
   error: string | null;
   /** Send a hinge command over the helper's input socket (`0x10`, answered with `0x90`). */
   setControl: (command: HingeControlCommand) => void;

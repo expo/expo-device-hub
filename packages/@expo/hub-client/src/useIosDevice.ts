@@ -124,9 +124,9 @@ import {
   type WsMessageSent,
 } from "./ws-send-queue";
 import { WS_MSG_CONFIG } from "./input-protocol";
+import { WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 import { screenConfigsEqual } from "./screen-config";
 import { useIosHinge } from "./useIosHinge";
-import { WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
