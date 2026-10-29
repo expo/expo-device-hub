@@ -13,7 +13,12 @@ function buttonTags(markup: string) {
 describe("StreamControls", () => {
   test("locks Rotate and explains the pending recording check", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="unknown" />,
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        recording="unknown"
+        recordingControlsLocked
+      />,
     );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -21,7 +26,12 @@ describe("StreamControls", () => {
   });
   test("explains why Rotate is unavailable during recording without disabling app controls", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="recording" />,
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        recording="recording"
+        recordingControlsLocked
+      />,
     );
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
@@ -31,6 +41,23 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
+  test.each(["recording", "unknown"] as const)(
+    "follows the client's lock, not the %s status, and explains only a locked Rotate",
+    (recording) => {
+      const markup = renderToStaticMarkup(
+        <StreamControls
+          appearance="light"
+          onToggleAppearance={() => {}}
+          onRotate={() => {}}
+          recording={recording}
+          recordingControlsLocked={false}
+        />,
+      );
+      const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+      expect(rotate).not.toContain("aria-disabled");
+      expect(rotate).not.toContain("Rotation is unavailable");
+    },
+  );
   test("groups Save, Theme, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />,

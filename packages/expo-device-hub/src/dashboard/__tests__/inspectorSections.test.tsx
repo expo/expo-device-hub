@@ -1847,13 +1847,26 @@ test("shows the active hardware encoder and hides unresolved encoder names", () 
   ).not.toContain("Active encoder:");
 });
 
-test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed", null] as const)(
-  "recording state %s locks only capture and destructive device controls",
-  (screenRecording) => {
+test.each([
+  ["unknown", true],
+  ["waiting", true],
+  ["recording", true],
+  ["finalizing", true],
+  ["complete", false],
+  ["failed", false],
+  [null, false],
+  // The dashboard follows the client's lock, not its own reading of the status.
+  ["recording", false],
+  ["unknown", false],
+  ["complete", true],
+] as const)(
+  "with recording %s and recordingControlsLocked %s, the lock disables only capture and destructive device controls",
+  (screenRecording, locked) => {
     const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
+      recordingControlsLocked: locked,
       deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
         mode: "grpc-screenshot",
@@ -1867,11 +1880,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
         sessionGeneration: 0,
       },
     };
-    const locked =
-      screenRecording === "unknown" ||
-      screenRecording === "waiting" ||
-      screenRecording === "recording" ||
-      screenRecording === "finalizing";
+    const unknownReason = locked && screenRecording === "unknown";
     const stream = renderToStaticMarkup(
       <StreamOptionsSection
         client={client}
@@ -1894,7 +1903,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
     expect(selectMarkup(stream, "Stream transport")).not.toContain('disabled=""');
     expect(stream).not.toContain("Capture settings are locked");
-    expect(stream.includes("until recording status is known")).toBe(screenRecording === "unknown");
+    expect(stream.includes("until recording status is known")).toBe(unknownReason);
     expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
     if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
 
@@ -1906,9 +1915,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
       const button = deviceOptions.slice(deviceOptions.lastIndexOf("<button", end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes("until recording status is known")).toBe(
-      screenRecording === "unknown",
-    );
+    expect(deviceOptions.includes("until recording status is known")).toBe(unknownReason);
     expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
       locked ? 2 : 0,
     );

@@ -14,6 +14,11 @@ export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordin
   }
 }
 
+/**
+ * True while a recording status could end with a rotation or stream change.
+ *
+ * @deprecated Read `DeviceClient.recordingControlsLocked`, which also ignores the locked controls.
+ */
 export function areRecordingControlsLocked(status: DeviceScreenRecordingStatus | null): boolean {
   return (
     status === "unknown" ||

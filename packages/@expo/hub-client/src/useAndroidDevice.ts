@@ -136,6 +136,8 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
+const RECORDING_LOCKED_MESSAGE =
+  "The orientation was not changed because a screen recording started. Change it after the recording.";
 // Servers that report `orientation` in `/api` lock every pose; older ones only portrait and
 // landscape (rotation 0 or 1; rotation 1 turns a phone counterclockwise, `landscape_right`).
 const ORIENTATION_CAPABILITIES: { orientations: readonly DeviceOrientation[] } = {
@@ -345,6 +347,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   if (recordingSnapshot.scope !== deviceScope) {
     setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
   }
+  const screenRecording =
+    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : active ? "unknown" : null;
+  // Turning the device or changing the stream can end the host recording, so those controls are
+  // locked while it could break (LLP 0013#recording-lock).
+  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
+  const recordingLockedRef = useRef(recordingControlsLocked);
+  useLayoutEffect(() => {
+    recordingLockedRef.current = recordingControlsLocked;
+  }, [recordingControlsLocked]);
   // Whether this server reports the display orientation, and its last report. Null until the
   // first `/api` answer for this device.
   const [orientationReport, setOrientationReport] = useState<{
@@ -513,6 +524,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         url: string;
         fetch: typeof sessionFetch;
       }) => {
+        // A choice queued behind another one must not go out once a recording starts.
+        if (recordingLockedRef.current) throw new Error(RECORDING_LOCKED_MESSAGE);
         const response = await request.fetch(request.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -2262,46 +2275,32 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ],
   );
 
-  const screenRecording =
-    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : active ? "unknown" : null;
   // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
-  // Turning the device or changing the stream restarts serve-emu's encoder, which ends the
-  // host recording. Refuse those controls in one place while it could break.
-  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
-  const recordingLockedRef = useRef(recordingControlsLocked);
-  recordingLockedRef.current = recordingControlsLocked;
-  const unlessRecording = useCallback(
-    <Args extends unknown[]>(control: (...args: Args) => void) =>
+  // Ignore the controls that can end the recording, in one place, while it could break.
+  const recordingSafeControls = useMemo(() => {
+    const unlessRecording =
+      <Args extends unknown[]>(control: (...args: Args) => void) =>
       (...args: Args) => {
         if (!recordingLockedRef.current) control(...args);
-      },
-    [],
-  );
-  const lockedRotate = useMemo(() => unlessRecording(rotate), [unlessRecording, rotate]);
-  const lockedSetOrientation = useMemo(
-    () => unlessRecording(setOrientation),
-    [unlessRecording, setOrientation],
-  );
-  const lockedUpdateStreamSettings = useMemo(
-    () => unlessRecording(updateStreamSettings),
-    [unlessRecording, updateStreamSettings],
-  );
-  const lockedSetStreamSource = useMemo(
-    () => unlessRecording(setStreamSource),
-    [unlessRecording, setStreamSource],
-  );
-  const lockedSetGrpcImageMode = useMemo(
-    () => unlessRecording(setGrpcImageMode),
-    [unlessRecording, setGrpcImageMode],
-  );
-  const lockedSetGrpcEncoder = useMemo(
-    () => unlessRecording(setGrpcEncoder),
-    [unlessRecording, setGrpcEncoder],
-  );
-  const lockedSetGrpcInputSource = useMemo(
-    () => unlessRecording(setGrpcInputSource),
-    [unlessRecording, setGrpcInputSource],
-  );
+      };
+    return {
+      rotate: unlessRecording(rotate),
+      setOrientation: unlessRecording(setOrientation),
+      updateStreamSettings: unlessRecording(updateStreamSettings),
+      setStreamSource: unlessRecording(setStreamSource),
+      setGrpcImageMode: unlessRecording(setGrpcImageMode),
+      setGrpcEncoder: unlessRecording(setGrpcEncoder),
+      setGrpcInputSource: unlessRecording(setGrpcInputSource),
+    };
+  }, [
+    rotate,
+    setOrientation,
+    updateStreamSettings,
+    setStreamSource,
+    setGrpcImageMode,
+    setGrpcEncoder,
+    setGrpcInputSource,
+  ]);
 
   return {
     platform: "android",
@@ -2351,16 +2350,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
-    updateStreamSettings: lockedUpdateStreamSettings,
+    updateStreamSettings: recordingSafeControls.updateStreamSettings,
     streamSource,
     screenRecording,
     recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
-    setStreamSource: lockedSetStreamSource,
-    setGrpcImageMode: lockedSetGrpcImageMode,
-    setGrpcEncoder: lockedSetGrpcEncoder,
-    setGrpcInputSource: lockedSetGrpcInputSource,
+    setStreamSource: recordingSafeControls.setStreamSource,
+    setGrpcImageMode: recordingSafeControls.setGrpcImageMode,
+    setGrpcEncoder: recordingSafeControls.setGrpcEncoder,
+    setGrpcInputSource: recordingSafeControls.setGrpcInputSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: "h264",
@@ -2375,12 +2374,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendKey,
     pressButton,
     reload,
-    rotate: lockedRotate,
+    rotate: recordingSafeControls.rotate,
     orientation,
     orientationPending: chosenOrientation?.answeredAt === null,
     orientationError:
       orientationFailureState?.scope === deviceScope ? orientationFailureState.message : null,
-    setOrientation: lockedSetOrientation,
+    setOrientation: recordingSafeControls.setOrientation,
     screenshot,
     appearance,
     setAppearance,
