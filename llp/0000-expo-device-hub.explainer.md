@@ -103,9 +103,9 @@ bounds, including keyboard height and viewport panning. Mobile hides the title,
 keeps the sidebar reachable, and fits the device above a normal-flow action bar.
 Mobile fitting does not wait for an observer to measure that bar.
 The mobile viewer provides a keyboard toggle when the client supports HID text
-events. It sits in the action bar's Clipboard pill. While typing or in full screen,
-the bar shows only that pill, so the toggle stays reachable and the device keeps
-its room. An in-page full-screen toggle is pinned to the top-right corner, opposite
+events. It sits in the action bar's Clipboard pill. While typing, the bar shows only
+that pill, so the keyboard can be dismissed and the device keeps its room. Full screen
+hides the whole bar. An in-page full-screen toggle is pinned to the top-right corner, opposite
 the sidebar toggle, and shows a close icon while active. Full-screen controls
 preserve capture focus. Tablet and desktop layouts retain their existing title,
 padding, and controls. [observed: Hub `Dashboard.tsx`, HubComponents

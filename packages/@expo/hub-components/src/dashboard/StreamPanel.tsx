@@ -166,8 +166,9 @@ export function StreamPanel({
           ? { open: keyboardOpen && typing, onToggle: toggleKeyboard }
           : undefined
       }
-      // Full screen and a raised keyboard hide everything but the pill that holds Keyboard.
-      compact={viewport.mobile && (presenting || typing)}
+      // A raised keyboard hides everything but the pill that holds Keyboard. Full screen
+      // hides the whole bar, as in the serve-sim viewer.
+      compact={viewport.mobile && typing}
     />
   );
 
@@ -327,8 +328,9 @@ export function StreamPanel({
           }}
           style={{
             flexShrink: 0,
-            // Without a Keyboard toggle there is nothing to keep in compact mode.
-            display: (presenting || typing) && !client.sendKeyEvents ? "none" : "flex",
+            // Full screen hides the bar. While typing, only the Keyboard pill stays, so the
+            // keyboard can be dismissed; without a Keyboard toggle there is nothing to keep.
+            display: presenting || (typing && !client.sendKeyEvents) ? "none" : "flex",
             justifyContent: "center",
           }}
         >
