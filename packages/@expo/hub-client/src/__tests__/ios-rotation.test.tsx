@@ -395,19 +395,30 @@ test("a non-string orientation readback cannot throw or poison iOS rotation requ
 test("an iOS orientation choice sends that pose and Rotate continues from it", async () => {
   const { client, helper } = await mount();
   expect(client().capabilities.orientation).toEqual({
-    orientations: ["portrait", "landscape_left", "landscape_right", "portrait_upside_down"],
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
   });
-  client().setOrientation("landscape_right");
-  client().rotate();
-  expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);
+  await act(async () => client().setOrientation("landscape_right"));
+  // The choice shows at once; the screen keeps the helper's readback.
+  expect(client().orientation).toBe("landscape_right");
+  expect(client().orientationPending).toBe(false);
   expect(client().screen?.orientation).toBe("portrait");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);
+
+  await act(async () => helper().screen("landscape_right"));
+  expect(client().orientation).toBe("landscape_right");
+  await act(async () => helper().screen("portrait"));
+  expect(client().orientation).toBe("portrait");
 });
 
-test("a queued iOS orientation choice is sent once the helper admits input", async () => {
+test("a queued iOS orientation choice is pending until the helper admits input", async () => {
   const { client, helper } = await mount({ inputAdmission: true });
-  client().setOrientation("portrait_upside_down");
+  await act(async () => client().setOrientation("portrait_upside_down"));
   expect(helper().rotations()).toEqual([]);
+  expect(client().orientationPending).toBe(true);
+  expect(client().orientation).toBe("portrait_upside_down");
   await act(async () => helper().admit());
-  client().rotate();
+  expect(client().orientationPending).toBe(false);
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["portrait_upside_down", "landscape_right"]);
 });
