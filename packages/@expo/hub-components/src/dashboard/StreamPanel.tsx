@@ -13,7 +13,6 @@ import {
   border,
   radius,
   ControlButton,
-  KeyboardIcon,
   FullScreenIcon,
   CloseIcon,
   SidebarIcon,
@@ -160,12 +159,6 @@ export function StreamPanel({
     return () => observer.disconnect();
   }, [viewport.mobile]);
   const captureScreenshot = useScreenshotToast(client, device.name);
-  const setting = client.deviceSettings?.appearance;
-  const appearance = setting === "dark" || setting === "light" ? setting : null;
-  const appearanceDisabled =
-    appearance === null ||
-    client.deviceSettingsStatus !== "ready" ||
-    client.deviceSettingsPending.has("appearance");
   const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
@@ -173,13 +166,6 @@ export function StreamPanel({
   const controls = (
     <StreamControls
       recording={client.screenRecording}
-      appearance={appearance}
-      appearanceDisabled={appearanceDisabled}
-      onToggleAppearance={() => {
-        if (!appearanceDisabled) {
-          client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
-        }
-      }}
       onHome={() => client.pressButton("home")}
       onReload={() => client.reload()}
       onRotate={() => client.rotate()}
@@ -188,6 +174,13 @@ export function StreamPanel({
       clipboardPending={client.clipboardPending}
       onPaste={() => void clipboard.pasteFromDevice()}
       onCopy={() => void clipboard.copyFromSimulator()}
+      keyboard={
+        viewport.mobile && client.sendKeyEvents
+          ? { open: keyboardOpen && typing, onToggle: toggleKeyboard }
+          : undefined
+      }
+      // Full screen and a raised keyboard hide everything but the pill that holds Keyboard.
+      compact={viewport.mobile && (presenting || typing)}
     />
   );
 
@@ -256,16 +249,6 @@ export function StreamPanel({
               borderRadius: radius.xl,
             }}
           >
-            {client.sendKeyEvents && (
-              <ControlButton
-                icon={<KeyboardIcon />}
-                hideTooltip
-                label="Keyboard"
-                role="switch"
-                aria-checked={keyboardOpen && typing}
-                onClick={toggleKeyboard}
-              />
-            )}
             <ControlButton
               hideTooltip
               ref={fullScreenRef}
@@ -375,9 +358,13 @@ export function StreamPanel({
       </div>
       {viewport.mobile && (
         <div
+          onMouseDownCapture={(event) => {
+            if (typing || keyboardOpen) event.preventDefault();
+          }}
           style={{
             flexShrink: 0,
-            display: presenting || typing ? "none" : "flex",
+            // Without a Keyboard toggle there is nothing to keep in compact mode.
+            display: (presenting || typing) && !client.sendKeyEvents ? "none" : "flex",
             justifyContent: "center",
           }}
         >
