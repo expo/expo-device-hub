@@ -2007,7 +2007,8 @@ async function serve(
         basePath: "/",
         configureResources: async (configuration, signal) => {
           signal?.throwIfAborted();
-          const selectedDevice = configuration.device ?? targetDevice;
+          // Owned devices are uppercase UDIDs; the request may use any case.
+          const selectedDevice = (configuration.device ?? targetDevice)?.toUpperCase();
           if (!selectedDevice) throw new Error("Adoption requires a Simulator UDID");
           // A boot already started by warmup must drain before its device can shut down.
           await warmupTask;
@@ -2278,7 +2279,7 @@ async function serve(
     backgroundCancellation.abort(new Error("Session is stopping"));
     const ownerStopping = owner?.close();
     warmupCancellation.abort();
-    await Promise.allSettled([ownerStopping, warmupTask, otherDevicesRetirement]);
+    await Promise.allSettled([ownerStopping, warmupTask]);
     foregroundTracker.stopAll();
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
@@ -2294,6 +2295,8 @@ async function serve(
         console.error(error);
       },
       completeShutdown: async (recordingsFinished) => {
+        // Recordings finish first; the other devices' shutdowns may still be running.
+        await otherDevicesRetirement;
         const cleanupConfirmed = recordingsFinished && !backgroundFailure;
         if (!cleanupConfirmed) {
           try {

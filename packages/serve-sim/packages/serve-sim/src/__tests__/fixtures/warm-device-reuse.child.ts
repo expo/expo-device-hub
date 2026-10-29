@@ -2,20 +2,20 @@ import { expect, mock, test } from "bun:test";
 
 const calls: string[] = [];
 let failStop: string | undefined;
-let releaseStop = () => {};
+let notBooted: string | undefined;
+const pendingStops: (() => void)[] = [];
 mock.module("../../device", () => ({
   bootDevice: async () => {},
   shutdownDevice: async () => {},
   confirmDeviceBooted: async (udid: string) => {
     calls.push(`bootstatus ${udid}`);
+    if (udid === notBooted) throw new Error("timed out");
   },
 }));
 mock.module("../../device-session", () => ({
   retireDeviceSession: async (udid: string) => {
     calls.push(`retire ${udid}`);
-    await new Promise<void>((resolve) => {
-      releaseStop = resolve;
-    });
+    await new Promise<void>((resolve) => pendingStops.push(resolve));
   },
 }));
 mock.module("../../capture", () => ({ captureRuntime: { disableForDevice: async () => {} } }));
@@ -40,6 +40,20 @@ test("a prepared device only passes the boot check again", async () => {
   await prepareDeviceOnce("aaaa", prepared, prepare);
   expect(prepare).not.toHaveBeenCalled();
   expect(calls).toEqual(["bootstatus aaaa"]);
+});
+
+test("a prepared device that is no longer booted is prepared again", async () => {
+  calls.length = 0;
+  notBooted = "EEEE";
+  try {
+    const prepared = new Set(["EEEE"]);
+    const prepare = mock(async () => {});
+    await prepareDeviceOnce("EEEE", prepared, prepare);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepared.has("EEEE")).toBe(true);
+  } finally {
+    notBooted = undefined;
+  }
 });
 
 test("a device is prepared until one preparation succeeds", async () => {
@@ -67,10 +81,11 @@ test("other devices are unpublished at once and shut down in the background", as
     const retirement = retireDevicesInBackground(["CCCC", "DDDD"], 1, prepared);
     expect(calls).toEqual(["unpublish CCCC", "unpublish DDDD", "retire CCCC"]);
     expect([...prepared]).toEqual([]);
-    releaseStop();
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    releaseStop();
+    // Each shutdown starts only after the previous one finished.
+    while (!calls.includes("shutdown DDDD")) {
+      pendingStops.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
     await retirement;
     expect(calls).toContain("shutdown DDDD");
     expect(errors.join("\n")).toContain("Could not shut down Simulator CCCC: shutdown failed");

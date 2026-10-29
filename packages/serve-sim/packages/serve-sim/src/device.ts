@@ -6,6 +6,7 @@ import { simctl } from "./simctl";
 
 const SHUTDOWN_TIMEOUT_MS = 60_000;
 export const BOOT_TIMEOUT_MS = 120_000;
+const CONFIRM_BOOTED_TIMEOUT_MS = 10_000;
 
 /**
  * UDID of a booted simulator, or null if none is booted. Prefers an iOS device
@@ -151,11 +152,14 @@ export async function bootDevice(
   }
 }
 
-/** The readiness barrier alone, for a device that this process already booted and prepared. */
+/**
+ * The readiness barrier alone, for a device that this process already prepared. Without `-b` it
+ * does not boot a device that shut down, which would lose its capability loader; it times out.
+ */
 export async function confirmDeviceBooted(udid: string): Promise<void> {
   await timeStartup(
     "simulator-bootstatus",
-    () => simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS),
+    () => simctl(["bootstatus", udid], CONFIRM_BOOTED_TIMEOUT_MS),
     udid,
   );
 }

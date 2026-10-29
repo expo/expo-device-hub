@@ -50,7 +50,8 @@ export async function stopDeviceInProcess(udid: string, ownerPid?: number): Prom
 
 /**
  * Runs `prepare` unless this process already prepared `udid`. A prepared device only passes the
- * boot readiness check again. Only a successful preparation counts.
+ * boot readiness check again; if it is no longer booted, it is prepared again. Only a successful
+ * preparation counts.
  */
 export async function prepareDeviceOnce(
   udid: string,
@@ -59,8 +60,12 @@ export async function prepareDeviceOnce(
 ): Promise<void> {
   const key = udid.toUpperCase();
   if (preparedDevices.has(key)) {
-    await confirmDeviceBooted(udid);
-    return;
+    try {
+      await confirmDeviceBooted(udid);
+      return;
+    } catch {
+      preparedDevices.delete(key);
+    }
   }
   await prepare();
   preparedDevices.add(key);
