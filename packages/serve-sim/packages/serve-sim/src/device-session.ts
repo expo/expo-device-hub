@@ -1,4 +1,5 @@
 import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
+import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
 import { US_KEYBOARD_MAP } from "./text-to-keys";
@@ -398,10 +399,44 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
-  /** Use the same native panel election as the live stream, including external folds. */
+  // Cache only a proven sole-screen ID for this capture, including concurrent reads.
+  // Native display notifications, reboot and close invalidate both settled and in-flight proof.
+  private screenshotDisplayFallback?: Promise<number>;
+
+  /** Prefer native panel election; legacy profiles may prove one screen through simctl. */
   async activeScreenId(): Promise<number> {
     await withHostActionDeadline(this.start(), "Screenshot capture startup");
-    return await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    const read = async () => {
+      if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+      let proof = this.screenshotDisplayFallback;
+      if (!proof) {
+        try {
+          return await this.capture.activeScreenId();
+        } catch (error) {
+          await this.waitForCapture();
+          if (this.rebootSuspended) throw error;
+          proof = this.screenshotDisplayFallback ??= getScreenshotDisplayIdsAsync(this.udid).then(
+            (ids) => {
+              if (ids?.length !== 1) throw error;
+              return ids[0]!;
+            },
+          );
+        }
+      }
+      try {
+        const id = await proof;
+        if (this.screenshotDisplayFallback !== proof)
+          throw new Error("Screenshot display changed while checking its profile");
+        return id;
+      } catch (error) {
+        if (this.screenshotDisplayFallback === proof) this.screenshotDisplayFallback = undefined;
+        throw error;
+      }
+    };
+    const id = await withHostActionDeadline(read(), "Active display read");
+    await this.waitForCapture();
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    return id;
   }
 
   private readonly queueScreenshot = createSerialQueue();
@@ -445,6 +480,7 @@ export class DeviceSession {
         if (this.phase !== "running") return;
         const unsubscribe = await this.capture.subscribeScreenChanges(async () => {
           if (this.phase !== "running") return;
+          this.screenshotDisplayFallback = undefined;
           try {
             if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
           } catch {
@@ -489,6 +525,7 @@ export class DeviceSession {
   }
 
   async suspendForReboot(): Promise<void> {
+    this.screenshotDisplayFallback = undefined;
     this.rebootSuspended = true;
     this.inputGeneration++;
     this.clearSoftwareKeyboardRequests();
@@ -535,6 +572,7 @@ export class DeviceSession {
 
   close(): void {
     if (this.phase !== "running") return;
+    this.screenshotDisplayFallback = undefined;
     this.phase = "stopped";
     // Keep the promises even if their completion clears the mutable fields
     // while observer teardown is pending; finalization failures still belong to this close.
