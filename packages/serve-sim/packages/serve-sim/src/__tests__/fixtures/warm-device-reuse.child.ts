@@ -89,7 +89,7 @@ test("other devices are unpublished at once and shut down in the background", as
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(calls).toContain("shutdown DDDD");
-    await retirement;
+    expect(await retirement).toEqual([expect.objectContaining({ message: "shutdown failed" })]);
     expect(errors.join("\n")).toContain("Could not shut down Simulator CCCC: shutdown failed");
   } finally {
     console.error = error;

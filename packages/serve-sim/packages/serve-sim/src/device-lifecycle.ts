@@ -75,8 +75,8 @@ export async function prepareDeviceOnce(
 }
 
 /**
- * Unpublishes `udids` at once, then shuts them down in the background. Failures are logged:
- * the launcher's stop confirms every shutdown.
+ * Unpublishes `udids` at once, then shuts them down in the background. Resolves with the
+ * shutdown failures, which are also logged; the launcher's stop confirms every shutdown.
  */
 export function retireDevicesInBackground(
   udids: readonly string[],
@@ -84,21 +84,24 @@ export function retireDevicesInBackground(
   preparedDevices: Set<string>,
   // A boot already started by warmup must finish before its device shuts down.
   warmup: Promise<unknown> = Promise.resolve(),
-): Promise<void> {
+): Promise<unknown[]> {
   for (const udid of udids) {
     preparedDevices.delete(udid.toUpperCase());
     clearServeSimState(udid, ownerPid);
   }
   return (async () => {
     await warmup.catch(() => {});
+    const failures: unknown[] = [];
     for (const udid of udids) {
       try {
         await stopDeviceInProcess(udid, ownerPid);
       } catch (error) {
+        failures.push(error);
         console.error(
           `Could not shut down Simulator ${udid}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }
+    return failures;
   })();
 }

@@ -197,8 +197,9 @@ the existing `src/device.ts` boot/shutdown commands. The owner hands over a targ
 process already prepared after bootstatus, and joins warmup only for a target that is not
 the first. It unpublishes unused devices before reporting success, then drains their
 native/capture sessions and shuts them down in the background after their warmup; the
-session stop joins that work. A failed or unconfirmed shutdown is logged and preserves
-that device's capability ownership and configuration. Foreign or unreadable ownership
+session stop joins that work. A failed or unconfirmed shutdown is logged, makes the
+session stop exit non-zero, and preserves that device's capability ownership and
+configuration. Foreign or unreadable ownership
 refuses shutdown; cleanup failure keeps the consumed claim unavailable.
 The selected native session, capture and optional recording must be ready before
 success. Shutdown joins the private configuration task before resource teardown. Without

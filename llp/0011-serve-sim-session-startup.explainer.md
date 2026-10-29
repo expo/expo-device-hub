@@ -182,8 +182,9 @@ warmup of the others; adoption of another target joins it. A target this process
 already prepared passes only bootstatus again; any other target is prepared fully.
 Unused devices are unpublished before the handoff. In the background, after their
 warmup drains, adoption drains their native input/video and network capture and
-shuts down the exact unused UDIDs; failures are logged, the session stop joins this
-work, and the launcher's terminal stop confirms every shutdown
+shuts down the exact unused UDIDs; failures are logged and make the session stop exit
+non-zero, the session stop joins this work, and the launcher's terminal stop confirms
+every shutdown
 [confirmed: Gabe Debes, 2026-10-29, hand over warm devices without repeated preparation]. Ownership and
 capability configuration stay unchanged if shutdown fails or cannot be confirmed
 [observed: `src/launch-manager.ts` `releaseSession`].

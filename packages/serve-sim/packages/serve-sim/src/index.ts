@@ -2052,7 +2052,12 @@ async function serve(
             process.pid,
             preparedDevices,
             warmupTask,
-          );
+          ).then((failures) => {
+            // Adoption does not wait for this; the session stop reports it in its exit code.
+            if (failures.length > 0) {
+              backgroundFailure ??= new AggregateError(failures, "Unused Simulators did not shut down");
+            }
+          });
           writeState({
             ...inProcessServeSimState(selectedDevice, boundPort, "/", host, configuration.stream),
             token: previewToken,
