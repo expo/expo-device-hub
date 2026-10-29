@@ -3,8 +3,8 @@ import {
   getDisplayRotation,
   screenOrientationForRotation,
   type DisplayRotation,
-  type ScreenOrientation,
 } from "./adb.ts";
+import type { ScreenOrientation } from "./shared/api-contracts.ts";
 
 const MAX_AGE_MS = 1_000;
 const FRESH_WAIT_MS = 300;
@@ -12,7 +12,8 @@ const FRESH_WAIT_MS = 300;
 export type DisplayOrientationReader = {
   /**
    * The last reading, or null before the first one. Starts a new reading in the background
-   * when this one is older than a second, for the synchronous `/health` snapshot.
+   * when this one is older than a second, for the synchronous `/health` snapshot. The reader
+   * polls adb only when asked; a failed read keeps the last value.
    */
   current(): ScreenOrientation | null;
   /**
@@ -34,13 +35,12 @@ export function createDisplayOrientationReader(
   serial: string,
   {
     readRotation = (target) => getDisplayRotation(target),
-    readNaturalSize = (target) => getDeviceSize(target),
+    readNaturalSize = (target) => getDeviceSize(target, undefined, "background"),
     now = () => performance.now(),
   }: DisplayOrientationReaderOptions = {},
 ): DisplayOrientationReader {
   let orientation: ScreenOrientation | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
-  let natural: Promise<{ width: number; height: number }> | null = null;
   let pending: Promise<ScreenOrientation | null> | null = null;
 
   const refresh = () => {
@@ -48,12 +48,12 @@ export function createDisplayOrientationReader(
     const startedAt = now();
     pending = (async () => {
       try {
-        // The natural size never changes while the device runs.
-        natural ??= readNaturalSize(serial);
-        const [size, rotation] = await Promise.all([natural, readRotation(serial)]);
+        // Read the natural size with each rotation: another AVD can reuse the serial, and a
+        // foldable changes its display.
+        const [size, rotation] = await Promise.all([readNaturalSize(serial), readRotation(serial)]);
         orientation = screenOrientationForRotation(rotation, size);
       } catch {
-        natural = null;
+        // Keep the last reading.
       } finally {
         readAt = startedAt;
         pending = null;
