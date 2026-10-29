@@ -1185,6 +1185,7 @@ test("offers the client's orientations and shows the client's pose", () => {
       client={{
         ...inspectorClient("ios"),
         capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
         orientation: "landscape_right",
       }}
     />,
@@ -1226,6 +1227,23 @@ test("offers the client's orientations and shows the client's pose", () => {
   );
   expect(unreported).not.toContain('aria-label="Orientation"');
 
+  // After a Rotate on that server, the client shows the pick, but the device reported nothing.
+  const pickedUnreported = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: {
+          ...inspectorClient("android").capabilities,
+          orientation: { orientations: ["portrait", "landscape_right"] },
+        },
+        screen: { width: 390, height: 844 },
+        orientation: "landscape_right",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(pickedUnreported).not.toContain('aria-label="Orientation"');
+
   const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
   expect(unsupported).not.toContain('aria-label="Orientation"');
 });
@@ -1235,6 +1253,7 @@ test("disables the orientation select with the same reason as Rotate", () => {
   const client = {
     ...ios,
     capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
     orientation: "portrait",
   } as const;
   for (const [overrides, reason] of [
@@ -1264,6 +1283,7 @@ test("shows why an orientation change failed", () => {
       client={{
         ...ios,
         capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        screen: { width: 390, height: 844, orientation: "portrait" },
         orientation: "portrait",
         orientationError: "The orientation was not sent.",
       }}

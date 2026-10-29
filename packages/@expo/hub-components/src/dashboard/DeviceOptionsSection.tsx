@@ -180,9 +180,18 @@ export function DeviceOptionsSection({
         orientationCapabilities.orientations.includes(value),
       )
     : [];
-  // Shown once the client knows the pose: the last pick at once, then the device's report.
-  // Rotate still works before that.
-  const currentOrientation = client?.orientation ?? null;
+  // Shown once the device has reported a pose, so an older serve-emu server, which reports
+  // none, never shows the row after a Rotate. It stays while the report briefly disagrees with
+  // a turned frame, and goes when the client loses its orientation capability (a new device).
+  // It shows the last pick at once, then the device's report. Rotate still works before that.
+  const reportedOrientation = client?.screen?.orientation;
+  const [poseReported, setPoseReported] = useState(false);
+  if (reportedOrientation && !poseReported) setPoseReported(true);
+  if (!orientationCapabilities && poseReported) setPoseReported(false);
+  const currentOrientation =
+    poseReported || reportedOrientation
+      ? (client?.orientation ?? reportedOrientation ?? null)
+      : null;
   const rotationUnavailable = client
     ? rotationUnavailableReason({
         platform: client.platform,
