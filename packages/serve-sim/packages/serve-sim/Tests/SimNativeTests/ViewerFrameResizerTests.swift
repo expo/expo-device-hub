@@ -221,7 +221,7 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(counters.backend, "primary")
     }
 
-    func testMetalBackendScalesToTheCanvasAndLetterboxesWithBars() throws {
+    func testMetalBackendScalesToTheCanvasAndLetterboxesWithAGuardedEdge() throws {
         guard let backend = MetalResizeBackend(maxBuffers: 4) else {
             throw XCTSkip("Metal is not available on this host")
         }
@@ -235,14 +235,33 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(luma(fit, x: 1, y: 1), 235, accuracy: 2)
         XCTAssertEqual(chroma(fit, x: 15, y: 30), 64, accuracy: 2)
 
-        // Wider canvas: the picture sits centered between bars.
+        // Wider canvas: the picture starts at the left edge, its edge repeats over the guard
+        // band, and the rest of the unused columns are black bars.
         let boxed = try XCTUnwrap(resize(source, to: Dimensions(width: 160, height: 120), with: backend))
         XCTAssertEqual(boxed.dimensions, Dimensions(width: 160, height: 120))
-        XCTAssertEqual(luma(boxed, x: 80, y: 60), 235, accuracy: 2, "picture in the middle")
-        XCTAssertEqual(luma(boxed, x: 10, y: 60), 16, accuracy: 1, "left bar")
-        XCTAssertEqual(luma(boxed, x: 150, y: 60), 16, accuracy: 1, "right bar")
-        XCTAssertEqual(chroma(boxed, x: 5, y: 30), 128, accuracy: 1, "bars are neutral")
-        XCTAssertEqual(chroma(boxed, x: 40, y: 30), 64, accuracy: 2)
+        XCTAssertEqual(luma(boxed, x: 1, y: 60), 235, accuracy: 2, "picture at the left edge")
+        XCTAssertEqual(luma(boxed, x: 58, y: 60), 235, accuracy: 2)
+        XCTAssertEqual(luma(boxed, x: 64, y: 60), 235, accuracy: 2, "guard band repeats the edge")
+        XCTAssertEqual(luma(boxed, x: 100, y: 60), 16, accuracy: 1, "black bar past the guard")
+        XCTAssertEqual(chroma(boxed, x: 15, y: 30), 64, accuracy: 2)
+        XCTAssertEqual(chroma(boxed, x: 32, y: 30), 64, accuracy: 2)
+        XCTAssertEqual(chroma(boxed, x: 60, y: 30), 128, accuracy: 1, "bars are neutral")
+    }
+
+    func testMetalBackendKeepsBothPictureEdges() throws {
+        guard let backend = MetalResizeBackend(maxBuffers: 4) else {
+            throw XCTSkip("Metal is not available on this host")
+        }
+        try assertKeepsBothPictureEdges(backend)
+    }
+
+    func testVideoToolboxBackendKeepsBothPictureEdges() throws {
+        try assertKeepsBothPictureEdges(LetterboxResizeBackend(letterboxer: PixelBufferLetterboxer()))
+    }
+
+    func testCPUBackendKeepsBothPictureEdges() throws {
+        try assertKeepsBothPictureEdges(LetterboxResizeBackend(
+            letterboxer: PixelBufferLetterboxer(preferCPU: true), name: "cpu"))
     }
 
     func testMetalBackendPoolIsBounded() throws {
@@ -264,7 +283,87 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(backend.poolDrops, 3)
     }
 
+    func testFailedTopLeftTransferLatchesToTheCPUPathWithoutRetrying() throws {
+        var attempts = 0
+        let letterboxer = PixelBufferLetterboxer(transferImage: { _, _, _ in
+            attempts += 1
+            return -1
+        })
+        let source = makeBuffer(width: 1_398, height: 2_034,
+                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        fill(source, luma: 128, chroma: 128)
+        fillColumns(source, from: 1_374, to: 1_398, luma: 235)
+
+        // The first frame tries VideoToolbox once, then uses the CPU path, still top-left.
+        let first = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(letterboxer.cpuFrames, 1)
+        XCTAssertEqual(letterboxer.transferFrames, 0)
+        XCTAssertEqual(luma(first, x: 780, y: 568), 235, accuracy: 3, "right edge kept")
+        XCTAssertEqual(luma(first, x: 785, y: 568), 235, accuracy: 3, "edge repeated over the guard band")
+        XCTAssertEqual(luma(first, x: 795, y: 568), 16, accuracy: 1, "black bar past the guard, on the right only")
+        XCTAssertEqual(luma(first, x: 2, y: 568), 128, accuracy: 3, "picture at the left edge")
+
+        // Later frames skip VideoToolbox, top-left and centered alike.
+        let second = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        _ = try XCTUnwrap(letterboxer.place(source, width: 798, height: 1_136))
+        XCTAssertEqual(attempts, 1, "the failed transfer is not retried")
+        XCTAssertEqual(letterboxer.cpuFrames, 3)
+        XCTAssertEqual(luma(second, x: 785, y: 568), 235, accuracy: 3)
+    }
+
+    func testFailedTopLeftTransferWithoutCPUFallbackDropsFramesWithoutRetrying() {
+        var attempts = 0
+        let letterboxer = PixelBufferLetterboxer(allowCPUFallback: false, transferImage: { _, _, _ in
+            attempts += 1
+            return -1
+        })
+        let source = makeBuffer(width: 1_398, height: 2_034,
+                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+
+        XCTAssertNil(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertNil(letterboxer.place(source, width: 798, height: 1_136, topLeft: true))
+        XCTAssertEqual(attempts, 1, "the failed transfer is not retried")
+        XCTAssertEqual(letterboxer.cpuFrames, 0)
+    }
+
     // MARK: - Helpers
+
+    /// The iPhone Duo cover screen in the canvas sized for its inner screen. The source's left
+    /// and right 24 columns are marked, so a stretched or clipped picture loses a mark.
+    private func assertKeepsBothPictureEdges(_ backend: ViewerResizeBackend,
+                                             file: StaticString = #filePath, line: UInt = #line) throws {
+        let source = makeBuffer(width: 1_398, height: 2_034,
+                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        fill(source, luma: 128, chroma: 128)
+        fillColumns(source, from: 0, to: 24, luma: 60)
+        fillColumns(source, from: 1_374, to: 1_398, luma: 235)
+
+        let output = try XCTUnwrap(resize(source, to: Dimensions(width: 798, height: 1_136), with: backend),
+                                   file: file, line: line)
+        XCTAssertEqual(output.dimensions, Dimensions(width: 798, height: 1_136), file: file, line: line)
+        // The picture is 780.8 columns wide, drawn into 782 from x = 0.
+        XCTAssertEqual(luma(output, x: 1, y: 568), 60, accuracy: 3, "left mark at the left edge", file: file, line: line)
+        XCTAssertEqual(luma(output, x: 11, y: 568), 60, accuracy: 3, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 390, y: 568), 128, accuracy: 3, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 772, y: 568), 235, accuracy: 3, "right mark is kept", file: file, line: line)
+        XCTAssertEqual(luma(output, x: 780, y: 568), 235, accuracy: 3, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 785, y: 568), 235, accuracy: 3, "guard band repeats the right edge", file: file, line: line)
+        XCTAssertEqual(luma(output, x: 789, y: 568), 235, accuracy: 3, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 792, y: 568), 16, accuracy: 1, "black bar past the guard", file: file, line: line)
+        XCTAssertEqual(chroma(output, x: 397, y: 284), 128, accuracy: 2, file: file, line: line)
+        XCTAssertEqual(luma(output, x: 390, y: 1_134), 128, accuracy: 3, "full height", file: file, line: line)
+    }
+
+    private func fillColumns(_ buffer: CVPixelBuffer, from start: Int, to end: Int, luma: UInt8) {
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        for y in 0..<CVPixelBufferGetHeightOfPlane(buffer, 0) {
+            for x in start..<end { base[y * stride + x] = luma }
+        }
+    }
 
     private func makeBuffer(width: Int, height: Int, format: OSType) -> CVPixelBuffer {
         var buffer: CVPixelBuffer?

@@ -163,4 +163,47 @@ public struct LetterboxPlacement: Equatable {
         x = ((canvasWidth - width) / 2) & ~1
         y = ((canvasHeight - height) / 2) & ~1
     }
+
+    /// Columns or rows past a top-left picture that repeat its edge. A client that scales the
+    /// frame down can blend this far past the picture's edge; the rest of the unused canvas
+    /// stays black, so it costs the encoder nothing while the picture changes.
+    public static let edgeGuard = 8
+
+    /// The picture with its edge guard, clipped to the canvas.
+    public func guarded(canvasWidth: Int, canvasHeight: Int) -> LetterboxPlacement {
+        LetterboxPlacement(
+            x: x, y: y,
+            width: width < canvasWidth ? min(canvasWidth - x, width + Self.edgeGuard) : width,
+            height: height < canvasHeight ? min(canvasHeight - y, height + Self.edgeGuard) : height
+        )
+    }
+
+    public init(x: Int, y: Int, width: Int, height: Int) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    /// The live viewer canvas: the picture keeps its proportions and starts at the top-left
+    /// corner, so a client shows the whole screen by pinning the frame top-left in a box with the
+    /// screen's proportions. Sizes round up to even, never past the canvas, so no unused column
+    /// or row sits inside the picture. An iPhone Duo cover screen in the canvas sized for its
+    /// inner screen leaves its unused columns on the right only.
+    // @ref LLP 0001#viewer-frame-placement — clients pin the frame top-left, so the unused area stays out of view
+    public static func topLeft(sourceWidth: Int, sourceHeight: Int,
+                               canvasWidth: Int, canvasHeight: Int) -> LetterboxPlacement {
+        guard sourceWidth > 0, sourceHeight > 0, canvasWidth > 0, canvasHeight > 0 else {
+            return LetterboxPlacement(x: 0, y: 0, width: 0, height: 0)
+        }
+        let scale = min(Double(canvasWidth) / Double(sourceWidth),
+                        Double(canvasHeight) / Double(sourceHeight))
+        // The tolerance keeps a size that is exact up to rounding error from rounding up.
+        let evenCeiling = { (value: Double, limit: Int) in
+            min(limit, max(2, (Int((value - 1e-6).rounded(.up)) + 1) & ~1))
+        }
+        return LetterboxPlacement(x: 0, y: 0,
+                                  width: evenCeiling(Double(sourceWidth) * scale, canvasWidth),
+                                  height: evenCeiling(Double(sourceHeight) * scale, canvasHeight))
+    }
 }

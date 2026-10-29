@@ -16,10 +16,15 @@ final class PixelBufferLetterboxer {
     private(set) var transferFrames: UInt64 = 0
     private(set) var cpuFrames: UInt64 = 0
     private(set) var poolDrops: UInt64 = 0
+    typealias TransferImage = (VTPixelTransferSession, CVPixelBuffer, CVPixelBuffer) -> OSStatus
+    private let transferImage: TransferImage
 
     /// `preferCPU` skips the VideoToolbox transfer and scales with vImage from the start.
-    init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false) {
+    /// `transferImage` lets a test fail the VideoToolbox transfer.
+    init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false,
+         transferImage: @escaping TransferImage = { VTPixelTransferSessionTransferImage($0, from: $1, to: $2) }) {
         self.allowCPUFallback = allowCPUFallback
+        self.transferImage = transferImage
         allocationLimit = maxBuffers.map { [kCVPixelBufferPoolAllocationThresholdKey as String: $0] as CFDictionary }
         transferUnavailable = preferCPU && allowCPUFallback
     }
@@ -30,24 +35,49 @@ final class PixelBufferLetterboxer {
          kCVPixelFormatType_420YpCbCr8BiPlanarFullRange].contains(format)
     }
 
-    func place(_ source: CVPixelBuffer, width: Int, height: Int) -> CVPixelBuffer? {
+    /// `topLeft` uses the live viewer placement, ``LetterboxPlacement/topLeft(sourceWidth:sourceHeight:canvasWidth:canvasHeight:)``,
+    /// instead of a centered picture.
+    func place(_ source: CVPixelBuffer, width: Int, height: Int, topLeft: Bool = false) -> CVPixelBuffer? {
         let format = CVPixelBufferGetPixelFormatType(source)
         guard width > 0, height > 0, Self.supports(format) else { return nil }
         let sourceWidth = CVPixelBufferGetWidth(source)
         let sourceHeight = CVPixelBufferGetHeight(source)
         if sourceWidth == width, sourceHeight == height { return source }
-        let placement = LetterboxPlacement(
-            sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-            canvasWidth: width, canvasHeight: height
-        )
+        let placement = topLeft
+            ? LetterboxPlacement.topLeft(sourceWidth: sourceWidth, sourceHeight: sourceHeight,
+                                         canvasWidth: width, canvasHeight: height)
+            : LetterboxPlacement(sourceWidth: sourceWidth, sourceHeight: sourceHeight,
+                                 canvasWidth: width, canvasHeight: height)
         guard let output = makeOutput(width: width, height: height, format: format) else { return nil }
 
-        if let transfer = transferSession(),
-           VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr {
+        if topLeft {
+            // The plain letterbox mode always centers, so the aperture places the picture. A
+            // top-left frame never uses the centered session, so a failure here falls to the CPU path.
+            if !transferUnavailable {
+                let geometry = PlacedGeometry(source: source.dimensions,
+                                              canvas: Dimensions(width: width, height: height),
+                                              placement: placement)
+                if let transfer = placedSession(geometry),
+                   transferImage(transfer, source, output) == noErr {
+                    transferFrames &+= 1
+                    for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
+                                kCVImageBufferPixelAspectRatioKey] { CVBufferRemoveAttachment(output, key) }
+                    Self.extendPictureEdges(output, placement: placement)
+                    return output
+                }
+                if let placedTransfer { VTPixelTransferSessionInvalidate(placedTransfer) }
+                placedTransfer = nil
+                placedGeometry = nil
+                placedTransferUnavailable = true
+                transferUnavailable = true
+                print("[stream] VideoToolbox letterbox transfer failed; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
+            }
+        } else if let transfer = transferSession(),
+           transferImage(transfer, source, output) == noErr {
             transferFrames &+= 1
             return output
         }
-        if let transfer {
+        if !topLeft, let transfer {
             VTPixelTransferSessionInvalidate(transfer)
             self.transfer = nil
             transferUnavailable = true
@@ -63,8 +93,9 @@ final class PixelBufferLetterboxer {
             CVPixelBufferUnlockBaseAddress(source, .readOnly)
         }
         if format != kCVPixelFormatType_32BGRA {
-            return placeBiPlanar(source, into: output, placement: placement, format: format)
-                ? output : nil
+            guard placeBiPlanar(source, into: output, placement: placement, format: format) else { return nil }
+            if topLeft { Self.extendPictureEdges(output, placement: placement) }
+            return output
         }
         guard let sourceAddress = CVPixelBufferGetBaseAddress(source),
               let outputAddress = CVPixelBufferGetBaseAddress(output) else { return nil }
@@ -81,19 +112,58 @@ final class PixelBufferLetterboxer {
         )
         guard vImageScale_ARGB8888(&sourceImage, &destination, nil,
                                    vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return nil }
+        if topLeft { Self.extendPictureEdges(output, placement: placement) }
         return output
     }
 
-    private struct RecordingGeometry: Equatable {
+    /// Repeats the picture's last column and row over `LetterboxPlacement.edgeGuard` pixels of the
+    /// unused canvas on the right and bottom, so a client that scales the frame down blends the
+    /// picture's edge with itself, not with black. The rest stays black. Only for a top-left
+    /// placement, which leaves no unused area on the left or top.
+    static func extendPictureEdges(_ buffer: CVPixelBuffer, placement: LetterboxPlacement) {
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        guard placement.x == 0, placement.y == 0, placement.width > 0, placement.height > 0,
+              placement.width < width || placement.height < height else { return }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        let planar = CVPixelBufferIsPlanar(buffer)
+        for plane in 0..<(planar ? CVPixelBufferGetPlaneCount(buffer) : 1) {
+            guard let address = planar ? CVPixelBufferGetBaseAddressOfPlane(buffer, plane)
+                                       : CVPixelBufferGetBaseAddress(buffer) else { continue }
+            let base = address.assumingMemoryBound(to: UInt8.self)
+            let stride = planar ? CVPixelBufferGetBytesPerRowOfPlane(buffer, plane) : CVPixelBufferGetBytesPerRow(buffer)
+            let planeWidth = planar ? CVPixelBufferGetWidthOfPlane(buffer, plane) : width
+            let planeHeight = planar ? CVPixelBufferGetHeightOfPlane(buffer, plane) : height
+            // Luma is 1 byte, interleaved CbCr 2 bytes at half size, BGRA 4 bytes.
+            let bytesPerPixel = planar ? (plane == 0 ? 1 : 2) : 4
+            let guarded = placement.guarded(canvasWidth: width, canvasHeight: height)
+            let right = placement.width * planeWidth / width
+            let bottom = placement.height * planeHeight / height
+            let guardRight = guarded.width * planeWidth / width
+            let guardBottom = guarded.height * planeHeight / height
+            guard right > 0, bottom > 0 else { continue }
+            for y in 0..<bottom where right < guardRight {
+                let row = base + y * stride
+                let edge = row + (right - 1) * bytesPerPixel
+                for x in right..<guardRight { (row + x * bytesPerPixel).update(from: edge, count: bytesPerPixel) }
+            }
+            let lastRow = base + (bottom - 1) * stride
+            for y in bottom..<guardBottom { (base + y * stride).update(from: lastRow, count: guardRight * bytesPerPixel) }
+        }
+    }
+
+    private struct PlacedGeometry: Equatable {
         let source: Dimensions
         let canvas: Dimensions
+        let placement: LetterboxPlacement
     }
-    private var recordingGeometry: RecordingGeometry?
-    private var recordingTransfer: VTPixelTransferSession?
-    private var recordingTransferUnavailable = false
+    private var placedGeometry: PlacedGeometry?
+    private var placedTransfer: VTPixelTransferSession?
+    private var placedTransferUnavailable = false
 
     deinit {
-        if let recordingTransfer { VTPixelTransferSessionInvalidate(recordingTransfer) }
+        if let placedTransfer { VTPixelTransferSessionInvalidate(placedTransfer) }
     }
 
     func placeForRecording(_ source: CVPixelBuffer, contentSize: Dimensions, width: Int, height: Int)
@@ -109,10 +179,11 @@ final class PixelBufferLetterboxer {
         }
         let placement = LetterboxPlacement(sourceWidth: size.width, sourceHeight: size.height,
             canvasWidth: width, canvasHeight: height)
-        let geometry = RecordingGeometry(source: size, canvas: Dimensions(width: width, height: height))
-        guard let transfer = recordingSession(geometry, placement: placement),
+        let geometry = PlacedGeometry(source: size, canvas: Dimensions(width: width, height: height),
+                                      placement: placement)
+        guard let transfer = placedSession(geometry),
               let output = makeOutput(width: width, height: height, format: format),
-              VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr else { return nil }
+              transferImage(transfer, source, output) == noErr else { return nil }
         transferFrames &+= 1
         // The MP4 retains the full canvas and square pixels; cropping belongs to its timeline.
         for key in [kCVImageBufferCleanApertureKey, kCVImageBufferPreferredCleanApertureKey,
@@ -124,18 +195,19 @@ final class PixelBufferLetterboxer {
         return (output, contentRect)
     }
 
-    private func recordingSession(_ geometry: RecordingGeometry, placement: LetterboxPlacement)
-        -> VTPixelTransferSession? {
-        if recordingTransferUnavailable { return nil }
-        if recordingGeometry == geometry { return recordingTransfer }
-        if recordingTransfer == nil {
+    /// A transfer session that scales the source into `geometry.placement` of the canvas.
+    private func placedSession(_ geometry: PlacedGeometry) -> VTPixelTransferSession? {
+        if placedTransferUnavailable { return nil }
+        if placedGeometry == geometry { return placedTransfer }
+        if placedTransfer == nil {
             guard VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault,
-                pixelTransferSessionOut: &recordingTransfer) == noErr else {
-                recordingTransferUnavailable = true
+                pixelTransferSessionOut: &placedTransfer) == noErr else {
+                placedTransferUnavailable = true
                 return nil
             }
         }
-        guard let transfer = recordingTransfer else { return nil }
+        guard let transfer = placedTransfer else { return nil }
+        let placement = geometry.placement
         let aperture: [String: Any] = [
             kCVImageBufferCleanApertureWidthKey as String: placement.width,
             kCVImageBufferCleanApertureHeightKey as String: placement.height,
@@ -155,12 +227,12 @@ final class PixelBufferLetterboxer {
         ] {
             guard VTSessionSetProperty(transfer, key: key, value: value) == noErr else {
                 VTPixelTransferSessionInvalidate(transfer)
-                recordingTransfer = nil
-                recordingTransferUnavailable = true
+                placedTransfer = nil
+                placedTransferUnavailable = true
                 return nil
             }
         }
-        recordingGeometry = geometry
+        placedGeometry = geometry
         return transfer
     }
 
