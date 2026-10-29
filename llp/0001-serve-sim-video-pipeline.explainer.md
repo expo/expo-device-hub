@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery)
+**Revised:** 2026-10-29 (viewer frame placement: top-left with a repeated edge)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ SimulatorKit active-panel IOSurface
        native size while recording, else the largest size a consumer needs
        |-> (recording) latest-frame mailbox -> hardware H.264 recorder
        |     -> MP4 + session.json
-       `-> viewer resize queue: scale/letterbox to the shared canvas
+       `-> viewer resize queue: scale to the shared canvas, picture top-left
              -> frame pump -> shared H.264 encoder -> H.264 WebRTC senders
                            `-> per-peer VP8 encoders -> VP8 WebRTC senders
 ```
@@ -149,6 +149,37 @@ it, a viewer offering VP8 uses the existing per-peer software path. An H.264-onl
 viewer can join at a lower level by shrinking the shared canvas to fit.
 The same VP8 path remains when the H.264 hardware probe fails. The recording
 encoder is independent of those fallbacks.
+
+### Viewer frame placement
+
+The shared canvas can have another shape than the active panel: an iPhone Duo
+session sizes it for the inner screen, so the cover screen does not fill it
+[observed: `FrameCapture.computeWebRTCEncodeCanvasSize()`]. The resizer then
+draws the picture at its own proportions from the canvas's top-left corner
+(`LetterboxPlacement.topLeft`), rounds its size up to even numbers, and fills
+the unused columns on the right or rows at the bottom with the picture's last
+column or row. Clients show the screen with `object-fit: cover` and
+`object-position: 0 0` in a box with the screen's proportions, so the unused
+area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
+
+- Top-left, not centered: the unused area is only on the right or bottom, and
+  the client needs only the screen size to cut it. A centered picture has bars
+  on both sides that rounding makes uneven, which a centered `cover` crop does
+  not remove exactly.
+- A repeated edge, not black: a browser that draws the frame smaller mixes
+  pixels across the box edge. Black there showed as a dark line along the
+  screen's edge [observed: iPhone Duo cover screen in expo-device-hub].
+- Metal needs an explicit `MPSScaleTransform`. With only a clip rect, MPS scales
+  the source to the whole canvas and the clip cuts the picture's right edge
+  [observed: 798 × 1136 frames lost 18 of 792 panel columns].
+- Recordings keep the centered placement and report their content rect
+  separately (see Saved MP4 layout contract).
+- With WebRTC viewers alone, the capture already has the canvas size and passes
+  through unchanged. While a recording runs, or an MJPEG or AVCC viewer is
+  attached, every device is resized; there the old centered placement left
+  2–4 px bars and a Metal cut of the same size, and the new placement leaves at
+  most 2 rows of repeated edge [observed: placement math for iPhone and iPad
+  screens].
 
 ## Session recording
 

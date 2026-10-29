@@ -150,6 +150,30 @@ final class SharedH264PolicyTests: XCTestCase {
         XCTAssertLessThanOrEqual(unevenBars.x + unevenBars.width, 1_200)
     }
 
+    func testViewerPlacementPinsThePictureTopLeftAndRoundsUp() {
+        // iPhone Duo cover screen in the canvas sized for its inner screen: the
+        // unused columns are only on the right, and none sit inside the picture.
+        let cover = LetterboxPlacement.topLeft(sourceWidth: 1_398, sourceHeight: 2_034,
+                                               canvasWidth: 798, canvasHeight: 1_136)
+        XCTAssertEqual(cover, LetterboxPlacement(x: 0, y: 0, width: 782, height: 1_136))
+        let smallCover = LetterboxPlacement.topLeft(sourceWidth: 1_398, sourceHeight: 2_034,
+                                                    canvasWidth: 400, canvasHeight: 568)
+        XCTAssertEqual(smallCover, LetterboxPlacement(x: 0, y: 0, width: 392, height: 568))
+
+        // The inner screen fills its own canvas, even where it is 0.6 px short.
+        let inner = LetterboxPlacement.topLeft(sourceWidth: 2_007, sourceHeight: 2_853,
+                                               canvasWidth: 798, canvasHeight: 1_136)
+        XCTAssertEqual(inner, LetterboxPlacement(x: 0, y: 0, width: 798, height: 1_136))
+        let smallInner = LetterboxPlacement.topLeft(sourceWidth: 2_007, sourceHeight: 2_853,
+                                                    canvasWidth: 400, canvasHeight: 568)
+        XCTAssertEqual(smallInner, LetterboxPlacement(x: 0, y: 0, width: 400, height: 568))
+
+        // A wider picture leaves its unused rows at the bottom.
+        let wide = LetterboxPlacement.topLeft(sourceWidth: 1_200, sourceHeight: 800,
+                                              canvasWidth: 1_000, canvasHeight: 1_000)
+        XCTAssertEqual(wide, LetterboxPlacement(x: 0, y: 0, width: 1_000, height: 668))
+    }
+
     func testSlowEncoderRetainsOnlyNewestWaitingFrame() {
         var backlog = SharedFrameBacklog()
         XCTAssertEqual(backlog.submit(1), .start)
