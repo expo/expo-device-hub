@@ -163,6 +163,7 @@ export function StreamPanel({
             }}
           >
             <StreamControls
+              status={client.status}
               recording={client.screenRecording}
               recordingControlsLocked={client.recordingControlsLocked}
               appearance={appearance}

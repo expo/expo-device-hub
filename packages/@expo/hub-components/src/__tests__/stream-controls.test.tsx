@@ -58,6 +58,19 @@ describe("StreamControls", () => {
       expect(rotate).not.toContain("Rotation is unavailable");
     },
   );
+  test("locks Rotate until the stream is live, with the same reason as the Orientation select", () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls
+        appearance="light"
+        onToggleAppearance={() => {}}
+        onRotate={() => {}}
+        status="connecting"
+      />,
+    );
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+    expect(rotate).toContain("Rotation is unavailable until the device stream is live.");
+  });
   test("groups Save, Theme, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />,

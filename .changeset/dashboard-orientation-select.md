@@ -2,4 +2,4 @@
 "expo-device-hub": minor
 ---
 
-Add an Orientation select to Device options in the dashboard sidebar. It offers the client's `capabilities.orientation`, shows the pose the device reports, and appears once the device reports one. The select, Rotate, the stream options and the shut down and remove actions now follow the client's `recordingControlsLocked` instead of their own recording check.
+Add an Orientation select to Device options in the dashboard sidebar. It lists the poses the device accepts, shows a pick at once, then the pose the device reports, and shows why a change failed. It appears once the device reports a pose. The select and Rotate follow one rule: both are unavailable during an Android recording, while the recording status is unknown, and until the device stream is live.

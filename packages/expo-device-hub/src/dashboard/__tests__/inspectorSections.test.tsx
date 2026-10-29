@@ -1176,7 +1176,7 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
-test("offers the client's orientations and shows the pose the device reports", () => {
+test("offers the client's orientations and shows the client's pose", () => {
   const all = {
     orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
   } as const;
@@ -1185,7 +1185,7 @@ test("offers the client's orientations and shows the pose the device reports", (
       client={{
         ...inspectorClient("ios"),
         capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
-        screen: { width: 844, height: 390, orientation: "landscape_right" },
+        orientation: "landscape_right",
       }}
     />,
   );
@@ -1197,21 +1197,19 @@ test("offers the client's orientations and shows the pose the device reports", (
   ]);
   expect(selectValue(ios, "Orientation")).toBe("Landscape right");
 
-  const android = renderToStaticMarkup(
+  // A pick shows at once, before the frame turns.
+  const picked = renderToStaticMarkup(
     <LogSidebar
       client={{
         ...inspectorClient("android"),
         capabilities: { ...inspectorClient("android").capabilities, orientation: all },
-        screen: {
-          width: 390,
-          height: 844,
-          orientation: "portrait_upside_down",
-          framesUpright: true,
-        },
+        screen: { width: 390, height: 844, orientation: "portrait", framesUpright: true },
+        orientation: "portrait_upside_down",
+        orientationPending: true,
       }}
     />,
   );
-  expect(selectValue(android, "Orientation")).toBe("Upside down");
+  expect(selectValue(picked, "Orientation")).toBe("Upside down");
 
   // An older serve-emu takes two poses but reports none, so the select waits instead of guessing.
   const unreported = renderToStaticMarkup(
@@ -1220,7 +1218,7 @@ test("offers the client's orientations and shows the pose the device reports", (
         ...inspectorClient("android"),
         capabilities: {
           ...inspectorClient("android").capabilities,
-          orientation: { orientations: ["portrait", "landscape_left"] },
+          orientation: { orientations: ["portrait", "landscape_right"] },
         },
         screen: { width: 844, height: 390 },
       }}
@@ -1232,21 +1230,45 @@ test("offers the client's orientations and shows the pose the device reports", (
   expect(unsupported).not.toContain('aria-label="Orientation"');
 });
 
-test("disables the orientation select from the client's recording lock or a stopped stream", () => {
+test("disables the orientation select with the same reason as Rotate", () => {
   const ios = inspectorClient("ios");
   const client = {
     ...ios,
     capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
-    screen: { width: 390, height: 844, orientation: "portrait" },
+    orientation: "portrait",
   } as const;
-  for (const [overrides, locked] of [
-    [{}, false],
-    [{ recordingControlsLocked: true }, true],
-    [{ status: "connecting" as const }, true],
+  for (const [overrides, reason] of [
+    [{}, null],
+    [
+      { recordingControlsLocked: true, screenRecording: "recording" },
+      "Rotation is unavailable while recording.",
+    ],
+    [
+      { recordingControlsLocked: true, screenRecording: "unknown" },
+      "Rotation is unavailable until recording status is known.",
+    ],
+    [{ status: "connecting" }, "Rotation is unavailable until the device stream is live."],
   ] as const) {
     const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
-    expect(selectMarkup(html, "Orientation").includes('disabled=""')).toBe(locked);
+    const select = selectMarkup(html, "Orientation");
+    expect(select.includes('disabled=""')).toBe(reason !== null);
+    if (reason) expect(html).toContain(`aria-description="${reason}"`);
   }
+});
+
+test("shows why an orientation change failed", () => {
+  const ios = inspectorClient("ios");
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        orientation: "portrait",
+        orientationError: "The orientation was not sent.",
+      }}
+    />,
+  );
+  expect(html).toContain("The orientation was not sent.");
 });
 
 test("renders the Android display-size control the backend reports", () => {

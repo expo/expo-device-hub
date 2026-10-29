@@ -158,6 +158,8 @@ Clipboard fallbacks belong to the selected device and are discarded on a selecti
 - **Older serve-emu servers** do not send `orientation` in `GET /api`. HubClient then offers only `portrait` and `landscape_right` and sends them as `portrait` and `landscape`, which lock rotation 0 and 1. Rotate on those servers locks the opposite of the frame's aspect. Before a server's first `/api` answer, the recording status is unknown, so the [recording lock](#recording-lock) ignores Rotate until the status arrives [observed: `useAndroidDevice.ts`].
 - **`screen.framesUpright`**: serve-emu frames already show the display as it faces, so Android sets `framesUpright` and `DeviceScreen` never turns the video. serve-sim can send raw portrait frames for a turned simulator, which `DeviceScreen` turns [observed: `streamGeometry` in `orientation.ts`]. The reported pose comes from the 1.5 s `/api` poll, and the frame size changes first, so Android adds the pose to `screen` only while both show the same portrait or landscape shape [observed: `useAndroidDevice.ts`].
 
+- **Dashboard**: Device options shows an Orientation select once the client has a pose, with the poses from `capabilities.orientation`. It shows `orientation`, so a pick appears at once, and `orientationError` under its label. The select and Rotate share one rule for when they are unavailable: the recording lock first, then a live stream [observed: `DeviceOptionsSection.tsx`, `StreamControls.tsx`, `rotation-availability.ts` in `packages/@expo/hub-components/src/dashboard`].
+
 ## Single-device sessions
 
 The standalone Hub accepts `--platform ios|android --single-device <id>`; iOS
