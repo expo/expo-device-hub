@@ -20,7 +20,7 @@ import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 import { type DeviceFrameProfileId, type ScreenCornerRadii } from "@expo/hub-components";
 
 import { type PlatformFilter } from "../platform-filter";
-import { androidCornerRadii, appleCornerRadii } from "./corner-radii";
+import { appleCornerRadii } from "./corner-radii";
 import {
   androidDeviceFrame,
   appleDeviceFrame,
@@ -51,8 +51,8 @@ export interface HubDevice {
   /** Frame artwork available for this exact device model, or null when none is available. */
   deviceFrame: DeviceFrameProfileId | null;
   /**
-   * Physical screen corner radii read from the device (DeviceKit on iOS,
-   * `dumpsys display` on Android), or null when it does not report them.
+   * Physical screen corner radii read from the device's DeviceKit profile, or
+   * null/absent when it has none. Only iOS simulators report them today.
    */
   cornerRadii?: ScreenCornerRadii | null;
   /**
@@ -115,9 +115,9 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
 export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
   const listed = await listAndroidDevices();
 
-  const devices = await Promise.all(
-    listed.value.map(
-      async (device): Promise<HubDevice> => ({
+  return {
+    devices: listed.value
+      .map((device) => ({
         id: device.serial ?? device.name,
         name: device.name,
         version: androidVersion(device),
@@ -126,14 +126,9 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
         deviceFrame: androidDeviceFrame(device),
-        cornerRadii: await androidCornerRadii(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
-      }),
-    ),
-  );
-
-  return {
-    devices: devices.filter((device) => device.booted || device.lastUsedAt !== undefined),
+      }))
+      .filter((device) => device.booted || device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }

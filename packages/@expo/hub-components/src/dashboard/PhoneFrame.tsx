@@ -37,8 +37,7 @@ const CONFIG: Record<
   { ratio: number; radiusFraction: number; squircle: boolean }
 > = {
   ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
-  // Pixel 9's 132 px corners on a 1080 px wide screen, for emulators that report none.
-  android: { ratio: 320 / 711, radiusFraction: 132 / 1080, squircle: false },
+  android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
 };
 
 /**
