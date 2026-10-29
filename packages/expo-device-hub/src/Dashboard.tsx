@@ -51,6 +51,7 @@ import {
   floatingSidebarToggleVisible,
 } from "./dashboard/FloatingSidebarToggle";
 import { pageBackground } from "./dashboard/pageBackground";
+import { sidebarOverlayWidth } from "./dashboard/sidebarOverlayWidth";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
@@ -460,7 +461,11 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           toggleIcon={viewport.mobile ? "close" : "sidebar"}
           topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
           platform={platform}
-          width={sidebarWidth}
+          width={sidebarOverlayWidth({
+            mobile: viewport.mobile,
+            sidebarWidth,
+            viewportWidth: viewport.width,
+          })}
         >
           {inspector}
         </Sidebar>

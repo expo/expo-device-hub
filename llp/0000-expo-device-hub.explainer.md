@@ -109,7 +109,7 @@ full-screen button hide too, and the device takes that room; the phone's own key
 controls dismiss the keyboard. An in-page full-screen toggle is pinned to the top-right
 corner, opposite the sidebar toggle, and shows a close icon while active. On a phone the
 page behind the dashboard takes the color of the surface above the browser's bottom bars,
-so no lighter strip shows under them. Full-screen controls
+so no lighter strip shows under them. A phone's open sidebar fills the screen. Full-screen controls
 preserve capture focus. Tablet and desktop layouts retain their existing title,
 padding, and controls. [observed: Hub `Dashboard.tsx`, HubComponents
 `StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
