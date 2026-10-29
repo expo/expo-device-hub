@@ -2266,7 +2266,8 @@ async function serve(
         if (error instanceof AggregateError) {
           backgroundFailure ??= error;
           console.error(`Warm Simulator cleanup failed: ${startupErrorMessage(error)}`);
-          // After a claim the job may already use its device; the session stop reports this.
+          // After a claim the job may already use its device. serve-sim then exits non-zero at
+          // stop; the launcher's stop confirms the shutdown of every device itself.
           if (!claimed) {
             backgroundCancellation.abort(error);
             process.kill(process.pid, "SIGTERM");
