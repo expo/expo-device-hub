@@ -10,9 +10,9 @@ import { screenHingeState } from "./screen-config";
 import { type DeviceHinge, type ScreenSize } from "./types";
 
 export const HINGE_INVALID_COMMAND_MESSAGE =
-  "The hinge command is not valid. Use an angle from 0 to 180 degrees or one of HINGE_POSES.";
+  "The hinge command is not valid. Use an angle from 0 to 180 degrees, one of HINGE_POSES, Table Mode on or off, or face up or face down.";
 export const HINGE_NOT_CONNECTED_MESSAGE =
-  "Could not send the hinge command because simulator input is not connected. Try again when the stream is live.";
+  "Could not send the hinge command because simulator input is not connected or not yet admitted. Try again when the stream is live.";
 export const HINGE_DISCONNECTED_MESSAGE =
   "The simulator connection closed before the hinge command was confirmed. Check the device and send it again.";
 const HINGE_FAILED_MESSAGE = "The simulator could not change the hinge. Try the command again.";
@@ -78,9 +78,11 @@ export function useIosHinge({ screen, identity, trySend }: IosHingeOptions) {
   /** The input socket closed: commands without a reply may or may not have moved the hinge. */
   const failPending = useCallback(() => {
     if (requestsRef.current.size === 0) return;
+    // Only the newest command's outcome is shown; an older one without a reply does not matter.
+    const newestOpen = requestsRef.current.has(latestRequestRef.current);
     requestsRef.current.clear();
     setPending(false);
-    setError(HINGE_DISCONNECTED_MESSAGE);
+    if (newestOpen) setError(HINGE_DISCONNECTED_MESSAGE);
   }, []);
 
   const hinge = useMemo<DeviceHinge | null>(
