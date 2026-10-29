@@ -1425,20 +1425,31 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const webRtcCodecsExhausted =
     exhaustedDecision === "switch-to-http" || exhaustedDecision === "restart-ladder";
 
+  // While the Duo's 3D model shows, its panel feeds walk the same codec ladder.
+  // The flat stream is disabled then, so restarts go to the panels instead.
+  const [panelWebRtcFailure, setPanelWebRtcFailure] = useState<WebRtcStreamFailure | null>(null);
+  const [panelRestartGeneration, setPanelRestartGeneration] = useState(0);
+  const ladderFailure = modelActive ? panelWebRtcFailure : webRtcFailure;
+  const restartLadderStream = useCallback(() => {
+    if (!modelActive) {
+      restartWebRtc();
+      return;
+    }
+    setPanelWebRtcFailure(null);
+    setPanelRestartGeneration((generation) => generation + 1);
+  }, [modelActive, restartWebRtc]);
+
   const setWebRtcCodec = useCallback(
     (codec: DeviceWebRtcCodec) => {
       setInitialWebRtcCodec(codec);
       ladderBackoffRef.current = createLadderBackoff();
       // Selecting an already-active failed codec does not change the stream
       // hook's inputs, so retry its session explicitly.
-      if (codec === activeWebRtcCodec && webRtcFailure) restartWebRtc();
+      if (codec === activeWebRtcCodec && ladderFailure) restartLadderStream();
     },
-    [activeWebRtcCodec, webRtcFailure, restartWebRtc, setInitialWebRtcCodec],
+    [activeWebRtcCodec, ladderFailure, restartLadderStream, setInitialWebRtcCodec],
   );
 
-  // While the Duo's 3D model shows, its panel feeds walk the same codec ladder.
-  const [panelWebRtcFailure, setPanelWebRtcFailure] = useState<WebRtcStreamFailure | null>(null);
-  const ladderFailure = modelActive ? panelWebRtcFailure : webRtcFailure;
   useEffect(() => {
     if (!useWebRtc || !ladderFailure) return;
     if (handledWebRtcFailureRef.current === ladderFailure.sessionId) return;
@@ -1456,7 +1467,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (decision?.type !== "restart-ladder") return;
     const timer = setTimeout(() => {
       setActiveWebRtcCodec(decision.codec);
-      restartWebRtc();
+      restartLadderStream();
     }, ladderBackoff.takeRestartDelayMs());
     return () => clearTimeout(timer);
   }, [
@@ -1465,7 +1476,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     webRtcCodec,
     activeWebRtcCodec,
     streamTransportLocked,
-    restartWebRtc,
+    restartLadderStream,
   ]);
 
   useEffect(() => {
@@ -1920,6 +1931,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       onStatsChange: setPanelStats,
       onAvccError: onPanelAvccError,
       onWebRtcFailure: setPanelWebRtcFailure,
+      restartGeneration: panelRestartGeneration,
     };
   }, [
     modelActive,
@@ -1932,6 +1944,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     onAvccFrame,
     onPanelAvccError,
     streamStatsEnabled,
+    panelRestartGeneration,
   ]);
   // While the model is shown, the presented panel's health is the connection status.
   useEffect(() => {

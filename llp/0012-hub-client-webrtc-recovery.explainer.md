@@ -96,6 +96,7 @@ An iPhone Duo's 3D preview keeps a WebRTC peer open for both physical panels. iO
 - A first-frame verdict whose reads finish after the panel turned inactive is dropped.
 - Turning it on arms the first-frame timeout on the existing peer, without renegotiating.
 - The presented panel's codec failures walk the same codec ladder as the flat stream [observed: `ladderFailure` in `useIosDevice.ts`].
+- The flat stream is disabled while the panels show, so a ladder restart, or a reselect of the failed codec, restarts the panels' WebRTC sessions instead. A locked VP8 session has no other codec, so this restart is its only recovery [observed: `restartLadderStream` and `restartGeneration` in `useIosDevice.ts`, `DuoPanelStreams.tsx`].
 
 serve-sim's client uses the same rule [observed: `judgeStalls` in `hooks/use-webrtc-stream.ts` and `components/duo-panel-streams.tsx`].
 

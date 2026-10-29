@@ -126,6 +126,8 @@ export interface DuoPanelFeeds {
   /** The H.264 decoder failed; the client falls back to MJPEG. */
   onAvccError: () => void;
   onWebRtcFailure: (failure: WebRtcStreamFailure) => void;
+  /** Each increment restarts the panels' WebRTC sessions, as the codec ladder does for the flat stream. */
+  restartGeneration?: number;
 }
 
 /** Raw-framebuffer touch the 3D model already mapped; sent on the helper's touch channel unchanged. */
