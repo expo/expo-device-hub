@@ -602,7 +602,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Rotate continues the same four-pose cycle as iOS from the chosen or reported pose. Without
   // a pose (older servers), it locks the opposite of the streamed frame's aspect; locking
   // rather than `auto` turns the display even when auto-rotate is off.
-  // Before the first `/api` answer it also uses the aspect, which every server accepts.
+  // Before the first `/api` answer the recording lock ignores Rotate, because the recording
+  // status is still unknown (LLP 0013#recording-lock).
   const rotate = useCallback(() => {
     if (orientationCapabilities === ORIENTATION_CAPABILITIES && orientation) {
       sendOrientation(nextOrientation(orientation), nextOrientation(orientation));
