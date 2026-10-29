@@ -87,3 +87,28 @@ export async function runAdbEmuKill(
     );
   }
 }
+
+/**
+ * Run `adb -s <serial> shell dumpsys display` and return its stdout, or `null`
+ * on failure. Never throws.
+ */
+export async function runAdbDumpsysDisplay(
+  adbPath: string,
+  serial: string,
+): Promise<AndroidUtilsResult<string | null>> {
+  try {
+    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "shell", "dumpsys", "display"], {
+      timeout: 5_000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return result(stdout);
+  } catch (error) {
+    return result(
+      null,
+      reportError(
+        `[android-utils] Failed to run \`adb -s ${serial} shell dumpsys display\`:`,
+        error,
+      ),
+    );
+  }
+}

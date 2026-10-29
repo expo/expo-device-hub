@@ -152,3 +152,14 @@ export interface RemoveDeviceOptions {
   /** AVD name to delete → `--name` (e.g. `"expo-emu-host-0"`). */
   name: string;
 }
+
+/**
+ * A screen's physical corner radii, each as a fraction of the portrait screen
+ * width. Corners are named as seen on a portrait-held device.
+ */
+export interface ScreenCornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}

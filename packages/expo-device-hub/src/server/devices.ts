@@ -17,9 +17,10 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
 import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
-import { type DeviceFrameProfileId } from "@expo/hub-components";
+import { type DeviceFrameProfileId, type ScreenCornerRadii } from "@expo/hub-components";
 
 import { type PlatformFilter } from "../platform-filter";
+import { androidCornerRadii, appleCornerRadii } from "./corner-radii";
 import {
   androidDeviceFrame,
   appleDeviceFrame,
@@ -50,6 +51,11 @@ export interface HubDevice {
   /** Frame artwork available for this exact device model, or null when none is available. */
   deviceFrame: DeviceFrameProfileId | null;
   /**
+   * Physical screen corner radii read from the device (DeviceKit on iOS,
+   * `dumpsys display` on Android), or null when it does not report them.
+   */
+  cornerRadii?: ScreenCornerRadii | null;
+  /**
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the
    * newest `lastUsedAt` / `lastBootedAt` value from CoreSimulator's
@@ -75,10 +81,10 @@ interface PlatformDeviceList {
 export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
 
-  return {
-    devices: listed.value
+  const devices = await Promise.all(
+    listed.value
       .filter((device) => device.platform === "iOS" && device.isAvailable)
-      .map((device) => {
+      .map(async (device): Promise<HubDevice> => {
         const platform = device.platform ?? "iOS";
 
         return {
@@ -90,10 +96,14 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           physical: false,
           supported: isSupportedAppleDevice(device),
           deviceFrame: appleDeviceFrame(device),
+          cornerRadii: await appleCornerRadii(device.deviceTypeIdentifier),
           lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
-      })
-      .filter((device) => device.lastUsedAt !== undefined),
+      }),
+  );
+
+  return {
+    devices: devices.filter((device) => device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }
@@ -105,9 +115,9 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
 export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
   const listed = await listAndroidDevices();
 
-  return {
-    devices: listed.value
-      .map((device) => ({
+  const devices = await Promise.all(
+    listed.value.map(
+      async (device): Promise<HubDevice> => ({
         id: device.serial ?? device.name,
         name: device.name,
         version: androidVersion(device),
@@ -116,9 +126,14 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
         deviceFrame: androidDeviceFrame(device),
+        cornerRadii: await androidCornerRadii(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
-      }))
-      .filter((device) => device.booted || device.lastUsedAt !== undefined),
+      }),
+    ),
+  );
+
+  return {
+    devices: devices.filter((device) => device.booted || device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }

@@ -14,6 +14,7 @@ import {
   deviceViewportStyle,
   type DeviceFrameAssets,
 } from "./deviceFrame";
+import { cornerRadiiBorderRadius, orientedCornerRadiiCqw } from "./deviceCornerRadii";
 import { deviceScreenClipPath } from "./deviceScreenClipPath";
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
@@ -36,7 +37,8 @@ const CONFIG: Record<
   { ratio: number; radiusFraction: number; squircle: boolean }
 > = {
   ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
-  android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
+  // Pixel 9's 132 px corners on a 1080 px wide screen, for emulators that report none.
+  android: { ratio: 320 / 711, radiusFraction: 132 / 1080, squircle: false },
 };
 
 /**
@@ -97,8 +99,19 @@ export function PhoneFrame({
 
   // `cqw` resolves against the width, but the radius should stay a fraction of
   // the *short* side so the corners look the same in portrait and landscape.
-  const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
-  const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
+  // Prefer the radii read from the device, which differ per model and can differ
+  // per corner; the platform fraction is only the fallback.
+  const cornerRadiiCqw = orientedCornerRadiiCqw(
+    device.cornerRadii ?? {
+      topLeft: radiusFraction,
+      topRight: radiusFraction,
+      bottomRight: radiusFraction,
+      bottomLeft: radiusFraction,
+    },
+    client?.screen?.orientation,
+    ratio,
+  );
+  const borderRadius = cornerRadiiBorderRadius(cornerRadiiCqw);
   const live = client && client.status !== "idle";
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
@@ -142,7 +155,7 @@ export function PhoneFrame({
         inset: 0,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
-        clipPath: deviceScreenClipPath(radiusCqw, squircle),
+        clipPath: deviceScreenClipPath(cornerRadiiCqw, squircle),
       };
 
   return (
