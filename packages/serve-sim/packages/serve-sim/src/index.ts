@@ -2055,7 +2055,10 @@ async function serve(
           ).then((failures) => {
             // Adoption does not wait for this; the session stop reports it in its exit code.
             if (failures.length > 0) {
-              backgroundFailure ??= new AggregateError(failures, "Unused Simulators did not shut down");
+              backgroundFailure ??= new AggregateError(
+                failures,
+                "Unused Simulators did not shut down",
+              );
             }
           });
           writeState({
