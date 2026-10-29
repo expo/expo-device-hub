@@ -23,6 +23,12 @@ export type DisplayOrientationReader = {
   fresh(): Promise<ScreenOrientation | null>;
   /** Read now. Concurrent calls share one adb query; a failure keeps the last reading. */
   refresh(): Promise<ScreenOrientation | null>;
+  /**
+   * Record a lock. A locked pose becomes the reading for the next second; null (a free
+   * rotation) makes the reading stale. Reads that started before the lock are discarded, and
+   * the next read waits for them instead of sharing their result.
+   */
+  locked(pose: ScreenOrientation | null): void;
 };
 
 export type DisplayOrientationReaderOptions = {
@@ -41,26 +47,36 @@ export function createDisplayOrientationReader(
 ): DisplayOrientationReader {
   let orientation: ScreenOrientation | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
-  let pending: Promise<ScreenOrientation | null> | null = null;
+  // Each lock starts a new generation; a read only counts for the generation it started in.
+  let generation = 0;
+  let pending: { generation: number; read: Promise<ScreenOrientation | null> } | null = null;
 
   const refresh = () => {
-    if (pending) return pending;
-    const startedAt = now();
-    pending = (async () => {
+    if (pending?.generation === generation) return pending.read;
+    const readGeneration = generation;
+    const previous = pending?.read;
+    let read!: Promise<ScreenOrientation | null>;
+    read = (async () => {
+      // A read from before a lock can still be running; adb answers it first.
+      if (previous) await previous;
+      const startedAt = now();
       try {
         // Read the natural size with each rotation: another AVD can reuse the serial, and a
         // foldable changes its display.
         const [size, rotation] = await Promise.all([readNaturalSize(serial), readRotation(serial)]);
-        orientation = screenOrientationForRotation(rotation, size);
+        if (readGeneration === generation) {
+          orientation = screenOrientationForRotation(rotation, size);
+        }
       } catch {
         // Keep the last reading.
       } finally {
-        readAt = startedAt;
-        pending = null;
+        if (readGeneration === generation) readAt = startedAt;
+        if (pending?.read === read) pending = null;
       }
       return orientation;
     })();
-    return pending;
+    pending = { generation: readGeneration, read };
+    return read;
   };
 
   return {
@@ -81,6 +97,15 @@ export function createDisplayOrientationReader(
       }
     },
     refresh,
+    locked(pose) {
+      generation++;
+      if (pose) {
+        orientation = pose;
+        readAt = now();
+      } else {
+        readAt = Number.NEGATIVE_INFINITY;
+      }
+    },
   };
 }
 

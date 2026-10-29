@@ -432,7 +432,8 @@ curl -X POST "$BASE/api/orientation" \
 # shows on a phone; auto follows the sensor. The answer's "pose" is the locked pose.
 # GET /api and /health report the current pose as "orientation": null until the first
 # adb read succeeds, then the last successful read. serve-emu reads it again with adb
-# when a request finds a read older than a second.
+# when a request finds a read older than a second. After a lock, the locked pose is the
+# reading for one second, and a read that started before the lock is discarded.
 
 # Emulator foldables report their current posture and hinge angle.
 curl "$BASE/api/fold"

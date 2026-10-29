@@ -247,7 +247,7 @@ export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
   /** `portrait` or `landscape` for a locked rotation, from the device's natural display. */
-  orientation: OrientationMode | "unknown";
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
   /** The locked pose, or null when the rotation is free or unknown. Absent on older servers. */
   pose?: ScreenOrientation | null;
   raw: string;
