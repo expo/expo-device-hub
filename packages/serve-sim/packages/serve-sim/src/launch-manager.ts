@@ -103,8 +103,9 @@ export function releaseLaunchState(udid: string, ownerPid: number): boolean {
 }
 
 /** Reserve before native preparation; publication and retirement honor the same device lock. */
-export async function reserveDeviceSession(udid: string): Promise<void> {
+export async function reserveDeviceSession(udid: string, signal?: AbortSignal): Promise<void> {
   await withLaunchStateLock(udid, async () => {
+    signal?.throwIfAborted();
     assertDeviceOwnership(udid, process.pid);
     const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
     writeLaunchState(udid, {

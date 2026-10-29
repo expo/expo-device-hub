@@ -1959,7 +1959,7 @@ async function serve(
     prepareDeviceOnce(udid, preparedDevices, async () => {
       signal?.throwIfAborted();
       if (sessionStopping) throw new Error("Session is stopping");
-      await reserveDeviceSession(udid);
+      await reserveDeviceSession(udid, signal);
       if (!ownedDevices.includes(udid)) ownedDevices.push(udid);
       await startDeviceInProcess(
         udid,

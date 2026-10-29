@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { adoptSession } from "../session-owner";
 import { DEFAULT_STREAM_ENCODER_SETTINGS } from "../stream-settings";
@@ -16,6 +16,7 @@ test.each([
   { failure: "retire", log: `Could not shut down Simulator ${extra}`, exitCode: 1 },
   { failure: "warmup-during", log: "Warm Simulator cleanup failed", exitCode: 1 },
   { failure: "foreign", log: "", exitCode: 0 },
+  { failure: "cancel-reservation", log: "", exitCode: 0 },
 ])(
   "adopting the first warm device keeps it after a failure on the extra device: $failure",
   async ({ failure, log, exitCode }) => {
@@ -67,11 +68,20 @@ test.each([
       } else {
         expect(await adoption).toMatchObject({ device: first });
       }
+      if (failure === "cancel-reservation") {
+        writeFileSync(join(state.dir, "release-extra-lock"), "");
+        await waitFor(() => stderr.includes("reservation lock released"));
+      }
       await waitFor(() => stderr.includes(log));
       // The server keeps running after the failure until its stop.
       await Bun.sleep(200);
       if (failure === "foreign") {
         expect(readFileSync(join(state.dir, `server-${extra}.json`), "utf8")).toBe(foreign);
+        expect(stderr).not.toContain(`native ${extra}`);
+        expect(stderr).not.toContain(`released ${extra}`);
+      }
+      if (failure === "cancel-reservation") {
+        expect(existsSync(join(state.dir, `launch-${extra}.json`))).toBe(false);
         expect(stderr).not.toContain(`native ${extra}`);
         expect(stderr).not.toContain(`released ${extra}`);
       }

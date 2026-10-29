@@ -1,5 +1,9 @@
 import { mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { stateDir } from "../../state";
+import { withLaunchStateLock } from "../../launch-state-lock";
 
 // Two warm devices in one orphan: the default (first) and an extra one that warms in the
 // background. WARM_FAILURE selects a failure on the extra device: "none", "retire", "warmup"
@@ -7,6 +11,11 @@ import * as childProcess from "node:child_process";
 const first = "00000000-0000-0000-0000-000000000501";
 const extra = "00000000-0000-0000-0000-000000000502";
 const failure = process.env.WARM_FAILURE ?? "none";
+if (failure === "cancel-reservation") {
+  void withLaunchStateLock(extra, async () => {
+    while (!existsSync(join(stateDir(), "release-extra-lock"))) await Bun.sleep(10);
+  }).then(() => console.error("reservation lock released"));
+}
 const listing = JSON.stringify({
   devices: { iOS: [first, extra].map((udid) => ({ udid, state: "Booted" })) },
 });

@@ -192,6 +192,9 @@ Before preparing another target, adoption checks its preview and capability owne
 and reserves it under the device lock. Preview publication honors this reservation,
 which survives discovery unpublication until shutdown or session cleanup
 [observed: `src/launch-manager.ts` `reserveDeviceSession`, `src/state.ts`].
+Cancellation is checked again after taking the reservation lock. Preview publication
+waits at most one lock poll, so another process's native work cannot freeze adoption
+or input for the other devices [observed: `src/launch-manager.ts`, `src/state.ts`].
 Adoption refuses foreign live or persistent ownership. The UI grid retains its
 explicit user shutdown contract, including a separate detached helper, and its
 legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
