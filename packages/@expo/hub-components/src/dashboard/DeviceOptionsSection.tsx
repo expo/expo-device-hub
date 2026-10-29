@@ -1,8 +1,9 @@
 import { useId, useState } from "react";
 
-import { type DeviceClient, type DeviceSettingKey } from "@expo/hub-client";
+import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { rotationUnavailableReason } from "./rotation-availability";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -70,6 +71,13 @@ const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
   { value: "extra-large", label: "XL" },
 ];
 
+const ORIENTATION_OPTIONS: ReadonlyArray<SelectOption<DeviceOrientation>> = [
+  { value: "portrait", label: "Portrait" },
+  { value: "landscape_left", label: "Landscape left" },
+  { value: "landscape_right", label: "Landscape right" },
+  { value: "portrait_upside_down", label: "Upside down" },
+];
+
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: "reduce-motion", label: "Reduce motion" },
   { key: "bold-text", label: "Bold text" },
@@ -126,6 +134,7 @@ export function DeviceOptionsSection({
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
+  const orientationErrorId = useId();
   const settings = client?.deviceSettings ?? null;
   const settingsAvailable = client?.deviceSettingsStatus === "ready";
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
@@ -165,6 +174,32 @@ export function DeviceOptionsSection({
   }
 
   const keyboardVisible = showDeviceSettings && client?.platform === "ios";
+  const orientationCapabilities = client?.capabilities.orientation;
+  const orientationOptions = orientationCapabilities
+    ? ORIENTATION_OPTIONS.filter(({ value }) =>
+        orientationCapabilities.orientations.includes(value),
+      )
+    : [];
+  // Shown once the device has reported a pose, so an older serve-emu server, which reports
+  // none, never shows the row after a Rotate. It stays while the report briefly disagrees with
+  // a turned frame, and goes when the client loses its orientation capability (a new device).
+  // It shows the last pick at once, then the device's report. Rotate still works before that.
+  const reportedOrientation = client?.screen?.orientation;
+  const [poseReported, setPoseReported] = useState(false);
+  if (reportedOrientation && !poseReported) setPoseReported(true);
+  if (!orientationCapabilities && poseReported) setPoseReported(false);
+  const currentOrientation =
+    poseReported || reportedOrientation
+      ? (client?.orientation ?? reportedOrientation ?? null)
+      : null;
+  const rotationUnavailable = client
+    ? rotationUnavailableReason({
+        platform: client.platform,
+        status: client.status,
+        recording: client.screenRecording,
+        recordingControlsLocked: client.recordingControlsLocked,
+      })
+    : undefined;
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
@@ -241,6 +276,24 @@ export function DeviceOptionsSection({
             label="Force on-screen keyboard"
             descriptionId={onscreenKeyboardDescriptionId}
             onChange={(checked) => setValue("onscreen-keyboard", checked ? "on" : "off")}
+          />
+        </SidebarRow>
+      )}
+
+      {client && orientationOptions.length > 0 && currentOrientation && (
+        <SidebarRow
+          label="Orientation"
+          description={client.orientationError ?? undefined}
+          descriptionId={client.orientationError ? orientationErrorId : undefined}
+        >
+          <Select
+            ariaLabel="Orientation"
+            ariaDescribedBy={client.orientationError ? orientationErrorId : undefined}
+            options={orientationOptions}
+            value={currentOrientation}
+            disabled={rotationUnavailable !== undefined}
+            disabledReason={rotationUnavailable}
+            onChange={client.setOrientation}
           />
         </SidebarRow>
       )}

@@ -1,6 +1,8 @@
 import { type ReactNode } from "react";
 
 import {
+  type ConnectionStatus,
+  type DevicePlatform,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
@@ -23,6 +25,7 @@ import {
   text,
 } from "../primitives";
 import { type ColorScheme } from "./data";
+import { rotationUnavailableReason } from "./rotation-availability";
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 24;
@@ -73,6 +76,8 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
+  platform,
+  status = "streaming",
   recording = null,
   recordingControlsLocked = false,
   clipboard = false,
@@ -94,6 +99,10 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  /** The client's platform. On iOS, Rotate waits for a live stream, like the Orientation select. */
+  platform?: DevicePlatform;
+  /** The client's connection status. */
+  status?: ConnectionStatus;
   /** Only picks the explanation; `recordingControlsLocked` decides whether Rotate is locked. */
   recording?: DeviceScreenRecordingStatus | null;
   /** The client's `recordingControlsLocked`. */
@@ -108,6 +117,12 @@ export function StreamControls({
   onCopy?: () => void;
 }) {
   const themeDisabled = appearanceDisabled || appearance === null;
+  const rotateUnavailable = rotationUnavailableReason({
+    platform,
+    status,
+    recording,
+    recordingControlsLocked,
+  });
   const clipboardDisabled = clipboardPending !== null;
   return (
     <div
@@ -188,17 +203,13 @@ export function StreamControls({
         <ControlButton
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
-          tooltip={
-            !recordingControlsLocked
-              ? undefined
-              : recording === "unknown"
-                ? "Rotation is unavailable until recording status is known."
-                : "Rotation is unavailable while recording."
-          }
-          aria-disabled={recordingControlsLocked || undefined}
-          onClick={recordingControlsLocked ? undefined : onRotate}
+          tooltip={rotateUnavailable}
+          aria-disabled={rotateUnavailable !== undefined || undefined}
+          onClick={rotateUnavailable === undefined ? onRotate : undefined}
           style={
-            recordingControlsLocked ? { color: text.tertiary, cursor: "not-allowed" } : undefined
+            rotateUnavailable === undefined
+              ? undefined
+              : { color: text.tertiary, cursor: "not-allowed" }
           }
         />
       </ControlGroup>
