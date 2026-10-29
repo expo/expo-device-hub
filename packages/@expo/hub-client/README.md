@@ -256,6 +256,31 @@ and app permissions are only available on some backends. Check `client.capabilit
 you show their controls. The full `DeviceClient` contract, with a comment on every field, is
 in [`src/types.ts`](./src/types.ts).
 
+### Fold an iPhone Duo
+
+`client.hinge` is set only for a simulator with a hinge that serve-sim can move. It reads the
+hinge from the screen config and sends commands over the input socket. serve-sim sends the new
+config before its reply, but when the config has a native observation, the observation wins and
+can arrive later. The state can then show the previous pose for a moment after `pending` clears,
+so a UI that animates a pick must keep its own preview until the state matches.
+
+```ts
+import { HINGE_POSES } from "@expo/hub-client";
+
+if (client.hinge) {
+  // Each state field is undefined while serve-sim has not reported it.
+  client.hinge.angle; // 0 closed to 180 open
+  client.hinge.pose; // 'closed' | 'open' | 'laptop' | 'book' | 'tent', or null for another state
+  client.hinge.activeScreenId; // 1 cover, 3 inner screen
+  client.hinge.tableModeAvailable; // whether { control: "table", value: true } can work now
+  client.hinge.supportsPhysicalOrientation; // whether "physical" commands work
+  client.hinge.setControl({ control: "pose", value: "book" });
+  client.hinge.setControl({ control: "angle", value: 120 });
+  client.hinge.pending; // true until the helper replies
+  client.hinge.error; // why the newest command failed
+}
+```
+
 ## Remote connections
 
 Set `options.baseUrl` on `DeviceClientProvider` to the remote streaming server:
