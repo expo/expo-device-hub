@@ -5,7 +5,7 @@
 **Systems:** HubClient, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-16 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248); 2026-10-16 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -88,6 +88,18 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].
 
+## Inactive Duo panels
+
+An iPhone Duo's 3D preview keeps a WebRTC peer open for both physical panels. iOS keeps the inactive panel silent until a fold hands off to it, so its silence is not a failure. Each panel passes `judgeStalls: true` only while it is the presented panel [observed: `DuoPanelStreams.tsx`, `useWebRtcStream.ts`]:
+
+- With `judgeStalls: false`, the first-frame timeout does not arm and the playback watchdog does not judge the peer. Turning it off clears a pending timeout and resets the stall samples.
+- A first-frame verdict whose reads finish after the panel turned inactive is dropped.
+- Turning it on arms the first-frame timeout on the existing peer, without renegotiating.
+- The presented panel's codec failures walk the same codec ladder as the flat stream [observed: `ladderFailure` in `useIosDevice.ts`].
+- The flat stream is disabled while the panels show, so a ladder restart, or a reselect of the failed codec, restarts the panels' WebRTC sessions instead. A locked VP8 session has no other codec, so this restart is its only recovery [observed: `restartLadderStream` and `restartGeneration` in `useIosDevice.ts`, `DuoPanelStreams.tsx`].
+
+serve-sim's client uses the same rule [observed: `judgeStalls` in `hooks/use-webrtc-stream.ts` and `components/duo-panel-streams.tsx`].
+
 ## Capture reboot
 
 The sender's optional `capture.rebooting` boolean identifies an intentional capture suspension. The shared stats parser preserves explicit `true` and `false`; missing or malformed values remain unknown [observed: `DeviceStreamCaptureStats` in `types.ts`, `readWebRtcCaptureStats` in `stream-stats.ts`].
@@ -100,7 +112,7 @@ This ports the browser recovery behavior added to serve-sim in #333; it needs a 
 
 ## H.264 offer level
 
-Chrome offers H.264 level 3.1 by default, which is too low for large simulator screens. iOS offers raise the asymmetric `profile-level-id` to level 5.2 when it is lower. Android offers are unchanged [observed: `webrtc-sdp-level.ts`, `raiseH264Level` in `useIosDevice.ts`]. The level policy is in [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md#signaling-lifecycle), and serve-sim's client sends the same level [observed: `webrtc-sdp-level.ts`].
+Chrome offers H.264 level 3.1 by default, which is too low for large simulator screens. iOS offers, including the iPhone Duo's panel streams, raise the asymmetric `profile-level-id` to level 5.2 when it is lower. Android offers are unchanged [observed: `webrtc-sdp-level.ts`, `raiseH264Level` in `useIosDevice.ts` and `DuoPanelStreams.tsx`]. The level policy is in [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md#signaling-lifecycle), and serve-sim's client sends the same level [observed: `webrtc-sdp-level.ts`].
 
 ## Open questions
 

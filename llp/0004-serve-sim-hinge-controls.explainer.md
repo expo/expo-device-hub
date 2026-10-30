@@ -384,6 +384,11 @@ display and mapped back to its streamed coordinates.
 In the flat framed view used for AX inspection, the closed screen uses
 DeviceKit's `phone15` frame; half-folded and fully open use the same `phone14`
 inner-display frame. The frame and hardware buttons rotate around the stream.
+When a hinge command switches panels, the departing panel keeps its last
+geometry until native readback identifies the destination panel. The new panel
+ID, dimensions, orientation, and glass corners are then published together.
+Failed commands release this hold; a two-second limit lets native geometry
+recover even if the expected display election never arrives.
 The inner frame's button PDFs declare `/Rotate 270`; both asset dimensions and
 PNG conversion must apply that page rotation.
 

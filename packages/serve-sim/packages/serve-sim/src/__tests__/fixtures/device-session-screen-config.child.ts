@@ -3125,6 +3125,110 @@ describe("native active screen config", () => {
     expect(configs.at(-1)).not.toHaveProperty("hingeAngle");
   });
 
+  test("switches flat orientation and display corners together after opening", async () => {
+    const { configs, controlResults, url } = await start(
+      { width: 1398, height: 2034, orientation: "portrait", screenId: 1 },
+      true,
+    );
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(JSON.stringify({ requestId: 1, command: { control: "pose", value: "open" } })),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    screen = { ...screen, orientation: "landscape_left" };
+    await screenChanged!();
+    const controller = new AbortController();
+    const response = fetch(url, { signal: controller.signal }).catch(() => null);
+    await waitUntil(() => !!mjpeg);
+    await mjpeg!({ width: 2008, height: 2854, data: new Uint8Array([1, 2]) });
+    expect(session!.screenConfig()).toMatchObject({
+      width: 1398,
+      height: 2034,
+      orientation: "portrait",
+      screenId: 1,
+    });
+    screen = { width: 2008, height: 2854, orientation: "landscape_left", screenId: 3 };
+    await screenChanged!();
+    await waitUntil(() => configs.at(-1)?.screenId === 3);
+    expect(configs.at(-1)).toMatchObject(screen);
+    expect(
+      configs
+        .filter((config) => config.screenId === 1)
+        .every((config) => config.orientation === "portrait"),
+    ).toBe(true);
+    expect(routedScreens).toEqual([1, 3]);
+    controller.abort();
+    await response;
+  });
+
+  test("a rejected opening releases the departing panel's geometry", async () => {
+    const { configs, controlResults } = await start(
+      { width: 1398, height: 2034, orientation: "portrait", screenId: 1 },
+      true,
+    );
+    hingeResult = false;
+    screen = { ...screen, orientation: "landscape_left" };
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(JSON.stringify({ requestId: 1, command: { control: "pose", value: "open" } })),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]?.ok).toBe(false);
+    expect(configs.at(-1)).toMatchObject({ screenId: 1, orientation: "landscape_left" });
+  });
+
+  test("a missing display election cannot hold native geometry indefinitely", async () => {
+    const { controlResults } = await start(
+      { width: 1398, height: 2034, orientation: "portrait", screenId: 1 },
+      true,
+    );
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(JSON.stringify({ requestId: 1, command: { control: "pose", value: "open" } })),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    const clock = spyOn(Date, "now").mockReturnValue(Date.now() + 2100);
+    try {
+      screen = { ...screen, orientation: "landscape_left" };
+      await screenChanged!();
+      expect(session!.screenConfig()).toMatchObject({ screenId: 1, orientation: "landscape_left" });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  test("switches flat orientation and display corners together after closing", async () => {
+    const { configs, controlResults } = await start(
+      { width: 2008, height: 2854, orientation: "landscape_left", screenId: 3 },
+      true,
+    );
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x10]),
+        Buffer.from(
+          JSON.stringify({ requestId: 1, command: { control: "pose", value: "closed" } }),
+        ),
+      ]),
+    );
+    await waitUntil(() => controlResults.length === 1);
+    screen = { ...screen, orientation: "portrait" };
+    await screenChanged!();
+    expect(session!.screenConfig()).toMatchObject({ orientation: "landscape_left", screenId: 3 });
+    screen = { width: 1398, height: 2034, orientation: "portrait", screenId: 1 };
+    await screenChanged!();
+    await waitUntil(() => configs.at(-1)?.screenId === 1);
+    expect(configs.at(-1)).toMatchObject(screen);
+    screen = { ...screen, orientation: "landscape_right" };
+    await screenChanged!();
+    expect(session!.screenConfig().orientation).toBe("landscape_right");
+  });
+
   test("rejects malformed hinge requests without sending native input", async () => {
     const { hingeResults } = await start({ width: 2007, height: 2853 });
     for (const angle of [-1, 181, "90", null]) {
