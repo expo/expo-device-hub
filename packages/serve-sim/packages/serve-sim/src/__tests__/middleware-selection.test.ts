@@ -31,6 +31,11 @@ const states: ServeSimState[] = [
 ];
 
 describe("selectServeSimState", () => {
+  test("matches Simulator UUIDs regardless of helper-state casing", () => {
+    const lower = { ...states[0]!, device: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" };
+    expect(selectServeSimState([lower], lower.device.toUpperCase())).toBe(lower);
+  });
+
   test("keeps existing first-state behavior when no device is requested", () => {
     expect(selectServeSimState(states)?.device).toBe("DEVICE-A");
   });

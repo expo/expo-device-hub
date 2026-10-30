@@ -1,6 +1,6 @@
 {
   "name": "@expo/serve-sim",
-  "version": "0.10.4",
+  "version": "0.13.0",
   "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim/packages/serve-sim",
   "bugs": {
     "url": "https://github.com/expo/expo-device-hub/issues"
@@ -43,6 +43,7 @@
     "src/camera-helper.ts",
     "src/connect-to-fetch.ts",
     "src/middleware.ts",
+    "src/single-device.ts",
     "src/native.ts",
     "src/state.ts",
     "src/stream-settings.ts",

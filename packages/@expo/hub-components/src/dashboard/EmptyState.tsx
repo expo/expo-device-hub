@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { Button } from "../components/Button";
+import type { AddDeviceOutcome } from "./data";
 import { PhoneIcon, bg, border, heading, icon, radius, text, textSize } from "../primitives";
 import { type Platform } from "./data";
 
@@ -9,19 +12,42 @@ import { type Platform } from "./data";
 export function EmptyState({
   platform,
   framed = true,
+  singleDevice = false,
+  onStart,
 }: {
   platform?: Platform;
+  singleDevice?: boolean;
+  onStart?: () => Promise<AddDeviceOutcome>;
   /** Whether to draw the hairline seams toward the sidebars (see StreamPanel). */
   framed?: boolean;
 }) {
-  const title =
-    platform === "ios"
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function start() {
+    if (!onStart || starting) return;
+    setStarting(true);
+    setError(null);
+    try {
+      const result = await onStart();
+      if (!result.ok) setError(result.error ?? "The device did not come online.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStarting(false);
+    }
+  }
+  const title = singleDevice
+    ? "The session device is unavailable"
+    : platform === "ios"
       ? "No booted simulators"
       : platform === "android"
         ? "No booted emulators"
         : "No booted devices";
-  const description =
-    platform === "ios"
+  const description = singleDevice
+    ? onStart
+      ? "Start the same device to continue."
+      : "Reconnect the same device to continue."
+    : platform === "ios"
       ? "There are no booted simulators. Use the + button to add one."
       : platform === "android"
         ? "There are no booted emulators or connected devices. Use the + button to add one."
@@ -65,6 +91,16 @@ export function EmptyState({
       <p style={{ ...textSize.sm, color: text.secondary, margin: 0, maxWidth: 320 }}>
         {description}
       </p>
+      {onStart && (
+        <Button onClick={() => void start()} disabled={starting}>
+          {starting ? "Starting…" : "Start device"}
+        </Button>
+      )}
+      {error && (
+        <p role="alert" style={{ ...textSize.sm, color: text.danger, margin: 0 }}>
+          {error}
+        </p>
+      )}
     </section>
   );
 }

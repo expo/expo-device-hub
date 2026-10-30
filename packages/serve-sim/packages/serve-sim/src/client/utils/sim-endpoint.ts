@@ -47,6 +47,7 @@ declare global {
       requireToken?: boolean;
       /** Public page Share copies when `--share-url` is set. */
       shareUrl?: string;
+      singleDevice?: string;
       /** Hide the Share button when `--disable-share` is set. */
       disableShare?: boolean;
       streamSettings?: StreamSettings;
@@ -123,4 +124,9 @@ export function simEndpoint(path: string): string {
   const configured = window.__SIM_PREVIEW__?.basePath;
   const basePath = configured ?? (window.location.pathname.replace(/\/+$/, "") || "/");
   return basePath === "/" ? `/${path}` : `${basePath}/${path}`;
+}
+
+/** Simulator UUIDs may arrive with different casing from helpers and discovery. */
+export function sameSimulator(a: string | null | undefined, b: string | null | undefined): boolean {
+  return !!a && !!b && a.toUpperCase() === b.toUpperCase();
 }

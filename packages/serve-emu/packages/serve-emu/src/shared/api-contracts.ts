@@ -190,6 +190,8 @@ export type StreamModeRequest =
       inputSource?: InputSource;
     };
 export type StreamModeResponse = ApiSuccess<{
+  /** Effective idle repeat interval; 0 disables repeats. Older hosts omit this field. */
+  repeatFrameMs?: number;
   serial: string;
   mode: StreamMode;
   grpcImageMode: GrpcImageMode;

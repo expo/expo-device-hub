@@ -87,7 +87,7 @@ struct Photocopier {
                                            pixelTransferSessionOut: &session) == noErr,
               let session else {
             transferUnavailable = true
-            print("[capture] GPU pixel transfer unavailable; falling back to CPU copies")
+            fputs("[capture] GPU pixel transfer unavailable; falling back to CPU copies\n", stderr)
             return nil
         }
         VTSessionSetProperty(session,
@@ -161,7 +161,7 @@ struct Photocopier {
                                                     .outputColorSpace: NSNull()])
             } else {
                 nativeContextUnavailable = true
-                print("[capture] Metal native-size copy unavailable; using CPU copy")
+                fputs("[capture] Metal native-size copy unavailable; using CPU copy\n", stderr)
             }
         }
         guard let nativeContext else {

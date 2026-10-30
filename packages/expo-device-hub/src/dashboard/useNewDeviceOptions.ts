@@ -1,6 +1,7 @@
 import { type NewDeviceOptions, type Platform } from "@expo/hub-components";
 import { useEffect, useState } from "react";
 
+import { dashboardSingleDevice } from "../single-device";
 import { basePath } from "./basePath";
 import { logUtilityErrors, type UtilityError } from "./utilityErrors";
 
@@ -27,6 +28,7 @@ export function useNewDeviceOptions(): NewDeviceOptionsByPlatform {
   const [options, setOptions] = useState<NewDeviceOptionsByPlatform>(EMPTY);
 
   useEffect(() => {
+    if (dashboardSingleDevice()) return;
     let cancelled = false;
 
     (async () => {

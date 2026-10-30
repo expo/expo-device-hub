@@ -208,6 +208,9 @@ created before a late load remain unchanged, so those requests can be missed.
 The capability manager owns all insert-list updates. A separate insert ownership file
 retains startup paths until launchd cleanup succeeds, even when their capability owner
 has exited or their config has been removed. Unrelated inserted libraries are preserved.
+Each update reads the insert fresh and skips a `launchctl setenv` whose value is already
+in place, so a launch with unchanged capabilities does not write launchd state. A reboot
+clears those values, so the next update writes them again.
 `SERVE_SIM_ADDITIONAL_DYLIBS` adds caller-owned paths to that insert list alongside
 the loader and startup capability images. Cleanup by a process with that variable set
 preserves its explicitly requested paths, even when an enabled capability also records

@@ -190,7 +190,7 @@ class ForegroundTracker {
     this.deps
       .frontmostApp(this.udid)
       .then((app) => {
-        if (app && !this.heardFromLog) this.set(app);
+        if (!this.stopped && app && !this.heardFromLog) this.set(app);
       })
       .catch(() => {});
     this.spawn();
@@ -230,6 +230,7 @@ class ForegroundTracker {
     this.child?.kill();
     this.child = null;
     this.buf = "";
+    this.listeners.clear();
   }
 
   /** Assemble log lines from a stdout chunk and adopt any visibility transitions. */
@@ -290,6 +291,7 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
     restartDelayMs: deps.restartDelayMs ?? RESTART_DELAY_MS,
   };
   const byUdid = new Map<string, ForegroundTracker>();
+  let stopped = false;
   return {
     /** Latest known foreground app for a udid, or null when nothing is tracking it. */
     peek(udid: string): ForegroundApp | null {
@@ -300,6 +302,7 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
      * are notified on future changes only; read `peek` for the current value.
      */
     subscribe(udid: string, onChange?: (app: ForegroundApp) => void): ForegroundSubscription {
+      if (stopped) return { unsubscribe() {} };
       let tracker = byUdid.get(udid);
       if (!tracker) {
         tracker = new ForegroundTracker(udid, resolved);
@@ -320,6 +323,11 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
           }
         },
       };
+    },
+    stopAll(): void {
+      stopped = true;
+      for (const tracker of byUdid.values()) tracker.stop();
+      byUdid.clear();
     },
   };
 }

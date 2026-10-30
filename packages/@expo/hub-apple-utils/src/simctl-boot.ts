@@ -1,6 +1,9 @@
 import { type AppleUtilsResult, result } from "./errors";
 import { errorText, execSimctl } from "./simctl";
 
+/** Matches serve-sim's `simctl boot` limit, longer than the 30 s default. */
+const BOOT_TIMEOUT_MS = 120_000;
+
 /** Build the `simctl boot <udid>` args. */
 export function buildBootArgs(udid: string): string[] {
   return ["boot", udid];
@@ -26,6 +29,7 @@ export function isAlreadyBootedError(message: string): boolean {
 export async function runSimctlBoot(udid: string): Promise<AppleUtilsResult<boolean>> {
   const executed = await execSimctl(buildBootArgs(udid), {
     errorMessage: "[apple-utils] Failed to run `xcrun simctl boot`:",
+    timeoutMs: BOOT_TIMEOUT_MS,
     ignoreError: (error) => isAlreadyBootedError(errorText(error)),
   });
   return result(executed.error === null, executed.error);

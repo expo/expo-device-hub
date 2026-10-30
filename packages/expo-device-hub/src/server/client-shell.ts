@@ -9,8 +9,10 @@ export function configureClientShell(
   transport: Transport | undefined,
   hideSidebar: boolean,
   hideBootDevice: boolean,
+  singleDevice?: string,
 ): string {
   return html
+    .replaceAll("{{singleDevice}}", singleDevice ?? "")
     .replaceAll("{{mount}}", mountPath)
     .replaceAll("{{platform}}", platform ?? "")
     .replaceAll("{{transport}}", transport ?? "")

@@ -1,5 +1,39 @@
 # @expo/serve-sim
 
+## 0.13.0
+
+### Minor Changes
+
+- 413a053: Adopt a running serve-sim with a different Simulator while keeping the server and respecting `--single-device`. Adoption reuses the UI device lifecycle and waits for unused devices to shut down and the selected device to become ready.
+
+### Patch Changes
+
+- 0665a67: Fix about three seconds of lag in the HTTP simulator preview on Chromium. When the encoder falls back to default rate control, the stream now declares that frames are never reordered.
+
+## 0.12.0
+
+### Minor Changes
+
+- 12e23ba: Add single-device mode to lock a session to one Simulator and hide the sidebar.
+
+### Patch Changes
+
+- ec8156b: Center the Simulator beside open panels and restore its preferred size when they close.
+
+## 0.11.0
+
+### Minor Changes
+
+- 78c10f6: Let adoption start video recording before app actions, using paired `--recording-output` and `--recording-id` flags. The server owns the recording until an explicit stop or shutdown.
+- 499c168: Add `--orphan` to start a warm Simulator server that a job can claim once with `--adopt`, with network capture ready before app launch.
+
+### Patch Changes
+
+- 3a6cf32: Show missing mitmproxy errors once when restarting with network capture. On EAS runners, ask users to restart the session with `--network-capture`; locally, show the Homebrew install command.
+- f9cba16: Add an optional `restart` setting to `app.launch`, launch apps and answer the first readiness check faster, and retry `app.launch` once after a simctl timeout, with clearer timeout and rollback errors.
+- 1357114: Log startup phase durations and readiness failures to help diagnose slow Simulator sessions.
+- 998aa7a: Stop foreground-app log streams before preview shutdown so they cannot restart while recordings finish.
+
 ## 0.10.4
 
 ### Patch Changes
