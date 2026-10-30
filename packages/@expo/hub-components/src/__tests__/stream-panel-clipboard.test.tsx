@@ -9,6 +9,20 @@ import { createGlobalStubs } from "./test-globals";
 test("denied browser copy leaves mobile presentation and opens the fallback", async () => {
   const { stubGlobal, restoreGlobals } = createGlobalStubs();
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  class Element {
+    inert = false;
+  }
+  const sibling = new Element();
+  const panel = new Element();
+  Object.assign(panel, { parentElement: { children: [panel, sibling] } });
+  stubGlobal("HTMLElement", Element);
+  stubGlobal(
+    "MutationObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
   stubGlobal("document", {
     documentElement: { getAttribute: () => "ltr" },
     addEventListener() {},
@@ -71,16 +85,19 @@ test("denied browser copy leaves mobile presentation and opens the fallback", as
             fallback = request;
           }}
         />,
+        { createNodeMock: (element) => (element.type === "section" ? panel : null) },
       );
     });
     await act(async () => {
       renderer!.root.findByProps({ "aria-label": "Full screen" }).props.onClick();
     });
     expect(renderer!.root.findByType("section").props.style.position).toBe("fixed");
+    expect(sibling.inert).toBe(true);
     await act(async () => {
       await renderer!.root.findByType(PhoneFrame).props.onCopy();
     });
     expect(fallback).toEqual({ action: "copy", text: "device text" });
+    expect(sibling.inert).toBe(false);
     expect(renderer!.root.findByType("section").props.style.position).toBe("relative");
     expect(renderer!.root.findByProps({ "aria-label": "Full screen" })).toBeDefined();
   } finally {

@@ -167,15 +167,24 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     deviceId: string | null;
     request: ClipboardRequest;
   } | null>(null);
+  const [singleDeviceInspectorOpen, setSingleDeviceInspectorOpen] = useState(false);
+  const closeInspector = () => {
+    setSingleDeviceInspectorOpen(false);
+    sidebars.closeLeft();
+  };
   const clipboardRequest =
     clipboardFallback && clipboardFallback.deviceId === selectedId
       ? clipboardFallback.request
       : null;
-  useEffect(() => setClipboardFallback(null), [selectedId]);
+  useEffect(() => {
+    setClipboardFallback(null);
+    setSingleDeviceInspectorOpen(false);
+  }, [selectedId]);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    sidebars.openLeft();
+    if (singleDevice) setSingleDeviceInspectorOpen(true);
+    else sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -471,23 +480,23 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
 
       <SidebarOverlay
         side="left"
-        open={sidebars.leftOverlay}
-        sidebarOpen={sidebars.leftOpen}
+        open={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOverlay}
+        sidebarOpen={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOpen}
         topmost
-        onDismiss={sidebars.closeLeft}
+        onDismiss={closeInspector}
       >
         <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recentSimulators}
-          recentEmulators={recentEmulators}
-          simulatorOptions={simulatorOptions}
-          emulatorOptions={emulatorOptions}
+          simulators={singleDevice ? [] : simulators}
+          emulators={singleDevice ? [] : emulators}
+          recentSimulators={singleDevice ? [] : recentSimulators}
+          recentEmulators={singleDevice ? [] : recentEmulators}
+          simulatorOptions={singleDevice ? [] : simulatorOptions}
+          emulatorOptions={singleDevice ? [] : emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
           onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-          onToggle={sidebars.closeLeft}
+          onToggle={closeInspector}
           // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
           toggleIcon={viewport.mobile ? "close" : "sidebar"}
           topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
