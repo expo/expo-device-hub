@@ -49,10 +49,13 @@ export * from "./components/icons";
 export * from "./theme/tokens";
 
 // ── Dashboard composites ──
-// These compose the primitives above into the Expo Hub dashboard layout. The
-// device stream is injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen`
-// component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
-// types-only devDependency) so this library never imports the client at runtime.
+// These compose the primitives above into the Expo Hub dashboard layout. They
+// read a `DeviceClient` from props and take small helpers from `@expo/hub-client`,
+// a peer dependency, so the host's own copy serves both. The device stream is
+// injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen` component +
+// `displayScreen` helper as props. The iPhone Duo's 3D preview is the
+// `@expo/hub-components/foldable` entry, injected the same way, so only a
+// consumer that renders it loads three.js.
 export { Sidebar } from "./dashboard/Sidebar";
 export { LogSidebar, type LogSidebarProps } from "./dashboard/LogSidebar";
 export { StreamPanel } from "./dashboard/StreamPanel";
@@ -90,7 +93,11 @@ export { EventsSection } from "./dashboard/EventsSection";
 export { LogsSection } from "./dashboard/LogsSection";
 export { CollapsibleSection } from "./dashboard/CollapsibleSection";
 export { KeyboardSection } from "./dashboard/KeyboardSection";
-export { PhoneFrame, type PhoneFrameFoldPreview } from "./dashboard/PhoneFrame";
+export {
+  PhoneFrame,
+  type FoldPreviewMode,
+  type PhoneFrameFoldPreview,
+} from "./dashboard/PhoneFrame";
 export {
   deviceScreenClipPath,
   deviceScreenCornersClipPath,

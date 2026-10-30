@@ -1,17 +1,11 @@
 /**
  * iPhone Duo physical poses and framebuffer mapping, ported from serve-sim's
- * `src/client/simulator/duo-pose.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/duo-pose.ts` (@expo/serve-sim 0.5.0). Which display a
+ * fold elects is fold state, so `@expo/hub-client` owns it.
  */
 
+import { streamGeometry, type HingePose, type ScreenSize } from "@expo/hub-client";
 import { Euler, Quaternion } from "three";
-
-import {
-  hingePoseOrientation,
-  type HingePhysicalOrientation,
-  type HingePose,
-} from "../hinge-control";
-import { streamGeometry } from "../orientation";
-import { type ScreenSize } from "../types";
 
 export interface DuoViewAngles {
   elevation: number;
@@ -32,34 +26,6 @@ export function duoScreenRoll(config: ScreenSize) {
 /** Turn the ordinary folding view from the cover toward the inner screens. */
 export function duoFacingYaw(fold: number): number {
   return (Math.PI / 2) * Math.pow(fold / (Math.PI / 2), 3);
-}
-
-/** Another client turned the device over, so a remembered preset no longer describes it. */
-export function duoPhysicalPoseChanged(
-  pose: HingePose | null | undefined,
-  orientation: HingePhysicalOrientation | undefined,
-): boolean {
-  return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
-}
-
-/** Select the requested panel before native display metadata catches up. */
-export function duoIntendedScreen(
-  angle: number | undefined,
-  physicalPose: HingePose | null | undefined,
-  nativeScreenId?: number,
-  faceDown = false,
-): 1 | 3 {
-  if (angle === undefined) return nativeScreenId === 1 ? 1 : 3;
-  if (angle <= 0) return 1;
-  if (angle >= 180) return 3;
-  // Face down with Table Mode elects the cover, as the native Tent pose does.
-  if (physicalPose === "tent" || faceDown) return 1;
-  // CoreSimulator keeps the cover active through 54° and activates the inner
-  // display at 55°. Keep fractional angles between those boundaries on the
-  // current panel, matching native display ownership during slider motion.
-  if (angle <= 54) return 1;
-  if (angle >= 55) return 3;
-  return nativeScreenId === 3 ? 3 : 1;
 }
 
 /** Initial/preset framing. Live hinge edits articulate the saved view in duo-view.ts. */
@@ -178,4 +144,36 @@ export function duoScreenPoint(x: number, y: number, mapping: DuoScreenMapping) 
     x: 0.5 + (px * cos + py * sin) / mapping.drawnWidth,
     y: 0.5 + (-px * sin + py * cos) / mapping.drawnHeight,
   };
+}
+
+/**
+ * The scene hits raw framebuffer points, but the client takes display points,
+ * as `DeviceScreen` sends them, and maps them back with the same orientation.
+ * This is the inverse of hub-client's display-to-raw mapping.
+ */
+export function duoDisplayPoint(config: ScreenSize | null | undefined, x: number, y: number) {
+  switch (streamGeometry(config).inputOrientation) {
+    case "landscape_left":
+      return { x: 1 - y, y: x };
+    case "landscape_right":
+      return { x: y, y: 1 - x };
+    case "portrait_upside_down":
+      return { x: 1 - x, y: 1 - y };
+    default:
+      return { x, y };
+  }
+}
+
+/** The linear part of {@link duoDisplayPoint}, for scroll deltas. */
+export function duoDisplayDelta(config: ScreenSize | null | undefined, dx: number, dy: number) {
+  switch (streamGeometry(config).inputOrientation) {
+    case "landscape_left":
+      return { dx: -dy, dy: dx };
+    case "landscape_right":
+      return { dx: dy, dy: -dx };
+    case "portrait_upside_down":
+      return { dx: -dx, dy: -dy };
+    default:
+      return { dx, dy };
+  }
 }

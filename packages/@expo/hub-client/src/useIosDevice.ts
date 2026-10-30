@@ -44,26 +44,22 @@ import {
 } from "./acknowledged-control-queue";
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from "./avcc-fallback";
 import {
-  type DuoHingeCommands,
-  INITIAL_DUO_HINGE_COMMANDS,
-  recordDuoHingeCommand,
-} from "./duo/duo-hinge-commands";
-import {
   type DeviceDisplayChrome,
   displayChromeForScreen,
   displayClipOrientation,
   displayCornerRadii,
 } from "./display-corners";
-import { duoIntendedScreen, duoPhysicalPoseChanged } from "./duo/duo-pose";
 import {
-  DUO_FACE_DOWN_HELD,
-  type DuoFaceDownFraming,
-  type DuoView,
-  duoFaceDownFraming,
-  duoInitialView,
-  duoPresetView,
-  duoRotateView,
-} from "./duo/duo-view";
+  type DuoPanelId,
+  duoCommandScreen,
+  duoIntendedScreen,
+  duoPhysicalPoseChanged,
+} from "./duo/duo-fold";
+import {
+  type DuoPanelElement,
+  type DuoPanelFeeds,
+  useDuoPanelStreams,
+} from "./duo/useDuoPanelStreams";
 import {
   type HingeControlCommand,
   type HingeControlState,
@@ -102,6 +98,7 @@ import {
   type DeviceCapabilities,
   type DeviceClipboardAction,
   type DeviceConnectionOptions,
+  type DeviceDisplay,
   type DeviceHinge,
   type DeviceLog,
   type DisplayCornerRadii,
@@ -112,12 +109,9 @@ import {
   type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
-  type DuoModelMultiTouch,
-  type DuoModelScroll,
-  type DuoModelTouch,
-  type DuoPanelFeeds,
   type ForegroundApp,
   type HardwareButton,
+  type HingeCommandEvent,
   type HidKeyEvent,
   type KeyboardInput,
   type MultiTouchSample,
@@ -399,7 +393,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     enabled = true,
     device: targetDevice = null,
     streamMode: requestedStreamMode,
-    duoPreview = "2d",
     token = null,
   } = options;
   const active = enabled && !!baseUrl;
@@ -609,35 +602,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : null,
     [isDuo, config?.chrome, screen],
   );
-  // The 3D model feeds both panels itself, so the flat stream parks meanwhile.
-  const modelActive = isDuo && duoPreview === "3d";
+  // Elements a consumer attached through `displays`, by the kind each was attached as.
+  const [panelElements, setPanelElements] = useState<
+    Readonly<Record<DuoPanelId, DuoPanelElement | null>>
+  >({ 1: null, 3: null });
+  // The consumer streams the displays itself, so the flat stream parks meanwhile.
+  const displayStreaming = isDuo && (panelElements[1] !== null || panelElements[3] !== null);
   const [hingePending, setHingePending] = useState(false);
   const [hingeError, setHingeError] = useState<string | null>(null);
   // The requested state, shown until its acknowledgement and matching config arrive.
   const [hingePreview, setHingePreview] = useState<HingeControlState | null>(null);
   const [physicalPose, setPhysicalPose] = useState<HingePose | null | undefined>(undefined);
-  const [duoView, setDuoView] = useState<DuoView | null>(null);
-  const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
   // A local rotation cleared the native preset; ignore older preset acknowledgements.
   const [orientationOverride, setOrientationOverride] = useState(false);
   const hingePendingRef = useRef(false);
-  const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>(INITIAL_DUO_HINGE_COMMANDS);
   const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
-  // The last accepted view before pending presets. A rejected, timed-out, or
-  // interrupted preset restores it. A Rotate supersedes it, so the next preset
-  // records a new one, and only that burst's own accepted presets advance it.
-  const duoViewRef = useRef<DuoView | null>(null);
-  duoViewRef.current = duoView;
-  const presetRestoreRef = useRef<{
-    view: DuoView | null;
-    presets: WeakSet<HingeControlCommand>;
-  } | null>(null);
   const hingeQueueRef = useRef<ReturnType<
     typeof createAcknowledgedControlQueue<HingeControlCommand>
   > | null>(null);
-  const [panelStreaming, setPanelStreaming] = useState(false);
-  const [panelError, setPanelError] = useState<string | null>(null);
-  const [panelStats, setPanelStats] = useState<DeviceClient["streamStats"]>(null);
+  const hingeListenersRef = useRef(new Set<(event: HingeCommandEvent) => void>());
+  const emitHingeEvent = useCallback((event: HingeCommandEvent) => {
+    for (const listener of [...hingeListenersRef.current]) listener(event);
+  }, []);
+  const observeHinge = useCallback((listener: (event: HingeCommandEvent) => void) => {
+    hingeListenersRef.current.add(listener);
+    return () => {
+      hingeListenersRef.current.delete(listener);
+    };
+  }, []);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const previewHingeAngle = hingePreview?.hingeAngle ?? screen?.hingeAngle;
   const previewHingePose = hingePreview ? hingePreview.hingePose : screen?.hingePose;
@@ -646,14 +638,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const previewFaceDown =
     (hingePreview?.tableMode ?? screen?.tableMode) === true &&
     screen?.physicalOrientation === "facedown";
-  const initialDuoView = useMemo(
-    () => duoInitialView(screen?.hingeAngle, screen?.hingePose, screen),
-    [screen],
+  const electedPose = physicalPose === undefined ? previewHingePose : physicalPose;
+  const activeScreenId = duoIntendedScreen(
+    previewHingeAngle,
+    electedPose,
+    screen?.screenId,
+    previewFaceDown,
   );
   // Control callbacks read the latest native state without re-registering
   // listeners on every config broadcast.
-  const duoRef = useRef({ isDuo, initialView: initialDuoView, screen });
-  duoRef.current = { isDuo, initialView: initialDuoView, screen };
+  const duoRef = useRef({ isDuo, screen });
+  duoRef.current = { isDuo, screen };
   useEffect(() => {
     if (streamMode === "webrtc") return;
     setActiveWebRtcCodec(webRtcCodec);
@@ -692,6 +687,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setWebRtcVideoElement(null);
         imgRef.current = null;
       } else {
+        // The stream effect may have started before this element attached, so
+        // only here can a detached <img> stop its multipart request.
+        if (imgRef.current && imgRef.current !== el) imgRef.current.removeAttribute("src");
         imgRef.current = (el as HTMLImageElement) ?? null;
         canvasRef.current = null;
         videoRef.current = null;
@@ -725,9 +723,26 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [ownsInput],
   );
 
+  // The helper routes input to the display that native readback reports. A
+  // gesture that begins on another display would land on the wrong panel, so
+  // it is dropped through its end.
+  const droppedDisplayGestureRef = useRef({ touch: false, multi: false });
+  const dropsDisplayInput = useCallback(
+    (kind: "touch" | "multi", display: number | undefined, phase: TouchSample["phase"]) => {
+      const dropped = droppedDisplayGestureRef.current;
+      if (phase === "begin") {
+        dropped[kind] = display !== undefined && display !== screenRef.current?.screenId;
+      }
+      if (!dropped[kind]) return false;
+      if (phase === "end") dropped[kind] = false;
+      return true;
+    },
+    [],
+  );
+
   const sendTouch = useCallback(
     (sample: TouchSample) => {
-      if (!ownsInput()) return;
+      if (!ownsInput() || dropsDisplayInput("touch", sample.display, sample.phase)) return;
       const orientation = streamGeometry(screenRef.current).inputOrientation;
 
       let displayEdge: number | undefined;
@@ -755,17 +770,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         sendWs(WS_MSG_TOUCH, payload);
       }
     },
-    [sendWs, ownsInput],
+    [sendWs, ownsInput, dropsDisplayInput],
   );
 
   const sendMultiTouch = useCallback(
     (sample: MultiTouchSample) => {
+      if (dropsDisplayInput("multi", sample.display, sample.phase)) return;
       const orientation = streamGeometry(screenRef.current).inputOrientation;
       const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
       const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
       sendWs(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     },
-    [sendWs],
+    [sendWs, dropsDisplayInput],
   );
 
   // Scroll-to-pan: forwarded as a native scroll event so iOS pans content
@@ -776,6 +792,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (sample: ScrollSample) => {
       if (!Number.isFinite(sample.dx) || !Number.isFinite(sample.dy)) return;
       if (sample.dx === 0 && sample.dy === 0) return;
+      if (sample.display !== undefined && sample.display !== screenRef.current?.screenId) return;
       const orientation = streamGeometry(screenRef.current).inputOrientation;
       const delta = rawDeltaForDisplayDelta(orientation, sample.dx, sample.dy);
       const anchor = rawPointForDisplayPoint(orientation, sample.x, sample.y);
@@ -968,20 +985,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Keep cycling from requested poses while the helper's readback is delayed
   // or an app declines a pose. Screen state still comes only from readback.
   // Other devices follow Simulator's counterclockwise "Rotate Left"; the
-  // iPhone Duo turns clockwise like Xcode's Device Hub and serve-sim, and its
-  // 3D view turns at once while the native preset, which a rotation clears,
-  // is forgotten.
+  // iPhone Duo turns clockwise like Xcode's Device Hub and serve-sim, and the
+  // native preset, which a rotation clears, is forgotten at once.
   const rotate = useCallback(() => {
     const duo = duoRef.current;
     const direction = duo.isDuo ? "right" : "left";
     if (duo.isDuo) {
-      presetRestoreRef.current = null;
-      setDuoView((previous) => duoRotateView(previous ?? duo.initialView, 1));
-      faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
       setHingePreview(null);
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
       setOrientationOverride(true);
+      emitHingeEvent({ type: "rotated" });
     }
     // Resolve each queued click in delivery order; refused, expired or evicted
     // input must not advance the cursor.
@@ -993,13 +1007,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           (payload as { orientation: DeviceOrientation }).orientation,
         ),
     );
-  }, [sendWs]);
-
-  function restorePresetView() {
-    const restore = presetRestoreRef.current;
-    presetRestoreRef.current = null;
-    if (restore) setDuoView(restore.view);
-  }
+  }, [sendWs, emitHingeEvent]);
 
   // One command at a time: a live slider coalesces into the newest value and a
   // preset replaces queued edits. Replies arrive as 0x90 on the helper socket.
@@ -1008,79 +1016,58 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       send: (request) => {
         if (!inputSocketRef.current?.trySend(WS_MSG_HINGE_CONTROL, request)) return false;
         if (request.command.control === "pose") sentHingePoseRef.current = request.command.value;
-        const pose = sentHingePoseRef.current;
-        setHingeCommands((previous) => recordDuoHingeCommand(previous, request.command, pose));
+        emitHingeEvent({
+          type: "sent",
+          command: request.command,
+          display: duoCommandScreen(request.command, sentHingePoseRef.current),
+        });
         return true;
       },
       onPendingChange: (pending) => {
         hingePendingRef.current = pending;
         setHingePending(pending);
-        setHingeCommands((previous) => ({ ...previous, pending }));
       },
       onResult: (command, reply) => {
-        // Advance recovery to the accepted preset while later presets can still
-        // be queued. A preset from before a Rotate leaves the newer view alone.
-        const restore = presetRestoreRef.current;
-        if (reply.ok && command.control === "pose" && restore?.presets.has(command)) {
-          restore.view = duoPresetView(command.value);
-        }
+        emitHingeEvent({ type: "acknowledged", command, ok: reply.ok });
       },
       onError: (message) => {
-        // A failure discards the whole queue, including any preset whose view
-        // is already showing but was never sent or confirmed.
-        restorePresetView();
+        // A failure discards the whole queue, including any preset whose
+        // preview is already showing but was never sent or confirmed.
         setHingeError(message);
         setHingePreview(null);
         setPhysicalPose(undefined);
         sentHingePoseRef.current = undefined;
         setOrientationOverride(false);
+        emitHingeEvent({ type: "failed", error: message });
       },
     });
   }
 
-  const setHingeControl = useCallback((input: HingeControlCommand) => {
-    // Its own object per request, so recovery knows which burst sent a reply.
-    const command = { ...input };
-    const { screen, initialView } = duoRef.current;
-    setHingeError(null);
-    faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
-    // Editing the hinge or Table Mode clears the named preset, but preserves
-    // the simulator's physical orientation (for example Laptop on a table).
-    if (command.control === "pose") {
-      // Remember the view before the first preset of a burst; each successful
-      // acknowledgement advances it without changing the optimistic preview.
-      presetRestoreRef.current ??= { view: duoViewRef.current, presets: new WeakSet() };
-      presetRestoreRef.current.presets.add(command);
-      setPhysicalPose(command.value);
-      setOrientationOverride(false);
-      setDuoView(duoPresetView(command.value));
-    } else {
-      // Lock even an early edit before the first complete native config.
-      setDuoView((previous) => previous ?? initialView);
-    }
-    setHingePreview((previous) => ({
-      hingeAngle: previous?.hingeAngle ?? screen?.hingeAngle,
-      hingePose: previous ? previous.hingePose : screen?.hingePose,
-      tableMode: previous?.tableMode ?? screen?.tableMode,
-      ...hingeControlState(command),
-    }));
-    hingeQueueRef.current?.enqueue(command, {
-      key: command.control,
-      replaceQueued: command.control === "pose",
-    });
-  }, []);
-  // The 3D scene already mapped these to the raw framebuffer of the panel it hit.
-  const sendModelTouch = useCallback(
-    (sample: DuoModelTouch) => sendWs(WS_MSG_TOUCH, sample),
-    [sendWs],
-  );
-  const sendModelMultiTouch = useCallback(
-    (sample: DuoModelMultiTouch) => sendWs(WS_MSG_MULTI_TOUCH, sample),
-    [sendWs],
-  );
-  const sendModelScroll = useCallback(
-    (sample: DuoModelScroll) => sendWs(WS_MSG_SCROLL, sample),
-    [sendWs],
+  const setHingeControl = useCallback(
+    (input: HingeControlCommand) => {
+      // Its own object per request, so a listener can follow each one to its reply.
+      const command = { ...input };
+      const { screen } = duoRef.current;
+      setHingeError(null);
+      // Editing the hinge or Table Mode clears the named preset, but preserves
+      // the simulator's physical orientation (for example Laptop on a table).
+      if (command.control === "pose") {
+        setPhysicalPose(command.value);
+        setOrientationOverride(false);
+      }
+      setHingePreview((previous) => ({
+        hingeAngle: previous?.hingeAngle ?? screen?.hingeAngle,
+        hingePose: previous ? previous.hingePose : screen?.hingePose,
+        tableMode: previous?.tableMode ?? screen?.tableMode,
+        ...hingeControlState(command),
+      }));
+      emitHingeEvent({ type: "requested", command });
+      hingeQueueRef.current?.enqueue(command, {
+        key: command.control,
+        replaceQueued: command.control === "pose",
+      });
+    },
+    [emitHingeEvent],
   );
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -1399,18 +1386,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     closeUrl: config ? `${config.url}/webrtc/close` : "",
     closeBeaconUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : "",
     statsUrl: config ? `${config.url}/webrtc/stats` : "",
-    enabled: active && useWebRtc && !!config && !modelActive,
+    enabled: active && useWebRtc && !!config && !displayStreaming,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
     fetchImpl: videoFetch,
     transportLocked: streamTransportLocked,
     raiseH264Level: true,
   });
-  // Statistics come from the stream on screen: the flat stream, or the panel
-  // the 3D model presents.
+  // Statistics come from the stream on screen: the flat stream, or the active
+  // display while the consumer streams the displays.
   useEffect(() => {
-    setFlatStreamStatsEnabled(streamStatsEnabled && !modelActive);
-  }, [setFlatStreamStatsEnabled, streamStatsEnabled, modelActive]);
+    setFlatStreamStatsEnabled(streamStatsEnabled && !displayStreaming);
+  }, [setFlatStreamStatsEnabled, streamStatsEnabled, displayStreaming]);
   const handledWebRtcFailureRef = useRef<string | null>(null);
   const ladderBackoffRef = useRef(createLadderBackoff());
   useEffect(() => {
@@ -1425,19 +1412,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const webRtcCodecsExhausted =
     exhaustedDecision === "switch-to-http" || exhaustedDecision === "restart-ladder";
 
-  // While the Duo's 3D model shows, its panel feeds walk the same codec ladder.
-  // The flat stream is disabled then, so restarts go to the panels instead.
+  // While the consumer streams the displays, their streams walk the same codec
+  // ladder. The flat stream is disabled then, so restarts go to the displays instead.
   const [panelWebRtcFailure, setPanelWebRtcFailure] = useState<WebRtcStreamFailure | null>(null);
   const [panelRestartGeneration, setPanelRestartGeneration] = useState(0);
-  const ladderFailure = modelActive ? panelWebRtcFailure : webRtcFailure;
+  const ladderFailure = displayStreaming ? panelWebRtcFailure : webRtcFailure;
   const restartLadderStream = useCallback(() => {
-    if (!modelActive) {
+    if (!displayStreaming) {
       restartWebRtc();
       return;
     }
     setPanelWebRtcFailure(null);
     setPanelRestartGeneration((generation) => generation + 1);
-  }, [modelActive, restartWebRtc]);
+  }, [displayStreaming, restartWebRtc]);
 
   const setWebRtcCodec = useCallback(
     (codec: DeviceWebRtcCodec) => {
@@ -1480,7 +1467,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   ]);
 
   useEffect(() => {
-    if (!useWebRtc || modelActive) return;
+    if (!useWebRtc || displayStreaming) return;
     if (webRtcError || webRtcCodecsExhausted) {
       setStatus("error");
       setError(
@@ -1495,7 +1482,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [
     useWebRtc,
-    modelActive,
+    displayStreaming,
     webRtcError,
     webRtcStream,
     webRtcCodecsExhausted,
@@ -1578,14 +1565,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [streamMode, videoSessionKey, config?.webRtcCodec]);
 
   useEffect(() => {
-    if (!useAvcc || !config?.url || modelActive) return;
+    if (!useAvcc || !config?.url || displayStreaming) return;
     const timer = setTimeout(() => dispatchAvccFallback("timeout"), AVCC_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [useAvcc, config?.url, modelActive, videoSessionKey]);
+  }, [useAvcc, config?.url, displayStreaming, videoSessionKey]);
 
   useAvccStream({
     url: config?.url ?? "",
-    enabled: active && useAvcc && !!config && !modelActive,
+    enabled: active && useAvcc && !!config && !displayStreaming,
     canvasRef,
     fetchImpl: videoFetch,
     onFirstFrame: () => {
@@ -1611,7 +1598,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   });
 
   // ── MJPEG video (<img>) ──
-  const streamUrl = useAvcc || useWebRtc || modelActive ? null : (config?.streamUrl ?? null);
+  const streamUrl = useAvcc || useWebRtc || displayStreaming ? null : (config?.streamUrl ?? null);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
@@ -1664,8 +1651,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (retryTimer) clearTimeout(retryTimer);
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
-      // The 3D model may have unmounted the flat <img> already, which nulls the
-      // ref, so stop the multipart request on the element this effect started.
+      // A consumer that streams the displays may have unmounted the flat <img>
+      // already, which nulls the ref, so stop the multipart request on the
+      // element this effect started.
       img?.removeAttribute("src");
       imgRef.current?.removeAttribute("src");
       // The helper's pushed config outlives a transport switch.
@@ -1776,12 +1764,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           sentHingePoseRef.current = undefined;
           setOrientationOverride(false);
           if (hingePendingRef.current) {
+            const message = "Connection lost while changing the device pose.";
             hingeQueueRef.current?.clear();
-            restorePresetView();
             setHingePreview(null);
-            setHingeError("Connection lost while changing the device pose.");
+            setHingeError(message);
+            emitHingeEvent({ type: "failed", error: message });
           }
-          presetRestoreRef.current = null;
           // Normally exec-ws pushes replacement config by the reconnect. HTTP discovery
           // recovers rotated credentials or a proxy that cannot upgrade WebSockets.
           clearTimeout(refreshTimer);
@@ -1827,29 +1815,41 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       hingeQueueRef.current?.clear();
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
+  }, [
+    wsUrl,
+    requireInputAdmission,
+    controlDevice,
+    socketProtocols,
+    videoSessionKey,
+    keyboard,
+    emitHingeEvent,
+  ]);
 
-  // ── iPhone Duo: pose bookkeeping and the 3D model's panel feeds ──
+  // ── iPhone Duo: pose bookkeeping and the displays' own streams ──
+  // The hinge queue belongs to one input socket. Every change that replaces
+  // that socket also changes this key: the helper and its process, the socket
+  // URL, and its admission. A changed token or device first drops the config.
+  const hingeSessionKey = config
+    ? JSON.stringify([videoSessionKey, config.wsUrl, config.inputAdmission])
+    : null;
+  const hingeSessionRef = useRef<string | null>(null);
   useEffect(() => {
+    const previous = hingeSessionRef.current;
+    hingeSessionRef.current = hingeSessionKey;
+    // A config refresh for the same session, or a strict-mode rerun, keeps
+    // the pending commands.
+    if (previous === hingeSessionKey) return;
     setHingePending(false);
     setHingeError(null);
     setHingePreview(null);
     setPhysicalPose(undefined);
-    setDuoView(null);
-    setHingeCommands(INITIAL_DUO_HINGE_COMMANDS);
-    faceDownFramingRef.current = { saved: null, held: false };
-    presetRestoreRef.current = null;
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
-  }, [config?.url]);
-
-  useEffect(() => {
-    // Use native orientation once when connecting, never as a live view control.
-    if (!duoView && screen?.screenId !== undefined) {
-      setDuoView((previous) => previous ?? initialDuoView);
-    }
-  }, [duoView, screen?.screenId, initialDuoView]);
+    // Every command of the old session gets a final event, so no listener
+    // waits for a reply or a confirmation that cannot come.
+    if (previous !== null) emitHingeEvent({ type: "reset" });
+  }, [hingeSessionKey, emitHingeEvent]);
 
   useEffect(() => {
     if (!hingePreview || hingePending || !screen) return;
@@ -1861,10 +1861,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
       (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode)
     ) {
-      presetRestoreRef.current = null;
       setHingePreview(null);
+      emitHingeEvent({ type: "confirmed" });
     }
-  }, [hingePreview, hingePending, screen]);
+  }, [hingePreview, hingePending, screen, emitHingeEvent]);
 
   useEffect(() => {
     // Also learn poses applied outside this browser. An older queued reply
@@ -1876,11 +1876,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setPhysicalPose(screen.hingePose);
       sentHingePoseRef.current = screen.hingePose;
     } else if (duoPhysicalPoseChanged(physicalPose, screen?.physicalOrientation)) {
-      // Another client turned the device over without a preset. Frame it as
-      // on connect; face-down framing below still turns it to the cover.
+      // Another client turned the device over without a preset.
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
-      setDuoView(null);
     }
   }, [
     orientationOverride,
@@ -1891,52 +1889,59 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     physicalPose,
   ]);
 
-  useEffect(() => {
-    // Another client can turn a half-open device face down without a preset.
-    // Frame the elected cover as Tent does, and restore the previous view when
-    // the device turns back. Local hinge and rotation controls own the view.
-    if (hingePreview || hingePending || screen?.hingePose === "tent") return;
-    const faceDown = screen?.tableMode === true && screen.physicalOrientation === "facedown";
-    const { state, view } = duoFaceDownFraming(
-      faceDownFramingRef.current,
-      faceDown,
-      duoView ?? initialDuoView,
-    );
-    faceDownFramingRef.current = state;
-    if (view) setDuoView(view);
-  }, [
-    hingePreview,
-    hingePending,
-    screen?.hingePose,
-    screen?.tableMode,
-    screen?.physicalOrientation,
-    duoView,
-    initialDuoView,
-  ]);
+  const videoKind = useWebRtc ? "video" : useAvcc ? "canvas" : "img";
+  // A new kind re-registers the consumer's elements through new ref callbacks,
+  // as the flat `attachVideo` does.
+  const attachCover = useCallback(
+    (element: DuoPanelElement["element"] | null) =>
+      setPanelElements((previous) => ({
+        ...previous,
+        1: element ? { kind: videoKind, element } : null,
+      })),
+    [videoKind],
+  );
+  const attachInner = useCallback(
+    (element: DuoPanelElement["element"] | null) =>
+      setPanelElements((previous) => ({
+        ...previous,
+        3: element ? { kind: videoKind, element } : null,
+      })),
+    [videoKind],
+  );
+  const displays = useMemo<readonly DeviceDisplay[] | null>(
+    () =>
+      isDuo
+        ? [
+            { id: 1, active: activeScreenId === 1, attachVideo: attachCover },
+            { id: 3, active: activeScreenId === 3, attachVideo: attachInner },
+          ]
+        : null,
+    [isDuo, activeScreenId, attachCover, attachInner],
+  );
 
   const onPanelAvccError = useCallback(() => dispatchAvccFallback("error"), []);
-  const panels = useMemo<DuoPanelFeeds | null>(() => {
-    if (!modelActive || !config) return null;
+  const panelFeeds = useMemo<DuoPanelFeeds | null>(() => {
+    if (!displayStreaming || !active || !config) return null;
     return {
       url: config.url,
       token,
+      session: videoSessionKey,
       mode: useWebRtc ? "webrtc" : useAvcc ? "avcc" : "mjpeg",
       codec: activeWebRtcCodec,
       iceServers: config.webRtcIceServers,
       transportLocked: streamTransportLocked,
-      onFrame: onAvccFrame,
-      onStreamingChange: setPanelStreaming,
-      onStreamError: setPanelError,
       statsEnabled: streamStatsEnabled,
-      onStatsChange: setPanelStats,
+      onFrame: onAvccFrame,
       onAvccError: onPanelAvccError,
       onWebRtcFailure: setPanelWebRtcFailure,
       restartGeneration: panelRestartGeneration,
     };
   }, [
-    modelActive,
+    displayStreaming,
+    active,
     config,
     token,
+    videoSessionKey,
     useWebRtc,
     useAvcc,
     activeWebRtcCodec,
@@ -1946,13 +1951,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamStatsEnabled,
     panelRestartGeneration,
   ]);
-  // While the model is shown, the presented panel's health is the connection status.
+  const {
+    streaming: panelStreaming,
+    error: panelError,
+    stats: panelStats,
+  } = useDuoPanelStreams(panelFeeds, panelElements, activeScreenId);
+  // While the consumer streams the displays, the active display's health is the connection status.
   useEffect(() => {
-    if (!modelActive) {
-      setPanelStreaming(false);
-      setPanelError(null);
-      return;
-    }
+    if (!displayStreaming) return;
     if (panelError) {
       setStatus("error");
       setError(panelError);
@@ -1960,19 +1966,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setStatus(panelStreaming ? "streaming" : "connecting");
       setError(null);
     }
-  }, [modelActive, panelError, panelStreaming]);
+  }, [displayStreaming, panelError, panelStreaming]);
   useEffect(() => {
-    if (!modelActive) return;
+    if (!displayStreaming) return;
     return () => {
       setStatus("connecting");
       setError(null);
       setFps(0);
     };
-  }, [modelActive]);
+  }, [displayStreaming]);
 
   const hinge = useMemo<DeviceHinge | null>(() => {
     if (!isDuo) return null;
-    const electedPose = physicalPose === undefined ? previewHingePose : physicalPose;
     return {
       supported: screen?.supportsHingeAngle,
       angle: previewHingeAngle,
@@ -1981,23 +1986,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       tableMode: hingePreview?.tableMode ?? screen?.tableMode,
       tableModeAvailable: screen?.tableModeAvailable,
       faceDown: previewFaceDown,
-      activeScreenId: duoIntendedScreen(
-        previewHingeAngle,
-        electedPose,
-        screen?.screenId,
-        previewFaceDown,
-      ),
       pending: hingePending,
       error: hingeError,
-      commands: hingeCommands,
-      view: duoView ?? initialDuoView,
-      modelActive,
-      modelUrl: config?.deviceKitModelUrl ?? null,
-      panels,
       setControl: setHingeControl,
-      sendModelTouch,
-      sendModelMultiTouch,
-      sendModelScroll,
+      observe: observeHinge,
     };
   }, [
     isDuo,
@@ -2008,20 +2000,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     hingePreview?.tableMode,
     screen?.tableMode,
     screen?.tableModeAvailable,
-    screen?.screenId,
     previewFaceDown,
     hingePending,
     hingeError,
-    hingeCommands,
-    duoView,
-    initialDuoView,
-    modelActive,
-    config?.deviceKitModelUrl,
-    panels,
     setHingeControl,
-    sendModelTouch,
-    sendModelMultiTouch,
-    sendModelScroll,
+    observeHinge,
   ]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
@@ -2519,6 +2502,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
     screen,
     hinge,
+    displays,
+    deviceModelUrl: isDuo ? (config?.deviceKitModelUrl ?? null) : null,
     displayCorners,
     fps,
     devices,
@@ -2576,13 +2561,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setGrpcImageMode: noop,
     setGrpcEncoder: noop,
     setGrpcInputSource: noop,
-    streamStats: modelActive && useWebRtc ? panelStats : flatStreamStats,
+    streamStats: displayStreaming && useWebRtc ? panelStats : flatStreamStats,
     setStreamStatsEnabled,
     webRtcCodec,
     setWebRtcCodec,
     capabilities,
     foregroundApp,
-    videoKind: useWebRtc ? "video" : useAvcc ? "canvas" : "img",
+    videoKind,
     attachVideo,
     sendTouch,
     sendMultiTouch,

@@ -1,12 +1,13 @@
 /**
- * Per-panel stream routes and health for the iPhone Duo model, ported from
+ * Per-panel stream routes and health for the iPhone Duo's displays, ported from
  * serve-sim's `src/client/components/duo-panel-streams.tsx` (@expo/serve-sim 0.5.0).
  */
 
-import { type DuoPanelStreamMode, type ScreenSize } from "../types";
 import { type WebRtcStreamFailure } from "../webrtc-fallback";
+import { type DuoPanelId } from "./duo-fold";
 
-export type DuoPanelId = 1 | 3;
+/** Transport of the per-panel streams, the same one the flat stream uses. */
+export type DuoPanelStreamMode = "mjpeg" | "avcc" | "webrtc";
 
 /** `…/helper/<udid>` → `…/helper/<udid>/panel/<screenId>`; the middleware serves the panel's capture there. */
 export function duoPanelUrl(helperUrl: string, screenId: DuoPanelId): string {
@@ -21,12 +22,6 @@ export type DuoPanelStatus = {
   streaming: boolean;
   error: string | null;
   failure: WebRtcStreamFailure | null;
-};
-
-export const EMPTY_DUO_PANEL_STATUS: DuoPanelStatus = {
-  streaming: false,
-  error: null,
-  failure: null,
 };
 
 /** Health belongs to the displayed panel; the other decoder can remain healthy independently. */
@@ -47,10 +42,3 @@ export function duoPanelStatus(
       : null;
   return { streaming: panel.streaming && !error, error };
 }
-
-// Framebuffer dimensions only establish the hidden source view's layout.
-// The scene reads each decoded frame's actual size for its texture mapping.
-export const DUO_PANEL_CONFIG: Record<DuoPanelId, ScreenSize> = {
-  1: { width: 1398, height: 2034, screenId: 1, orientation: "portrait" },
-  3: { width: 2007, height: 2853, screenId: 3, orientation: "portrait" },
-};

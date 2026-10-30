@@ -5,8 +5,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as THREE from "three";
 
-import { type USDLayer, applySelectedLayer, parseDeviceKitUsdz } from "../duo/devicekit-usdz";
-import { clipHingeGeometry, prepareDuoModel } from "../duo/duo-model";
+import { type USDLayer, applySelectedLayer, parseDeviceKitUsdz } from "../foldable/devicekit-usdz";
+import { clipHingeGeometry, prepareDuoModel } from "../foldable/duo-model";
 
 const MODEL_RESOURCE =
   "SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/Resources/V68.usdz";
