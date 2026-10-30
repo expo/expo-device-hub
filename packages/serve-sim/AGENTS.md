@@ -116,9 +116,12 @@ through `serve-sim` subcommands against a running server:
   `simctl spawn <udid> defaults read` on com.apple.Accessibility /
   com.apple.mediaaccessibility / com.apple.UIKit.
 - `serve-sim ui time-zone <IANA zone | host>` sets `TZ` on the simulator's
-  launchd. An app reads `TZ` once at launch, so relaunch the app under test
-  afterwards. Verify with `simctl getenv <udid> TZ`. The override lasts until
-  the simulator reboots.
+  launchd for processes started later. While a serve-sim session owns the
+  device (a foreground server or the Hub, not `--detach` alone), it also
+  switches running apps through the time-zone capability, with no restart. Only apps that carry the capability loader switch live: start the
+  session before opening the app, or relaunch it. The status bar clock keeps
+  the old zone until the `springboard.restart` action. Verify with
+  `simctl getenv <udid> TZ`. The override lasts until the simulator reboots.
 - `xcrun simctl openurl booted <url>` — deep-link into apps (faster than
   tapping through Expo Go's recent-projects list).
 

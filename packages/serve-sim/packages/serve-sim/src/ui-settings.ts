@@ -9,6 +9,7 @@ import { dirnameOf } from "./runtime";
 import { stateDir } from "./state";
 import { withStateLock } from "./state-lock";
 import { HOST_TIME_ZONE, normalizeTimeZone } from "./time-zone";
+import { setTimeZoneCapability, withTimeZoneLock, writeTimeZoneFile } from "./time-zone-capability";
 
 // Bun's bundler inlines a bare `__dirname` as the build machine's source
 // directory; shadow it with the runtime location so the published bundle
@@ -355,7 +356,8 @@ async function axRun(udid: string, ...args: string[]): Promise<string> {
 
 // ─── Time zone ───
 // The simulator has no zone setting of its own: it uses the Mac's zone unless
-// TZ is set. TZ on launchd_sim reaches processes started later; a reboot clears it.
+// TZ is set. The capability switches running apps while a session owns the device;
+// TZ on launchd_sim reaches processes started later. SpringBoard's clock waits for a restart.
 
 /** `(file, args) => stdout`; injectable so the launchd flow is unit-testable. */
 export type SimExec = (file: string, args: string[]) => Promise<string>;
@@ -371,17 +373,47 @@ export async function readTimeZone(udid: string, exec: SimExec = runSimctl): Pro
   return (await launchctl(udid, ["getenv", "TZ"], exec)) || HOST_TIME_ZONE;
 }
 
-/** Apps launched afterwards use the zone; running apps and the status bar clock keep theirs. */
-export async function writeTimeZone(
-  udid: string,
-  zone: string,
-  exec: SimExec = runSimctl,
-): Promise<void> {
-  await launchctl(
+function setLaunchdTimeZone(udid: string, zone: string, exec: SimExec): Promise<string> {
+  return launchctl(
     udid,
     zone === HOST_TIME_ZONE ? ["unsetenv", "TZ"] : ["setenv", "TZ", zone],
     exec,
   );
+}
+
+export interface TimeZoneDeps {
+  exec?: SimExec;
+  writeZoneFile?: (udid: string, zone: string) => void;
+  setCapability?: (udid: string, enabled: boolean) => Promise<void>;
+}
+
+/**
+ * The zone file goes first, so loaded dylibs switch at once; `host` writes it too, because a
+ * loaded dylib stays loaded after the capability is disabled. A failure restores the previous zone.
+ */
+export async function writeTimeZone(
+  udid: string,
+  zone: string,
+  {
+    exec = runSimctl,
+    writeZoneFile = writeTimeZoneFile,
+    setCapability = setTimeZoneCapability,
+  }: TimeZoneDeps = {},
+): Promise<void> {
+  await withTimeZoneLock(udid, async () => {
+    const previous = await readTimeZone(udid, exec);
+    writeZoneFile(udid, zone);
+    try {
+      await setLaunchdTimeZone(udid, zone, exec);
+      await setCapability(udid, zone !== HOST_TIME_ZONE);
+    } catch (e) {
+      try {
+        writeZoneFile(udid, previous);
+      } catch {}
+      await setLaunchdTimeZone(udid, previous, exec).catch(() => {});
+      throw e;
+    }
+  });
 }
 
 function toToggle(simctlValue: string): string {
@@ -536,7 +568,7 @@ Simulator-wide UI options:
   voiceover            on | off
   hardware-keyboard    on | off
   time-zone            host | UTC | <IANA zone, e.g. Europe/Berlin>
-                       (apps launched afterwards; a reboot returns to the host zone)`;
+                       (running apps switch while a serve-sim session owns the device; a reboot returns to the host zone)`;
 
 export async function uiSettings(args: string[]): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {
