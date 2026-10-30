@@ -57,6 +57,7 @@ export function PhoneFrame({
   client,
   agentInteraction,
   onCopy,
+  preserveKeyboardFocus = false,
   DeviceScreen,
   displayScreen,
   showDeviceFrame = true,
@@ -66,6 +67,7 @@ export function PhoneFrame({
   client?: DeviceClient;
   agentInteraction?: AgentInteraction | null;
   onCopy?: DeviceScreenProps["onCopy"];
+  preserveKeyboardFocus?: boolean;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
@@ -104,7 +106,12 @@ export function PhoneFrame({
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
   const deviceSurface = live ? (
-    <DeviceScreen client={client} agentInteraction={agentInteraction} onCopy={onCopy} />
+    <DeviceScreen
+      client={client}
+      agentInteraction={agentInteraction}
+      onCopy={onCopy}
+      preserveKeyboardFocus={preserveKeyboardFocus}
+    />
   ) : (
     <div style={{ position: "absolute", inset: 0, backgroundColor: bg.element }} />
   );

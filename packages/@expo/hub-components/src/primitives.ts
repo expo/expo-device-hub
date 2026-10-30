@@ -13,6 +13,7 @@ export * from "./components/DeviceListItem";
 export * from "./components/Dialog";
 export * from "./components/Dropdown";
 export * from "./components/DropdownItem";
+export * from "./components/FloatingIconButton";
 export * from "./components/Logo";
 export * from "./components/PillButton";
 export * from "./components/ResizeHandle";
