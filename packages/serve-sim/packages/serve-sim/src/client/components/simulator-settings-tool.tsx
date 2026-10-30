@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Box, FoldHorizontal, Image, Laptop, Maximize, SlidersHorizontal } from "lucide-react";
 import { HOST_TIME_ZONE, supportedTimeZones, timeZoneOffsetLabel } from "../../time-zone";
-import { hostUiRequest } from "../../socket/client-control";
+import { hostUiRequest, runHostAction } from "../../socket/client-control";
 import { parseRuntime } from "../utils/grid";
 import { CollapsibleSection } from "./collapsible-section";
 import { Select, type SelectOption } from "./select";
@@ -38,6 +38,8 @@ export const TEXT_SIZE_CATEGORIES = [
 const TEXT_SIZE_DEBOUNCE_MS = 250;
 /** `getUiStatus` reports an option it could not read as this. */
 const UNREADABLE = "unsupported";
+/** `pending` while SpringBoard restarts; not an option name. */
+const SPRINGBOARD = "springboard";
 
 type SettingsState = Record<string, string>;
 
@@ -671,6 +673,10 @@ export function SimulatorSettingsTool({
   const [state, setState] = useState<SettingsState | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A zone change switches apps but not SpringBoard's clock, on the device it was made for.
+  const [staleClockUdid, setStaleClockUdid] = useState<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const supported = isIosRuntime(runtime);
 
   useEffect(() => {
@@ -709,12 +715,14 @@ export function SimulatorSettingsTool({
     async (option: string, value: string) => {
       setPending(option);
       setError(null);
+      const previous = stateRef.current?.[option];
       setState((s) => (s ? { ...s, [option]: value } : s));
       try {
         await hostUiRequest(
           { device: udid, option, value },
           { signal: AbortSignal.timeout(15_000) },
         );
+        if (option === "time-zone" && value !== previous) setStaleClockUdid(udid);
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to set ${option}`);
         // Re-sync from the simulator rather than restoring a snapshot — with
@@ -727,6 +735,25 @@ export function SimulatorSettingsTool({
     },
     [udid, refresh],
   );
+
+  const restartSpringBoard = useCallback(async () => {
+    setPending(SPRINGBOARD);
+    setError(null);
+    try {
+      const result = await runHostAction(
+        "springboard.restart",
+        { udid },
+        { signal: AbortSignal.timeout(15_000) },
+      );
+      if (result.exitCode !== 0) throw new Error(result.stderr || "Failed to restart SpringBoard");
+      // The user may have switched devices while it restarted.
+      setStaleClockUdid((stale) => (stale === udid ? null : stale));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restart SpringBoard");
+    } finally {
+      setPending(null);
+    }
+  }, [udid]);
 
   // Rapid slider movements queue latest-wins: one exec in flight at a time,
   // intermediate values dropped, so out-of-order completions can't leave the
@@ -851,6 +878,22 @@ export function SimulatorSettingsTool({
                 searchPlaceholder="Search zones…"
               />
             </SettingRow>
+            {staleClockUdid === udid && (
+              <div className="flex flex-col items-start gap-1 pl-[26px] -mt-1 text-[11px] text-white/45">
+                <span role="status">
+                  Running apps use the new zone; one that does not switch needs a relaunch. The
+                  status bar clock changes after a SpringBoard restart.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void restartSpringBoard()}
+                  disabled={!ready || pending !== null}
+                  className="cursor-pointer rounded border border-white/15 bg-transparent px-1.5 py-0.5 text-white/70 disabled:cursor-default disabled:opacity-50"
+                >
+                  Restart SpringBoard
+                </button>
+              </div>
+            )}
 
             {TOGGLE_OPTIONS.map(({ key, label }) => (
               <SettingRow

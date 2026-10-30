@@ -5,6 +5,7 @@
 
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
+#include <time.h>
 
 static void Record(NSString *kind, NSString *detail) {
   NSArray<NSString *> *dirs =
@@ -302,6 +303,38 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
 
 @end
 
+// The time-zone E2E reads what the process itself sees, from both places an app
+// asks: Foundation's zone name, and libc's offset for now, which is what Hermes
+// `Date` uses. Recorded once at launch and again whenever either changes.
+static NSUInteger zoneChangeNotifications = 0;
+static NSString *lastZoneRecord = nil;
+
+static void RecordTimeZoneIfChanged(void) {
+  time_t now = time(NULL);
+  struct tm local;
+  localtime_r(&now, &local);
+  NSString *detail = [NSString stringWithFormat:@"%@|%ld|%lu", NSTimeZone.systemTimeZone.name,
+                                                 (long)local.tm_gmtoff,
+                                                 (unsigned long)zoneChangeNotifications];
+  if ([detail isEqualToString:lastZoneRecord]) return;
+  lastZoneRecord = detail;
+  Record(@"tz", detail);
+}
+
+static void StartTimeZoneRecording(void) {
+  [NSNotificationCenter.defaultCenter addObserverForName:NSSystemTimeZoneDidChangeNotification
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(__unused NSNotification *note) {
+    zoneChangeNotifications++;
+    RecordTimeZoneIfChanged();
+  }];
+  RecordTimeZoneIfChanged();
+  [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(__unused NSTimer *timer) {
+    RecordTimeZoneIfChanged();
+  }];
+}
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -356,6 +389,7 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
       ? [arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)]
       : @[];
   Record(@"launch", [passed componentsJoinedByString:@"\x1f"]);
+  if ([arguments containsObject:@"--time-zone-test"]) StartTimeZoneRecording();
   if ([arguments containsObject:@"--logs-test"]) {
     [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(__unused NSTimer *timer) {
       NSLog(@"SERVE_SIM_USER_APP_LOG_MARKER pid=%d", getpid());
