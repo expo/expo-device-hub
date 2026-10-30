@@ -91,6 +91,7 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
       async (res, directory) => {
         expect(res.status).toBe(200);
         expect(res.headers.get("content-type")).toBe("image/png");
+        expect(res.headers.get("content-length")).toBe(String(PNG.length));
         expect(res.headers.get("x-expo-screenshot-artifact")).toBe("saved");
         expect(res.headers.has("x-expo-screenshot-artifact-error")).toBe(false);
         expect(res.headers.get("access-control-expose-headers")).toContain(

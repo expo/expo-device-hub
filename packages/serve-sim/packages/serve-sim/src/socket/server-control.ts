@@ -24,11 +24,13 @@ import {
 // runtime does that with `ws`, while other web runtimes can provide their own
 // socket object with the same small shape.
 //
-// Wire protocol (all JSON text frames):
+// Wire protocol (JSON text frames, except opt-in binary results):
 //   client → {token}                  first frame, when no token subprotocol was offered
 //   server → {ready:true}             auth accepted
 //   client → {id, action, params}      run one typed simulator action
 //   server → {id, stdout, stderr, exitCode}
+//   client → {id, action:"screenshot.capture", params:{udid?,display?,output:"binary"}}
+//   server → binary: uint32 BE id, then PNG bytes; errors use {id, error}
 //   client → {id, ui:{…}}             simulator-settings request (in-process,
 //   server → {id, …} | {id, error}     no shell round-trip)
 //   client → {sub, path}              subscribe to a same-origin SSE route
@@ -70,6 +72,8 @@ interface ExecChannelOptions {
   ssePrefixes?: string[];
   /** In-process handler for `{id, ui}` simulator-settings requests. */
   onUiRequest?: UiRequestHandler;
+  /** Reuses the authenticated HTTP screenshot route and its device policy. */
+  onScreenshotRequest?: (payload: unknown, request: Request) => Promise<Response>;
   onActionResult?: ActionResultHandler;
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
@@ -243,6 +247,45 @@ function wireExecSocket(
     }
     if (typeof msg.sub === "number" && typeof msg.path === "string") {
       subscribe(msg.sub, msg.path);
+      return;
+    }
+    if (
+      msg.action === "screenshot.capture" &&
+      msg.params !== null &&
+      typeof msg.params === "object" &&
+      (msg.params as { output?: unknown }).output === "binary"
+    ) {
+      const { id } = msg;
+      if (typeof id !== "number" || !Number.isInteger(id) || id < 0 || id > 0xffff_ffff) {
+        send({ id, error: "Screenshot id must be an unsigned 32-bit integer" });
+        return;
+      }
+      if (!opts.onScreenshotRequest) {
+        send({ id, error: "screenshot requests not supported" });
+        return;
+      }
+      if (!reserveAction(id)) return;
+      const task = opts
+        .onScreenshotRequest(msg.params ?? {}, request)
+        .then(async (response) => {
+          if (!response.ok) {
+            const body = (await response.json()) as { error?: string };
+            send({ id, error: body.error ?? "Screenshot failed" });
+            return;
+          }
+          const png = Buffer.from(await response.arrayBuffer());
+          if (ws.readyState !== ws.OPEN) return;
+          const frame = Buffer.allocUnsafe(4 + png.length);
+          frame.writeUInt32BE(id);
+          png.copy(frame, 4);
+          ws.send(frame);
+        })
+        .catch(() => send({ id, error: "Screenshot failed" }))
+        .finally(() => {
+          actionsInFlight -= 1;
+          opts.pendingActions?.delete(task);
+        });
+      opts.pendingActions?.add(task);
       return;
     }
     if (typeof msg.id === "number" && msg.ui !== undefined) {
