@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { execBuffer, execText, type ExecResult } from "./exec.ts";
+import { execBuffer, execText, type ExecLane, type ExecResult } from "./exec.ts";
+import type { OrientationMode, ScreenOrientation } from "./shared/api-contracts.ts";
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
 const ADB_MUTATION_TIMEOUT_MS = 5_000;
@@ -7,12 +8,12 @@ const ADB_SCREENSHOT_TIMEOUT_MS = 8_000;
 const EMU_CONSOLE_TIMEOUT_MS = 5_000;
 
 export type Device = { serial: string; state: string };
-export type OrientationMode = "auto" | "portrait" | "landscape";
 export type NightMode = "auto" | "dark" | "light";
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
-  orientation: OrientationMode | "unknown";
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
+  pose: ScreenOrientation | null;
   raw: string;
 };
 export type FontScaleStatus = {
@@ -190,9 +191,11 @@ export async function readEmuConsoleValue(
 export async function getDeviceSize(
   serial: string,
   runExec: typeof execText = execText,
+  lane?: ExecLane,
 ): Promise<{ width: number; height: number }> {
   const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
+    lane,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
   const m = r.stdout.match(/(\d+)x(\d+)/);
@@ -236,14 +239,40 @@ export async function getDisplayRotation(
   return (value > 3 ? value / 90 : value) as DisplayRotation;
 }
 
-function orientationFromRotation(
-  mode: "free" | "lock" | "unknown",
-  rotation: number | null,
-): OrientationStatus["orientation"] {
-  if (mode === "free") return "auto";
-  if (rotation === 0 || rotation === 2) return "portrait";
-  if (rotation === 1 || rotation === 3) return "landscape";
-  return "unknown";
+type NaturalSize = { width: number; height: number };
+
+/**
+ * The poses in the order Android numbers its rotations. Rotation N shows the content turned
+ * N quarter turns clockwise, because the device turned N quarter turns counterclockwise
+ * (`Display.getRotation()`), so rotation 1 on a phone has the bottom on the right:
+ * `landscape_right` in serve-sim's names.
+ */
+const COUNTERCLOCKWISE_POSES = [
+  "portrait",
+  "landscape_right",
+  "portrait_upside_down",
+  "landscape_left",
+] as const satisfies readonly ScreenOrientation[];
+
+/** A display that is wider than tall at rotation 0, like a tablet's, starts one turn on. */
+function naturalOffset(natural: NaturalSize): number {
+  return natural.width > natural.height ? 1 : 0;
+}
+
+/** Name an Android display rotation from the device's natural display size. */
+export function screenOrientationForRotation(
+  rotation: DisplayRotation,
+  natural: NaturalSize,
+): ScreenOrientation {
+  return COUNTERCLOCKWISE_POSES[(naturalOffset(natural) + rotation) % 4];
+}
+
+export function rotationForScreenOrientation(
+  orientation: ScreenOrientation,
+  natural: NaturalSize,
+): DisplayRotation {
+  const index = COUNTERCLOCKWISE_POSES.indexOf(orientation);
+  return ((index - naturalOffset(natural) + 4) % 4) as DisplayRotation;
 }
 
 export async function getUserRotation(
@@ -259,11 +288,20 @@ export async function getUserRotation(
   const raw = r.stdout.trim();
   const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
   if (!match) {
-    return { mode: "unknown", rotation: null, orientation: "unknown", raw };
+    return { mode: "unknown", rotation: null, orientation: "unknown", pose: null, raw };
   }
   const mode = match[1] as "free" | "lock";
   const rotation = match[2] === undefined ? null : Number(match[2]);
-  return { mode, rotation, orientation: orientationFromRotation(mode, rotation), raw };
+  if (mode === "free") return { mode, rotation, orientation: "auto", pose: null, raw };
+  if (rotation === null || rotation > 3) {
+    return { mode, rotation, orientation: "unknown", pose: null, raw };
+  }
+  // A tablet locked at rotation 0 shows landscape, so the name needs the natural size.
+  const natural = await getDeviceSize(serial, runExec).catch(() => null);
+  if (!natural) return { mode, rotation, orientation: "unknown", pose: null, raw };
+  const pose = screenOrientationForRotation(rotation as DisplayRotation, natural);
+  const orientation = pose.startsWith("portrait") ? "portrait" : "landscape";
+  return { mode, rotation, orientation, pose, raw };
 }
 
 export async function setUserRotation(
@@ -271,10 +309,13 @@ export async function setUserRotation(
   orientation: OrientationMode,
   runExec: typeof execText = execText,
 ): Promise<OrientationStatus> {
-  const args =
-    orientation === "auto"
-      ? ["cmd", "window", "user-rotation", "free"]
-      : ["cmd", "window", "user-rotation", "lock", orientation === "portrait" ? "0" : "1"];
+  let args = ["cmd", "window", "user-rotation", "free"];
+  if (orientation !== "auto") {
+    const pose = orientation === "landscape" ? "landscape_right" : orientation;
+    // `wm size` runs before each lock: the natural size can change with the device.
+    const rotation = rotationForScreenOrientation(pose, await getDeviceSize(serial, runExec));
+    args = ["cmd", "window", "user-rotation", "lock", String(rotation)];
+  }
   const r = await runExec("adb", ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
