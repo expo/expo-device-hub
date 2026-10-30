@@ -1,5 +1,12 @@
 # expo-device-hub
 
+## 0.19.1
+
+### Patch Changes
+
+- 32b4ccf: Stop the device list from hanging when CoreSimulatorService stops responding. `simctl` calls now time out after 30 s and report that the command did not respond.
+- 0665a67: Fix about three seconds of lag in the iOS Simulator preview on Chromium. The vendored serve-sim stream now declares that frames are never reordered after its encoder falls back to default rate control.
+
 ## 0.19.0
 
 ### Minor Changes
