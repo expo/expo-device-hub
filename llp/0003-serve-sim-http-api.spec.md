@@ -717,13 +717,26 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 The HTTP `/api/screenshot` download follows the same native active-display
 selection and three-attempt handoff bound as `screenshot.capture`. Its optional
 `display` query selects an explicit panel without starting native capture. It
-keeps the existing PNG response, artifact headers, and temporary-file cleanup,
+keeps the existing PNG response and artifact headers. Native pixels stay in memory
+through display validation and delivery; only simctl capture uses a temporary file,
+which is cleaned up. The completed PNG response declares `Content-Length`,
 without the host action's Desktop copy. Default HTTP captures share the same
 one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
 `getScreenshotDisplayIdsAsync`]
+
+An authenticated exec-ws client can request `{id, screenshot: {device?, display?}}`
+to receive PNG bytes in one binary response, without staging or Desktop copies.
+The first four bytes are the unsigned 32-bit request ID in network byte order;
+the remaining bytes are the PNG. IDs must be integers from 0 through 4294967295.
+Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
+out of order. This request shares the HTTP screenshot route's device restrictions,
+display validation, artifact persistence and error handling, and the socket's
+eight-action admission limit. Existing `screenshot.capture` still returns a staged
+path. Existing clients must opt into the binary request; EAS CLI's path-based
+workflow does not switch automatically. [observed: `server-control.ts`, `simMiddleware`]
 
 Capture errors return a generic message, except for the safe retry guidance
 when the active display keeps changing. Private native-startup and simctl
