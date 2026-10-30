@@ -1,5 +1,6 @@
 import { join } from "path";
 import { stateDir } from "./state";
+import { canonicalDeviceKey } from "./launch-state";
 import { STATE_LOCK_POLL_MS, withStateLock, withStateLockSync } from "./state-lock";
 
 // Allow time for the holder to build, terminate, and relaunch an app.
@@ -7,7 +8,7 @@ const LOCK_TIMEOUT_MS = 90_000;
 export const LOCK_POLL_MS = STATE_LOCK_POLL_MS;
 
 function lockFile(udid: string): string {
-  return join(stateDir(), `launch-${udid}.lock`);
+  return join(stateDir(), `launch-${canonicalDeviceKey(udid)}.lock`);
 }
 
 const pendingLaunchUpdates = new Set<Promise<unknown>>();
