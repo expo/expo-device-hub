@@ -1,3 +1,4 @@
+import type { DeviceKitChromeDescriptor } from "./device-kit-chrome";
 import { listenForInputCancellation } from "./input-cancellation";
 import { createControlSocket } from "./control-socket";
 /**
@@ -252,6 +253,7 @@ export function toQueryStyleHelperWsUrl(wsUrl: string): string {
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
+  chrome: DeviceKitChromeDescriptor | null;
   /** Base serve-sim helper URL used by `/stream.avcc`. */
   url: string;
   streamUrl: string;
@@ -291,6 +293,7 @@ interface ResolvedConfig {
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
 interface PreviewApi {
+  chrome?: DeviceKitChromeDescriptor | null;
   url?: string;
   streamUrl?: string;
   wsUrl?: string;
@@ -985,6 +988,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           : null;
       const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
       return {
+        chrome: c.chrome ?? null,
         url: c.url!,
         // An <img> and an EventSource cannot set a header.
         streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
@@ -1482,7 +1486,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             setScreen((prev) =>
               prev?.width === c.width &&
               prev.height === c.height &&
-              prev.orientation === c.orientation
+              prev.orientation === c.orientation &&
+              prev.screenId === c.screenId
                 ? prev
                 : c,
             );
@@ -2031,6 +2036,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   return {
     platform: "ios",
+    chrome: active ? (config?.chrome ?? null) : null,
     status,
     error,
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,

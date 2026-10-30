@@ -18,6 +18,7 @@
  */
 
 import { type CSSProperties } from "react";
+import type { DeviceKitChromeDescriptor } from "./device-kit-chrome";
 
 export type DevicePlatform = "ios" | "android";
 
@@ -51,6 +52,8 @@ export interface ScreenSize {
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim). */
   orientation?: DeviceOrientation;
+  /** Active display identifier for devices with alternate screen geometry. */
+  screenId?: number;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -618,6 +621,8 @@ export interface DeviceClient {
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
+  /** DeviceKit frame metadata for the current device; null when unavailable. */
+  chrome?: DeviceKitChromeDescriptor | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
   /** Running devices the server exposes (may be a placeholder list). */

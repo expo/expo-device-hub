@@ -49,3 +49,14 @@ export {
 } from "./mobile-keyboard";
 export { createPacedKeySender, type PacedKeySender } from "./paced-key-sender";
 export { textToKeyEventsLenient } from "./text-to-keys";
+
+export * from "./device-kit-chrome";
+export {
+  DeviceKitChrome,
+  deviceKitChromeGeometry,
+  deviceKitChromeForScreen,
+  deviceKitScreenRadius,
+  snapChromeRect,
+  type DeviceKitChromeProps,
+  type ChromeButtonPress,
+} from "./DeviceKitChrome";
