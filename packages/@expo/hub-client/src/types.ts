@@ -98,7 +98,10 @@ export interface DisplayCornerRadii {
 /**
  * One step of a hinge command, or a rotation, as the client handles it. Each
  * event carries the command object that `setControl` queued, so a listener can
- * follow one command from its request to its outcome.
+ * match a step to its request. A command can end without an event of its own:
+ * while it waits in the queue, a newer command of the same control replaces it,
+ * and a pose command clears the whole queue. Such a command gets `requested`
+ * and nothing after it.
  */
 export type HingeCommandEvent =
   /** `setControl` queued the command; `angle`, `pose`, and `tableMode` already preview it. */
