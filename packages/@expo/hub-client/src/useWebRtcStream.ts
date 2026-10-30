@@ -40,6 +40,21 @@ const BUSY_RETRY_COUNT = 30;
 const TRANSPORT_RETRY_BASE_MS = 500;
 const TRANSPORT_RETRY_MAX_MS = 5_000;
 const DISCONNECTED_GRACE_MS = 10_000;
+/** Final offer failures that the user can act on, by server reason code. */
+const OFFER_FAILURE_MESSAGES = new Map([
+  [
+    "device_mismatch",
+    "WebRTC offer failed: the selected device is not the active device on the server.",
+  ],
+  [
+    "webrtc_codec_unavailable",
+    "WebRTC offer failed: the device stream is not H.264. Change the stream codec to H.264.",
+  ],
+  [
+    "unsupported_offer",
+    "WebRTC offer failed: this browser cannot play the H.264 video from the server.",
+  ],
+]);
 
 export type WebRtcVideoCodecCapability = {
   mimeType: string;
@@ -581,8 +596,25 @@ export function useWebRtcStream({
         });
         if (!response.ok) {
           const status = response.status;
+          // A clone keeps the body unlocked for the cancel below.
+          const failure =
+            status === 400 || status === 409
+              ? ((await response
+                  .clone()
+                  .json()
+                  .catch(() => null)) as { code?: unknown; error?: unknown } | null)
+              : null;
+          // Standalone serve-emu names the reason in `code`; the Hub middleware and serve-sim use `error`.
+          const reason =
+            typeof failure?.code === "string"
+              ? failure.code
+              : typeof failure?.error === "string"
+                ? failure.error
+                : null;
+          const message =
+            (reason !== null && OFFER_FAILURE_MESSAGES.get(reason)) ||
+            `WebRTC offer failed: HTTP ${status}.`;
           await response.body?.cancel();
-          const message = `WebRTC offer failed: HTTP ${status}.`;
           if (isRetryableWebRtcOfferStatus(status, transportLocked)) retryTransport(message);
           else failPermanently(message);
           return;

@@ -814,3 +814,66 @@ for (const conflict of [
     expect(failures()).toEqual([]);
   });
 }
+
+test("Android names an inactive selected device instead of a bare HTTP 409", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  await start("visible", 200, false, [
+    Response.json(
+      { ok: false, code: "device_mismatch", error: "selected device is not active" },
+      { status: 409 },
+    ),
+  ]);
+  expect(offersPosted).toBe(1);
+  expect(updates).toContain(
+    "WebRTC offer failed: the selected device is not the active device on the server.",
+  );
+  expect(updates).not.toContain("WebRTC offer failed: HTTP 409.");
+  expect(failures()).toEqual([expect.objectContaining({ kind: "permanent" })]);
+  // A final conflict schedules no retry.
+  expect(() => fireTimer(500)).toThrow("Expected a 500ms timer");
+  expect(offersPosted).toBe(1);
+});
+
+test("other final 409s keep the HTTP status message", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  await start("visible", 200, false, [
+    Response.json({ ok: false, code: "invalid_offer" }, { status: 409 }),
+  ]);
+  expect(updates).toContain("WebRTC offer failed: HTTP 409.");
+  expect(failures()).toEqual([expect.objectContaining({ kind: "permanent" })]);
+});
+
+for (const { name, status, body, message } of [
+  {
+    // Device Hub middleware shape: the code is in `error`.
+    name: "a capture codec that WebRTC cannot send",
+    status: 409,
+    body: {
+      error: "webrtc_codec_unavailable",
+      message: "WebRTC requires H264 video, but scrcpy negotiated h265.",
+    },
+    message:
+      "WebRTC offer failed: the device stream is not H.264. Change the stream codec to H.264.",
+  },
+  {
+    // Standalone serve-emu shape: the code is in `code`.
+    name: "a browser that cannot receive H.264",
+    status: 400,
+    body: {
+      ok: false,
+      code: "unsupported_offer",
+      error: "WebRTC offer does not include receivable H.264 packetization-mode=1 video",
+    },
+    message: "WebRTC offer failed: this browser cannot play the H.264 video from the server.",
+  },
+]) {
+  test(`Android explains ${name} instead of a bare HTTP ${status}`, async () => {
+    hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+    await start("visible", 200, false, [Response.json(body, { status })]);
+    expect(offersPosted).toBe(1);
+    expect(updates).toContain(message);
+    expect(updates).not.toContain(`WebRTC offer failed: HTTP ${status}.`);
+    expect(failures()).toEqual([expect.objectContaining({ kind: "permanent" })]);
+    expect(() => fireTimer(500)).toThrow("Expected a 500ms timer");
+  });
+}
