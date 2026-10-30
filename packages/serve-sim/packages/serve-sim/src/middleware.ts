@@ -3,6 +3,7 @@ export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
 import { SingleDevicePolicy } from "./single-device";
 import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
+import { ScreenshotParams } from "./host-actions";
 import {
   captureScreenshotFileAsync,
   captureNativeScreenshotAsync,
@@ -3486,14 +3487,19 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
     async onScreenshotRequest(payload, request) {
-      const parsed = z
-        .object({ device: z.string().optional(), display: ScreenshotDisplay.optional() })
+      const parsed = ScreenshotParams.omit({ fileName: true })
+        .partial({ udid: true })
         .strict()
         .safeParse(payload);
       if (!parsed.success)
         return Response.json({ error: "Invalid screenshot request" }, { status: 400 });
       const url = new URL(`${base}/api/screenshot`, request.url);
-      if (parsed.data.device !== undefined) url.searchParams.set("device", parsed.data.device);
+      if (parsed.data.udid !== undefined) {
+        const { resolveBootedDeviceAsync } = await import("./device");
+        // Enforce the same target policy as ordinary actions before resolving aliases.
+        policy?.resolveTarget(parsed.data.udid);
+        url.searchParams.set("device", await resolveBootedDeviceAsync(parsed.data.udid));
+      }
       if (parsed.data.display !== undefined)
         url.searchParams.set("display", String(parsed.data.display));
       return (await fetchMiddleware(

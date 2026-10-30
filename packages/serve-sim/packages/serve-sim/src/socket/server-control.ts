@@ -24,12 +24,12 @@ import {
 // runtime does that with `ws`, while other web runtimes can provide their own
 // socket object with the same small shape.
 //
-// Wire protocol (all JSON text frames):
+// Wire protocol (JSON text frames, except opt-in binary results):
 //   client → {token}                  first frame, when no token subprotocol was offered
 //   server → {ready:true}             auth accepted
 //   client → {id, action, params}      run one typed simulator action
 //   server → {id, stdout, stderr, exitCode}
-//   client → {id, screenshot:{device?, display?}}  download PNG without staging/Desktop copy
+//   client → {id, action:"screenshot.capture", params:{udid?,display?,output:"binary"}}
 //   server → binary: uint32 BE id, then PNG bytes; errors use {id, error}
 //   client → {id, ui:{…}}             simulator-settings request (in-process,
 //   server → {id, …} | {id, error}     no shell round-trip)
@@ -50,7 +50,6 @@ interface ExecMessage {
   action?: string;
   params?: unknown;
   ui?: unknown;
-  screenshot?: unknown;
   sub?: number;
   path?: string;
   unsub?: number;
@@ -250,7 +249,12 @@ function wireExecSocket(
       subscribe(msg.sub, msg.path);
       return;
     }
-    if (msg.screenshot !== undefined) {
+    if (
+      msg.action === "screenshot.capture" &&
+      msg.params !== null &&
+      typeof msg.params === "object" &&
+      (msg.params as { output?: unknown }).output === "binary"
+    ) {
       const { id } = msg;
       if (typeof id !== "number" || !Number.isInteger(id) || id < 0 || id > 0xffff_ffff) {
         send({ id, error: "Screenshot id must be an unsigned 32-bit integer" });
@@ -262,7 +266,7 @@ function wireExecSocket(
       }
       if (!reserveAction(id)) return;
       const task = opts
-        .onScreenshotRequest(msg.screenshot, request)
+        .onScreenshotRequest(msg.params ?? {}, request)
         .then(async (response) => {
           if (!response.ok) {
             const body = (await response.json()) as { error?: string };

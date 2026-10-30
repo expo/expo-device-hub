@@ -1,6 +1,7 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
+import * as simctl from "../../simctl";
 import { writeFileSync } from "fs";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
@@ -20,6 +21,15 @@ let unstable = false,
   fallbackReads = 0,
   simctlCaptures = 0;
 const targets: string[] = [];
+mock.module("../../simctl", () => ({
+  ...simctl,
+  simctl: async (args: string[]) => {
+    expect(args).toEqual(["list", "devices", "booted", "-j"]);
+    return JSON.stringify({
+      devices: { runtime: [{ udid: UDID, state: "Booted", name: "Test phone" }] },
+    });
+  },
+}));
 mock.module("../../device-session", () => ({
   ...sessions,
   withScreenshotDeviceSession: async (
@@ -77,7 +87,9 @@ afterAll(async () => {
   temp.restore();
 });
 
-function socketRequest(payload: unknown): Promise<Buffer | { id: number; error: string }> {
+function socketRequest(
+  payload: Record<string, unknown>,
+): Promise<Buffer | { id: number; error: string }> {
   const handleWebSocket = middleware.handleWebSocket;
   if (!handleWebSocket) throw new Error("Middleware must expose its WebSocket handler");
   return new Promise((resolve, reject) => {
@@ -109,7 +121,15 @@ function socketRequest(payload: unknown): Promise<Buffer | { id: number; error: 
       ),
     )
       .then(() => {
-        receive(Buffer.from(JSON.stringify({ id: 42, screenshot: payload })));
+        receive(
+          Buffer.from(
+            JSON.stringify({
+              id: 42,
+              action: "screenshot.capture",
+              params: { output: "binary", ...payload },
+            }),
+          ),
+        );
       })
       .catch(reject);
   });
@@ -126,18 +146,18 @@ test("real socket callback returns HTTP PNG bytes and validates device/display i
     );
     expect(response!.headers.get("content-length")).toBe(String(png.length));
     const http = Buffer.from(await response!.arrayBuffer());
-    const binary = (await socketRequest({ device: UDID })) as Buffer;
+    const binary = (await socketRequest({ udid: UDID })) as Buffer;
     expect(binary.readUInt32BE()).toBe(42);
     expect(binary.subarray(4)).toEqual(http);
     expect(http).toEqual(display === 7 ? png : secondPanelPng);
   }
   expect(targets).toEqual([UDID, UDID, UDID, UDID]);
   expect(capturedDisplays).toEqual([7, 7, 8, 8]);
-  expect(await socketRequest({ device: "invalid" })).toEqual({
+  expect(await socketRequest({ udid: "invalid/device" })).toEqual({
     id: 42,
-    error: "Invalid simulator device ID",
+    error: "Invalid screenshot request",
   });
-  expect(await socketRequest({ device: UDID, display: 0 })).toEqual({
+  expect(await socketRequest({ udid: UDID, display: 0 })).toEqual({
     id: 42,
     error: "Invalid screenshot request",
   });
@@ -161,9 +181,21 @@ test("unstable single-panel capture returns retry guidance without consulting fa
   expect(fallbackReads).toBe(0);
   expect(simctlCaptures).toBe(0);
   reads = 0;
-  expect(await socketRequest({ device: UDID })).toEqual({
+  expect(await socketRequest({ udid: UDID })).toEqual({
     id: 42,
     error: "The active display kept changing. Retry the screenshot once the fold has finished.",
   });
   expect(simctlCaptures).toBe(0);
+});
+
+test("binary mode resolves action device names and rejects path-only filename options", async () => {
+  unstable = false;
+  activeDisplay = 7;
+  const result = (await socketRequest({ udid: "Test phone" })) as Buffer;
+  expect(result.subarray(4)).toEqual(png);
+  expect(targets.at(-1)).toBe(UDID);
+  expect(await socketRequest({ udid: UDID, fileName: "serve-sim-screenshot-test.png" })).toEqual({
+    id: 42,
+    error: "Invalid screenshot request",
+  });
 });

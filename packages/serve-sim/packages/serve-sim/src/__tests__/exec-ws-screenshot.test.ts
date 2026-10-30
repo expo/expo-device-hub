@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createExecWebSocketHandler } from "../socket/server-control";
 import type { UpgradeHandlerWebSocket } from "../socket/types";
+import { runHostActionAsync } from "../host-actions";
 
 function channel(handler: (payload: unknown) => Promise<Response>, authenticated = true) {
   let receive!: (data: Buffer) => void;
@@ -35,14 +36,16 @@ test("binary capture enforces authentication, bounded admission and safe request
     calls++;
     return new Response("PNG");
   }, false);
-  h.send({ id: 1, screenshot: {} });
+  h.send({ id: 1, action: "screenshot.capture", params: { output: "binary" } });
   expect(calls).toBe(0);
   h.send({ token: "test" });
-  for (const id of [-1, 1.5, 2 ** 32]) h.send({ id, screenshot: {} });
+  for (const id of [-1, 1.5, 2 ** 32])
+    h.send({ id, action: "screenshot.capture", params: { output: "binary" } });
   expect(calls).toBe(0);
   const { promise, resolve } = Promise.withResolvers<Response>();
   const busy = channel(() => promise.then((response) => response.clone()));
-  for (let id = 0; id < 9; id++) busy.send({ id, screenshot: {} });
+  for (let id = 0; id < 9; id++)
+    busy.send({ id, action: "screenshot.capture", params: { output: "binary" } });
   expect(busy.pending.size).toBe(8);
   expect(busy.sent.at(-1)).toContain("too many actions");
   resolve(new Response("PNG"));
@@ -53,7 +56,7 @@ test("capture errors remain correlated JSON and disconnected sockets receive no 
   const h = channel(async () =>
     Response.json({ error: "Invalid simulator display ID" }, { status: 400 }),
   );
-  h.send({ id: 7, screenshot: {} });
+  h.send({ id: 7, action: "screenshot.capture", params: { output: "binary" } });
   await Promise.all(h.pending);
   expect(JSON.parse(String(h.sent.at(-1)))).toEqual({
     id: 7,
@@ -61,11 +64,43 @@ test("capture errors remain correlated JSON and disconnected sockets receive no 
   });
   const { promise, resolve } = Promise.withResolvers<Response>();
   const closed = channel(() => promise);
-  closed.send({ id: 8, screenshot: {} });
+  closed.send({ id: 8, action: "screenshot.capture", params: { output: "binary" } });
   Object.defineProperty(closed.ws, "readyState", { value: 3 });
   resolve(new Response("PNG"));
   await Promise.all(closed.pending);
   expect(closed.sent.filter(Buffer.isBuffer)).toHaveLength(0);
+});
+
+test("binary is opt-in, action-scoped and advertised without changing default catalog output", async () => {
+  let calls = 0;
+  const h = channel(async () => {
+    calls++;
+    return new Response("PNG");
+  });
+  for (const output of [undefined, "binary"]) {
+    h.send({ id: 3, action: "actions.describe", params: { output } });
+    await Promise.all(h.pending);
+    const result = JSON.parse(String(h.sent.at(-1)));
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout)["screenshot.capture"]).toMatchObject({
+      output: "path",
+      properties: { output: { enum: ["path", "binary"], default: "path" } },
+    });
+  }
+  expect(calls).toBe(0);
+  expect(h.sent.filter(Buffer.isBuffer)).toHaveLength(0);
+});
+
+test("binary output cannot silently stage a file outside the socket transport", async () => {
+  await expect(
+    runHostActionAsync(
+      {
+        action: "screenshot.capture",
+        params: { udid: "DEVICE-A", output: "binary" },
+      },
+      "serve-sim",
+    ),
+  ).rejects.toThrow("requires exec-ws");
 });
 
 test("a screenshot returns one correlated binary PNG, including concurrent out-of-order replies", async () => {
@@ -73,9 +108,11 @@ test("a screenshot returns one correlated binary PNG, including concurrent out-o
   const slow = new Promise<Response>((resolve) => {
     release = resolve;
   });
-  const h = channel(async (payload) => (payload === "slow" ? slow : new Response("PNG2")));
-  h.send({ id: 1, screenshot: "slow" });
-  h.send({ id: 2, screenshot: {} });
+  const h = channel(async (payload) =>
+    (payload as { slow?: boolean }).slow ? slow : new Response("PNG2"),
+  );
+  h.send({ id: 1, action: "screenshot.capture", params: { output: "binary", slow: true } });
+  h.send({ id: 2, action: "screenshot.capture", params: { output: "binary" } });
   await new Promise((resolve) => setImmediate(resolve));
   release(new Response("PNG1"));
   await Promise.all(h.pending);
