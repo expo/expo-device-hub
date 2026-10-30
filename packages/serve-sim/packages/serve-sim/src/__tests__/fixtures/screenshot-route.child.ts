@@ -65,6 +65,8 @@ afterAll(async () => {
 });
 
 function socketRequest(payload: unknown): Promise<Buffer | { id: number; error: string }> {
+  const handleWebSocket = middleware.handleWebSocket;
+  if (!handleWebSocket) throw new Error("Middleware must expose its WebSocket handler");
   return new Promise((resolve, reject) => {
     let receive!: (data: Buffer) => void;
     const timeout = setTimeout(() => reject(Error("No socket reply")), 3000);
@@ -82,7 +84,7 @@ function socketRequest(payload: unknown): Promise<Buffer | { id: number; error: 
       },
     } as UpgradeHandlerWebSocket;
     void Promise.resolve(
-      middleware.handleWebSocket(
+      handleWebSocket(
         new Request("http://localhost/preview/exec-ws", {
           headers: {
             host: "localhost",
