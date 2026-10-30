@@ -413,8 +413,12 @@ export async function rearmCapabilityLoader(udid: string): Promise<void> {
   });
 }
 
-/** Best-effort rearmCapabilityLoader for startup: a missing loader is skipped, a failure logged. */
+/** Ordinary startup is best-effort; a resident boot requires successful rearming. */
 export async function armCapabilityLoader(udid: string): Promise<void> {
+  if (readLaunchState(udid)?.capabilities.egressGuard?.resident) {
+    await rearmCapabilityLoader(udid);
+    return;
+  }
   if (!existsSync(capabilityLoaderPath(udid))) return;
   try {
     await rearmCapabilityLoader(udid);
