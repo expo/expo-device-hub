@@ -3,6 +3,7 @@ import { createConnection, type Socket } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { adbCommand } from "./adb-command.ts";
 import { SCRCPY_VERSION, ensureScrcpyServer } from "./scrcpy-server.ts";
 import { execText } from "./exec.ts";
 
@@ -201,14 +202,14 @@ function runtimeFor(deps: ScrcpyDependencies): ScrcpyRuntime {
     runAdb:
       deps.runAdb ??
       (async (serial, args, opts) =>
-        execText("adb", ["-s", serial, ...args], {
+        execText(adbCommand(), ["-s", serial, ...args], {
           timeout: opts.timeoutMs,
           signal: opts.signal,
         })),
     spawnAdb:
       deps.spawnAdb ??
       ((serial, args) =>
-        spawn("adb", ["-s", serial, ...args], {
+        spawn(adbCommand(), ["-s", serial, ...args], {
           stdio: ["ignore", "pipe", "pipe"],
         })),
     connect: deps.connect ?? connectOnce,
