@@ -69,7 +69,7 @@ Below 640 CSS pixels, the serve-sim preview fits the device to the visible
 viewport after subtracting safe-area padding and the measured action controls.
 The displayed mobile size does not reuse the saved desktop resize preference. The floating
 controls and device sidebar toggle remain; the device name, status badge, and AX
-button are hidden. Input and keyboard unavailable warnings remain visible on phones. While the phone keyboard is raised, the bottom action toolbar
+button are hidden. Input and keyboard unavailable warnings remain visible on phones; mobile fitting reserves their measured height and gap. While the phone keyboard is raised, the bottom action toolbar
 is hidden and its space is given to the device; it returns when the keyboard closes.
 The top-right mobile controls form one vertical toolbar, including the keyboard
 toggle. It overlays the device without taking layout space. The sidebar toggle remains separate.

@@ -1713,12 +1713,18 @@ function AppWithConfig({
   }, [presentation, exitScaling]);
   const scaling = presentation || exitScaling;
   const presentationInset = SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION;
+  const mobileStatusRef = useRef<HTMLDivElement | null>(null);
+  const mobileStatusVisible = !!(
+    streamConfig?.inputUnavailable || streamConfig?.keyboardUnavailable
+  );
   const mobileActionsRef = useRef<HTMLDivElement | null>(null);
   const mobileWidth = useMobileSimulatorSize(
     scrollContainerRef,
     mobileActionsRef,
     mobileLayout && !presentation,
     containerAspectRatioValue,
+    mobileStatusRef,
+    mobileStatusVisible,
   );
   const layoutWidth =
     mobileLayout && !presentation ? (mobileWidth ?? simulatorResize.width) : simulatorResize.width;
@@ -1835,7 +1841,8 @@ function AppWithConfig({
         >
           {!presentation && (
             <div
-              className={`${streamConfig?.inputUnavailable || streamConfig?.keyboardUnavailable ? "block" : "hidden sm:block"} self-center`}
+              ref={mobileStatusRef}
+              className={`${mobileStatusVisible ? "block" : "hidden sm:block"} self-center`}
             >
               <SimulatorToolbar
                 onRotate={rotateDevice}
