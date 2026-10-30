@@ -4,7 +4,9 @@ import {
   capabilityConfigPath,
   capabilityLoaderDir,
   capabilityLoaderPath,
+  assertResidentMetadataPresent,
 } from "./capability-config";
+import { canonicalDeviceKey, readLaunchState } from "./launch-state";
 
 export function additionalDylibs(): string[] {
   return [...new Set((process.env.SERVE_SIM_ADDITIONAL_DYLIBS ?? "").split(":").filter(Boolean))];
@@ -23,21 +25,37 @@ export function validatedAdditionalDylibs(): string[] {
   return paths;
 }
 
+function residentBootState(udid: string) {
+  const canonical = canonicalDeviceKey(udid);
+  const state = readLaunchState(canonical);
+  assertResidentMetadataPresent(canonical);
+  return { canonical, resident: state?.capabilities.egressGuard };
+}
+
 // @ref LLP 0011#additional-boot-dylibs — simctl passes child variables into the simulator at boot.
-export function simulatorBootEnv(udid: string): NodeJS.ProcessEnv {
+export function simulatorBootEnv(udid: string, booting = false): NodeJS.ProcessEnv {
   const additional = validatedAdditionalDylibs();
-  if (!additional.length) return { ...process.env };
+  const { canonical, resident } = residentBootState(udid);
+  if (booting && resident?.resident?.boot) {
+    throw new Error(
+      "A new Simulator boot requires fresh resident egress enrollment; the previous page cannot be reused.",
+    );
+  }
+  if (!additional.length && !resident?.resident) return { ...process.env };
   const capture = join(capabilityLoaderDir(), "..", "simnet", "libSimNetProxy.dylib");
   return {
     ...process.env,
     SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [
       ...new Set([
         ...(process.env.SIMCTL_CHILD_DYLD_INSERT_LIBRARIES ?? "").split(":").filter(Boolean),
-        capabilityLoaderPath(),
+        capabilityLoaderPath(resident?.resident ? canonical : udid),
+        ...(resident?.resident ? [resident.dylib] : []),
         ...(existsSync(capture) ? [capture] : []),
         ...additional,
       ]),
     ].join(":"),
-    SIMCTL_CHILD_SERVE_SIM_CAPABILITIES_CONFIG: capabilityConfigPath(udid),
+    SIMCTL_CHILD_SERVE_SIM_CAPABILITIES_CONFIG: capabilityConfigPath(
+      resident?.resident ? canonical : udid,
+    ),
   };
 }
