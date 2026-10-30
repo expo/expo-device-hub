@@ -23,6 +23,7 @@ import {
   newScreenshotName,
 } from "./screenshot-store";
 import { approveUrlScheme, launchApp, openUrlInApp, stopApp } from "./launch-manager";
+import { isSimctlTimeout } from "./simctl";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
@@ -395,8 +396,13 @@ const ACTION_SCHEMAS = {
         .url()
         .refine((value) => !value.includes("\0"), "must not contain NUL")
         .optional(),
+      // false skips the stop, e.g. right after install; a running app then keeps its arguments.
+      restart: z.boolean().default(true),
     })
-    .meta({ description: "Restart an app with launch arguments and an optional URL to open." }),
+    .meta({
+      description:
+        "Launch an app with launch arguments and an optional URL to open. Restarts it first unless restart is false.",
+    }),
   "app.iconPath": z
     .object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) })
     .meta({ hidden: true }),
@@ -809,12 +815,22 @@ async function runProcedureAsync(
       }
     }
     case "app.launch": {
-      const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
+      const { udid, bundleId, launchArgs, openUrl, restart } = parseParams(action, raw);
       return timeStartup(
         action,
         async () => {
           try {
-            await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
+            const launch = () => launchApp(udid, { bundleId, launchArgs, restart, openUrl });
+            try {
+              await launch();
+            } catch (error) {
+              // A simctl call that hit its time limit gets one more try; other failures and a second stall do not.
+              if (!isSimctlTimeout(error)) throw error;
+              console.error(
+                `app.launch on ${udid}: retrying once after ${(error as Error).message}`,
+              );
+              await launch();
+            }
             return ok();
           } catch (error) {
             return {

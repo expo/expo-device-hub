@@ -355,4 +355,67 @@ describe("createForegroundTrackerCache", () => {
     expect(children[0]!.killed).toBe(true); // stopped with the last subscriber
     expect(cache.peek("UDID")).toBeNull(); // evicted
   });
+
+  test("stops every foreground stream while subscribers remain", async () => {
+    const { cache, children } = trackerWithFakeStream(0);
+    const a = cache.subscribe("A");
+    const b = cache.subscribe("B");
+
+    cache.stopAll();
+    expect(children.every((child) => child.killed)).toBe(true);
+    for (const child of children) child.emit("exit");
+    await tick();
+
+    expect(children).toHaveLength(2);
+    expect(cache.peek("A")).toBeNull();
+    expect(cache.peek("B")).toBeNull();
+    a.unsubscribe();
+    b.unsubscribe();
+  });
+
+  test("cancels a pending restart when shutdown begins", async () => {
+    const { cache, children } = trackerWithFakeStream(0);
+    const sub = cache.subscribe("UDID");
+    children[0]!.emit("exit");
+
+    cache.stopAll();
+    await tick();
+
+    expect(children).toHaveLength(1);
+    sub.unsubscribe();
+  });
+
+  test("does not create streams for subscriptions arriving during shutdown", () => {
+    const { cache, children } = trackerWithFakeStream();
+    cache.stopAll();
+
+    const sub = cache.subscribe("UDID");
+
+    expect(children).toHaveLength(0);
+    expect(cache.peek("UDID")).toBeNull();
+    sub.unsubscribe();
+    cache.stopAll();
+  });
+
+  test("does not publish an AX seed that arrives after shutdown", async () => {
+    let resolveSeed!: (app: ForegroundApp) => void;
+    const seed = new Promise<ForegroundApp>((resolve) => {
+      resolveSeed = resolve;
+    });
+    const child = fakeChild();
+    const seen: ForegroundApp[] = [];
+    const cache = createForegroundTrackerCache({
+      spawnLogStream: () => child as unknown as ChildProcess,
+      frontmostApp: () => seed,
+    });
+    const sub = cache.subscribe("UDID", (app) => seen.push(app));
+
+    cache.stopAll();
+    resolveSeed({ bundleId: "dev.expo.A", pid: 11 });
+    await tick();
+
+    expect(seen).toEqual([]);
+    expect(child.killed).toBe(true);
+    sub.unsubscribe();
+  });
 });

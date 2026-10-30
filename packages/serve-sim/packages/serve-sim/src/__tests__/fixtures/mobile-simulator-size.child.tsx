@@ -27,9 +27,13 @@ let actionsHeight = 58;
 const actions = { getBoundingClientRect: () => ({ height: actionsHeight }) };
 const pageRef = { current: page as HTMLElement };
 const actionsRef = { current: actions as unknown as HTMLElement };
+let statusHeight = 30;
+const statusRef = {
+  current: { getBoundingClientRect: () => ({ height: statusHeight }) } as HTMLElement,
+};
 let result: number | null = null;
-function Probe({ enabled = true, aspect = 0.5 }) {
-  result = useMobileSimulatorSize(pageRef, actionsRef, enabled, aspect);
+function Probe({ enabled = true, aspect = 0.5, warning = false }) {
+  result = useMobileSimulatorSize(pageRef, actionsRef, enabled, aspect, statusRef, warning);
   return null;
 }
 let renderer: ReactTestRenderer;
@@ -37,6 +41,17 @@ await act(async () => {
   renderer = create(<Probe />);
 });
 assert.equal(result, 283, "fill all available portrait height rather than a saved desktop size");
+await act(async () => {
+  renderer.update(<Probe warning />);
+});
+assert.equal(result, 262, "reserve warning height and its gap before paint");
+statusHeight = 60;
+await act(async () => onResize());
+assert.equal(result, 247, "refit when a warning changes height");
+await act(async () => {
+  renderer.update(<Probe />);
+});
+assert.equal(result, 283, "return warning space when it clears");
 page.clientHeight = 350;
 await act(async () => onResize());
 assert.equal(result, 108, "refit above the mobile keyboard");

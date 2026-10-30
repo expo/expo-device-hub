@@ -1,5 +1,15 @@
 # @expo/hub-client
 
+## 1.8.1
+
+### Patch Changes
+
+- 660da0e: Retry temporary Android WebRTC offer conflicts when capture or the device session changes during setup.
+
+  Refuse standalone Android WebRTC offers for a selected device that is no longer active, so recovery cannot connect to a different device.
+
+- 174f551: Advertise the effective Android idle repeat interval and recover gRPC screenshot streams that stop delivering frames, while allowing scrcpy and slow custom repeats to stay idle. Indicate pending automatic recovery when a locked iOS codec ladder restarts.
+
 ## 1.8.0
 
 ### Minor Changes

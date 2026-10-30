@@ -23,14 +23,18 @@ lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and in
 `.eas/workflows/sim-test.yml` `bun run test` in two parallel shards that
 ignore `*.e2e.test.*` files, plus separate Simulator jobs with
 `SERVE_SIM_E2E_REQUIRED=1`. The package and fixtures are built once with pinned
-Xcode 26, and the Simulator jobs use that archive without rebuilding. The e2e files
-are split over two Simulator jobs: one runs `*.slow.e2e.test.ts`, the other runs
-all remaining e2e files. `.eas/functions/test-sim-runtime` selects each group.
-The serve-sim workflow runs on a PR that is ready for review; a draft runs it only
-with the `ci-ready` label. Fixture apps must adopt the scene lifecycle: UIKit
-stops an app linked with the iOS 27 SDK at launch if it does not. Test jobs pass
-`--retry=1`, so a failed test runs once more; a failed `beforeAll` and a file that
-fails to load stay red. Local checks do not replace the CI run.
+Xcode 26; the Xcode 26 and 27 Simulator jobs use that archive without rebuilding.
+Each runtime splits the e2e files over two Simulator jobs: one runs `*.slow.e2e.test.ts`,
+the other runs the rest. `.eas/functions/test-sim-runtime` selects each group. The
+serve-sim workflow runs on a PR that is ready for review; a draft runs it only with
+the `ci-ready` label. `.eas/workflows/sim-test-xcode27.yml` builds with Xcode 27 and
+runs the same split on the Xcode 27 image every night, and on a PR with the
+`xcode-27` label. [LLP 0014](../../llp/0014-serve-sim-xcode-support-and-ci.decision.md)
+states which Xcode versions serve-sim supports and what each CI run tests. Fixture
+apps must adopt the scene lifecycle: UIKit stops an app linked with the iOS 27 SDK
+at launch if it does not. Test jobs pass `--retry=1`, so a failed test runs once
+more; a failed `beforeAll` and a file that fails to load stay red. Local checks do
+not replace the CI run.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and

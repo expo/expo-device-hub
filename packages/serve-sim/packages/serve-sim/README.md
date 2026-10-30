@@ -402,6 +402,49 @@ http://localhost:8081/_expo/plugins/expo-device-hub
 
 No other configuration needed.
 
+## Restrict a session to one simulator
+
+```sh
+npx @expo/serve-sim --single-device <simulator-udid>
+```
+
+This boots and locks the preview to that exact simulator. The device sidebar
+and its toggle are removed. HTTP routes, helper sockets, and control actions
+reject other device targets, including `all` and `booted`. The same simulator
+can reboot or reconnect without changing the session's device. This option
+requires the preview server and cannot be combined with `--detach`, `--orphan`,
+`--no-preview`, `--list`, or `--kill`. It can accompany `--adopt` when its UDID
+matches the requested job device. The private handoff can select another device
+or boot it inside the same server, then applies the restriction before success.
+
+Embedded hosts can set `simMiddleware({ singleDevice: udid })`. This also enables
+same-origin helper proxies; forward WebSocket upgrades as described below.
+WebKit DevTools is disabled because the bridge cannot reliably associate its
+targets with a simulator UDID. The restriction applies to this server's routes;
+it does not prevent host tools or separately running servers from using devices.
+Path-based `file.readBase64` and `app.infoPlist` actions remain host-scoped within
+their existing allowed roots. They can read files belonging to another Simulator;
+single-device mode is not a filesystem sandbox.
+
+## Warm a server before a job
+
+```sh
+npx @expo/serve-sim <default-udid> <optional-second-udid> --orphan --port 3200 --require-token --transport webrtc
+npx @expo/serve-sim <device-udid> --adopt --port 3200 --single-device <device-udid> --require-token --transport webrtc
+```
+
+The first device becomes ready before additional devices warm in the background.
+Until adoption succeeds, an orphan accepts only health, readiness and authenticated
+state probes; preview actions, input and subscriptions wait for its private owner.
+Adoption keeps the server PID and port, selects or boots the exact job device, and
+waits for its native stream and requested capture/recording setup. A claim stops
+future background warmup. A device this process already prepared is handed over after
+a bootstatus check; adoption of the first device does not wait for warmup of the others.
+Unused devices are unpublished before the handoff and shut down in the background after
+their warmup drains, using the same internal device lifecycle as the UI; the session stop
+waits for them. A failed claim is consumed and requires stopping that server
+before a cold start.
+
 ## Embed in your dev server
 
 `@expo/serve-sim/middleware` is a **fetch-style** middleware. `simMiddleware(options)` returns a Web-standard request handler with a `.handleWebSocket` hook, so it mounts in any server that speaks `Request`/`Response` (Bun, Deno, Hono, a Node adapter, …). Run `serve-sim --detach` once to start the streaming helper, then wire the two entry points:

@@ -1,9 +1,15 @@
 #!/usr/bin/env node
 import {
+  prepareDeviceOnce,
+  retireDevicesInBackground,
+  startDeviceInProcess,
+} from "./device-lifecycle";
+import {
   RECORDING_FINALIZATION_WAIT_MS,
   RECORDING_RECONCILIATION_WAIT_MS,
 } from "./recording-timeouts";
 import { timeStartup } from "./startup-timing";
+import { SingleDevicePolicy } from "./single-device";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
@@ -20,7 +26,7 @@ import {
   writeFileSync,
 } from "fs";
 import { createHash, randomBytes } from "crypto";
-import { networkInterfaces } from "os";
+import { networkInterfaces, tmpdir } from "os";
 import { extname, join, resolve } from "path";
 import WebSocket from "ws";
 import { onCliInputReady } from "./socket/cli-input";
@@ -41,12 +47,13 @@ import {
 } from "./state";
 import { textToKeyEvents, UnsupportedCharacterError, sendKeyEventsToWs } from "./text-to-keys";
 import { logBufferCache } from "./log-buffer";
+import { foregroundTracker } from "./foreground-tracker";
 import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
-import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
+import { validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   capabilitiesToApply,
@@ -62,6 +69,7 @@ import {
   disarmStaleCapabilityLoader,
   releaseSessionSync,
   releaseSession,
+  reserveDeviceSession,
   stopLaunchSession,
   waitForLaunchUpdates,
 } from "./launch-manager";
@@ -69,9 +77,8 @@ import { LaunchStateLockTimeoutError } from "./launch-state-lock";
 import { parseCaptureFields } from "./capture/fields";
 import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
-import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice, resolveDeviceMatches } from "./device";
+import { bootDevice, findBootedDevice, resolveDevice, resolveDeviceMatches } from "./device";
 import { openSimulatorHost } from "./simulator-host";
-import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { clipboardCapability } from "./sim-pasteboard-reader";
@@ -87,15 +94,26 @@ import {
   cameraHelperSocketFile as helperSocketFile,
   isCameraHelperAlive as isHelperAlive,
   readCameraStatus,
+  stopCameraHelper,
   readInjectedCameraBundles as readInjectedBundles,
   sendCameraHelperCommand as sendHelperCommand,
 } from "./camera-helper";
 import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream-runtime-args";
-import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
+import {
+  MAX_MJPEG_STREAM_FPS,
+  MAX_VIDEO_STREAM_FPS,
+  normalizeStreamEncoderSettings,
+} from "./stream-settings";
+import { sessionConfigurationSchema } from "./session-configuration";
+import { adoptSession, bootSession, sessionEnvironment, startSessionOwner } from "./session-owner";
 import { parseHingeAngle } from "./hinge-angle";
 import { CA_DEBUG_ALIASES, CA_DEBUG_FLAGS } from "./ca-debug";
 import { readHingeStateFromWs, sendHingeAngleToWs } from "./hinge-command";
-import { finishDeviceRecordingsForShutdown } from "./device-session";
+import {
+  finishDeviceRecordingsForShutdown,
+  getDeviceSession,
+  startDeviceSession,
+} from "./device-session";
 import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 import { captureHarPaths, followCaptureHar } from "./capture";
 
@@ -403,24 +421,6 @@ function readDeviceNamesByUdid(): Map<string, string> {
   return names;
 }
 
-function isDeviceBooted(udid: string): boolean {
-  try {
-    const output = execSync("xcrun simctl list devices -j", { encoding: "utf-8" });
-    const data = JSON.parse(output) as {
-      devices: Record<string, Array<{ udid: string; name?: string; state: string }>>;
-    };
-    for (const runtime of Object.values(data.devices)) {
-      for (const device of runtime) {
-        if (device.udid === udid) {
-          if (device.name) startupDeviceNames.set(udid, device.name);
-          return device.state === "Booted";
-        }
-      }
-    }
-  } catch {}
-  return false;
-}
-
 function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -428,28 +428,6 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
-}
-
-function bootDevice(udid: string): void {
-  if (!isDeviceBooted(udid)) {
-    try {
-      execFileSync("xcrun", ["simctl", "boot", udid], {
-        encoding: "utf-8",
-        stdio: "pipe",
-        env: simulatorBootEnv(udid),
-      });
-    } catch (err: any) {
-      const msg = (err.stderr ?? err.message ?? "").toLowerCase();
-      if (!msg.includes("booted") && !msg.includes("current state")) {
-        throw new Error(`Failed to boot device ${udid}: ${err.stderr || err.message}`);
-      }
-    }
-  }
-  // Open the selected Xcode's Simulator or Device Hub in the background.
-  // Ignore failure: `open` can hang or miss a window server on headless hosts.
-  try {
-    openSimulatorHost(udid);
-  } catch {}
 }
 
 function getLocalNetworkIP(): string | null {
@@ -471,22 +449,13 @@ async function findAvailablePort(start: number): Promise<number> {
   throw new Error(`No available port found in range ${start}-${start + 99}`);
 }
 
-async function ensureBooted(udid: string): Promise<void> {
-  await timeStartup("simulator-boot", () => bootDevice(udid), udid);
-  // @ref LLP 0011#boot-is-a-readiness-barrier — Booted can still be starting services; a failed wait stops startup.
-  try {
-    await timeStartup(
-      "simulator-bootstatus",
-      () => simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS),
-      udid,
-    );
-  } catch (error) {
-    const detail = (error as { killed?: boolean }).killed
-      ? `boot did not finish within ${BOOT_TIMEOUT_MS / 1000}s`
-      : `boot did not finish: ${error instanceof Error ? error.message : String(error)}`;
-    throw new Error(`Simulator ${udid} ${detail}`, { cause: error });
+async function ensureBooted(udid: string, openHost = true): Promise<void> {
+  await bootDevice(udid);
+  if (openHost) {
+    try {
+      openSimulatorHost(udid);
+    } catch {}
   }
-
   // Only clean up a capability loader an earlier session left behind. Arming belongs to
   // launchApp and enableCapabilities: this runs in the stream helper too, and a
   // helper arming after its parent disarmed would leave the insert set.
@@ -504,7 +473,7 @@ function disarmDevicesArmedHere(): void {
   for (const udid of devicesArmedHere()) {
     try {
       releaseSessionSync(udid, process.pid, (capability) => {
-        if (capability.name === "camera") stopExistingHelper(udid);
+        if (capability.name === "camera") stopCameraHelper(udid);
       });
     } catch (error) {
       console.error(
@@ -526,7 +495,7 @@ function disarmDevicesArmedHereAsync(): Promise<void> {
     for (const udid of devicesArmedHere()) {
       try {
         await releaseSession(udid, process.pid, (capability) => {
-          if (capability.name === "camera") stopExistingHelper(udid);
+          if (capability.name === "camera") stopCameraHelper(udid);
         });
       } catch (error) {
         console.error(
@@ -920,7 +889,7 @@ async function killStreams(deviceArg?: string): Promise<void> {
   const states = udid ? (state ? [state] : []) : readAllStates();
   for (const current of states) {
     await stopLaunchSession(current.device, current.pid, (capability) => {
-      if (capability.name === "camera") stopExistingHelper(current.device);
+      if (capability.name === "camera") stopCameraHelper(current.device);
     });
     clearServeSimState(current.device, current.pid);
   }
@@ -1295,24 +1264,6 @@ function clearInjectedBundles(udid: string): void {
   } catch {}
 }
 
-function stopExistingHelper(udid: string) {
-  const pf = helperPidFile(udid);
-  if (!existsSync(pf)) return;
-  const pid = Number(readFileSync(pf, "utf-8").trim());
-  if (Number.isFinite(pid) && isProcessAlive(pid)) {
-    try {
-      process.kill(pid, "SIGTERM");
-    } catch {}
-    // Give it a moment to clean up the shm region.
-    const start = Date.now();
-    while (isProcessAlive(pid) && Date.now() - start < 1500) sleepSync(50);
-  }
-  try {
-    unlinkSync(pf);
-  } catch {}
-  clearInjectedBundles(udid);
-}
-
 function spawnCameraHelper(args: {
   udid: string;
   helperBin: string;
@@ -1475,7 +1426,7 @@ async function ensureHelperWithSource(opts: {
     };
   }
   // Need to start a fresh helper. Pre-emptively reap any stale state.
-  stopExistingHelper(opts.udid);
+  stopCameraHelper(opts.udid);
   const helper = (!opts.forceBuild && locateCameraHelper()) || buildCameraHelper();
   const pid = spawnCameraHelper({
     udid: opts.udid,
@@ -1624,7 +1575,7 @@ Examples:
         terminated.push(b);
       } catch {}
     }
-    stopExistingHelper(udid);
+    stopCameraHelper(udid);
     if (quiet) console.log(JSON.stringify({ udid, stopped: true, terminated }));
     else {
       console.log(`Stopped camera helper for ${udid}`);
@@ -1757,7 +1708,7 @@ Examples:
   try {
     callerDylibs = validatedAdditionalDylibs();
   } catch (error) {
-    printStartupError(error instanceof Error ? error.message : String(error), quiet);
+    printStartupError(startupErrorMessage(error), quiet);
     process.exit(1);
   }
 
@@ -1944,6 +1895,17 @@ async function startNetworkCapture(
   }));
 }
 
+// An aggregate such as CapabilityRollbackError names only the outcome; its causes say which
+// simctl calls failed, so print them too.
+function startupErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  if (!(error instanceof AggregateError)) return error.message;
+  const causes = [
+    ...new Set(error.errors.map((cause) => startupErrorMessage(cause).trim())),
+  ].filter((cause) => cause && !error.message.includes(cause));
+  return causes.length > 0 ? `${error.message} Causes: ${causes.join("; ")}` : error.message;
+}
+
 function printStartupError(message: string, quiet: boolean): void {
   if (quiet) console.log(JSON.stringify({ error: message }));
   else console.error(message);
@@ -1951,7 +1913,7 @@ function printStartupError(message: string, quiet: boolean): void {
 
 async function serve(
   servePort: number,
-  targetDevices: string[],
+  ownedDevices: string[],
   portExplicit: boolean,
   host: string,
   options: {
@@ -1964,7 +1926,13 @@ async function serve(
     allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
+    orphan?: boolean;
+    warmDevices?: string[];
+    /** Devices that startup already booted and armed with their default capabilities. */
+    preparedDevices?: string[];
+    capabilities?: { enable: string[]; disable: string[] };
     quiet?: boolean;
+    singleDevice?: string;
     networkCapture?: boolean;
     networkCaptureProxy?: string;
     clipboard?: boolean | "unmanaged";
@@ -1975,14 +1943,53 @@ async function serve(
     printStartupError(message, quiet);
     process.exit(1);
   };
-  const targetDevice = targetDevices[0];
+  const targetDevice = ownedDevices[0];
+  const warmupCancellation = new AbortController();
+  let warmupTask = Promise.resolve();
+  let backgroundFailure: unknown;
+  const backgroundCancellation = new AbortController();
+  // Booted, loader armed and default capabilities applied by this process. Adoption hands these
+  // over as they are; a stop or a failed preparation removes the device.
+  const preparedDevices = new Set(
+    (options.preparedDevices ?? []).map((udid) => udid.toUpperCase()),
+  );
+  let otherDevicesRetirement = Promise.resolve();
+  let claimed = false;
+  const prepareDevice = (udid: string, signal?: AbortSignal) =>
+    prepareDeviceOnce(udid, preparedDevices, async () => {
+      signal?.throwIfAborted();
+      if (sessionStopping) throw new Error("Session is stopping");
+      await reserveDeviceSession(udid, signal);
+      if (!ownedDevices.includes(udid)) ownedDevices.push(udid);
+      await startDeviceInProcess(
+        udid,
+        boundPort,
+        "/",
+        options.stream,
+        previewToken,
+        async () => {
+          await disarmStaleCapabilityLoader(udid);
+          signal?.throwIfAborted();
+          await armCapabilityLoader(udid);
+          signal?.throwIfAborted();
+          const overrides = options.capabilities ?? { enable: [], disable: [] };
+          const applied = await applyDefaultCapabilities(udid, null, overrides);
+          const missing = missingCapabilities(overrides, applied);
+          if (missing.length)
+            throw new Error(
+              `Could not prepare requested capabilities on ${udid}: ${missing.join(", ")}`,
+            );
+        },
+        { signal, requireReady: true },
+      );
+    });
 
   const capture = await timeStartup("capture-module", () => import("./capture"));
   // The panel can turn capture on too, so a public preview without the token gate refuses it there
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
   await startNetworkCapture(
-    options.networkCapture ? targetDevices : [],
+    options.networkCapture ? ownedDevices : [],
     options.networkCaptureFields,
     quiet,
   );
@@ -1995,12 +2002,75 @@ async function serve(
   // Minted here, not in the middleware, because the operator has to be told what it is.
   const requirePreviewToken = !!options.requireToken;
   const previewToken = randomBytes(32).toString("base64url");
+  let boundPort = servePort;
   let middleware: ReturnType<typeof simMiddleware>;
   try {
     middleware = await timeStartup("preview-middleware", () =>
       simMiddleware({
         basePath: "/",
+        configureResources: async (configuration, signal) => {
+          signal?.throwIfAborted();
+          // Owned devices are uppercase UDIDs; the request may use any case.
+          const selectedDevice = (configuration.device ?? targetDevice)?.toUpperCase();
+          if (!selectedDevice) throw new Error("Adoption requires a Simulator UDID");
+          // Only an extra warm device's own warmup must finish before its adoption; warmup of the
+          // other devices drains before they shut down.
+          if (selectedDevice !== targetDevice?.toUpperCase()) await warmupTask;
+          signal?.throwIfAborted();
+          if (backgroundFailure) throw backgroundFailure;
+          // A device this process already prepared is served as it is.
+          await prepareDevice(selectedDevice, signal);
+          signal?.throwIfAborted();
+          if (sessionStopping) throw new Error("Session is stopping");
+          // An active capture keeps its old upstream; stop it before applying the job proxy.
+          await Promise.all(
+            ownedDevices.map((udid) => capture.captureRuntime.disableForDevice(udid)),
+          );
+          capture.captureRuntime.setUpstream(parseCaptureProxy(configuration.networkCaptureProxy));
+          captureStarter = undefined;
+          await startNetworkCapture(
+            configuration.networkCapture ? [selectedDevice] : [],
+            configuration.networkCaptureFields,
+            quiet,
+          );
+          if (sessionStopping) throw new Error("Session is stopping");
+          if (
+            configuration.networkCapture &&
+            capture.captureRuntime.metaFor(selectedDevice).attachment !== "capturing"
+          ) {
+            throw new Error("Network capture could not be configured");
+          }
+          if (backgroundFailure) throw backgroundFailure;
+          if (configuration.screenshotsDirectory) {
+            process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = configuration.screenshotsDirectory;
+          } else {
+            delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+          }
+          signal?.throwIfAborted();
+          // The job sees only its device and does not wait for the others to shut down. The
+          // session stop drains this retirement.
+          otherDevicesRetirement = retireDevicesInBackground(
+            ownedDevices.filter((udid) => udid.toUpperCase() !== selectedDevice),
+            process.pid,
+            preparedDevices,
+            warmupTask,
+          ).then((failures) => {
+            // Adoption does not wait for this; the session stop reports it in its exit code.
+            if (failures.length > 0) {
+              backgroundFailure ??= new AggregateError(
+                failures,
+                "Unused Simulators did not shut down",
+              );
+            }
+          });
+          writeState({
+            ...inProcessServeSimState(selectedDevice, boundPort, "/", host, configuration.stream),
+            token: previewToken,
+          });
+        },
         device: targetDevice,
+        prepareForAdoption: options.orphan,
+        singleDevice: options.singleDevice,
         streamSettings: options.stream,
         proxyHelpers: true,
         corsOrigins: options.corsOrigins ?? [],
@@ -2022,13 +2092,15 @@ async function serve(
 
   // Try requested port; if busy and the user didn't pin it, scan forward.
   const maxScan = portExplicit ? 1 : 50;
-  let boundPort = servePort;
   let lastErr: unknown;
   let bound = false;
+  let previewServer: Awaited<ReturnType<typeof bindPreviewServer>> | undefined;
   for (let i = 0; i < maxScan; i++) {
     const p = servePort + i;
     try {
-      await timeStartup("http-listener", () => bindPreviewServer(p, middleware, host));
+      previewServer = await timeStartup("http-listener", () =>
+        bindPreviewServer(p, middleware, host),
+      );
       if (sessionStopping) return;
       boundPort = p;
       bound = true;
@@ -2050,10 +2122,61 @@ async function serve(
     }
   }
 
+  const disposeSessionResources = () =>
+    runShutdownSteps({
+      stopCapture: () => capture.captureRuntime.disableAll(),
+      disarm: async () => {
+        try {
+          await middleware.dispose();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
+      },
+      totalMs: SHUTDOWN_TIMEOUT_MS,
+      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+    });
+
+  let owner: Awaited<ReturnType<typeof startSessionOwner>> | undefined;
+  try {
+    // @ref LLP 0011#prepared-process-adoption — only an explicit orphan offers ownership.
+    if (options.orphan) {
+      const startupBoot = bootSession();
+      const startupEnvironment = sessionEnvironment();
+      owner = await startSessionOwner(
+        targetDevice!,
+        () => ({
+          version: resolveVersion(),
+          pid: process.pid,
+          device: targetDevice!,
+          bootSession: startupBoot,
+          host,
+          port: boundPort,
+          stateDirectory: resolve(stateDir()),
+          temporaryDirectory: resolve(tmpdir()),
+          environment: startupEnvironment,
+        }),
+        (configuration, signal) =>
+          middleware.configureSession(
+            configuration,
+            AbortSignal.any([signal, backgroundCancellation.signal]),
+          ),
+        () => {
+          claimed = true;
+          warmupCancellation.abort();
+        },
+      );
+    }
+  } catch (error) {
+    sessionStopping = true;
+    previewServer?.stop();
+    await disposeSessionResources();
+    return failStartup(error instanceof Error ? error.message : String(error));
+  }
+
   // Record in-process state so the preview/grid enumerate these devices and the
   // CLI input subcommands can reach the same-origin /helper ws.
   await timeStartup("state-publication", () => {
-    for (const udid of targetDevices) {
+    for (const udid of ownedDevices) {
       const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
       // Capture CLI commands read this token. A public host without --require-token refuses capture,
       // so the token is written only where something can use it.
@@ -2061,8 +2184,16 @@ async function serve(
       writeState(tokenNeeded ? { ...state, token: previewToken } : state);
     }
   });
+  // @ref LLP 0011#startup-order — start capture now rather than on the first /readyz, which
+  // still waits for this same start before it reports ready, and reports a session that fails.
+  for (const udid of ownedDevices) {
+    try {
+      getDeviceSession(udid, options.stream);
+    } catch {}
+  }
   const clearAll = () => {
-    for (const udid of targetDevices) {
+    owner?.close();
+    for (const udid of ownedDevices) {
       try {
         clearServeSimState(udid, process.pid);
       } catch {}
@@ -2071,6 +2202,9 @@ async function serve(
   };
   process.on("exit", () => {
     // This process owns the device tails and the crash watcher; `follow` never mounts them.
+    try {
+      foregroundTracker.stopAll();
+    } catch {}
     try {
       logBufferCache.stopAll();
     } catch {}
@@ -2087,7 +2221,7 @@ async function serve(
         `http://127.0.0.1:${boundPort}/helper/${encodeURIComponent(device)}/webrtc/stats`,
       authToken: requirePreviewToken ? previewToken : undefined,
     });
-    runStreamDebugLog(targetDevices, logger);
+    runStreamDebugLog(ownedDevices, logger);
     if (!quiet) console.log(`  - Stream debug: recording to ${options.debugStreamPath}`);
   }
 
@@ -2095,7 +2229,7 @@ async function serve(
   const networkIP = getLocalNetworkIP();
   const tokenQuery = requirePreviewToken ? `/?token=${previewToken}` : "";
   if (quiet) {
-    const states = targetDevices.map((udid) =>
+    const states = ownedDevices.map((udid) =>
       inProcessServeSimState(udid, boundPort, "/", host, options.stream),
     );
     console.log(
@@ -2124,6 +2258,37 @@ async function serve(
     console.log("");
   }
 
+  // Default readiness is already published. Extra devices warm in this same process
+  // without delaying its first job, and a claim prevents any later warmup from starting.
+  warmupTask = (async () => {
+    for (const udid of options.warmDevices ?? []) {
+      if (warmupCancellation.signal.aborted || sessionStopping) break;
+      try {
+        await prepareDevice(udid, warmupCancellation.signal);
+        warmupCancellation.signal.throwIfAborted();
+        await startDeviceSession(udid, options.stream, warmupCancellation.signal);
+        warmupCancellation.signal.throwIfAborted();
+        writeState({
+          ...inProcessServeSimState(udid, boundPort, "/", host, options.stream),
+          token: previewToken,
+        });
+      } catch (error) {
+        if (error instanceof AggregateError) {
+          backgroundFailure ??= error;
+          console.error(`Warm Simulator cleanup failed: ${startupErrorMessage(error)}`);
+          // After a claim the job may already use its device. serve-sim then exits non-zero at
+          // stop; the launcher's stop confirms the shutdown of every device itself.
+          if (!claimed) {
+            backgroundCancellation.abort(error);
+            process.kill(process.pid, "SIGTERM");
+          }
+        } else if (!warmupCancellation.signal.aborted && !sessionStopping) {
+          console.error(`Could not warm Simulator ${udid}: ${startupErrorMessage(error)}`);
+        }
+      }
+    }
+  })();
+
   let shuttingDown = false;
   // Capture and capability teardown share one shutdown budget, but capture gets only part of it:
   // a stalled capture step must not use up the time disarming the devices needs.
@@ -2131,6 +2296,11 @@ async function serve(
     if (shuttingDown) return;
     shuttingDown = true;
     sessionStopping = true;
+    backgroundCancellation.abort(new Error("Session is stopping"));
+    const ownerStopping = owner?.close();
+    warmupCancellation.abort();
+    await Promise.allSettled([ownerStopping, warmupTask]);
+    foregroundTracker.stopAll();
     const recordingErrors: string[] = [];
     await runRecordingShutdown({
       finishRecordings: () =>
@@ -2145,7 +2315,10 @@ async function serve(
         console.error(error);
       },
       completeShutdown: async (recordingsFinished) => {
-        if (!recordingsFinished) {
+        // Recordings finish first; the other devices' shutdowns may still be running.
+        await otherDevicesRetirement;
+        const cleanupConfirmed = recordingsFinished && !backgroundFailure;
+        if (!cleanupConfirmed) {
           try {
             writeFileSync(
               recordingShutdownFailureFile(process.pid),
@@ -2159,20 +2332,9 @@ async function serve(
             console.error(`Could not report recording shutdown failure: ${String(error)}`);
           }
         }
-        await runShutdownSteps({
-          stopCapture: () => capture.captureRuntime.disableAll(),
-          disarm: async () => {
-            try {
-              await middleware.dispose();
-            } finally {
-              await disarmDevicesArmedHereAsync();
-            }
-          },
-          totalMs: SHUTDOWN_TIMEOUT_MS,
-          captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
-        });
+        await disposeSessionResources();
         clearAll();
-        process.exit(recordingsFinished ? 0 : 1);
+        process.exit(cleanupConfirmed ? 0 : 1);
       },
     });
   };
@@ -2222,6 +2384,11 @@ function parseShareUrl(value: string): string {
 }
 
 const program = new Command();
+program.hook("preAction", (_command, actionCommand) => {
+  if ((program.opts().adopt || program.opts().orphan) && actionCommand !== program) {
+    throw new InvalidArgumentError("--adopt/--orphan cannot be used with a subcommand.");
+  }
+});
 
 program
   .name("serve-sim")
@@ -2246,7 +2413,15 @@ program
       "it whenever the server is reachable from the network: the same token gates the route that runs " +
       "shell commands.",
   )
+  .option(
+    "--single-device <udid>",
+    "Lock the preview and controls to one simulator; hide the device sidebar",
+  )
   .option("--detach", "Spawn helper and exit (daemon mode)")
+  .option("--orphan", "Start a server that a local --adopt command can claim once")
+  .option("--adopt", "Apply these options to an existing compatible orphan server; never start one")
+  .option("--recording-output <directory>", "Start server-owned video recording during adoption")
+  .option("--recording-id <id>", "Job recording ID for adoption")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
   .option(
@@ -2424,6 +2599,84 @@ Examples:
                                          Launch an installed app, then start the stream`,
   )
   .action(async (devices: string[], opts) => {
+    if (opts.singleDevice !== undefined) {
+      try {
+        const policy = new SingleDevicePolicy(opts.singleDevice);
+        if (devices.length > 1) throw new Error("--single-device accepts only one startup target.");
+        for (const device of devices) policy.resolveTarget(device);
+        if (
+          opts.detach ||
+          opts.orphan ||
+          opts.preview === false ||
+          opts.list !== undefined ||
+          opts.kill !== undefined
+        ) {
+          throw new Error(
+            "--single-device requires the preview server; drop --detach/--orphan/--no-preview/--list/--kill.",
+          );
+        }
+        opts.singleDevice = policy.device;
+        devices = [policy.device];
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    }
+    if (
+      opts.orphan &&
+      (opts.adopt ||
+        opts.list !== undefined ||
+        opts.kill !== undefined ||
+        opts.detach ||
+        opts.preview === false ||
+        devices.length < 1 ||
+        new Set(devices.map((device) => device.toUpperCase())).size !== devices.length ||
+        !opts.requireToken ||
+        !isLoopbackHost(opts.host) ||
+        opts.transport !== "webrtc")
+    ) {
+      printStartupError(
+        "--orphan requires at least one device, a loopback preview, --require-token and --transport webrtc; cannot combine with --adopt, --list, --kill or --detach",
+        !!opts.quiet,
+      );
+      process.exit(1);
+    }
+    if (opts.adopt) {
+      try {
+        const unsupported = [
+          "list",
+          "kill",
+          "detach",
+          "preview",
+          "installAppPath",
+          "launchAppIdentifier",
+          "launchArg",
+          "openUrl",
+          "enable",
+          "disable",
+          "debugStream",
+          "allowAnyHostWhenInsecure",
+        ].filter((name) => program.getOptionValueSource(name) === "cli");
+        if (unsupported.length)
+          throw new Error(
+            `--adopt cannot change startup-only options: ${unsupported.join(", ")}; use a cold start`,
+          );
+        if (devices.length !== 1 || !opts.requireToken || opts.transport !== "webrtc") {
+          throw new Error(
+            "--adopt requires one exact UDID, --require-token and --transport webrtc",
+          );
+        }
+        if (
+          process.env.SERVE_SIM_ADDITIONAL_DYLIBS ||
+          process.env.SIMCTL_CHILD_DYLD_INSERT_LIBRARIES
+        ) {
+          throw new Error("--adopt cannot change boot-time dylibs; use a cold start");
+        }
+      } catch (error) {
+        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        process.exit(1);
+      }
+    }
     if (opts.list !== undefined) {
       listStreams(typeof opts.list === "string" ? opts.list : undefined);
       return;
@@ -2435,7 +2688,7 @@ Examples:
     try {
       validatedAdditionalDylibs();
     } catch (error) {
-      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      printStartupError(startupErrorMessage(error), !!opts.quiet);
       process.exit(1);
     }
     try {
@@ -2446,9 +2699,9 @@ Examples:
             "Their stream helpers would capture without it.",
         );
       }
-      captureRuntime.setUpstream(upstream);
+      if (!opts.adopt) captureRuntime.setUpstream(upstream);
     } catch (error) {
-      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      printStartupError(startupErrorMessage(error), !!opts.quiet);
       process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
@@ -2649,7 +2902,45 @@ Examples:
         process.exit(1);
       }
     }
+    if (!opts.adopt && (opts.recordingOutput || opts.recordingId)) {
+      printStartupError("--recording-output/--recording-id require --adopt", !!opts.quiet);
+      process.exit(1);
+    }
+    if (opts.adopt) {
+      try {
+        if (!!opts.recordingOutput !== !!opts.recordingId)
+          throw new Error("Pass both --recording-output and --recording-id");
+        const configuration = sessionConfigurationSchema.parse({
+          singleDevice: opts.singleDevice,
+          stream: { ...stream, ...normalizeStreamEncoderSettings(stream) },
+          corsOrigins: opts.corsOrigin,
+          frameAncestors: opts.frameAncestor,
+          shareUrl: opts.shareUrl,
+          disableShare: !!opts.disableShare,
+          screenshotsDirectory: process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY,
+          videoRecording: opts.recordingOutput
+            ? { output: resolve(opts.recordingOutput), recordingId: opts.recordingId }
+            : undefined,
+          networkCapture: !!opts.networkCapture,
+          networkCaptureFields: parseCaptureFields(opts.networkCaptureField),
+          networkCaptureProxy: opts.networkCaptureProxy,
+        });
+        const adopted = await adoptSession(
+          devices[0]!,
+          resolveVersion(),
+          opts.host,
+          opts.port,
+          configuration,
+        );
+        console.log(JSON.stringify(adopted));
+      } catch (error) {
+        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        process.exitCode = 1;
+      }
+      return;
+    }
     let targets = devices;
+    let warmDevices: string[] = [];
     const defaultsInitialized = new Set<string>();
     // A preview with no app startup or capture; those keep arming and defaults separate.
     const plainPreview =
@@ -2674,6 +2965,15 @@ Examples:
           `[startup] ${JSON.stringify({ phase: "cli", version: program.version() })}\n`,
         );
         targets = await timeStartup("device-resolution", () => resolveTargetDevices(devices));
+        if (opts.orphan) {
+          targets = [...new Set(targets)];
+          if (targets.length > 1 && (installAppPath || bundleId))
+            throw new Error(
+              "Multiple orphan devices cannot be combined with app startup flags; start the app after adoption.",
+            );
+          warmDevices = targets.slice(1);
+          targets = targets.slice(0, 1);
+        }
         // The capability loader is armed for the whole session, not when a capability
         // turns on: an app only carries it if it was inserted at launch, so
         // arming late means the app it was armed for cannot receive anything
@@ -2790,7 +3090,7 @@ Examples:
         }
       } catch (error) {
         if (sessionStopping) return;
-        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+        printStartupError(startupErrorMessage(error), !!opts.quiet);
         sessionStopping = true;
         try {
           await stopNetworkCapture();
@@ -2809,13 +3109,18 @@ Examples:
     } else {
       await serve(startPort ?? 3200, targets, startPort !== undefined, opts.host, {
         stream,
+        preparedDevices: isStreamHelper ? [] : targets,
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
         disableShare: !!opts.disableShare,
         allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
+        singleDevice: opts.singleDevice,
         requireToken: !!opts.requireToken,
+        orphan: !!opts.orphan,
+        warmDevices,
+        capabilities,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,

@@ -31,6 +31,7 @@ import { createPortal } from "react-dom";
 import pixelDeviceFrame from "../assets/device-frames/google-pixel-10-pro.png";
 import pixel9DeviceFrame from "../assets/device-frames/pixel_9_obsidian.png";
 import iphoneDeviceFrame from "../assets/device-frames/iphone-17-pro-silver.png";
+import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
 import { basePath } from "./dashboard/basePath";
@@ -118,7 +119,8 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
-  const hideBootDevice = dashboardHideBootDevice();
+  const singleDevice = dashboardSingleDevice();
+  const hideBootDevice = !!singleDevice || dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
   const { booted, recent, connectionStatus } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
@@ -245,7 +247,9 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
-    trackAddedDevice(device, replacedIds);
+    // Pinned sessions follow discovery, including shutdowns outside this UI.
+    // An optimistic entry would otherwise keep the stopped device selected.
+    if (!singleDevice) trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
@@ -281,7 +285,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   }, [simulators, emulators, reconcileSelectedDevice]);
 
   const devices = [...simulators, ...emulators];
-  const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
+  const selected =
+    devices.find((device) => device.id === selectedId) ?? (singleDevice ? undefined : devices[0]);
   const selectedStreamModeAvailability =
     selected?.platform === "android"
       ? androidStreamModeAvailability(
@@ -328,29 +333,31 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         overflow: "hidden",
       }}
     >
-      <AnimatedDockedSidebar
-        side="left"
-        width={sidebarWidth}
-        open={sidebars.leftDocked}
-        sidebarOpen={sidebars.leftOpen}
-        resizing={resizing}
-      >
-        <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recentSimulators}
-          recentEmulators={recentEmulators}
-          simulatorOptions={simulatorOptions}
-          emulatorOptions={emulatorOptions}
-          agentDeviceIds={agentDeviceIds}
-          selectedId={selectedId}
-          onSelect={selectDevice}
-          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-          onToggle={sidebars.closeLeft}
-          platform={platform}
+      {!singleDevice && (
+        <AnimatedDockedSidebar
+          side="left"
           width={sidebarWidth}
-        />
-      </AnimatedDockedSidebar>
+          open={sidebars.leftDocked}
+          sidebarOpen={sidebars.leftOpen}
+          resizing={resizing}
+        >
+          <Sidebar
+            simulators={simulators}
+            emulators={emulators}
+            recentSimulators={recentSimulators}
+            recentEmulators={recentEmulators}
+            simulatorOptions={simulatorOptions}
+            emulatorOptions={emulatorOptions}
+            agentDeviceIds={agentDeviceIds}
+            selectedId={selectedId}
+            onSelect={selectDevice}
+            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+            onToggle={sidebars.closeLeft}
+            platform={platform}
+            width={sidebarWidth}
+          />
+        </AnimatedDockedSidebar>
+      )}
       {sidebars.leftDocked && (
         <ResizeHandle
           side="left"
@@ -383,6 +390,30 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
           onClipboardFallback={handleClipboardFallback}
+        />
+      ) : singleDevice ? (
+        <EmptyState
+          platform={platform}
+          framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
+          singleDevice
+          onStart={
+            platform === "ios"
+              ? () =>
+                  handleAddDevice({
+                    kind: "recent",
+                    device: recent.simulators.find((device) => device.id === singleDevice) ?? {
+                      id: singleDevice,
+                      platform: "ios",
+                      name: "Session Simulator",
+                      version: "iOS",
+                      booted: false,
+                      physical: false,
+                      supported: true,
+                      deviceFrame: null,
+                    },
+                  })
+              : undefined
+          }
         />
       ) : (
         <EmptyState
@@ -429,7 +460,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
+          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
           clipboardRequest={clipboardRequest}
           onClipboardRequestHandled={() => setClipboardFallback(null)}
           onToggle={sidebars.closeRight}
@@ -437,29 +468,31 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         />
       </AnimatedDockedSidebar>
 
-      <SidebarOverlay
-        side="left"
-        open={sidebars.leftOverlay}
-        sidebarOpen={sidebars.leftOpen}
-        topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
-        onDismiss={sidebars.closeLeft}
-      >
-        <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recentSimulators}
-          recentEmulators={recentEmulators}
-          simulatorOptions={simulatorOptions}
-          emulatorOptions={emulatorOptions}
-          agentDeviceIds={agentDeviceIds}
-          selectedId={selectedId}
-          onSelect={selectDevice}
-          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-          onToggle={sidebars.closeLeft}
-          platform={platform}
-          width={sidebarWidth}
-        />
-      </SidebarOverlay>
+      {!singleDevice && (
+        <SidebarOverlay
+          side="left"
+          open={sidebars.leftOverlay}
+          sidebarOpen={sidebars.leftOpen}
+          topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
+          onDismiss={sidebars.closeLeft}
+        >
+          <Sidebar
+            simulators={simulators}
+            emulators={emulators}
+            recentSimulators={recentSimulators}
+            recentEmulators={recentEmulators}
+            simulatorOptions={simulatorOptions}
+            emulatorOptions={emulatorOptions}
+            agentDeviceIds={agentDeviceIds}
+            selectedId={selectedId}
+            onSelect={selectDevice}
+            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+            onToggle={sidebars.closeLeft}
+            platform={platform}
+            width={sidebarWidth}
+          />
+        </SidebarOverlay>
+      )}
 
       <SidebarOverlay
         side="right"
@@ -479,7 +512,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
+          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
           clipboardRequest={clipboardRequest}
           onClipboardRequestHandled={() => setClipboardFallback(null)}
           onToggle={sidebars.closeRight}
@@ -487,7 +520,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         />
       </SidebarOverlay>
 
-      {!sidebars.leftOpen && (
+      {!singleDevice && !sidebars.leftOpen && (
         <FloatingSidebarToggle
           side="left"
           inset={floatingSidebarToggleInset(

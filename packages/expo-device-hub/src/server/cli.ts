@@ -74,6 +74,8 @@ async function main(): Promise<void> {
   }
 
   process.env.EXPO_DEVICE_HUB_BASE_PATH = "";
+  if (options.singleDevice) process.env.EXPO_DEVICE_HUB_SINGLE_DEVICE = options.singleDevice;
+  else delete process.env.EXPO_DEVICE_HUB_SINGLE_DEVICE;
   if (options.platform) {
     process.env.EXPO_DEVICE_HUB_PLATFORM = options.platform;
   } else {

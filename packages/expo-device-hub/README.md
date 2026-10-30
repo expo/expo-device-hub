@@ -96,6 +96,21 @@ an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev
 covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
 sends the token.
 
+### Restrict a session to one device
+
+```sh
+npx expo-device-hub --platform ios --single-device <simulator-udid>
+npx expo-device-hub --platform android --single-device <adb-serial>
+```
+
+Start the device before opening the Hub. The session stays bound to that ID,
+including after a disconnect. The left sidebar and its toggle are removed;
+HTTP and control sockets reject other devices, device creation, and device
+deletion. An iOS session can boot its original simulator again. Android AVD
+launch actions are disabled because an AVD name does not pin an adb serial.
+WebKit DevTools is unavailable in this mode because its bridge cannot reliably
+associate targets with a simulator UDID.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.

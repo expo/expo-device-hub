@@ -77,6 +77,8 @@ final class H264EncoderFallbackTests: XCTestCase {
             _ = try await encoder.encode(flat)
         }
         let fallbacks = await encoder.lowLatencyFallbacks
+        let drops = await encoder.droppedFrames
         XCTAssertEqual(fallbacks, 1)
+        XCTAssertGreaterThanOrEqual(drops, 1, "the second-frame drop is counted as a drop")
     }
 }

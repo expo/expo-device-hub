@@ -29,6 +29,7 @@ import {
   clearLaunchState,
   writeLaunchState,
   ownerIsGone,
+  assertDeviceOwnership,
 } from "./launch-state";
 import {
   withLaunchStateLock,
@@ -36,8 +37,9 @@ import {
   waitForLaunchUpdates,
   LOCK_POLL_MS,
 } from "./launch-state-lock";
-import { isDeviceNotBooted } from "./device";
+import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "./device";
 import { simctl, simctlSync } from "./simctl";
+import { timeStartup } from "./startup-timing";
 import { additionalDylibs } from "./additional-dylibs";
 
 export {
@@ -72,10 +74,17 @@ function releaseLaunchStateUnlocked(
     Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
   );
   const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  const exclusivePid = previous.exclusivePid;
+  if (exclusivePid === ownerPid || (exclusivePid !== undefined && ownerIsGone(exclusivePid)))
+    delete previous.exclusivePid;
   for (const record of Object.values(previous.capabilities)) {
     if (record.ownerPid === ownerPid) onRelease?.(record);
   }
-  if (Object.keys(kept).length === 0 && !sessionPids?.length) {
+  if (
+    Object.keys(kept).length === 0 &&
+    !sessionPids?.length &&
+    previous.exclusivePid === undefined
+  ) {
     clearLaunchState(udid);
     return false;
   }
@@ -91,6 +100,21 @@ function releaseLaunchStateUnlocked(
 
 export function releaseLaunchState(udid: string, ownerPid: number): boolean {
   return withLaunchStateLockSync(udid, () => releaseLaunchStateUnlocked(udid, ownerPid));
+}
+
+/** Reserve before native preparation; publication and retirement honor the same device lock. */
+export async function reserveDeviceSession(udid: string, signal?: AbortSignal): Promise<void> {
+  await withLaunchStateLock(udid, async () => {
+    signal?.throwIfAborted();
+    assertDeviceOwnership(udid, process.pid);
+    const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
+    writeLaunchState(udid, {
+      ...previous,
+      exclusivePid: process.pid,
+      sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])],
+    });
+    armedHere.add(udid);
+  });
 }
 
 export function releaseSessionSync(
@@ -116,12 +140,24 @@ export async function releaseSession(
   udid: string,
   ownerPid: number,
   onRelease: (capability: RecordedCapability) => void,
+  options: { shutdown?: boolean } = {},
 ): Promise<void> {
   await waitForLaunchUpdates();
   await withLaunchStateLock(udid, async () => {
+    if (options.shutdown) {
+      // Keep ownership and configuration until native shutdown is confirmed under this lock.
+      assertDeviceOwnership(udid, ownerPid);
+      await shutdownDevice(udid);
+      if ((await getDeviceState(udid)) !== "Shutdown")
+        throw new Error(`Simulator ${udid} did not shut down.`);
+    }
     const previousStartup = managedStartupDylibs(udid);
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
-    if (!othersRemain) removeCapabilityLoaderSync(udid);
+    if (options.shutdown) {
+      // launchd's environment died with the device; only local ownership files remain.
+      writeManagedStartupDylibs(udid, []);
+      rmSync(capabilityConfigPath(udid), { force: true });
+    } else if (!othersRemain) removeCapabilityLoaderSync(udid);
     else removeReleasedStartupSync(udid, previousStartup);
     armedHere.delete(udid);
   });
@@ -216,16 +252,22 @@ async function armInsert(
   dylib: string,
   capabilities: Record<string, Capability> = readLaunchState(udid)?.capabilities ?? {},
   previousStartup = managedStartupDylibs(udid),
+  configPath?: string,
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
-  const retained = withoutOurs(await readInsert(udid), previousStartup);
+  // Read the insert fresh: another tool may have changed it since any earlier snapshot.
+  const insert = await readInsert(udid);
+  const retained = withoutOurs(insert, previousStartup);
   const next = [...new Set([...retained, dylib, ...desired, ...additionalDylibs()])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
-  await simctl(
-    ["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)],
-    15_000,
-  );
-  await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
+  // Each launchctl call costs a simctl spawn, so skip values that are already set.
+  if (configPath !== capabilityConfigPath(udid)) {
+    await simctl(
+      ["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)],
+      15_000,
+    );
+  }
+  if (insert !== next) await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
   writeManagedStartupDylibs(udid, desired);
   armedHere.add(udid);
 }
@@ -286,11 +328,15 @@ function validateStartupDylibs(paths: string[]): void {
   }
 }
 
-async function publishLaunchState(udid: string, state: LaunchState): Promise<void> {
+async function publishLaunchState(
+  udid: string,
+  state: LaunchState,
+  snapshot?: CapabilityLaunchSnapshot,
+): Promise<void> {
   const config = renderCapabilityConfig(state);
   const desiredStartupDylibs = startupDylibs(state.capabilities);
   validateStartupDylibs(desiredStartupDylibs);
-  const previous = await snapshotCapabilityLaunch(udid);
+  const previous = snapshot ?? (await snapshotCapabilityLaunch(udid));
   // Running apps' loaders watch the config. Removals go out before arming, so an app launched
   // next cannot load a withdrawn capability. Additions wait until launchd accepts the insert, so
   // a failed update never lets a running app load something rollback cannot take back.
@@ -304,7 +350,13 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
 
   try {
     commitCapabilityConfig(udid, withdrawnOnly);
-    await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs);
+    await armInsert(
+      udid,
+      capabilityLoaderPath(),
+      state.capabilities,
+      previous.startupDylibs,
+      previous.configPath,
+    );
     if (config !== withdrawnOnly) commitCapabilityConfig(udid, config);
     writeLaunchState(udid, state);
   } catch (error) {
@@ -480,13 +532,19 @@ export async function launchApp(
     const previousEnvironment = hasCapabilities ? await snapshotCapabilityLaunch(udid) : undefined;
     const wasArmed = armedHere.has(udid);
     try {
-      if (hasCapabilities) await publishLaunchState(udid, state);
+      if (hasCapabilities)
+        await timeStartup(
+          "app.launch.capabilities",
+          () => publishLaunchState(udid, state, previousEnvironment),
+          udid,
+        );
       else {
         commitCapabilityConfig(udid, renderCapabilityConfig(state));
         writeLaunchState(udid, state);
       }
       // @ref LLP 0003#launching-an-installed-app — set up before the app stops; a failed launch restores the previous state
-      if (restart) await terminateForRelaunch(udid, bundleId);
+      if (restart)
+        await timeStartup("app.launch.terminate", () => terminateForRelaunch(udid, bundleId), udid);
       await simctl(["launch", udid, bundleId, ...launchArgs]);
     } catch (error) {
       try {
@@ -773,12 +831,16 @@ async function isRunning(udid: string, bundleId: string): Promise<boolean | null
 }
 
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
+  let stopError: unknown;
   try {
     await simctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
     return;
-  } catch {}
+  } catch (error) {
+    stopError = error;
+  }
   const running = await isRunning(udid, bundleId);
   if (running === false) return;
+  // The cause keeps a timed-out stop recognizable, so app.launch can retry it.
   throw new Error(
     running === null
       ? `Could not stop ${bundleId} on ${udid}, and could not check whether it is still running. ` +
@@ -786,6 +848,7 @@ async function terminateForRelaunch(udid: string, bundleId: string): Promise<voi
       : `Could not stop ${bundleId} on ${udid}, so it cannot be relaunched with its capabilities ` +
           `loaded. simctl terminate did not take effect within ${TERMINATE_TIMEOUT_MS / 1000}s. ` +
           `Stop the app yourself and retry.`,
+    { cause: stopError },
   );
 }
 

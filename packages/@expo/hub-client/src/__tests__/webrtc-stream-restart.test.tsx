@@ -281,6 +281,9 @@ async function androidHarness({
   captureThrows = false,
   canvasContextUnavailable = false,
   canvasImage = "data:image/png;base64,last-frame",
+  sourceMode = "scrcpy",
+  omitCadence = false,
+  repeatFrameMs = undefined as number | undefined,
 } = {}) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const timers = new Map<number, { callback: () => void; delay: number }>();
@@ -325,13 +328,15 @@ async function androidHarness({
   stubGlobal("WebSocket", ControlSocket);
   const source = {
     ok: true,
-    mode: "scrcpy",
+    mode: sourceMode,
+    repeatFrameMs: repeatFrameMs ?? (sourceMode === "grpc-screenshot" ? 500 : 0),
     grpcImageMode: "mmap",
     inputSource: "scrcpy",
     availableModes: ["scrcpy", "grpc-screenshot"],
     availableInputSources: ["scrcpy", "grpc"],
     sessionGeneration: 1,
   };
+  if (omitCadence) delete (source as { repeatFrameMs?: number }).repeatFrameMs;
   const writes: { path: string; body: unknown; finish: (response: Response) => void }[] = [];
   const closedSessions: string[] = [];
   let finishSource!: (response: Response) => void;
@@ -396,8 +401,8 @@ async function androidHarness({
     changeDevice: async () => {
       await act(async () => renderer!.update(<Harness device="another-emulator" />));
     },
-    stallPlayback: async () => {
-      for (let sample = 0; sample <= PLAYBACK_STALL_POLLS; sample++) {
+    stallPlayback: async (samples = PLAYBACK_STALL_POLLS + 1) => {
+      for (let sample = 0; sample < samples; sample++) {
         await act(async () => {
           for (const interval of intervals.values()) {
             if (interval.delay === PLAYBACK_STALL_POLL_MS) interval.callback();
@@ -650,7 +655,12 @@ test("Android source changes reject overlapping settings writes and wait for rep
   await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
   expect(hub.writes.map((write) => write.path)).toEqual(["/api/stream-mode"]);
   await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
-  await hub.finishWrite({ ...hub.source, mode: "grpc-screenshot", sessionGeneration: 2 });
+  await hub.finishWrite({
+    ...hub.source,
+    mode: "grpc-screenshot",
+    repeatFrameMs: 500,
+    sessionGeneration: 2,
+  });
   await hub.fireTimer(100);
   await act(async () => ControlSocket.instances.at(-1)!.open());
   expect(hub.client.status).toBe("reconnecting");
@@ -680,5 +690,243 @@ for (const outcome of ["failure", "superseded"] as const) {
     expect(hub.client.streamSourcePending).toBe(false);
     expect(hub.client.streamSettings?.maxDimension).toBe(1280);
     if (outcome === "failure") expect(hub.client.status).toBe("streaming");
+  });
+}
+
+for (const mode of ["scrcpy", "grpc-screenshot"]) {
+  test(`Android ${mode} applies its source-specific no-frame recovery policy`, async () => {
+    const hub = await androidHarness({ sourceMode: mode });
+    const peer = Peer.instances.at(-1)!;
+    peer.getStats = async () =>
+      new Map([
+        [
+          "video",
+          {
+            id: "video",
+            type: "inbound-rtp",
+            kind: "video",
+            framesReceived: 100,
+            framesDecoded: 100,
+          },
+        ],
+      ]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(mode === "grpc-screenshot" ? 1 : 0);
+    if (mode === "grpc-screenshot") {
+      expect(hub.closedSessions).toHaveLength(1);
+      await hub.fireTimer(500);
+      expect(Peer.instances.at(-1)).not.toBe(peer);
+      await hub.paintReplacement();
+    }
+    expect(hub.client.status).toBe("streaming");
+  });
+}
+
+for (const repeatFrameMs of [0, 4_001, 7_999, 8_000, 30_000]) {
+  test(`slow or disabled gRPC repeats (${repeatFrameMs}ms) do not trigger false recovery`, async () => {
+    const hub = await androidHarness({ sourceMode: "grpc-screenshot", repeatFrameMs });
+    const peer = Peer.instances.at(-1)!;
+    peer.getStats = async () =>
+      new Map([
+        [
+          "video",
+          {
+            id: "video",
+            type: "inbound-rtp",
+            kind: "video",
+            framesReceived: 100,
+            framesDecoded: 100,
+          },
+        ],
+      ]);
+    await hub.stallPlayback();
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(0);
+    expect(hub.client.status).toBe("streaming");
+  });
+}
+
+test("gRPC repeats at the eligibility boundary tolerate timer and delivery latency but recover when dead", async () => {
+  const hub = await androidHarness({ sourceMode: "grpc-screenshot", repeatFrameMs: 4_000 });
+  const peer = Peer.instances.at(-1)!;
+  let polls = 0;
+  let frozen = false;
+  let frames = 100;
+  peer.getStats = async () => {
+    // A 4 s repeat plus up to 250 ms timer quantization and 750 ms delivery.
+    if (!frozen && ++polls % 5 === 0) frames++;
+    return new Map([
+      [
+        "video",
+        {
+          id: "video",
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived: frames,
+          framesDecoded: frames,
+        },
+      ],
+    ]);
+  };
+  await hub.stallPlayback(25);
+  expect(peer.closeCount).toBe(0);
+  expect(hub.client.status).toBe("streaming");
+  frozen = true;
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(1);
+});
+
+test("missing cadence metadata stays conservative and late discovery updates the existing watchdog", async () => {
+  const hub = await androidHarness({ delaySource: true, sourceMode: "grpc-screenshot" });
+  const initial = Peer.instances.at(-1)!;
+  initial.getStats = async () =>
+    new Map([
+      [
+        "video",
+        {
+          id: "video",
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived: 100,
+          framesDecoded: 100,
+        },
+      ],
+    ]);
+  await hub.stallPlayback();
+  expect(initial.closeCount).toBe(0);
+  await hub.finishSource();
+  const peer = Peer.instances.at(-1)!;
+  expect(peer).toBe(initial);
+  expect(peer.closeCount).toBe(0);
+  expect(hub.client.status).toBe("streaming");
+  const count = Peer.instances.length;
+  peer.getStats = initial.getStats;
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(1);
+  expect(Peer.instances).toHaveLength(count);
+});
+
+for (const from of ["scrcpy", "grpc-screenshot"]) {
+  test(`switching from ${from} adopts the new policy before first paint without another peer replacement`, async () => {
+    const hub = await androidHarness({ sourceMode: from });
+    const to = from === "scrcpy" ? "grpc-screenshot" : "scrcpy";
+    await act(async () => hub.client.setStreamSource(to));
+    await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
+    await hub.finishWrite({
+      ...hub.source,
+      mode: to,
+      repeatFrameMs: to === "grpc-screenshot" ? 500 : 0,
+      sessionGeneration: 2,
+    });
+    await hub.fireTimer(100);
+    await act(async () => ControlSocket.instances.at(-1)!.open());
+    const peer = Peer.instances.at(-1)!;
+    const count = Peer.instances.length;
+    await hub.paintReplacement();
+    expect(hub.client.status).toBe("streaming");
+    expect(Peer.instances).toHaveLength(count);
+    peer.getStats = async () =>
+      new Map([
+        [
+          "video",
+          {
+            id: "video",
+            type: "inbound-rtp",
+            kind: "video",
+            framesReceived: 100,
+            framesDecoded: 100,
+          },
+        ],
+      ]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(to === "grpc-screenshot" ? 1 : 0);
+  });
+}
+
+test("a healthy repeating gRPC stream stays connected", async () => {
+  const hub = await androidHarness({ sourceMode: "grpc-screenshot" });
+  const peer = Peer.instances.at(-1)!;
+  let frames = 100;
+  peer.getStats = async () => {
+    frames++;
+    return new Map([
+      [
+        "video",
+        {
+          id: "video",
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived: frames,
+          framesDecoded: frames,
+        },
+      ],
+    ]);
+  };
+  await hub.stallPlayback();
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(0);
+  expect(hub.client.status).toBe("streaming");
+});
+
+test("a legacy gRPC host with no cadence metadata remains usable without false stalls", async () => {
+  const hub = await androidHarness({ sourceMode: "grpc-screenshot", omitCadence: true });
+  const peer = Peer.instances.at(-1)!;
+  expect(hub.client.streamSource?.mode).toBe("grpc-screenshot");
+  expect(hub.client.streamSource?.repeatFrameMs).toBeUndefined();
+  peer.getStats = async () =>
+    new Map([
+      [
+        "video",
+        {
+          id: "video",
+          type: "inbound-rtp",
+          kind: "video",
+          framesReceived: 100,
+          framesDecoded: 100,
+        },
+      ],
+    ]);
+  await hub.stallPlayback();
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(0);
+});
+
+for (const from of ["scrcpy", "grpc-screenshot"]) {
+  test(`late ${from} source-switch response keeps the painted replacement peer`, async () => {
+    const hub = await androidHarness({ sourceMode: from });
+    const to = from === "scrcpy" ? "grpc-screenshot" : "scrcpy";
+    await act(async () => hub.client.setStreamSource(to));
+    await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
+    await hub.fireTimer(100);
+    await act(async () => ControlSocket.instances.at(-1)!.open());
+    await hub.paintReplacement();
+    const peer = Peer.instances.at(-1)!;
+    expect(Peer.instances).toHaveLength(2);
+    await hub.finishWrite({
+      ...hub.source,
+      mode: to,
+      repeatFrameMs: to === "grpc-screenshot" ? 500 : 0,
+      sessionGeneration: 2,
+    });
+    expect(peer.closeCount).toBe(0);
+    expect(Peer.instances).toHaveLength(2);
+    expect(hub.client.status).toBe("streaming");
+    expect(hub.client.streamSourcePending).toBe(false);
+    expect(hub.client.streamSource?.mode).toBe(to);
+    peer.getStats = async () =>
+      new Map([
+        [
+          "video",
+          {
+            id: "video",
+            type: "inbound-rtp",
+            kind: "video",
+            framesReceived: 100,
+            framesDecoded: 100,
+          },
+        ],
+      ]);
+    await hub.stallPlayback();
+    expect(peer.closeCount).toBe(to === "grpc-screenshot" ? 1 : 0);
   });
 }

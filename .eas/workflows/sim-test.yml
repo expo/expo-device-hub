@@ -107,7 +107,7 @@ jobs:
           for pid in "${pids[@]}"; do wait "$pid" || result=1; done
           exit "$result"
 
-  # The e2e files run one at a time, so they are split over two machines; see test-sim-runtime.
+  # The e2e files run one at a time, so each runtime splits them over two machines; see test-sim-runtime.
   sim-test-26:
     name: Xcode 26 build on Xcode 26 runtime (1/2)
     needs: [build]
@@ -127,6 +127,34 @@ jobs:
     needs: [build]
     runs_on: macos-medium
     image: macos-tahoe-26.5-xcode-26.6
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: rest
+
+  sim-test-27:
+    name: Xcode 26 build on Xcode 27 runtime (1/2)
+    needs: [build]
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
+    steps:
+      - uses: ./.eas/functions/restore-sim-test-build
+        with:
+          artifact_id: ${{ needs.build.outputs.artifact_id }}
+      - uses: ./.eas/functions/install-mitmproxy
+      - uses: ./.eas/functions/test-sim-runtime
+        with:
+          group: slow
+
+  sim-test-27-shard2:
+    name: Xcode 26 build on Xcode 27 runtime (2/2)
+    needs: [build]
+    runs_on: macos-medium
+    image: macos-tahoe-26.6-xcode-27.1
     steps:
       - uses: ./.eas/functions/restore-sim-test-build
         with:

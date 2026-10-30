@@ -74,6 +74,9 @@ interface ExecChannelOptions {
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
+  singleDevicePolicy?: import("../single-device").SingleDevicePolicy;
+  unavailable?: boolean;
+  pendingActions?: Set<Promise<unknown>>;
   deviceName?: (udid: string) => string | undefined;
   /** Trusted initial settings from the owning middleware, never from action parameters. */
   streamSettings?: StreamSettings;
@@ -119,6 +122,16 @@ function wireExecSocket(
   }
 
   const subscribe = (sub: number, path: string) => {
+    if (opts.singleDevicePolicy) {
+      try {
+        const url = new URL(path, "http://localhost");
+        for (const device of url.searchParams.getAll("device"))
+          opts.singleDevicePolicy.resolveTarget(device);
+      } catch {
+        send({ sub, end: true, error: "Subscription is outside this single-device session." });
+        return;
+      }
+    }
     // Every other refusal answers; a silent one leaves the client's subscription pending forever.
     if (subscriptions.has(sub)) {
       send({ sub, end: true, error: "subscription id already in use on this connection" });
@@ -221,6 +234,13 @@ function wireExecSocket(
       subscriptions.delete(msg.unsub);
       return;
     }
+    if (opts.unavailable) {
+      send({
+        ...(typeof msg.id === "number" ? { id: msg.id } : { sub: msg.sub, end: true }),
+        error: "The Simulator session is being configured",
+      });
+      return;
+    }
     if (typeof msg.sub === "number" && typeof msg.path === "string") {
       subscribe(msg.sub, msg.path);
       return;
@@ -232,13 +252,15 @@ function wireExecSocket(
         return;
       }
       if (!reserveAction(id)) return;
-      opts
+      const task = opts
         .onUiRequest(msg.ui)
         .then((reply) => send({ id, ...reply }))
         .catch((e: unknown) => send({ id, error: e instanceof Error ? e.message : String(e) }))
         .finally(() => {
           actionsInFlight -= 1;
+          opts.pendingActions?.delete(task);
         });
+      opts.pendingActions?.add(task);
       return;
     }
     if (typeof msg.id !== "number") {
@@ -255,9 +277,16 @@ function wireExecSocket(
       return;
     }
     if (!reserveAction(id)) return;
-    const params = msg.params as Record<string, unknown> | undefined;
-    runHostActionAsync(
-      msg,
+    let params = msg.params as Record<string, unknown> | undefined;
+    try {
+      if (opts.singleDevicePolicy) params = opts.singleDevicePolicy.scopeAction(action, params);
+    } catch (error) {
+      actionsInFlight -= 1;
+      send({ id, error: error instanceof Error ? error.message : "Invalid device" });
+      return;
+    }
+    const task = runHostActionAsync(
+      { ...msg, params },
       opts.serveSimBinPath ?? "serve-sim",
       opts.streamSettings,
       opts.deviceName,
@@ -278,7 +307,9 @@ function wireExecSocket(
       })
       .finally(() => {
         actionsInFlight -= 1;
+        opts.pendingActions?.delete(task);
       });
+    opts.pendingActions?.add(task);
   });
 
   ws.on("error", () => ws.close());

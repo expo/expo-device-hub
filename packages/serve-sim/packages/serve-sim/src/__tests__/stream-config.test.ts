@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   mjpegStreamUrlFrom,
   streamConfigFrom,
+  sameSimulator,
   webrtcCloseUrlFrom,
   webrtcOfferUrlFrom,
   webrtcSessionStatsUrl,
@@ -131,5 +132,14 @@ describe("webrtcSessionStatsUrl", () => {
     expect(
       webrtcSessionStatsUrl(webrtcStatsUrlFrom(fullConfig), "07a5f32b-273e-4a30-8f62-8e741a815af1"),
     ).toBe("http://127.0.0.1:3100/webrtc/stats?sessionId=07a5f32b-273e-4a30-8f62-8e741a815af1");
+  });
+});
+
+describe("simulator identity", () => {
+  test("matches a lowercase helper to the pinned uppercase Simulator", () => {
+    const id = "ABCDEF12-ABCD-ABCD-ABCD-ABCDEF123456";
+    expect(sameSimulator(id.toLowerCase(), id)).toBe(true);
+    expect(sameSimulator(id, "11111111-1111-1111-1111-111111111111")).toBe(false);
+    expect(sameSimulator(undefined, undefined)).toBe(false);
   });
 });
