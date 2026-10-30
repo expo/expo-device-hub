@@ -3,7 +3,7 @@ import { readMobileViewport } from "../useMobileViewport";
 
 test("phone keyboard fitting follows visible height and viewport panning", () => {
   const original = Object.getOwnPropertyDescriptor(globalThis, "window");
-  const visual = { width: 375, height: 667, offsetTop: 0, offsetLeft: 0 };
+  const visual = { width: 375, height: 667, offsetTop: 0, offsetLeft: 0, scale: 1 };
   const browser = {
     innerWidth: 375,
     innerHeight: 667,
@@ -13,6 +13,12 @@ test("phone keyboard fitting follows visible height and viewport panning", () =>
   Object.defineProperty(globalThis, "window", { configurable: true, value: browser });
   try {
     expect(readMobileViewport().mobile).toBe(true);
+    visual.scale = 2;
+    visual.height = 667 / 2;
+    expect(readMobileViewport().keyboardRaised).toBe(false);
+    visual.height = 200;
+    expect(readMobileViewport().keyboardRaised).toBe(true);
+    visual.scale = 1;
     visual.height = 330;
     visual.offsetTop = 42;
     expect(readMobileViewport()).toMatchObject({

@@ -99,7 +99,8 @@ in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
 
 Hub uses its own shared components, not the serve-sim viewer. Below 640px and
 on short touch landscape viewports, the dashboard and viewer share visual viewport
-bounds, including keyboard height and viewport panning. Mobile hides the title,
+bounds, including keyboard height and viewport panning. Keyboard detection normalizes
+the visual height by its zoom scale so pinch zoom alone does not hide controls. Mobile hides the title,
 keeps the sidebar reachable, and fits the device above a normal-flow action bar.
 Mobile fitting does not wait for an observer to measure that bar.
 The mobile viewer provides a keyboard toggle when the client supports HID text

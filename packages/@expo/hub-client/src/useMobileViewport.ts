@@ -15,7 +15,11 @@ export function readMobileViewport() {
     left: visual?.offsetLeft ?? 0,
     keyboardRaised:
       coarse &&
-      isVisualViewportKeyboardRaised(window.innerHeight, visual?.height ?? window.innerHeight),
+      isVisualViewportKeyboardRaised(
+        window.innerHeight,
+        visual?.height ?? window.innerHeight,
+        visual?.scale ?? 1,
+      ),
   };
 }
 

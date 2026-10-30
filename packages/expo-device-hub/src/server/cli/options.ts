@@ -53,7 +53,7 @@ Options:
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
       --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(", ")} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
-      --hide-sidebar         Hide the device list sidebar by default
+      --hide-sidebar         Hide the device list and inspector sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown
   -h, --help                 Show this help
