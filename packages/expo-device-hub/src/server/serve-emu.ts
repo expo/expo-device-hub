@@ -8,6 +8,14 @@ import {
   type WsWebSocketLike,
 } from "../../vendor/serve-emu/dist/middleware.js";
 
+import { listAndroidEmulators } from "./devices";
+import {
+  SERVER_SINGLE_DEVICE,
+  isSessionDevice,
+  scopeEmuRequest,
+  singleDeviceRefusal,
+  refuseSingleDeviceSocket,
+} from "./single-device";
 import { type EmulatorCameraFeeds } from "./device-actions";
 import { AndroidSession, type RecordingFinish, type RecordingStart } from "./android-session";
 import { recordingLimitsFromEnv } from "./recording-limits";
@@ -29,6 +37,7 @@ type EmuSocket = WsWebSocketLike & { on(event: "error", listener: () => void): u
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
 const router = createRouter({
   ...serveEmuOptions,
+  ...(SERVER_SINGLE_DEVICE?.platform === "android" ? { serial: SERVER_SINGLE_DEVICE.id } : {}),
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN ? { sessionToken: SESSION_TOKEN } : {}),
 });
@@ -42,7 +51,15 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
   seedPlaceholders: seedCameraFeeds,
 };
 
-const androidSession = new AndroidSession(router);
+const androidSession = new AndroidSession(router, async () => {
+  const listed = await listAndroidEmulators();
+  return {
+    ...listed,
+    devices: listed.devices.filter((device) =>
+      isSessionDevice(SERVER_SINGLE_DEVICE, device.platform, device.id),
+    ),
+  };
+});
 
 export const startAndroidScreenRecording = async (directory: string): Promise<RecordingStart> =>
   await androidSession.startRecording(directory, recordingLimitsFromEnv(process.env));
@@ -63,6 +80,9 @@ process.once("exit", () => {
 });
 
 export function handleEmuRequest(request: Request): Promise<Response> {
+  const scoped = scopeEmuRequest(request);
+  if (!scoped) return Promise.resolve(singleDeviceRefusal());
+  request = scoped;
   const url = new URL(request.url);
   const rest = `${url.pathname.slice(EMU_PREFIX.length) || "/"}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
@@ -70,6 +90,12 @@ export function handleEmuRequest(request: Request): Promise<Response> {
 }
 
 async function attachEmuSocket(socket: EmuSocket, request: Request): Promise<void> {
+  const scoped = scopeEmuRequest(request);
+  if (!scoped) {
+    refuseSingleDeviceSocket(socket);
+    return;
+  }
+  request = scoped;
   // Before `ensure`, which starts the device.
   if (!router.authorizeUpgrade(request)) {
     socket.close(1008, "Unauthorized");

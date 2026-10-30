@@ -12,6 +12,8 @@ export function useMobileSimulatorSize(
   // keyboard-sized page for a frame while the ResizeObserver catches up.
   pageHeight: number,
   actionsHidden: boolean,
+  statusRef?: RefObject<HTMLElement | null>,
+  statusVisible = false,
 ) {
   const [width, setWidth] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -25,11 +27,15 @@ export function useMobileSimulatorSize(
       const availableWidth =
         page.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       const actionsHeight = actions.getBoundingClientRect().height;
+      const statusHeight = statusVisible
+        ? (statusRef?.current?.getBoundingClientRect().height ?? 0)
+        : 0;
       const availableHeight =
         page.clientHeight -
         parseFloat(style.paddingTop) -
         parseFloat(style.paddingBottom) -
-        (actionsHeight > 0 ? actionsHeight + 12 : 0);
+        (actionsHeight > 0 ? actionsHeight + 12 : 0) -
+        (statusHeight > 0 ? statusHeight + 12 : 0);
       setWidth(
         availableHeight <= 0
           ? 0
@@ -40,7 +46,17 @@ export function useMobileSimulatorSize(
     const observer = new ResizeObserver(measure);
     observer.observe(page);
     observer.observe(actions);
+    if (statusRef?.current) observer.observe(statusRef.current);
     return () => observer.disconnect();
-  }, [pageRef, actionsRef, enabled, aspectRatio, pageHeight, actionsHidden]);
+  }, [
+    pageRef,
+    actionsRef,
+    enabled,
+    aspectRatio,
+    pageHeight,
+    actionsHidden,
+    statusRef,
+    statusVisible,
+  ]);
   return width;
 }

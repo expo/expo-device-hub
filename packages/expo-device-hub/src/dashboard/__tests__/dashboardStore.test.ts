@@ -20,6 +20,16 @@ afterEach(() => {
 });
 
 describe("dashboard store", () => {
+  test("keeps the session device selected when it disappears or another device is requested", () => {
+    (globalThis as any).window = { __EXPO_DEVICE_HUB_SINGLE_DEVICE__: "pinned" };
+    const store = createDashboardStore();
+    expect(store.getState().selectedDeviceId).toBe("pinned");
+    store.getState().selectDevice("other");
+    expect(store.getState().selectedDeviceId).toBe("pinned");
+    store.getState().reconcileSelectedDevice(["other"]);
+    expect(store.getState().selectedDeviceId).toBe("pinned");
+  });
+
   test("tracks a replacement device and selects it", () => {
     const store = createDashboardStore({
       addedDevices: [

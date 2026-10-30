@@ -308,6 +308,7 @@ export class DeviceSession {
   private captureStart?: Promise<void>;
   private captureReady = false;
   private phase: "unstarted" | "running" | "stopped" = "unstarted";
+  private closing?: Promise<void>;
 
   private width = 0;
   private height = 0;
@@ -356,7 +357,7 @@ export class DeviceSession {
   private readonly scheduledInputSockets = new Set<HidSocket>();
   private readonly inputSocketOrder: HidSocket[] = [];
   private readonly inputStateWaiters = new Set<() => void>();
-  private recordingLease?: { id: string; timer: ReturnType<typeof setTimeout> };
+  private recordingLease?: { id: string; timer?: ReturnType<typeof setTimeout> };
   private readonly recordingLeaseMs = RECORDING_LEASE_MS;
   private recordingStarting = false;
   private recordingStartingId?: string;
@@ -474,6 +475,16 @@ export class DeviceSession {
     // A failed recording POST reports its own error and owns no lease to preserve.
     // It must settle before suspend, but its failure must not strand reboot input.
     await this.recordingStart?.catch(() => {});
+    await this.retireInputConsumers();
+    for (const panel of this.panels.values()) this.stopPanel(panel);
+    this.latestJpegBuffer = null;
+    this.latestJpegLength = 0;
+    await this.capture.suspendForReboot();
+  }
+
+  /** Disconnect every prior owner and join native input before handing this capture to a job. */
+  async retireInputConsumers(): Promise<void> {
+    this.clearSoftwareKeyboardRequests();
     // Disconnect input before replacing HID, including clients that are awaiting admission.
     this.discardQueuedInput(this.serverInput);
     this.queueInputCleanup(this.serverInput, true);
@@ -489,10 +500,6 @@ export class DeviceSession {
     }
     await this.hingeControlUpdate;
     await this.softwareKeyboardSync;
-    for (const panel of this.panels.values()) this.stopPanel(panel);
-    this.latestJpegBuffer = null;
-    this.latestJpegLength = 0;
-    await this.capture.suspendForReboot();
   }
 
   async resumeAfterReboot(): Promise<void> {
@@ -511,8 +518,8 @@ export class DeviceSession {
     this.broadcastConfig();
   }
 
-  close(): void {
-    if (this.phase !== "running") return;
+  close(): Promise<void> {
+    if (this.phase !== "running") return this.closing ?? Promise.resolve();
     this.phase = "stopped";
     // Keep the promises even if their completion clears the mutable fields
     // while observer teardown is pending; finalization failures still belong to this close.
@@ -546,29 +553,30 @@ export class DeviceSession {
     // Observe a stop failure immediately while observer cleanup is still pending;
     // the tracked finalization below reports it after that cleanup.
     void stoppingStartup?.catch(() => {});
-    trackClosedSessionStop(
-      (async () => {
-        if (!stoppingStartup) await this.captureStart?.catch(() => {});
-        await Promise.all([screenChangesDetached, deviceStateDetached]);
-        let recordingError: unknown = this.recordingFailure;
-        try {
-          await recordingStart;
-        } catch (error) {
-          if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
-        }
-        try {
-          await recordingFinishing;
-        } catch (error) {
-          recordingError ??= error;
-        }
-        try {
-          await (stoppingStartup ?? this.capture.stop());
-        } catch (error) {
-          recordingError ??= error;
-        }
-        if (recordingError) throw recordingError;
-      })(),
-    );
+    this.closing = (async () => {
+      await this.retireInputConsumers();
+      if (!stoppingStartup) await this.captureStart?.catch(() => {});
+      await Promise.all([screenChangesDetached, deviceStateDetached]);
+      let recordingError: unknown = this.recordingFailure;
+      try {
+        await recordingStart;
+      } catch (error) {
+        if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
+      }
+      try {
+        await recordingFinishing;
+      } catch (error) {
+        recordingError ??= error;
+      }
+      try {
+        await (stoppingStartup ?? this.capture.stop());
+      } catch (error) {
+        recordingError ??= error;
+      }
+      if (recordingError) throw recordingError;
+    })();
+    trackClosedSessionStop(this.closing);
+    return this.closing;
   }
 
   async finishRecordingForShutdown(): Promise<void> {
@@ -660,32 +668,7 @@ export class DeviceSession {
           });
           return;
         }
-        this.recordingStarting = true;
-        const output = body.output;
-        const recordingId = body.recordingId;
-        this.recordingStartingId = recordingId;
-        this.recordingStartCancelled = false;
-        this.cancelledRecordingStart = undefined;
-        const starting = this.waitForCapture().then(async () => {
-          if (this.rebootSuspended) throw new RecordingStartRebooting("Capture is rebooting");
-          if (this.recordingStartCancelled) {
-            this.cancelledRecordingStart = { id: recordingId };
-            throw new RecordingStartCancelled("Recording start was cancelled");
-          }
-          await this.capture.startRecording(output);
-          if (this.recordingStartCancelled || this.phase !== "running") {
-            this.cancelledRecordingStart = {
-              id: recordingId,
-              manifest: await this.capture.stopRecording(),
-            };
-            throw new RecordingStartCancelled("Recording start was cancelled");
-          }
-          this.refreshRecordingLease(recordingId);
-        });
-        this.recordingStart = starting;
-        await starting;
-        this.lastFinishedRecording = undefined;
-        this.lastFailedRecording = undefined;
+        await this.startVideoRecording(body.output, body.recordingId);
         this.sendJson(res, 200, { recording: true });
       } catch (error) {
         const status =
@@ -701,11 +684,6 @@ export class DeviceSession {
               ? error.code
               : "recording_start_failed";
         this.sendJson(res, status, { error: code, message: String(error) });
-      } finally {
-        this.recordingStart = undefined;
-        this.recordingStarting = false;
-        this.recordingStartingId = undefined;
-        this.recordingStartCancelled = false;
       }
       return;
     }
@@ -802,7 +780,100 @@ export class DeviceSession {
     res.end();
   }
 
+  /** Private local adoption owns this writer until explicit stop or server shutdown. */
+  // @ref LLP 0003#prepared-process-handoff — adoption awaits video startup without a recorder child.
+  async startAdoptedRecording(
+    output: string,
+    recordingId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await this.startVideoRecording(output, recordingId, true, signal);
+  }
+
+  private async startVideoRecording(
+    output: string,
+    recordingId: string,
+    serverOwned = false,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    if (recordingsShuttingDown || this.rebootSuspended)
+      throw new Error("Recording cannot start while stopping or rebooting");
+    if (this.recordingLease || this.recordingStarting || this.recordingFinishing)
+      throw new Error("A recording is already active");
+    if ((recordingStartCancellations.get(this.udid)?.ids.get(recordingId) ?? 0) > Date.now())
+      throw new RecordingStartCancelled("Recording start was cancelled");
+    const cancelled = () => {
+      this.recordingStartCancelled = true;
+    };
+    signal?.addEventListener("abort", cancelled, { once: true });
+    try {
+      this.recordingStarting = true;
+      this.recordingStartingId = recordingId;
+      this.recordingStartCancelled = false;
+      this.cancelledRecordingStart = undefined;
+      const starting = this.waitForCapture()
+        .then(async () => {
+          if (this.rebootSuspended) throw new RecordingStartRebooting("Capture is rebooting");
+          if (this.recordingStartCancelled) {
+            this.cancelledRecordingStart = { id: recordingId };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          await this.capture.startRecording(output);
+          if (this.recordingStartCancelled || this.phase !== "running") {
+            this.cancelledRecordingStart = {
+              id: recordingId,
+              manifest: await this.capture.stopRecording().catch((error) => {
+                if (serverOwned)
+                  this.recordingFailure ??=
+                    error instanceof Error ? error : new Error(String(error));
+                throw error;
+              }),
+            };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          if (serverOwned) this.recordingLease = { id: recordingId };
+          else this.refreshRecordingLease(recordingId);
+        })
+        .catch(async (error) => {
+          // Drain partial native startup inside the promise shutdown/reboot/close await.
+          if (serverOwned && !this.cancelledRecordingStart) {
+            try {
+              await this.capture.stopRecording();
+            } catch (cleanupError) {
+              // Native start throws before it creates a writer, so "no recording is active"
+              // (CaptureEngine.swift error 15) means nothing was left to drain.
+              if (
+                cleanupError instanceof Error &&
+                /Domain=serve-sim-recording Code=15\b/.test(cleanupError.message)
+              )
+                throw error;
+              this.recordingFailure ??=
+                cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError));
+              throw new AggregateError(
+                [error, cleanupError],
+                "Recording startup and cleanup failed",
+              );
+            }
+          }
+          throw error;
+        });
+      this.recordingStart = starting;
+      await starting;
+      this.lastFinishedRecording = undefined;
+      this.lastFailedRecording = undefined;
+    } finally {
+      signal?.removeEventListener("abort", cancelled);
+      this.recordingStart = undefined;
+      this.recordingStarting = false;
+      this.recordingStartingId = undefined;
+      this.recordingStartCancelled = false;
+    }
+  }
+
   private refreshRecordingLease(id: string): void {
+    // An HTTP heartbeat must not turn a server-owned recording into an expiring client lease.
+    if (this.recordingLease?.id === id && !this.recordingLease.timer) return;
     if (this.recordingLease) clearTimeout(this.recordingLease.timer);
     const timer = setTimeout(() => {
       void this.finishRecording(id).catch((error) => {
@@ -1191,9 +1262,7 @@ export class DeviceSession {
     }
   }
 
-  private updateStreamSettings(
-    patch: Partial<StreamEncoderSettings>,
-  ): Promise<StreamEncoderSettings> {
+  updateStreamSettings(patch: Partial<StreamEncoderSettings>): Promise<StreamEncoderSettings> {
     const update = this.streamSettingsUpdate.then(async () => {
       const next = normalizeStreamEncoderSettings(
         { ...this.encoderSettings, ...patch },
@@ -3032,6 +3101,43 @@ export function getDeviceSession(
   return session;
 }
 
+/** Own startup cancellation: native stop, including its input drain, must finish before rejection. */
+export async function startDeviceSession(
+  udid: string,
+  settings: StreamSettings | undefined,
+  signal?: AbortSignal,
+): Promise<DeviceSession> {
+  signal?.throwIfAborted();
+  const session = getDeviceSession(udid, settings);
+  if (!signal) {
+    await session.start();
+    return session;
+  }
+  let cancel!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    cancel = () => {
+      closeDeviceSession(udid);
+      reject(signal.reason);
+    };
+  });
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    await Promise.race([session.start(), cancelled]);
+    signal.throwIfAborted();
+    return session;
+  } catch (error) {
+    try {
+      await session.close();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Simulator capture startup and cleanup failed");
+    }
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
 /** Claim session state for a persistent consumer, such as an accepted settings update. */
 export function retainDeviceSession(session: DeviceSession): void {
   const owner = screenshotOwners.get(session);
@@ -3086,6 +3192,18 @@ export function closeDeviceSession(udid: string): void {
     session.close();
     sessions.delete(udid);
   }
+}
+
+/** Retire warm consumers before the private owner changes the selected device. */
+export async function retireDeviceSession(udid: string): Promise<void> {
+  const session = peekDeviceSession(udid);
+  closeDeviceSession(udid);
+  await session?.close();
+  if (closedSessionStopErrors.length > 0)
+    throw new AggregateError(
+      [...closedSessionStopErrors],
+      "Could not retire the warm device session",
+    );
 }
 
 export async function finishDeviceRecordingsForShutdown(

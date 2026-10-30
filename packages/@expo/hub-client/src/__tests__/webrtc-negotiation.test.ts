@@ -34,6 +34,117 @@ describe("WebRTC offer negotiation", () => {
     expect(requests).toBe(2);
   });
 
+  for (const conflict of [
+    { error: "webrtc_stream_changed", message: "The stream changed while WebRTC was starting." },
+    { ok: false, code: "session_changed", error: "device session changed from generation 1 to 2" },
+  ]) {
+    test(`retries a temporary Android offer conflict: ${JSON.stringify(conflict)}`, async () => {
+      let requests = 0;
+      const response = await postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: '{"sessionId":"viewer-A"}',
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async (_url, init) => {
+          expect(init?.body).toBe('{"sessionId":"viewer-A"}');
+          requests++;
+          return requests === 1
+            ? Response.json(conflict, { status: 409 })
+            : Response.json({ type: "answer", sdp: "answer" });
+        },
+      });
+      expect(response.status).toBe(200);
+      expect(requests).toBe(2);
+    });
+  }
+
+  for (const reason of ["webrtc_stream_changed", "session_changed"]) {
+    test(`caps retries for persistent ${reason}`, async () => {
+      let requests = 0;
+      await expect(
+        postWebRtcOffer({
+          url: "https://example.test/webrtc/offer",
+          body: "{}",
+          requestTimeoutMs: 100,
+          busyRetryIntervalMs: 0,
+          busyRetryCount: 2,
+          fetchImpl: async () => {
+            requests++;
+            return Response.json({ error: reason }, { status: 409 });
+          },
+        }),
+      ).rejects.toBeInstanceOf(WebRtcSignalingBusyError);
+      expect(requests).toBe(3);
+    });
+
+    test(`teardown cancels ${reason} without another offer`, async () => {
+      const lifecycle = new AbortController();
+      const aborted = new DOMException("Unmounted", "AbortError");
+      let requests = 0;
+      const pending = postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        signal: lifecycle.signal,
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 500,
+        busyRetryCount: 2,
+        fetchImpl: async () => {
+          requests++;
+          setTimeout(() => lifecycle.abort(aborted), 5);
+          return Response.json({ error: reason }, { status: 409 });
+        },
+      });
+      await expect(pending).rejects.toBe(aborted);
+      expect(requests).toBe(1);
+    });
+  }
+
+  test("unknown and malformed named conflicts remain final without coercion", async () => {
+    for (const conflict of [
+      { code: "future_transient_code" },
+      { error: "no_panel_streams" },
+      { code: ["session_changed"] },
+      { error: { code: "webrtc_stream_changed" } },
+      { code: null },
+      { error: false },
+    ]) {
+      let requests = 0;
+      const response = await postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async () => {
+          requests++;
+          return Response.json(conflict, { status: 409 });
+        },
+      });
+      expect(requests).toBe(1);
+      expect(await response.json()).toEqual(conflict);
+    }
+  });
+
+  test("a retryable reason only retries HTTP 409", async () => {
+    for (const status of [200, 401, 404, 503]) {
+      let requests = 0;
+      const response = await postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async () => {
+          requests++;
+          return Response.json({ error: "webrtc_stream_changed" }, { status });
+        },
+      });
+      expect(response.status).toBe(status);
+      expect(requests).toBe(1);
+    }
+  });
+
   test("returns a lasting named 409 without retrying it", async () => {
     let requests = 0;
     const response = await postWebRtcOffer({
@@ -52,22 +163,25 @@ describe("WebRTC offer negotiation", () => {
     expect(requests).toBe(1);
   });
 
-  test("does not retry a permanent serve-emu code without an error message", async () => {
-    let requests = 0;
-    const response = await postWebRtcOffer({
-      url: "https://example.test/webrtc/offer",
-      body: "{}",
-      requestTimeoutMs: 100,
-      busyRetryIntervalMs: 0,
-      busyRetryCount: 1,
-      fetchImpl: async () => {
-        requests++;
-        return Response.json({ code: "invalid_offer" }, { status: 409 });
-      },
-    });
-    expect(response.status).toBe(409);
-    expect(requests).toBe(1);
-  });
+  test.each(["invalid_offer", "device_mismatch"])(
+    "does not retry permanent serve-emu code %s",
+    async (code) => {
+      let requests = 0;
+      const response = await postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 100,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async () => {
+          requests++;
+          return Response.json({ code }, { status: 409 });
+        },
+      });
+      expect(response.status).toBe(409);
+      expect(requests).toBe(1);
+    },
+  );
 
   test("the signaling deadline also bounds a stalled 409 body", async () => {
     await expect(

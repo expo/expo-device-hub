@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-17 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -110,6 +110,118 @@ differs from the copy that serve-sim ships. Each Copy grants it pasteboard
 access. The app and the grant stay after Copy, and the app shows on the Home
 screen. `--disable clipboard`, or `clipboard: false` for `simMiddleware`, does
 not prevent this.
+
+## Single-device sessions
+
+`--single-device <udid>` and `simMiddleware({ singleDevice: udid })` bind a preview
+session to one concrete simulator UUID. The CLI rejects multiple or conflicting
+targets and helper-only run modes before resolving or booting a device. The
+policy survives a shutdown or reconnect; it never chooses a replacement
+[observed: `src/index.ts`, `src/single-device.ts`].
+
+Discovery, catalog and status feeds include only that simulator. Scoped discovery
+does not reap another device's state or prune its runtime caches. HTTP query
+parameters, helper path segments, lifecycle request bodies, control actions,
+simulator settings and SSE subscriptions reject a different target. Omitted
+control targets use the pinned UUID. `server.detach`, `server.kill` and
+`home.watch` are unavailable because they act outside this session. The device
+sidebar and every entry point that opens it are omitted. This restriction adds
+to the existing authentication and origin gates; it never grants access
+[observed: `src/middleware.ts`, `src/socket/server-control.ts`, `src/client/client.tsx`].
+
+Path-only `file.readBase64` and `app.infoPlist` actions retain their existing
+host-scoped allowed roots, including files belonging to another Simulator. The
+device policy does not sandbox filesystem reads [confirmed: Gabe Debes,
+2026-10-26, accepted host-scoped reads; observed: `src/host-actions.ts`].
+
+Start and shutdown share lifecycle-body validation and refusal responses
+[observed: `src/middleware.ts`, `resolveLifecycleDevice`].
+
+The original simulator may reboot or start again. WebKit inspection is disabled
+because the bridge cannot reliably map its targets to a simulator UUID. The
+middleware uses same-origin helper routes in this mode. The restriction covers
+this server's interfaces, not independently launched servers or host tools
+[observed: `src/middleware.ts`].
+
+## Preview layout
+
+The preview centers the simulator within the area between docked panels, and
+uses that same width for its resize limits. Panel constraints do not overwrite
+the chosen frame width or its persisted scale; closing the panel restores that
+width unless the user resized it. Dragging uses a separate transient width; a
+gesture ending at its starting width preserves the previous preference. Below the desktop breakpoint,
+panels overlay the preview and do not change its horizontal padding. A panel
+also overlays when docking it would leave less than the minimum simulator width
+plus its page gutters. Presentation mode uses the full viewport. Soft-keyboard
+height handling remains owned by the existing viewport logic
+[observed: `src/client/utils/simulator-viewport.ts`,
+`src/client/hooks/use-simulator-resize.ts`, `src/client/client.tsx`].
+
+## Prepared process handoff
+
+Only servers started with `--orphan` offer process ownership to the local
+`serve-sim <udid> --adopt` CLI. Matching preview settings alone do not opt in
+[confirmed: Gabe Debes, 2026-10-26]. HTTP and `/exec-ws` do not expose ownership or reconfiguration, even to a
+preview-token holder. The CLI uses a private Unix socket, not the preview server
+[observed: `src/session-owner.ts`, `src/middleware.ts`].
+
+The server creates its owner socket and separate random authority in a private
+0700 directory under canonical `/tmp`, with 0600 socket and authority files. This
+directory is outside the host actions' file roots regardless of custom state or
+temporary directories. Local discovery state is keyed by the server port and contains its owning PID,
+startup device and directory reference; neither owner state nor authority enters public preview
+state. The CLI checks file type, OS user, permissions, process identity and startup
+compatibility before claiming the process. The preview bearer token is not owner
+authority [observed: `src/session-owner.ts`, `src/host-paths.ts`].
+
+A compatible local claim consumes the handoff before native configuration starts.
+The server closes its owner listener and removes the authority, rejecting concurrent
+or later claims. Invalid owner credentials or incompatible identity do not consume
+it; malformed configuration or failed native setup does. The caller must replace
+the process after a failed claim [observed: `src/session-owner.ts`].
+
+Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screenshot
+artifacts, and network capture fields/upstream before the CLI reports success.
+An orphan restricts requests to its startup device while awaiting ownership.
+Adoption selects an exact UDID separately from the immutable server identity;
+`--single-device` may restrict the job to that selected UUID. The private owner
+prepares/boots a new target through the normal dylib path while keeping its server
+PID and port [confirmed: Gabe Debes, 2026-10-28]. An unclaimed orphan permits only GET/HEAD `/healthz`, `/readyz` and authenticated
+`/api` probes. It refuses input, actions and subscriptions until the private handoff
+succeeds, so old preview streams cannot survive a device selection. Its state
+probe has no clipboard initialization side effect. Consuming a private claim
+synchronously cancels future background warmup, even if parsing or later setup
+fails. The middleware retires prior native input before selection. UI selection and private
+adoption share the in-process device lifecycle (`src/device-lifecycle.ts`), using
+the existing `src/device.ts` boot/shutdown commands. The owner hands over a target this
+process already prepared after bootstatus, and joins warmup only for a target that is not
+the first. It unpublishes unused devices before reporting success, then drains their
+native/capture sessions and shuts them down in the background after their warmup; the
+session stop joins that work. A failed or unconfirmed shutdown is logged, makes the
+session stop exit non-zero, and preserves that device's capability ownership and
+configuration. Foreign or unreadable ownership
+refuses shutdown; cleanup failure keeps the consumed claim unavailable.
+The selected native session, capture and optional recording must be ready before
+success. Shutdown joins the private configuration task before resource teardown. Without
+the flag, adoption restores normal multi-device behavior; an explicit startup
+single-device policy cannot be removed or changed [observed: `src/index.ts`,
+`src/middleware.ts`, `src/session-configuration.ts`].
+Existing captures stop before the job's upstream is applied; requested capture must
+be active before success, and app installation/launch follows through normal typed
+`/exec-ws` actions. `/exec-ws` is not used to enable capture for this handoff.
+
+The paired adoption flags `--recording-output <absolute-directory>` and
+`--recording-id <id>` optionally start the existing native video writer after
+stream reconfiguration and before success. The startup JSON then confirms
+`recording: { output, recordingId }`. Warmup and adoption without these flags do
+not start video. This private owner recording lasts until its exact-ID stop or
+server shutdown; it needs no recorder child or lease heartbeat. Existing
+`record-video` client leases retain their expiry behavior. The normal authenticated
+`DELETE /helper/<udid>/recording/video` with `x-recording-id` waits for native
+finalization and returns `{ manifest }`; retrying the same finished ID returns the
+same manifest. A disconnected adoption drains in-flight recording startup before
+configuration settles; failed adoption still consumes the private claim
+[observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 ## Preview sharing
 
@@ -369,12 +481,15 @@ concurrent input [observed: `src/__tests__/raw-hid-socket.test.ts`].
 ### Launching an installed app
 
 An authenticated `/exec-ws` client can launch an installed app with
-`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?}}`.
+`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?, restart?}}`.
 Use a Simulator UDID. The action restarts the app with the supplied arguments,
 preserves the session's active capabilities, then pre-approves and opens the
-optional deep link. Pre-approval is best effort. Launch arguments are limited
-to 256 arguments of 8,192 characters each and 128 KiB total UTF-8 bytes,
-including terminators. The action replies with
+optional deep link. `restart: false` skips the stop, for a caller that knows the
+app is not running, such as right after installation. An app that is already
+running then keeps its process and its previous arguments. If a `simctl` call
+times out, the action runs the whole launch once more; other failures and a
+second timeout fail it. Pre-approval is best effort. Launch arguments are limited to 256 arguments of 8,192 characters each
+and 128 KiB total UTF-8 bytes, including terminators. The action replies with
 `{id, stdout, stderr, exitCode}`; invalid parameters and unsupported actions
 reply with `{id, error}`. Installation stays a separate operation. Setup finishes
 before the app stops. If the stop or the launch fails, the action restores the

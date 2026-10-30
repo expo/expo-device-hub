@@ -2,6 +2,7 @@ import { type DeviceStreamMode } from "@expo/hub-client";
 import { type Device, type StreamModeAvailability } from "@expo/hub-components";
 import { create } from "zustand";
 
+import { dashboardSingleDevice } from "../single-device";
 import { dashboardHideSidebar } from "../sidebar";
 import { dashboardTransport } from "../transport";
 import { browserStreamModeAvailability, resolveStreamMode } from "./streamMode";
@@ -71,7 +72,7 @@ function initialHideUnsupportedDevices(): boolean {
 function defaultDashboardStoreValues(): DashboardStoreValues {
   const availability = browserStreamModeAvailability();
   return {
-    selectedDeviceId: "",
+    selectedDeviceId: dashboardSingleDevice() ?? "",
     addedDevices: [],
     streamMode: resolveStreamMode(dashboardTransport(), availability),
     sidebarWidths: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
@@ -89,12 +90,15 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
   return create<DashboardStore>()((set) => ({
     ...defaultDashboardStoreValues(),
     ...initialState,
-    selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
+    selectDevice: (selectedDeviceId) =>
+      set({ selectedDeviceId: dashboardSingleDevice() ?? selectedDeviceId }),
     reconcileSelectedDevice: (availableIds) =>
       set((state) =>
-        availableIds.includes(state.selectedDeviceId)
-          ? state
-          : { selectedDeviceId: availableIds[0] ?? "" },
+        dashboardSingleDevice()
+          ? { selectedDeviceId: dashboardSingleDevice()! }
+          : availableIds.includes(state.selectedDeviceId)
+            ? state
+            : { selectedDeviceId: availableIds[0] ?? "" },
       ),
     trackAddedDevice: (device, replacedIds) =>
       set((state) => {

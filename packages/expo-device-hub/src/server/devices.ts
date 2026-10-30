@@ -26,6 +26,7 @@ import {
   isSupportedAndroidDevice,
   isSupportedAppleDevice,
 } from "./device-support";
+import { filterSessionDevices } from "./single-device";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
 export type HubDevicePlatform = PlatformFilter;
@@ -146,11 +147,11 @@ export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceL
     platform === "ios" ? empty() : listAndroidEmulators(),
   ]);
 
-  return {
+  return filterSessionDevices({
     simulators: simulators.devices,
     emulators: emulators.devices,
     errors: [simulators.error, emulators.error].filter(
       (error): error is SerializableError => error !== null,
     ),
-  };
+  });
 }

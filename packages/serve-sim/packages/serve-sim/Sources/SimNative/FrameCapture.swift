@@ -172,7 +172,7 @@ actor FrameCapture {
         displayConfigurationReady = true
         captureFrame(force: true)
         startSurfacePoller()
-        print("[capture] Frame callbacks registered + \(fixedScreenID == nil ? 60 : 120)Hz IOSurface poll + 5fps idle floor")
+        fputs("[capture] Frame callbacks registered + \(fixedScreenID == nil ? 60 : 120)Hz IOSurface poll + 5fps idle floor\n", stderr)
     }
 
     /// Find all framebuffer display descriptors, register callbacks on each,
@@ -215,7 +215,7 @@ actor FrameCapture {
         if let (_, surface) = currentSurface() {
             let width = IOSurfaceGetWidth(surface)
             let height = IOSurfaceGetHeight(surface)
-            print("[capture] Framebuffer: \(width)x\(height) (direct IOSurface, zero-copy)")
+            fputs("[capture] Framebuffer: \(width)x\(height) (direct IOSurface, zero-copy)\n", stderr)
         }
 
         captureFrame()
@@ -492,7 +492,7 @@ actor FrameCapture {
             atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0, deviceBooted: isDeviceBooted()
         ) else { return }
         if lossStarted {
-            print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
+            fputs("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline\n", stderr)
         }
         do {
             try wireUpFramebuffer()
@@ -543,7 +543,7 @@ actor FrameCapture {
         if pickNs > pickMaxNs { pickMaxNs = pickNs }
         guard let (key, surface) = picked else { return }
         if let lostNs = surfaceWatch.surfaceFound(atNanoseconds: nowNanoseconds()) {
-            print("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))")
+            fputs("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))\n", stderr)
         }
         let display = screenMetadata[key]?.applying(authoritativeDisplay)
         let panelActivity: Bool? = if isFoldable, let fixedScreenID, let deviceUDID {
@@ -588,7 +588,7 @@ actor FrameCapture {
         if dimensionsChanged {
             capturedWidth = w
             capturedHeight = h
-            print("[capture] Surface size changed: \(w)x\(h)")
+            fputs("[capture] Surface size changed: \(w)x\(h)\n", stderr)
         }
         if displayChanged || dimensionsChanged {
             for notify in screenObservers.values { notify() }
