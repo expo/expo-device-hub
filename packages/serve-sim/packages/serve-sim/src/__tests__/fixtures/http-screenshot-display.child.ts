@@ -183,6 +183,29 @@ test("HTTP recaptures a panel switch and bounds an unstable fold", async () => {
     error: "The active display kept changing. Retry the screenshot once the fold has finished.",
   });
 });
+test("HTTP screenshots expose capture and artifact timing for native and explicit displays", async () => {
+  for (const query of ["", "&display=3"]) {
+    const response = await shot(query);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-expose-headers")).toContain("Server-Timing");
+    const timings = Object.fromEntries(
+      response.headers
+        .get("server-timing")!
+        .split(",")
+        .map((entry) => {
+          const [name, duration] = entry.trim().split(";dur=");
+          return [name, Number(duration)];
+        }),
+    );
+    for (const name of ["total", "capture", "native", "artifact"]) {
+      expect(Number.isFinite(timings[name])).toBe(true);
+      expect(timings[name]).toBeGreaterThanOrEqual(0);
+    }
+    expect(timings.total).toBeGreaterThanOrEqual(timings.capture);
+    expect(timings.capture).toBeGreaterThanOrEqual(timings.native);
+    if (query) expect(timings.native).toBe(0);
+  }
+});
 test("HTTP explicit display avoids native startup and rejects invalid IDs", async () => {
   startupError = new Error("Must not start capture");
   const explicit = await shot("&display=3");
