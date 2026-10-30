@@ -224,8 +224,8 @@ and capability setup for a new target, then awaits native capture, requested
 network capture and recording before confirming adoption. `--single-device`
 restricts the job to its selected device; it does not require the warm device to
 match. An explicit startup restriction remains immutable. Failed configuration
-remains consumed and unavailable, and shutdown joins in-flight configuration before
-resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
+remains consumed and unavailable. Shutdown and preview-startup failure both join
+in-flight owner configuration before listener and resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
 It is separate from the preview token and never exposed by HTTP or `/exec-ws`.
