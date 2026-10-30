@@ -260,6 +260,8 @@ transition; required admission checks are described in
 
 If an inserted resident loader has disappeared, stale-loader cleanup rejects
 under the device lock without changing enrollment, startup config or inserts.
+Startup arming also propagates a resident rearm failure instead of taking the
+ordinary missing-loader skip/log path [observed: `armCapabilityLoader`].
 Removing only the missing loader would leave later guard processes without their
 startup callback. This rejection does not repair or validate that boot; assets
 remain until its death is confirmed [observed: `disarmStaleCapabilityLoader` and
