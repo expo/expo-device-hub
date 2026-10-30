@@ -13,6 +13,7 @@ import { EventLogTool } from "./event-log-tool";
 import type { HingeControlsProps } from "./hinge-controls";
 import { MetricsTool } from "./metrics-tool";
 import { NetworkCaptureTool } from "./network-capture-tool";
+import { EgressGuardTool } from "./egress-guard-tool";
 import { PANEL_BACKGROUND } from "./panel-colors";
 import { SimulatorSettingsTool } from "./simulator-settings-tool";
 import { StreamSettingsTool } from "./stream-settings-tool";
@@ -92,6 +93,7 @@ export function ToolsPanel({
             metricsEndpoint={metricsEndpoint}
           />
           <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />
+          <EgressGuardTool key={udid} udid={udid} />
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
           <SimulatorSettingsTool
             udid={udid}
