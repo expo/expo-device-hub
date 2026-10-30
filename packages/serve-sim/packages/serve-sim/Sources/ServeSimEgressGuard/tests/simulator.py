@@ -79,6 +79,9 @@ try:
         shutil.copytree(source.parent / name, work / name)
     output = work / 'out'
     run(['bash', str(work / 'ServeSimCapabilityLoader/build.sh'), str(output)])
+    loader = output / 'libServeSimCapabilityLoader.dylib'
+    if '_serve_sim_startup_all_processes' not in run(['nm', '-gU', str(loader)]).split():
+        raise RuntimeError('Simulator harness requires the all-process capability loader; no Simulator was created')
     run(['bash', str(work / 'ServeSimEgressGuard/build.sh'), str(output)])
     sdk = run(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-path'])
     fixture = output / 'simulator-check'
