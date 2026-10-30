@@ -1,13 +1,8 @@
 import * as fileSystem from "node:fs";
-
 import { execFile as execFileCallback } from "node:child_process";
-
 import { promisify } from "node:util";
-
 import * as simctlModule from "../../simctl";
-
 import { afterAll, afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
-
 import {
   existsSync,
   copyFileSync,
@@ -21,48 +16,30 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-
 import { fileURLToPath } from "node:url";
-
 import { dirname, join } from "node:path";
-
 import * as config from "../../capability-config";
-
 import { readLaunchState, writeLaunchState } from "../../launch-state";
-
 import { releaseLaunchState } from "../../launch-manager";
-
 import { useTempStateDir, withShimsAsync } from "../helpers";
 
 const work = mkdtempSync("/tmp/serve-sim-egress-resources-");
-
 const source = join(work, "capability-loader"),
   native = join(work, "egress-guard");
-
 const bootFile = join(work, "boot.json");
-
 const failingSet = join(work, "failing-set");
-
 const pauseBoot = join(work, "pause-boot"),
   enteredBoot = join(work, "entered-boot");
-
 const udid = "11111111-1111-4111-8111-111111111111";
-
 mkdirSync(source);
-
 mkdirSync(native);
-
 writeFileSync(
   join(source, "libServeSimCapabilityLoader.dylib"),
   "loader fixture, not a native image",
 );
-
 writeFileSync(join(native, "libServeSimEgressGuard.dylib"), "guard fixture, not a native image");
-
 const originalFixtureDirectory = process.env.SERVE_SIM_EGRESS_FIXTURE_DIRECTORY;
-
 process.env.SERVE_SIM_EGRESS_FIXTURE_DIRECTORY = work;
-
 for (const [target, fixture] of [
   ["serve-sim-egress-boot-identity", new URL("./egress-boot-fixture.cjs", import.meta.url)],
   ["serve-sim-egress-control", new URL("./egress-control-fixture.cjs", import.meta.url)],
@@ -71,11 +48,8 @@ for (const [target, fixture] of [
   copyFileSync(fixture, join(native, target));
   chmodSync(join(native, target), 0o500);
 }
-
 const executeCheck = promisify(execFileCallback);
-
 const originalSimctl = simctlModule.simctl;
-
 mock.module("../../simctl", () => ({
   ...simctlModule,
   simctl: async (args: string[], options?: number) => {
@@ -86,7 +60,6 @@ mock.module("../../simctl", () => ({
     return originalSimctl(args, options);
   },
 }));
-
 mock.module("../../capability-config", () => ({
   ...config,
   capabilityLoaderDir: () => source,
@@ -98,7 +71,6 @@ mock.module("../../capability-config", () => ({
     );
   },
 }));
-
 const {
   prepareResidentEgress,
   startResidentEgress,
@@ -107,9 +79,7 @@ const {
   publishResidentEgressPolicy,
   verifyResidentEgressPolicy,
 } = await import("../../egress-resources");
-
 let state: ReturnType<typeof useTempStateDir>;
-
 beforeEach(() => {
   state = useTempStateDir();
   writeFileSync(bootFile, "null");
@@ -188,8 +158,61 @@ test("transaction reuses a live boot and publishes the requested policy without 
   await verifyResidentEgressPolicy(udid, "block");
 });
 
+test("right-panel policy actions require current ownership and never enroll a device", async () => {
+  const { runHostActionAsync } = await import("../../host-actions");
+  const action = (name: string, enabled?: boolean) =>
+    runHostActionAsync(
+      {
+        action: name,
+        params: { udid, ...(enabled === undefined ? {} : { enabled }) },
+      },
+      "unused",
+    );
+  expect(JSON.parse((await action("egress.status")).stdout)).toEqual({ available: false });
+  expect((await action("egress.set", true)).exitCode).toBe(1);
+  expect(readLaunchState(udid)).toBeNull();
+  await prepareResidentEgress(udid, "passthrough");
+  await withShimsAsync({ xcrun: bootShim(join(state.dir, "panel-boot")) }, async () => {
+    await bootPreparedResidentEgress(udid);
+  });
+  const enrolled = readLaunchState(udid)!;
+  const page = enrolled.capabilities.egressGuard!.env!.SERVE_SIM_EGRESS_POLICY_FILE!;
+  const before = readFileSync(page);
+  expect((await action("egress.set", true)).stderr).toContain("does not own");
+  expect(readFileSync(page)).toEqual(before);
+  writeLaunchState(udid, { ...enrolled, sessionPids: [process.pid] });
+  expect(JSON.parse((await action("egress.status")).stdout)).toEqual({
+    available: true,
+    enabled: false,
+  });
+  expect(JSON.parse((await action("egress.set", true)).stdout)).toEqual({
+    available: true,
+    enabled: true,
+  });
+  expect(JSON.parse((await action("egress.set", false)).stdout)).toEqual({
+    available: true,
+    enabled: false,
+  });
+  const shared = readLaunchState(udid)!;
+  const unchanged = readFileSync(page);
+  writeLaunchState(udid, { ...shared, sessionPids: [process.pid, process.ppid] });
+  expect((await action("egress.set", true)).stderr).toContain("another session");
+  expect((await action("egress.status")).exitCode).toBe(1);
+  expect(readFileSync(page)).toEqual(unchanged);
+  writeLaunchState(udid, shared);
+  writeFileSync(join(work, "failing-check"), "fail");
+  expect((await action("egress.set", true)).exitCode).toBe(1);
+  expect(readLaunchState(udid)!.capabilities.egressGuard!.resident).toEqual(
+    enrolled.capabilities.egressGuard!.resident,
+  );
+  await expect(
+    runHostActionAsync({ action: "egress.set", params: { udid: "all", enabled: true } }, "unused"),
+  ).rejects.toThrow("simulator udid");
+  await expect(
+    runHostActionAsync({ action: "egress.set", params: { udid, enabled: "true" } }, "unused"),
+  ).rejects.toThrow();
+});
 afterEach(() => state.restore());
-
 afterAll(() => {
   mock.restore();
   if (originalFixtureDirectory === undefined) delete process.env.SERVE_SIM_EGRESS_FIXTURE_DIRECTORY;
@@ -272,6 +295,36 @@ test("valid page and native identity cannot hide a missing startup record", asyn
   expect(existsSync(config.capabilityConfigPath(udid))).toBe(false);
 });
 
+test("middleware observes a matching resident boot without issuing another boot", async () => {
+  await prepareResidentEgress(udid, "passthrough");
+  writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
+  await bootFixture();
+  const nativeLog = join(state.dir, "middleware-calls");
+  const { withShimsAsync } = await import("../helpers");
+  const { startDeviceInProcess } = await import("../../middleware");
+  await withShimsAsync(
+    {
+      xcrun: `#!/usr/bin/env node
+const fs=require('fs'),args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(nativeLog)},JSON.stringify(args)+'\\n');
+if(args[1]==='bootstatus') process.exit(42);
+console.log(JSON.stringify({devices:{}}));
+`,
+    },
+    async () => {
+      await expect(startDeviceInProcess(udid, 12345, "/")).rejects.toThrow();
+    },
+  );
+  const calls = readFileSync(nativeLog, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as string[]);
+  expect(calls.some((args) => args[1] === "boot")).toBe(false);
+  expect(calls.some((args) => args[1] === "bootstatus")).toBe(true);
+  expect(
+    calls.filter((args) => args[1] === "bootstatus").every((args) => !args.includes("-b")),
+  ).toBe(true);
+});
+
 test("another live session cannot change resident policy", async () => {
   await prepareResidentEgress(udid, "passthrough");
   writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
@@ -282,6 +335,218 @@ test("another live session cannot change resident policy", async () => {
   const before = readFileSync(page);
   await expect(publishResidentEgressPolicy(udid, "block")).rejects.toThrow("another session");
   expect(readFileSync(page)).toEqual(before);
+});
+
+test("a replacement boot during the wait cannot run callbacks or publish ready", async () => {
+  await prepareResidentEgress(udid, "passthrough");
+  writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
+  await bootFixture();
+  const { withShimsAsync } = await import("../helpers");
+  const { startDeviceInProcess } = await import("../../middleware");
+  const { stateFileForDevice } = await import("../../state");
+  let applied = false;
+  await withShimsAsync(
+    {
+      xcrun: `#!/usr/bin/env node
+if(process.argv[3]==='bootstatus') require('fs').writeFileSync(${JSON.stringify(bootFile)},JSON.stringify({pid:1234,startedAt:'1720000001:42'}));
+`,
+    },
+    async () => {
+      await expect(
+        startDeviceInProcess(udid, 12345, "/", undefined, undefined, async () => {
+          applied = true;
+        }),
+      ).rejects.toThrow("boot changed");
+    },
+  );
+  expect(applied).toBe(false);
+  expect(existsSync(stateFileForDevice(udid))).toBe(false);
+});
+
+// Exercise the existing private owner channel, with only the boot/controller executables modeled.
+async function ownerFixture(
+  run: (value: {
+    adopt(policy?: "block" | "passthrough"): Promise<unknown>;
+    configured(): number;
+    ownerFile: string;
+    raw(policy?: "block" | "passthrough"): Promise<Record<string, unknown>>;
+    disconnectDuringPreflight(): Promise<void>;
+  }) => Promise<void>,
+) {
+  const { resolve } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const { adoptSession, bootSession, sessionEnvironment, sessionOwnerFile, startSessionOwner } =
+    await import("../../session-owner");
+  const { inProcessServeSimState, stateDir, writeServeSimState } = await import("../../state");
+  const { DEFAULT_STREAM_ENCODER_SETTINGS } = await import("../../stream-settings");
+  let configured = 0;
+  const identity = {
+    version: "fixture",
+    pid: process.pid,
+    device: udid,
+    bootSession: bootSession(),
+    host: "127.0.0.1",
+    port: 3200,
+    stateDirectory: resolve(stateDir()),
+    temporaryDirectory: resolve(tmpdir()),
+    environment: sessionEnvironment(),
+  };
+  const owner = await startSessionOwner(
+    udid,
+    () => identity,
+    async () => {
+      configured++;
+    },
+  );
+  writeServeSimState({ ...inProcessServeSimState(udid, 3200), token: "preview-token" });
+  const directory = JSON.parse(readFileSync(sessionOwnerFile(3200), "utf8")).directory;
+  const secret = readFileSync(join(directory, "authority"), "utf8");
+  const configuration = (egressPolicy?: "block" | "passthrough") => ({
+    stream: { transport: "webrtc", codec: "h264", ...DEFAULT_STREAM_ENCODER_SETTINGS },
+    corsOrigins: [],
+    frameAncestors: [],
+    disableShare: false,
+    networkCapture: false,
+    networkCaptureFields: [],
+    egressPolicy,
+  });
+  const { createConnection } = await import("node:net");
+  const connect = () => createConnection(join(directory, "control.sock"));
+  const body = (policy?: "block" | "passthrough") =>
+    JSON.stringify({
+      secret,
+      method: "configure",
+      identity,
+      configuration: configuration(policy),
+    }) + "\n";
+  try {
+    await run({
+      ownerFile: sessionOwnerFile(3200),
+      raw: (policy) =>
+        new Promise((resolve, reject) => {
+          const socket = connect();
+          let data = "";
+          socket.setTimeout(3000, () => socket.destroy(new Error("owner fixture timeout")));
+          socket.on("error", reject);
+          socket.once("connect", () => socket.write(body(policy)));
+          socket.on("data", (chunk) => {
+            data += chunk;
+            if (data.includes("\n")) {
+              const response = JSON.parse(data);
+              socket.once("close", () => resolve(response));
+              socket.destroy();
+            }
+          });
+        }),
+      disconnectDuringPreflight: async () => {
+        writeFileSync(pauseBoot, "pause");
+        const socket = connect();
+        try {
+          await new Promise<void>((resolve, reject) => {
+            socket.once("error", reject);
+            socket.once("connect", () => {
+              socket.write(body("block"));
+              resolve();
+            });
+          });
+          const deadline = Date.now() + 3000;
+          while (!existsSync(enteredBoot)) {
+            if (Date.now() > deadline) throw new Error("preflight did not enter boot check");
+            await new Promise((r) => setTimeout(r, 5));
+          }
+          const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+          socket.destroy();
+          await closed;
+          // Deliver the peer close before allowing its blocked preflight to resume.
+          await new Promise((r) => setTimeout(r, 20));
+        } finally {
+          socket.destroy();
+          rmSync(pauseBoot, { force: true });
+        }
+        const { withLaunchStateLock } = await import("../../launch-state-lock");
+        await withLaunchStateLock(udid, async () => {});
+      },
+      configured: () => configured,
+      adopt: (egressPolicy) =>
+        adoptSession(udid, "fixture", "127.0.0.1", 3200, {
+          stream: { transport: "webrtc", codec: "h264", ...DEFAULT_STREAM_ENCODER_SETTINGS },
+          corsOrigins: [],
+          frameAncestors: [],
+          disableShare: false,
+          networkCapture: false,
+          networkCaptureFields: [],
+          egressPolicy,
+        }),
+    });
+  } finally {
+    owner.close();
+  }
+}
+
+for (const policy of ["block", "passthrough"] as const) {
+  test(`private ${policy} adoption publishes and self-checks before configuration`, async () => {
+    await prepareResidentEgress(udid, "passthrough");
+    writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
+    await bootFixture();
+    const cap = readLaunchState(udid)!.capabilities.egressGuard!;
+    const page = cap.env!.SERVE_SIM_EGRESS_POLICY_FILE!;
+    const configBefore = readFileSync(config.capabilityConfigPath(udid));
+    await ownerFixture(async ({ adopt, configured, ownerFile, raw }) => {
+      await expect(adopt()).rejects.toThrow("explicit");
+      expect(await raw()).toEqual({ ok: false, error: "session_configuration_failed" });
+      expect(existsSync(ownerFile)).toBe(true);
+      await adopt(policy);
+      expect(configured()).toBe(1);
+      expect(existsSync(ownerFile)).toBe(false);
+      await expect(adopt(policy)).rejects.toThrow();
+    });
+    expect(Number(readFileSync(page).readBigUInt64LE(8) & 3n)).toBe(policy === "block" ? 2 : 1);
+    expect(readFileSync(config.capabilityConfigPath(udid))).toEqual(configBefore);
+  });
+}
+
+test("a changed native boot rejects private adoption before consuming authority", async () => {
+  await prepareResidentEgress(udid, "passthrough");
+  const boot = { pid: 1234, startedAt: "1720000000:42" };
+  writeFileSync(bootFile, JSON.stringify(boot));
+  await bootFixture();
+  await ownerFixture(async ({ adopt, configured, ownerFile }) => {
+    writeFileSync(bootFile, JSON.stringify({ ...boot, startedAt: "1720000001:42" }));
+    await expect(adopt("block")).rejects.toThrow("boot changed");
+    expect(existsSync(ownerFile)).toBe(true);
+    expect(configured()).toBe(0);
+    writeFileSync(bootFile, JSON.stringify(boot));
+    await adopt("block");
+    expect(configured()).toBe(1);
+    expect(existsSync(ownerFile)).toBe(false);
+  });
+});
+
+test("an ordinary uninstrumented owner rejects egress without consuming its normal claim", async () => {
+  await ownerFixture(async ({ adopt, configured, ownerFile }) => {
+    await expect(adopt("block")).rejects.toThrow("No compatible resident");
+    expect(existsSync(ownerFile)).toBe(true);
+    await adopt();
+    expect(configured()).toBe(1);
+    expect(existsSync(ownerFile)).toBe(false);
+  });
+});
+
+test("disconnect during resident compatibility does not consume a claim or publish policy", async () => {
+  await prepareResidentEgress(udid, "passthrough");
+  writeFileSync(bootFile, JSON.stringify({ pid: 1234, startedAt: "1720000000:42" }));
+  await bootFixture();
+  const page = readLaunchState(udid)!.capabilities.egressGuard!.env!.SERVE_SIM_EGRESS_POLICY_FILE!;
+  const before = readFileSync(page);
+  await ownerFixture(async ({ disconnectDuringPreflight, ownerFile, configured, adopt }) => {
+    await disconnectDuringPreflight();
+    expect(existsSync(ownerFile)).toBe(true);
+    expect(configured()).toBe(0);
+    expect(readFileSync(page)).toEqual(before);
+    await adopt("block");
+    expect(configured()).toBe(1);
+    expect(existsSync(ownerFile)).toBe(false);
+  });
 });
 
 function bootShim(
@@ -373,7 +638,6 @@ async function recordedDeadBoot() {
   await child.exited;
   return { pid: child.pid, startedAt: "1720000000:42" };
 }
-
 async function retirementFixture(
   run: (old: NonNullable<ReturnType<typeof readLaunchState>>) => Promise<void>,
 ) {
