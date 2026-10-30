@@ -9,6 +9,7 @@ import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/sc
 import {
   adaptScrcpySession,
   type EmuSession,
+  type ExperimentalGpuCaptureDiagnostics,
   type GrpcCaptureDiagnostics,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
@@ -473,6 +474,46 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
         frameStats,
       },
     });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("reports GPU health using one diagnostics snapshot", async () => {
+  const diagnostics: ExperimentalGpuCaptureDiagnostics = {
+    backend: "gfxstream-cuda-nvenc",
+    encoderName: "h264_nvenc",
+    packets: 120,
+    bytes: 1_000_000,
+    requestedKeyFrames: 2,
+    queuedBytes: 0,
+    fps: 120,
+    nativeSize: { width: 1440, height: 2560 },
+    streamSize: { width: 720, height: 1280 },
+    maxSize: 1280,
+  };
+  let samples = 0;
+  const { session } = fakeScrcpySession(0);
+  const app = await createApp(
+    { serial: session.serial },
+    {
+      startSession: async () => ({
+        ...adaptScrcpySession(session),
+        diagnostics: () => {
+          samples++;
+          return { experimentalGpuCapture: diagnostics };
+        },
+      }),
+    },
+  );
+  try {
+    const before = samples;
+    expect(app.health()).toMatchObject({
+      streamMode: "scrcpy",
+      captureBackend: "gfxstream-cuda-nvenc",
+      experimentalGpuCapture: diagnostics,
+    });
+    expect(samples - before).toBe(1);
   } finally {
     await app.stop();
   }

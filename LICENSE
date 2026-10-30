@@ -22,10 +22,11 @@ SOFTWARE.
 
 ---
 
-This repository includes third-party code that is licensed separately. See the
-vendored licenses:
+This repository includes third-party code that is licensed separately. See:
 
 - serve-sim — Apache License 2.0:
-  packages/expo-device-hub/vendor/serve-sim/LICENSE
+  packages/serve-sim/LICENSE and packages/serve-sim/NOTICE
 - serve-emu — Apache License 2.0:
-  packages/expo-device-hub/vendor/serve-emu/LICENSE
+  packages/serve-emu/LICENSE
+- emulator-capture native dependencies:
+  packages/expo-emulator-capture/THIRD_PARTY_LICENSES.md
