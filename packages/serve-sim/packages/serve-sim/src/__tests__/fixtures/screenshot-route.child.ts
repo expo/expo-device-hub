@@ -5,7 +5,16 @@ import { writeFileSync } from "fs";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
 
-const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const secondPanelPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==",
+  "base64",
+);
+let activeDisplay = 7;
+const capturedDisplays: number[] = [];
 let unstable = false,
   reads = 0,
   fallbackReads = 0,
@@ -20,8 +29,12 @@ mock.module("../../device-session", () => ({
   ) => {
     targets.push(device);
     return await capture({
-      activeScreenId: async () => (unstable ? (++reads % 2 ? 7 : 8) : 7),
-      screenshot: async () => png,
+      activeScreenId: async () => (unstable ? (++reads % 2 ? 7 : 8) : activeDisplay),
+      screenshot: async (display: number) => {
+        capturedDisplays.push(display);
+        if (display !== 7 && display !== 8) throw new Error("Unexpected display");
+        return display === 7 ? png : secondPanelPng;
+      },
     });
   },
 }));
@@ -103,18 +116,23 @@ function socketRequest(payload: unknown): Promise<Buffer | { id: number; error: 
 }
 
 test("real socket callback returns HTTP PNG bytes and validates device/display input", async () => {
-  const response = await middleware(
-    new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
-      method: "POST",
-      headers: { authorization: "Bearer test" },
-    }),
-  );
-  expect(response!.headers.get("content-length")).toBe(String(png.length));
-  const http = Buffer.from(await response!.arrayBuffer());
-  const binary = (await socketRequest({ device: UDID })) as Buffer;
-  expect(binary.readUInt32BE()).toBe(42);
-  expect(binary.subarray(4)).toEqual(http);
-  expect(targets).toEqual([UDID, UDID]);
+  for (const display of [7, 8]) {
+    activeDisplay = display;
+    const response = await middleware(
+      new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+      }),
+    );
+    expect(response!.headers.get("content-length")).toBe(String(png.length));
+    const http = Buffer.from(await response!.arrayBuffer());
+    const binary = (await socketRequest({ device: UDID })) as Buffer;
+    expect(binary.readUInt32BE()).toBe(42);
+    expect(binary.subarray(4)).toEqual(http);
+    expect(http).toEqual(display === 7 ? png : secondPanelPng);
+  }
+  expect(targets).toEqual([UDID, UDID, UDID, UDID]);
+  expect(capturedDisplays).toEqual([7, 7, 8, 8]);
   expect(await socketRequest({ device: "invalid" })).toEqual({
     id: 42,
     error: "Invalid simulator device ID",
