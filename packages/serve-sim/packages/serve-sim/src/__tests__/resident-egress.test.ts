@@ -2,25 +2,11 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 
 import { join } from "node:path";
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
-import {
-  formatCapabilityConfig,
-  capabilityConfigPath,
-  writeManagedStartupDylibs,
-} from "../capability-config";
+import { formatCapabilityConfig, capabilityConfigPath } from "../capability-config";
 
 import { readLaunchState, writeLaunchState, type RecordedCapability } from "../launch-state";
-
-import {
-  disableCapability,
-  enableCapabilities,
-  releaseLaunchState,
-  removeCapabilityLoader,
-  removeCapabilityLoaderSync,
-  isCapabilityArmed,
-  disarmStaleCapabilityLoader,
-} from "../launch-manager";
 
 import { useTempStateDir, withShimsAsync } from "./helpers";
 
