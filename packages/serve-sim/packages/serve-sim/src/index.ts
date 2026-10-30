@@ -2170,7 +2170,7 @@ async function serve(
     sessionStopping = true;
     const failures: unknown[] = [error];
     try {
-      owner?.close();
+      await owner?.close();
     } catch (cleanup) {
       failures.push(cleanup);
     }

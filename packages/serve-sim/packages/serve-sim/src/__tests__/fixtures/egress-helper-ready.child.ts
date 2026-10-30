@@ -4,6 +4,7 @@ import { join } from "node:path";
 import * as runtime from "../../runtime";
 import * as egress from "../../egress";
 import * as sessions from "../../device-session";
+import * as sessionOwner from "../../session-owner";
 import { stateFileForDevice } from "../../state";
 import { useTempStateDir, withShimsAsync } from "../helpers";
 
@@ -21,6 +22,7 @@ test("checked resident boot disappears while the real CLI binds its preview", as
   const listeners = new Map(signals.map((signal) => [signal, process.listeners(signal)]));
   let gone = false,
     stopped = false,
+    ownerDrained = false,
     middleware: any;
   const outputs: string[] = [];
   mock.module("../../egress", () => ({
@@ -35,11 +37,23 @@ test("checked resident boot disappears while the real CLI binds its preview", as
     servePreview: async (options: any) => {
       middleware = options.middleware;
       expect(existsSync(join(state.dir, "resident-wait"))).toBe(true);
-      gone = true;
       return {
         port: 32001,
         stop() {
+          expect(ownerDrained).toBe(true);
           stopped = true;
+        },
+      };
+    },
+  }));
+  mock.module("../../session-owner", () => ({
+    ...sessionOwner,
+    startSessionOwner: async () => {
+      gone = true;
+      return {
+        async close() {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          ownerDrained = true;
         },
       };
     },
@@ -61,7 +75,16 @@ test("checked resident boot disappears while the real CLI binds its preview", as
   });
   try {
     process.env.SERVE_SIM_STREAM_HELPER = "1";
-    process.argv = [process.execPath, join(import.meta.dir, "../../index.ts"), uid, "--quiet"];
+    process.argv = [
+      process.execPath,
+      join(import.meta.dir, "../../index.ts"),
+      uid,
+      "--quiet",
+      "--orphan",
+      "--require-token",
+      "--transport",
+      "webrtc",
+    ];
     let failure: unknown;
     const waitMarker = join(state.dir, "resident-wait");
     await withShimsAsync(
@@ -85,10 +108,14 @@ exit 99
     );
     expect(failure).toBeInstanceOf(Exit);
     expect((failure as Exit).code).toBe(1);
-    expect(outputs.some((value) => value.includes("Simulator boot changed"))).toBe(true);
+    expect(
+      outputs.some((value) => value.includes("Simulator boot changed")),
+      outputs.join("\n"),
+    ).toBe(true);
     expect(outputs.some((value) => value.includes('"url"'))).toBe(false);
     expect(existsSync(stateFileForDevice(uid))).toBe(false);
     expect(stopped).toBe(true);
+    expect(ownerDrained).toBe(true);
   } finally {
     await middleware?.dispose?.();
     for (const signal of signals)
