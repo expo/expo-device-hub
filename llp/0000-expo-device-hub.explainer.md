@@ -74,8 +74,24 @@ is hidden and its space is given to the device; it returns when the keyboard clo
 The top-right mobile controls form one vertical toolbar, including the keyboard
 toggle. It overlays the device without taking layout space. The sidebar toggle remains separate.
 On mobile widths, presentation mode keeps its existing controls and fits the visible
-viewport, including while the phone keyboard is raised. Tablet and desktop widths
+viewport, including while the phone keyboard is raised. Mobile presentation controls
+retain the keyboard capture input’s focus so exiting does not dismiss the keyboard
+and trigger a second viewport refit. Tablet and desktop widths
 keep their existing toolbar rendering and presentation sizing.
+For flat mobile previews, the normal fitted width is retained while presentation
+unmounts its controls. A single layout transform animates the device between its
+normal and presentation bounds; an interrupted animation restarts from its current
+visible bounds rather than its old target. The initial fit and reduced motion do
+not animate. Mobile hardware artwork and its screen opening use the current layout
+size in that same render; waiting for a ResizeObserver would leave their pixel
+rectangles at the previous size for a frame during keyboard fitting. For the
+same reason, the mobile fitted width is measured again in the commit that applies
+a new page height or hides the action row; otherwise the old, taller device
+overflows the keyboard-sized page and jumps up for a frame. Desktop
+keeps observed dimensions for its width transition, and 3D Duo keeps its existing
+animation path.
+[observed: ServeSim `src/client/hooks/use-flip-layout.ts`,
+`src/client/hooks/use-mobile-simulator-size.ts`, and `src/client/utils/layout-transition.ts`]
 [observed: `src/client/client.tsx` and `src/client/hooks/use-mobile-simulator-size.ts`
 in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
 

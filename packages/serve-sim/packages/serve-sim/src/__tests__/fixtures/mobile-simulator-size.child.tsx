@@ -32,8 +32,23 @@ const statusRef = {
   current: { getBoundingClientRect: () => ({ height: statusHeight }) } as HTMLElement,
 };
 let result: number | null = null;
-function Probe({ enabled = true, aspect = 0.5, warning = false }) {
-  result = useMobileSimulatorSize(pageRef, actionsRef, enabled, aspect, statusRef, warning);
+function Probe({
+  enabled = true,
+  aspect = 0.5,
+  pageHeight = 700,
+  actionsHidden = false,
+  warning = false,
+}) {
+  result = useMobileSimulatorSize(
+    pageRef,
+    actionsRef,
+    enabled,
+    aspect,
+    pageHeight,
+    actionsHidden,
+    statusRef,
+    warning,
+  );
   return null;
 }
 let renderer: ReactTestRenderer;
@@ -77,7 +92,23 @@ assert.equal(result, 372, "fit a landscape stream without changing its aspect ra
 await act(async () => {
   renderer.update(<Probe enabled={false} />);
 });
-assert.equal(result, null, "release mobile sizing on desktop or presentation mode");
+assert.equal(result, 372, "hold the normal width while presentation unmounts its controls");
+page.clientHeight = 700;
+page.clientWidth = 390;
+await act(async () => {
+  renderer.update(<Probe />);
+});
+assert.equal(result, 283, "measure again when normal controls return");
+page.clientHeight = 350;
+actionsHeight = 0;
+await act(async () => {
+  renderer.update(<Probe pageHeight={350} actionsHidden />);
+});
+assert.equal(
+  result,
+  143,
+  "refit in the commit that applies the keyboard height, not after a later observer callback",
+);
 assert.ok(disconnects >= 2, "disconnect observers on mode changes");
 await act(async () => {
   renderer.unmount();

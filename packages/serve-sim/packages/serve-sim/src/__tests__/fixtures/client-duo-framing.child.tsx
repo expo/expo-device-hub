@@ -75,6 +75,10 @@ const grid = {
   devices: [{ device: "DUO", name: "iPhone Duo", runtime: "iOS-26", helper: {} }],
   total: 1,
 };
+let fittedMobileWidth: number | null = null;
+mock.module("../../client/hooks/use-mobile-simulator-size", () => ({
+  useMobileSimulatorSize: () => fittedMobileWidth,
+}));
 const hooks: Record<string, Record<string, unknown>> = {
   "use-clipboard-toast": {
     useClipboardToast: () => ({
@@ -981,5 +985,58 @@ test("an angle-only native update reconciles an expired optimistic rotation befo
     ).toBeCloseTo(0, 6);
   } finally {
     Date.now = realNow;
+  }
+});
+
+// The actual App wiring must not wait for a ResizeObserver delivery to update
+// pixel-based chrome after mobile fitting. The fitting hook itself has a
+// separate suite; here it supplies the two widths of a keyboard refit.
+test("mobile frame pixels follow the current fit before an observer delivery", async () => {
+  const { DeviceKitChrome } = await import("../../client/components/device-chrome-frame");
+  const device = grid.devices[0]!;
+  const originalName = device.name;
+  device.name = "iPhone SE";
+  const config = window.__SIM_PREVIEW__!;
+  Object.assign(config, {
+    chrome: {
+      identifier: "test-phone",
+      frame: { width: 1000, height: 2000 },
+      body: { x: 0, y: 0, width: 1000, height: 2000 },
+      screen: { x: 100, y: 200, width: 800, height: 1600 },
+      insets: { top: 0, left: 0, bottom: 0, right: 0 },
+      outerCornerRadius: 0,
+      innerCornerRadius: 0,
+      screenRadius: 0,
+      compositeImage: "Composite",
+      slice: null,
+      corner: null,
+      buttons: [],
+    },
+  });
+  window.innerWidth = 402;
+  fittedMobileWidth = 300;
+  try {
+    await mount();
+    for (const orientation of ["portrait", "landscape_left"] as const) {
+      await observe({ width: 750, height: 1334, orientation });
+      const heightRatio = orientation === "portrait" ? 2 : 0.5;
+      for (const width of [300, 160, 300]) {
+        fittedMobileWidth = width;
+        window.innerHeight = width === 160 ? 377 : 714;
+        await act(async () => {
+          window.dispatchEvent(new Event("resize"));
+        });
+        expect(renderer!.root.findByType(DeviceKitChrome).props.containerSize).toEqual({
+          width,
+          height: width * heightRatio,
+        });
+      }
+    }
+  } finally {
+    fittedMobileWidth = null;
+    device.name = originalName;
+    delete config.chrome;
+    window.innerWidth = 1280;
+    window.innerHeight = 900;
   }
 });

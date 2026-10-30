@@ -7,6 +7,11 @@ export function useMobileSimulatorSize(
   actionsRef: RefObject<HTMLElement | null>,
   enabled: boolean,
   aspectRatio: number,
+  // The page height and action-row visibility the caller just rendered.
+  // Measuring again in the same commit keeps the device from overflowing the
+  // keyboard-sized page for a frame while the ResizeObserver catches up.
+  pageHeight: number,
+  actionsHidden: boolean,
   statusRef?: RefObject<HTMLElement | null>,
   statusVisible = false,
 ) {
@@ -14,10 +19,9 @@ export function useMobileSimulatorSize(
   useLayoutEffect(() => {
     const page = pageRef.current;
     const actions = actionsRef.current;
-    if (!enabled || !page || !actions) {
-      setWidth(null);
-      return;
-    }
+    // Presentation removes the action row. Keep the last normal width so exit
+    // can animate back to it without a temporary desktop-size layout.
+    if (!enabled || !page || !actions) return;
     const measure = () => {
       const style = getComputedStyle(page);
       const availableWidth =
@@ -44,6 +48,15 @@ export function useMobileSimulatorSize(
     observer.observe(actions);
     if (statusRef?.current) observer.observe(statusRef.current);
     return () => observer.disconnect();
-  }, [pageRef, actionsRef, enabled, aspectRatio, statusRef, statusVisible]);
+  }, [
+    pageRef,
+    actionsRef,
+    enabled,
+    aspectRatio,
+    pageHeight,
+    actionsHidden,
+    statusRef,
+    statusVisible,
+  ]);
   return width;
 }
