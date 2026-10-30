@@ -125,6 +125,9 @@ foreground streaming [observed: `src/index.ts` CLI action]:
    identifier, apply requested/default capabilities instead.
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
+   Once it publishes device state, it starts each device's capture session in the
+   background, without waiting for the first `/readyz`. `/readyz` awaits that same
+   start before it answers ready, and a failed start is retried by the next poll.
 
 Plain foreground preview startup without capture, app startup, or capability
 overrides, with the loader and clipboard reader built, prepares defaults while arming
@@ -133,7 +136,8 @@ order so an on-demand build cannot delay initial arming. Combined initialization
 retains idle-session ownership even when no default prepares.
 A failed publication with successful rollback falls back to separate arming and
 default initialization. A stop signal prevents fallback, and lock timeouts and
-uncertain rollback stop startup. The late live insert
+uncertain rollback stop startup. The startup error then lists the failed update and the
+failed restore, so a log shows which calls failed. The late live insert
 read and ordered environment writes are unchanged [observed: `src/index.ts`
 `combineInitialDefaults`; `src/launch-manager.ts` `applyDefaultCapabilities`].
 
@@ -163,6 +167,90 @@ action. `launchAppAsync` awaits launch before opening the URL. These are success
 simctl operations, not proof that the app rendered its UI or handled the deep link
 [observed: `src/host-actions-utils.ts` `installAppInvocation`; `src/launch-app.ts`].
 
+## Prepared process adoption
+
+Start a warm server with `serve-sim <udid> --orphan --require-token --transport webrtc`.
+Only `--orphan` creates the private one-shot owner channel; matching these settings
+without the flag leaves a normal server unadoptable. This makes ownership handoff
+an explicit startup choice instead of inferring it from unrelated preview settings
+[confirmed: Gabe Debes, 2026-10-26, explicit orphan flag direction].
+The flag requires at least one device and a loopback, token-protected WebRTC preview.
+The first target boots before server startup; additional targets warm in that same
+process after its initial state is published, without delaying the first target.
+A private claim cancels future warmup. Adoption of the first target does not join
+warmup of the others; adoption of another target joins it. A target this process
+already prepared passes only bootstatus again; any other target is prepared fully.
+Unused devices are unpublished before the handoff. In the background, after their
+warmup drains, adoption drains their native input/video and network capture and
+shuts down the exact unused UDIDs; failures are logged and make the session stop exit
+non-zero, the session stop joins this work, and the launcher's terminal stop confirms
+every shutdown
+[confirmed: Gabe Debes, 2026-10-29, hand over warm devices without repeated preparation]. Ownership and
+capability configuration stay unchanged if shutdown fails or cannot be confirmed
+[observed: `src/launch-manager.ts` `releaseSession`].
+Before preparing another target, adoption checks its preview and capability owners
+and reserves it under the device lock. Preview publication honors this reservation,
+which survives discovery unpublication until shutdown or session cleanup
+[observed: `src/launch-manager.ts` `reserveDeviceSession`, `src/state.ts`].
+Cancellation is checked again after taking the reservation lock. Preview publication
+waits at most one lock poll, so another process's native work cannot freeze adoption
+or input for the other devices [observed: `src/launch-manager.ts`, `src/state.ts`].
+Adoption refuses foreign live or persistent ownership. The UI grid retains its
+explicit user shutdown contract, including a separate detached helper, and its
+legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
+successful bootstatus instead [observed: `src/device-lifecycle.ts`, `src/device.ts`]. Adoption of a
+target that is still warming waits for that warmup; this is distinct from publishing the
+first warm device’s initial readiness
+[confirmed: Gabe Debes, 2026-10-28, keep the server and select or boot internally].
+It cannot accompany `--adopt`, list/kill, `--detach`, `--no-preview` or subcommands
+[observed: `packages/serve-sim/packages/serve-sim/src/index.ts`].
+
+`serve-sim <udid> --adopt --require-token --transport webrtc` parses the same
+normal startup flags and defaults, then claims that orphan without starting
+another server. With an explicit `--port`, discovery uses the private owner record
+for that port rather than requiring existing state for the requested UDID. Without
+an explicit port, the requested device must already have state to locate its server.
+The immutable identity still includes the startup device, PID, package version,
+macOS boot, host, port, state directory, temporary directory and process-bound
+startup environment. The requested device travels separately in the strict private
+configuration [observed: `src/index.ts`, `src/session-owner.ts`].
+
+An unclaimed orphan exposes only GET/HEAD health, readiness and authenticated
+state probes; it refuses input, actions and subscriptions until the private handoff
+succeeds. Its read-only state probe does not initialize clipboard capabilities.
+Consuming the claim synchronously cancels future warmup before parsing or awaiting
+configuration. The owner retires prior native input before changing the selection. It uses the normal serve-sim boot/dylib
+and capability setup for a new target, then awaits native capture, requested
+network capture and recording before confirming adoption. `--single-device`
+restricts the job to its selected device; it does not require the warm device to
+match. An explicit startup restriction remains immutable. Failed configuration
+remains consumed and unavailable, and shutdown joins in-flight configuration before
+resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
+
+The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
+It is separate from the preview token and never exposed by HTTP or `/exec-ws`.
+A compatible claim consumes the local authority once, including when native setup
+fails. It updates stream settings including normal encoder defaults, STUN/TURN,
+CORS/frame policy, sharing, screenshot directory and capture fields/upstream.
+A running native encoder receives the update before the CLI reports success.
+Optional paired recording output/ID flags also await the native writer before
+success, confirming that output/ID in startup JSON. The same server owns video
+until exact-ID finalization or shutdown, without a `record-video` child or
+heartbeat; warmup starts no video [observed: `src/device-session.ts`,
+`src/middleware.ts`, `src/session-owner.ts`].
+Capture restarts with the requested upstream before the CLI succeeds and before app operations; an upstream
+failure never selects direct traffic [observed: `src/index.ts`, `src/middleware.ts`,
+`src/device-session.ts`, `src/capture/upstream.ts`].
+
+Adoption rejects helper/detach modes, list/kill combinations, debug logging,
+insecure-host policy changes, app-startup flags, capability overrides and
+additional boot dylibs. These require the caller to stop its prepared service
+and use the existing cold path. It also rejects subcommand combinations before
+the subcommand runs. The adoption command never silently falls back or executes
+app startup twice; the job continues using authenticated `app.install` and
+`app.launch` on `/exec-ws` [observed: `src/index.ts`; confirmed: Gabe Debes,
+2026-10-22, CLI adoption direction].
+
 ## Failure and teardown
 
 Failed boot, install, launch or `simctl openurl` stops startup with exit code 1,
@@ -188,15 +276,17 @@ publication, app operations, preview imports/construction, HTTP binding, state
 publication, and native device options/capture/screen configuration. A started
 phase without a completion line identifies work still pending. Host-action
 `app.install` and `app.launch` timings also cover apps supplied after the listener
-starts. App timings include the validated target UDID and a device name when
-available from existing device snapshots; logging does not add device queries.
+starts. Nested `app.launch.capabilities` and `app.launch.terminate` phases time
+capability publication and the stop before a restart.
+App timings include the validated target UDID and a device name when available
+from existing device snapshots; logging does not add device queries.
 Nonzero install/launch results, including timeouts, log failure without changing
 the result. A failed stale-loader insert read logs the original error (including
 its process-error cause), reports a failed phase, and still lets startup continue.
 For best-effort loader arming, completion means the function returned,
 not that every capability applied. Phases can overlap; their durations are not an end-to-end sum
 [observed: `src/startup-timing.ts`, `src/index.ts`, `src/device-session.ts`,
-`src/host-actions.ts`].
+`src/host-actions.ts`, `src/launch-manager.ts`].
 
 `/readyz` keeps its response contract and logs readiness transitions on stderr.
 An unavailable response identifies no usable booted session (`session-unavailable`,

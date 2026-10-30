@@ -57,6 +57,11 @@ import {
   withBearerToken,
 } from "./session-auth";
 import { FRAME_ANCESTORS, SESSION_TOKEN } from "./session-token";
+import {
+  SERVER_SINGLE_DEVICE,
+  allowsSessionDeviceAction,
+  singleDeviceRefusal,
+} from "./single-device";
 import { SERVER_HIDE_SIDEBAR } from "./sidebar";
 import { listNewDeviceOptions } from "./sim-options";
 import { SERVER_TRANSPORT } from "./transport";
@@ -113,7 +118,8 @@ async function serveClientIndexHtml(): Promise<Response | null> {
       SERVER_PLATFORM_FILTER,
       SERVER_TRANSPORT,
       SERVER_HIDE_SIDEBAR,
-      SERVER_HIDE_BOOT_DEVICE,
+      SERVER_HIDE_BOOT_DEVICE || !!SERVER_SINGLE_DEVICE,
+      SERVER_SINGLE_DEVICE?.id,
     ),
     {
       headers: {
@@ -230,40 +236,32 @@ async function routeRequest(request: Request): Promise<Response | null> {
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
   }
 
-  if (pathname === SHUTDOWN_DEVICE_ROUTE || pathname === REMOVE_DEVICE_ROUTE) {
+  const actionKind =
+    pathname === BOOT_DEVICE_ROUTE
+      ? "boot"
+      : pathname === SHUTDOWN_DEVICE_ROUTE
+        ? "shutdown"
+        : pathname === REMOVE_DEVICE_ROUTE
+          ? "remove"
+          : null;
+  if (actionKind) {
     if (request.method !== "POST") {
       return jsonResponse({ ok: false, error: "Method Not Allowed" }, 405);
     }
-
     const action = await parseDeviceAction(request);
     if (!action) {
       return jsonResponse({ ok: false, error: "Expected { platform, id, name } JSON body" }, 400);
     }
-
+    if (!allowsSessionDeviceAction(SERVER_SINGLE_DEVICE, actionKind, action)) {
+      return singleDeviceRefusal();
+    }
     try {
       const result =
-        pathname === SHUTDOWN_DEVICE_ROUTE
-          ? await shutdownHubDevice(action)
-          : await removeHubDevice(action);
-      if (result.ok) refreshDeviceList();
-      return jsonResponse(result);
-    } catch (error) {
-      return jsonResponse({ ok: false, error: String(error) }, 500);
-    }
-  }
-
-  if (pathname === BOOT_DEVICE_ROUTE) {
-    if (request.method !== "POST") {
-      return jsonResponse({ ok: false, error: "Method Not Allowed" }, 405);
-    }
-
-    const action = await parseDeviceAction(request);
-    if (!action) {
-      return jsonResponse({ ok: false, error: "Expected { platform, id, name } JSON body" }, 400);
-    }
-
-    try {
-      const result = await bootHubDevice(action, emuCameraFeeds);
+        actionKind === "boot"
+          ? await bootHubDevice(action, emuCameraFeeds)
+          : actionKind === "shutdown"
+            ? await shutdownHubDevice(action)
+            : await removeHubDevice(action);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {
@@ -272,6 +270,7 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === CREATE_DEVICE_ROUTE) {
+    if (SERVER_SINGLE_DEVICE) return singleDeviceRefusal();
     if (request.method !== "POST") {
       return jsonResponse({ ok: false, error: "Method Not Allowed" }, 405);
     }
@@ -294,6 +293,7 @@ async function routeRequest(request: Request): Promise<Response | null> {
   }
 
   if (pathname === NEW_DEVICE_OPTIONS_ROUTE) {
+    if (SERVER_SINGLE_DEVICE) return singleDeviceRefusal();
     if (request.method !== "GET") {
       return jsonResponse({ ok: false, error: "Method Not Allowed" }, 405);
     }

@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import type { ServerWebSocket } from "bun";
+import { DEFAULT_IDLE_REPEAT_MS } from "./grpc-session.ts";
 import {
   CameraInputError,
   cameraLaunchIsWired,
@@ -1530,6 +1531,10 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     ok: true as const,
     serial: context.serial,
     mode: context.stream.mode,
+    repeatFrameMs:
+      context.stream.mode === "grpc-screenshot"
+        ? opts.repeatFrameMs || DEFAULT_IDLE_REPEAT_MS
+        : (opts.repeatFrameMs ?? SCRCPY_DEFAULTS.repeatFrameMs),
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
     encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
@@ -1953,6 +1958,13 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       if (url.pathname === "/webrtc/offer") {
         if (req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });
+        }
+        const requestedSerial = url.searchParams.get("device")?.trim();
+        if (requestedSerial && requestedSerial !== requestContext.serial) {
+          return Response.json(
+            { ok: false, code: "device_mismatch", error: "selected device is not active" },
+            { status: 409 },
+          );
         }
         try {
           const offer = parseWebRtcOffer(

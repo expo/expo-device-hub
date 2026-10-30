@@ -80,6 +80,7 @@ import { useResizableHeight, useResizableWidth } from "./hooks/use-resizable-wid
 import { useScreenshotToast } from "./hooks/use-screenshot-toast";
 import { useMobileSimulatorSize } from "./hooks/use-mobile-simulator-size";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
+import { getSimulatorViewport } from "./utils/simulator-viewport";
 import { useFlipLayout } from "./hooks/use-flip-layout";
 import { useUploadToasts } from "./hooks/use-upload-toasts";
 import { useWebKitDevtools } from "./hooks/use-webkit-devtools";
@@ -106,6 +107,7 @@ import {
   mjpegStreamUrlFrom,
   simEndpoint,
   streamConfigFrom,
+  sameSimulator,
   webrtcCloseUrlFrom,
   webrtcOfferUrlFrom,
   webrtcStatsUrlFrom,
@@ -166,6 +168,7 @@ function previewConfigKey(config: PreviewConfig | null): string {
 }
 
 function App() {
+  const singleDevice = window.__SIM_PREVIEW__?.singleDevice;
   const [injectedConfig] = useState(() => streamConfigFrom(window.__SIM_PREVIEW__));
   const [config, setConfig] = useState<PreviewConfig | null>(() =>
     proxyPreviewConfigForBrowser(injectedConfig, window.location),
@@ -175,6 +178,7 @@ function App() {
   // this and re-subscribes the SSE below — the main view swaps streams instantly
   // (or shows a Start placeholder) without a full page reload.
   const [selectedUdid, setSelectedUdid] = useState<string | null>(() => {
+    if (singleDevice) return singleDevice;
     if (injectedConfig) return injectedConfig.device;
     return new URLSearchParams(window.location.search).get("device");
   });
@@ -216,7 +220,7 @@ function App() {
   // Open the sidebar by default when the viewport has room for it beside the
   // simulator; narrow windows keep it collapsed so the device isn't squeezed.
   const [gridOpen, setGridOpen] = useState(() => {
-    if (typeof window === "undefined" || presentationBoot.initial) return false;
+    if (typeof window === "undefined" || presentationBoot.initial || singleDevice) return false;
     return window.innerWidth >= DEVICE_SIDEBAR_WIDTH + 640;
   });
   const { width: gridPanelWidth, onPointerDown: onGridResize } = useResizableWidth(
@@ -253,7 +257,7 @@ function App() {
   // a helper, so its config lands as soon as it boots rather than waiting on the
   // next filesystem-watch tick — the stream appears sooner after boot.
   const selectedHasHelper = !!(
-    selectedUdid && gridDevices?.find((d) => d.device === selectedUdid)?.helper
+    selectedUdid && gridDevices?.find((d) => sameSimulator(d.device, selectedUdid))?.helper
   );
 
   const selectDevice = useCallback((udid: string) => {
@@ -315,7 +319,8 @@ function App() {
           endpoint.searchParams.set("device", udid);
           const res = await fetch(endpoint, { cache: "no-store" });
           const json = await res.json();
-          if ((json.statuses ?? []).some((d: any) => d.device === udid && d.helper)) return true;
+          if ((json.statuses ?? []).some((d: any) => sameSimulator(d.device, udid) && d.helper))
+            return true;
         } catch {}
         await new Promise((r) => setTimeout(r, 400));
       }
@@ -404,8 +409,12 @@ function App() {
         } else if (window.__SIM_PREVIEW__) {
           // Keep the minimal injection: the empty state still routes through
           // simEndpoint (basePath) and authenticates /exec (execToken).
-          const { basePath, execToken } = window.__SIM_PREVIEW__;
-          window.__SIM_PREVIEW__ = { basePath, execToken } as Window["__SIM_PREVIEW__"];
+          const { basePath, execToken, singleDevice } = window.__SIM_PREVIEW__;
+          window.__SIM_PREVIEW__ = {
+            basePath,
+            execToken,
+            singleDevice,
+          } as Window["__SIM_PREVIEW__"];
         }
         return next;
       });
@@ -502,13 +511,14 @@ function App() {
   // Selection drives the view: stream when the selected device's helper config
   // has arrived, otherwise a placeholder (connecting / boot-and-start).
   const effectiveUdid = selectedUdid ?? config?.device ?? null;
-  const selectedDevice = gridDevices?.find((d) => d.device === effectiveUdid) ?? null;
+  const selectedDevice = gridDevices?.find((d) => sameSimulator(d.device, effectiveUdid)) ?? null;
   // The catalog is a fetch behind the inlined config, so until it lands the
   // device would lay out at the bare screen aspect and then reflow into its bezel.
   // Once available, prefer the catalog's complete cover/inner display variants.
-  const inlineChrome =
-    injectedConfig?.device === effectiveUdid ? (injectedConfig.chrome ?? null) : null;
-  const isStreaming = !!config && config.device === effectiveUdid;
+  const inlineChrome = sameSimulator(injectedConfig?.device, effectiveUdid)
+    ? (injectedConfig?.chrome ?? null)
+    : null;
+  const isStreaming = !!config && sameSimulator(config.device, effectiveUdid);
 
   let mainView: ReactNode;
   if (isStreaming && config) {
@@ -557,6 +567,10 @@ function App() {
             error={actionErrors[selectedDevice.device] ?? null}
             onStart={() => startDevice(selectedDevice.device)}
           />
+        ) : singleDevice ? (
+          <p>
+            The session device is unavailable. Reconnect or restart the same device to continue.
+          </p>
         ) : gridDevices ? (
           <div className="flex flex-col items-center gap-3 text-center">
             <h1 className="text-[18px] m-0 text-white/90">No simulators available</h1>
@@ -579,43 +593,45 @@ function App() {
       <ServeSimToaster />
       {/* Persistent left device sidebar — overlays every main view so swapping
           streams never remounts (and refetches) the picker. */}
-      <div
-        aria-hidden={presentation}
-        style={{
-          opacity: presentation ? 0 : 1,
-          // `visibility`, not `hidden`: an unrendered element has no opacity to
-          // fade back in from. Still keeps it out of the tab order.
-          visibility: chromeGone ? "hidden" : "visible",
-          pointerEvents: presentation ? "none" : undefined,
-          transition: `opacity ${SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS}ms ease`,
-        }}
-      >
-        <GridPanel
-          open={gridOpen}
-          onClose={() => setGridOpen(false)}
-          width={gridPanelWidth}
-          side="left"
-          devices={gridDevices}
-          total={gridTotal}
-          hasMore={gridHasMore}
-          onLoadMore={loadMoreGrid}
-          onLoadAll={loadAllGrid}
-          onResetPage={resetGridPage}
-          selectedUdid={effectiveUdid}
-          onSelect={selectDevice}
-          starting={starting}
-          shuttingDown={shuttingDown}
-          onShutdown={shutdownDevice}
-        />
-        <ResizeHandle
-          panelWidth={gridPanelWidth}
-          visible={gridOpen}
-          onPointerDown={onGridResize}
-          ariaLabel="Resize simulators sidebar"
-          side="left"
-        />
-        <DeviceSidebarToggle open={gridOpen} onClick={() => setGridOpen(true)} />
-      </div>
+      {!singleDevice && (
+        <div
+          aria-hidden={presentation}
+          style={{
+            opacity: presentation ? 0 : 1,
+            // `visibility`, not `hidden`: an unrendered element has no opacity to
+            // fade back in from. Still keeps it out of the tab order.
+            visibility: chromeGone ? "hidden" : "visible",
+            pointerEvents: presentation ? "none" : undefined,
+            transition: `opacity ${SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS}ms ease`,
+          }}
+        >
+          <GridPanel
+            open={gridOpen}
+            onClose={() => setGridOpen(false)}
+            width={gridPanelWidth}
+            side="left"
+            devices={gridDevices}
+            total={gridTotal}
+            hasMore={gridHasMore}
+            onLoadMore={loadMoreGrid}
+            onLoadAll={loadAllGrid}
+            onResetPage={resetGridPage}
+            selectedUdid={effectiveUdid}
+            onSelect={selectDevice}
+            starting={starting}
+            shuttingDown={shuttingDown}
+            onShutdown={shutdownDevice}
+          />
+          <ResizeHandle
+            panelWidth={gridPanelWidth}
+            visible={gridOpen}
+            onPointerDown={onGridResize}
+            ariaLabel="Resize simulators sidebar"
+            side="left"
+          />
+          <DeviceSidebarToggle open={gridOpen} onClick={() => setGridOpen(true)} />
+        </div>
+      )}
     </>
   );
 }
@@ -1667,38 +1683,24 @@ function AppWithConfig({
     onHostPathDrop: screenshot.dismiss,
   });
 
+  const rightPanelWidthPx = devtoolsOpen ? devtoolsPanelWidth : panelOpen ? toolsPanelWidth : 0;
+  const contentViewport = getSimulatorViewport(
+    viewportWidth,
+    !presentation && gridOpen ? gridPanelWidth : 0,
+    presentation ? 0 : rightPanelWidthPx,
+  );
   const simulatorResize = useSimulatorResize({
     defaultWidth: containerDefaultWidth,
-    viewportWidth,
+    viewportWidth: contentViewport.width,
     viewportHeight: stableViewportHeight,
     aspectRatio: containerAspectRatioValue,
     reservedForChrome: SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME,
     onStart: () => setSimFocused(false),
   });
 
-  // Only shift the simulator when a panel would otherwise collide with it.
-  // Tools/DevTools dock on the right; the device sidebar docks on the left, so
-  // each pushes the centered simulator the opposite way.
   const PANEL_EDGE_OFFSET = 12;
-  const PANEL_GAP = 24;
   const RAIL_PANEL_GAP = 8;
   const SM_BREAKPOINT = 640;
-  const deviceWidth =
-    deviceRenderedWidth > 0
-      ? Math.min(deviceRenderedWidth, simulatorResize.width)
-      : simulatorResize.width;
-  // Shift needed to clear a docked panel of `panelWidthPx` on the given side
-  // without ever pushing the device under the opposite edge.
-  const shiftToClear = (panelWidthPx: number): number => {
-    if (panelWidthPx <= 0) return 0;
-    const panelInnerEdge = viewportWidth - PANEL_EDGE_OFFSET - panelWidthPx;
-    const deviceEdgeAtCenter = viewportWidth / 2 + deviceWidth / 2;
-    const overlap = deviceEdgeAtCenter - (panelInnerEdge - PANEL_GAP);
-    if (overlap <= 0) return 0;
-    const shiftNeeded = 2 * overlap;
-    return shiftNeeded <= panelWidthPx + PANEL_GAP ? shiftNeeded : 0;
-  };
-  const rightPanelWidthPx = devtoolsOpen ? devtoolsPanelWidth : panelOpen ? toolsPanelWidth : 0;
   const [exitScaling, setExitScaling] = useState(false);
   useEffect(() => {
     if (presentation) {
@@ -1710,8 +1712,6 @@ function AppWithConfig({
     return () => clearTimeout(id);
   }, [presentation, exitScaling]);
   const scaling = presentation || exitScaling;
-  const shiftForRightPanel = presentation ? 0 : shiftToClear(rightPanelWidthPx);
-  const shiftForLeftPanel = presentation ? 0 : shiftToClear(gridOpen ? gridPanelWidth : 0);
   const presentationInset = SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION;
   const mobileActionsRef = useRef<HTMLDivElement | null>(null);
   const mobileWidth = useMobileSimulatorSize(
@@ -1762,18 +1762,20 @@ function AppWithConfig({
       >
         <PanelRight size={18} strokeWidth={1.75} />
       </IconButton>
-      <IconButton
-        onClick={() => {
-          setPanelOpen(false);
-          setDevtoolsOpen((o) => !o);
-        }}
-        className="max-sm:hidden"
-        aria-label="Open WebKit DevTools"
-        aria-pressed={devtoolsOpen}
-        title="WebKit DevTools"
-      >
-        <Globe size={18} strokeWidth={1.75} />
-      </IconButton>
+      {!window.__SIM_PREVIEW__?.singleDevice && (
+        <IconButton
+          onClick={() => {
+            setPanelOpen(false);
+            setDevtoolsOpen((o) => !o);
+          }}
+          className="max-sm:hidden"
+          aria-label="Open WebKit DevTools"
+          aria-pressed={devtoolsOpen}
+          title="WebKit DevTools"
+        >
+          <Globe size={18} strokeWidth={1.75} />
+        </IconButton>
+      )}
       <IconButton
         onClick={() => setLogsOpen((o) => !o)}
         aria-label="Open device logs"
@@ -1803,12 +1805,12 @@ function AppWithConfig({
             ? presentationInset
             : mobileLayout
               ? "max(4px, env(safe-area-inset-left, 0px))"
-              : 24 + shiftForLeftPanel,
+              : 24 + contentViewport.left,
           paddingRight: presentation
             ? presentationInset
             : mobileLayout
               ? "max(4px, env(safe-area-inset-right, 0px))"
-              : 24 + shiftForRightPanel,
+              : 24 + contentViewport.right,
           transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
         }}
       >
@@ -1857,17 +1859,21 @@ function AppWithConfig({
                 }}
               >
                 <span className="hidden sm:contents">
-                  <SimulatorToolbar.Title
-                    onClick={() => setGridOpen((o) => !o)}
-                    aria-label="Toggle simulators sidebar"
-                    aria-pressed={gridOpen}
-                    title="Simulators"
-                    hideSubtitle
-                    hideChevron
-                    style={{
-                      maxWidth: "min(230px, calc(100vw - 170px))",
-                    }}
-                  />
+                  {window.__SIM_PREVIEW__?.singleDevice ? (
+                    <span className="max-w-57.5 truncate text-sm">{deviceName ?? "Simulator"}</span>
+                  ) : (
+                    <SimulatorToolbar.Title
+                      onClick={() => setGridOpen((o) => !o)}
+                      aria-label="Toggle simulators sidebar"
+                      aria-pressed={gridOpen}
+                      title="Simulators"
+                      hideSubtitle
+                      hideChevron
+                      style={{
+                        maxWidth: "min(230px, calc(100vw - 170px))",
+                      }}
+                    />
+                  )}
                 </span>
                 <StreamStatusPill
                   streaming={streaming}

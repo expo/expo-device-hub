@@ -1,5 +1,29 @@
 # expo-device-hub
 
+## 0.19.1
+
+### Patch Changes
+
+- 32b4ccf: Stop the device list from hanging when CoreSimulatorService stops responding. `simctl` calls now time out after 30 s and report that the command did not respond.
+- 0665a67: Fix about three seconds of lag in the iOS Simulator preview on Chromium. The vendored serve-sim stream now declares that frames are never reordered after its encoder falls back to default rate control.
+
+## 0.19.0
+
+### Minor Changes
+
+- 96d74b8: Add single-device mode to lock the Hub to one device and hide the sidebar.
+
+## 0.18.1
+
+### Patch Changes
+
+- 16dcce4: Fix pnpm installation failing on the node-datachannel install script by using prebuilt platform packages that do not need install scripts.
+- 660da0e: Retry temporary Android WebRTC offer conflicts when capture or the device session changes during setup.
+
+  Refuse standalone Android WebRTC offers for a selected device that is no longer active, so recovery cannot connect to a different device.
+
+- 174f551: Advertise the effective Android idle repeat interval and recover gRPC screenshot streams that stop delivering frames, while allowing scrcpy and slow custom repeats to stay idle. Indicate pending automatic recovery when a locked iOS codec ladder restarts.
+
 ## 0.18.0
 
 ### Minor Changes

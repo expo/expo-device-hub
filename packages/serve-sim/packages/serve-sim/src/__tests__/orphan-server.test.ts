@@ -1,0 +1,86 @@
+import { expect, test } from "bun:test";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { adoptSession } from "../session-owner";
+import { DEFAULT_STREAM_ENCODER_SETTINGS } from "../stream-settings";
+import { useTempStateDir } from "./helpers";
+
+test.each([
+  { orphan: false, lowercase: false },
+  { orphan: true, lowercase: false },
+  { orphan: true, lowercase: true },
+])(
+  "only explicit orphans offer adoption: %o",
+  async ({ orphan, lowercase }) => {
+    const device = lowercase
+      ? "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+      : "00000000-0000-0000-0000-000000000288";
+    const state = useTempStateDir();
+    const directory = state.dir;
+    const child = spawn(
+      process.execPath,
+      [join(import.meta.dir, "fixtures/orphan-server.child.ts")],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...process.env,
+          SERVE_SIM_STATE_DIR: directory,
+          ORPHAN_TEST: orphan ? "1" : "0",
+          ORPHAN_DEVICE: device,
+          ORPHAN_LOWERCASE: lowercase ? "1" : "0",
+        },
+      },
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout!.on("data", (data) => {
+      stdout += data;
+    });
+    child.stderr!.on("data", (data) => {
+      stderr += data;
+    });
+    const exited = once(child, "exit");
+    try {
+      for (let i = 0; i < 300 && !stdout.includes('"port"') && child.exitCode === null; i++)
+        await Bun.sleep(10);
+      expect(stdout, stderr).toContain('"port"');
+      const { port } = JSON.parse(stdout);
+      expect(existsSync(join(directory, `owner-port-${port}.json`))).toBe(orphan);
+      const adopt = () =>
+        adoptSession(
+          device,
+          JSON.parse(readFileSync(join(import.meta.dir, "../../package.json"), "utf8")).version,
+          "127.0.0.1",
+          undefined,
+          {
+            stream: { transport: "webrtc", codec: "h264", ...DEFAULT_STREAM_ENCODER_SETTINGS },
+            corsOrigins: [],
+            frameAncestors: [],
+            disableShare: false,
+            networkCapture: false,
+            networkCaptureFields: [],
+          },
+        );
+      if (orphan) expect(await adopt()).toMatchObject({ device });
+      await expect(adopt()).rejects.toThrow(
+        `No adoptable serve-sim on port ${port}: start it with --orphan, or it was already claimed.`,
+      );
+      child.kill("SIGTERM");
+      expect(await exited).toEqual([0, null]);
+      expect(existsSync(join(directory, `owner-port-${port}.json`))).toBe(false);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+        await Promise.race([exited, Bun.sleep(1000)]);
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+          await exited;
+        }
+      }
+      state.restore();
+    }
+  },
+  8000,
+);

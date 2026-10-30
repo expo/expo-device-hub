@@ -163,7 +163,9 @@ const { DeviceSession } = await import("../../device-session");
 class Socket extends EventEmitter {
   closedCode?: number;
   send() {}
+  closed = false;
   close(code?: number) {
+    this.closed = true;
     this.closedCode = code;
     this.emit("close");
   }
@@ -546,4 +548,27 @@ test("reboot drains an accepted HTTP Copy but refuses a new Copy during the drai
   expect(handles[0]!.keys).toEqual(["down:227", "down:6", "up:6", "up:227"]);
   expect(done).toBe(true);
   expect(suspended).toBe(1);
+});
+
+test("adoption retires same-device input and drains an admitted native control", async () => {
+  const socket = await start();
+  let release!: () => void;
+  keyboardGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const running = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  send(socket, 0x04, { button: "home" });
+  await running;
+  let finished = false;
+  const retiring = session.retireInputConsumers().then(() => {
+    finished = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(socket.closed).toBe(true);
+  expect(finished).toBe(false);
+  release();
+  await retiring;
+  expect(finished).toBe(true);
 });

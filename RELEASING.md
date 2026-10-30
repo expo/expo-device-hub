@@ -60,8 +60,11 @@ secret.
 The native release build is pinned to `macos-tahoe-26.5-xcode-26.6`. The EAS
 builder uses `--force` to rebuild and write fresh cache entries on that image.
 The Ubuntu reader uses the cache without `--force`.
-The PR workflow builds serve-sim once on that image and runs the Simulator tests on
-the same build.
+On a PR that is ready for review, or a draft with the `ci-ready` label, the serve-sim
+workflow tests one Xcode 26 build on the Xcode 26 and 27 images. A second workflow builds serve-sim with Xcode 27 and tests
+that build on the Xcode 27 image, for users who build from source. It runs every night
+and on a PR with the `xcode-27` label, and it does not publish its build. LLP 0014
+states which Xcode versions serve-sim supports.
 
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
 latest commit on `main`.
