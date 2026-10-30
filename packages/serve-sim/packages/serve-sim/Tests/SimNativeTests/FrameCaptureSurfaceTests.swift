@@ -102,6 +102,35 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         return (capture, log)
     }
 
+    func testActiveDisplayDoesNotRequireAStaticProfileScreenID() async throws {
+        let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+        let capture = FrameCapture(readDisplayInfo: { _ in
+            [CoreDeviceDisplayState(screenID: 7, isActive: true, orientation: "portrait")]
+        })
+        await capture.installDescriptorsForTesting([
+            (descriptor, SimDisplayMetadata(screenID: 7, orientation: nil, chromeIdentifier: nil, screenType: 0)),
+        ], deviceUDID: "legacy-phone") { _, _, _ in }
+        let id = try await capture.activeScreenID()
+        XCTAssertEqual(id, 7)
+        await capture.stop()
+    }
+
+    func testUnknownProfileDoesNotGuessFromOneCachedDescriptor() async throws {
+        let observations: [[CoreDeviceDisplayState]?] = [nil, [],
+            [CoreDeviceDisplayState(screenID: 3, isActive: true, orientation: nil)],
+            [CoreDeviceDisplayState(screenID: 1, isActive: false, orientation: nil)]]
+        for observation in observations {
+            let capture = FrameCapture(readDisplayInfo: { _ in observation })
+            let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+            await capture.installDescriptorsForTesting([(descriptor, panel)], deviceUDID: "unknown-profile") { _, _, _ in }
+            do {
+                _ = try await capture.activeScreenID()
+                XCTFail("An unknown profile guessed its active display")
+            } catch { XCTAssertEqual((error as NSError).domain, "FrameCapture") }
+            await capture.stop()
+        }
+    }
+
     func testActiveReadCannotOutliveCaptureGeneration() async throws {
         let gate = DisplayReadGate()
         let capture = FrameCapture(readDisplayInfo: { _ in await gate.read() })

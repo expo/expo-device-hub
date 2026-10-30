@@ -137,14 +137,14 @@ afterAll(() => {
 });
 
 test.each(["startup", "readback"])(
-  "a single-display device uses its proven sole screen after native %s fails",
+  "a single-display device uses simctl if native %s is unavailable",
   async (failure) => {
     if (failure === "startup") startupError = new Error("Native addon missing");
     else active = new Error("Native display readback unavailable");
     const res = await shot("", single);
     expect(res.status).toBe(200);
     const png = await res.text();
-    expect(png).toContain(failure === "startup" ? `simctl io ${single} screenshot` : "native");
+    expect(png).toContain(`simctl io ${single} screenshot`);
     expect(png).toContain("--display=7");
     expect((await shot()).status).toBe(500);
     expect((await shot("", unknown)).status).toBe(500);

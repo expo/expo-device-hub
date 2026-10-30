@@ -13,17 +13,8 @@ import { UDID, useTempStateDir } from "../helpers";
 const tempState = useTempStateDir();
 let screenshotRun: () => Promise<Uint8Array> = async () => new Uint8Array();
 let activeScreenError: Error | undefined;
-let screenshotProfileIds: number[] | null = null;
-let screenshotProfileReads = 0;
-let screenshotProfileGate: Promise<void> | undefined;
-mock.module("../../screenshot-display", () => ({
-  getScreenshotDisplayIdsAsync: async () => {
-    screenshotProfileReads++;
-    const ids = screenshotProfileIds;
-    await screenshotProfileGate;
-    return ids;
-  },
-}));
+let activeScreenReadGate: Promise<void> | undefined;
+let activeScreenReads = 0;
 afterAll(() => tempState.restore());
 
 let screen: NativeScreenInfo;
@@ -303,6 +294,8 @@ mock.module("../../native", () => ({
   },
   NativeCapture: class {
     async activeScreenId() {
+      activeScreenReads++;
+      await activeScreenReadGate;
       if (activeScreenError) throw activeScreenError;
       return screen.screenId;
     }
@@ -412,9 +405,8 @@ let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 beforeEach(() => {
   screenshotRun = async () => new Uint8Array();
   activeScreenError = undefined;
-  screenshotProfileIds = null;
-  screenshotProfileReads = 0;
-  screenshotProfileGate = undefined;
+  activeScreenReadGate = undefined;
+  activeScreenReads = 0;
   deviceStateChanged = undefined;
   deviceStateSubscriptionGate = undefined;
   deviceStateUnsubscribeGate = undefined;
@@ -3680,78 +3672,38 @@ describe("physical hinge controls", () => {
 });
 
 describe("native screenshots", () => {
-  test("reuses the proven sole screen for native screenshots and invalidates it on changes and reboot", async () => {
+  test("native display reads reject during reboot and work after resume", async () => {
     await start({ width: 1206, height: 2622, screenId: 7 });
-    activeScreenError = new Error("Simulator did not report its active display");
-    screenshotProfileIds = [7];
     expect(await Promise.all(Array.from({ length: 8 }, () => session!.activeScreenId()))).toEqual(
       Array(8).fill(7),
     );
-    expect(screenshotProfileReads).toBe(1);
-    expect(await session!.activeScreenId()).toBe(7);
-    expect(screenshotProfileReads).toBe(1);
     screen = { width: 1206, height: 2622, screenId: 9 };
-    screenshotProfileIds = [9];
     await screenChanged!();
     expect(await session!.activeScreenId()).toBe(9);
-    expect(screenshotProfileReads).toBe(2);
     await session!.suspendForReboot();
     await expect(session!.activeScreenId()).rejects.toThrow();
-    expect(screenshotProfileReads).toBe(2);
     await session!.resumeAfterReboot();
     expect(await session!.activeScreenId()).toBe(9);
-    expect(screenshotProfileReads).toBe(3);
   });
 
-  test("unknown and multiple-screen proofs fail closed without poisoning a later valid proof", async () => {
+  test("native display errors propagate without poisoning a later read", async () => {
     await start({ width: 1206, height: 2622, screenId: 7 });
     expect(await session!.activeScreenId()).toBe(7);
-    expect(screenshotProfileReads).toBe(0);
     activeScreenError = new Error("no active display");
-    for (const ids of [null, [], [1, 3]]) {
-      screenshotProfileIds = ids;
-      await expect(session!.activeScreenId()).rejects.toThrow("no active display");
-    }
-    screenshotProfileIds = [7];
+    await expect(session!.activeScreenId()).rejects.toThrow("no active display");
+    activeScreenError = undefined;
     expect(await session!.activeScreenId()).toBe(7);
-    expect(screenshotProfileReads).toBe(4);
   });
 
-  test("a display change rejects an old in-flight profile and allows a new proof", async () => {
+  test("shutdown cannot return a late native display read", async () => {
     await start({ width: 1206, height: 2622, screenId: 7 });
-    activeScreenError = new Error("no active display");
-    screenshotProfileIds = [7];
     let release!: () => void;
-    screenshotProfileGate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const old = Promise.allSettled([session!.activeScreenId()]);
-    try {
-      await waitUntil(() => screenshotProfileReads === 1);
-      screen = { width: 1206, height: 2622, screenId: 9 };
-      await screenChanged!();
-      screenshotProfileIds = [9];
-      screenshotProfileGate = undefined;
-      expect(await session!.activeScreenId()).toBe(9);
-    } finally {
-      release();
-    }
-    expect((await old)[0]!.status).toBe("rejected");
-    expect(await session!.activeScreenId()).toBe(9);
-    expect(screenshotProfileReads).toBe(2);
-  });
-
-  test("shutdown cannot return a late sole-screen proof", async () => {
-    await start({ width: 1206, height: 2622, screenId: 7 });
-    activeScreenError = new Error("no active display");
-    screenshotProfileIds = [7];
-    let release!: () => void;
-    screenshotProfileGate = new Promise<void>((resolve) => {
+    activeScreenReadGate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const pending = Promise.allSettled([session!.activeScreenId()]);
     try {
-      await waitUntil(() => screenshotProfileReads === 1);
+      await waitUntil(() => activeScreenReads === 1);
       session!.close();
     } finally {
       release();

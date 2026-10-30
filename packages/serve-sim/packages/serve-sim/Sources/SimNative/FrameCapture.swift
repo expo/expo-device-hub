@@ -699,24 +699,23 @@ actor FrameCapture {
     func activeScreenID() async throws -> UInt32 {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if let fixedScreenID { return fixedScreenID }
-        if displayProfile.integratedDisplayCount > 1 || integratedIDs.count > 1 {
-            guard let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
-            let generation = captureGeneration
-            let displays = try await readDisplayInfo(deviceUDID)
-            guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
-            guard let displays,
-                  let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
-                throw makeError(5, "Simulator did not report its active display")
-            }
-            updateDisplayInfo(displays)
-            return active.screenID
+        if integratedIDs.count == 1,
+           let id = displayProfile.singleIntegratedScreenID, integratedIDs.contains(id),
+           capturedDisplay?.integratedScreenID == id {
+            return id
         }
-        guard integratedIDs.count == 1,
-              let id = displayProfile.singleIntegratedScreenID, integratedIDs.contains(id),
-              capturedDisplay?.integratedScreenID == id else {
+        // Legacy profiles omit static screen IDs. CoreDevice identifies the active
+        // framebuffer directly, using the same authoritative read as foldable devices.
+        guard let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
+        let generation = captureGeneration
+        let displays = try await readDisplayInfo(deviceUDID)
+        guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
+        guard let displays,
+              let active = displays.first(where: { $0.isActive && integratedIDs.contains($0.screenID) }) else {
             throw makeError(5, "Simulator did not report its active display")
         }
-        return id
+        updateDisplayInfo(displays)
+        return active.screenID
     }
 
     /// Surfaces that this capture can publish. A fixed-panel session must not
