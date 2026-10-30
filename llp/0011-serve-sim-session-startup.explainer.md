@@ -224,8 +224,8 @@ and capability setup for a new target, then awaits native capture, requested
 network capture and recording before confirming adoption. `--single-device`
 restricts the job to its selected device; it does not require the warm device to
 match. An explicit startup restriction remains immutable. Failed configuration
-remains consumed and unavailable, and shutdown joins in-flight configuration before
-resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
+remains consumed and unavailable. Shutdown and preview-startup failure both join
+in-flight owner configuration before listener and resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
 It is separate from the preview token and never exposed by HTTP or `/exec-ws`.
@@ -297,3 +297,70 @@ with a bounded cache. A failed capture start remains cached until the session is
 replaced; a later ready response from the replacement logs recovery. The
 startup logs leave `--quiet` stdout JSON unchanged
 [observed: `src/middleware.ts`, `src/startup-timing.ts`].
+
+## Resident egress startup
+
+An explicit `--enable egressGuard` or `--disable egressGuard` takes a strict path
+before boot, app actions or preview readiness. It does not use the ordinary
+best-effort capability preparation path. The initial choice supplies the required
+warmup policy: block for enable, pass-through for disable; neither is a default.
+Conflicting choices fail before device operations [observed: `src/index.ts`,
+`src/egress.ts`].
+
+Preboot preparation creates a private set of pinned artifacts and one policy page,
+then records enrollment and its startup config before the selected device boots.
+Postboot binding records the native `launchd_sim` PID and microsecond start time.
+Page replacement, changed artifacts or a different boot invalidate reuse. Session
+release retains enrollment; uncertain postboot cleanup retains its files. These
+checks establish identity and page validity, not all-process coverage or in-flight
+draining [observed: `src/egress-resources.ts`].
+
+Explicit egress startup publishes its selected policy and requires a fresh
+Simulator process to verify the pinned image, page identity, mode and generation.
+Failure rejects admission. Existing connections and in-flight calls remain alone;
+no drain is required. Local native evidence and remaining acceptance gates are in
+[LLP 0007.000](0007.000-runtime-egress-guard.explainer.md)
+[observed: required startup path and retained validation limits].
+
+Host stream helpers cannot request an egress policy, including through the helper
+environment marker. They may only observe a matching existing boot. Device and
+shared device-lifecycle boot paths verify resident identity before skipping a redundant boot;
+all actual new-boot paths reject reuse of a bound page. Capture/clipboard health
+checks use the same pinned loader path as publication. Policy updates also reject
+another live owner using the existing session/capability records
+[observed: startup, device, device-lifecycle and launch-manager source].
+
+Resident readiness waits omit bootstatus's boot-if-needed flag. Raw sync and
+async boot-capable waits receive the same old-page protection as explicit boots.
+Observers revalidate the native boot before callbacks and ready publication, so a
+replacement during a wait cannot inherit the earlier check
+[observed: boot-status arguments, simctl wrapper, device and device-lifecycle source].
+
+The CLI helper carries its checked native boot identity through a non-booting
+readiness wait and preview setup. It rechecks that same identity before writing
+state and before reporting its URL. Failure closes the listener and removes only
+its own session state; cleanup failures retain the original error
+[observed: `src/index.ts`, `src/egress.ts`, `egress-helper-ready` CLI fixture].
+
+Private one-shot adoption accepts only the egress capability's explicit policy
+flags. Compatibility checks run before claiming and again under the device lock
+after the claim. Required policy self-check precedes capture/video setup; failure
+consumes the claim without reporting success. A disconnect during compatibility
+does not claim or publish a policy. Adapter tests establish ordering; packaged
+native evidence is recorded separately in the pull request
+[observed: `src/session-owner.ts`, `src/egress.ts`, resident-owner fixtures].
+
+A prepared resident boot uses a strict `simctl boot` under the existing device
+lock. An already-booted response fails; the ordinary boot-or-observe fallback is
+not used. The native identity captured after boot must survive the non-booting
+readiness wait before binding. Binding is private to that path. This proves
+command/identity ordering only, not insertion coverage [observed: resident boot
+helper and isolated boot-race fixtures].
+
+Serve-sim camera app injection, direct and preview-grid shutdown, and capture reboot reject resident
+enrollment before obtaining camera resources or changing the device/capture
+state. Camera launch holds the existing device lock through its insert override.
+The resident page and startup record remain intact; dead-boot reclamation is
+still a separate lifecycle requirement. Capture-reboot errors report the cause
+without guessing whether the device shut down [observed: CLI camera, device and
+preview-grid shutdown, capture reboot, host-action errors and their regression fixtures].
