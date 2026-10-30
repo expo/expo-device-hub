@@ -14,6 +14,31 @@ RUNNER = Path(__file__).with_name("run.py")
 
 
 class RunnerOwnershipTests(unittest.TestCase):
+    def test_simulator_runner_refuses_missing_loader_entrypoint_before_device_creation(self):
+        with tempfile.TemporaryDirectory() as parent_name:
+            parent = Path(parent_name)
+            work = parent / "owned"
+            work.mkdir()
+            evidence = parent / "evidence"
+            with contextlib.ExitStack() as stack:
+                stack.enter_context(patch.object(sys, "argv", [str(RUNNER.with_name("simulator.py")),
+                    "--runtime", "fixture", "--evidence", str(evidence)]))
+                stack.enter_context(patch("subprocess.check_output", return_value="fixture-head"))
+                stack.enter_context(patch("tempfile.mkdtemp", return_value=str(work)))
+                stack.enter_context(patch("shutil.copytree"))
+                stack.enter_context(patch("signal.signal"))
+                process = stack.enter_context(patch("subprocess.Popen"))
+                process.return_value.returncode = 0
+                process.return_value.communicate.return_value = ("", "")
+                stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+                with self.assertRaises(SystemExit) as stopped:
+                    runpy.run_path(str(RUNNER.with_name("simulator.py")), run_name="__main__")
+            self.assertEqual(stopped.exception.code, 1)
+            result = json.loads((evidence / "results.json").read_text())
+            self.assertIn("requires the all-process capability loader", result["error"])
+            self.assertFalse(any("simctl" in call.args[0] for call in process.call_args_list))
+            self.assertFalse(work.exists())
+
     def test_simulator_runner_keeps_evidence_when_private_cleanup_fails(self):
         runner = RUNNER.with_name("simulator.py")
         for cleanup_error in (OSError("test deletion failure"), KeyboardInterrupt("test cancel")):
