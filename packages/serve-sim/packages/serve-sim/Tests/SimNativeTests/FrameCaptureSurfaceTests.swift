@@ -102,17 +102,51 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         return (capture, log)
     }
 
-    func testActiveDisplayDoesNotRequireAStaticProfileScreenID() async throws {
+    func testLegacySingleScreenUsesProfileGeometryWithoutCoreDevice() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
         let capture = FrameCapture(readDisplayInfo: { _ in
-            [CoreDeviceDisplayState(screenID: 7, isActive: true, orientation: "portrait")]
+            XCTFail("A proven legacy single screen must not query CoreDevice")
+            return nil
         })
         await capture.installDescriptorsForTesting([
             (descriptor, SimDisplayMetadata(screenID: 7, orientation: nil, chromeIdentifier: nil, screenType: 0)),
-        ], deviceUDID: "legacy-phone") { _, _, _ in }
+        ], deviceUDID: "legacy-phone", legacyScreenSize: Dimensions(width: 128, height: 64)) { _, _, _ in }
+        await capture.captureFrameForTesting(force: true)
         let id = try await capture.activeScreenID()
         XCTAssertEqual(id, 7)
         await capture.stop()
+    }
+
+    func testLegacyGeometryCannotHideMissingMetadataOrAnotherPanel() async throws {
+        for metadata in [nil,
+            SimDisplayMetadata(screenID: 3, orientation: nil, chromeIdentifier: nil, screenType: 0),
+            SimDisplayMetadata(screenID: 2, orientation: nil, chromeIdentifier: nil, screenType: nil)] {
+            let capture = FrameCapture(readDisplayInfo: { _ in nil })
+            let first = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 255))
+            let other = FakeFramebufferDescriptor(nil)
+            await capture.installDescriptorsForTesting([(first, panel), (other, metadata)],
+                deviceUDID: "incomplete", legacyScreenSize: Dimensions(width: 64, height: 128)) { _, _, _ in }
+            await capture.captureFrameForTesting(force: true)
+            do {
+                _ = try await capture.activeScreenID()
+                XCTFail("Legacy geometry identified an ambiguous framebuffer")
+            } catch { XCTAssertEqual((error as NSError).domain, "FrameCapture") }
+            await capture.stop()
+        }
+    }
+
+    func testLegacyScreenDimensionsRequireAnUnambiguousLegacyProfile() {
+        let dimensions: [String: Any] = ["main-screen-width": 64, "main-screen-height": 128]
+        let profile: [String: Any] = ["idiom": "phone", "ScreenDimensionsCapability": dimensions]
+        XCTAssertEqual(SimDisplayMetadata.legacyScreenSize(capabilities: profile), Dimensions(width: 64, height: 128))
+        XCTAssertEqual(SimDisplayMetadata.legacyScreenSize(capabilities: ["capabilities": profile]), Dimensions(width: 64, height: 128))
+        for extra: [String: Any] in [["displays": []], ["displays": "invalid"], ["idiom": "unknown"],
+            ["capabilities": NSNull()],
+            ["ScreenDimensionsCapability": ["main-screen-width": NSNumber(value: true), "main-screen-height": 128]],
+            ["ScreenDimensionsCapability": ["main-screen-width": 64.5, "main-screen-height": 128]],
+            ["ScreenDimensionsCapability": ["main-screen-width": 0, "main-screen-height": 128]]] {
+            XCTAssertNil(SimDisplayMetadata.legacyScreenSize(capabilities: profile.merging(extra) { _, value in value }))
+        }
     }
 
     func testUnknownProfileDoesNotGuessFromOneCachedDescriptor() async throws {

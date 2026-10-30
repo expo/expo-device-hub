@@ -106,6 +106,7 @@ actor FrameCapture {
     private var displayConfigurationReady = false
     private var captureGeneration: UInt64 = 0
     private let readDisplayInfo: @Sendable (String) async throws -> [CoreDeviceDisplayState]?
+    private var legacyScreenSize: Dimensions?
     private var capturedDisplay: SimDisplayMetadata?
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
@@ -143,6 +144,7 @@ actor FrameCapture {
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
         displayProfile = SimulatorDisplayProfile.read(from: device)
+        legacyScreenSize = SimDisplayMetadata.legacyScreenSize(from: device)
         isFoldable = displayProfile.isFoldable
         if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
@@ -644,12 +646,14 @@ actor FrameCapture {
         device: NSObject? = nil,
         deviceUDID: String? = nil,
         profile: SimulatorDisplayProfile? = nil,
+        legacyScreenSize: Dimensions? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
         self.device = device
         self.deviceUDID = deviceUDID
         if let profile { displayProfile = profile }
+        self.legacyScreenSize = legacyScreenSize
         self.onFrame = { buffer, timestamp, canvas, _ in onFrame(buffer, timestamp, canvas) }
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
@@ -699,14 +703,22 @@ actor FrameCapture {
     func activeScreenID() async throws -> UInt32 {
         let integratedIDs = Set(screenMetadata.values.filter { $0.screenType == 0 }.map(\.screenID))
         if let fixedScreenID { return fixedScreenID }
-        if integratedIDs.count == 1,
-           let id = displayProfile.singleIntegratedScreenID, integratedIDs.contains(id),
+        if integratedIDs.count == 1, let id = integratedIDs.first,
            capturedDisplay?.integratedScreenID == id {
-            return id
+            if displayProfile.singleIntegratedScreenID == id { return id }
+            // Match a legacy profile to a completely identified framebuffer set.
+            // Rotation may swap geometry, but neither missing metadata nor a second
+            // integrated panel can establish a sole-screen identity.
+            if let size = legacyScreenSize,
+               screenMetadata.count == descriptors.count,
+               screenMetadata.values.allSatisfy({ $0.screenType != nil }),
+               (size.width == capturedWidth && size.height == capturedHeight ||
+                size.width == capturedHeight && size.height == capturedWidth) {
+                return id
+            }
         }
-        // Legacy profiles omit static screen IDs. CoreDevice identifies the active
-        // framebuffer directly, using the same authoritative read as foldable devices.
-        guard let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
+        guard displayProfile.integratedDisplayCount > 1 || integratedIDs.count > 1,
+              let deviceUDID else { throw makeError(5, "Simulator did not report its active display") }
         let generation = captureGeneration
         let displays = try await readDisplayInfo(deviceUDID)
         guard generation == captureGeneration, !Task.isCancelled else { throw CancellationError() }
@@ -786,6 +798,7 @@ actor FrameCapture {
         deviceUDID = nil
         isFoldable = false
         displayProfile = SimulatorDisplayProfile()
+        legacyScreenSize = nil
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()
