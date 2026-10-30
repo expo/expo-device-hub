@@ -31,6 +31,7 @@ export {
   agentInteractionPointsAt,
 } from "./agent-interaction-animation";
 export { displayScreen, streamGeometry } from "./orientation";
+export { DEVICE_ORIENTATIONS } from "./rotation-cursor";
 export { useIosDeviceClient } from "./useIosDevice";
 export { useAndroidDeviceClient } from "./useAndroidDevice";
 export {

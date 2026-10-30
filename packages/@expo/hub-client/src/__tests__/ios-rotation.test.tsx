@@ -391,3 +391,66 @@ test("a non-string orientation readback cannot throw or poison iOS rotation requ
   client().rotate();
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
+
+test("an iOS orientation choice sends that pose and Rotate continues from it", async () => {
+  const { client, helper } = await mount();
+  expect(client().capabilities.orientation).toEqual({
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  });
+  await act(async () => client().setOrientation("landscape_right"));
+  // The choice shows at once; the screen keeps the helper's readback.
+  expect(client().orientation).toBe("landscape_right");
+  expect(client().orientationPending).toBe(false);
+  expect(client().screen?.orientation).toBe("portrait");
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);
+
+  await act(async () => helper().screen("landscape_right"));
+  expect(client().orientation).toBe("landscape_right");
+  await act(async () => helper().screen("portrait"));
+  expect(client().orientation).toBe("portrait");
+});
+
+test("a queued iOS orientation choice is pending until the helper admits input", async () => {
+  const { client, helper } = await mount({ inputAdmission: true });
+  await act(async () => client().setOrientation("portrait_upside_down"));
+  expect(helper().rotations()).toEqual([]);
+  expect(client().orientationPending).toBe(true);
+  expect(client().orientation).toBe("portrait_upside_down");
+  await act(async () => helper().admit());
+  expect(client().orientationPending).toBe(false);
+  await act(async () => client().rotate());
+  expect(helper().rotations()).toEqual(["portrait_upside_down", "landscape_right"]);
+});
+
+test("an iOS orientation choice that the input queue does not send in 2 s fails", async () => {
+  const { client, helper } = await mount({ inputAdmission: true });
+  await act(async () => client().setOrientation("landscape_left"));
+  expect(client().orientationPending).toBe(true);
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 2_100)));
+  expect(helper().rotations()).toEqual([]);
+  expect(client().orientationPending).toBe(false);
+  expect(client().orientationError).toContain("was not sent");
+  expect(client().orientation).toBe("portrait");
+});
+
+test("an iOS orientation choice fails at once when this client cannot send input", async () => {
+  await mount();
+  let disabled!: DeviceClient;
+  function Disabled() {
+    disabled = useIosDeviceClient({
+      baseUrl: "/sim",
+      device: "DEVICE-A",
+      enabled: false,
+      streamMode: "mjpeg",
+    });
+    return null;
+  }
+  await act(async () => {
+    renderer!.update(<Disabled />);
+  });
+  await act(async () => disabled.setOrientation("landscape_left"));
+  expect(disabled.orientationPending).toBe(false);
+  expect(disabled.orientation).toBeNull();
+  expect(disabled.orientationError).toContain("was not sent");
+});
