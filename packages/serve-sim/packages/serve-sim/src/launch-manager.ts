@@ -29,6 +29,7 @@ import {
   clearLaunchState,
   writeLaunchState,
   ownerIsGone,
+  assertDeviceOwnership,
 } from "./launch-state";
 import {
   withLaunchStateLock,
@@ -36,7 +37,7 @@ import {
   waitForLaunchUpdates,
   LOCK_POLL_MS,
 } from "./launch-state-lock";
-import { isDeviceNotBooted } from "./device";
+import { isDeviceNotBooted, shutdownDevice, getDeviceState } from "./device";
 import { simctl, simctlSync } from "./simctl";
 import { timeStartup } from "./startup-timing";
 import { additionalDylibs } from "./additional-dylibs";
@@ -73,10 +74,17 @@ function releaseLaunchStateUnlocked(
     Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
   );
   const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  const exclusivePid = previous.exclusivePid;
+  if (exclusivePid === ownerPid || (exclusivePid !== undefined && ownerIsGone(exclusivePid)))
+    delete previous.exclusivePid;
   for (const record of Object.values(previous.capabilities)) {
     if (record.ownerPid === ownerPid) onRelease?.(record);
   }
-  if (Object.keys(kept).length === 0 && !sessionPids?.length) {
+  if (
+    Object.keys(kept).length === 0 &&
+    !sessionPids?.length &&
+    previous.exclusivePid === undefined
+  ) {
     clearLaunchState(udid);
     return false;
   }
@@ -92,6 +100,21 @@ function releaseLaunchStateUnlocked(
 
 export function releaseLaunchState(udid: string, ownerPid: number): boolean {
   return withLaunchStateLockSync(udid, () => releaseLaunchStateUnlocked(udid, ownerPid));
+}
+
+/** Reserve before native preparation; publication and retirement honor the same device lock. */
+export async function reserveDeviceSession(udid: string, signal?: AbortSignal): Promise<void> {
+  await withLaunchStateLock(udid, async () => {
+    signal?.throwIfAborted();
+    assertDeviceOwnership(udid, process.pid);
+    const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
+    writeLaunchState(udid, {
+      ...previous,
+      exclusivePid: process.pid,
+      sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])],
+    });
+    armedHere.add(udid);
+  });
 }
 
 export function releaseSessionSync(
@@ -117,12 +140,24 @@ export async function releaseSession(
   udid: string,
   ownerPid: number,
   onRelease: (capability: RecordedCapability) => void,
+  options: { shutdown?: boolean } = {},
 ): Promise<void> {
   await waitForLaunchUpdates();
   await withLaunchStateLock(udid, async () => {
+    if (options.shutdown) {
+      // Keep ownership and configuration until native shutdown is confirmed under this lock.
+      assertDeviceOwnership(udid, ownerPid);
+      await shutdownDevice(udid);
+      if ((await getDeviceState(udid)) !== "Shutdown")
+        throw new Error(`Simulator ${udid} did not shut down.`);
+    }
     const previousStartup = managedStartupDylibs(udid);
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
-    if (!othersRemain) removeCapabilityLoaderSync(udid);
+    if (options.shutdown) {
+      // launchd's environment died with the device; only local ownership files remain.
+      writeManagedStartupDylibs(udid, []);
+      rmSync(capabilityConfigPath(udid), { force: true });
+    } else if (!othersRemain) removeCapabilityLoaderSync(udid);
     else removeReleasedStartupSync(udid, previousStartup);
     armedHere.delete(udid);
   });

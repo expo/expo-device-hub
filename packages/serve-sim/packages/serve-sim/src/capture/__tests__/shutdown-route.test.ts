@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 
 import { freePortAsync, installShims, UDID, useTempStateDir } from "../../__tests__/helpers";
-import { simMiddleware } from "../../middleware";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { simMiddleware, retryPendingCaptureCleanup } from "../../middleware";
 import { servePreview, type PreviewServer } from "../../runtime";
 import { captureRuntime } from "../runtime";
 
@@ -12,7 +14,10 @@ let stateDir: ReturnType<typeof useTempStateDir>;
 
 beforeAll(async () => {
   shims = installShims({
-    xcrun: `#!/bin/sh\nif [ "$2" = shutdown ]; then echo "Unable to shutdown device" >&2; exit 1; fi\necho '{"devices":{}}'\n`,
+    xcrun: readFileSync(
+      join(import.meta.dir, "../../__tests__/fixtures/grid-shutdown-xcrun.cjs"),
+      "utf8",
+    ),
   });
   stateDir = useTempStateDir();
   port = await freePortAsync();
@@ -30,6 +35,8 @@ afterAll(() => {
 });
 
 test("keeps capture running when the device fails to shut down", async () => {
+  const previous = process.env.SERVE_SIM_GRID_SHUTDOWN_FAIL;
+  process.env.SERVE_SIM_GRID_SHUTDOWN_FAIL = "1";
   const disabled: string[] = [];
   const disableForDevice = captureRuntime.disableForDevice;
   captureRuntime.disableForDevice = async (udid) => void disabled.push(udid);
@@ -43,5 +50,34 @@ test("keeps capture running when the device fails to shut down", async () => {
     expect(disabled).toEqual([]);
   } finally {
     captureRuntime.disableForDevice = disableForDevice;
+    if (previous === undefined) delete process.env.SERVE_SIM_GRID_SHUTDOWN_FAIL;
+    else process.env.SERVE_SIM_GRID_SHUTDOWN_FAIL = previous;
+  }
+});
+
+test("successful grid shutdown retains capture cleanup retry", async () => {
+  const originalDisable = captureRuntime.disableForDevice;
+  const originalStore = captureRuntime.storeFor;
+  const session = {} as NonNullable<ReturnType<typeof captureRuntime.storeFor>>;
+  let attempts = 0;
+  captureRuntime.storeFor = () => session;
+  captureRuntime.disableForDevice = async () => {
+    attempts++;
+    if (attempts === 1) throw new Error("temporary capture cleanup failure");
+  };
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/grid/api/shutdown`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ udid: UDID }),
+    });
+    expect(response.status).toBe(200);
+    expect(attempts).toBe(1);
+    await retryPendingCaptureCleanup();
+    expect(attempts).toBe(2);
+  } finally {
+    await retryPendingCaptureCleanup({ session: () => null });
+    captureRuntime.disableForDevice = originalDisable;
+    captureRuntime.storeFor = originalStore;
   }
 });

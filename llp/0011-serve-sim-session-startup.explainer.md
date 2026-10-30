@@ -174,17 +174,58 @@ Only `--orphan` creates the private one-shot owner channel; matching these setti
 without the flag leaves a normal server unadoptable. This makes ownership handoff
 an explicit startup choice instead of inferring it from unrelated preview settings
 [confirmed: Gabe Debes, 2026-10-26, explicit orphan flag direction].
-The flag requires one device and a loopback, token-protected WebRTC preview.
+The flag requires at least one device and a loopback, token-protected WebRTC preview.
+The first target boots before server startup; additional targets warm in that same
+process after its initial state is published, without delaying the first target.
+A private claim cancels future warmup. Adoption of the first target does not join
+warmup of the others; adoption of another target joins it. A target this process
+already prepared passes only bootstatus again; any other target is prepared fully.
+Unused devices are unpublished before the handoff. In the background, after their
+warmup drains, adoption drains their native input/video and network capture and
+shuts down the exact unused UDIDs; failures are logged and make the session stop exit
+non-zero, the session stop joins this work, and the launcher's terminal stop confirms
+every shutdown
+[confirmed: Gabe Debes, 2026-10-29, hand over warm devices without repeated preparation]. Ownership and
+capability configuration stay unchanged if shutdown fails or cannot be confirmed
+[observed: `src/launch-manager.ts` `releaseSession`].
+Before preparing another target, adoption checks its preview and capability owners
+and reserves it under the device lock. Preview publication honors this reservation,
+which survives discovery unpublication until shutdown or session cleanup
+[observed: `src/launch-manager.ts` `reserveDeviceSession`, `src/state.ts`].
+Cancellation is checked again after taking the reservation lock. Preview publication
+waits at most one lock poll, so another process's native work cannot freeze adoption
+or input for the other devices [observed: `src/launch-manager.ts`, `src/state.ts`].
+Adoption refuses foreign live or persistent ownership. The UI grid retains its
+explicit user shutdown contract, including a separate detached helper, and its
+legacy `Booted` readback recovery after failed bootstatus. Adoption requires a
+successful bootstatus instead [observed: `src/device-lifecycle.ts`, `src/device.ts`]. Adoption of a
+target that is still warming waits for that warmup; this is distinct from publishing the
+first warm device’s initial readiness
+[confirmed: Gabe Debes, 2026-10-28, keep the server and select or boot internally].
 It cannot accompany `--adopt`, list/kill, `--detach`, `--no-preview` or subcommands
 [observed: `packages/serve-sim/packages/serve-sim/src/index.ts`].
 
 `serve-sim <udid> --adopt --require-token --transport webrtc` parses the same
-normal startup flags and defaults, then claims that orphan without
-booting a device or starting another server. The CLI resolves only an exact UDID
-from its existing native state directory, checks the running PID against the
-server's own PID, and requires the same package version, macOS boot, device,
-host, explicit port, state directory, temporary directory and process-bound
-startup environment [observed: `src/index.ts`, `src/session-owner.ts`].
+normal startup flags and defaults, then claims that orphan without starting
+another server. With an explicit `--port`, discovery uses the private owner record
+for that port rather than requiring existing state for the requested UDID. Without
+an explicit port, the requested device must already have state to locate its server.
+The immutable identity still includes the startup device, PID, package version,
+macOS boot, host, port, state directory, temporary directory and process-bound
+startup environment. The requested device travels separately in the strict private
+configuration [observed: `src/index.ts`, `src/session-owner.ts`].
+
+An unclaimed orphan exposes only GET/HEAD health, readiness and authenticated
+state probes; it refuses input, actions and subscriptions until the private handoff
+succeeds. Its read-only state probe does not initialize clipboard capabilities.
+Consuming the claim synchronously cancels future warmup before parsing or awaiting
+configuration. The owner retires prior native input before changing the selection. It uses the normal serve-sim boot/dylib
+and capability setup for a new target, then awaits native capture, requested
+network capture and recording before confirming adoption. `--single-device`
+restricts the job to its selected device; it does not require the warm device to
+match. An explicit startup restriction remains immutable. Failed configuration
+remains consumed and unavailable, and shutdown joins in-flight configuration before
+resource teardown [observed: `src/index.ts`, `src/middleware.ts`, `src/session-owner.ts`].
 
 The private Unix-socket owner channel is described in [LLP 0003](0003-serve-sim-http-api.spec.md#prepared-process-handoff).
 It is separate from the preview token and never exposed by HTTP or `/exec-ws`.

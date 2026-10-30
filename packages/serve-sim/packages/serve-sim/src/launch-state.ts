@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { CapabilityLoadPhase, CapabilityScope } from "./capabilities";
-import { stateDir } from "./state";
+import { stateDir, stateFileForDevice } from "./state";
 
 function isCapabilityScope(value: unknown): value is CapabilityScope {
   return value === "userApps" || value === "allApps";
@@ -25,6 +25,8 @@ export interface RecordedCapability extends Capability {
 
 export interface LaunchState {
   sessionPids?: number[];
+  /** Private adoption reserves the device before boot; detached previews must leave it alone. */
+  exclusivePid?: number;
   bundleId?: string;
   launchArgs: string[];
   capabilities: Record<string, RecordedCapability>;
@@ -44,6 +46,38 @@ export function ownerIsGone(ownerPid: number | null): boolean {
   }
 }
 
+/** Call under the device lock, before reserving it or shutting it down. */
+export function assertDeviceOwnership(udid: string, ownerPid: number): void {
+  const launchFile = stateFile(udid);
+  const raw = existsSync(launchFile) ? JSON.parse(readFileSync(launchFile, "utf8")) : {};
+  if (
+    !raw ||
+    typeof raw !== "object" ||
+    Array.isArray(raw) ||
+    (raw.sessionPids !== undefined && !Array.isArray(raw.sessionPids)) ||
+    (raw.capabilities !== undefined &&
+      (!raw.capabilities ||
+        typeof raw.capabilities !== "object" ||
+        Array.isArray(raw.capabilities)))
+  ) {
+    throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+  }
+  const previewFile = stateFileForDevice(udid);
+  const preview = existsSync(previewFile)
+    ? JSON.parse(readFileSync(previewFile, "utf8"))
+    : undefined;
+  const owners = [
+    ...(raw.sessionPids ?? []),
+    ...Object.values(raw.capabilities ?? {}).map((record: any) => record?.ownerPid),
+    ...(raw.exclusivePid === undefined ? [] : [raw.exclusivePid]),
+  ];
+  if (preview !== undefined) owners.push(preview?.pid);
+  if (owners.some((pid) => pid !== null && (!Number.isInteger(pid) || pid <= 1)))
+    throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+  if (owners.some((pid) => pid !== ownerPid && !ownerIsGone(pid)))
+    throw new Error(`Cannot use Simulator ${udid}: another session still owns it.`);
+}
+
 export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchState | null {
   let parsed: unknown;
   try {
@@ -52,8 +86,10 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
     return null;
   }
   if (typeof parsed !== "object" || parsed === null) return null;
-  const { bundleId, launchArgs, capabilities, sessionPids } = parsed as Partial<LaunchState>;
+  const { bundleId, launchArgs, capabilities, sessionPids, exclusivePid } =
+    parsed as Partial<LaunchState>;
   return {
+    ...(exclusivePid === undefined ? {} : { exclusivePid }),
     ...(typeof bundleId === "string" && bundleId ? { bundleId } : {}),
     launchArgs: Array.isArray(launchArgs)
       ? launchArgs.filter((arg): arg is string => typeof arg === "string")

@@ -16,7 +16,8 @@ import {
 import { writeManagedStartupDylibs, managedStartupDylibs } from "../capability-config";
 import { writeLaunchState } from "../launch-state";
 import { additionalDylibs, simulatorBootEnv } from "../additional-dylibs";
-import { simMiddleware, startDeviceInProcess } from "../middleware";
+import { simMiddleware } from "../middleware";
+import { startDeviceInProcess } from "../device-lifecycle";
 import { simctl, simctlSync } from "../simctl";
 import { locateProxyDylib } from "../capture/device";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
@@ -314,7 +315,7 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args: process.argv.sli
         },
         async () => {
           await bootDevice(UDID);
-          expect(await startDeviceInProcess(UDID, 12345, "/")).toBeNull();
+          await startDeviceInProcess(UDID, 12345, "/");
           await simctl(["list", "devices", "-j"]);
         },
       );
@@ -322,16 +323,16 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args: process.argv.sli
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line));
-      expect(calls.slice(0, 4).map((call) => call.args[1])).toEqual([
-        "boot",
-        "bootstatus",
-        "boot",
-        "bootstatus",
-      ]);
-      for (const call of calls.slice(0, 4)) {
+      expect(
+        calls
+          .filter((call) => ["boot", "bootstatus"].includes(call.args[1]))
+          .map((call) => call.args[1]),
+      ).toEqual(["boot", "bootstatus", "boot", "bootstatus"]);
+      for (const call of calls.filter((call) => ["boot", "bootstatus"].includes(call.args[1]))) {
         expect(call.insert).toBe(`${bootInsert}:${caller.join(":")}`);
       }
-      expect(calls[4].insert).toBeUndefined();
+      for (const call of calls.filter((call) => !["boot", "bootstatus"].includes(call.args[1])))
+        expect(call.insert).toBeUndefined();
     } finally {
       state.restore();
     }
