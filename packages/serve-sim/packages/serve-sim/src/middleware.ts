@@ -13,6 +13,7 @@ import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
 import { validatedAdditionalDylibs } from "./additional-dylibs";
+import { assertNoResidentEgress } from "./egress-resources";
 import {
   createReadStream,
   readdirSync,
@@ -2518,6 +2519,19 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("end", async () => {
         const udid = resolveLifecycleDevice(body, res);
         if (udid === null) return;
+
+        try {
+          assertNoResidentEgress(udid, "Simulator shutdown");
+        } catch (error) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          return;
+        }
         bootedGeneration++;
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
         try {

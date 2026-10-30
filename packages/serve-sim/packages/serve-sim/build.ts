@@ -281,6 +281,16 @@ console.log("dist/serve-sim      (compiled binary)");
   console.log("dist/capability-loader/libServeSimCapabilityLoader.dylib");
 }
 
+// Resident egress artifacts are built here but are enrolled only by an explicit request.
+{
+  const result = spawnSync(
+    "bash",
+    [resolve(root, "Sources/ServeSimEgressGuard/build.sh"), resolve(distDir, "egress-guard")],
+    { stdio: "inherit" },
+  );
+  if (result.status !== 0) throw new Error("ServeSimEgressGuard build failed.");
+}
+
 // ─── 6. SimCameraInjector dylib + SimCameraHelper host CLI ───────────────
 // Both ship in dist/simcam/ so they tarball alongside the JS bin. The CLI's
 // `camera` verb resolves them via locateCameraDylib / locateCameraHelper.

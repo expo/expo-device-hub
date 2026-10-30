@@ -93,8 +93,8 @@ static unsigned parse_delay_ms(const char *text) {
   return (unsigned)value;
 }
 
-static int capability_applies(char *line, const char *exec_path, char **dylib_out,
-                             char **env_out, unsigned *delay_ms_out) {
+static int capability_applies_scoped(char *line, const char *exec_path, char **dylib_out,
+                                    char **env_out, unsigned *delay_ms_out, int all_processes) {
   if (*line == '\0' || *line == '#') return 0;
 
   char *fields = line;
@@ -110,7 +110,11 @@ static int capability_applies(char *line, const char *exec_path, char **dylib_ou
 
   // `all` needs no check of its own: the constructor already refused anything
   // that is not an app. An unknown scope loads nowhere.
-  if (strcmp(scope, "user") == 0) {
+  if (all_processes) {
+    if (strcmp(scope, "process") != 0) return 0;
+  } else if (strcmp(scope, "process") == 0) {
+    return 0;
+  } else if (strcmp(scope, "user") == 0) {
     if (strstr(exec_path, USER_APP_MARKER) == NULL) return 0;
   } else if (strcmp(scope, "all") != 0) {
     fprintf(stderr, "[serve-sim] ignoring capability with unknown scope '%s': %s\n", scope, dylib);
@@ -121,6 +125,12 @@ static int capability_applies(char *line, const char *exec_path, char **dylib_ou
   *env_out = env;
   *delay_ms_out = parse_delay_ms(delay);
   return 1;
+}
+
+// Deferred app loading never accepts the process-wide startup token.
+static int capability_applies(char *line, const char *exec_path, char **dylib_out,
+                             char **env_out, unsigned *delay_ms_out) {
+  return capability_applies_scoped(line, exec_path, dylib_out, env_out, delay_ms_out, 0);
 }
 
 struct CapabilityLoad {
@@ -324,10 +334,11 @@ static void serve_sim_capability_loader_init(void) {
   });
 }
 
-void serve_sim_startup(void (*initialize)(void)) {
+static void initialize_startup(void (*initialize)(void), int all_processes) {
   const char *tmp = getenv("TMPDIR");
   const char *config_path = getenv(CONFIG_VAR);
-  if (!tmp || !strstr(tmp, "/Containers/Data/Application/") || !config_path || *config_path != '/') return;
+  if ((!all_processes && (!tmp || !strstr(tmp, "/Containers/Data/Application/"))) ||
+      !config_path || *config_path != '/') return;
   char executable[1024];
   uint32_t size = sizeof executable;
   if (_NSGetExecutablePath(executable, &size) != 0) return;
@@ -342,7 +353,7 @@ void serve_sim_startup(void (*initialize)(void)) {
       if (strncmp(line, "startup\t", 8) != 0) continue;
       char *dylib, *env;
       unsigned delay;
-      if (!capability_applies(line + 8, executable, &dylib, &env, &delay) || delay != 0) continue;
+      if (!capability_applies_scoped(line + 8, executable, &dylib, &env, &delay, all_processes) || delay != 0) continue;
       char expected[PATH_MAX];
       if (!realpath(dylib, expected) || strcmp(expected, actual) != 0) continue;
       if (!env || apply_env(env) == 0) initialize();
@@ -350,4 +361,13 @@ void serve_sim_startup(void (*initialize)(void)) {
     }
   }
   free(config);
+}
+
+void serve_sim_startup(void (*initialize)(void)) {
+  initialize_startup(initialize, 0);
+}
+
+// Separate symbol: an older loader cannot silently reduce process coverage to apps.
+void serve_sim_startup_all_processes(void (*initialize)(void)) {
+  initialize_startup(initialize, 1);
 }
