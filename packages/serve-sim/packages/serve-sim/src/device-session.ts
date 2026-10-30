@@ -3199,11 +3199,7 @@ export async function retireDeviceSession(udid: string): Promise<void> {
   const session = peekDeviceSession(udid);
   closeDeviceSession(udid);
   await session?.close();
-  if (closedSessionStopErrors.length > 0)
-    throw new AggregateError(
-      [...closedSessionStopErrors],
-      "Could not retire the warm device session",
-    );
+  // Errors from other sessions belong to server-wide shutdown, not this device's retirement.
 }
 
 export async function finishDeviceRecordingsForShutdown(
