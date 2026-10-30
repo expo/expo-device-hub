@@ -125,6 +125,7 @@ export function DeviceScreen({
   squircle,
   agentInteraction,
   onCopy,
+  preserveKeyboardFocus = false,
 }: DeviceScreenInputProps) {
   const {
     videoKind,
@@ -373,7 +374,7 @@ export function DeviceScreen({
     if (!p) return;
     scrollSenderRef.current?.cancel();
     event.preventDefault();
-    surfaceRef.current?.focus({ preventScroll: true });
+    if (!preserveKeyboardFocus) surfaceRef.current?.focus({ preventScroll: true });
     try {
       const surface = surfaceRef.current;
       surface?.setPointerCapture(event.pointerId);

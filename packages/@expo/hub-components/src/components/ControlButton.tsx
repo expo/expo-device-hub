@@ -17,6 +17,8 @@ export type ControlButtonProps = {
   icon: ReactNode;
   label: string;
   tooltip?: string;
+  /** Touch-only controls already have accessible labels; avoid sticky emulated hover. */
+  hideTooltip?: boolean;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
@@ -25,6 +27,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
       icon,
       label,
       tooltip,
+      hideTooltip = false,
       style,
       onMouseEnter,
       onMouseLeave,
@@ -39,7 +42,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
     const [hovered, setHovered] = useState(false);
     const [pressed, setPressed] = useState(false);
     const [focused, setFocused] = useState(false);
-    const tooltipVisible = hovered || focused;
+    const tooltipVisible = !hideTooltip && (hovered || focused);
 
     return (
       <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>

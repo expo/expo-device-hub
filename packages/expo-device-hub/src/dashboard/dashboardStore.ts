@@ -7,7 +7,7 @@ import { dashboardHideSidebar } from "../sidebar";
 import { dashboardTransport } from "../transport";
 import { browserStreamModeAvailability, resolveStreamMode } from "./streamMode";
 
-export const DEFAULT_SIDEBAR_WIDTH = 400;
+export const DEFAULT_SIDEBAR_WIDTH = 320;
 export const HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY = "expo-device-hub.hideUnsupportedDevices";
 
 export type SidebarPreference = "auto" | "open" | "hidden";
