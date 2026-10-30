@@ -31,5 +31,10 @@ export type FoldControlCommand =
   | { control: "pose"; value: FoldPose }
   /** Turn the device's persistent table state on or off (Xcode's Table Mode). */
   | { control: "tableMode"; value: boolean }
-  /** Lay the device face down or face up without moving the hinge. */
+  /**
+   * Lay the device face down or face up. The hinge does not move. On iOS the
+   * command also sets Table Mode (on for face down, off for face up) and clears
+   * the named pose, and face down needs a partly open hinge. Other adapters can
+   * apply it differently.
+   */
   | { control: "faceDown"; value: boolean };

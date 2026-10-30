@@ -111,7 +111,11 @@ export type DeviceFoldCapabilities =
       poses: Readonly<Partial<Record<FoldPose, Readonly<{ angle: number }>>>>;
       /** A persistent table state (Xcode's Table Mode); `DeviceFold.tableMode` is then present. */
       tableMode: boolean;
-      /** The `faceDown` command, which lays the device face down without moving the hinge. */
+      /**
+       * The `faceDown` command, which lays the device face down or face up
+       * without moving the hinge. On iOS it also sets Table Mode; see
+       * {@link FoldControlCommand}.
+       */
       faceDown: boolean;
     }>;
 
