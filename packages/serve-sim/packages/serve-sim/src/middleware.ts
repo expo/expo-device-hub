@@ -2882,6 +2882,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                   ),
                 );
               }).catch(async (error) => {
+                if (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED)
+                  throw error;
                 // A sole integrated display needs no native panel election. Never
                 // fall back on an unknown profile or a multi-display device.
                 if (!(await getBootedUdids())?.has(udid)) throw error;
