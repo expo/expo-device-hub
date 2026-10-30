@@ -149,7 +149,22 @@ export function assertNoResidentEgress(udid: string, operation: string): void {
 /** Uses existing session/capability owners; boot enrollment itself has no job owner. */
 export function assertEgressSessionOwner(udid: string, ownerPid = process.pid): void {
   const state = readLaunchState(udid);
+  let exclusivePid = state?.exclusivePid;
+  if (exclusivePid !== undefined) {
+    if (!Number.isSafeInteger(exclusivePid) || exclusivePid <= 1)
+      throw new Error(`Cannot read the exclusive Simulator reservation on ${udid}.`);
+    try {
+      process.kill(exclusivePid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH")
+        throw new Error(`Cannot verify the exclusive Simulator reservation on ${udid}.`, {
+          cause: error,
+        });
+      exclusivePid = undefined;
+    }
+  }
   const owners = [
+    ...(exclusivePid === undefined ? [] : [exclusivePid]),
     ...(state?.sessionPids ?? []),
     ...Object.values(state?.capabilities ?? {}).flatMap((capability) =>
       capability.resident || capability.ownerPid === null ? [] : [capability.ownerPid],
