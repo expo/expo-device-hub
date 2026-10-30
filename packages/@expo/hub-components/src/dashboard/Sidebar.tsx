@@ -33,6 +33,7 @@ export function Sidebar({
   platform,
   width = 320,
   children,
+  showDeviceLists = true,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
@@ -64,6 +65,8 @@ export function Sidebar({
   width?: number;
   /** Rendered below the device lists, edge to edge, in the same scrolling area. */
   children?: ReactNode;
+  /** Hide device navigation for a locked session’s temporary inspector. */
+  showDeviceLists?: boolean;
 }) {
   return (
     <aside
@@ -101,53 +104,55 @@ export function Sidebar({
           overflowY: "auto",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 32,
-            padding: `0 ${SIDEBAR_SECTION_INSET}px ${SIDEBAR_SECTION_INSET}px`,
-          }}
-        >
-          {platform !== "android" && (
-            <DeviceSection
-              title="Simulators"
-              addLabel="Add simulator"
-              kind="simulator"
-              emptyLabel={
-                onAddDevice
-                  ? "No booted simulators. Use the + button to add one."
-                  : "No booted simulators."
-              }
-              devices={simulators}
-              recent={recentSimulators}
-              options={simulatorOptions}
-              agentDeviceIds={agentDeviceIds}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onAdd={onAddDevice}
-            />
-          )}
-          {platform !== "ios" && (
-            <DeviceSection
-              title="Emulators"
-              addLabel="Add emulator"
-              kind="emulator"
-              emptyLabel={
-                onAddDevice
-                  ? "No booted emulators or devices. Use the + button to add one."
-                  : "No booted emulators or devices."
-              }
-              devices={emulators}
-              recent={recentEmulators}
-              options={emulatorOptions}
-              agentDeviceIds={agentDeviceIds}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              onAdd={onAddDevice}
-            />
-          )}
-        </div>
+        {showDeviceLists && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 32,
+              padding: `0 ${SIDEBAR_SECTION_INSET}px ${SIDEBAR_SECTION_INSET}px`,
+            }}
+          >
+            {platform !== "android" && (
+              <DeviceSection
+                title="Simulators"
+                addLabel="Add simulator"
+                kind="simulator"
+                emptyLabel={
+                  onAddDevice
+                    ? "No booted simulators. Use the + button to add one."
+                    : "No booted simulators."
+                }
+                devices={simulators}
+                recent={recentSimulators}
+                options={simulatorOptions}
+                agentDeviceIds={agentDeviceIds}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onAdd={onAddDevice}
+              />
+            )}
+            {platform !== "ios" && (
+              <DeviceSection
+                title="Emulators"
+                addLabel="Add emulator"
+                kind="emulator"
+                emptyLabel={
+                  onAddDevice
+                    ? "No booted emulators or devices. Use the + button to add one."
+                    : "No booted emulators or devices."
+                }
+                devices={emulators}
+                recent={recentEmulators}
+                options={emulatorOptions}
+                agentDeviceIds={agentDeviceIds}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onAdd={onAddDevice}
+              />
+            )}
+          </div>
+        )}
         {children}
       </div>
     </aside>

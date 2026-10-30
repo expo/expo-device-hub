@@ -149,10 +149,16 @@ export function StreamPanel({
   const captureScreenshot = useScreenshotToast(client, device.name);
   // Leave presentation in the same update that opens the inspector, restoring its
   // sibling interactivity before the Clipboard section can take focus.
-  const clipboard = useClipboardToast(client, device.id, (request) => {
-    setPresentation(false);
-    onClipboardFallback?.(request);
-  });
+  const clipboard = useClipboardToast(
+    client,
+    device.id,
+    onClipboardFallback
+      ? (request) => {
+          setPresentation(false);
+          onClipboardFallback(request);
+        }
+      : undefined,
+  );
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 

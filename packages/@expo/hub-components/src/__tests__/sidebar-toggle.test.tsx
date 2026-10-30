@@ -53,3 +53,28 @@ describe("Sidebar toggle glyph", () => {
     expect(markup).not.toContain('aria-label="Toggle sidebar"');
   });
 });
+
+test("an inspector-only sidebar omits device lists and their empty-state messages", () => {
+  const markup = renderToStaticMarkup(
+    <Sidebar
+      simulators={[]}
+      emulators={[]}
+      recentSimulators={[]}
+      recentEmulators={[]}
+      simulatorOptions={{ runtimes: [] }}
+      emulatorOptions={{ runtimes: [] }}
+      selectedId="locked"
+      onSelect={() => {}}
+      showDeviceLists={false}
+      onToggle={() => {}}
+      toggleIcon="close"
+    >
+      <div>Clipboard inspector</div>
+    </Sidebar>,
+  );
+  expect(markup).toContain("Clipboard inspector");
+  expect(markup).toContain('aria-label="Close sidebar"');
+  expect(markup).not.toContain("No booted");
+  expect(markup).not.toContain("Simulators");
+  expect(markup).not.toContain("Emulators");
+});

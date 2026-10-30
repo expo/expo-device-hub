@@ -112,7 +112,9 @@ corner, opposite the sidebar toggle, and shows a close icon while active. On a p
 page behind the dashboard takes the color of the surface above the browser's bottom bars,
 so no lighter strip shows under them. A phone's open sidebar fills the screen. Full-screen controls
 preserve capture focus. The sidebar stays hidden in full screen intentionally; a browser
-clipboard fallback leaves full screen before showing the inspector. Tablet and desktop stream panels retain their existing title and
+clipboard fallback leaves full screen before showing the inspector when a fallback
+handler exists. Locked sessions show only inspector sections, without device-list
+empty states. Consumers without a fallback handler retain presentation. Tablet and desktop stream panels retain their existing title and
 padding. The shared toolbar and sidebar changes are described below. [observed: Hub `Dashboard.tsx`, HubComponents
 `StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
 [confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]

@@ -486,12 +486,13 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         onDismiss={closeInspector}
       >
         <Sidebar
+          showDeviceLists={!singleDevice}
           simulators={singleDevice ? [] : simulators}
           emulators={singleDevice ? [] : emulators}
           recentSimulators={singleDevice ? [] : recentSimulators}
           recentEmulators={singleDevice ? [] : recentEmulators}
-          simulatorOptions={singleDevice ? [] : simulatorOptions}
-          emulatorOptions={singleDevice ? [] : emulatorOptions}
+          simulatorOptions={singleDevice ? { runtimes: [] } : simulatorOptions}
+          emulatorOptions={singleDevice ? { runtimes: [] } : emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
