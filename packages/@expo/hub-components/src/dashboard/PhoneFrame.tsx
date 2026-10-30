@@ -88,7 +88,12 @@ export function PhoneFrame({
   preserveKeyboardFocus?: boolean;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  /**
+   * iPhone Duo 3D renderer, injected from `@expo/hub-client`. Pass it whenever
+   * the client was created with `duoPreview: '3d'`: that client parks the flat
+   * streams, so without this component the Duo shows "Connecting…" and no video.
+   * With a `'2d'` client the Duo renders flat and this prop is not used.
+   */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
