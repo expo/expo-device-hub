@@ -1,4 +1,4 @@
-import { withHostActionDeadline } from "./host-actions-utils";
+import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
 import { US_KEYBOARD_MAP } from "./text-to-keys";
@@ -399,10 +399,35 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
-  /** Use the same native panel election as the live stream, including external folds. */
   async activeScreenId(): Promise<number> {
     await withHostActionDeadline(this.start(), "Screenshot capture startup");
-    return await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    const id = await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    await this.waitForCapture();
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    return id;
+  }
+
+  private readonly queueScreenshot = createSerialQueue();
+
+  screenshot(screenID: number, timeoutMs?: number): Promise<Uint8Array> {
+    let expired = false;
+    const work = withDeviceSessionTask(this, () =>
+      this.queueScreenshot(async () => {
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        await this.start();
+        await this.waitForCapture();
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        const png = await this.capture.screenshot(screenID);
+        await this.waitForCapture();
+        return png;
+      }),
+    );
+    // Only the caller times out. Retain the capture lease and serial queue until native work
+    // settles, so cleanup cannot race it and a retry cannot allocate another native buffer.
+    return withHostActionDeadline(work, "Screenshot capture", timeoutMs).finally(() => {
+      expired = true;
+    });
   }
 
   /** Begin capture. Throws if the device isn't booted. Idempotent. */

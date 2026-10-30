@@ -1,5 +1,5 @@
 import { afterAll, afterEach, expect, mock, test } from "bun:test";
-import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { UDID, installShims, useTempStateDir } from "../helpers";
 import * as native from "../../native";
@@ -10,8 +10,17 @@ let active: number | Error = 1;
 let sequence: Array<number | Error> = [];
 let stops = 0;
 let startupError: Error | undefined;
+let screenshotGate: Promise<void> | undefined;
 const captures: Array<{ udid: string; settings: StreamEncoderSettings }> = [];
 class Capture {
+  async screenshot(display: number) {
+    await screenshotGate;
+    appendFileSync(process.env.SERVE_SIM_HTTP_SHOTS!, `native --display=${display}\n`);
+    return Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      Buffer.from(`native --display=${display}`),
+    ]);
+  }
   constructor(udid: string, settings: StreamEncoderSettings) {
     captures.push({ udid, settings });
   }
@@ -116,6 +125,7 @@ afterEach(() => {
   active = 1;
   sequence = [];
   startupError = undefined;
+  screenshotGate = undefined;
   captures.length = 0;
   stops = 0;
 });
@@ -127,7 +137,7 @@ afterAll(() => {
 });
 
 test.each(["startup", "readback"])(
-  "a single-display device falls back to its sole profile display after native %s fails",
+  "a single-display device uses simctl if native %s is unavailable",
   async (failure) => {
     if (failure === "startup") startupError = new Error("Native addon missing");
     else active = new Error("Native display readback unavailable");
@@ -173,6 +183,29 @@ test("HTTP recaptures a panel switch and bounds an unstable fold", async () => {
     error: "The active display kept changing. Retry the screenshot once the fold has finished.",
   });
 });
+test("HTTP screenshots expose capture and artifact timing for native and explicit displays", async () => {
+  for (const query of ["", "&display=3"]) {
+    const response = await shot(query);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-expose-headers")).toContain("Server-Timing");
+    const timings = Object.fromEntries(
+      response.headers
+        .get("server-timing")!
+        .split(",")
+        .map((entry) => {
+          const [name, duration] = entry.trim().split(";dur=");
+          return [name, Number(duration)];
+        }),
+    );
+    for (const name of ["total", "capture", "native", "artifact"]) {
+      expect(Number.isFinite(timings[name])).toBe(true);
+      expect(timings[name]).toBeGreaterThanOrEqual(0);
+    }
+    expect(timings.total).toBeGreaterThanOrEqual(timings.capture);
+    expect(timings.capture).toBeGreaterThanOrEqual(timings.native);
+    if (query) expect(timings.native).toBe(0);
+  }
+});
 test("HTTP explicit display avoids native startup and rejects invalid IDs", async () => {
   startupError = new Error("Must not start capture");
   const explicit = await shot("&display=3");
@@ -209,3 +242,24 @@ test("HTTP startup errors keep private addon paths in host logs", async () => {
   expect(res.status).toBe(500);
   expect(await res.json()).toEqual({ ok: false, error: "Simulator screenshot failed" });
 });
+
+test("HTTP capture keeps its five-second deadline and retains native work until it drains", async () => {
+  let release!: () => void;
+  screenshotGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    const response = await Promise.race([
+      shot(),
+      Bun.sleep(8000).then(() => {
+        throw new Error("HTTP screenshot did not honor its deadline");
+      }),
+    ]);
+    expect(response.status).toBe(500);
+    expect(stops).toBe(0);
+  } finally {
+    release();
+  }
+  for (let i = 0; i < 400 && !stops; i++) await Bun.sleep(5);
+  expect(stops).toBe(1);
+}, 10_000);

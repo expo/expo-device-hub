@@ -102,6 +102,7 @@ actor CaptureEngine {
 
     private let deviceUDID: String
     private let screenID: UInt32?
+    private let screenshotEncoder = ScreenshotEncoder()
     private let frameCapture = FrameCapture()
     private let nativeFrameMailbox = NativeFrameMailbox()
     private var phase = Phase.unstarted
@@ -238,6 +239,16 @@ actor CaptureEngine {
         lastViewerCanvasSequence = sequence
         viewerCanvas = canvas
         await refreshSnapshotSize()
+    }
+
+    func screenshot(_ screenID: UInt32) async throws -> Data {
+        guard phase == .running, !rebootSuspended else { throw CancellationError() }
+        let generation = captureGeneration
+        let frame = try await frameCapture.screenshotPixels(screenID: screenID)
+        guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
+        let png = try await screenshotEncoder.encode(frame.pixels, orientation: frame.orientation)
+        guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
+        return png
     }
 
     private func handleFrame(_ frame: Frame) async {
