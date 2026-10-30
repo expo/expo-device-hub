@@ -17,7 +17,16 @@ const HOME = "/Users/test";
 
 /** A file system that holds only `files`, with no links. */
 function onlyFiles(...files: string[]): SdkFileSystem {
-  return { existsSync: (path) => files.includes(path), realpathSync: (path) => path };
+  return {
+    existsSync: (path) => files.includes(path),
+    realpathSync: (path) => path,
+    readdirSync: (path) => {
+      const children = files
+        .filter((file) => file.startsWith(`${path}/`))
+        .map((file) => file.slice(path.length + 1).split("/")[0]!);
+      return [...new Set(children)];
+    },
+  };
 }
 
 const EMPTY = onlyFiles();
@@ -178,11 +187,69 @@ describe("resolveAvdmanagerPath", () => {
       "/sdk/home/cmdline-tools/latest/bin/avdmanager",
     );
   });
+
+  test("prefers cmdline-tools/latest over a numbered version", () => {
+    const fileSystem = onlyFiles(
+      "/sdk/cmdline-tools/19.0/bin/avdmanager",
+      "/sdk/cmdline-tools/latest/bin/avdmanager",
+    );
+    expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "darwin", fileSystem)).toBe(
+      "/sdk/cmdline-tools/latest/bin/avdmanager",
+    );
+  });
+
+  test("falls back to the newest numbered cmdline-tools version", () => {
+    const fileSystem = onlyFiles(
+      "/sdk/cmdline-tools/9.0/bin/avdmanager",
+      "/sdk/cmdline-tools/19.0/bin/avdmanager",
+      "/sdk/cmdline-tools/11.0/bin/avdmanager",
+      "/sdk/cmdline-tools/latest-2/bin/avdmanager",
+    );
+    expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "darwin", fileSystem)).toBe(
+      "/sdk/cmdline-tools/19.0/bin/avdmanager",
+    );
+  });
+
+  test("skips a numbered version that lacks the tool", () => {
+    const fileSystem = onlyFiles(
+      "/sdk/cmdline-tools/19.0/source.properties",
+      "/sdk/cmdline-tools/11.0/bin/avdmanager",
+    );
+    expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "darwin", fileSystem)).toBe(
+      "/sdk/cmdline-tools/11.0/bin/avdmanager",
+    );
+  });
+
+  test("does not search the old tools/bin layout", () => {
+    // Left out on purpose until someone reports that they need it.
+    const fileSystem = onlyFiles("/sdk/tools/bin/avdmanager");
+    expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "darwin", fileSystem)).toBe(
+      "/sdk/cmdline-tools/latest/bin/avdmanager",
+    );
+  });
+
+  test("searches every folder of one SDK before the next SDK", () => {
+    // ANDROID_HOME's numbered version wins over the default SDK's latest folder.
+    const fileSystem = onlyFiles(
+      "/sdk/home/cmdline-tools/9.0/bin/avdmanager",
+      "/Users/test/Library/Android/sdk/cmdline-tools/latest/bin/avdmanager",
+    );
+    expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME, "darwin", fileSystem)).toBe(
+      "/sdk/home/cmdline-tools/9.0/bin/avdmanager",
+    );
+  });
 });
 
 describe("sdkmanagerPath", () => {
   test("appends the cmdline-tools binary subpath", () => {
     expect(sdkmanagerPath("/sdk", "darwin")).toBe("/sdk/cmdline-tools/latest/bin/sdkmanager");
+  });
+
+  test("targets the .bat wrapper of a numbered version on Windows", () => {
+    const fileSystem = onlyFiles("/sdk/cmdline-tools/19.0/bin/sdkmanager.bat");
+    expect(resolveSdkmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "win32", fileSystem)).toBe(
+      "/sdk/cmdline-tools/19.0/bin/sdkmanager.bat",
+    );
   });
 
   test("targets the .bat wrapper on Windows", () => {
