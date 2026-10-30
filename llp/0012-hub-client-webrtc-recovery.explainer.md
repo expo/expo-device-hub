@@ -5,7 +5,7 @@
 **Systems:** HubClient, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-16 (Codex, directed by Gabe Debes)
+**Revised:** 2026-10-26 (Claude Code, directed by Krystof Woldrich: shared repeat interval); 2026-10-16 (Codex, directed by Gabe Debes)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -72,7 +72,7 @@ One poll per peer reads stats once a second. The watchdog and the stats panel sh
 
 - The watchdog judges only a connected peer that has shown a frame, in a visible tab.
 - It resets on `visibilitychange`, and after a poll gap longer than 8 s, because sleep does not always send `visibilitychange`.
-- Android sets `expectContinuousFrames` from its active source: `true` for `grpc-screenshot` when its advertised effective `repeatFrameMs` is positive and at most half the 8 s stall window (4 s), reserving the other half for capture-timer quantization and encode/delivery latency; `false` for scrcpy, slow custom repeats, or missing/invalid cadence metadata. gRPC defaults to 500 ms; scrcpy repeats no frames by default. Idle scrcpy remains valid; a gRPC stream with no new frames receives the normal stall recovery. A source-policy change updates the existing watchdog and invalidates its samples and pending verdicts without renegotiating the peer. During a switch the adapter uses the committed pending source; a late HTTP response or later sidebar update cannot replace an already healthy peer [observed: `useAndroidDevice.ts`, the layout effect in `useWebRtcStream.ts` and `setExpectContinuousFrames` in `playback-stall-watchdog.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`, and `/api/stream-mode` in serve-emu `middleware.ts` and `server.ts`].
+- Android sets `expectContinuousFrames` from its active source: `true` for `grpc-screenshot` when its advertised effective `repeatFrameMs` is positive and at most half the 8 s stall window (4 s), reserving the other half for capture-timer quantization and encode/delivery latency; `false` for scrcpy, slow custom repeats, or missing/invalid cadence metadata. gRPC defaults to 500 ms; scrcpy repeats no frames by default. Idle scrcpy remains valid; a gRPC stream with no new frames receives the normal stall recovery. A source-policy change updates the existing watchdog and invalidates its samples and pending verdicts without renegotiating the peer. During a switch the adapter uses the committed pending source; a late HTTP response or later sidebar update cannot replace an already healthy peer [observed: `useAndroidDevice.ts`, the layout effect in `useWebRtcStream.ts` and `setExpectContinuousFrames` in `playback-stall-watchdog.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `effectiveRepeatFrameMs` in `grpc-session.ts`, shared by the gRPC session and `/api/stream-mode` in serve-emu `middleware.ts` and `server.ts`].
 - During automatic recovery, Android keeps the last frame as a poster, but only on the video element that the adapter attached [observed: `preserveWebRtcFrame` in `useAndroidDevice.ts`].
 
 serve-sim's client has the same watchdog [observed: `hooks/playback-stall-watchdog.ts`].

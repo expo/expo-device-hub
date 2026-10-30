@@ -59,6 +59,7 @@ import {
   type GrpcEncoder,
   type GrpcImageMode,
   type InputSource,
+  type StreamMode,
 } from "./shared/api-contracts.ts";
 
 export { H264StartupGate } from "./h264-readiness.ts";
@@ -74,7 +75,7 @@ const ACCESS_UNIT_CADENCE_WINDOW = 8;
 const ACCESS_UNIT_CADENCE_OUTLIER_FLOOR_MS = 250;
 const ACCESS_UNIT_CADENCE_OUTLIER_MULTIPLIER = 4;
 const ACCESS_UNIT_SLOW_CADENCE_SIMILARITY = 1.5;
-export const DEFAULT_IDLE_REPEAT_MS = 500;
+const DEFAULT_IDLE_REPEAT_MS = 500;
 const ENCODER_DRAIN_TIMEOUT_MS = 5_000;
 const FIRST_FRAME_TIMEOUT_MS = 10_000;
 const MAX_QUEUED_PACKET_BYTES = 64 * 1024 * 1024;
@@ -1514,6 +1515,19 @@ function nonNegativeInteger(value: number, name: string, maximum: number): numbe
 }
 
 /**
+ * The idle repeat interval that a capture source really uses, in milliseconds.
+ * `0` means the source sends no repeats. gRPC capture always repeats: an unset,
+ * zero, or invalid value falls back to its default. scrcpy repeats only when a
+ * value is configured. Callers validate `configured` first when it must be valid.
+ */
+export function effectiveRepeatFrameMs(mode: StreamMode, configured: number | undefined): number {
+  if (mode === "grpc-screenshot") {
+    return configured !== undefined && configured > 0 ? configured : DEFAULT_IDLE_REPEAT_MS;
+  }
+  return configured ?? SCRCPY_DEFAULTS.repeatFrameMs;
+}
+
+/**
  * Host-side emulator screenshot capture and input, encoded to the same H.264
  * packet contract as scrcpy.
  */
@@ -1547,8 +1561,7 @@ export async function startGrpcSession(
     "repeatFrameMs",
     60_000,
   );
-  const repeatFrameMs =
-    configuredRepeatFrameMs > 0 ? configuredRepeatFrameMs : DEFAULT_IDLE_REPEAT_MS;
+  const repeatFrameMs = effectiveRepeatFrameMs("grpc-screenshot", configuredRepeatFrameMs);
   const encoderDrainTimeoutMs = positiveNumber(
     dependencies.encoderDrainTimeoutMs ?? ENCODER_DRAIN_TIMEOUT_MS,
     "encoderDrainTimeoutMs",
