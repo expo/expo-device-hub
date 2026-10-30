@@ -20,6 +20,7 @@ import {
   removeCapabilityLoaderSync,
   isCapabilityArmed,
   disarmStaleCapabilityLoader,
+  armCapabilityLoader,
 } from "../launch-manager";
 
 import { useTempStateDir, withShimsAsync } from "./helpers";
@@ -46,6 +47,18 @@ beforeEach(() => {
 });
 
 afterEach(() => state.restore());
+
+test("resident arming rejects a missing pinned loader without changing enrollment", async () => {
+  const guard = enrollment();
+  writeLaunchState(udid, { launchArgs: [], capabilities: { egressGuard: guard } });
+  const config = capabilityConfigPath(udid);
+  writeFileSync(config, formatCapabilityConfig({ egressGuard: guard }));
+  writeManagedStartupDylibs(udid, [guard.dylib]);
+  const before = readFileSync(config);
+  await expect(armCapabilityLoader(udid)).rejects.toThrow("Capability loader not found");
+  expect(readLaunchState(udid)?.capabilities.egressGuard).toEqual(guard);
+  expect(readFileSync(config)).toEqual(before);
+});
 
 test("a missing resident loader rejects stale cleanup without changing enrollment", async () => {
   const guard = enrollment();
