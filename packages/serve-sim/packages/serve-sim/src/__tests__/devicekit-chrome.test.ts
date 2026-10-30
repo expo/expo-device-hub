@@ -13,6 +13,22 @@ import {
 } from "../devicekit-chrome";
 
 describe("DeviceKit chrome helpers", () => {
+  for (const [name, identifier] of [
+    ["iPhone SE (3rd generation)", "phone"],
+    ["iPad (9th generation)", "tablet"],
+  ] as const) {
+    test.skipIf(!fs.existsSync(`/Library/Developer/DeviceKit/Chrome/${identifier}.devicechrome`))(
+      `centers the Home button within the ${name} body`,
+      () => {
+        const chrome = resolveDeviceKitChrome({ name });
+        expect(chrome?.identifier).toBe(identifier);
+        const home = chrome!.buttons.find((button) => button.name === "home");
+        expect(home).toBeDefined();
+        expect(home!.frame.x + home!.frame.width / 2).toBe(chrome!.body.x + chrome!.body.width / 2);
+      },
+    );
+  }
+
   test("reads each display's corner metadata without averaging or mixing displays", () => {
     const display = {
       displayType: "integrated",
