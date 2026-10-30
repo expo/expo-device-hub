@@ -78,11 +78,9 @@ self-check the resident image and control page; failure requires cold fallback.
 
 A native mechanism check requires a coordinated, dedicated Simulator window:
 
-The Simulator harness also requires the all-process capability-loader implementation
-(stack layer #523 or later). This tools-only layer can run host checks but cannot
-run that Simulator check by itself. The runner checks the built loader's exported
-entry point before creating a device. No final-head Simulator or benchmark result
-is implied by the presence of these tools.
+The Simulator harness requires a loader exporting `serve_sim_startup_all_processes`.
+The runner checks that entry point before creating a device and rejects incompatible
+loaders. The presence of these tools does not establish Simulator or benchmark results.
 
 ```sh
 python3 tests/simulator.py \
