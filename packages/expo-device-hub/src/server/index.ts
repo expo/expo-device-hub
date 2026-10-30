@@ -25,6 +25,7 @@ import { configureClientShell } from "./client-shell";
 import { argentInteractionWebSocketHandler } from "./argent-interaction-websocket";
 import { deviceListWebSocketHandler, refreshDeviceList } from "./device-list-websocket";
 import { type HubDeviceList, listDevices } from "./devices";
+import { networkWebSocketHandler } from "./network-inspector";
 import {
   ANDROID_RECORDING_STOP_ROUTE,
   handleEasEndpoint,
@@ -76,6 +77,7 @@ const CREATE_DEVICE_ROUTE = "/api/devices/create";
 const NEW_DEVICE_OPTIONS_ROUTE = "/api/new-device-options";
 const DEVICES_WEBSOCKET_ROUTE = "/api/devices/ws";
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = "/api/argent-interactions/ws";
+const NETWORK_WEBSOCKET_ROUTE = "/api/network/ws";
 
 // Under a session token every route needs it, so a new route is gated by default. Health and
 // readiness probes cannot carry a token, as in serve-sim, and EAS stops a recording with its own
@@ -329,6 +331,7 @@ function gatedSocket<Socket extends GatedSocket>(
 export const webSocketHandlers = {
   [DEVICES_WEBSOCKET_ROUTE]: gatedSocket(deviceListWebSocketHandler),
   [ARGENT_INTERACTIONS_WEBSOCKET_ROUTE]: gatedSocket(argentInteractionWebSocketHandler),
+  [NETWORK_WEBSOCKET_ROUTE]: gatedSocket(networkWebSocketHandler),
   [`${SIM_PREFIX}/exec-ws`]: gatedSocket(simWebSocketHandler),
   [`${SIM_PREFIX}/helper/ws`]: gatedSocket(simWebSocketHandler),
   [`${EMU_PREFIX}/ws`]: gatedSocket(emuWebSocketHandler),
