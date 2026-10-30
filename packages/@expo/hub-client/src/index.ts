@@ -32,6 +32,7 @@ export {
 } from "./agent-interaction-animation";
 export { displayScreen, streamGeometry } from "./orientation";
 export { useIosDeviceClient } from "./useIosDevice";
+export { usePhysicalIosDeviceClient } from "./usePhysicalIosDevice";
 export { useAndroidDeviceClient } from "./useAndroidDevice";
 export {
   useActiveDeviceClient,

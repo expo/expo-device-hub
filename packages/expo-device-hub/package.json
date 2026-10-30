@@ -26,6 +26,10 @@
     "expo-device-hub": "dist/server/cli.mjs"
   },
   "files": [
+    "native/ios-device/ios-device.node",
+    "native/ios-device/*LICENSE.txt",
+    "native/ios-device/THIRD-PARTY-LICENSES.txt",
+    "native/ios-device/NOTICE.md",
     "dist/client",
     "dist/server/index.mjs",
     "dist/server/cli.mjs",
@@ -45,6 +49,7 @@
     "/expo-module.config.json"
   ],
   "scripts": {
+    "build:ios-device": "bun scripts/build-ios-device.ts",
     "start": "expo start --web",
     "web": "expo start --web",
     "cli": "bun dist/server/cli.mjs",

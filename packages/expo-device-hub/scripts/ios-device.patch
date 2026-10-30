@@ -1,0 +1,205 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -2 +2 @@
+-name = "mobile-dev-ios-mirror"
++name = "expo-hub-ios-device"
+@@ -11,2 +11 @@
+-mobile-dev-telemetry = { path = "../telemetry" }
+-idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream"] }
++idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a64b8867815b3da17b5c927531bdba877e8456ef", default-features = false, features = ["ring", "usbmuxd", "core_device_proxy", "tunnel_tcp_stack", "display_stream", "springboardservices"] }
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -162,0 +163,16 @@
++
++[[package]]
++name = "expo-hub-ios-device"
++version = "0.1.0"
++dependencies = [
++ "flate2",
++ "idevice",
++ "napi",
++ "napi-build",
++ "napi-derive",
++ "plist",
++ "thiserror",
++ "tokio",
++ "uuid",
++ "web-time",
++]
+@@ -456,24 +471,0 @@
+-name = "mobile-dev-ios-mirror"
+-version = "0.1.0"
+-dependencies = [
+- "flate2",
+- "idevice",
+- "mobile-dev-telemetry",
+- "napi",
+- "napi-build",
+- "napi-derive",
+- "plist",
+- "thiserror",
+- "tokio",
+- "uuid",
+- "web-time",
+-]
+-
+-[[package]]
+-name = "mobile-dev-telemetry"
+-version = "0.1.0"
+-dependencies = [
+- "cc",
+-]
+-
+-[[package]]
+--- a/src/addon.rs
++++ b/src/addon.rs
+@@ -7 +7 @@
+-    result.map_err(|_| "Timed out opening the iPhone developer connection.".to_string())?.map_err(|error| error.to_string())
++    result.map_err(|_| "Timed out opening the device developer connection.".to_string())?.map_err(|error| error.to_string())
+@@ -16,5 +16 @@
+-
+-#[napi_derive::module_init]
+-pub fn initialize_telemetry() {
+-    mobile_dev_telemetry::init("ios-mirror");
+-}
++use idevice::springboardservices::{InterfaceOrientation, SpringBoardServicesClient};
+@@ -23,0 +20 @@
++    display_size: Mutex<Option<(f64, f64)>>,
+@@ -38,0 +36,2 @@
++    pub display_width: u32,
++    pub display_height: u32,
+@@ -79 +78,3 @@
+-            queue.configuration.as_ref().map(|value| VideoConfiguration {
++            queue.configuration.as_ref().map(|value| {
++                let (display_width, display_height) = codec::content_size(value.width, value.height, *self.shared.display_size.lock().unwrap());
++                VideoConfiguration {
+@@ -80,0 +82 @@
++                display_width, display_height,
+@@ -82 +84 @@
+-            })
++            }})
+@@ -96 +97,0 @@
+-        let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Input);
+@@ -123,2 +124 @@
+-    let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::Connect);
+-    let shared = Arc::new(Shared { queue: Mutex::new(Queue::default()), changed: Notify::new(), stopped: Notify::new() });
++    let shared = Arc::new(Shared { queue: Mutex::new(Queue::default()), display_size: Mutex::new(None), changed: Notify::new(), stopped: Notify::new() });
+@@ -176 +176 @@
+-        .ok_or("The iPhone is no longer connected. Check USB or Wi-Fi pairing in Xcode.")?;
++        .ok_or("Preview needs a USB connection or Wi-Fi access enabled in Finder. Connect by USB and enable 'Show this device when on Wi-Fi' in Finder.")?;
+@@ -189 +189,11 @@
+-        let port = handshake.services.get("com.apple.coredevice.displayservice").ok_or("The iPhone does not expose its display service. Enable Developer Mode.")?.port;
++        if let Some(service) = handshake.services.get("com.apple.coredevice.deviceinfo") {
++            let geometry = async {
++                let stream = adapter.connect(service.port).await.map_err(|e| e.to_string())?;
++                let mut info = control::Control::new(stream).await?;
++                info.invoke("com.apple.coredevice.feature.getdisplayinfo", Default::default(), None).await
++            };
++            if let Ok(Ok(info)) = tokio::time::timeout(Duration::from_secs(2), geometry).await {
++                *shared.display_size.lock().unwrap() = control::display_size(&info);
++            }
++        }
++        let port = handshake.services.get("com.apple.coredevice.displayservice").ok_or("The device does not expose its display service. Enable Developer Mode.")?.port;
+@@ -221 +231 @@
+-                .ok_or("The iPhone does not expose its touch-input service. Prepare it with Xcode 27 and enable Developer Mode.")?.port;
++                .ok_or("The device does not expose its touch-input service. Prepare it with Xcode 27 and enable Developer Mode.")?.port;
+@@ -243,0 +254 @@
++            let mut touch_orientation = InterfaceOrientation::Portrait;
+@@ -252,0 +264,4 @@
++                            if available == false {
++                                let _ = reply.send(Err("Wait for a fresh physical iOS screen before sending input.".to_string()));
++                                continue;
++                            }
+@@ -254 +269,5 @@
+-                                if available == false { return Err("Wait for a fresh physical iOS screen before sending input.".to_string()); }
++                                if samples.iter().any(|sample| sample.phase == 0) {
++                                    let mut springboard = SpringBoardServicesClient::connect(&provider).await.map_err(|e| e.to_string())?;
++                                    touch_orientation = springboard.get_interface_orientation().await.map_err(|e| e.to_string())?;
++                                }
++                                let samples = samples.into_iter().map(|sample| sample.oriented(touch_orientation)).collect::<std::result::Result<Vec<_>, _>>()?;
+@@ -308 +326,0 @@
+-                        let _timing = mobile_dev_telemetry::Timer::start(mobile_dev_telemetry::Timing::FrameProcess);
+--- a/src/codec.rs
++++ b/src/codec.rs
+@@ -1,0 +2,17 @@
++
++/// CoreDevice pads encoded video at the right/bottom, even after SPS cropping.
++pub fn content_size(width: u32, height: u32, native: Option<(f64, f64)>) -> (u32, u32) {
++    let Some((a, b)) = native.filter(|(a, b)| a.is_finite() && b.is_finite() && *a > 0.0 && *b > 0.0 && *a <= 16384.0 && *b <= 16384.0) else { return (width, height); };
++    let (w, h) = if width > height { (a.max(b), a.min(b)) } else { (a.min(b), a.max(b)) };
++    let scale = (f64::from(width) / w).min(f64::from(height) / h).min(1.0);
++    ((w * scale).round() as u32, (h * scale).round() as u32)
++}
++
++#[test]
++fn removes_encoder_padding_without_cropping_the_display() {
++    assert_eq!(content_size(1216, 2656, Some((1206.0, 2622.0))), (1206, 2622));
++    assert_eq!(content_size(2656, 1216, Some((1206.0, 2622.0))), (2622, 1206));
++    assert_eq!(content_size(2736, 2064, Some((2752.0, 2064.0))), (2736, 2052));
++    assert_eq!(content_size(1216, 2656, None), (1216, 2656));
++    assert_eq!(content_size(1216, 2656, Some((f64::NAN, 0.0))), (1216, 2656));
++}
+--- a/src/control.rs
++++ b/src/control.rs
+@@ -5,0 +6,8 @@
++pub fn display_size(info: &plist::Value) -> Option<(f64, f64)> {
++    let displays = info.as_dictionary()?.get("displays")?.as_array()?;
++    let display = displays.iter().filter_map(plist::Value::as_dictionary)
++        .find(|display| display.get("primary").and_then(plist::Value::as_boolean) == Some(true))?;
++    let size = display.get("nativeSize")?.as_array()?;
++    Some((size.first()?.as_real()?, size.get(1)?.as_real()?))
++}
++
+@@ -8 +16 @@
+-    result.map_err(|_| "The iPhone display service did not respond.".to_string())?.map_err(|error| error.to_string())
++    result.map_err(|_| "The device display service did not respond.".to_string())?.map_err(|error| error.to_string())
+@@ -83 +91 @@
+-        result.map_err(|_| "The iPhone display request timed out.")?.map_err(|error| error.to_string())?;
++        result.map_err(|_| "The device display request timed out.")?.map_err(|error| error.to_string())?;
+--- a/src/input.rs
++++ b/src/input.rs
+@@ -5,0 +6 @@
++use idevice::springboardservices::InterfaceOrientation;
+@@ -14,0 +16,18 @@
++}
++
++impl TouchSample {
++    // UniversalHID uses the digitizer's portrait coordinates, even when the
++    // display stream is rotated. Keep one orientation for the whole gesture.
++    pub fn oriented(self, orientation: InterfaceOrientation) -> Result<Self, String> {
++        use InterfaceOrientation::*;
++        normalized(self.x, self.width)?;
++        normalized(self.y, self.height)?;
++        let (x, y, width, height) = match orientation {
++            Portrait => (self.x, self.y, self.width, self.height),
++            PortraitUpsideDown => (self.width - self.x, self.height - self.y, self.width, self.height),
++            LandscapeRight => (self.height - self.y, self.x, self.height, self.width),
++            LandscapeLeft => (self.y, self.width - self.x, self.height, self.width),
++            Unknown => return Err("Cannot determine the device's screen orientation. Unlock it and retry.".into()),
++        };
++        Ok(Self { x, y, width, height, ..self })
++    }
+@@ -68 +87 @@
+-        let touchscreen = surface.ok_or("The iPhone did not register a touchscreen input surface.")?;
++        let touchscreen = surface.ok_or("The device did not register a touchscreen input surface.")?;
+@@ -70 +89 @@
+-        if touchscreens.next().is_some() { return Err("The iPhone registered more than one touchscreen input surface.".into()); }
++        if touchscreens.next().is_some() { return Err("The device registered more than one touchscreen input surface.".into()); }
+@@ -113,0 +133,17 @@
++    fn maps_display_touches_to_the_portrait_digitizer_in_every_orientation() {
++        use InterfaceOrientation::*;
++        let point = sample(0, 100.0, 200.0);
++        for (orientation, expected) in [
++            (Portrait, (100.0, 200.0, 400.0, 800.0)),
++            (PortraitUpsideDown, (300.0, 600.0, 400.0, 800.0)),
++            (LandscapeRight, (600.0, 100.0, 800.0, 400.0)),
++            (LandscapeLeft, (200.0, 300.0, 800.0, 400.0)),
++        ] {
++            let p = point.oriented(orientation).unwrap();
++            assert_eq!((p.x, p.y, p.width, p.height), expected);
++        }
++        assert!(point.oriented(Unknown).is_err());
++        assert!(sample(0, -1.0, 0.0).oriented(LandscapeRight).is_err());
++    }
++
++    #[test]

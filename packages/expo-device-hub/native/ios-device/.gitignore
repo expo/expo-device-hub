@@ -1,0 +1,5 @@
+target/
+source/
+source.tar.gz
+*.node
+THIRD-PARTY-LICENSES.txt

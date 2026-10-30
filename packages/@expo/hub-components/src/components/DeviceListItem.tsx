@@ -1,6 +1,6 @@
 import { type CSSProperties, useRef, useState } from "react";
 
-import { WarningIcon } from "./icons";
+import { WarningIcon, UsbIcon, WifiIcon } from "./icons";
 import { bg, icon, radius, text, textSize } from "../theme/tokens";
 import { AgentDeviceStatus } from "./AgentDeviceStatus";
 import { useCompactAgentDeviceStatus } from "./useCompactAgentDeviceStatus";
@@ -12,6 +12,8 @@ import { useCompactAgentDeviceStatus } from "./useCompactAgentDeviceStatus";
 export type DeviceListItemProps = {
   name: string;
   version: string;
+  model?: string;
+  transport?: "usb" | "wifi";
   /** Shows an accessible warning for a device type that Hub does not support or test. */
   unsupported?: boolean;
   usedByAgent?: boolean;
@@ -22,12 +24,15 @@ export type DeviceListItemProps = {
 export function DeviceListItem({
   name,
   version,
+  model,
+  transport,
   unsupported = false,
   usedByAgent = false,
   selected = false,
   onClick,
 }: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
+  const connectionLabel = transport === "usb" ? "USB" : transport === "wifi" ? "Wi-Fi" : null;
   const [pressed, setPressed] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLSpanElement>(null);
@@ -68,7 +73,7 @@ export function DeviceListItem({
       style={style}
       onClick={onClick}
       aria-pressed={selected}
-      aria-label={`${name}, ${version}${usedByAgent ? ", used by agent" : ""}`}
+      aria-label={`${name}, ${version}${connectionLabel ? `, ${connectionLabel}` : ""}${usedByAgent ? ", used by agent" : ""}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -99,7 +104,7 @@ export function DeviceListItem({
         )}
         <span
           ref={nameRef}
-          title={name}
+          title={model ? `${name} (${model})` : name}
           style={{
             ...textSize.sm,
             minWidth: 0,
@@ -127,9 +132,22 @@ export function DeviceListItem({
           color: text.secondary,
           whiteSpace: "nowrap",
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
         {version}
+        {connectionLabel && (
+          <span
+            role="img"
+            aria-label={connectionLabel}
+            title={`Connected via ${connectionLabel}`}
+            style={{ display: "flex" }}
+          >
+            {transport === "usb" ? <UsbIcon size={16} /> : <WifiIcon size={16} />}
+          </span>
+        )}
       </span>
     </button>
   );

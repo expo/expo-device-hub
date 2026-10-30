@@ -15,7 +15,7 @@
  */
 
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
-import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
+import { listDevices as listAppleDevices, listPhysicalDevices } from "@expo/hub-apple-utils";
 
 import { type DeviceFrameProfileId } from "@expo/hub-components";
 
@@ -45,6 +45,8 @@ export interface HubDevice {
    * Physical devices can't be removed from Hub, so the UI hides that action.
    */
   physical: boolean;
+  transport?: "usb" | "wifi";
+  model?: string;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for this exact device model, or null when none is available. */
@@ -114,6 +116,7 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         platform: "android" as const,
         booted: device.booted,
         physical: device.type === "device",
+        transport: device.transport,
         supported: isSupportedAndroidDevice(device),
         deviceFrame: androidDeviceFrame(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
@@ -142,15 +145,37 @@ function latestTimestamp(...timestamps: Array<number | null>): number | undefine
 /** Every requested simulator and emulator/device, each tagged with its `booted` state. */
 export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceList> {
   const empty = (): PlatformDeviceList => ({ devices: [], error: null });
-  const [simulators, emulators] = await Promise.all([
+  const [simulators, emulators, physical] = await Promise.all([
     platform === "android" ? empty() : listIosSimulators(),
     platform === "ios" ? empty() : listAndroidEmulators(),
+    platform === "android" ? { value: [], error: null } : listPhysicalDevices(),
   ]);
 
   return filterSessionDevices({
-    simulators: simulators.devices,
+    simulators: [
+      ...simulators.devices,
+      ...physical.value
+        .filter((device) => device.connected)
+        .map(
+          (device): HubDevice => ({
+            id: device.udid,
+            name: device.name,
+            version: `${device.kind === "iPad" ? "iPadOS" : "iOS"} ${device.osVersion}`,
+            platform: "ios",
+            booted: true,
+            physical: true,
+            model: device.model,
+            transport:
+              device.transport === "usb" || device.transport === "wifi"
+                ? device.transport
+                : undefined,
+            supported: true,
+            deviceFrame: null,
+          }),
+        ),
+    ],
     emulators: emulators.devices,
-    errors: [simulators.error, emulators.error].filter(
+    errors: [simulators.error, emulators.error, toSerializableError(physical.error)].filter(
       (error): error is SerializableError => error !== null,
     ),
   });

@@ -2,10 +2,12 @@ import { endpointFor } from "./connections";
 import { type DeviceClient, type DeviceConnectionOptions, type DevicePlatform } from "./types";
 import { useAndroidDeviceClient } from "./useAndroidDevice";
 import { useIosDeviceClient } from "./useIosDevice";
+import { usePhysicalIosDeviceClient } from "./usePhysicalIosDevice";
 import { NOOP_DEVICE_CLIENT } from "./useNoopDeviceClient";
 
 export interface ActiveDeviceTarget {
   platform: DevicePlatform;
+  physical?: boolean;
   /** Which running device (udid/serial) to stream. */
   device?: string | null;
   /** Explicit consumer-owned stream selection. */
@@ -28,7 +30,8 @@ export function useActiveDeviceClient(
   hubBase: string,
   { token = null }: ActiveDeviceClientOptions = {},
 ): DeviceClient {
-  const iosActive = target?.platform === "ios";
+  const physicalIosActive = target?.platform === "ios" && target.physical === true;
+  const iosActive = target?.platform === "ios" && !physicalIosActive;
   const androidActive = target?.platform === "android";
 
   const ios = useIosDeviceClient({
@@ -46,6 +49,15 @@ export function useActiveDeviceClient(
     token,
   });
 
+  const physicalIos = usePhysicalIosDeviceClient({
+    enabled: physicalIosActive,
+    baseUrl: `${hubBase.replace(/\/$/, "")}/api/ios-device`,
+    device: physicalIosActive ? target?.device : null,
+    streamMode: target?.streamMode as DeviceConnectionOptions["streamMode"],
+    token,
+  });
+
+  if (physicalIosActive) return physicalIos;
   if (iosActive) return ios;
   if (androidActive) return android;
   return NOOP_DEVICE_CLIENT;

@@ -303,7 +303,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // boots) on load.
   const client = useActiveDeviceClient(
     connectionStatus === "connected" && selected
-      ? { platform: selected.platform, device: selected.id, streamMode }
+      ? {
+          platform: selected.platform,
+          device: selected.id,
+          physical: selected.physical,
+          streamMode,
+        }
       : null,
     basePath(),
   );
@@ -459,7 +464,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onShutdown={selected && !selected.physical ? () => handleShutdown(selected) : undefined}
           onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
           clipboardRequest={clipboardRequest}
           onClipboardRequestHandled={() => setClipboardFallback(null)}
@@ -511,7 +516,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onShutdown={selected && !selected.physical ? () => handleShutdown(selected) : undefined}
           onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
           clipboardRequest={clipboardRequest}
           onClipboardRequestHandled={() => setClipboardFallback(null)}

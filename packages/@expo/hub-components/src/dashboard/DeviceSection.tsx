@@ -113,6 +113,8 @@ export function DeviceSection({
               key={device.id}
               name={device.name}
               version={device.version}
+              model={device.model}
+              transport={device.transport}
               unsupported={!device.supported}
               usedByAgent={agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}

@@ -32,6 +32,8 @@ import {
   READY_ROUTE,
 } from "./eas-endpoints";
 import { MOUNT_PATH } from "./mount";
+import { physicalIos } from "./physical-ios";
+export const shutdownPhysicalIos = () => physicalIos.dispose();
 import { SERVER_PLATFORM_FILTER } from "./platform-filter";
 import {
   EMU_PREFIX,
@@ -229,6 +231,8 @@ async function routeRequest(request: Request): Promise<Response | null> {
   if (isEmuPath(pathname)) {
     return handleEmuRequest(request);
   }
+
+  if (pathname.startsWith("/api/ios-device/")) return physicalIos.handle(request, !!SESSION_TOKEN);
 
   if (pathname === DEVICES_ROUTE) {
     const devices = await listDevices(SERVER_PLATFORM_FILTER);

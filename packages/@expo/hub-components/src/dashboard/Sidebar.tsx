@@ -8,7 +8,7 @@ import {
   type Platform,
 } from "./data";
 
-/** Left column: simulators + emulators lists. The device output (logs) lives in {@link LogSidebar}. */
+/** Virtual and physical devices in separate groups. Device output lives in {@link LogSidebar}. */
 export function Sidebar({
   simulators,
   emulators,
@@ -24,9 +24,9 @@ export function Sidebar({
   platform,
   width = 400,
 }: {
-  /** Simulators to list — real iOS devices from the plugin server. */
+  /** Running iOS simulators and connected physical iOS devices. */
   simulators: Device[];
-  /** Emulators to list. */
+  /** Running Android emulators and connected physical Android devices. */
   emulators: Device[];
   /** Shut-down simulators offered in the add-simulator picker. */
   recentSimulators: Device[];
@@ -61,7 +61,8 @@ export function Sidebar({
         boxSizing: "border-box",
         padding: "32px 24px",
         backgroundColor: bg.default,
-        overflow: "hidden",
+        overflowX: "hidden",
+        overflowY: "auto",
       }}
     >
       <div
@@ -80,7 +81,7 @@ export function Sidebar({
               ? "No booted simulators. Use the + button to add one."
               : "No booted simulators."
           }
-          devices={simulators}
+          devices={simulators.filter((device) => !device.physical)}
           recent={recentSimulators}
           options={simulatorOptions}
           agentDeviceIds={agentDeviceIds}
@@ -96,16 +97,44 @@ export function Sidebar({
           kind="emulator"
           emptyLabel={
             onAddDevice
-              ? "No booted emulators or devices. Use the + button to add one."
-              : "No booted emulators or devices."
+              ? "No booted emulators. Use the + button to add one."
+              : "No booted emulators."
           }
-          devices={emulators}
+          devices={emulators.filter((device) => !device.physical)}
           recent={recentEmulators}
           options={emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={onSelect}
           onAdd={onAddDevice}
+        />
+      )}
+      {platform !== "android" && (
+        <DeviceSection
+          title="iOS Devices"
+          addLabel=""
+          kind="simulator"
+          emptyLabel="No connected iOS devices."
+          devices={simulators.filter((device) => device.physical)}
+          recent={[]}
+          options={simulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      )}
+      {platform !== "ios" && (
+        <DeviceSection
+          title="Android Devices"
+          addLabel=""
+          kind="emulator"
+          emptyLabel="No connected Android devices."
+          devices={emulators.filter((device) => device.physical)}
+          recent={[]}
+          options={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={onSelect}
         />
       )}
     </aside>

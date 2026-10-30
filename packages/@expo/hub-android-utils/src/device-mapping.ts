@@ -5,6 +5,7 @@ import type { AndroidDevice } from "./types";
 export interface ConnectedDevice {
   /** adb serial (e.g. `"emulator-5554"`). */
   serial: string;
+  transport?: "usb" | "wifi";
   /** Whether `getprop` identified this device as an emulator. */
   isEmulator: boolean;
   /** AVD name for booted emulators; `null` for physical devices. */
@@ -72,6 +73,7 @@ export function toPhysicalDevice(device: ConnectedDevice): AndroidDevice {
   return {
     name: physicalDeviceName(properties, device.serial),
     type: "device",
+    transport: device.transport,
     booted: true,
     serial: device.serial,
     path: null,

@@ -12,6 +12,37 @@ type IconProps = {
   style?: CSSProperties;
 };
 
+export function WifiIcon({ size = 18, color = "currentColor", strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2 8.5a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8.5 15.5a5.5 5.5 0 0 1 7 0"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="19" r="1" fill={color} />
+    </svg>
+  );
+}
+
+export function UsbIcon({ size = 18, color = "currentColor", strokeWidth = 1.5 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 19V3m-3 3 3-3 3 3M12 16l-5-4V9m5 4 5-4V7"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="20" r="2" stroke={color} strokeWidth={strokeWidth} />
+      <circle cx="7" cy="8" r="1.5" fill={color} />
+      <path d="M15.5 4h3v3h-3z" fill={color} />
+    </svg>
+  );
+}
+
 export function PlusIcon({
   size = 18,
   color = "currentColor",

@@ -206,6 +206,27 @@ test("deviceListFingerprint ignores discovery order", () => {
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
 });
 
+test("deviceListFingerprint broadcasts physical connection and model changes", () => {
+  const connected: HubDeviceList = {
+    simulators: [{ ...IOS, physical: true, transport: "usb", model: "iPad Pro" }],
+    emulators: [],
+  };
+  const wireless: HubDeviceList = {
+    simulators: [{ ...connected.simulators[0], transport: "wifi" }],
+    emulators: [],
+  };
+  expect(deviceListFingerprint(connected)).not.toBe(deviceListFingerprint(wireless));
+  expect(deviceListFingerprint(wireless)).not.toBe(
+    deviceListFingerprint({ simulators: [], emulators: [] }),
+  );
+  expect(deviceListFingerprint(connected)).not.toBe(
+    deviceListFingerprint({
+      simulators: [{ ...connected.simulators[0], model: "iPad Air" }],
+      emulators: [],
+    }),
+  );
+});
+
 test("deviceListFingerprint includes device-frame capability changes", () => {
   const changed = { ...LIST, simulators: [{ ...IOS, deviceFrame: null }] };
 

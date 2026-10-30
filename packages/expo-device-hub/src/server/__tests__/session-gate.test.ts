@@ -160,6 +160,26 @@ function openSocket(route: string, headers: Record<string, string> = {}) {
 }
 
 describe("the Hub under a session token", () => {
+  test("physical iOS permits authenticated remote requests and refuses missing credentials", async () => {
+    for (const origin of [ORIGIN, "https://hub.example"]) {
+      for (const authenticated of [false, true]) {
+        const response = await server.default(
+          new Request(`${origin}/api/ios-device/open`, {
+            method: "POST",
+            headers: {
+              origin,
+              "Content-Type": "application/json",
+              ...(authenticated ? SAME_ORIGIN : {}),
+            },
+            body: "{}",
+          }),
+        );
+        // An authenticated request reaches validation without opening a device.
+        expect(response?.status).toBe(authenticated ? 400 : 401);
+      }
+    }
+  });
+
   test("hands the token to the vendored serve-sim and serve-emu gates", () => {
     expect(simOptions).toMatchObject({
       execToken: TOKEN,

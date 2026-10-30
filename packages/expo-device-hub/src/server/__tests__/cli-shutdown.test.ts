@@ -11,6 +11,10 @@ const STUB_SERVER = `
 export default async () => null;
 export const staticFileHeaders = {};
 export const webSocketHandlers = {};
+export const shutdownPhysicalIos = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  console.log('physical iOS stopped');
+};
 export const startAndroidScreenRecording = async () => ({ started: false, reason: 'stub' });
 export const shutdownAndroid = async () => {
   if (process.env.STUB_ANDROID === 'reject') throw new Error('Android failed on purpose');
@@ -90,6 +94,7 @@ describe("Hub CLI shutdown", () => {
     expect(result.code, result.stderr).toBe(0);
     expect(result.stdout).toContain("Android stopped");
     expect(result.stdout).toContain("serve-sim stopped");
+    expect(result.stdout).toContain("physical iOS stopped");
   }, 15_000);
 
   test("logs a failed serve-sim release and still exits 0", async () => {

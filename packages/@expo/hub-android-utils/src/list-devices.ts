@@ -17,6 +17,8 @@ import { isEmulatorProps, parseGetprop } from "./parse-getprop";
 import { resolveAdbPath, resolveAvdmanagerPath } from "./sdk-paths";
 import type { AndroidDevice } from "./types";
 
+const discoveryTools = { runAvdmanagerListAvd, runAdbDevices, runAdbGetprop, runAdbEmuAvdName };
+
 /**
  * List the Android devices known to the SDK.
  *
@@ -26,24 +28,28 @@ import type { AndroidDevice } from "./types";
  * described from `getprop`. The result's `value` contains every device it could
  * read, with the first invocation-specific failure in `error`.
  */
-export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>> {
+export async function listDevices(
+  overrides: Partial<typeof discoveryTools> = {},
+): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
     const env = process.env;
     const home = homedir();
     const avdmanager = resolveAvdmanagerPath(env, home);
     const adb = resolveAdbPath(env, home);
 
-    const avdList = await runAvdmanagerListAvd(avdmanager);
-    if (avdList.error) return result([], avdList.error);
-
-    const adbList = await runAdbDevices(adb);
-    if (adbList.error) return result([], adbList.error);
+    const tools = { ...discoveryTools, ...overrides };
+    // A physical phone only needs platform-tools. Missing Java/cmdline-tools
+    // must not hide it, and a failed adb must not hide known AVDs.
+    const [avdList, adbList] = await Promise.all([
+      tools.runAvdmanagerListAvd(avdmanager),
+      tools.runAdbDevices(adb),
+    ]);
 
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
-    const connected = await inspectConnectedDevices(adb, adbList.value);
-    if (connected.error) return result([], connected.error);
+    const connected = await inspectConnectedDevices(adb, adbList.value, tools);
 
-    return await buildDevices(avdBlocks, connected.value);
+    const built = await buildDevices(avdBlocks, connected.value);
+    return result(built.value, avdList.error ?? adbList.error ?? connected.error ?? built.error);
   } catch (error) {
     return result([], reportError("[android-utils] Failed to list devices:", error));
   }
@@ -53,24 +59,35 @@ export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>
 async function inspectConnectedDevices(
   adb: string,
   adbStdout: string | null,
+  tools: typeof discoveryTools,
 ): Promise<AndroidUtilsResult<ConnectedDevice[]>> {
   if (!adbStdout) return result([]);
 
   const online = parseAdbDevices(adbStdout).filter(isOnline);
   const connected: ConnectedDevice[] = [];
+  let error: AndroidUtilsError | null = null;
   for (const device of online) {
-    const inspected = await inspectDevice(adb, device.serial);
-    if (inspected.error) return result([], inspected.error);
+    const inspected = await inspectDevice(adb, device.serial, tools);
+    error ??= inspected.error;
+    if (inspected.error) continue;
+    if (!inspected.value.isEmulator) {
+      inspected.value.transport = device.fields.usb
+        ? "usb"
+        : /:\d+$|\._adb-tls-connect\._tcp\.?$/.test(device.serial)
+          ? "wifi"
+          : undefined;
+    }
     connected.push(inspected.value);
   }
-  return result(connected);
+  return result(connected, error);
 }
 
 async function inspectDevice(
   adb: string,
   serial: string,
+  tools: typeof discoveryTools,
 ): Promise<AndroidUtilsResult<ConnectedDevice>> {
-  const getprop = await runAdbGetprop(adb, serial);
+  const getprop = await tools.runAdbGetprop(adb, serial);
   if (getprop.error) {
     return result({ serial, isEmulator: false, avdName: null, properties: {} }, getprop.error);
   }
@@ -79,7 +96,7 @@ async function inspectDevice(
   const isEmulator = isEmulatorProps(properties);
   let avdName: string | null = null;
   if (isEmulator) {
-    const named = await runAdbEmuAvdName(adb, serial);
+    const named = await tools.runAdbEmuAvdName(adb, serial);
     if (named.error) {
       return result({ serial, isEmulator, avdName, properties }, named.error);
     }
@@ -104,7 +121,7 @@ async function buildDevices(
       readAvdConfig(path),
       readAvdLastBootedAt(path),
     ]);
-    if (config.error) return result([], config.error);
+    usageError ??= config.error;
     usageError ??= lastBootedAt.error;
     const serial = properties.Name ? (bootedByName.get(properties.Name) ?? null) : null;
     emulators.push(toEmulatorDevice(properties, config.value, serial, lastBootedAt.value));

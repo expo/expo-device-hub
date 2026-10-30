@@ -61,6 +61,7 @@ export function StreamPanel({
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
   const controlsRef = useRef<HTMLDivElement>(null);
+  const physicalIos = device.physical && device.platform === "ios";
   const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
   useLayoutEffect(() => {
     const element = controlsRef.current;
@@ -163,6 +164,7 @@ export function StreamPanel({
             }}
           >
             <StreamControls
+              deviceControlsDisabled={physicalIos}
               recording={client.screenRecording}
               appearance={appearance}
               appearanceDisabled={appearanceDisabled}
@@ -171,9 +173,9 @@ export function StreamPanel({
                   client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
                 }
               }}
-              onHome={() => client.pressButton("home")}
-              onReload={() => client.reload()}
-              onRotate={() => client.rotate()}
+              onHome={physicalIos ? undefined : () => client.pressButton("home")}
+              onReload={physicalIos ? undefined : () => client.reload()}
+              onRotate={physicalIos ? undefined : () => client.rotate()}
               onSave={captureScreenshot}
               clipboard={client.capabilities.clipboard}
               clipboardPending={client.clipboardPending}

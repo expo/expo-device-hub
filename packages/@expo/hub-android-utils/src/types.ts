@@ -12,6 +12,7 @@ export interface AndroidDevice {
   name: string;
   /** `"emulator"` for AVDs, `"device"` for physical hardware. */
   type: AndroidDeviceType;
+  transport?: "usb" | "wifi";
   /** Whether the device is currently booted / connected (visible to `adb`). */
   booted: boolean;
   /** adb serial (e.g. `"emulator-5554"`) when booted; `null` otherwise. */

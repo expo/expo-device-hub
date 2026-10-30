@@ -136,6 +136,35 @@ describe("StreamControls", () => {
 });
 
 describe("StreamPanel", () => {
+  test.each([
+    ["ios", true, true],
+    ["ios", false, false],
+    ["android", true, false],
+    ["android", false, false],
+  ] as const)("Reload availability for %s (physical: %s)", (platform, physical, disabled) => {
+    const markup = renderToStaticMarkup(
+      <StreamPanel
+        device={{
+          id: "device",
+          name: "Device",
+          version: "27",
+          platform,
+          physical,
+          booted: true,
+          supported: true,
+          deviceFrame: null,
+        }}
+        client={{ status: "streaming", capabilities: { clipboard: false } } as DeviceClient}
+        DeviceScreen={() => null}
+        displayScreen={() => null}
+      />,
+    );
+    const buttons = buttonTags(markup);
+    const reload = buttons.find((tag) => tag.includes('aria-label="Reload"'))!;
+    expect(reload.includes('disabled=""')).toBe(disabled);
+    expect(buttons.find((tag) => tag.includes('aria-label="Save"'))).not.toContain("disabled");
+  });
+
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {
     let onCopy: DeviceScreenProps["onCopy"];
     let copies = 0;

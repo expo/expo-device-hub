@@ -77,7 +77,14 @@ export function PhoneFrame({
 }) {
   const [hovered, setHovered] = useState(false);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
-  const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
+  const {
+    ratio: fallbackRatio,
+    radiusFraction,
+    squircle,
+  } = device.model?.startsWith("iPad")
+    ? // Reuse serve-sim's iPad frame proportions (430 wide, 16 bezel, 12 inner radius).
+      { ratio: 430 / 605, radiusFraction: 12 / (430 - 32), squircle: false }
+    : CONFIG[device.platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
   // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses

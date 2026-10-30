@@ -33,6 +33,8 @@ export type Device = {
    * Physical devices can't be removed, so the "Remove" control is hidden for them.
    */
   physical: boolean;
+  transport?: "usb" | "wifi";
+  model?: string;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for this exact device model, or null when none is available. */

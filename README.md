@@ -51,6 +51,48 @@ terminal when the dev server starts:
 
 ## Use standalone
 
+### Physical devices (experimental fork)
+
+Connected Android phones need Android SDK platform-tools and authorized USB or
+wireless debugging. Emulator command-line tools are optional for physical phones.
+The Hub uses scrcpy for physical Android video and input.
+
+Physical iPhones and iPads need an Apple Silicon Mac, Xcode 27 or later, Developer
+Mode, and a trusted USB or Wi-Fi connection. Build this fork's optional native
+capture addon with Rust installed:
+
+```sh
+bun install --frozen-lockfile
+bun run build
+bun run --filter expo-device-hub build:ios-device
+node packages/expo-device-hub/dist/server/cli.mjs --port 3344
+```
+
+The native build downloads a pinned, checksum-verified Callstack adapter and
+compiles it locally; it does not require the Codex plugin to be installed.
+
+For iOS Wi-Fi preview, connect once by USB, trust the Mac, and enable **Show this
+iPhone/iPad when on Wi-Fi** in Finder. Keep both devices on the same network.
+Xcode can discover a device over its own wireless tunnel even when this separate
+Wi-Fi access is disabled; discovery alone does not guarantee preview access.
+If the Finder option is already enabled but preview fails, reconnect by USB once
+and retry after disconnecting it.
+
+Open `http://localhost:3344`, then select a device under **iOS Devices** or
+**Android Devices**. Simulators and Emulators keep their own groups. Physical
+iOS devices are identified from their hardware model; iPads show iPadOS. USB and
+Wi-Fi icons show the discovered connection, with a label on hover. The existing
+discovery loop automatically updates arrivals, departures, and connection changes.
+Physical iOS uses HEVC WebCodecs; use a browser with HEVC support. It currently supports
+live video, taps, drags and screenshots. Keyboard, hardware buttons, accessibility
+inspection, recording and device settings are unavailable on physical iOS.
+The capture adapter uses private CoreDevice services and is experimental.
+
+Implementation, attribution and open review questions are in
+[LLP 0015](llp/0015-physical-device-preview.explainer.md).
+
+### Start the server
+
 The Hub also runs outside of `expo start` as a standalone server — useful when you want
 the device dashboard without a running Expo project:
 

@@ -187,6 +187,7 @@ async function main(): Promise<void> {
       shutdownTask = Promise.allSettled([
         hubServer.shutdownAndroid(),
         hubServer.shutdownServeSim(),
+        hubServer.shutdownPhysicalIos(),
       ]).then(([android, serveSim]) => {
         if (android.status === "rejected")
           console.error("Android recording shutdown failed:", android.reason);
