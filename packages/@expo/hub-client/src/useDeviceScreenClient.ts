@@ -16,6 +16,7 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     screen,
     status,
     error,
+    framePresented,
     inputError,
   } = client;
   return {
@@ -32,6 +33,7 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     screen,
     status,
     error,
+    framePresented,
     inputError,
   } satisfies DeviceScreenClient & Record<keyof DeviceScreenClient, unknown>;
 }

@@ -77,11 +77,13 @@ import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import { parseScreenRecordingStatus } from "./screen-recording";
+import { STREAM_DISCONNECTED_ERROR, useScreenPresentation } from "./screen-presentation";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { type WebRtcIceServer, useWebRtcStream } from "./useWebRtcStream";
 import { PLAYBACK_STALL_POLL_MS, PLAYBACK_STALL_POLLS } from "./webrtc-playback-stall";
 import { presentedVideoFrameDelta } from "./video-frame-metadata";
+import { preserveVideoFrame } from "./video-frame-poster";
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -279,7 +281,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // a reconnect (last frame kept) rather than the initial connect.
   const [webRtcWasLive, setWebRtcWasLive] = useState(false);
   const [webRtcGraceExpired, setWebRtcGraceExpired] = useState(false);
-  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}`;
+  // A new token is a new connection: its stream has not been live yet either.
+  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}\0${token ?? ""}`;
   const [webRtcDeviceKey, setWebRtcDeviceKey] = useState(deviceKey);
   if (webRtcDeviceKey !== deviceKey) {
     // Reset per-device readiness during render: the previous device's flags
@@ -930,6 +933,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const webRtcRequested = streamMode === "webrtc";
   const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
   const useWebRtc = webRtcRequested && serverStreamSettings?.transport === "webrtc";
+  // @ref LLP 0015#screen-sessions — a new device, server, token, or media element loads again
+  const screenSessionKey = active
+    ? JSON.stringify([baseUrl, targetDevice, token, useWebRtc ? "video" : "canvas"])
+    : null;
+  const [statusSessionKey, setStatusSessionKey] = useState(screenSessionKey);
+  if (statusSessionKey !== screenSessionKey) {
+    // The previous session's `streaming` is still in state during this render.
+    setStatusSessionKey(screenSessionKey);
+    setStatus(screenSessionKey ? "connecting" : "idle");
+    setError(null);
+  }
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: "reset-video" });
   }, [send]);
@@ -947,31 +961,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     )
       return;
     // Keep an existing poster until fresh video paints, but still detach a
-    // replacement stream that failed before its first paint.
-    if (!video.poster && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-      try {
-        const snapshot = document.createElement("canvas");
-        snapshot.width = video.videoWidth;
-        snapshot.height = video.videoHeight;
-        const context = snapshot.getContext("2d");
-        if (context) {
-          context.drawImage(video, 0, 0);
-          const poster = snapshot.toDataURL("image/png");
-          // Empty canvas serialization returns data:, rather than an image.
-          if (poster && poster !== "data:,") video.poster = poster;
-        }
-      } catch {
-        // Canvas capture is best effort; peer teardown still proceeds.
-      }
-    }
-    // Without a poster, keep the browser's existing frame attachment as a fallback.
-    if (video.poster) video.srcObject = null;
+    // replacement stream that failed before its first paint. Without a
+    // poster, keep the browser's existing frame attachment as a fallback.
+    if (preserveVideoFrame(video)) video.srcObject = null;
   }, [deviceScope, webRtcVideoElement]);
   // Source switches are committed on the server before the first replacement paint.
   const webRtcCaptureSource = pendingStreamSourceRef.current ?? streamSource;
   const {
     stream: webRtcStream,
     error: webRtcError,
+    retrying: webRtcRetrying,
     markFrameDecoded: markWebRtcFrameDecoded,
     restart: restartWebRtcStream,
     streamStats,
@@ -1070,7 +1069,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       // Its bounded frame wait can outlast the ordinary reconnect grace period.
       setStatus("reconnecting");
       setError(null);
-    } else if (webRtcError) {
+    } else if (webRtcError && (webRtcWasLive || !webRtcRetrying)) {
+      // Before the first frame, a transport retry is no error: it stays `connecting` below.
       setStatus("error");
       setError(webRtcError);
     } else if (webRtcInputError) {
@@ -1083,6 +1083,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   }, [
     useWebRtc,
     webRtcError,
+    webRtcRetrying,
     webRtcGraceExpired,
     webRtcInputError,
     webRtcLive,
@@ -1470,7 +1471,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               graceTimer = null;
               if (cancelled || painted) return;
               setStatus("error");
-              setError((prev) => prev ?? "Disconnected — retrying…");
+              setError((prev) => prev ?? STREAM_DISCONNECTED_ERROR);
             }, STREAM_RECONNECT_GRACE_MS);
           }
         }
@@ -2089,6 +2090,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [cameraSupported, accessibilityAvailable, locationCapabilities, permissionsAvailable],
   );
 
+  const presentation = useScreenPresentation(screenSessionKey, status, error);
+
   return {
     platform: "android",
     fold: null,
@@ -2099,10 +2102,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Show the pending change immediately without feeding it back into the
     // switch tracker, which must observe the actual interruption and recovery.
     status:
-      status === "streaming" && (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
+      presentation.status === "streaming" &&
+      (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
         ? "reconnecting"
-        : status,
-    error,
+        : presentation.status,
+    error: presentation.error,
+    framePresented: presentation.framePresented,
     // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
     inputError: webRtcInputError,
     screen,
