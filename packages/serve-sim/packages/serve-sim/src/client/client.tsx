@@ -1833,7 +1833,7 @@ function AppWithConfig({
         >
           {!presentation && (
             <div
-              className={`hidden sm:block fixed sm:static top-[18px] sm:top-auto left-1/2 -translate-x-1/2 sm:translate-x-0 z-30 sm:z-auto self-center ${panelOpen || devtoolsOpen ? "max-sm:hidden" : ""}`}
+              className={`${streamConfig?.inputUnavailable || streamConfig?.keyboardUnavailable ? "block" : "hidden sm:block"} self-center`}
             >
               <SimulatorToolbar
                 onRotate={rotateDevice}
