@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 
-import { type DeviceHinge } from "@expo/hub-client";
+import { type DeviceFold, type DeviceFoldCapabilities } from "@expo/hub-client";
 import { Select, type SelectOption, bg, border, radius, text, textSize } from "../primitives";
 import { DisabledControlHint } from "../components/DisabledControlHint";
 import { FOLD_POSE_OPTIONS, selectedFoldPose } from "./foldPoses";
@@ -39,17 +39,21 @@ const PREVIEW_SIZE_OPTIONS: ReadonlyArray<SelectOption<"physical" | "fill">> = [
 const SLIDER_WIDTH = 112;
 
 /**
- * The iPhone Duo's fold controls, placed at the top of Device options like
- * serve-sim's Simulator settings: the five named poses, a live 0–180° hinge
- * slider with a decimal degree input, Table Mode, and the viewer's 2D/3D
- * preview choices. Every change waits for the helper's acknowledgement while
- * the controls stay enabled, so a slider drag feels live.
+ * A foldable's controls, placed at the top of Device options like serve-sim's
+ * Simulator settings: the named poses, a live hinge slider with a decimal
+ * degree input, Table Mode, and the viewer's 2D/3D preview choices. Each row
+ * shows only what the device offers (the iPhone Duo offers all of them). Every
+ * change waits for the device's acknowledgement while the controls stay
+ * enabled, so a slider drag feels live.
  */
 export function FoldSettings({
-  hinge,
+  fold,
+  controls,
   preview,
 }: {
-  hinge: DeviceHinge;
+  fold: DeviceFold;
+  /** `client.capabilities.fold`: the rows to show. */
+  controls: Exclude<DeviceFoldCapabilities, false>;
   preview?: FoldPreviewOption;
 }) {
   const [editing, setEditing] = useState(false);
@@ -57,7 +61,9 @@ export function FoldSettings({
   const [angleDraft, setAngleDraft] = useState<number | null>(null);
   const [adjusting, setAdjusting] = useState(false);
   const previewDescriptionId = useId();
-  const { angle, pose, pending, error, tableMode, tableModeAvailable } = hinge;
+  const { angle, pose, pending, error } = fold;
+  const tableMode = controls.tableMode ? fold.tableMode : undefined;
+  const angleRange = controls.angle;
 
   useEffect(() => {
     if (error || (!pending && !adjusting)) setAngleDraft(null);
@@ -69,114 +75,124 @@ export function FoldSettings({
     }
   }, [error]);
 
-  // Like serve-sim, show nothing until the simulator reports a hinge or an angle.
-  if (!(hinge.supported ?? angle !== undefined)) return null;
   const displayedAngle = angleDraft ?? angle;
-  const selectedPose = angleDraft !== null ? null : selectedFoldPose(angle, pose);
+  const offeredPoses = FOLD_POSE_OPTIONS.filter((option) => controls.poses[option.value]);
+  const selectedPose = angleDraft !== null ? null : selectedFoldPose(angle, pose, controls.poses);
   const poseValue = selectedPose ?? (displayedAngle === undefined ? "unknown" : "custom");
   const poseOptions: ReadonlyArray<SelectOption> =
-    selectedPose === null
+    selectedPose === null || !controls.poses[selectedPose]
       ? [
-          ...FOLD_POSE_OPTIONS,
+          ...offeredPoses,
           {
             value: poseValue,
             label: poseValue === "unknown" ? "Unknown" : "Custom",
             disabled: true,
           },
         ]
-      : FOLD_POSE_OPTIONS;
-  const canChangeTableMode = (tableModeAvailable ?? false) || tableMode === true;
+      : offeredPoses;
+  const canChangeTableMode = (tableMode?.available ?? false) || tableMode?.enabled === true;
   // An unavailable model shows the flat screen until 3D is selected again.
   const viewMode: FoldPreviewMode = preview?.mode === "3d" && !preview.unavailable ? "3d" : "2d";
   const changeAngle = (value: number) => {
     setAngleDraft(value);
-    hinge.setControl({ control: "angle", value });
+    fold.setControl({ control: "angle", value });
   };
   const selectPose = (value: string) => {
-    const position = FOLD_POSE_OPTIONS.find((option) => option.value === value);
+    const position = offeredPoses.find((option) => option.value === value);
     if (!position) return;
     setAngleDraft(null);
     setAdjusting(false);
     setEditing(false);
-    hinge.setControl({ control: "pose", value: position.value });
+    fold.setControl({ control: "pose", value: position.value });
   };
 
   return (
     <div role="group" aria-label="Fold settings" aria-busy={pending || undefined}>
-      <SidebarRow label="Fold pose">
-        <Select
-          ariaLabel="Fold pose"
-          options={poseOptions}
-          value={poseValue}
-          onChange={selectPose}
-          onReselect={selectPose}
-        />
-      </SidebarRow>
-      <SidebarRow label="Hinge angle">
-        <span style={{ display: "flex", minWidth: 0, alignItems: "center", gap: 8 }}>
-          <SidebarSlider
-            label="Hinge angle"
-            valueText={displayedAngle === undefined ? "Unknown" : `${displayedAngle} degrees`}
-            max={180}
-            value={displayedAngle ?? 90}
-            width={SLIDER_WIDTH}
-            onChange={changeAngle}
-            onAdjustStart={() => setAdjusting(true)}
-            onAdjustEnd={() => setAdjusting(false)}
+      {offeredPoses.length > 0 && (
+        <SidebarRow label="Fold pose">
+          <Select
+            ariaLabel="Fold pose"
+            options={poseOptions}
+            value={poseValue}
+            onChange={selectPose}
+            onReselect={selectPose}
           />
-          <input
-            type="number"
-            aria-label="Hinge angle in degrees"
-            min={0}
-            max={180}
-            step="any"
-            placeholder="—"
-            value={editing ? draft : (displayedAngle ?? "")}
-            onFocus={() => {
-              setDraft(displayedAngle === undefined ? "" : String(displayedAngle));
-              setEditing(true);
-            }}
-            onChange={(event) => {
-              const { value, valueAsNumber } = event.currentTarget;
-              setDraft(value);
-              if (Number.isFinite(valueAsNumber) && valueAsNumber >= 0 && valueAsNumber <= 180) {
-                changeAngle(valueAsNumber);
-              }
-            }}
-            onBlur={() => setEditing(false)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-            style={{
-              ...textSize.sm,
-              width: 56,
-              boxSizing: "border-box",
-              padding: "4px 6px",
-              border: `1px solid ${border.default}`,
-              borderRadius: radius.md,
-              backgroundColor: bg.default,
-              color: text.default,
-              fontFamily: "inherit",
-              textAlign: "right",
-            }}
-          />
-        </span>
-      </SidebarRow>
-      <SidebarRow label="Table Mode">
-        <DisabledControlHint
-          reason={
-            !canChangeTableMode ? "Table Mode is not available in the current pose." : undefined
-          }
-          label="Table Mode"
-        >
-          <SidebarSwitch
+        </SidebarRow>
+      )}
+      {angleRange && (
+        <SidebarRow label="Hinge angle">
+          <span style={{ display: "flex", minWidth: 0, alignItems: "center", gap: 8 }}>
+            <SidebarSlider
+              label="Hinge angle"
+              valueText={displayedAngle === undefined ? "Unknown" : `${displayedAngle} degrees`}
+              min={angleRange.min}
+              max={angleRange.max}
+              value={displayedAngle ?? (angleRange.min + angleRange.max) / 2}
+              width={SLIDER_WIDTH}
+              onChange={changeAngle}
+              onAdjustStart={() => setAdjusting(true)}
+              onAdjustEnd={() => setAdjusting(false)}
+            />
+            <input
+              type="number"
+              aria-label="Hinge angle in degrees"
+              min={angleRange.min}
+              max={angleRange.max}
+              step="any"
+              placeholder="—"
+              value={editing ? draft : (displayedAngle ?? "")}
+              onFocus={() => {
+                setDraft(displayedAngle === undefined ? "" : String(displayedAngle));
+                setEditing(true);
+              }}
+              onChange={(event) => {
+                const { value, valueAsNumber } = event.currentTarget;
+                setDraft(value);
+                if (
+                  Number.isFinite(valueAsNumber) &&
+                  valueAsNumber >= angleRange.min &&
+                  valueAsNumber <= angleRange.max
+                ) {
+                  changeAngle(valueAsNumber);
+                }
+              }}
+              onBlur={() => setEditing(false)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              style={{
+                ...textSize.sm,
+                width: 56,
+                boxSizing: "border-box",
+                padding: "4px 6px",
+                border: `1px solid ${border.default}`,
+                borderRadius: radius.md,
+                backgroundColor: bg.default,
+                color: text.default,
+                fontFamily: "inherit",
+                textAlign: "right",
+              }}
+            />
+          </span>
+        </SidebarRow>
+      )}
+      {tableMode && (
+        <SidebarRow label="Table Mode">
+          <DisabledControlHint
+            reason={
+              !canChangeTableMode ? "Table Mode is not available in the current pose." : undefined
+            }
             label="Table Mode"
-            checked={tableMode ?? false}
-            disabled={!canChangeTableMode}
-            onChange={(value) => hinge.setControl({ control: "table", value })}
-          />
-        </DisabledControlHint>
-      </SidebarRow>
+          >
+            <SidebarSwitch
+              label="Table Mode"
+              checked={tableMode.enabled ?? false}
+              disabled={!canChangeTableMode}
+              onChange={(value) => fold.setControl({ control: "tableMode", value })}
+            />
+          </DisabledControlHint>
+        </SidebarRow>
+      )}
       {preview && (
         <>
           <SidebarRow

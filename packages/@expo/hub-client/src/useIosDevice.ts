@@ -50,6 +50,8 @@ import {
   displayCornerRadii,
 } from "./display-corners";
 import {
+  DUO_DISPLAY_FOR_PANEL,
+  DUO_PANEL_FOR_DISPLAY,
   type DuoPanelId,
   duoCommandScreen,
   duoIntendedScreen,
@@ -60,11 +62,12 @@ import {
   type DuoPanelFeeds,
   useDuoPanelStreams,
 } from "./duo/useDuoPanelStreams";
+import { FOLD_POSES, type FoldControlCommand, type FoldPose } from "./fold";
 import {
-  type HingeControlCommand,
+  DUO_POSE_ANGLES,
   type HingeControlState,
-  type HingePose,
   hingeControlState,
+  hingeWireCommand,
 } from "./hinge-control";
 import { appendActivitySample, parseActivityHostCores, parseActivitySample } from "./activity";
 import { useActivityStatus } from "./useActivityStatus";
@@ -78,7 +81,12 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from "./orientation";
-import { screenConfigsEqual } from "./screen-config";
+import {
+  type SimScreenConfig,
+  screenConfigsEqual,
+  screenSizesEqual,
+  simScreenSize,
+} from "./screen-config";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -99,7 +107,9 @@ import {
   type DeviceClipboardAction,
   type DeviceConnectionOptions,
   type DeviceDisplay,
-  type DeviceHinge,
+  type DeviceDisplayId,
+  type DeviceFold,
+  type DeviceFoldCapabilities,
   type DeviceLog,
   type DisplayCornerRadii,
   type DeviceOrientation,
@@ -110,8 +120,8 @@ import {
   type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
   type ForegroundApp,
+  type FoldCommandEvent,
   type HardwareButton,
-  type HingeCommandEvent,
   type HidKeyEvent,
   type KeyboardInput,
   type MultiTouchSample,
@@ -187,6 +197,12 @@ export { WS_MSG_CONFIG as WS_TAG_SCREEN_CONFIG } from "./input-protocol";
 // iPhone Duo hinge commands carry a requestId that the helper acknowledges with 0x90.
 const WS_MSG_HINGE_CONTROL = 0x10;
 const WS_TAG_HINGE_REPLY = 0x90;
+
+// The iPhone Duo's fold controls, as Xcode's Device Hub offers them.
+const DUO_FOLD_ANGLE = { min: 0, max: 180 } as const;
+const DUO_FOLD_POSES = Object.fromEntries(
+  FOLD_POSES.map((pose) => [pose, { angle: DUO_POSE_ANGLES[pose] }]),
+) as Record<FoldPose, { angle: number }>;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -409,7 +425,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
-  const [screen, setScreen] = useState<ScreenSize | null>(null);
+  // serve-sim's full config; `publicScreen` below is the platform-neutral part.
+  const [screen, setScreen] = useState<SimScreenConfig | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
@@ -602,6 +619,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : null,
     [isDuo, config?.chrome, screen],
   );
+  // Consumers get the platform-neutral screen. serve-sim's hinge fields and
+  // display IDs stay here, and a hinge move alone keeps the same object.
+  const publicScreenRef = useRef<ScreenSize | null>(null);
+  const publicScreen = useMemo(() => {
+    const next = screen ? simScreenSize(screen, isDuo) : null;
+    return screenSizesEqual(publicScreenRef.current, next) ? publicScreenRef.current : next;
+  }, [screen, isDuo]);
+  publicScreenRef.current = publicScreen;
   // Elements a consumer attached through `displays`, by the kind each was attached as.
   const [panelElements, setPanelElements] = useState<
     Readonly<Record<DuoPanelId, DuoPanelElement | null>>
@@ -612,19 +637,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [hingeError, setHingeError] = useState<string | null>(null);
   // The requested state, shown until its acknowledgement and matching config arrive.
   const [hingePreview, setHingePreview] = useState<HingeControlState | null>(null);
-  const [physicalPose, setPhysicalPose] = useState<HingePose | null | undefined>(undefined);
+  const [physicalPose, setPhysicalPose] = useState<FoldPose | null | undefined>(undefined);
   // A local rotation cleared the native preset; ignore older preset acknowledgements.
   const [orientationOverride, setOrientationOverride] = useState(false);
   const hingePendingRef = useRef(false);
-  const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
+  const sentHingePoseRef = useRef<FoldPose | null | undefined>(undefined);
   const hingeQueueRef = useRef<ReturnType<
-    typeof createAcknowledgedControlQueue<HingeControlCommand>
+    typeof createAcknowledgedControlQueue<FoldControlCommand>
   > | null>(null);
-  const hingeListenersRef = useRef(new Set<(event: HingeCommandEvent) => void>());
-  const emitHingeEvent = useCallback((event: HingeCommandEvent) => {
+  const hingeListenersRef = useRef(new Set<(event: FoldCommandEvent) => void>());
+  const emitHingeEvent = useCallback((event: FoldCommandEvent) => {
     for (const listener of [...hingeListenersRef.current]) listener(event);
   }, []);
-  const observeHinge = useCallback((listener: (event: HingeCommandEvent) => void) => {
+  const observeHinge = useCallback((listener: (event: FoldCommandEvent) => void) => {
     hingeListenersRef.current.add(listener);
     return () => {
       hingeListenersRef.current.delete(listener);
@@ -635,15 +660,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const previewHingePose = hingePreview ? hingePreview.hingePose : screen?.hingePose;
   // A pending angle or preset releases Table Mode, so the preview wins over a
   // face-down orientation that another client confirmed.
-  const previewFaceDown =
-    (hingePreview?.tableMode ?? screen?.tableMode) === true &&
-    screen?.physicalOrientation === "facedown";
+  const previewTableMode = hingePreview?.tableMode ?? screen?.tableMode;
+  const previewFaceDown = previewTableMode === true && screen?.physicalOrientation === "facedown";
+  // @ref LLP 0016#fold-state-and-commands — an unknown field leaves face down unknown, as serve-sim's framing reads it
+  const knownFaceDown =
+    previewFaceDown ||
+    previewTableMode === false ||
+    (screen?.physicalOrientation !== undefined && screen.physicalOrientation !== "facedown");
   const electedPose = physicalPose === undefined ? previewHingePose : physicalPose;
   const activeScreenId = duoIntendedScreen(
     previewHingeAngle,
     electedPose,
     screen?.screenId,
-    previewFaceDown,
+    knownFaceDown ? previewFaceDown : null,
   );
   // Control callbacks read the latest native state without re-registering
   // listeners on every config broadcast.
@@ -656,7 +685,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
-  const screenRef = useRef<ScreenSize | null>(null);
+  const screenRef = useRef<SimScreenConfig | null>(null);
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
@@ -726,18 +755,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The helper routes input to the display that native readback reports. A
   // gesture that begins on another display would land on the wrong panel, so
   // it is dropped through its end.
+  const isNativeDisplay = useCallback(
+    (display: DeviceDisplayId | undefined) =>
+      display === undefined || DUO_PANEL_FOR_DISPLAY[display] === screenRef.current?.screenId,
+    [],
+  );
   const droppedDisplayGestureRef = useRef({ touch: false, multi: false });
   const dropsDisplayInput = useCallback(
-    (kind: "touch" | "multi", display: number | undefined, phase: TouchSample["phase"]) => {
+    (
+      kind: "touch" | "multi",
+      display: DeviceDisplayId | undefined,
+      phase: TouchSample["phase"],
+    ) => {
       const dropped = droppedDisplayGestureRef.current;
-      if (phase === "begin") {
-        dropped[kind] = display !== undefined && display !== screenRef.current?.screenId;
-      }
+      if (phase === "begin") dropped[kind] = !isNativeDisplay(display);
       if (!dropped[kind]) return false;
       if (phase === "end") dropped[kind] = false;
       return true;
     },
-    [],
+    [isNativeDisplay],
   );
 
   const sendTouch = useCallback(
@@ -792,13 +828,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (sample: ScrollSample) => {
       if (!Number.isFinite(sample.dx) || !Number.isFinite(sample.dy)) return;
       if (sample.dx === 0 && sample.dy === 0) return;
-      if (sample.display !== undefined && sample.display !== screenRef.current?.screenId) return;
+      if (!isNativeDisplay(sample.display)) return;
       const orientation = streamGeometry(screenRef.current).inputOrientation;
       const delta = rawDeltaForDisplayDelta(orientation, sample.dx, sample.dy);
       const anchor = rawPointForDisplayPoint(orientation, sample.x, sample.y);
       sendWs(WS_MSG_SCROLL, { dx: delta.dx, dy: delta.dy, x: anchor.x, y: anchor.y });
     },
-    [sendWs],
+    [sendWs, isNativeDisplay],
   );
 
   // Keep ordinary input owned across discovery gaps; clipboard requests require a live config.
@@ -1012,14 +1048,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // One command at a time: a live slider coalesces into the newest value and a
   // preset replaces queued edits. Replies arrive as 0x90 on the helper socket.
   if (!hingeQueueRef.current) {
-    hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
+    hingeQueueRef.current = createAcknowledgedControlQueue<FoldControlCommand>({
       send: (request) => {
-        if (!inputSocketRef.current?.trySend(WS_MSG_HINGE_CONTROL, request)) return false;
+        const wire = { ...request, command: hingeWireCommand(request.command) };
+        if (!inputSocketRef.current?.trySend(WS_MSG_HINGE_CONTROL, wire)) return false;
         if (request.command.control === "pose") sentHingePoseRef.current = request.command.value;
+        const panel = duoCommandScreen(request.command, sentHingePoseRef.current);
         emitHingeEvent({
           type: "sent",
           command: request.command,
-          display: duoCommandScreen(request.command, sentHingePoseRef.current),
+          display: panel === undefined ? undefined : DUO_DISPLAY_FOR_PANEL[panel],
         });
         return true;
       },
@@ -1044,7 +1082,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }
 
   const setHingeControl = useCallback(
-    (input: HingeControlCommand) => {
+    (input: FoldControlCommand) => {
       // Its own object per request, so a listener can follow each one to its reply.
       const command = { ...input };
       const { screen } = duoRef.current;
@@ -1731,7 +1769,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
           if (bytes[0] !== WS_MSG_CONFIG) return false;
           try {
-            const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
+            const c = JSON.parse(decoder.decode(bytes.subarray(1))) as SimScreenConfig & {
               inputUnavailable?: boolean;
             };
             if (
@@ -1912,8 +1950,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       isDuo
         ? [
-            { id: 1, active: activeScreenId === 1, attachVideo: attachCover },
-            { id: 3, active: activeScreenId === 3, attachVideo: attachInner },
+            { id: "cover", active: activeScreenId === 1, attachVideo: attachCover },
+            { id: "inner", active: activeScreenId === 3, attachVideo: attachInner },
           ]
         : null,
     [isDuo, activeScreenId, attachCover, attachInner],
@@ -1976,24 +2014,43 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [displayStreaming]);
 
-  const hinge = useMemo<DeviceHinge | null>(() => {
+  // Like serve-sim, fold controls show once the helper reports hinge support or an angle.
+  const hingeReported = screen?.supportsHingeAngle ?? screen?.hingeAngle !== undefined;
+  const foldCapabilities = useMemo<DeviceFoldCapabilities>(
+    () =>
+      isDuo && hingeReported
+        ? {
+            angle: DUO_FOLD_ANGLE,
+            poses: DUO_FOLD_POSES,
+            tableMode: true,
+            faceDown: screen?.supportsPhysicalOrientation === true,
+          }
+        : false,
+    [isDuo, hingeReported, screen?.supportsPhysicalOrientation],
+  );
+  const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;
-    return {
-      supported: screen?.supportsHingeAngle,
+    const state: DeviceFold = {
       angle: previewHingeAngle,
       pose: previewHingePose,
-      physicalPose,
-      tableMode: hingePreview?.tableMode ?? screen?.tableMode,
-      tableModeAvailable: screen?.tableModeAvailable,
-      faceDown: previewFaceDown,
       pending: hingePending,
       error: hingeError,
       setControl: setHingeControl,
       observe: observeHinge,
     };
+    // @ref LLP 0016#fold-state-and-commands — the groups come with the capability that reports them
+    if (!foldCapabilities) return state;
+    return {
+      ...state,
+      tableMode: {
+        enabled: hingePreview?.tableMode ?? screen?.tableMode,
+        available: screen?.tableModeAvailable,
+      },
+      physical: { pose: physicalPose, faceDown: knownFaceDown ? previewFaceDown : undefined },
+    };
   }, [
     isDuo,
-    screen?.supportsHingeAngle,
+    foldCapabilities,
     physicalPose,
     previewHingePose,
     previewHingeAngle,
@@ -2001,6 +2058,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     screen?.tableMode,
     screen?.tableModeAvailable,
     previewFaceDown,
+    knownFaceDown,
     hingePending,
     hingeError,
     setHingeControl,
@@ -2482,6 +2540,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
+      fold: foldCapabilities,
     }),
     [
       deviceSettingsAvailable,
@@ -2492,6 +2551,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       locationCapabilities,
       clipboardPaste,
       clipboardCopy,
+      foldCapabilities,
     ],
   );
 
@@ -2500,8 +2560,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     status,
     error,
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
-    screen,
-    hinge,
+    screen: publicScreen,
+    fold,
     displays,
     deviceModelUrl: isDuo ? (config?.deviceKitModelUrl ?? null) : null,
     displayCorners,

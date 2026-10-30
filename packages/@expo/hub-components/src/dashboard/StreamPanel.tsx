@@ -188,7 +188,7 @@ export function StreamPanel({
               onPaste={() => void clipboard.pasteFromDevice()}
               onCopy={() => void clipboard.copyFromSimulator()}
             />
-            {client.hinge?.error && (
+            {client.fold?.error && (
               <div
                 role="alert"
                 style={{
@@ -199,7 +199,7 @@ export function StreamPanel({
                   margin: "8px auto 0",
                 }}
               >
-                {client.hinge.error}
+                {client.fold.error}
               </div>
             )}
           </div>

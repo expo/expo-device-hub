@@ -4,36 +4,59 @@
  * (@expo/serve-sim 0.5.0).
  */
 
+import { type FoldControlCommand, type FoldPose } from "../fold";
 import {
   hingeControlState,
   hingePoseOrientation,
-  type HingeControlCommand,
   type HingePhysicalOrientation,
-  type HingePose,
 } from "../hinge-control";
+import { type DeviceDisplayId } from "../types";
 
+/** serve-sim's display ID of an iPhone Duo panel: 1 is the cover, 3 the inner display. */
 export type DuoPanelId = 1 | 3;
+
+// @ref LLP 0016#display-identity — serve-sim's display IDs stay inside the iOS adapter
+export const DUO_DISPLAY_FOR_PANEL: Readonly<Record<DuoPanelId, DeviceDisplayId>> = {
+  1: "cover",
+  3: "inner",
+};
+
+export const DUO_PANEL_FOR_DISPLAY: Readonly<Record<DeviceDisplayId, DuoPanelId>> = {
+  cover: 1,
+  inner: 3,
+};
+
+/** The display a serve-sim screen ID names, or undefined for another ID. */
+export function duoDisplayId(screenId: number | undefined): DeviceDisplayId | undefined {
+  return screenId === 1 || screenId === 3 ? DUO_DISPLAY_FOR_PANEL[screenId] : undefined;
+}
 
 /** Another client turned the device over, so a remembered preset no longer describes it. */
 export function duoPhysicalPoseChanged(
-  pose: HingePose | null | undefined,
+  pose: FoldPose | null | undefined,
   orientation: HingePhysicalOrientation | undefined,
 ): boolean {
   return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
 }
 
-/** Select the requested panel before native display metadata catches up. */
+/**
+ * Select the requested panel before native display metadata catches up.
+ * `faceDown` is null while Table Mode or the physical orientation is unknown;
+ * a half-open device then keeps the panel that native readback reports.
+ */
 export function duoIntendedScreen(
   angle: number | undefined,
-  physicalPose: HingePose | null | undefined,
+  physicalPose: FoldPose | null | undefined,
   nativeScreenId?: number,
-  faceDown = false,
+  faceDown: boolean | null = false,
 ): DuoPanelId {
   if (angle === undefined) return nativeScreenId === 1 ? 1 : 3;
   if (angle <= 0) return 1;
   if (angle >= 180) return 3;
   // Face down with Table Mode elects the cover, as the native Tent pose does.
-  if (physicalPose === "tent" || faceDown) return 1;
+  if (physicalPose === "tent" || faceDown === true) return 1;
+  // @ref LLP 0016#iphone-duo — unknown face down: the 3D framing keeps its view, so election keeps the native panel
+  if (faceDown === null && (nativeScreenId === 1 || nativeScreenId === 3)) return nativeScreenId;
   // CoreSimulator keeps the cover active through 54° and activates the inner
   // display at 55°. Keep fractional angles between those boundaries on the
   // current panel, matching native display ownership during slider motion.
@@ -48,10 +71,10 @@ export function duoIntendedScreen(
  * keep whichever panel is already active, so neither can establish a departure.
  */
 export function duoCommandScreen(
-  command: HingeControlCommand,
-  physicalPose?: HingePose | null,
+  command: FoldControlCommand,
+  physicalPose?: FoldPose | null,
 ): DuoPanelId | undefined {
-  if (command.control === "table" || command.control === "physical") return undefined;
+  if (command.control === "tableMode" || command.control === "faceDown") return undefined;
   if (command.control === "angle" && command.value > 54 && command.value < 55) return undefined;
   const { hingeAngle } = hingeControlState(command);
   return duoIntendedScreen(hingeAngle, command.control === "pose" ? command.value : physicalPose);

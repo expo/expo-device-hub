@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { screenConfigsEqual } from "../screen-config";
+import { screenConfigsEqual, screenSizesEqual, simScreenSize } from "../screen-config";
 
 describe("screenConfigsEqual", () => {
   const inner = { width: 2007, height: 2853, orientation: "portrait" as const, screenId: 3 };
@@ -32,5 +32,44 @@ describe("screenConfigsEqual", () => {
     expect(screenConfigsEqual(inner, { ...inner, supportsPhysicalOrientation: true })).toBe(false);
     expect(screenConfigsEqual(inner, { ...inner, physicalOrientation: "facedown" })).toBe(false);
     expect(screenConfigsEqual(inner, { ...inner, inputUnavailable: true })).toBe(false);
+  });
+});
+
+describe("simScreenSize", () => {
+  const config = {
+    width: 2007,
+    height: 2853,
+    orientation: "portrait" as const,
+    screenId: 3,
+    supportsHingeAngle: true,
+    hingeAngle: 180,
+    hingePose: "open" as const,
+    tableMode: false,
+  };
+
+  test("keeps serve-sim's hinge fields and display ID out of the public screen", () => {
+    expect(simScreenSize(config, true)).toEqual({
+      width: 2007,
+      height: 2853,
+      orientation: "portrait",
+      display: "inner",
+    });
+    expect(simScreenSize({ ...config, screenId: 1 }, true).display).toBe("cover");
+  });
+
+  test("names no display on a device that does not fold", () => {
+    expect(simScreenSize(config, false)).toEqual({
+      width: 2007,
+      height: 2853,
+      orientation: "portrait",
+    });
+  });
+
+  test("compares only the public fields", () => {
+    const screen = simScreenSize(config, true);
+    expect(screenSizesEqual(screen, simScreenSize({ ...config, hingeAngle: 90 }, true))).toBe(true);
+    expect(screenSizesEqual(screen, simScreenSize({ ...config, screenId: 1 }, true))).toBe(false);
+    expect(screenSizesEqual(null, screen)).toBe(false);
+    expect(screenSizesEqual(null, null)).toBe(true);
   });
 });
