@@ -284,6 +284,68 @@ test("another live session cannot change resident policy", async () => {
   expect(readFileSync(page)).toEqual(before);
 });
 
+test("a foreign exclusive reservation without session PIDs prevents enrollment", async () => {
+  writeLaunchState(udid, { launchArgs: [], capabilities: {}, exclusivePid: process.ppid });
+  const file = join(state.dir, `launch-${udid}.json`);
+  const before = readFileSync(file);
+  await expect(prepareResidentEgress(udid, "passthrough")).rejects.toThrow("another session");
+  expect(readFileSync(file)).toEqual(before);
+  expect(readdirSync(state.dir).filter((name) => name.startsWith("egress-"))).toEqual([]);
+});
+
+test("a foreign exclusive reservation cannot change an enrolled policy page", async () => {
+  await prepareResidentEgress(udid, "passthrough");
+  await withShimsAsync({ xcrun: bootShim(join(state.dir, "reservation-boot")) }, () =>
+    bootPreparedResidentEgress(udid),
+  );
+  const stateBefore = readLaunchState(udid)!;
+  writeLaunchState(udid, { ...stateBefore, sessionPids: [], exclusivePid: process.ppid });
+  const page = stateBefore.capabilities.egressGuard!.env!.SERVE_SIM_EGRESS_POLICY_FILE!;
+  const before = readFileSync(page);
+  await expect(publishResidentEgressPolicy(udid, "block")).rejects.toThrow("another session");
+  expect(readFileSync(page)).toEqual(before);
+});
+
+test("this process's exclusive reservation permits its own enrollment", async () => {
+  writeLaunchState(udid, { launchArgs: [], capabilities: {}, exclusivePid: process.pid });
+  expect(await prepareResidentEgress(udid, "passthrough")).toBe(true);
+  expect(readLaunchState(udid)!.exclusivePid).toBe(process.pid);
+});
+
+test("a confirmed dead reservation does not prevent enrollment", async () => {
+  const dead = await recordedDeadBoot();
+  writeLaunchState(udid, { launchArgs: [], capabilities: {}, exclusivePid: dead.pid });
+  expect(await prepareResidentEgress(udid, "passthrough")).toBe(true);
+});
+
+test("unknown reservation visibility fails closed before enrollment", async () => {
+  writeLaunchState(udid, { launchArgs: [], capabilities: {}, exclusivePid: process.ppid });
+  const original = process.kill;
+  const visibility = spyOn(process, "kill").mockImplementation((pid, signal) => {
+    if (pid === process.ppid) throw Object.assign(new Error("not permitted"), { code: "EPERM" });
+    return original.call(process, pid, signal);
+  });
+  try {
+    await expect(prepareResidentEgress(udid, "passthrough")).rejects.toThrow("reservation");
+  } finally {
+    visibility.mockRestore();
+  }
+  expect(readLaunchState(udid)!.capabilities).toEqual({});
+});
+
+test("malformed reservation metadata fails closed before enrollment", async () => {
+  writeFileSync(
+    join(state.dir, `launch-${udid}.json`),
+    JSON.stringify({
+      launchArgs: [],
+      capabilities: {},
+      exclusivePid: "unknown",
+    }),
+  );
+  await expect(prepareResidentEgress(udid, "passthrough")).rejects.toThrow("reservation");
+  expect(readdirSync(state.dir).filter((name) => name.startsWith("egress-"))).toEqual([]);
+});
+
 function bootShim(
   log: string,
   mode: "own" | "already-booted" | "replace" = "own",
