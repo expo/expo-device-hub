@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
