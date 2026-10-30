@@ -1,12 +1,15 @@
-import { type ComponentType, useLayoutEffect, useRef, useState } from "react";
+import { type ComponentType, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
+  KeyboardCapture,
+  useMobileViewport,
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import { bg, border } from "../primitives";
+import { bg, border, FloatingIconButton, FullScreenIcon, CloseIcon } from "../primitives";
+import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
@@ -26,9 +29,9 @@ const CONTROLS_GAP = 32;
  * separated from each sidebar by the same `border.default` hairline that
  * divides the inspector sections.
  *
- * The device title sits directly above the frame and the toolbar directly
- * below it, whatever the panel size: the frame viewport reserves their height
- * as padding, and both are anchored to the frame rather than the panel edges.
+ * Desktop anchors the title and toolbar to the frame and reserves their height
+ * as padding. Mobile hides the title and uses a normal-flow footer, so fitting
+ * and toolbar wrapping happen in one layout without waiting for an observer.
  */
 export function StreamPanel({
   device,
@@ -60,36 +63,151 @@ export function StreamPanel({
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
+  const viewport = useMobileViewport();
+  const [presentation, setPresentation] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const keyboardRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+  const wasTyping = useRef(false);
+  const fullScreenRef = useRef<HTMLButtonElement | null>(null);
+  const presenting = viewport.mobile && presentation;
+  const typing = viewport.mobile && viewport.keyboardRaised;
+  useEffect(() => {
+    if (wasTyping.current && !typing) {
+      keyboardRef.current?.blur();
+      setKeyboardOpen(false);
+    }
+    wasTyping.current = typing;
+  }, [typing]);
+  useLayoutEffect(() => {
+    if (!presenting) return;
+    const panel = panelRef.current;
+    const parent = panel?.parentElement;
+    if (!parent) return;
+    const previous = new Map<HTMLElement, boolean>();
+    const protectSiblings = () => {
+      for (const node of parent.children) {
+        if (node === panel || !(node instanceof HTMLElement) || previous.has(node)) continue;
+        previous.set(node, node.inert);
+        node.inert = true;
+      }
+    };
+    protectSiblings();
+    const observer = new MutationObserver(protectSiblings);
+    observer.observe(parent, { childList: true });
+    return () => {
+      observer.disconnect();
+      previous.forEach((inert, node) => {
+        node.inert = inert;
+      });
+    };
+  }, [presenting]);
+  useEffect(() => {
+    if (!viewport.mobile) {
+      setPresentation(false);
+      setKeyboardOpen(false);
+    }
+  }, [viewport.mobile]);
+  useEffect(() => {
+    setKeyboardOpen(false);
+  }, [device.id]);
+  useEffect(() => {
+    if (!presenting) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPresentation(false);
+      if (!typing) fullScreenRef.current?.focus();
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [presenting, typing]);
+  const toggleKeyboard = () => {
+    if (
+      keyboardOpen &&
+      (viewport.keyboardRaised || document.activeElement === keyboardRef.current)
+    ) {
+      keyboardRef.current?.blur();
+      setKeyboardOpen(false);
+    } else {
+      keyboardRef.current?.focus();
+      setKeyboardOpen(true);
+    }
+  };
   const controlsRef = useRef<HTMLDivElement>(null);
   const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
   useLayoutEffect(() => {
     const element = controlsRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
+    if (viewport.mobile || !element || typeof ResizeObserver === "undefined") return;
     const measure = () => setControlsHeight(element.getBoundingClientRect().height);
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [viewport.mobile]);
   const captureScreenshot = useScreenshotToast(client, device.name);
-  const setting = client.deviceSettings?.appearance;
-  const appearance = setting === "dark" || setting === "light" ? setting : null;
-  const appearanceDisabled =
-    appearance === null ||
-    client.deviceSettingsStatus !== "ready" ||
-    client.deviceSettingsPending.has("appearance");
-  const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
+  // Leave presentation in the same update that opens the inspector, restoring its
+  // sibling interactivity before the Clipboard section can take focus.
+  const clipboard = useClipboardToast(
+    client,
+    device.id,
+    onClipboardFallback
+      ? (request) => {
+          setPresentation(false);
+          onClipboardFallback(request);
+        }
+      : undefined,
+  );
   // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
   const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
+  const controls = (
+    <StreamControls
+      recording={client.screenRecording}
+      onHome={() => client.pressButton("home")}
+      onReload={() => client.reload()}
+      onRotate={() => client.rotate()}
+      onSave={captureScreenshot}
+      clipboard={client.capabilities.clipboard}
+      clipboardPending={client.clipboardPending}
+      onPaste={() => void clipboard.pasteFromDevice()}
+      onCopy={() => void clipboard.copyFromSimulator()}
+      keyboard={
+        viewport.mobile && client.sendKeyEvents
+          ? { open: keyboardOpen, onToggle: toggleKeyboard }
+          : undefined
+      }
+    />
+  );
+
   return (
     <section
+      ref={panelRef}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setKeyboardOpen(false);
+      }}
       style={{
         flex: 1,
+        position: viewport.mobile ? "relative" : undefined,
         minWidth: 0,
+        gap: viewport.mobile ? 8 : undefined,
         display: "flex",
         flexDirection: "column",
-        padding: 40,
+        padding: viewport.mobile
+          ? `calc(${presenting || typing ? 8 : 56}px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px))`
+          : 40,
+        ...(presenting
+          ? ({
+              position: "fixed",
+              top: viewport.top,
+              left: viewport.left,
+              width: viewport.width,
+              height: viewport.height,
+              zIndex: 20,
+            } as const)
+          : {}),
         boxSizing: "border-box",
         backgroundColor: bg.subtle,
         borderLeft: framed ? `1px solid ${border.default}` : "none",
@@ -97,6 +215,40 @@ export function StreamPanel({
         overflow: "hidden",
       }}
     >
+      {viewport.mobile && (
+        <>
+          {client.sendKeyEvents && (
+            <KeyboardCapture
+              open={keyboardOpen}
+              inputRef={keyboardRef}
+              onKeys={client.sendKeyEvents}
+            />
+          )}
+          {!typing && (
+            <div
+              // Pinned to the top-right corner, opposite the sidebar toggle. Its z-index stays
+              // below the sidebar overlay (backdrop 12, panel 13), whose close button can share the corner.
+              onMouseDownCapture={(event) => {
+                if (typing || keyboardOpen) event.preventDefault();
+              }}
+              style={{
+                position: "absolute",
+                top: `calc(${MOBILE_CORNER_BUTTON_TOP}px + env(safe-area-inset-top, 0px))`,
+                right: 24,
+                zIndex: 3,
+              }}
+            >
+              <FloatingIconButton
+                ref={fullScreenRef}
+                icon={presenting ? <CloseIcon size={20} /> : <FullScreenIcon />}
+                label={presenting ? "Exit full screen" : "Full screen"}
+                aria-pressed={presenting}
+                onClick={() => setPresentation(!presenting)}
+              />
+            </div>
+          )}
+        </>
+      )}
       <div
         data-testid="device-frame-viewport"
         style={{
@@ -107,7 +259,9 @@ export function StreamPanel({
           boxSizing: "border-box",
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
+          padding: viewport.mobile
+            ? 0
+            : `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
           containerType: "size",
           display: "flex",
           alignItems: "center",
@@ -116,11 +270,18 @@ export function StreamPanel({
       >
         <div
           data-testid="device-frame-anchor"
-          style={{ position: "relative", display: "flex", flexShrink: 0 }}
+          style={{
+            position: "relative",
+            display: "flex",
+            // Safari otherwise retains the stretched height when keyboard fitting narrows the frame.
+            alignItems: viewport.mobile ? "center" : undefined,
+            flexShrink: 0,
+          }}
         >
           <PhoneFrame
             device={device}
             client={screenClient}
+            preserveKeyboardFocus={viewport.mobile && keyboardOpen}
             agentInteraction={agentInteraction}
             onCopy={async () => {
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
@@ -130,60 +291,63 @@ export function StreamPanel({
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
           />
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              bottom: `calc(100% + ${TITLE_GAP}px)`,
-              display: "flex",
-              justifyContent: "center",
-              width: "max-content",
-              // Bound by the panel, not the frame: `cqw` resolves against the
-              // viewport container, so long names keep the panel's width.
-              maxWidth: "100cqw",
-              transform: "translateX(-50%)",
-            }}
-          >
-            <DeviceTitle
-              key={device.id}
-              device={device}
-              status={client.status}
-              recording={client.screenRecording}
-            />
-          </div>
-          <div
-            ref={controlsRef}
-            style={{
-              position: "absolute",
-              left: "50%",
-              top: `calc(100% + ${CONTROLS_GAP}px)`,
-              width: "max-content",
-              maxWidth: "100cqw",
-              transform: "translateX(-50%)",
-            }}
-          >
-            <StreamControls
-              recording={client.screenRecording}
-              appearance={appearance}
-              appearanceDisabled={appearanceDisabled}
-              onToggleAppearance={() => {
-                if (!appearanceDisabled) {
-                  client.setDeviceSetting("appearance", appearance === "dark" ? "light" : "dark");
-                }
+          {!viewport.mobile && (
+            <div
+              style={{
+                position: "absolute",
+                left: "50%",
+                bottom: `calc(100% + ${TITLE_GAP}px)`,
+                display: "flex",
+                justifyContent: "center",
+                width: "max-content",
+                // Bound by the panel, not the frame: `cqw` resolves against the
+                // viewport container, so long names keep the panel's width.
+                maxWidth: "100cqw",
+                transform: "translateX(-50%)",
               }}
-              onHome={() => client.pressButton("home")}
-              onReload={() => client.reload()}
-              onRotate={() => client.rotate()}
-              onSave={captureScreenshot}
-              clipboard={client.capabilities.clipboard}
-              clipboardPending={client.clipboardPending}
-              onPaste={() => void clipboard.pasteFromDevice()}
-              onCopy={() => void clipboard.copyFromSimulator()}
-            />
-          </div>
+            >
+              <DeviceTitle
+                key={device.id}
+                device={device}
+                status={client.status}
+                recording={client.screenRecording}
+              />
+            </div>
+          )}
+          {!viewport.mobile && (
+            <div
+              ref={controlsRef}
+              style={{
+                position: "absolute",
+                left: "50%",
+                top: `calc(100% + ${CONTROLS_GAP}px)`,
+                width: "max-content",
+                maxWidth: "100cqw",
+                transform: "translateX(-50%)",
+              }}
+            >
+              {controls}
+            </div>
+          )}
           <ClipboardToaster />
         </div>
       </div>
+      {viewport.mobile && (
+        <div
+          onMouseDownCapture={(event) => {
+            if (typing || keyboardOpen) event.preventDefault();
+          }}
+          style={{
+            flexShrink: 0,
+            // Full screen and a raised keyboard hide the bar to give the device room; the
+            // phone's own keyboard controls dismiss the keyboard.
+            display: presenting || typing ? "none" : "flex",
+            justifyContent: "center",
+          }}
+        >
+          {controls}
+        </div>
+      )}
       <ScreenshotToaster />
     </section>
   );

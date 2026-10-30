@@ -95,6 +95,42 @@ animation path.
 [observed: `src/client/client.tsx` and `src/client/hooks/use-mobile-simulator-size.ts`
 in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
 
+### Mobile Hub layout
+
+Hub uses its own shared components, not the serve-sim viewer. Below 640px and
+on short touch landscape viewports, the dashboard and viewer share visual viewport
+bounds, including keyboard height and viewport panning. Keyboard detection normalizes
+the visual height by its zoom scale so pinch zoom alone does not hide controls. Mobile hides the title,
+keeps the sidebar reachable, and fits the device above a normal-flow action bar.
+Mobile fitting does not wait for an observer to measure that bar.
+The mobile viewer provides a keyboard toggle when the client supports HID text
+events. It sits in the action bar's Clipboard pill. The action bar is hidden while the
+keyboard is up and in full screen. With the keyboard up, the sidebar toggle and the
+full-screen button hide too, and the device takes that room; the phone's own keyboard
+controls dismiss the keyboard. An in-page full-screen toggle is pinned to the top-right
+corner, opposite the sidebar toggle, and shows a close icon while active. On a phone the
+page behind the dashboard takes the color of the surface above the browser's bottom bars,
+so no lighter strip shows under them. A phone's open sidebar fills the screen. Full-screen controls
+preserve capture focus. The sidebar stays hidden in full screen intentionally; a browser
+clipboard fallback leaves full screen before showing the inspector when a fallback
+handler exists. Locked sessions show only inspector sections, without device-list
+empty states. Consumers without a fallback handler retain presentation. Tablet and desktop stream panels retain their existing title and
+padding. The shared toolbar and sidebar changes are described below. [observed: Hub `Dashboard.tsx`, HubComponents
+`StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
+[confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
+[confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
+the top-right Full screen button]
+
+### Hub sidebar
+
+Hub has one sidebar, on the left. It lists the simulators and emulators, then shows the
+selected device's inspector below them in the same scrolling column. There is no right
+sidebar, so the stream panel uses the rest of the width. The toolbar has no Theme button;
+the device's appearance is the inspector's Appearance setting. [observed: Hub
+`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `LogSidebar.tsx` (`InspectorSections`),
+`StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
+into the left pane and removing the Theme button]
+
 ### DeviceKit hardware artwork
 
 Hardware-button sprites follow the alignment in Apple's DeviceKit profile.

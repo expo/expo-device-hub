@@ -6,12 +6,15 @@ import {
   DeviceScreen,
   displayScreen,
   useActiveDeviceClient,
+  useMobileViewport,
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from "@expo/hub-client";
 import {
   EmptyState,
-  LogSidebar,
+  InspectorSections,
+  MOBILE_CORNER_BUTTON_TOP,
+  MOBILE_SIDEBAR_TOP_INSET,
   ResizeHandle,
   ServerConnectionOverlay,
   Sidebar,
@@ -46,8 +49,10 @@ import { useColorScheme } from "./dashboard/useColorScheme";
 import { useDeviceLists } from "./dashboard/useDevices";
 import {
   FloatingSidebarToggle,
-  floatingSidebarToggleInset,
+  floatingSidebarToggleVisible,
 } from "./dashboard/FloatingSidebarToggle";
+import { pageBackground } from "./dashboard/pageBackground";
+import { sidebarOverlayWidth } from "./dashboard/sidebarOverlayWidth";
 import { useArgentInteractions } from "./dashboard/useArgentInteraction";
 import { useNewDeviceOptions } from "./dashboard/useNewDeviceOptions";
 import { SidebarOverlay } from "./dashboard/SidebarOverlay";
@@ -119,6 +124,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
+  const viewport = useMobileViewport();
   const singleDevice = dashboardSingleDevice();
   const hideBootDevice = !!singleDevice || dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
@@ -145,16 +151,15 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
   const sidebarWidth = useDashboardStore((state) => state.sidebarWidths.left);
-  const logsWidth = useDashboardStore((state) => state.sidebarWidths.right);
   const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
-  const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   // While a resize handle is dragged the docked sidebars must not ease toward
   // each new width, or they wobble behind the pointer.
   const [resizing, setResizing] = useState(false);
   const sidebars = useSidebarLayout({
     leftWidth: sidebarWidth,
-    rightWidth: logsWidth,
+    // The inspector lives in the left sidebar now, so no column is reserved on the right.
+    rightWidth: 0,
     minStreamWidth: MIN_STREAM_WIDTH,
   });
   // A toolbar Paste or Copy that the browser clipboard stopped, until the inspector takes it over.
@@ -162,15 +167,24 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     deviceId: string | null;
     request: ClipboardRequest;
   } | null>(null);
+  const [singleDeviceInspectorOpen, setSingleDeviceInspectorOpen] = useState(false);
+  const closeInspector = () => {
+    setSingleDeviceInspectorOpen(false);
+    sidebars.closeLeft();
+  };
   const clipboardRequest =
     clipboardFallback && clipboardFallback.deviceId === selectedId
       ? clipboardFallback.request
       : null;
-  useEffect(() => setClipboardFallback(null), [selectedId]);
+  useEffect(() => {
+    setClipboardFallback(null);
+    setSingleDeviceInspectorOpen(false);
+  }, [selectedId]);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    sidebars.openRight();
+    if (singleDevice) setSingleDeviceInspectorOpen(true);
+    else sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -275,6 +289,24 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     return () => root.classList.remove("dark-theme");
   }, [scheme]);
 
+  // On a phone the dashboard fits the visible viewport, so the page behind it shows under
+  // the browser's translucent bottom bars. Paint it the color of the surface above.
+  const background = pageBackground({
+    mobile: viewport.mobile,
+    sidebarOverlay: sidebars.leftOverlay,
+  });
+  useEffect(() => {
+    if (!background) return;
+    const targets = [document.documentElement, document.body];
+    const previous = targets.map((element) => element.style.backgroundColor);
+    for (const element of targets) element.style.backgroundColor = background;
+    return () => {
+      targets.forEach((element, index) => {
+        element.style.backgroundColor = previous[index] ?? "";
+      });
+    };
+  }, [background]);
+
   // Keep a valid selection — default to the first device once the list loads.
   // Selecting a device streams it (its helper is attached on demand); the
   // sidebar lists only booted devices, so the default selection streams an
@@ -313,6 +345,25 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
 
   const connectionBlocked = connectionStatus !== "connected";
 
+  // The device inspector sits in the left sidebar, below the device lists.
+  const inspector = (
+    <InspectorSections
+      device={selected}
+      client={client}
+      showDeviceFrame={showDeviceFrame}
+      onShowDeviceFrameChange={setShowDeviceFrame}
+      streamMode={streamMode}
+      httpCodec={httpCodec}
+      streamModeAvailability={selectedStreamModeAvailability}
+      onStreamModeChange={handleStreamModeChange}
+      onHttpCodecChange={setHttpCodec}
+      onShutdown={selected ? () => handleShutdown(selected) : undefined}
+      onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
+      clipboardRequest={clipboardRequest}
+      onClipboardRequestHandled={() => setClipboardFallback(null)}
+    />
+  );
+
   return (
     <div
       ref={sidebars.containerRef}
@@ -325,7 +376,16 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         flex: 1,
         width: "100%",
         minWidth: 0,
-        height: "100vh",
+        height: viewport.mobile ? viewport.height : "100vh",
+        ...(viewport.mobile
+          ? ({
+              position: "fixed",
+              top: viewport.top,
+              left: viewport.left,
+              width: viewport.width,
+              "--hub-viewport-height": `${viewport.height}px`,
+            } as const)
+          : {}),
         boxSizing: "border-box",
         backgroundColor: bg.default,
         color: text.default,
@@ -355,10 +415,12 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
             onToggle={sidebars.closeLeft}
             platform={platform}
             width={sidebarWidth}
-          />
+          >
+            {inspector}
+          </Sidebar>
         </AnimatedDockedSidebar>
       )}
-      {sidebars.leftDocked && (
+      {!singleDevice && sidebars.leftDocked && (
         <ResizeHandle
           side="left"
           offset={sidebarWidth}
@@ -368,13 +430,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           }}
           onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
-            resizeSidebar(
-              "left",
-              clampSidebarWidth(
-                sidebarWidthStart.current + delta,
-                sidebars.rightDocked ? logsWidth : 0,
-              ),
-            )
+            resizeSidebar("left", clampSidebarWidth(sidebarWidthStart.current + delta, 0))
           }
         />
       )}
@@ -422,127 +478,52 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         />
       )}
 
-      {sidebars.rightDocked && (
-        <ResizeHandle
-          side="right"
-          offset={logsWidth}
-          onResizeStart={() => {
-            logsWidthStart.current = logsWidth;
-            setResizing(true);
-          }}
-          onResizeEnd={() => setResizing(false)}
-          onResize={(delta) =>
-            resizeSidebar(
-              "right",
-              clampSidebarWidth(
-                logsWidthStart.current + delta,
-                sidebars.leftDocked ? sidebarWidth : 0,
-              ),
-            )
-          }
-        />
-      )}
-      <AnimatedDockedSidebar
-        side="right"
-        width={logsWidth}
-        open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}
-        resizing={resizing}
-      >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
-      </AnimatedDockedSidebar>
-
-      {!singleDevice && (
-        <SidebarOverlay
-          side="left"
-          open={sidebars.leftOverlay}
-          sidebarOpen={sidebars.leftOpen}
-          topmost={sidebars.lastOpened === "left" || !sidebars.rightOverlay}
-          onDismiss={sidebars.closeLeft}
-        >
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            agentDeviceIds={agentDeviceIds}
-            selectedId={selectedId}
-            onSelect={selectDevice}
-            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          />
-        </SidebarOverlay>
-      )}
-
       <SidebarOverlay
-        side="right"
-        open={sidebars.rightOverlay}
-        sidebarOpen={sidebars.rightOpen}
-        topmost={sidebars.lastOpened === "right" || !sidebars.leftOverlay}
-        onDismiss={sidebars.closeRight}
+        side="left"
+        open={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOverlay}
+        sidebarOpen={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOpen}
+        topmost
+        onDismiss={closeInspector}
       >
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
-          clipboardRequest={clipboardRequest}
-          onClipboardRequestHandled={() => setClipboardFallback(null)}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
-        />
+        <Sidebar
+          showDeviceLists={!singleDevice}
+          simulators={singleDevice ? [] : simulators}
+          emulators={singleDevice ? [] : emulators}
+          recentSimulators={singleDevice ? [] : recentSimulators}
+          recentEmulators={singleDevice ? [] : recentEmulators}
+          simulatorOptions={singleDevice ? { runtimes: [] } : simulatorOptions}
+          emulatorOptions={singleDevice ? { runtimes: [] } : emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={selectDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+          onToggle={closeInspector}
+          // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
+          toggleIcon={viewport.mobile ? "close" : "sidebar"}
+          topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
+          platform={platform}
+          width={sidebarOverlayWidth({
+            mobile: viewport.mobile,
+            sidebarWidth,
+            viewportWidth: viewport.width,
+          })}
+        >
+          {inspector}
+        </Sidebar>
       </SidebarOverlay>
 
-      {!singleDevice && !sidebars.leftOpen && (
-        <FloatingSidebarToggle
-          side="left"
-          inset={floatingSidebarToggleInset(
-            sidebars.rightOverlay,
-            sidebars.containerWidth,
-            logsWidth,
-          )}
-          onClick={sidebars.openLeft}
-        />
-      )}
-
-      {!sidebars.rightOpen && (
-        <FloatingSidebarToggle
-          side="right"
-          inset={floatingSidebarToggleInset(
-            sidebars.leftOverlay,
-            sidebars.containerWidth,
-            sidebarWidth,
-          )}
-          onClick={sidebars.openRight}
-        />
-      )}
+      {!singleDevice &&
+        floatingSidebarToggleVisible({
+          sidebarOpen: sidebars.leftOpen,
+          mobile: viewport.mobile,
+          keyboardRaised: viewport.keyboardRaised,
+        }) && (
+          <FloatingSidebarToggle
+            side="left"
+            top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
+            onClick={sidebars.openLeft}
+          />
+        )}
       {connectionBlocked &&
         createPortal(
           <ServerConnectionOverlay

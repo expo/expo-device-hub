@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { type Device } from "@expo/hub-components";
 
-import { createDashboardStore } from "../dashboardStore";
+import { createDashboardStore, DEFAULT_SIDEBAR_WIDTH } from "../dashboardStore";
 
 const iosDevice: Device = {
   id: "ios-new",
@@ -91,7 +91,7 @@ describe("dashboard store", () => {
     store.getState().resizeSidebar("left", 480);
     store.getState().openSidebar("left", false);
     expect(store.getState()).toMatchObject({
-      sidebarWidths: { left: 480, right: 400 },
+      sidebarWidths: { left: 480, right: DEFAULT_SIDEBAR_WIDTH },
       sidebarPreferences: { left: "open", right: "auto" },
       lastOpenedSidebar: "left",
     });
