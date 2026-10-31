@@ -117,6 +117,50 @@ describe("generic-password format", () => {
   });
 });
 
+describe("keychain-access format", () => {
+  test("stores the key as a string account in the service, the bundle ID by default", () => {
+    const set = (options: object) =>
+      keychainSetOperations("keychain-access", [["token", "v"]], {
+        bundleId: "com.example.app",
+        ...options,
+      });
+    expect(set({})).toEqual([
+      {
+        op: "set",
+        service: "com.example.app",
+        account: b64("token"),
+        data: b64("v"),
+        accessible: "afterFirstUnlock",
+      },
+    ]);
+    expect(set({ service: "auth" })[0]).toMatchObject({ service: "auth" });
+  });
+
+  test("lists the accounts in its service", () => {
+    const items = [
+      { service: "com.example.app", account: b64("a") },
+      { service: "other", account: b64("b") },
+    ];
+    expect(keychainKeys("keychain-access", items, { bundleId: "com.example.app" })).toEqual(["a"]);
+    // A service given in its place hides the items in the bundle ID's service.
+    expect(
+      keychainKeys("keychain-access", items, { bundleId: "com.example.app", service: "other" }),
+    ).toEqual(["b"]);
+  });
+
+  test("delete removes the key's account in its service", () => {
+    expect(
+      keychainDeleteOperations("keychain-access", ["token"], { bundleId: "com.example.app" }),
+    ).toEqual([[{ op: "delete", service: "com.example.app", account: b64("token") }]]);
+  });
+
+  test("needs a service or the bundle ID", () => {
+    expect(() => keychainSetOperations("keychain-access", [["token", "v"]], {})).toThrow(
+      "The keychain-access format needs a service or the app's bundle ID.",
+    );
+  });
+});
+
 describe("react-native-keychain format", () => {
   test("set empties the key's service, then stores the username and password in it", () => {
     expect(

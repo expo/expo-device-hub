@@ -39,6 +39,7 @@ Shared options: `--format <format>` (default `expo-secure-store`; see [Formats](
 | ----------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `expo-secure-store`     | Generic password, service `<keychainService>:no-auth`, account and generic = key bytes as data | `--service` = SecureStore `keychainService` (default `app`) |
 | `generic-password`      | Generic password, given service, account = key as a string                                     | `--service` required                                        |
+| `keychain-access`       | Generic password, service = `--service` or the bundle ID, account = key as a string            | `--service` = `Keychain(service:)` (default the bundle ID)  |
 | `react-native-keychain` | Generic password, service = key, account = username as a string, data = password               | `--username` (default empty); no `--service`                |
 
 `delete` with `expo-secure-store` removes all three places SecureStore reads (`:no-auth`, `:auth`,
