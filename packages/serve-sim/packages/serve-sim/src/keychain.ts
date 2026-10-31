@@ -28,6 +28,7 @@ export const KEYCHAIN_FORMATS = [
   "generic-password",
   "react-native-keychain",
   "keychain-access",
+  "keychain-swift",
 ] as const;
 export type KeychainFormatName = (typeof KEYCHAIN_FORMATS)[number];
 
@@ -39,6 +40,8 @@ export interface KeychainFormatOptions {
   service?: string;
   /** react-native-keychain: the username stored with each password; empty when omitted. */
   username?: string;
+  /** keychain-swift: `KeychainSwift(keyPrefix:)`, which the library puts before each key. */
+  keyPrefix?: string;
   /** The app, from the target: keychain-access uses it when no service is given. */
   bundleId?: string;
   accessGroup?: string;
@@ -50,7 +53,7 @@ interface KeychainFormat {
   /** Whether the format takes a service, and whether it needs one. */
   service: "required" | "optional" | "none";
   /** The one option only some formats take, if this format takes it. */
-  option?: "username";
+  option?: "username" | "keyPrefix";
   /**
    * Every place the library may store `key`. `set` writes the first and, once that succeeds,
    * removes the others, as the library's own write does; `delete` removes all of them.
@@ -153,11 +156,33 @@ const reactNativeKeychain: KeychainFormat = {
   checkKey: nonEmpty,
 };
 
+// Mirrors KeychainSwift's KeychainSwift.swift (24.0.0): the key, after `keyPrefix`, as a string
+// account with no service, and `whenUnlocked`. Reads match the account alone, and a set first
+// deletes every item with that account, in any service. `allKeys` lists accounts.
+const keychainSwift: KeychainFormat = {
+  service: "none",
+  option: "keyPrefix",
+  places: (key, options) => [
+    withGroup({ account: b64(`${options.keyPrefix ?? ""}${key}`) }, options),
+  ],
+  clears: (key, options) => keychainSwift.places(key, options),
+  // Its own items have no service; other libraries' items with a matching account are left out.
+  keyOf: (item, { keyPrefix = "" }) => {
+    const account = fromB64(item.account);
+    return item.service === "" && account.startsWith(keyPrefix)
+      ? account.slice(keyPrefix.length)
+      : null;
+  },
+  defaultAccessible: "whenUnlocked",
+  checkKey: nonEmpty,
+};
+
 const FORMATS: Record<KeychainFormatName, KeychainFormat> = {
   "expo-secure-store": expoSecureStore,
   "generic-password": genericPassword,
   "react-native-keychain": reactNativeKeychain,
   "keychain-access": keychainAccess,
+  "keychain-swift": keychainSwift,
 };
 
 /** Refuses keys and options the format cannot store, before any request leaves. */
@@ -172,10 +197,15 @@ function assertKeychainRequest(
     throw new Error(`The ${format} format needs a service.`);
   }
   if (definition.service === "none" && options.service !== undefined) {
-    throw new Error(`The ${format} format takes no service; its keys are services.`);
+    throw new Error(`The ${format} format takes no service.`);
   }
-  if (options.username !== undefined && definition.option !== "username") {
-    throw new Error(`The ${format} format takes no username.`);
+  for (const [option, label] of [
+    ["username", "username"],
+    ["keyPrefix", "key prefix"],
+  ] as const) {
+    if (options[option] !== undefined && definition.option !== option) {
+      throw new Error(`The ${format} format takes no ${label}.`);
+    }
   }
   for (const key of keys) {
     const problem = definition.checkKey(key);

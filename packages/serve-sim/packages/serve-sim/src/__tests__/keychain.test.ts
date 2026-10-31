@@ -161,6 +161,41 @@ describe("keychain-access format", () => {
   });
 });
 
+describe("keychain-swift format", () => {
+  test("set clears the prefixed account in every service, then writes it without a service", () => {
+    expect(
+      keychainSetOperations("keychain-swift", [["token", "v"]], { keyPrefix: "app_" }),
+    ).toEqual([
+      {
+        op: "set",
+        clears: [{ account: b64("app_token") }],
+        account: b64("app_token"),
+        data: b64("v"),
+        accessible: "whenUnlocked",
+      },
+    ]);
+    expect(keychainDeleteOperations("keychain-swift", ["token"], {})).toEqual([
+      [{ op: "delete", account: b64("token") }],
+    ]);
+  });
+
+  test("lists its own items without the prefix", () => {
+    const items = [
+      { service: "", account: b64("app_a") },
+      { service: "", account: b64("b") },
+      { service: "svc", account: b64("app_c") },
+    ];
+    expect(keychainKeys("keychain-swift", items, { keyPrefix: "app_" })).toEqual(["a"]);
+    expect(keychainKeys("keychain-swift", items, {})).toEqual(["app_a", "b"]);
+  });
+
+  test("takes a key prefix, which other formats refuse", () => {
+    expect(() =>
+      keychainSetOperations("expo-secure-store", [["k", "v"]], { keyPrefix: "p" }),
+    ).toThrow("The expo-secure-store format takes no key prefix.");
+  });
+});
+
 describe("react-native-keychain format", () => {
   test("set empties the key's service, then stores the username and password in it", () => {
     expect(
@@ -207,7 +242,7 @@ describe("react-native-keychain format", () => {
   test("its keys are services, so it takes no service", () => {
     expect(() =>
       keychainSetOperations("react-native-keychain", [["svc", "pw"]], { service: "x" }),
-    ).toThrow("takes no service; its keys are services");
+    ).toThrow("The react-native-keychain format takes no service.");
   });
 });
 
