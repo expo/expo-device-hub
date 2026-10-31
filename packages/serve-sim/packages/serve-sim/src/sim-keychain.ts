@@ -64,7 +64,8 @@ export type KeychainAccessible = (typeof KEYCHAIN_ACCESSIBLE)[number];
 
 /** One generic password. Attribute bytes travel as base64 because some libraries store them as data. */
 export interface KeychainItemAttributes {
-  service: string;
+  /** Omitted for a library that sets no service; such a query covers the account in every service. */
+  service?: string;
   account: string;
   generic?: string;
   accessGroup?: string;
@@ -72,7 +73,10 @@ export interface KeychainItemAttributes {
   attributesAsData?: boolean;
 }
 
-/** The items a delete matches. Without an account, every item in the service. */
+/**
+ * The items a delete matches: without an account, every item in the service; without a service,
+ * the account in every service. The app refuses a query with neither.
+ */
 export type KeychainItemQuery = Omit<KeychainItemAttributes, "account"> & { account?: string };
 
 export type KeychainOperation =
