@@ -289,6 +289,21 @@ function deviceUnavailable(result: AdbCommandResult): boolean {
   return /\b(?:device offline|device .* not found|no devices?|closed)\b/i.test(detail);
 }
 
+/**
+ * adb cannot reach the device: it is offline, unauthorized, or not attached. A closed shell
+ * channel is not in this list; it is a transport race that a poll can try again.
+ */
+function deviceUnreachable(result: AdbCommandResult): boolean {
+  const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
+  return /\b(offline|unauthorized|not found|no devices?)\b/i.test(detail);
+}
+
+/** adb itself did not start: the binary is missing or cannot run. */
+function adbDidNotStart(result: AdbCommandResult): boolean {
+  const code = (result.error as NodeJS.ErrnoException | null | undefined)?.code;
+  return code === "ENOENT" || code === "EACCES";
+}
+
 async function runAdbRaw(
   runtime: ScrcpyRuntime,
   serial: string,
@@ -316,6 +331,55 @@ async function runAdbChecked(
   const result = await runAdbRaw(runtime, serial, args, timeoutMs, signal);
   if (result.status !== 0) throw commandFailure(serial, args, result);
   return result.stdout;
+}
+
+const BOOT_TIMEOUT_MS = 120_000;
+const BOOT_POLL_TIMEOUT_MS = 5_000;
+const BOOT_POLL_INTERVAL_MS = 500;
+
+/**
+ * adb lists a device as soon as adbd runs, seconds before Android starts its
+ * system services. A session started in that window fails: scrcpy's Controller
+ * finds no input service (a NullPointerException in KeyCharacterMap.load), and
+ * the gRPC session's wakeup finds no power service. Wait until the device
+ * reports `sys.boot_completed=1`.
+ */
+export async function waitForDeviceBoot(
+  opts: { serial: string; signal?: AbortSignal; timeoutMs?: number },
+  deps: ScrcpyDependencies = {},
+): Promise<void> {
+  const runtime = runtimeFor(deps);
+  const { serial } = opts;
+  const args = ["shell", "getprop", "sys.boot_completed"];
+  await withDeadline(
+    runtime,
+    opts.signal,
+    opts.timeoutMs ?? BOOT_TIMEOUT_MS,
+    `waiting for ${serial} to finish booting`,
+    async (signal) => {
+      while (true) {
+        const result = await runAdbRaw(runtime, serial, args, BOOT_POLL_TIMEOUT_MS, signal).catch(
+          (error: unknown) => {
+            // One probe can hang past its own deadline while adbd restarts during boot.
+            // Try again; only the boot deadline or the caller's abort ends the wait.
+            if (signal.aborted) throw error;
+            return null;
+          },
+        );
+        if (result?.status === 0 && result.stdout.trim() === "1") return;
+        // A closed shell channel is a transport race while the device boots. A device
+        // adb cannot reach, or an adb that cannot start, fails the start at once.
+        if (
+          result &&
+          result.status !== 0 &&
+          (deviceUnreachable(result) || adbDidNotStart(result))
+        ) {
+          throw commandFailure(serial, args, result);
+        }
+        await runtime.sleep(BOOT_POLL_INTERVAL_MS, signal);
+      }
+    },
+  );
 }
 
 function forwardedPorts(output: string, serial: string, target: string): number[] {
@@ -515,8 +579,7 @@ async function waitForAbstractSocketAsync(
       signal,
     );
     if (result.status === 0 && result.stdout.includes(`@${name}`)) return;
-    const detail = `${result.stderr ?? ""} ${result.stdout ?? ""}`;
-    if (/\b(offline|unauthorized|not found|no devices?)\b/i.test(detail)) {
+    if (deviceUnreachable(result)) {
       throw commandFailure(serial, ["shell", "cat", "/proc/net/unix"], result);
     }
     await runtime.sleep(100, signal);
