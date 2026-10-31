@@ -102,12 +102,68 @@ describe("generic-password format", () => {
     ).toThrow("A service cannot be empty.");
   });
 
+  test("stores no username", () => {
+    expect(() =>
+      keychainSetOperations("generic-password", [["user", "pw"]], { service: "s", username: "u" }),
+    ).toThrow("The generic-password format takes no username.");
+  });
+
   test("lists keys from its service only", () => {
     const items = [
       { service: "com.example", account: b64("user") },
       { service: "other", account: b64("else") },
     ];
     expect(keychainKeys("generic-password", items, { service: "com.example" })).toEqual(["user"]);
+  });
+});
+
+describe("react-native-keychain format", () => {
+  test("set empties the key's service, then stores the username and password in it", () => {
+    expect(
+      keychainSetOperations("react-native-keychain", [["com.example.app", "pw"]], {
+        username: "alice",
+      }),
+    ).toEqual([
+      {
+        op: "set",
+        clears: [{ service: "com.example.app" }],
+        service: "com.example.app",
+        account: b64("alice"),
+        data: b64("pw"),
+        accessible: "afterFirstUnlock",
+      },
+    ]);
+    const [operation] = keychainSetOperations("react-native-keychain", [["svc", "pw"]], {
+      accessGroup: "TEAM.group",
+    });
+    // No username: react-native-keychain then stores an empty account.
+    expect(operation).toMatchObject({
+      account: "",
+      accessGroup: "TEAM.group",
+      clears: [{ service: "svc", accessGroup: "TEAM.group" }],
+    });
+  });
+
+  test("delete removes every item in the key's service", () => {
+    expect(keychainDeleteOperations("react-native-keychain", ["svc"], {})).toEqual([
+      [{ op: "delete", service: "svc" }],
+    ]);
+  });
+
+  test("lists services, as getAllGenericPasswordServices does", () => {
+    const items = [
+      { service: "svc", account: b64("alice") },
+      { service: "app:no-auth", account: b64("k") },
+      { service: "svc", account: b64("bob") },
+      { service: "", account: b64("swift") },
+    ];
+    expect(keychainKeys("react-native-keychain", items, {})).toEqual(["app:no-auth", "svc"]);
+  });
+
+  test("its keys are services, so it takes no service", () => {
+    expect(() =>
+      keychainSetOperations("react-native-keychain", [["svc", "pw"]], { service: "x" }),
+    ).toThrow("takes no service; its keys are services");
   });
 });
 

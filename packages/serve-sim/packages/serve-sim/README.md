@@ -337,8 +337,11 @@ serve-sim keychain delete com.example.app refreshToken
   Early native launch callbacks can read before the write; an app that caches that read needs
   another restart after acknowledgement.
 - `--service` matches SecureStore's `keychainService` option, and `--access-group` its `accessGroup`.
-  `--format generic-password --service <name>` writes plain generic-password items for other
-  libraries; the key becomes the account.
+- `--format` writes the layout of another library:
+  - `generic-password --service <name>`: plain generic passwords; the key becomes the account.
+  - `react-native-keychain [--username <name>]`: the key is the service that
+    `getGenericPassword({ service })` reads, and the value is its password. Use the bundle ID for
+    the library's default service. A set replaces the service's credential, as the library does.
 - The app must run in a serve-sim session, with the default `keychain` capability, and must have
   an `application-identifier` entitlement. Xcode and EAS simulator builds have one.
 - Biometric-protected items are not supported. Values passed as `key=value` arguments are
