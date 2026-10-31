@@ -51,6 +51,10 @@ A standalone `serve-sim` session enables the capability with its other defaults.
 
 A managed middleware awaits its target device's keychain setup before each host action, so the first `/exec-ws` action needs no earlier preview or `/api` request. Setup failure refuses the action, including during the retry delay: actions keep the last setup error until a retry succeeds, while background preview polling keeps its existing backoff. `keychain: false` refuses all three host actions before calling the keychain service, even if shared device state says the capability is enabled; `"unmanaged"` leaves setup to its owning process [observed: `prepareKeychain` in `src/middleware.ts`, `runKeychainAction` in `src/host-actions.ts`].
 
+While the server runs, the `capabilities.set` host action turns `keychain` off or on again for one device that the middleware opened ([LLP 0003](0003-serve-sim-http-api.spec.md#capability-actions)). The session keeps that choice through its 30 s checks until the server stops. While keychain is off, this server's keychain actions fail before they write a request, and its preview config leaves out `keychain: true` for that device, so the Hub hides the Keychain section. An app that already loaded the dylib keeps it until it exits, but no request from this server reaches it. A server started with `keychain: false` does not turn it on.
+
+Off does not remove a setup that another running serve-sim process owns, such as a terminal session on the same simulator. That process would set it up again at its next check, and the two would undo each other's changes. Its own clients can still use keychain there [observed: `ownedElsewhere` in `src/capability-session.ts`].
+
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
 ## Formats, the CLI, and host actions
