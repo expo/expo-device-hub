@@ -70,6 +70,12 @@ describe("setIosKeychainValues", () => {
     expect(calls[0]?.params).toMatchObject({ format: "react-native-keychain", username: "alice" });
   });
 
+  test("passes keychain-swift's key prefix", async () => {
+    const { run, calls } = fakeRun(reply({ keys: [] }));
+    await listIosKeychainKeys(run, UDID, APP, { format: "keychain-swift", keyPrefix: "app_" });
+    expect(calls[0]?.params).toMatchObject({ format: "keychain-swift", keyPrefix: "app_" });
+  });
+
   test("passes the format", async () => {
     const { run, calls } = fakeRun(reply(APPLIED));
     await setIosKeychainValues(
