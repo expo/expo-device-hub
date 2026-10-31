@@ -113,7 +113,7 @@ function withTargetOptions(command: Command, deviceOpt: readonly [string, string
     )
     .option(
       "--service <name>",
-      "expo-secure-store: its keychainService option (default app). generic-password: the item service. react-native-keychain takes none; its keys are services",
+      "expo-secure-store: its keychainService option (default app). generic-password: the item service. keychain-access: Keychain(service:) (default the bundle ID). react-native-keychain takes none; its keys are services",
     )
     .option("--access-group <group>", "Keychain access group (default: the app's own)")
     .option(...deviceOpt)

@@ -324,4 +324,25 @@ describeOrSkip("keychain round trip", () => {
     expect(await deleteKeychainValues(credential(), [service])).toEqual(ok);
     expect(await accounts()).toEqual([]);
   }, 30_000);
+
+  test("keychain-access stores keys in the bundle ID's service by default", async () => {
+    const access: KeychainTarget = { ...target(), format: "keychain-access" };
+    const key = `e2e-access-${process.pid}`;
+    const ok: KeychainWriteSummary = {
+      applied: true,
+      keys: [{ key, status: 0, ok: true, message: "ok" }],
+    };
+    // Read with a raw list, so a wrong service in the format cannot hide behind its own list.
+    const accounts = async () => {
+      const outcome = await runKeychainOperations(udid!, APP, [{ op: "list", service: APP }], {
+        timeoutMs: 10_000,
+      });
+      return outcome.applied ? outcome.results[0]?.items?.map((item) => item.account) : null;
+    };
+    expect(await setKeychainValues(access, [[key, "v"]])).toEqual(ok);
+    expect(await accounts()).toContain(b64(key));
+    expect(await listKeychainKeys(access)).toContain(key);
+    expect(await deleteKeychainValues(access, [key])).toEqual(ok);
+    expect(await accounts()).not.toContain(b64(key));
+  }, 30_000);
 });
