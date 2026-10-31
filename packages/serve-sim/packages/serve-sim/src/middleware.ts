@@ -124,7 +124,8 @@ import {
   PasteboardUnavailableError,
   readSimPasteboardResult,
 } from "./sim-pasteboard-reader";
-import { createCapabilitySession } from "./capability-session";
+import { createCapabilityController, createCapabilitySession } from "./capability-session";
+import { isCapabilityEnabled } from "./launch-manager";
 import { keychainCapability, locateKeychainDylib } from "./sim-keychain";
 import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
@@ -2036,6 +2037,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     keychainOption === "unmanaged" || (keychainOption === true && !keychainAdvertised)
       ? null
       : createCapabilitySession(keychainCapability, keychainOption);
+  // Open /api/events streams, which a capability choice changes without a state-file event.
+  const configListeners = new Set<() => void>();
+  const capabilities = createCapabilityController({ clipboard, keychain }, () => {
+    for (const listener of configListeners) listener();
+  });
+  // A device where `capabilities.set` turned keychain off hides its controls too.
+  // A stream helper manages nothing, so it offers controls only where another session set keychain up.
+  const keychainAdvertisedOn = (udid: string) =>
+    keychainAdvertised &&
+    (keychain ? keychain.allows(udid) : isCapabilityEnabled(udid, "keychain"));
   const initializeCapabilities = async (udid: string, rebooted = false): Promise<void> => {
     const sessions = { clipboard, keychain };
     await Promise.all(
@@ -2315,7 +2326,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             shareUrl,
             disableShare,
             policy?.device,
-            keychainAdvertised,
+            keychainAdvertisedOn(remoteState.device),
           ),
         );
         const configScript = `<script>window.__SIM_PREVIEW__=${config}</script>`;
@@ -2796,7 +2807,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 shareUrl,
                 disableShare,
                 policy?.device,
-                keychainAdvertised,
+                keychainAdvertisedOn(remoteState.device),
               )
             : null,
         ),
@@ -3039,7 +3050,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         }
         const result = session
           ? await session.copyPasteboard()
-          : await readSimPasteboardResult(udid, { appReader: clipboardOption !== false });
+          : await readSimPasteboardResult(udid, {
+              appReader: capabilities.allows(udid, "clipboard"),
+            });
         respond(200, { ok: true, ...result });
       } catch (error) {
         // A failed Copy can still leave Command held; the viewer shows this beside the error.
@@ -3152,7 +3165,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 shareUrl,
                 disableShare,
                 policy?.device,
-                keychainAdvertised,
+                keychainAdvertisedOn(remoteState.device),
               )
             : null,
         );
@@ -3173,12 +3186,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       let watcher: FSWatcher | null = null;
       let watcherRetry: ReturnType<typeof setTimeout> | null = null;
       let heartbeat: ReturnType<typeof setInterval> | null = null;
+      let stopListening = () => {};
       req.on("close", () => {
         closed = true;
         if (debounce) clearTimeout(debounce);
         if (watcherRetry) clearTimeout(watcherRetry);
         if (heartbeat) clearInterval(heartbeat);
         watcher?.close();
+        stopListening();
       });
 
       let lastSent = await computeConfig();
@@ -3203,6 +3218,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           sendIfChanged();
         }, 150);
       };
+      configListeners.add(onFsEvent);
+      stopListening = () => configListeners.delete(onFsEvent);
 
       const ensureWatcher = () => {
         if (closed || res.writableEnded || watcher || watcherRetry) return;
@@ -3488,7 +3505,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     streamSettings,
-    appClipboardReader: clipboardOption !== false,
     prepareKeychain: async (udid) => {
       if (keychainOption === false) {
         throw new Error("The keychain capability is off on this server.");
@@ -3536,6 +3552,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return policy ?? undefined;
     },
     deviceName: bootedDeviceName,
+    capabilities,
     onActionResult: (action, params, result) => recordActionEvent(action, params, result),
     onSseRequest(path, websocketRequest) {
       const url = new URL(path, websocketRequest.url);

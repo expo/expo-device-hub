@@ -34,22 +34,7 @@ describe("clipboard host actions", () => {
     const result = await run("clipboard.read", { udid: UDID.toLowerCase() });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ text, cleanupWarning: "cleanup warning" });
-    expect(read).toHaveBeenCalledWith(UDID);
-  });
-
-  test("passes the owning server's clipboard reader opt-out", async () => {
-    const read = spyOn(reader, "readSimPasteboardResult").mockResolvedValue({ text: "test" });
-    restores.push(() => read.mockRestore());
-    const result = await runHostActionAsync(
-      { action: "clipboard.read", params: { udid: UDID } },
-      "false",
-      undefined,
-      undefined,
-      undefined,
-      false,
-    );
-    expect(result.exitCode).toBe(0);
-    expect(read).toHaveBeenCalledWith(UDID, { appReader: false });
+    expect(read).toHaveBeenCalledWith(UDID, { appReader: true });
   });
 
   test("writes empty and multiline Unicode text without putting it in argv", async () => {
