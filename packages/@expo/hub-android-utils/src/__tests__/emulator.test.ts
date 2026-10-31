@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import * as childProcess from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -180,5 +181,27 @@ describe("spawnEmulator", () => {
     const spawned = await spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
     expect(spawned.value).toBeNull();
     expect(spawned.error?.message).toBe("[android-utils] Failed to spawn `emulator`:");
+  });
+
+  // NOTE: Whether `windowsHide: true` actually suppresses the console window and
+  // whether the emulator survives Hub exit on Windows can only be verified with a
+  // live Windows integration test — a host-process spy cannot observe OS-level
+  // job-object or console behavior. The test below checks that the spawn options
+  // are set correctly; manual Windows verification is required for the runtime
+  // contract.
+  test("passes detached: true and windowsHide: true to spawn on every platform", async () => {
+    const spawnSpy = spyOn(childProcess, "spawn");
+    try {
+      await spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
+      expect(spawnSpy).toHaveBeenCalledTimes(1);
+      const options = spawnSpy.mock.calls[0]![2];
+      expect(options).toEqual({
+        detached: true,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } finally {
+      spawnSpy.mockRestore();
+    }
   });
 });

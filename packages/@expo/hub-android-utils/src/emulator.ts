@@ -54,9 +54,13 @@ export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceO
 /**
  * Spawn a detached, headless `emulator` process.
  *
- * The child is fully detached (its own process group, ignored stdio, `unref`ed)
- * so it keeps running after the parent exits. Resolves with the
- * {@link ChildProcess}, or `null` plus `error` if it could not be spawned.
+ * The child is fully detached (its own process group, ignored stdio,
+ * `unref`ed) so it keeps running after the parent exits on all platforms.
+ * On Windows, `windowsHide: true` suppresses console window allocation
+ * (`CREATE_NO_WINDOW`) while `detached: true` ensures the emulator lives
+ * outside the parent's Job Object — meaning it survives after Hub exits.
+ * Resolves with the {@link ChildProcess}, or `null` plus `error` if it could
+ * not be spawned.
  */
 export function spawnEmulator(
   emulatorPath: string,
@@ -65,6 +69,7 @@ export function spawnEmulator(
   try {
     const child = spawn(emulatorPath, buildEmulatorArgs(options), {
       detached: true,
+      windowsHide: true,
       stdio: "ignore",
     });
 
