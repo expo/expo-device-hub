@@ -168,10 +168,46 @@ describe("requestKeychain", () => {
     );
   });
 
+  test("runs afterPublish once the request is in place, then waits", async () => {
+    const root = container();
+    let seen: string[] = [];
+    const answered = answerOnce(root, ({ nonce }) => ({ nonce, results: [{ status: 0 }] }));
+    const results = await requestKeychain(root, [SET], {
+      timeoutMs: 3000,
+      afterPublish: async () => {
+        seen = readdirSync(mailbox(root).requests).filter((name) => name.endsWith(".json"));
+      },
+    });
+    await answered;
+    expect(seen).toHaveLength(1);
+    expect(results).toEqual([{ status: 0 }]);
+  });
+
+  test("withdraws the request when afterPublish fails", async () => {
+    const root = container();
+    await expect(
+      requestKeychain(root, [SET], {
+        afterPublish: async () => {
+          throw new Error("relaunch failed");
+        },
+      }),
+    ).rejects.toThrow("relaunch failed");
+    expect(readdirSync(mailbox(root).requests)).toEqual([]);
+  });
+
   test("refuses a request over the size the app reads", async () => {
     const root = container();
     const huge = { ...SET, data: "A".repeat(MAX_KEYCHAIN_REQUEST_BYTES) };
-    await expect(requestKeychain(root, [huge])).rejects.toThrow("Send fewer or smaller items");
+    let stopped = false;
+    await expect(
+      requestKeychain(root, [huge], {
+        beforePublish: async () => {
+          stopped = true;
+        },
+      }),
+    ).rejects.toThrow("Send fewer or smaller items");
+    // A relaunch stops the app in beforePublish, so a refused request leaves it running.
+    expect(stopped).toBe(false);
   });
 
   test("refuses a container that is not an absolute path", async () => {
