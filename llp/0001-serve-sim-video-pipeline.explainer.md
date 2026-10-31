@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery); 2026-10-23 (HTTP AVCC decoder configuration); 2026-10-29 (viewer frame placement: top-left with a repeated edge)
+**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery); 2026-10-23 (HTTP AVCC decoder configuration); 2026-10-31 (viewer frame placement: top-left, black bars right after the picture)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -179,9 +179,8 @@ session sizes it for the inner screen, so the cover screen does not fill it
 [observed: `FrameCapture.computeWebRTCEncodeCanvasSize()`]. The resizer then
 draws the picture at its own proportions from the canvas's top-left corner
 (`LetterboxPlacement.topLeft`) and rounds its size up to even numbers. The
-unused columns on the right or rows at the bottom are black bars, except a guard
-band of `LetterboxPlacement.edgeGuard` (8) pixels next to the picture that
-repeats its last column or row. Clients show the screen with `object-fit: cover` and
+unused columns on the right or rows at the bottom are black bars that start
+right after the picture. Clients show the screen with `object-fit: cover` and
 `object-position: 0 0` in a box with the screen's proportions, so the unused
 area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
 
@@ -189,16 +188,14 @@ area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
   the client needs only the screen size to cut it. A centered picture has bars
   on both sides that rounding makes uneven, which a centered `cover` crop does
   not remove exactly.
-- A guard band, then black: a browser that draws the frame smaller mixes
-  pixels across the box edge. Black right next to the picture showed as a dark
-  line along the screen's edge [observed: iPhone Duo cover screen in
-  expo-device-hub]; 8 repeated pixels remove it. Repeating the edge over the
-  whole unused area changes it with every frame of a scroll, so it stays black
-  past the guard, as static as the old bars [confirmed: Krystof Woldrich,
-  2026-10-29, after a review flagged lower Duo throughput]. On EAS with a
-  recording running, the guard band matched `main`'s encoded frame rate on an
-  iPhone Duo, an iPhone 18 Pro and an iPad Pro 13-inch [observed: the
-  serve-sim perf workflow, three rounds per arm, five more on the Duo].
+- Black right after the picture, as static as the old bars: they stay the same
+  while the picture changes. A browser that draws the frame
+  smaller can mix the first black column into the screen's edge, which showed
+  as a thin dark line [observed: iPhone Duo cover screen in expo-device-hub].
+  Repeating the picture's edge past it removes the line, but that area then
+  changes with the picture; the defect was the missing columns, not the line
+  [confirmed: Krystof Woldrich, 2026-10-31, after a review flagged lower Duo
+  throughput].
 - Metal needs an explicit `MPSScaleTransform`. With only a clip rect, MPS scales
   the source to the whole canvas and the clip cuts the picture's right edge
   [observed: 798 × 1136 frames lost 18 of 792 panel columns].
@@ -208,8 +205,8 @@ area stays outside the box [confirmed: Krystof Woldrich, 2026-10-29].
   through unchanged. While a recording runs, or an MJPEG or AVCC viewer is
   attached, every device is resized; there the old centered placement left
   2–4 px bars and a Metal cut of the same size, and the new placement leaves at
-  most 2 unused rows, inside the guard band [observed: placement math for
-  iPhone and iPad screens].
+  most 2 black rows at the bottom [observed: placement math for iPhone and iPad
+  screens].
 
 ## Session recording
 
