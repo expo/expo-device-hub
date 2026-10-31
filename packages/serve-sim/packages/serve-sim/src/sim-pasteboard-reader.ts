@@ -51,10 +51,14 @@ export const clipboardCapability: CapabilityDefinition = {
 
 const readsInFlight = new Map<string, Promise<PasteboardReadResult>>();
 
-export function readSimPasteboardResult(udid: string): Promise<PasteboardReadResult> {
+/** `appReader: false` keeps to `simctl pbpaste`, for a server that turned the clipboard off. */
+export function readSimPasteboardResult(
+  udid: string,
+  { appReader = true }: { appReader?: boolean } = {},
+): Promise<PasteboardReadResult> {
   const queued = (readsInFlight.get(udid) ?? Promise.resolve())
     .catch(() => {})
-    .then(() => readPasteboardOnce(udid));
+    .then(() => readPasteboardOnce(udid, appReader));
   readsInFlight.set(udid, queued);
   void queued
     .catch(() => {})
@@ -64,7 +68,7 @@ export function readSimPasteboardResult(udid: string): Promise<PasteboardReadRes
   return queued;
 }
 
-async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
+async function readPasteboardOnce(udid: string, appReader: boolean): Promise<PasteboardReadResult> {
   if (process.env.SERVE_SIM_SKIP_PBPASTE !== "1") {
     try {
       return await readPasteboardViaSimctl(udid);
@@ -72,6 +76,12 @@ async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
       if (error instanceof PasteboardTooLargeError) throw error;
       debugPasteboard("simctl pbpaste failed on %s: %s", udid, error);
     }
+  }
+  // Another process's reader can still be in place, so this server's choice is checked here.
+  if (!appReader) {
+    throw new PasteboardUnavailableError(
+      "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.",
+    );
   }
   try {
     return await readViaInjectedReader(udid);

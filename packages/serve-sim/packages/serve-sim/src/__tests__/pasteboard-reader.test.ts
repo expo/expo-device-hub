@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { promises as fs, readFileSync } from "fs";
+import { existsSync, promises as fs, readFileSync } from "fs";
 import { join } from "path";
 import { readLaunchState, writeLaunchState } from "../launch-state";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
@@ -110,6 +110,41 @@ test.each([BUNDLE, null, "com.apple.springboard"])(
     });
   },
 );
+
+test("a server that turned the clipboard off does not use a reader that is in place", async () => {
+  const state = useTempStateDir();
+  const previousSkip = process.env.SERVE_SIM_SKIP_PBPASTE;
+  process.env.SERVE_SIM_SKIP_PBPASTE = "1";
+  const calls = join(state.dir, "calls");
+  writeLaunchState(UDID, {
+    launchArgs: [],
+    capabilities: {
+      clipboard: {
+        name: "clipboard",
+        scope: "allApps",
+        dylib: "/reader.dylib",
+        bundleId: null,
+        ownerPid: process.pid,
+      },
+    },
+  });
+  try {
+    const shim = `#!/usr/bin/env bun
+require("fs").appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(" ") + "\\n");
+`;
+    await withShimsAsync({ xcrun: shim }, async () => {
+      await expect(readSimPasteboardResult(UDID, { appReader: false })).rejects.toThrow(
+        "Clipboard reader is off on this server, by --disable clipboard or capabilities.set.",
+      );
+    });
+    // No simctl call ran, so no pasteboard grant either.
+    expect(existsSync(calls)).toBe(false);
+  } finally {
+    if (previousSkip === undefined) delete process.env.SERVE_SIM_SKIP_PBPASTE;
+    else process.env.SERVE_SIM_SKIP_PBPASTE = previousSkip;
+    state.restore();
+  }
+});
 
 test("does not reactivate a disabled reader", async () => {
   await withReader({ enabled: false }, async () => {

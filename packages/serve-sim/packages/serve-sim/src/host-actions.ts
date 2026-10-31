@@ -41,6 +41,7 @@ import {
   type KeychainWriteSummary,
 } from "./keychain";
 import { KEYCHAIN_ACCESSIBLE, type KeychainAccessible } from "./sim-keychain";
+import { SESSION_CAPABILITIES, type CapabilityController } from "./capability-session";
 import type { StreamSettings } from "./stream-settings";
 import {
   UploadChunk,
@@ -119,7 +120,8 @@ const Token = z
 const FileName = z.string().regex(/^(?!\.)[^/\\\n]{1,255}$/, "must be a plain file name");
 
 const Coordinate = z.number().finite();
-const ClipboardDevice = DeviceUdid.toUpperCase();
+// Matches the upper-case keys the middleware stores sessions under.
+const UpperUdid = DeviceUdid.toUpperCase();
 const ClipboardText = z
   .string()
   .max(MAX_PASTEBOARD_TEXT_BYTES)
@@ -132,7 +134,7 @@ const KeychainKey = z.string().min(1).max(1024);
 // Bounded per action as well as by the app's 1 MiB request limit, so a bad call fails before IO.
 const MAX_KEYCHAIN_KEYS = 200;
 const KeychainTargetParams = {
-  udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+  udid: UpperUdid,
   bundleId: BundleId,
   format: z.enum(KEYCHAIN_FORMATS).default("expo-secure-store"),
   service: z.string().min(1).max(256).optional(),
@@ -155,15 +157,15 @@ const CaptureFieldList = z
 
 const ACTION_SCHEMAS = {
   "clipboard.read": z
-    .object({ udid: ClipboardDevice })
+    .object({ udid: UpperUdid })
     .meta({ description: "Read simulator clipboard text." }),
   "clipboard.write": z
-    .object({ udid: ClipboardDevice, text: ClipboardText })
+    .object({ udid: UpperUdid, text: ClipboardText })
     .meta({ description: "Write simulator clipboard text without pasting." }),
   "clipboard.copy": z
-    .object({ udid: ClipboardDevice })
+    .object({ udid: UpperUdid })
     .meta({ description: "Copy the current selection and read its text." }),
-  "clipboard.paste": z.object({ udid: ClipboardDevice, text: ClipboardText.optional() }).meta({
+  "clipboard.paste": z.object({ udid: UpperUdid, text: ClipboardText.optional() }).meta({
     description:
       "Paste text into the focused field, or paste the current simulator clipboard if omitted.",
   }),
@@ -191,6 +193,16 @@ const ACTION_SCHEMAS = {
   "keychain.list": z.object(KeychainTargetParams).meta({
     description: "List the keys an app stored in its keychain. Values are never returned.",
   }),
+  "capabilities.list": z.object({ udid: UpperUdid }).meta({
+    description:
+      "List the capabilities this server sets up on a device, such as keychain, and whether each is on.",
+  }),
+  "capabilities.set": z
+    .object({ udid: UpperUdid, name: z.enum(SESSION_CAPABILITIES), enabled: z.boolean() })
+    .meta({
+      description:
+        "Turn a capability on or off on a device this server opened, until the server stops. While keychain is off, keychain actions fail; while clipboard is off, clipboard reads use only simctl pbpaste.",
+    }),
   "appearance.get": z.object({ udid: Device }).meta({ description: "Read light or dark mode." }),
   "appearance.set": z
     .object({ udid: Device, value: z.enum(APPEARANCES) })
@@ -529,6 +541,8 @@ const PROCEDURE_ACTIONS = [
   "keychain.set",
   "keychain.delete",
   "keychain.list",
+  "capabilities.list",
+  "capabilities.set",
   "app.file.upload",
   "app.file.read",
   "app.file.list",
@@ -815,21 +829,31 @@ function keychainTarget(
   };
 }
 
+function failedResult(error: unknown): HostActionResult {
+  return {
+    stdout: "",
+    stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+    exitCode: 1,
+  };
+}
+
 // In this process, so values never reach a child's argv; neither stdout nor errors carry them.
 async function runKeychainAction(
   udid: string,
   prepare: ((udid: string) => Promise<void>) | undefined,
+  capabilities: CapabilityController | undefined,
   run: () => Promise<HostActionResult>,
 ): Promise<HostActionResult> {
   try {
+    if (capabilities?.allows(udid, "keychain") === false) {
+      throw new Error(
+        `Keychain access is off for ${udid} on this server, by --disable keychain or capabilities.set.`,
+      );
+    }
     await prepare?.(udid);
     return await run();
   } catch (error) {
-    return {
-      stdout: "",
-      stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
-      exitCode: 1,
-    };
+    return failedResult(error);
   }
 }
 
@@ -839,6 +863,21 @@ function keychainWriteResult(summary: KeychainWriteSummary): HostActionResult {
   return { ...ok(JSON.stringify(summary)), exitCode: failed ? 1 : 0 };
 }
 
+// Both actions reply with every capability's state, so a client sees the result of a change.
+async function capabilityReply(
+  capabilities: CapabilityController | undefined,
+  udid: string,
+  change?: (controller: CapabilityController) => Promise<void>,
+): Promise<HostActionResult> {
+  try {
+    if (!capabilities) throw new Error("Only a serve-sim preview server can switch capabilities.");
+    await change?.(capabilities);
+    return ok(JSON.stringify({ capabilities: capabilities.list(udid) }));
+  } catch (error) {
+    return failedResult(error);
+  }
+}
+
 async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
@@ -846,6 +885,7 @@ async function runProcedureAsync(
   serveSimBinPath: string,
   deviceName?: (udid: string) => string | undefined,
   prepareKeychain?: (udid: string) => Promise<void>,
+  capabilities?: CapabilityController,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -856,7 +896,8 @@ async function runProcedureAsync(
       try {
         if (action === "clipboard.read") {
           const { readSimPasteboardResult } = await import("./sim-pasteboard-reader");
-          return ok(JSON.stringify(await readSimPasteboardResult(p.udid)));
+          const appReader = capabilities?.allows(p.udid, "clipboard") ?? true;
+          return ok(JSON.stringify(await readSimPasteboardResult(p.udid, { appReader })));
         }
         if (action === "clipboard.write") {
           await writeSimPasteboard(p.udid, parseParams(action, raw).text);
@@ -880,7 +921,7 @@ async function runProcedureAsync(
     }
     case "keychain.set": {
       const p = parseParams(action, raw);
-      return runKeychainAction(p.udid, prepareKeychain, async () =>
+      return runKeychainAction(p.udid, prepareKeychain, capabilities, async () =>
         keychainWriteResult(
           await setKeychainValues(keychainTarget(p), Object.entries(p.values), {
             relaunch: p.relaunch,
@@ -890,7 +931,7 @@ async function runProcedureAsync(
     }
     case "keychain.delete": {
       const p = parseParams(action, raw);
-      return runKeychainAction(p.udid, prepareKeychain, async () =>
+      return runKeychainAction(p.udid, prepareKeychain, capabilities, async () =>
         keychainWriteResult(
           await deleteKeychainValues(keychainTarget(p), p.keys, { relaunch: p.relaunch }),
         ),
@@ -898,8 +939,16 @@ async function runProcedureAsync(
     }
     case "keychain.list": {
       const p = parseParams(action, raw);
-      return runKeychainAction(p.udid, prepareKeychain, async () =>
+      return runKeychainAction(p.udid, prepareKeychain, capabilities, async () =>
         ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
+      );
+    }
+    case "capabilities.list":
+      return capabilityReply(capabilities, parseParams(action, raw).udid);
+    case "capabilities.set": {
+      const p = parseParams(action, raw);
+      return capabilityReply(capabilities, p.udid, (controller) =>
+        controller.set(p.udid, p.name, p.enabled),
       );
     }
     case "app.file.upload":
@@ -1167,6 +1216,7 @@ export async function runHostActionAsync(
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
   prepareKeychain?: (udid: string) => Promise<void>,
+  capabilities?: CapabilityController,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
@@ -1183,7 +1233,7 @@ export async function runHostActionAsync(
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain)
+      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain, capabilities)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
