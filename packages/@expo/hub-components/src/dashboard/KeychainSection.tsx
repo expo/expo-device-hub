@@ -2,13 +2,20 @@ import { useEffect, useState } from "react";
 
 import {
   type DeviceClient,
+  type KeychainFormat,
   type KeychainOptions,
   type KeychainWriteResult,
 } from "@expo/hub-client";
-import { Button } from "../primitives";
+import { Button, Select } from "../primitives";
 import { errorMessage } from "./browserClipboard";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { describeKeychainWrite, parseKeychainDraft } from "./keychainInput";
+import {
+  KEYCHAIN_FORMAT_OPTIONS,
+  KEYCHAIN_FORMAT_UI,
+  describeKeychainWrite,
+  missingKeychainField,
+  parseKeychainDraft,
+} from "./keychainInput";
 import { SectionNote } from "./SectionNote";
 import { SidebarRow } from "./SidebarRow";
 import { SidebarTextArea } from "./SidebarTextArea";
@@ -22,7 +29,7 @@ const HOME_SCREEN = "com.apple.springboard";
 const SYSTEM_APP_PREFIX = "com.apple.";
 
 /**
- * Keychain values of the foreground app, in expo-secure-store's layout: list its keys, set
+ * Keychain values of the foreground app, in the layout of a library it uses: list its keys, set
  * values such as sign-in tokens, and delete them. Values are never read back.
  */
 export function KeychainSection({
@@ -36,10 +43,13 @@ export function KeychainSection({
   const [open, setOpen] = useState(defaultOpen);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
-  const [service, setService] = useState("");
-  // The options the keys are listed with, so a Delete goes where they were read. Typing a service
-  // does not change it; Enter in the field or a Set does. A new object lists the keys again.
-  const [query, setQuery] = useState<KeychainOptions>({});
+  const [format, setFormat] = useState<KeychainFormat>("expo-secure-store");
+  // The format's field, such as the service the app passes.
+  const [fieldValue, setFieldValue] = useState("");
+  // The options the keys are listed with, so a Delete goes where they were read. Typing in the
+  // field does not change it; a new format, Enter in the field, or a Set does. A new object lists
+  // the keys again.
+  const [query, setQuery] = useState<KeychainOptions>({ format: "expo-secure-store" });
   const [keys, setKeys] = useState<string[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -49,10 +59,13 @@ export function KeychainSection({
   const appId = foreground?.startsWith(SYSTEM_APP_PREFIX) ? null : foreground;
   const { listKeychainKeys } = client;
 
+  const missing = missingKeychainField(query);
+  const shown = KEYCHAIN_FORMAT_UI[format];
+
   useEffect(() => {
     setKeys(null);
     setListError(null);
-    if (!open || !appId) return;
+    if (!open || !appId || missingKeychainField(query)) return;
     let current = true;
     listKeychainKeys(appId, query).then(
       (next) => current && setKeys(next),
@@ -63,7 +76,10 @@ export function KeychainSection({
     };
   }, [open, appId, query, listKeychainKeys]);
 
-  const typedOptions = (): KeychainOptions => (service.trim() ? { service: service.trim() } : {});
+  const typedOptions = (): KeychainOptions => {
+    const text = fieldValue.trim();
+    return { format, ...(text ? { [shown.field.option]: text } : {}) };
+  };
   const reload = () => setQuery((current) => ({ ...current }));
 
   // The app ID is fixed when the write starts: a relaunch moves the foreground away and back.
@@ -97,14 +113,17 @@ export function KeychainSection({
     }
   }
 
+  function refuse(message: string) {
+    setNote(null);
+    setError(message);
+  }
+
   function set(relaunch: boolean) {
-    const draft = parseKeychainDraft(key, value);
-    if (!draft.ok) {
-      setNote(null);
-      setError(draft.error);
-      return;
-    }
     const options = typedOptions();
+    const field = missingKeychainField(options);
+    if (field) return refuse(`Enter the ${field}.`);
+    const draft = parseKeychainDraft(key, value);
+    if (!draft.ok) return refuse(draft.error);
     void write(
       "set",
       relaunch ? "Setting and restarting the app…" : "Setting…",
@@ -130,7 +149,37 @@ export function KeychainSection({
         </SectionNote>
       ) : (
         <>
-          {keys === null ? (
+          <SidebarRow label="Format">
+            <Select
+              ariaLabel="Keychain format"
+              value={format}
+              options={KEYCHAIN_FORMAT_OPTIONS}
+              disabled={pending !== null}
+              onChange={(next) => {
+                // The field can mean something else in the new format, so it starts empty, and a
+                // note about a write in the old format goes.
+                setFormat(next);
+                setFieldValue("");
+                setQuery({ format: next });
+                setNote(null);
+                setError(null);
+              }}
+            />
+          </SidebarRow>
+          <SidebarRow label={shown.field.label} description={shown.field.description}>
+            <SidebarTextInput
+              ariaLabel={`Keychain ${shown.field.label.toLowerCase()}`}
+              inputMode="text"
+              placeholder={shown.field.placeholder}
+              value={fieldValue}
+              disabled={pending !== null}
+              onChange={setFieldValue}
+              onSubmit={() => setQuery(typedOptions())}
+            />
+          </SidebarRow>
+          {missing ? (
+            <SectionNote>{`Enter the ${missing}, then press Enter to list its keys.`}</SectionNote>
+          ) : keys === null ? (
             listError ? (
               <>
                 <SectionNote role="alert">{listError}</SectionNote>
@@ -144,7 +193,9 @@ export function KeychainSection({
               <SectionNote>Reading keys…</SectionNote>
             )
           ) : keys.length === 0 ? (
-            <SectionNote>This app stored no SecureStore values.</SectionNote>
+            <SectionNote>
+              {KEYCHAIN_FORMAT_UI[query.format ?? "expo-secure-store"].empty}
+            </SectionNote>
           ) : (
             keys.map((name) => (
               <SidebarRow key={name} label={name}>
@@ -164,7 +215,7 @@ export function KeychainSection({
             <SidebarTextInput
               ariaLabel="Keychain key"
               inputMode="text"
-              placeholder="accessToken"
+              placeholder={shown.keyPlaceholder ?? "accessToken"}
               value={key}
               disabled={pending !== null}
               onChange={setKey}
@@ -181,17 +232,6 @@ export function KeychainSection({
               onSubmit={() => set(false)}
             />
           </div>
-          <SidebarRow label="Service" description="SecureStore keychainService">
-            <SidebarTextInput
-              ariaLabel="Keychain service"
-              inputMode="text"
-              placeholder="app"
-              value={service}
-              disabled={pending !== null}
-              onChange={setService}
-              onSubmit={() => setQuery(typedOptions())}
-            />
-          </SidebarRow>
           <div style={BUTTONS_STYLE}>
             <Button
               theme="secondary"

@@ -13,9 +13,9 @@ import {
 } from "./types";
 
 /**
- * Keychain values of iOS simulator apps over serve-sim's `keychain.*` host actions, in
- * expo-secure-store's layout. serve-sim writes from inside the app, so the values land in the
- * app's own access group. Values travel as action parameters and never come back.
+ * Keychain values of iOS simulator apps over serve-sim's `keychain.*` host actions, in the layout
+ * of a library the app uses. serve-sim writes from inside the app, so the values land in the app's
+ * own access group. Values travel as action parameters and never come back.
  */
 
 // serve-sim bounds these in-process actions only by its own waits: up to 30 s to find the app's
@@ -75,7 +75,7 @@ async function request(
 }
 
 function target(udid: string, appId: string, options?: KeychainOptions): HostActionParams {
-  return { udid, bundleId: appId, service: options?.service };
+  return { udid, bundleId: appId, format: options?.format, service: options?.service };
 }
 
 export async function listIosKeychainKeys(
