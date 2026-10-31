@@ -280,7 +280,7 @@ export async function runKeychainOperations(
   }
   if (!isCapabilityEnabled(udid, KEYCHAIN_CAPABILITY)) {
     throw new Error(
-      "Keychain access is unavailable. Start a serve-sim session with the keychain capability for this simulator and retry.",
+      "Keychain access is unavailable. Start a serve-sim session with the keychain capability for this simulator, or turn it on with capabilities.set, and retry.",
     );
   }
   const container = await simctl(["get_app_container", udid, bundleId, "data"]).catch(
