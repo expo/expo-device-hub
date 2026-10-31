@@ -235,6 +235,7 @@ export function KeychainSection({
               </SidebarRow>
             ))
           )}
+          {shown.note && <SectionNote>{shown.note}</SectionNote>}
           <SidebarRow label="Key">
             <SidebarTextInput
               ariaLabel="Keychain key"
