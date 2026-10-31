@@ -7,7 +7,7 @@ import { debugPasteboard } from "./debug";
 import { frontmostAppOf } from "./foreground-tracker";
 import { isCapabilityEnabled } from "./launch-manager";
 import { readLaunchState } from "./launch-state";
-import { simctl } from "./simctl";
+import { isContainerPath, simctl } from "./simctl";
 import { withStateLock } from "./state-lock";
 import {
   buildSimpbArtifact,
@@ -166,11 +166,6 @@ async function takeInjectedAnswer(
   } finally {
     if (claimed) await fs.rm(readingPath, { force: true });
   }
-}
-
-/** A real data container, not "(null)" and not a relative path we would write into cwd. */
-function isContainerPath(container: string): boolean {
-  return container.startsWith("/");
 }
 
 export async function requestInjectedPasteboard(
