@@ -96,6 +96,20 @@ an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev
 covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
 sends the token.
 
+### Turn off a simulator capability
+
+The Hub sets up two serve-sim capabilities on each iOS simulator it opens: `clipboard`, an
+in-app reader that clipboard reads fall back to when `simctl pbpaste` fails, and `keychain`,
+which sets keychain values inside apps. Pass `--disable <capability>` to leave one off; the flag
+is repeatable:
+
+```sh
+npx expo-device-hub --disable keychain
+```
+
+Without `clipboard`, clipboard reads use only `simctl pbpaste`. Without `keychain`, the Keychain
+section does not show.
+
 ### Restrict a session to one device
 
 ```sh
