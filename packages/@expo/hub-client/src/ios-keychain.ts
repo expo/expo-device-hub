@@ -75,7 +75,8 @@ async function request(
 }
 
 function target(udid: string, appId: string, options?: KeychainOptions): HostActionParams {
-  return { udid, bundleId: appId, format: options?.format, service: options?.service };
+  const { format, service, username } = options ?? {};
+  return { udid, bundleId: appId, format, service, username };
 }
 
 export async function listIosKeychainKeys(
