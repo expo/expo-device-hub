@@ -396,7 +396,7 @@ export interface DeviceCapabilities {
  * names as `KEYCHAIN_FORMATS` in serve-sim's `src/keychain.ts`, which this package does not import;
  * a hub-components test compares the two.
  */
-export type KeychainFormat = "expo-secure-store" | "generic-password";
+export type KeychainFormat = "expo-secure-store" | "generic-password" | "react-native-keychain";
 
 /** Where an app's values live: a library's layout, and the service the app passes it. */
 export interface KeychainOptions {
@@ -404,9 +404,11 @@ export interface KeychainOptions {
   format?: KeychainFormat;
   /**
    * expo-secure-store: its `keychainService`, `app` when omitted. generic-password: the item
-   * service, which that format needs.
+   * service, which that format needs. react-native-keychain takes none: its keys are services.
    */
   service?: string;
+  /** react-native-keychain: the username a set stores with each password; empty when omitted. */
+  username?: string;
 }
 
 export interface KeychainWriteOptions extends KeychainOptions {

@@ -209,6 +209,23 @@ test("a format that needs a service asks for one before it lists or sets", async
   });
 });
 
+test("react-native-keychain sets a service's password with a username", async () => {
+  const { client, calls } = keychainClient({}, ["com.example.app"]);
+  const s = await setup(client);
+  await s.choose("react-native-keychain");
+  expect(s.text()).toContain("Username");
+  await s.type("Keychain key", "com.example.app");
+  await s.type("Keychain value", "pw");
+  // A username is stored as typed, unlike a service name.
+  await s.type("Keychain username", " alice ");
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    arg: { "com.example.app": "pw" },
+    options: { format: "react-native-keychain", username: " alice ", relaunch: false },
+  });
+  expect(s.text()).toContain("Set replaces, and Delete removes, every item in it");
+});
+
 test("sets every key of a pasted JSON object", async () => {
   const { client, calls } = keychainClient();
   const s = await setup(client);

@@ -49,21 +49,28 @@ static id attribute(NSData *bytes, BOOL asData) {
   return asData ? bytes : [[NSString alloc] initWithData:bytes encoding:NSUTF8StringEncoding];
 }
 
-// Service, account, and access group identify a generic password. Generic is an attribute:
-// matching on it would miss an item stored with another value, and the add would then collide.
-static NSMutableDictionary *itemQuery(NSDictionary *operation, NSString **error) {
+// Service, account, and access group identify a generic password. Without an account, a query
+// covers every item in the service, as a library that keeps one item per service deletes them.
+// Generic is an attribute: matching on it would miss an item stored with another value, and the
+// add would then collide.
+static NSMutableDictionary *itemQuery(NSDictionary *operation, BOOL needsAccount, NSString **error) {
   NSString *service = operation[@"service"];
+  BOOL hasAccount = operation[@"account"] != nil;
   NSData *account = base64(operation[@"account"]);
   BOOL asData = [operation[@"attributesAsData"] isEqual:@YES];
-  if (![service isKindOfClass:NSString.class] || account == nil || attribute(account, asData) == nil) {
-    *error = @"needs a service string and a base64 account";
+  if (![service isKindOfClass:NSString.class]) {
+    *error = @"needs a service string";
+    return nil;
+  }
+  if ((hasAccount || needsAccount) && (account == nil || attribute(account, asData) == nil)) {
+    *error = @"needs a base64 account";
     return nil;
   }
   NSMutableDictionary *query = [@{
     (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
     (__bridge id)kSecAttrService : service,
-    (__bridge id)kSecAttrAccount : attribute(account, asData),
   } mutableCopy];
+  if (hasAccount) query[(__bridge id)kSecAttrAccount] = attribute(account, asData);
   if (operation[@"accessGroup"] != nil) {
     if (![operation[@"accessGroup"] isKindOfClass:NSString.class]) {
       *error = @"accessGroup must be a string";
@@ -76,14 +83,20 @@ static NSMutableDictionary *itemQuery(NSDictionary *operation, NSString **error)
 
 static NSDictionary *deleteItem(NSDictionary *operation) {
   NSString *error = nil;
-  NSMutableDictionary *query = itemQuery(operation, &error);
+  NSMutableDictionary *query = itemQuery(operation, NO, &error);
   if (query == nil) return @{@"status" : @(errSecParam), @"error" : error};
   return @{@"status" : @(SecItemDelete((__bridge CFDictionaryRef)query))};
 }
 
+static void deleteEach(NSArray *items) {
+  for (id item in items) {
+    if ([item isKindOfClass:NSDictionary.class]) deleteItem(item);
+  }
+}
+
 static NSDictionary *setItem(NSDictionary *operation) {
   NSString *error = nil;
-  NSMutableDictionary *query = itemQuery(operation, &error);
+  NSMutableDictionary *query = itemQuery(operation, YES, &error);
   NSData *data = base64(operation[@"data"]);
   if (query == nil || data == nil) return @{@"status" : @(errSecParam), @"error" : error ?: @"data must be base64"};
   NSMutableDictionary *attributes = [@{(__bridge id)kSecValueData : data} mutableCopy];
@@ -99,9 +112,12 @@ static NSDictionary *setItem(NSDictionary *operation) {
     if (accessible == NULL) return @{@"status" : @(errSecParam), @"error" : @"unknown accessible value"};
     attributes[(__bridge id)kSecAttrAccessible] = (__bridge id)accessible;
   }
-  id replaces = operation[@"replaces"];
-  if (replaces != nil && ![replaces isKindOfClass:NSArray.class])
-    return @{@"status" : @(errSecParam), @"error" : @"replaces must be a list"};
+  for (NSString *list in @[@"clears", @"replaces"]) {
+    if (operation[list] != nil && ![operation[list] isKindOfClass:NSArray.class])
+      return @{@"status" : @(errSecParam), @"error" : [list stringByAppendingString:@" must be a list"]};
+  }
+  // Items the library removes before it stores the key, such as the rest of a one-item service.
+  deleteEach(operation[@"clears"]);
   OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
   if (status == errSecItemNotFound) {
     [query addEntriesFromDictionary:attributes];
@@ -109,7 +125,7 @@ static NSDictionary *setItem(NSDictionary *operation) {
   }
   // Other places a library reads the same key, removed only once the new value is in place. A copy
   // that stays fails the set, as the app could still read the old value there.
-  for (id other in replaces) {
+  for (id other in operation[@"replaces"]) {
     if (status != errSecSuccess) break;
     if (![other isKindOfClass:NSDictionary.class]) continue;
     OSStatus removed = [deleteItem(other)[@"status"] intValue];

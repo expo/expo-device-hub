@@ -12,9 +12,9 @@ npx @expo/serve-sim keychain delete <bundle-id> <key...> [--relaunch]
 npx @expo/serve-sim keychain list   <bundle-id>
 ```
 
-Shared options: `--format <expo-secure-store|generic-password>` (default `expo-secure-store`),
+Shared options: `--format <format>` (default `expo-secure-store`; see [Formats](#formats)),
 `--service <name>`, `--access-group <group>`, `-d <udid|name>`, `-j/--json`.
-`set` also takes `--accessible <when>`.
+`set` also takes `--accessible <when>` and, for `react-native-keychain`, `--username <name>`.
 
 - `--from-file` reads a JSON object of string keys and values; `-` reads stdin. Prefer it to
   `key=value` arguments, which other processes can see.
@@ -35,14 +35,22 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
 
 ## Formats
 
-| Format              | Maps a key to                                                                                  | Options                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `expo-secure-store` | Generic password, service `<keychainService>:no-auth`, account and generic = key bytes as data | `--service` = SecureStore `keychainService` (default `app`) |
-| `generic-password`  | Generic password, given service, account = key as a string                                     | `--service` required                                        |
+| Format                  | Maps a key to                                                                                  | Options                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `expo-secure-store`     | Generic password, service `<keychainService>:no-auth`, account and generic = key bytes as data | `--service` = SecureStore `keychainService` (default `app`) |
+| `generic-password`      | Generic password, given service, account = key as a string                                     | `--service` required                                        |
+| `react-native-keychain` | Generic password, service = key, account = username as a string, data = password               | `--username` (default empty); no `--service`                |
 
 `delete` with `expo-secure-store` removes all three places SecureStore reads (`:no-auth`, `:auth`,
 and the legacy service). `set` writes `:no-auth` and then removes the other two, as SecureStore's own
 `setItemAsync` does.
+
+`react-native-keychain` keeps one credential per service, as `setGenericPassword({ service })` does:
+`set` deletes every item in the service before it writes, and `delete` removes them all. Its default
+service is the app's bundle ID, so pass that as the key for an app that calls
+`getGenericPassword()` without a service. `list` prints every generic-password service the app can
+read, as `getAllGenericPasswordServices` does. Internet credentials (`setInternetCredentials`) are
+not supported.
 
 ## Errors
 
