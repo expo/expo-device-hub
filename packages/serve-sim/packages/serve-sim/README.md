@@ -343,6 +343,8 @@ serve-sim keychain delete com.example.app refreshToken
     the library's default service. A set replaces the service's credential, as the library does.
   - `keychain-access [--service <name>]`: KeychainAccess's `Keychain(service:)`; the key becomes the
     account. Without `--service`, the bundle ID, as `Keychain()` uses.
+  - `keychain-swift [--key-prefix <prefix>]`: KeychainSwift's account, with no service. Set and
+    delete remove that account in every service first, as the library does.
 - The app must run in a serve-sim session, with the default `keychain` capability, and must have
   an `application-identifier` entitlement. Xcode and EAS simulator builds have one.
 - Biometric-protected items are not supported. Values passed as `key=value` arguments are

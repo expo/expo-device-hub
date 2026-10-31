@@ -128,6 +128,7 @@ const KeychainTargetParams = {
   format: z.enum(KEYCHAIN_FORMATS).default("expo-secure-store"),
   service: z.string().min(1).max(256).optional(),
   accessGroup: z.string().min(1).max(256).optional(),
+  keyPrefix: z.string().min(1).max(256).optional(),
 };
 
 function UiSetting(option: string) {
@@ -824,6 +825,7 @@ function keychainTarget(
     options: {
       service: p.service,
       username: p.username,
+      keyPrefix: p.keyPrefix,
       accessGroup: p.accessGroup,
       accessible: p.accessible,
     },

@@ -15,6 +15,7 @@ npx @expo/serve-sim keychain list   <bundle-id>
 Shared options: `--format <format>` (default `expo-secure-store`; see [Formats](#formats)),
 `--service <name>`, `--access-group <group>`, `-d <udid|name>`, `-j/--json`.
 `set` also takes `--accessible <when>` and, for `react-native-keychain`, `--username <name>`.
+`keychain-swift` takes `--key-prefix <prefix>` for its `keyPrefix`.
 
 - `--from-file` reads a JSON object of string keys and values; `-` reads stdin. Prefer it to
   `key=value` arguments, which other processes can see.
@@ -40,6 +41,7 @@ Shared options: `--format <format>` (default `expo-secure-store`; see [Formats](
 | `expo-secure-store`     | Generic password, service `<keychainService>:no-auth`, account and generic = key bytes as data | `--service` = SecureStore `keychainService` (default `app`) |
 | `generic-password`      | Generic password, given service, account = key as a string                                     | `--service` required                                        |
 | `keychain-access`       | Generic password, service = `--service` or the bundle ID, account = key as a string            | `--service` = `Keychain(service:)` (default the bundle ID)  |
+| `keychain-swift`        | Generic password, no service, account = `keyPrefix` + key as a string                          | `--key-prefix` (default none); no `--service`               |
 | `react-native-keychain` | Generic password, service = key, account = username as a string, data = password               | `--username` (default empty); no `--service`                |
 
 `delete` with `expo-secure-store` removes all three places SecureStore reads (`:no-auth`, `:auth`,
@@ -52,6 +54,10 @@ service is the app's bundle ID, so pass that as the key for an app that calls
 `getGenericPassword()` without a service. `list` prints every generic-password service the app can
 read, as `getAllGenericPasswordServices` does. Internet credentials (`setInternetCredentials`) are
 not supported.
+
+`keychain-swift` matches the account alone, as KeychainSwift does: `set` and `delete` remove that
+account in every service, also items that other libraries stored. `list` prints the keys of items
+without a service whose account starts with the prefix. Bool values are not supported.
 
 ## Errors
 

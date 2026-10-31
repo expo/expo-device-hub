@@ -345,4 +345,49 @@ describeOrSkip("keychain round trip", () => {
     expect(await deleteKeychainValues(access, [key])).toEqual(ok);
     expect(await accounts()).not.toContain(b64(key));
   }, 30_000);
+
+  test("keychain-swift stores prefixed accounts without a service", async () => {
+    const swift: KeychainTarget = {
+      ...target(),
+      format: "keychain-swift",
+      options: { keyPrefix: "e2e_" },
+    };
+    const key = `swift-${process.pid}`;
+    const ok: KeychainWriteSummary = {
+      applied: true,
+      keys: [{ key, status: 0, ok: true, message: "ok" }],
+    };
+    // Another library's item with the same account, which KeychainSwift's own set deletes too.
+    const other: KeychainTarget = {
+      ...target(),
+      format: "generic-password",
+      options: { service: `other-${process.pid}` },
+    };
+    expect(await setKeychainValues(other, [[`e2e_${key}`, "other"]])).toMatchObject({
+      applied: true,
+    });
+    expect(await setKeychainValues(swift, [[key, "v1"]])).toEqual(ok);
+    expect(await listKeychainKeys(other)).not.toContain(`e2e_${key}`);
+    expect(await setKeychainValues(swift, [[key, "v2"]])).toEqual(ok);
+    expect(await listKeychainKeys(swift)).toContain(key);
+    const listed = await runKeychainOperations(udid!, APP, [{ op: "list" }], { timeoutMs: 10_000 });
+    const stored = listed.applied
+      ? listed.results[0]?.items?.filter((item) => item.account === b64(`e2e_${key}`))
+      : null;
+    expect(stored?.map((item) => item.service)).toEqual([""]);
+    expect(await deleteKeychainValues(swift, [key])).toEqual(ok);
+    expect(await listKeychainKeys(swift)).not.toContain(key);
+  }, 30_000);
+
+  test("the app refuses a delete that would cover every item without a service or account", async () => {
+    const outcome = await runKeychainOperations(
+      udid!,
+      APP,
+      [{ op: "delete" }, { op: "delete", account: "" }, { op: "delete", service: "" }],
+      { timeoutMs: 10_000 },
+    );
+    expect(outcome.applied && outcome.results.map((result) => result.status)).toEqual([
+      -50, -50, -50,
+    ]);
+  }, 30_000);
 });
