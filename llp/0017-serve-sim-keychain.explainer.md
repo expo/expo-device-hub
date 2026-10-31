@@ -65,9 +65,12 @@ The `keychain.set`, `keychain.delete`, and `keychain.list` host actions run the 
 
 `@expo/hub-client` sets `capabilities.keychain` when serve-sim's preview config has `keychain: true` and the exec channel is up. `listKeychainKeys`, `setKeychainValues`, and `deleteKeychainValues` take an explicit app ID and return promises, so a write keeps its result while a relaunch moves the foreground to SpringBoard and back. They use the expo-secure-store layout, with SecureStore's `keychainService` as an option. A request waits up to 120 s, or 300 s with a relaunch, which covers serve-sim's lock waits; a write whose reply is lost, by a timeout or a dropped connection, says the change may still apply [observed: `ios-keychain.ts`, `useIosDevice.ts`]. Android clients report the capability as off.
 
+## Hub UI
+
+The inspector's Keychain section, `KeychainSection` in `@expo/hub-components`, appears when `capabilities.keychain` is set. It lists the foreground app's SecureStore keys, each with Delete, and sets one key, or every key of a pasted JSON object, with Set or Set and relaunch. The home screen counts as no app. An optional Service field is SecureStore's `keychainService`. The keys are listed with the service given by Enter in the field or by the last Set, and Delete uses that service. When the app does not answer, the section says the change applies if the app starts within the hour; after a Set it also suggests Set and relaunch, because serve-sim cannot tell a closed app from one opened before the session. The section keeps the result of a write while a relaunch moves the foreground away, and reads the keys again after it [observed: `KeychainSection.tsx`, `keychainInput.ts`].
+
 ## Not there yet
 
-- No Hub UI yet.
 - No Android support: serve-emu has no equivalent of the in-app write.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

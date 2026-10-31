@@ -5,6 +5,7 @@ import { CameraSection } from "./CameraSection";
 import { ClipboardSection } from "./ClipboardSection";
 import { type ClipboardRequest } from "./ClipboardToast";
 import { PermissionsSection } from "./PermissionsSection";
+import { KeychainSection } from "./KeychainSection";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
@@ -110,6 +111,9 @@ export function InspectorSections({
       {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
       {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
       {client?.capabilities.permissions && <PermissionsSection client={client} />}
+      {client?.capabilities.keychain && (
+        <KeychainSection key={`keychain:${device?.id}`} client={client} />
+      )}
       {client?.capabilities.clipboard && (
         <ClipboardSection
           key={`clipboard:${device?.id}`}
