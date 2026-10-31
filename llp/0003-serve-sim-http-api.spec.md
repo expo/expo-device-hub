@@ -645,6 +645,30 @@ settings [observed: `src/middleware.ts`, `src/socket/server-control.ts`,
 `src/host-actions.ts`]. Errors return a nonzero `exitCode` and explanatory `stderr`,
 including any key cleanup warning. See [LLP 0010](0010-serve-sim-clipboard.explainer.md).
 
+### Keychain actions
+
+All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
+`expo-secure-store` (default) or `generic-password`; `service` is SecureStore's
+`keychainService`, or the item service for `generic-password`, where it is required.
+
+- `keychain.set` also takes `values` (an object of 1 to 200 string keys and values),
+  `accessible?`, and `relaunch?`. It returns
+  `{applied: true, keys: [{key, status, ok, message}]}`, or `{applied: false}` when the app
+  did not answer and applies the change at its next launch.
+- `keychain.delete` also takes `keys` and `relaunch?`, and returns the same shape. A key
+  that did not exist counts as deleted: its `status` is "not found" and `ok` is true.
+- `keychain.list` returns `{keys}`, and fails when the app does not answer. Values are
+  never returned.
+
+These are in-process actions under the usual `/exec-ws` token and Origin policy, so
+values never reach a child process's arguments, and the event log does not record
+them. The preview config (`/api` and the inlined page config) has `keychain: true`
+unless the middleware runs with `keychain: false` (`--disable keychain`) or the
+keychain library is not built; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
+`stdout`; other errors return a nonzero `exitCode` and `stderr` [observed:
+`runKeychainAction` in `src/host-actions.ts`]. See
+[LLP 0017](0017-serve-sim-keychain.explainer.md).
+
 ### Action catalog
 
 `actions.describe` with `{}` returns a JSON object that maps each action name to

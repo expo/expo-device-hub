@@ -189,12 +189,6 @@ export function registerKeychainCommands(
     run(async () => {
       const target = targetOf(bundleId, opts);
       const keys = await listKeychainKeys(target);
-      if (keys === null) {
-        fail(
-          `${bundleId} did not answer. Open it in a serve-sim session and retry; ` +
-            "an app opened before the session started needs a restart.",
-        );
-      }
       if (opts.json) console.log(JSON.stringify({ udid: target.udid, bundleId, keys }));
       else for (const key of keys) console.log(key);
     }),

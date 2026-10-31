@@ -30,6 +30,15 @@ import { UI_OPTIONS } from "./ui-settings";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
 import { cleanupWarningOf } from "./sim-pasteboard-copy";
+import {
+  deleteKeychainValues,
+  KEYCHAIN_FORMATS,
+  listKeychainKeys,
+  setKeychainValues,
+  type KeychainTarget,
+  type KeychainWriteSummary,
+} from "./keychain";
+import { KEYCHAIN_ACCESSIBLE, type KeychainAccessible } from "./sim-keychain";
 import type { StreamSettings } from "./stream-settings";
 import {
   UploadChunk,
@@ -108,6 +117,17 @@ const ClipboardText = z
     "must be at most 4 MiB of UTF-8 text",
   );
 
+const KeychainKey = z.string().min(1).max(1024);
+// Bounded per action as well as by the app's 1 MiB request limit, so a bad call fails before IO.
+const MAX_KEYCHAIN_KEYS = 200;
+const KeychainTargetParams = {
+  udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+  bundleId: BundleId,
+  format: z.enum(KEYCHAIN_FORMATS).default("expo-secure-store"),
+  service: z.string().min(1).max(256).optional(),
+  accessGroup: z.string().min(1).max(256).optional(),
+};
+
 function UiSetting(option: string) {
   const spec = UI_OPTIONS[option];
   if (!spec) throw new Error(`Unknown simulator setting ${option}.`);
@@ -135,6 +155,30 @@ const ACTION_SCHEMAS = {
   "clipboard.paste": z.object({ udid: ClipboardDevice, text: ClipboardText.optional() }).meta({
     description:
       "Paste text into the focused field, or paste the current simulator clipboard if omitted.",
+  }),
+  "keychain.set": z
+    .object({
+      ...KeychainTargetParams,
+      values: z.record(KeychainKey, z.string().max(256 * 1024)).refine((values) => {
+        const count = Object.keys(values).length;
+        return count > 0 && count <= MAX_KEYCHAIN_KEYS;
+      }, `must hold 1 to ${MAX_KEYCHAIN_KEYS} keys`),
+      accessible: z.enum(KEYCHAIN_ACCESSIBLE).optional(),
+      relaunch: z.boolean().default(false),
+    })
+    .meta({
+      description:
+        "Set values an app reads from its keychain, such as sign-in tokens. Uses the expo-secure-store layout unless format says otherwise; relaunch restarts the app so it reads them at launch.",
+    }),
+  "keychain.delete": z
+    .object({
+      ...KeychainTargetParams,
+      keys: z.array(KeychainKey).min(1).max(MAX_KEYCHAIN_KEYS),
+      relaunch: z.boolean().default(false),
+    })
+    .meta({ description: "Delete values from an app's keychain." }),
+  "keychain.list": z.object(KeychainTargetParams).meta({
+    description: "List the keys an app stored in its keychain. Values are never returned.",
   }),
   "appearance.get": z.object({ udid: Device }).meta({ description: "Read light or dark mode." }),
   "appearance.set": z
@@ -472,6 +516,9 @@ const PROCEDURE_ACTIONS = [
   "clipboard.write",
   "clipboard.copy",
   "clipboard.paste",
+  "keychain.set",
+  "keychain.delete",
+  "keychain.list",
   "app.file.upload",
   "app.file.read",
   "app.file.list",
@@ -752,6 +799,36 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
   return "uploadId" in p ? stagedUploadPath(p.uploadId) : p.path;
 }
 
+function keychainTarget(
+  p: ParamsFor<"keychain.list"> & { accessible?: KeychainAccessible },
+): KeychainTarget {
+  return {
+    udid: p.udid,
+    bundleId: p.bundleId,
+    format: p.format,
+    options: { service: p.service, accessGroup: p.accessGroup, accessible: p.accessible },
+  };
+}
+
+// In this process, so values never reach a child's argv; neither stdout nor errors carry them.
+async function runKeychainAction(run: () => Promise<HostActionResult>): Promise<HostActionResult> {
+  try {
+    return await run();
+  } catch (error) {
+    return {
+      stdout: "",
+      stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+      exitCode: 1,
+    };
+  }
+}
+
+/** Per-key statuses stay in stdout; a key that failed makes the action fail as a whole. */
+function keychainWriteResult(summary: KeychainWriteSummary): HostActionResult {
+  const failed = summary.applied && summary.keys.some((key) => !key.ok);
+  return { ...ok(JSON.stringify(summary)), exitCode: failed ? 1 : 0 };
+}
+
 async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
@@ -788,6 +865,30 @@ async function runProcedureAsync(
           exitCode: 1,
         };
       }
+    }
+    case "keychain.set": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(async () =>
+        keychainWriteResult(
+          await setKeychainValues(keychainTarget(p), Object.entries(p.values), {
+            relaunch: p.relaunch,
+          }),
+        ),
+      );
+    }
+    case "keychain.delete": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(async () =>
+        keychainWriteResult(
+          await deleteKeychainValues(keychainTarget(p), p.keys, { relaunch: p.relaunch }),
+        ),
+      );
+    }
+    case "keychain.list": {
+      const p = parseParams(action, raw);
+      return runKeychainAction(async () =>
+        ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
+      );
     }
     case "app.file.upload":
       return runAppFileAction("upload", parseParams(action, raw));

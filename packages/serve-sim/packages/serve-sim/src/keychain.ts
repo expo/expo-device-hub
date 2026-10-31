@@ -231,14 +231,18 @@ export async function deleteKeychainValues(
   };
 }
 
-/** Null when the app did not answer: it is closed, or it started before the session. */
-export async function listKeychainKeys(target: KeychainTarget): Promise<string[] | null> {
+export async function listKeychainKeys(target: KeychainTarget): Promise<string[]> {
   assertKeychainRequest(target.format, [], target.options);
   const { accessGroup } = target.options;
   const outcome = await runKeychainOperations(target.udid, target.bundleId, [
     accessGroup ? { op: "list", accessGroup } : { op: "list" },
   ]);
-  if (!outcome.applied) return null;
+  if (!outcome.applied) {
+    throw new Error(
+      `${target.bundleId} did not answer. Open it in a serve-sim session and retry; an app ` +
+        "opened before the session started needs a restart.",
+    );
+  }
   const result = outcome.results[0]!;
   if (result.status !== SUCCESS) {
     throw new Error(`Could not list keychain items: ${describeKeychainStatus(result.status)}.`);

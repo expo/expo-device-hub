@@ -7,8 +7,8 @@ import {
   releaseSession,
   releaseSessionSync,
 } from "./launch-manager";
+import type { CapabilityDefinition } from "./capabilities";
 import { LaunchStateLockedError } from "./launch-state-lock";
-import { CLIPBOARD_CAPABILITY, clipboardCapability } from "./sim-pasteboard-reader";
 
 const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 5 * 60_000;
@@ -45,7 +45,7 @@ function releaseOnExit(udid: string): void {
         releaseSessionSync(device, process.pid, () => {}, EXIT_LOCK_TIMEOUT_MS);
       } catch (error) {
         console.error(
-          `[serve-sim] Could not release the clipboard reader on ${device} at exit: ${exitReleaseFailure(error)}`,
+          `[serve-sim] Could not release the capability loader on ${device} at exit: ${exitReleaseFailure(error)}`,
         );
       }
     }
@@ -62,7 +62,12 @@ function exitReleaseFailure(error: unknown): string {
   return `${holder}. The loader can stay until the simulator reboots or serve-sim sets it up again.`;
 }
 
-export function createClipboardSession(
+/**
+ * Sets up one default capability on each device the middleware opens or starts, keeps it in place,
+ * and releases it on `dispose()` or at exit.
+ */
+export function createCapabilitySession(
+  definition: CapabilityDefinition,
   enabled = true,
   { now = Date.now }: { now?: () => number } = {},
 ) {
@@ -85,10 +90,10 @@ export function createClipboardSession(
         previous &&
         !rebooted &&
         (!previous.done ||
-          (!enabled && !isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)) ||
+          (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
           (enabled &&
             now() - previous.checkedAt < RECHECK_MS &&
-            isCapabilityEnabled(udid, CLIPBOARD_CAPABILITY)))
+            isCapabilityEnabled(udid, definition.name)))
       ) {
         return previous.work;
       }
@@ -98,8 +103,8 @@ export function createClipboardSession(
       const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
       entry.work = (async () => {
         await earlier;
-        if (enabled && !rebooted && (await isCapabilityArmed(udid, CLIPBOARD_CAPABILITY))) return;
-        await configureCapability(udid, clipboardCapability, { enabled, relaunch: false });
+        if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
+        await configureCapability(udid, definition, { enabled, relaunch: false });
         if (enabled) {
           initializedHere.add(udid);
           releaseOnExit(udid);
@@ -133,9 +138,9 @@ export function createClipboardSession(
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
       const results = await Promise.allSettled(
         [...initializedHere].map(async (udid) => {
-          const clipboard = readLaunchState(udid)?.capabilities[CLIPBOARD_CAPABILITY];
-          if (clipboard?.ownerPid === process.pid) {
-            await configureCapability(udid, clipboardCapability, {
+          const record = readLaunchState(udid)?.capabilities[definition.name];
+          if (record?.ownerPid === process.pid) {
+            await configureCapability(udid, definition, {
               enabled: false,
               relaunch: false,
             });
@@ -151,7 +156,7 @@ export function createClipboardSession(
         .filter((result) => result.status === "rejected")
         .map((result) => result.reason);
       if (errors.length > 0)
-        throw new AggregateError(errors, "Could not release the clipboard session");
+        throw new AggregateError(errors, `Could not release the ${definition.name} session`);
     },
   };
 }
