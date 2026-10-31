@@ -50,7 +50,7 @@ and the legacy service). `set` writes `:no-auth` and then removes the other two,
   entitlement, or the access group is not one of its own. Xcode and EAS simulator builds have the
   entitlement.
 - `Keychain access is unavailable…`: no serve-sim session runs for this simulator, it was started
-  with `--disable keychain`, or this serve-sim install has no built keychain library
-  (`dist/simkc/libSimKeychain.dylib`).
+  with `--disable keychain`, the `capabilities.set` host action turned keychain off, or this
+  serve-sim install has no built keychain library (`dist/simkc/libSimKeychain.dylib`).
 
 Not supported: biometric-protected items, Android.

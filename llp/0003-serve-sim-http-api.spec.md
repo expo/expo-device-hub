@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-28 (keychain and capability actions; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -663,11 +663,29 @@ All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
 These are in-process actions under the usual `/exec-ws` token and Origin policy, so
 values never reach a child process's arguments, and the event log does not record
 them. The preview config (`/api` and the inlined page config) has `keychain: true`
-unless the middleware runs with `keychain: false` (`--disable keychain`) or the
-keychain library is not built; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
+unless the middleware runs with `keychain: false` (`--disable keychain`),
+`capabilities.set` turned keychain off for the device, the keychain library is
+not built, or, in a stream helper (`"unmanaged"`), no session set keychain up on the device; a client shows keychain controls only then. A key that failed sets a nonzero `exitCode` and keeps the per-key results in
 `stdout`; other errors return a nonzero `exitCode` and `stderr` [observed:
 `runKeychainAction` in `src/host-actions.ts`]. See
 [LLP 0017](0017-serve-sim-keychain.explainer.md).
+
+### Capability actions
+
+The middleware sets up the `clipboard` and `keychain` capabilities on each device it opens
+(LLP 0010, LLP 0017). `capabilities.set` takes `{udid, name, enabled}`, where `name` is
+`clipboard` or `keychain`, and turns that capability off or on again until the server stops,
+on a device this middleware opened; the middleware's 30 s check keeps the choice. Off leaves a
+setup that another running serve-sim process owns, and on again leaves it that process's; while
+off, this server's keychain actions refuse the device. Each choice resends the preview config to
+open `/api/events` streams, as it can leave the state files unchanged. With clipboard off, clipboard reads use only `simctl pbpaste`. `capabilities.list` takes `{udid}`.
+Both return `{capabilities: [{name, enabled}]}` for the capabilities this middleware manages.
+`enabled` is true only when this server allows the capability on the device and the device's
+launch state has it, so a capability that another process keeps set up still reads as off here.
+A capability that the middleware was started without (`false`) cannot be turned on, and one it
+leaves `"unmanaged"` is not listed; either request returns a nonzero `exitCode` and `stderr`
+[observed: `createCapabilityController` in `src/capability-session.ts`, `capabilityReply` in
+`src/host-actions.ts`].
 
 ### Action catalog
 
