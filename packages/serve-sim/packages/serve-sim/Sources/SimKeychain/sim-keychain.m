@@ -51,25 +51,31 @@ static id attribute(NSData *bytes, BOOL asData) {
 
 // Service, account, and access group identify a generic password. Without an account, a query
 // covers every item in the service, as a library that keeps one item per service deletes them.
-// Generic is an attribute: matching on it would miss an item stored with another value, and the
-// add would then collide.
+// Without a service, it covers the account in every service, for a library that sets no service.
+// A query needs one of the two, not empty, so it never covers every item, nor every item without
+// a service or without an account. Generic is an attribute: matching
+// on it would miss an item stored with another value, and the add would then collide.
 static NSMutableDictionary *itemQuery(NSDictionary *operation, BOOL needsAccount, NSString **error) {
-  NSString *service = operation[@"service"];
+  id service = operation[@"service"];
   BOOL hasAccount = operation[@"account"] != nil;
   NSData *account = base64(operation[@"account"]);
   BOOL asData = [operation[@"attributesAsData"] isEqual:@YES];
-  if (![service isKindOfClass:NSString.class]) {
-    *error = @"needs a service string";
+  if (service != nil && ![service isKindOfClass:NSString.class]) {
+    *error = @"service must be a string";
     return nil;
   }
   if ((hasAccount || needsAccount) && (account == nil || attribute(account, asData) == nil)) {
     *error = @"needs a base64 account";
     return nil;
   }
-  NSMutableDictionary *query = [@{
-    (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
-    (__bridge id)kSecAttrService : service,
-  } mutableCopy];
+  // A query with neither would match every generic password the app can reach.
+  if ([service length] == 0 && account.length == 0) {
+    *error = @"needs a nonempty service or account";
+    return nil;
+  }
+  NSMutableDictionary *query =
+      [@{(__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword} mutableCopy];
+  if (service != nil) query[(__bridge id)kSecAttrService] = service;
   if (hasAccount) query[(__bridge id)kSecAttrAccount] = attribute(account, asData);
   if (operation[@"accessGroup"] != nil) {
     if (![operation[@"accessGroup"] isKindOfClass:NSString.class]) {
@@ -161,7 +167,8 @@ static NSDictionary *listItems(NSDictionary *operation) {
   NSArray *rows = status == errSecSuccess ? (__bridge_transfer NSArray *)found : @[];
   NSMutableArray *items = [NSMutableArray array];
   for (NSDictionary *row in rows) {
-    NSString *service = row[(__bridge id)kSecAttrService];
+    // An item stored without a service reports none, or an empty one.
+    id service = row[(__bridge id)kSecAttrService] ?: @"";
     NSString *account = attributeBase64(row[(__bridge id)kSecAttrAccount]);
     if (![service isKindOfClass:NSString.class] || account == nil) continue;
     NSMutableDictionary *item = [@{@"service" : service, @"account" : account} mutableCopy];

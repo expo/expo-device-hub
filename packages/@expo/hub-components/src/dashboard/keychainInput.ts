@@ -56,6 +56,19 @@ export const KEYCHAIN_FORMAT_UI: Record<
     },
     empty: "This service has no items.",
   },
+  "keychain-swift": {
+    label: "KeychainSwift",
+    keyPlaceholder: "accessToken",
+    field: {
+      option: "keyPrefix",
+      label: "Key prefix",
+      description: "KeychainSwift(keyPrefix:)",
+      placeholder: "None",
+      required: false,
+    },
+    empty: "This app has no KeychainSwift values.",
+    note: "Set and Delete also remove this account in every other service, as KeychainSwift does.",
+  },
   "react-native-keychain": {
     label: "react-native-keychain",
     keyPlaceholder: "Service, such as the bundle ID",

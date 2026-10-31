@@ -400,7 +400,8 @@ export type KeychainFormat =
   | "expo-secure-store"
   | "generic-password"
   | "react-native-keychain"
-  | "keychain-access";
+  | "keychain-access"
+  | "keychain-swift";
 
 /** Where an app's values live: a library's layout, and the service the app passes it. */
 export interface KeychainOptions {
@@ -409,11 +410,14 @@ export interface KeychainOptions {
   /**
    * expo-secure-store: its `keychainService`, `app` when omitted. generic-password: the item
    * service, which that format needs. keychain-access: `Keychain(service:)`, the bundle ID when
-   * omitted. react-native-keychain takes none: its keys are services.
+   * omitted. react-native-keychain takes none, because its keys are services, and keychain-swift
+   * takes none, because it stores accounts without one.
    */
   service?: string;
   /** react-native-keychain: the username a set stores with each password; empty when omitted. */
   username?: string;
+  /** keychain-swift: the app's `KeychainSwift(keyPrefix:)`. */
+  keyPrefix?: string;
 }
 
 export interface KeychainWriteOptions extends KeychainOptions {
