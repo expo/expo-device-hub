@@ -391,9 +391,21 @@ export interface DeviceCapabilities {
   keychain: boolean;
 }
 
-/** Where an app's values live: expo-secure-store's layout, with its `keychainService` option. */
+/**
+ * A library's keychain layout; serve-sim writes items where that library reads them. The same
+ * names as `KEYCHAIN_FORMATS` in serve-sim's `src/keychain.ts`, which this package does not import;
+ * a hub-components test compares the two.
+ */
+export type KeychainFormat = "expo-secure-store" | "generic-password";
+
+/** Where an app's values live: a library's layout, and the service the app passes it. */
 export interface KeychainOptions {
-  /** expo-secure-store's `keychainService`; `app` when omitted. */
+  /** `expo-secure-store` when omitted. */
+  format?: KeychainFormat;
+  /**
+   * expo-secure-store: its `keychainService`, `app` when omitted. generic-password: the item
+   * service, which that format needs.
+   */
   service?: string;
 }
 

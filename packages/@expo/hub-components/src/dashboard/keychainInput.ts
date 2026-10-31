@@ -1,4 +1,57 @@
-import { type KeychainWriteResult } from "@expo/hub-client";
+import {
+  type KeychainFormat,
+  type KeychainOptions,
+  type KeychainWriteResult,
+} from "@expo/hub-client";
+import { type SelectOption } from "../primitives";
+
+/** The field beside the key: an option of the format, such as the service the app passes. */
+interface KeychainField {
+  option: Exclude<keyof KeychainOptions, "format">;
+  label: string;
+  description: string;
+  placeholder: string;
+  required: boolean;
+}
+
+/** How the section names each layout, its field, and an empty list. */
+export const KEYCHAIN_FORMAT_UI: Record<
+  KeychainFormat,
+  { label: string; keyPlaceholder?: string; field: KeychainField; empty: string }
+> = {
+  "expo-secure-store": {
+    label: "Expo SecureStore",
+    field: {
+      option: "service",
+      label: "Service",
+      description: "SecureStore keychainService",
+      placeholder: "app",
+      required: false,
+    },
+    empty: "This app stored no SecureStore values.",
+  },
+  "generic-password": {
+    label: "Generic password",
+    field: {
+      option: "service",
+      label: "Service",
+      description: "The item service",
+      placeholder: "com.example.app",
+      required: true,
+    },
+    empty: "This service has no items.",
+  },
+};
+
+export const KEYCHAIN_FORMAT_OPTIONS: SelectOption<KeychainFormat>[] = Object.entries(
+  KEYCHAIN_FORMAT_UI,
+).map(([value, { label }]) => ({ value: value as KeychainFormat, label }));
+
+/** The required field's name, lowercase, when `options` leave it empty. */
+export function missingKeychainField(options: KeychainOptions): string | null {
+  const { field } = KEYCHAIN_FORMAT_UI[options.format ?? "expo-secure-store"];
+  return field.required && !options[field.option] ? field.label.toLowerCase() : null;
+}
 
 export type KeychainDraft =
   | { ok: true; values: Record<string, string> }
