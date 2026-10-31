@@ -99,6 +99,11 @@ serve-sim software-keyboard [-d udid] Show or hide the on-screen keyboard
 serve-sim event-log [-d udid]         Show recent simulator events
 serve-sim capture har -o <path> [-d udid]
                                       Follow a live capture into HAR + JSON files
+serve-sim keychain set <bundle-id> [key=value...] [--from-file <path|->] [--relaunch]
+                                      Write values the app reads from its keychain
+serve-sim keychain delete <bundle-id> <key...> [--relaunch]
+                                      Delete keychain values
+serve-sim keychain list <bundle-id>   List stored keys (never values)
 
 serve-sim camera <bundle-id> [-d udid] [source-options]
                                       Inject a synthetic camera feed and (re)launch the app
@@ -313,6 +318,32 @@ Sources:
 - **placeholder** — animated programmatic frames (default).
 - **file** — image (PNG/JPEG/HEIC/…) or video (mp4/mov/m4v/webm/…). The CLI sniffs the kind from the extension and falls back to magic bytes for files without an extension.
 - **webcam** — live `AVCaptureDevice` (built-in, Continuity, external).
+
+### Keychain
+
+`serve-sim keychain set` writes values into an installed app's keychain, so a preview can start
+signed in without app code that imports tokens. The default format matches
+[`expo-secure-store`](https://docs.expo.dev/versions/latest/sdk/securestore/), so
+`SecureStore.getItemAsync("accessToken")` returns the value:
+
+```sh
+echo '{"accessToken":"…","refreshToken":"…"}' | serve-sim keychain set com.example.app --from-file - --relaunch
+serve-sim keychain list com.example.app
+serve-sim keychain delete com.example.app refreshToken
+```
+
+- A running app applies the change at once. A closed app applies it when it next starts, within
+  an hour. `--relaunch` restarts the app, so it reads the values from launch, and fails if the app
+  does not apply them.
+- `--service` matches SecureStore's `keychainService` option, and `--access-group` its `accessGroup`.
+  `--format generic-password --service <name>` writes plain generic-password items for other
+  libraries; the key becomes the account.
+- The app must run in a serve-sim session, with the default `keychain` capability, and must have
+  an `application-identifier` entitlement. Xcode and EAS simulator builds have one.
+- Biometric-protected items are not supported. Values passed as `key=value` arguments are
+  visible to other processes; prefer `--from-file`.
+
+See [keychain](https://github.com/expo/expo-device-hub/blob/main/llp/0017-serve-sim-keychain.explainer.md) for how the write reaches the app.
 
 ## Network capture
 

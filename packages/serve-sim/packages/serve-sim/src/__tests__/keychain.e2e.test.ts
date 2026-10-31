@@ -13,6 +13,12 @@ import {
   runKeychainOperations,
   type KeychainOperation,
 } from "../sim-keychain";
+import {
+  deleteKeychainValues,
+  listKeychainKeys,
+  setKeychainValues,
+  type KeychainTarget,
+} from "../keychain";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { useTempStateDir } from "./helpers";
 
@@ -244,6 +250,49 @@ describeOrSkip("keychain round trip", () => {
       timeoutMs: 10_000,
     });
     expect(outcome).toEqual({ applied: true, results: [{ status: 0 }] });
+    await waitForLastSeen("status=-25300");
+  }, 30_000);
+
+  const target = (): KeychainTarget => ({
+    udid: udid!,
+    bundleId: APP,
+    format: "expo-secure-store",
+    options: {},
+  });
+
+  test("set with relaunch starts a closed app and reports the result", async () => {
+    // Closed, so only the process the relaunch starts can apply the value.
+    terminate();
+    const value = `relaunched-${Date.now()}`;
+    expect(await setKeychainValues(target(), [[KEY, value]], { relaunch: true })).toEqual({
+      applied: true,
+      keys: [{ key: KEY, status: 0, ok: true, message: "ok" }],
+    });
+    // startApp starts the app without the fixture's argument, so start it with one.
+    terminate();
+    launch();
+    await waitForLastSeen(`value=${value}`);
+  }, 60_000);
+
+  test("a closed app queues the change without waiting", async () => {
+    terminate();
+    const started = Date.now();
+    expect(await setKeychainValues(target(), [[KEY, "queued-fast"]])).toEqual({ applied: false });
+    expect(Date.now() - started).toBeLessThan(2_500);
+    launch();
+    await waitForLastSeen("value=queued-fast");
+  }, 60_000);
+
+  test("list and delete report SecureStore keys", async () => {
+    // Keychain items outlive an uninstall, so other runs may have left keys behind.
+    expect(await listKeychainKeys(target())).toContain(KEY);
+    expect(await deleteKeychainValues(target(), [KEY, "missing"])).toEqual({
+      applied: true,
+      keys: [
+        { key: KEY, status: 0, ok: true, message: "ok" },
+        { key: "missing", status: -25300, ok: true, message: "not found" },
+      ],
+    });
     await waitForLastSeen("status=-25300");
   }, 30_000);
 });

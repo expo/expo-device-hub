@@ -46,8 +46,17 @@ The dylib loads on the app's main queue after launch. A read in `application(_:d
 
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
+## Formats and the CLI
+
+`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`:
+
+- `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
+- `generic-password` writes the key as a string account in a given service, for other libraries.
+
+A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for its answer, so the value is in place when the app reads it at launch. If the restarted app does not answer, the request is withdrawn and the command fails. Deleting a key that does not exist succeeds.
+
 ## Not there yet
 
-- No CLI, host action, or UI yet.
+- No host action or UI yet.
 - Items protected by biometrics (`kSecAttrAccessControl`) are not written.
 - A queued request stays in the app's `tmp` folder until the app next starts in a serve-sim session or the host sends the app another keychain request, even after it expired.

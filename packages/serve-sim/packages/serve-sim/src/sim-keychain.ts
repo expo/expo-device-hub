@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "timers/promises";
 import { z } from "zod";
 import type { CapabilityDefinition } from "./capabilities";
 import { debugKeychain } from "./debug";
-import { isCapabilityEnabled } from "./launch-manager";
+import { isCapabilityEnabled, isRunning, startApp, stopAppForRelaunch } from "./launch-manager";
 import { dirnameOf } from "./runtime";
 import { APP_NOT_INSTALLED, isContainerPath, simctl } from "./simctl";
 import { withStateLock } from "./state-lock";
@@ -15,6 +15,8 @@ const __dirname = dirnameOf(import.meta.url);
 export const KEYCHAIN_CAPABILITY = "keychain";
 
 const ANSWER_TIMEOUT_MS = 3000;
+// A relaunched app answers once the capability loader has loaded the dylib.
+const RELAUNCH_ANSWER_TIMEOUT_MS = 20_000;
 const ANSWER_POLL_MS = 25;
 // A request the app claimed right at the deadline is running; its answer follows shortly.
 const CLAIMED_ANSWER_GRACE_MS = 5000;
@@ -106,7 +108,8 @@ let requestSequence = 0;
 /**
  * Sends operations to the keychain dylib inside the app that owns `container`. Resolves the
  * results, or null when nothing answered in time. With `keepQueued`, an unanswered request stays
- * for the app to apply when it next starts; otherwise it is withdrawn.
+ * for the app to apply when it next starts; otherwise it is withdrawn. `beforePublish` runs once the
+ * request passed its checks, and `afterPublish` once it is in place, before the wait.
  */
 export async function requestKeychain(
   container: string,
@@ -114,7 +117,14 @@ export async function requestKeychain(
   {
     timeoutMs = ANSWER_TIMEOUT_MS,
     keepQueued = false,
-  }: { timeoutMs?: number; keepQueued?: boolean } = {},
+    beforePublish,
+    afterPublish,
+  }: {
+    timeoutMs?: number;
+    keepQueued?: boolean;
+    beforePublish?: () => Promise<void>;
+    afterPublish?: () => Promise<void>;
+  } = {},
 ): Promise<KeychainResult[] | null> {
   if (!isContainerPath(container)) throw new Error(`Not an app data container: ${container}`);
   const mailbox = mailboxOf(container);
@@ -125,7 +135,11 @@ export async function requestKeychain(
     join(mailbox, "lock"),
     60_000,
     () => new Error(`Timed out waiting for another keychain request in ${container}`),
-    () => requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued),
+    () =>
+      requestKeychainUnlocked(mailbox, operations, timeoutMs, keepQueued, {
+        beforePublish,
+        afterPublish,
+      }),
   );
 }
 
@@ -134,6 +148,10 @@ async function requestKeychainUnlocked(
   operations: KeychainOperation[],
   timeoutMs: number,
   keepQueued: boolean,
+  {
+    beforePublish,
+    afterPublish,
+  }: { beforePublish?: () => Promise<void>; afterPublish?: () => Promise<void> },
 ): Promise<KeychainResult[] | null> {
   const nonce = randomUUID();
   const body = JSON.stringify({ nonce, expiresAt: Date.now() + QUEUED_REQUEST_TTL_MS, operations });
@@ -151,12 +169,19 @@ async function requestKeychainUnlocked(
   const request = join(mailbox, "requests", name);
   const pending = join(mailbox, "requests", `.${name}.pending`);
   const answer = join(mailbox, "responses", `${nonce}.json`);
+  await beforePublish?.();
   // The request can carry secrets: private to this user, and the app deletes it once claimed.
   try {
     await fs.writeFile(pending, body, { mode: 0o600 });
     await fs.rename(pending, request);
   } catch (error) {
     await fs.rm(pending, { force: true });
+    throw error;
+  }
+  try {
+    await afterPublish?.();
+  } catch (error) {
+    await fs.rm(request, { force: true });
     throw error;
   }
 
@@ -234,13 +259,18 @@ export type KeychainOutcome = { applied: true; results: KeychainResult[] } | { a
 /**
  * Runs operations in an installed app's keychain. An app that is not running, or that started before
  * the session armed the capability loader, does not answer; with `keepQueued` its request waits for
- * the app's next launch.
+ * the app's next launch. `relaunch` stops the app, publishes the request, starts the app, and waits
+ * for it; a relaunched app that does not answer is an error, and its request is withdrawn.
  */
 export async function runKeychainOperations(
   udid: string,
   bundleId: string,
   operations: KeychainOperation[],
-  options: { timeoutMs?: number; keepQueued?: boolean } = {},
+  {
+    timeoutMs,
+    keepQueued = false,
+    relaunch = false,
+  }: { timeoutMs?: number; keepQueued?: boolean; relaunch?: boolean } = {},
 ): Promise<KeychainOutcome> {
   // The loader injects into user apps only, so a system app would never answer.
   if (bundleId.startsWith("com.apple.")) {
@@ -262,6 +292,23 @@ export async function runKeychainOperations(
   if (!isContainerPath(container)) {
     throw new Error(`${bundleId} is not installed on ${udid}. Install the app and retry.`);
   }
-  const results = await requestKeychain(container, operations, options);
+  // A closed app cannot answer, so its request is queued or withdrawn without a wait.
+  const closed = !relaunch && (await isRunning(udid, bundleId)) === false;
+  const results = await requestKeychain(container, operations, {
+    timeoutMs: closed
+      ? 0
+      : (timeoutMs ?? (relaunch ? RELAUNCH_ANSWER_TIMEOUT_MS : ANSWER_TIMEOUT_MS)),
+    keepQueued: keepQueued && !relaunch,
+    // Stopped first, so the old process cannot take the request and quit before it answers, and
+    // only once the request is valid, so a refused one leaves the app running.
+    beforePublish: relaunch ? () => stopAppForRelaunch(udid, bundleId) : undefined,
+    afterPublish: relaunch ? () => startApp(udid, bundleId) : undefined,
+  });
+  if (!results && relaunch) {
+    throw new Error(
+      `${bundleId} restarted but did not apply the change, so nothing changed. Check that it ` +
+        "starts and stays open, then retry.",
+    );
+  }
   return results ? { applied: true, results } : { applied: false };
 }

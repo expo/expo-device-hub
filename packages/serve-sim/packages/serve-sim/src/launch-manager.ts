@@ -824,10 +824,12 @@ async function enableCapabilitiesUnlocked(
 }
 
 /** null when the check itself failed, which is not the same as "not running". */
-async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
+export async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
   const out = await simctl(["spawn", udid, "launchctl", "list"], 15_000).catch(() => null);
   if (out === null) return null;
-  return out.includes(`UIKitApplication:${bundleId}`);
+  // Labels look like UIKitApplication:<bundle id>[1a2b][rb-legacy]; the bracket keeps
+  // com.example.app from matching com.example.app.dev.
+  return out.includes(`UIKitApplication:${bundleId}[`);
 }
 
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
@@ -859,9 +861,25 @@ async function relaunchTarget(
 ): Promise<void> {
   const target = bundleId ?? state.bundleId;
   if (!target) return;
-  const args = target === state.bundleId ? state.launchArgs : [];
   await terminateForRelaunch(udid, target);
-  await simctl(["launch", udid, target, ...args]);
+  await startTarget(udid, target, state);
+}
+
+/** Starts one app, with its recorded launch arguments when it is the session's target. */
+async function startTarget(udid: string, bundleId: string, state: LaunchState): Promise<void> {
+  const args = bundleId === state.bundleId ? state.launchArgs : [];
+  await simctl(["launch", udid, bundleId, ...args]);
+}
+
+/** Stops one app and waits until it is gone, so the next start is a new process. */
+export async function stopAppForRelaunch(udid: string, bundleId: string): Promise<void> {
+  await withLaunchStateLock(udid, () => terminateForRelaunch(udid, bundleId));
+}
+
+export async function startApp(udid: string, bundleId: string): Promise<void> {
+  await withLaunchStateLock(udid, () =>
+    startTarget(udid, bundleId, readLaunchState(udid) ?? { launchArgs: [], capabilities: {} }),
+  );
 }
 
 export async function disableCapability(
