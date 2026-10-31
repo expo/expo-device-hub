@@ -291,6 +291,7 @@ export function KeychainSection({
               );
             })
           )}
+          {shown.note && <SectionNote>{shown.note}</SectionNote>}
           <SidebarRow label="Key">
             <SidebarTextInput
               ariaLabel="Keychain key"

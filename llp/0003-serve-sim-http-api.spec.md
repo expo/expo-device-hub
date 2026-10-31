@@ -784,11 +784,12 @@ including any key cleanup warning. See [LLP 0010](0010-serve-sim-clipboard.expla
 ### Keychain actions
 
 All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
-`expo-secure-store` (default) or `generic-password`; `service` is SecureStore's
-`keychainService`, or the item service for `generic-password`, where it is required.
+`expo-secure-store` (default), `generic-password`, or `react-native-keychain`; `service` is
+SecureStore's `keychainService`, or the item service for `generic-password`, where it is
+required. `react-native-keychain` takes no service, because its keys are services.
 
 - `keychain.set` also takes `values` (an object of 1 to 200 string keys and values),
-  `accessible?`, and `relaunch?`. It returns
+  `accessible?`, `username?` (`react-native-keychain` only), and `relaunch?`. It returns
   `{applied: true, keys: [{key, status, ok, message}]}`, or `{applied: false}` when the app
   did not answer and the request remains queued for the helper to pick up before expiry.
 - `keychain.delete` takes `keys` and `relaunch?`. It returns the same result shape after

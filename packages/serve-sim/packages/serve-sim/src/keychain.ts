@@ -2,6 +2,7 @@ import {
   runKeychainOperations,
   type KeychainAccessible,
   type KeychainItemAttributes,
+  type KeychainItemQuery,
   type KeychainListedItem,
   type KeychainOperation,
   type KeychainResult,
@@ -30,25 +31,38 @@ export function describeKeychainStatus(status: number, error?: string): string {
   return status === SUCCESS ? "ok" : (STATUS_MESSAGES[status] ?? `keychain error ${status}`);
 }
 
-export const KEYCHAIN_FORMATS = ["expo-secure-store", "generic-password"] as const;
+export const KEYCHAIN_FORMATS = [
+  "expo-secure-store",
+  "generic-password",
+  "react-native-keychain",
+] as const;
 export type KeychainFormatName = (typeof KEYCHAIN_FORMATS)[number];
 
 export interface KeychainFormatOptions {
   /** expo-secure-store: its `keychainService` option. generic-password: the item's service. */
   service?: string;
+  /** react-native-keychain: the username stored with each password; empty when omitted. */
+  username?: string;
   accessGroup?: string;
   accessible?: KeychainAccessible;
 }
 
 /** How one library lays out a string key/value pair as keychain attributes. */
 interface KeychainFormat {
-  /** Whether the format needs a service. */
-  service: "required" | "optional";
+  /** Whether the format takes a service, and whether it needs one. */
+  service: "required" | "optional" | "none";
+  /** The one option only some formats take, if this format takes it. */
+  option?: "username";
   /**
    * Every place the library may store `key`. `set` writes the first and, once that succeeds,
    * removes the others, as the library's own write does; `delete` removes all of them.
    */
   places(key: string, options: KeychainFormatOptions): KeychainItemAttributes[];
+  /**
+   * Everything `key` covers, in a library whose write first deletes more than the key's own item:
+   * `set` deletes it before the write, and `delete` deletes it in place of `places`.
+   */
+  clears?(key: string, options: KeychainFormatOptions): KeychainItemQuery[];
   /** The key a listed item holds, or null when the item is not this format's. */
   keyOf(item: KeychainListedItem, options: KeychainFormatOptions): string | null;
   defaultAccessible: KeychainAccessible;
@@ -59,10 +73,7 @@ const b64 = (text: string) => Buffer.from(text, "utf-8").toString("base64");
 const fromB64 = (value: string) => Buffer.from(value, "base64").toString("utf-8");
 const nonEmpty = (key: string) => (key.length > 0 ? null : "Keys cannot be empty.");
 
-function withGroup(
-  attributes: KeychainItemAttributes,
-  options: KeychainFormatOptions,
-): KeychainItemAttributes {
+function withGroup<T extends KeychainItemQuery>(attributes: T, options: KeychainFormatOptions): T {
   return options.accessGroup ? { ...attributes, accessGroup: options.accessGroup } : attributes;
 }
 
@@ -111,9 +122,26 @@ const genericPassword: KeychainFormat = {
   checkKey: nonEmpty,
 };
 
+// Mirrors react-native-keychain's RNKeychainManager.m (v10) generic passwords: one credential per
+// service, the username as a string account and the password as data. `setGenericPassword` deletes
+// every item in the service before it adds, and `getAllGenericPasswordServices` lists services.
+const reactNativeKeychain: KeychainFormat = {
+  service: "none",
+  option: "username",
+  places: (key, options) => [
+    withGroup({ service: key, account: b64(options.username ?? "") }, options),
+  ],
+  clears: (key, options) => [withGroup({ service: key }, options)],
+  // A key names a service, so an item without one, such as KeychainSwift's, is not listed.
+  keyOf: (item) => item.service || null,
+  defaultAccessible: "afterFirstUnlock",
+  checkKey: nonEmpty,
+};
+
 const FORMATS: Record<KeychainFormatName, KeychainFormat> = {
   "expo-secure-store": expoSecureStore,
   "generic-password": genericPassword,
+  "react-native-keychain": reactNativeKeychain,
 };
 
 /** Refuses keys and options the format cannot store, before any request leaves. */
@@ -127,6 +155,12 @@ function assertKeychainRequest(
   if (options.service === "") throw new Error("A service cannot be empty.");
   if (definition.service === "required" && options.service === undefined) {
     throw new Error(`The ${format} format needs a service.`);
+  }
+  if (definition.service === "none" && options.service !== undefined) {
+    throw new Error(`The ${format} format takes no service; its keys are services.`);
+  }
+  if (options.username !== undefined && definition.option !== "username") {
+    throw new Error(`The ${format} format takes no username.`);
   }
   for (const key of keys) {
     const problem = definition.checkKey(key);
@@ -149,6 +183,7 @@ export function keychainSetOperations(
     const [target, ...others] = definition.places(key, options);
     return {
       op: "set",
+      ...(definition.clears ? { clears: definition.clears(key, options) } : {}),
       ...target!,
       data: b64(value),
       accessible: options.accessible ?? definition.defaultAccessible,
@@ -164,8 +199,9 @@ export function keychainDeleteOperations(
   options: KeychainFormatOptions,
 ): KeychainOperation[] {
   assertKeychainRequest(format, keys, options);
+  const covered = FORMATS[format].clears ?? FORMATS[format].places;
   return keys.map((key) => {
-    const items = FORMATS[format].places(key, options);
+    const items = covered(key, options);
     if (items.length === 1) return { op: "delete", ...items[0]! };
     return { op: "delete-aliases", items };
   });
