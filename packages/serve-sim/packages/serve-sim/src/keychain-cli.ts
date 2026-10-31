@@ -18,6 +18,7 @@ interface KeychainCliOptions {
   service?: string;
   accessGroup?: string;
   accessible?: KeychainAccessible;
+  username?: string;
   device?: string;
   json?: boolean;
 }
@@ -36,7 +37,12 @@ function targetOf(bundleId: string, opts: KeychainCliOptions): KeychainTarget {
     udid,
     bundleId,
     format: opts.format,
-    options: { service: opts.service, accessGroup: opts.accessGroup, accessible: opts.accessible },
+    options: {
+      service: opts.service,
+      username: opts.username,
+      accessGroup: opts.accessGroup,
+      accessible: opts.accessible,
+    },
   };
 }
 
@@ -107,7 +113,7 @@ function withTargetOptions(command: Command, deviceOpt: readonly [string, string
     )
     .option(
       "--service <name>",
-      "expo-secure-store: its keychainService option (default app). generic-password: the item service",
+      "expo-secure-store: its keychainService option (default app). generic-password: the item service. react-native-keychain takes none; its keys are services",
     )
     .option("--access-group <group>", "Keychain access group (default: the app's own)")
     .option(...deviceOpt)
@@ -135,6 +141,7 @@ export function registerKeychainCommands(
       .addOption(
         new Option("--accessible <when>", "When the item is readable").choices(KEYCHAIN_ACCESSIBLE),
       )
+      .option("--username <name>", "react-native-keychain: the username stored with each password")
       .option("--relaunch", "Restart the app so it reads the new values"),
     deviceOpt,
   ).action(

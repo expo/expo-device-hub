@@ -77,7 +77,8 @@ export function KeychainSection({
   }, [open, appId, query, listKeychainKeys]);
 
   const typedOptions = (): KeychainOptions => {
-    const text = fieldValue.trim();
+    // A service is a name; a username is stored as typed.
+    const text = shown.field.option === "service" ? fieldValue.trim() : fieldValue;
     return { format, ...(text ? { [shown.field.option]: text } : {}) };
   };
   const reload = () => setQuery((current) => ({ ...current }));
@@ -211,6 +212,7 @@ export function KeychainSection({
               </SidebarRow>
             ))
           )}
+          {shown.note && <SectionNote>{shown.note}</SectionNote>}
           <SidebarRow label="Key">
             <SidebarTextInput
               ariaLabel="Keychain key"
