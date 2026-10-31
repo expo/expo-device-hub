@@ -68,8 +68,11 @@ mock.module("../../simctl", () => ({
   },
 }));
 mock.module("../../capability-session", () => ({
+  SESSION_CAPABILITIES: ["clipboard", "keychain"],
+  createCapabilityController: () => ({ list: () => [], set: async () => {}, allows: () => true }),
   createCapabilitySession: ({ name }: { name: string }) => ({
     initialize: async () => {},
+    allows: () => true,
     dispose: async () => {
       if (name === "clipboard") event("clipboard-dispose");
     },
