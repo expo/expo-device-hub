@@ -70,6 +70,18 @@ describe("setIosKeychainValues", () => {
     expect(await result).toEqual(APPLIED);
   });
 
+  test("passes the format", async () => {
+    const { run, calls } = fakeRun(reply(APPLIED));
+    await setIosKeychainValues(
+      run,
+      UDID,
+      APP,
+      { a: "1" },
+      { format: "generic-password", service: "svc" },
+    );
+    expect(calls[0]?.params).toMatchObject({ format: "generic-password", service: "svc" });
+  });
+
   test("returns per-key failures that also failed the action", async () => {
     const failed: KeychainWriteResult = {
       applied: true,
