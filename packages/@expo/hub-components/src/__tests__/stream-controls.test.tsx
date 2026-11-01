@@ -12,17 +12,13 @@ function buttonTags(markup: string) {
 
 describe("StreamControls", () => {
   test("locks Rotate and explains the pending recording check", () => {
-    const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="unknown" />,
-    );
+    const markup = renderToStaticMarkup(<StreamControls recording="unknown" />);
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
     expect(rotate).toContain("Rotation is unavailable until recording status is known.");
   });
   test("explains why Rotate is unavailable during recording without disabling app controls", () => {
-    const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="recording" />,
-    );
+    const markup = renderToStaticMarkup(<StreamControls recording="recording" />);
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -31,15 +27,12 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
-  test("groups Save, Theme, Home, and Reload in one pill and keeps Rotate separate", () => {
-    const markup = renderToStaticMarkup(
-      <StreamControls appearance="dark" onToggleAppearance={() => {}} />,
-    );
+  test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
+    const markup = renderToStaticMarkup(<StreamControls />);
     const buttons = buttonTags(markup);
 
     expect(buttons.map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1])).toEqual([
       "Save",
-      "Theme",
       "Home",
       "Reload",
       "Rotate",
@@ -58,14 +51,19 @@ describe("StreamControls", () => {
     );
   });
 
+  test("spaces the pills 16px apart, across and down", () => {
+    const markup = renderToStaticMarkup(<StreamControls />);
+
+    expect(markup).toContain("column-gap:16px");
+    expect(markup).toContain("row-gap:16px");
+  });
+
   test("shows one Clipboard menu before Rotate when the device offers either action", () => {
     const labels = (clipboard: { paste: boolean; copy: boolean } | false) =>
-      buttonTags(
-        renderToStaticMarkup(
-          <StreamControls appearance="light" onToggleAppearance={() => {}} clipboard={clipboard} />,
-        ),
-      ).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
-    const base = ["Save", "Theme", "Home", "Reload"];
+      buttonTags(renderToStaticMarkup(<StreamControls clipboard={clipboard} />)).map(
+        (tag) => tag.match(/aria-label="([^"]+)"/)?.[1],
+      );
+    const base = ["Save", "Home", "Reload"];
 
     expect(labels({ paste: true, copy: true })).toEqual([...base, "Clipboard", "Rotate"]);
     expect(labels({ paste: true, copy: false })).toEqual([...base, "Clipboard", "Rotate"]);
@@ -73,13 +71,7 @@ describe("StreamControls", () => {
     expect(labels({ paste: false, copy: false })).toEqual([...base, "Rotate"]);
     expect(labels(false)).toEqual([...base, "Rotate"]);
 
-    const markup = renderToStaticMarkup(
-      <StreamControls
-        appearance="light"
-        onToggleAppearance={() => {}}
-        clipboard={{ paste: true, copy: true }}
-      />,
-    );
+    const markup = renderToStaticMarkup(<StreamControls clipboard={{ paste: true, copy: true }} />);
     expect([
       ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
     ]).toHaveLength(3);
@@ -89,12 +81,7 @@ describe("StreamControls", () => {
     "disables the Clipboard menu while %s is pending",
     (pending) => {
       const markup = renderToStaticMarkup(
-        <StreamControls
-          appearance="light"
-          onToggleAppearance={() => {}}
-          clipboard={{ paste: true, copy: true }}
-          clipboardPending={pending}
-        />,
+        <StreamControls clipboard={{ paste: true, copy: true }} clipboardPending={pending} />,
       );
       for (const tag of buttonTags(markup)) {
         if (tag.includes('aria-label="Clipboard"')) {
@@ -108,30 +95,66 @@ describe("StreamControls", () => {
     },
   );
 
-  test("shows every label as a tooltip above its button and exposes Theme as a switch", () => {
+  test("shows every label as a tooltip above its button and exposes Keyboard as a switch", () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="dark" onToggleAppearance={() => {}} />,
+      <StreamControls keyboard={{ open: true, onToggle: () => {} }} />,
     );
     const tooltips = [...markup.matchAll(/<span role="tooltip"[^>]*>([^<]+)<\/span>/g)];
 
     expect(tooltips.map((match) => match[1])).toEqual([
       "Save",
-      "Theme",
       "Home",
       "Reload",
+      "Keyboard",
       "Rotate",
     ]);
     for (const match of tooltips) {
       expect(match[0]).toContain("bottom:calc(100% + 8px)");
       expect(match[0]).toContain("opacity:0");
     }
-    const theme = buttonTags(markup).find((tag) => tag.includes('aria-label="Theme"'));
-    expect(theme).toContain('role="switch"');
-    expect(theme).toContain('aria-checked="true"');
+    const keyboard = buttonTags(markup).find((tag) => tag.includes('aria-label="Keyboard"'));
+    expect(keyboard).toContain('role="switch"');
+    expect(keyboard).toContain('aria-checked="true"');
     for (const tag of buttonTags(markup)) {
       expect(tag).toContain("width:44px");
       expect(tag).toContain("height:44px");
     }
+  });
+
+  describe("Keyboard toggle", () => {
+    const labels = (markup: string) =>
+      buttonTags(markup).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
+    const keyboard = { open: false, onToggle: () => {} };
+
+    test("joins the Clipboard pill, after Clipboard", () => {
+      const markup = renderToStaticMarkup(
+        <StreamControls clipboard={{ paste: true, copy: true }} keyboard={keyboard} />,
+      );
+
+      expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Clipboard", "Keyboard", "Rotate"]);
+      // Pill count is unchanged from the Clipboard-only toolbar: three.
+      expect([
+        ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
+      ]).toHaveLength(3);
+      const pill = markup.slice(
+        markup.indexOf('aria-label="Clipboard"'),
+        markup.indexOf('aria-label="Rotate"'),
+      );
+      expect(pill).toContain('aria-label="Keyboard"');
+    });
+
+    test("gets its own pill when the device has no clipboard actions", () => {
+      const markup = renderToStaticMarkup(<StreamControls keyboard={keyboard} />);
+
+      expect(labels(markup)).toEqual(["Save", "Home", "Reload", "Keyboard", "Rotate"]);
+      expect([
+        ...markup.matchAll(/<div style="[^"]*border-radius:var\(--expo-radius-xl\)[^"]*"/g),
+      ]).toHaveLength(3);
+    });
+
+    test("is absent unless the viewer passes it", () => {
+      expect(labels(renderToStaticMarkup(<StreamControls />))).not.toContain("Keyboard");
+    });
   });
 });
 

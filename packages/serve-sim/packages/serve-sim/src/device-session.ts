@@ -308,6 +308,7 @@ export class DeviceSession {
   private captureStart?: Promise<void>;
   private captureReady = false;
   private phase: "unstarted" | "running" | "stopped" = "unstarted";
+  private closing?: Promise<void>;
 
   private width = 0;
   private height = 0;
@@ -474,6 +475,16 @@ export class DeviceSession {
     // A failed recording POST reports its own error and owns no lease to preserve.
     // It must settle before suspend, but its failure must not strand reboot input.
     await this.recordingStart?.catch(() => {});
+    await this.retireInputConsumers();
+    for (const panel of this.panels.values()) this.stopPanel(panel);
+    this.latestJpegBuffer = null;
+    this.latestJpegLength = 0;
+    await this.capture.suspendForReboot();
+  }
+
+  /** Disconnect every prior owner and join native input before handing this capture to a job. */
+  async retireInputConsumers(): Promise<void> {
+    this.clearSoftwareKeyboardRequests();
     // Disconnect input before replacing HID, including clients that are awaiting admission.
     this.discardQueuedInput(this.serverInput);
     this.queueInputCleanup(this.serverInput, true);
@@ -489,10 +500,6 @@ export class DeviceSession {
     }
     await this.hingeControlUpdate;
     await this.softwareKeyboardSync;
-    for (const panel of this.panels.values()) this.stopPanel(panel);
-    this.latestJpegBuffer = null;
-    this.latestJpegLength = 0;
-    await this.capture.suspendForReboot();
   }
 
   async resumeAfterReboot(): Promise<void> {
@@ -511,8 +518,8 @@ export class DeviceSession {
     this.broadcastConfig();
   }
 
-  close(): void {
-    if (this.phase !== "running") return;
+  close(): Promise<void> {
+    if (this.phase !== "running") return this.closing ?? Promise.resolve();
     this.phase = "stopped";
     // Keep the promises even if their completion clears the mutable fields
     // while observer teardown is pending; finalization failures still belong to this close.
@@ -546,29 +553,30 @@ export class DeviceSession {
     // Observe a stop failure immediately while observer cleanup is still pending;
     // the tracked finalization below reports it after that cleanup.
     void stoppingStartup?.catch(() => {});
-    trackClosedSessionStop(
-      (async () => {
-        if (!stoppingStartup) await this.captureStart?.catch(() => {});
-        await Promise.all([screenChangesDetached, deviceStateDetached]);
-        let recordingError: unknown = this.recordingFailure;
-        try {
-          await recordingStart;
-        } catch (error) {
-          if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
-        }
-        try {
-          await recordingFinishing;
-        } catch (error) {
-          recordingError ??= error;
-        }
-        try {
-          await (stoppingStartup ?? this.capture.stop());
-        } catch (error) {
-          recordingError ??= error;
-        }
-        if (recordingError) throw recordingError;
-      })(),
-    );
+    this.closing = (async () => {
+      await this.retireInputConsumers();
+      if (!stoppingStartup) await this.captureStart?.catch(() => {});
+      await Promise.all([screenChangesDetached, deviceStateDetached]);
+      let recordingError: unknown = this.recordingFailure;
+      try {
+        await recordingStart;
+      } catch (error) {
+        if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
+      }
+      try {
+        await recordingFinishing;
+      } catch (error) {
+        recordingError ??= error;
+      }
+      try {
+        await (stoppingStartup ?? this.capture.stop());
+      } catch (error) {
+        recordingError ??= error;
+      }
+      if (recordingError) throw recordingError;
+    })();
+    trackClosedSessionStop(this.closing);
+    return this.closing;
   }
 
   async finishRecordingForShutdown(): Promise<void> {
@@ -3093,6 +3101,43 @@ export function getDeviceSession(
   return session;
 }
 
+/** Own startup cancellation: native stop, including its input drain, must finish before rejection. */
+export async function startDeviceSession(
+  udid: string,
+  settings: StreamSettings | undefined,
+  signal?: AbortSignal,
+): Promise<DeviceSession> {
+  signal?.throwIfAborted();
+  const session = getDeviceSession(udid, settings);
+  if (!signal) {
+    await session.start();
+    return session;
+  }
+  let cancel!: () => void;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    cancel = () => {
+      closeDeviceSession(udid);
+      reject(signal.reason);
+    };
+  });
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    await Promise.race([session.start(), cancelled]);
+    signal.throwIfAborted();
+    return session;
+  } catch (error) {
+    try {
+      await session.close();
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Simulator capture startup and cleanup failed");
+    }
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
+}
+
 /** Claim session state for a persistent consumer, such as an accepted settings update. */
 export function retainDeviceSession(session: DeviceSession): void {
   const owner = screenshotOwners.get(session);
@@ -3147,6 +3192,18 @@ export function closeDeviceSession(udid: string): void {
     session.close();
     sessions.delete(udid);
   }
+}
+
+/** Retire warm consumers before the private owner changes the selected device. */
+export async function retireDeviceSession(udid: string): Promise<void> {
+  const session = peekDeviceSession(udid);
+  closeDeviceSession(udid);
+  await session?.close();
+  if (closedSessionStopErrors.length > 0)
+    throw new AggregateError(
+      [...closedSessionStopErrors],
+      "Could not retire the warm device session",
+    );
 }
 
 export async function finishDeviceRecordingsForShutdown(

@@ -222,7 +222,7 @@ describeOrSkip("network request fixture", () => {
         if (reply.id !== 1) return;
         clearTimeout(timer);
         ws.close();
-        if (reply.exitCode !== 0) reject(new Error(reply.stderr || reply.error));
+        if (reply.exitCode !== 0) reject(new Error(`${reply.stderr || reply.error}\n${stderr}`));
         else resolve(JSON.parse(reply.stdout).attachment);
       });
       ws.on("error", (error) => {

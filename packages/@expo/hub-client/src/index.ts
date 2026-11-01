@@ -60,3 +60,4 @@ export {
   type DeviceKitChromeProps,
   type ChromeButtonPress,
 } from "./DeviceKitChrome";
+export { useMobileViewport } from "./useMobileViewport";

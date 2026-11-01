@@ -63,6 +63,81 @@ serve-sim and serve-emu speak different wire protocols. serve-sim streams MJPEG 
 
 The two protocols differ mainly because the servers started as separate projects [confirmed] (Krystof Woldrich, 2026-10-02).
 
+### Mobile serve-sim layout
+
+Below 640 CSS pixels, the serve-sim preview fits the device to the visible
+viewport after subtracting safe-area padding and the measured action controls.
+The displayed mobile size does not reuse the saved desktop resize preference. The floating
+controls and device sidebar toggle remain; the device name, status badge, and AX
+button are hidden. Input and keyboard unavailable warnings remain visible on phones; mobile fitting reserves their measured height and gap. While the phone keyboard is raised, the bottom action toolbar
+is hidden and its space is given to the device; it returns when the keyboard closes.
+The top-right mobile controls form one vertical toolbar, including the keyboard
+toggle. It overlays the device without taking layout space. The sidebar toggle remains separate.
+On mobile widths, presentation mode keeps its existing controls and fits the visible
+viewport, including while the phone keyboard is raised. Mobile presentation controls
+retain the keyboard capture input’s focus so exiting does not dismiss the keyboard
+and trigger a second viewport refit. Tablet and desktop widths
+keep their existing toolbar rendering and presentation sizing.
+For flat mobile previews, the normal fitted width is retained while presentation
+unmounts its controls. A single layout transform animates the device between its
+normal and presentation bounds; an interrupted animation restarts from its current
+visible bounds rather than its old target. The initial fit and reduced motion do
+not animate. Mobile hardware artwork and its screen opening use the current layout
+size in that same render; waiting for a ResizeObserver would leave their pixel
+rectangles at the previous size for a frame during keyboard fitting. For the
+same reason, the mobile fitted width is measured again in the commit that applies
+a new page height or hides the action row; otherwise the old, taller device
+overflows the keyboard-sized page and jumps up for a frame. Desktop
+keeps observed dimensions for its width transition, and 3D Duo keeps its existing
+animation path.
+[observed: ServeSim `src/client/hooks/use-flip-layout.ts`,
+`src/client/hooks/use-mobile-simulator-size.ts`, and `src/client/utils/layout-transition.ts`]
+[observed: `src/client/client.tsx` and `src/client/hooks/use-mobile-simulator-size.ts`
+in ServeSim; confirmed: Gabe Debes, 2026-10-23, requested mobile layout]
+
+### Mobile Hub layout
+
+Hub uses its own shared components, not the serve-sim viewer. Below 640px and
+on short touch landscape viewports, the dashboard and viewer share visual viewport
+bounds, including keyboard height and viewport panning. Keyboard detection normalizes
+the visual height by its zoom scale so pinch zoom alone does not hide controls. Mobile hides the title,
+keeps the sidebar reachable, and fits the device above a normal-flow action bar.
+Mobile fitting does not wait for an observer to measure that bar.
+The mobile viewer provides a keyboard toggle when the client supports HID text
+events. It sits in the action bar's Clipboard pill. The action bar is hidden while the
+keyboard is up and in full screen. With the keyboard up, the sidebar toggle and the
+full-screen button hide too, and the device takes that room; the phone's own keyboard
+controls dismiss the keyboard. An in-page full-screen toggle is pinned to the top-right
+corner, opposite the sidebar toggle, and shows a close icon while active. On a phone the
+page behind the dashboard takes the color of the surface above the browser's bottom bars,
+so no lighter strip shows under them. A phone's open sidebar fills the screen. Full-screen controls
+preserve capture focus. The sidebar stays hidden in full screen intentionally; a browser
+clipboard fallback leaves full screen before showing the inspector when a fallback
+handler exists. Locked sessions show only inspector sections, without device-list
+empty states. Consumers without a fallback handler retain presentation. Tablet and desktop stream panels retain their existing title and
+padding. The shared toolbar and sidebar changes are described below. [observed: Hub `Dashboard.tsx`, HubComponents
+`StreamPanel.tsx` and `StreamControls.tsx`, HubClient `useMobileViewport.ts`]
+[confirmed: Gabe Debes, 2026-10-26, requested equivalent mobile behavior in Hub]
+[confirmed: Billy Roh, 2026-10-29, requested the Keyboard toggle in the Clipboard pill and
+the top-right Full screen button]
+
+### Hub sidebar
+
+Hub has one sidebar, on the left. It lists the simulators and emulators, then shows the
+selected device's inspector below them in the same scrolling column. There is no right
+sidebar, so the stream panel uses the rest of the width. The toolbar has no Theme button;
+the device's appearance is the inspector's Appearance setting. [observed: Hub
+`Dashboard.tsx`; HubComponents `Sidebar.tsx`, `LogSidebar.tsx` (`InspectorSections`),
+`StreamControls.tsx`] [confirmed: Billy Roh, 2026-10-29, requested moving the right pane
+into the left pane and removing the Theme button]
+
+### DeviceKit hardware artwork
+
+Hardware-button sprites follow the alignment in Apple's DeviceKit profile.
+For `align: center`, horizontal offsets are relative to the body center, including
+Home buttons on older iPhones and iPads. [observed: ServeSim `src/devicekit-chrome.ts`
+and the `phone` and `tablet` DeviceKit `chrome.json` profiles]
+
 ### Direction: one device protocol
 
 The goal is to unify the serve-sim and serve-emu protocols. Until then, every new feature must behave the same on iOS and Android, so that unification stays possible [confirmed] (Krystof Woldrich, 2026-10-02). See [constraint 10](#same-behavior).

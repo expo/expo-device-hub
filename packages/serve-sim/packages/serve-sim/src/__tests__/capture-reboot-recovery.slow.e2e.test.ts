@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { execFileSync, spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
@@ -110,7 +110,9 @@ describeOrSkip("capture recovery after a device reboot", () => {
   let frame = async (): Promise<Uint8Array> => new Uint8Array(0);
   const frames = (c: CaptureCounts) => c.screenFrames + c.idleFrames;
 
-  beforeAll(async () => {
+  // A failed reboot leaves capture suspended; retries need a fresh server.
+  beforeEach(async () => {
+    output = "";
     tempState = useTempStateDir();
     killHelpersForDevice(udid!);
     const port = await freePortAsync();
@@ -163,7 +165,7 @@ describeOrSkip("capture recovery after a device reboot", () => {
     };
   }, 120_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (server?.exitCode === null) {
       server.kill("SIGTERM");
       await new Promise<void>((done) => {
@@ -345,7 +347,7 @@ describeOrSkip("capture recovery after a device reboot", () => {
           if (reply.id !== 1) return;
           clearTimeout(timer);
           if (reply.exitCode === 0) resolve();
-          else reject(new Error(reply.stderr ?? "capture reboot failed"));
+          else reject(new Error(`${reply.stderr ?? "capture reboot failed"}\n${output}`));
           ws.close();
         });
         ws.on("error", (error) => {

@@ -1,5 +1,15 @@
 # @expo/serve-sim
 
+## 0.13.0
+
+### Minor Changes
+
+- 413a053: Adopt a running serve-sim with a different Simulator while keeping the server and respecting `--single-device`. Adoption reuses the UI device lifecycle and waits for unused devices to shut down and the selected device to become ready.
+
+### Patch Changes
+
+- 0665a67: Fix about three seconds of lag in the HTTP simulator preview on Chromium. When the encoder falls back to default rate control, the stream now declares that frames are never reordered.
+
 ## 0.12.0
 
 ### Minor Changes

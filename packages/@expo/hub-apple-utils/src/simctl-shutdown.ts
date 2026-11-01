@@ -1,6 +1,9 @@
 import { type AppleUtilsResult, result } from "./errors";
 import { errorText, execSimctl } from "./simctl";
 
+/** Matches serve-sim's `simctl shutdown` limit. */
+const SHUTDOWN_TIMEOUT_MS = 60_000;
+
 /** Build the `simctl shutdown <udid>` args. */
 export function buildShutdownArgs(udid: string): string[] {
   return ["shutdown", udid];
@@ -27,6 +30,7 @@ export function isAlreadyShutdownError(message: string): boolean {
 export async function runSimctlShutdown(udid: string): Promise<AppleUtilsResult<boolean>> {
   const executed = await execSimctl(buildShutdownArgs(udid), {
     errorMessage: "[apple-utils] Failed to run `xcrun simctl shutdown`:",
+    timeoutMs: SHUTDOWN_TIMEOUT_MS,
     ignoreError: (error) => isAlreadyShutdownError(errorText(error)),
   });
   return result(executed.error === null, executed.error);

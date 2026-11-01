@@ -168,8 +168,8 @@ preview-token holder. The CLI uses a private Unix socket, not the preview server
 The server creates its owner socket and separate random authority in a private
 0700 directory under canonical `/tmp`, with 0600 socket and authority files. This
 directory is outside the host actions' file roots regardless of custom state or
-temporary directories. Local discovery state contains only the owning PID and
-directory reference; neither owner state nor authority enters public preview
+temporary directories. Local discovery state is keyed by the server port and contains its owning PID,
+startup device and directory reference; neither owner state nor authority enters public preview
 state. The CLI checks file type, OS user, permissions, process identity and startup
 compatibility before claiming the process. The preview bearer token is not owner
 authority [observed: `src/session-owner.ts`, `src/host-paths.ts`].
@@ -183,9 +183,26 @@ the process after a failed claim [observed: `src/session-owner.ts`].
 Adoption applies stream settings, STUN/TURN, CORS/frame origins, sharing, screenshot
 artifacts, and network capture fields/upstream before the CLI reports success.
 An orphan restricts requests to its startup device while awaiting ownership.
-Adoption may add `--single-device` for that same UUID; a different UUID is refused.
-The middleware applies the adopted policy before awaiting resource configuration,
-and existing execution sockets read the current policy for each message. Without
+Adoption selects an exact UDID separately from the immutable server identity;
+`--single-device` may restrict the job to that selected UUID. The private owner
+prepares/boots a new target through the normal dylib path while keeping its server
+PID and port [confirmed: Gabe Debes, 2026-10-28]. An unclaimed orphan permits only GET/HEAD `/healthz`, `/readyz` and authenticated
+`/api` probes. It refuses input, actions and subscriptions until the private handoff
+succeeds, so old preview streams cannot survive a device selection. Its state
+probe has no clipboard initialization side effect. Consuming a private claim
+synchronously cancels future background warmup, even if parsing or later setup
+fails. The middleware retires prior native input before selection. UI selection and private
+adoption share the in-process device lifecycle (`src/device-lifecycle.ts`), using
+the existing `src/device.ts` boot/shutdown commands. The owner hands over a target this
+process already prepared after bootstatus, and joins warmup only for a target that is not
+the first. It unpublishes unused devices before reporting success, then drains their
+native/capture sessions and shuts them down in the background after their warmup; the
+session stop joins that work. A failed or unconfirmed shutdown is logged, makes the
+session stop exit non-zero, and preserves that device's capability ownership and
+configuration. Foreign or unreadable ownership
+refuses shutdown; cleanup failure keeps the consumed claim unavailable.
+The selected native session, capture and optional recording must be ready before
+success. Shutdown joins the private configuration task before resource teardown. Without
 the flag, adoption restores normal multi-device behavior; an explicit startup
 single-device policy cannot be removed or changed [observed: `src/index.ts`,
 `src/middleware.ts`, `src/session-configuration.ts`].

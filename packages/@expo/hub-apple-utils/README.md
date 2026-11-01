@@ -72,4 +72,8 @@ All three resolve `xcrun` from `PATH` and return `{ value, error }`:
 `listRuntimes` uses `[]`, `createDevice` uses `null`, and `bootDevice` uses
 `false` as the failure value.
 
+Every helper stops a `simctl` call that has not finished after 30 s (boot 120 s,
+shutdown 60 s), sending it SIGTERM, and returns an `error` saying the command
+did not respond. This happens when CoreSimulatorService stops answering.
+
 > Requires Xcode's `simctl` on `PATH`. macOS only.
