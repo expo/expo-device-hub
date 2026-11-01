@@ -405,19 +405,19 @@ actor FrameCapture {
 
         let frameCallback: ScreenFrameCallback = { [weak self] in
             guard let self else { return }
-            self.assumeIsolated { $0.captureFrame() }
+            self.onCaptureQueue { $0.captureFrame() }
         }
         let surfacesChangedCallback: ScreenSurfacesChangedCallback = {
             [weak self, weak descriptor] unmasked, masked in
             guard let self, let descriptor else { return }
-            self.assumeIsolated {
+            self.onCaptureQueue {
                 $0.updateSurface(for: descriptor, unmasked: unmasked, masked: masked)
                 $0.captureFrame(allowLiveRevalidation: false)
             }
         }
         let propertiesChangedCallback: ScreenPropertiesChangedCallback = { [weak self, weak descriptor] properties in
             guard let self, let descriptor else { return }
-            self.assumeIsolated {
+            self.onCaptureQueue {
                 let key = ObjectIdentifier(descriptor)
                 if let properties = properties as? NSObject {
                     $0.screenMetadata[key] = SimDisplayMetadata.read(properties: properties)
@@ -446,6 +446,16 @@ actor FrameCapture {
         )
     }
 
+    /// SimulatorKit callbacks and the poll timer run on `queue` outside any Task. Before
+    /// macOS 26 (SE-0471), the runtime asks Dispatch whether `queue` is current only in its
+    /// Swift 6 checking mode; in legacy mode `assumeIsolated` traps. Assert the queue itself.
+    private nonisolated func onCaptureQueue(_ body: (isolated FrameCapture) -> Void) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        withoutActuallyEscaping(body) { body in
+            unsafeBitCast(body, to: ((FrameCapture) -> Void).self)(self)
+        }
+    }
+
     /// A DispatchSourceTimer on the actor's own queue rather than `Task.sleep`, whose leeway
     /// held the poll to 48Hz on bare metal even with nothing else running. `.strict` opts out
     /// of coalescing, which is what the frame pump needed on virtualized hosts.
@@ -460,7 +470,7 @@ actor FrameCapture {
         timer.schedule(deadline: first, repeating: interval, leeway: .nanoseconds(0))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            self.assumeIsolated {
+            self.onCaptureQueue {
                 $0.recordPollWake()
                 $0.onSurfacePollTick()
             }
