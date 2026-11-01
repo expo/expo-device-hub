@@ -3,4 +3,4 @@
 "expo-device-hub": patch
 ---
 
-Fix native iOS Simulator capture crashing with "Incorrect actor executor assumption" on macOS 15 and earlier.
+Validate native iOS Simulator capture callbacks against their dispatch queue instead of depending on Swift runtime executor checking mode.

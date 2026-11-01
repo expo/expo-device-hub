@@ -197,8 +197,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         await capture.stop()
     }
 
-    /// SimulatorKit calls back with a plain block on the callback queue, outside any Task.
-    /// Before macOS 26 the Swift runtime cannot prove actor isolation there.
+    /// SimulatorKit invokes these blocks on the registered queue without a Swift Task.
     func testSimulatorKitCallbackOnTheCallbackQueueCapturesTheNewSurface() async throws {
         let descriptor = FakeFramebufferDescriptor(surface(width: 64, height: 128, gray: 0))
         let io = FakeFramebufferIO()
@@ -215,7 +214,13 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         let framesBefore = log.all.count
 
         let light = surface(width: 64, height: 128, gray: 255)
-        queue.sync { surfacesChanged(nil, light) }
+        await withCheckedContinuation { continuation in
+            queue.async {
+                XCTAssertTrue(withUnsafeCurrentTask { $0 == nil })
+                surfacesChanged(nil, light)
+                continuation.resume(returning: ())
+            }
+        }
 
         XCTAssertEqual(log.all.count, framesBefore + 1)
         XCTAssertGreaterThan(log.all.last!.luma, 220)
