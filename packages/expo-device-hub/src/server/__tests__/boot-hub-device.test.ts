@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 import type {
   AndroidUtilsResult,
@@ -10,6 +10,8 @@ import type {
 import { bootHubDevice, shutdownHubDevice, type EmulatorCameraFeeds } from "../device-actions";
 
 const calls: string[] = [];
+const signals: { pid: number; signal: string | number | undefined }[] = [];
+let killSpy: ReturnType<typeof spyOn<typeof process, "kill">>;
 
 function pending<T>(): Promise<T> {
   return new Promise<T>(() => {});
@@ -23,7 +25,7 @@ interface Scenario {
   port: number | null;
   spawned: BootDeviceOptions | null;
   exited: Promise<EmulatorExit>;
-  online: Promise<AndroidUtilsResult<boolean>>;
+  online: Promise<AndroidUtilsResult<string | null>>;
   shutdownOk: boolean;
 }
 
@@ -31,7 +33,7 @@ const scenario: Scenario = {
   port: 5560,
   spawned: null,
   exited: pending(),
-  online: Promise.resolve({ value: true, error: null }),
+  online: Promise.resolve({ value: "Pixel_9", error: null }),
   shutdownOk: true,
 };
 
@@ -95,8 +97,17 @@ beforeEach(() => {
   scenario.port = 5560;
   scenario.spawned = null;
   scenario.exited = pending();
-  scenario.online = Promise.resolve({ value: true, error: null });
+  scenario.online = Promise.resolve({ value: "Pixel_9", error: null });
   scenario.shutdownOk = true;
+  signals.length = 0;
+  killSpy = spyOn(process, "kill").mockImplementation((pid: number, signal?: string | number) => {
+    signals.push({ pid, signal });
+    return true;
+  });
+});
+
+afterEach(() => {
+  killSpy.mockRestore();
 });
 
 describe("bootHubDevice camera feeds", () => {
@@ -142,6 +153,55 @@ describe("bootHubDevice camera feeds", () => {
     expect(scenario.spawned?.extraArgs).toBeUndefined();
     expect(result.ok).toBe(true);
     expect(result.errors[0]?.message).toBe("Failed to prepare camera feeds for Pixel_9");
+  });
+});
+
+describe("bootHubDevice emulator identity", () => {
+  test("fails at once when another AVD already holds the allocated serial", async () => {
+    scenario.online = Promise.resolve({ value: "j5-tester-1", error: null });
+
+    const result = await bootHubDevice(
+      { platform: "android", id: "", name: "j5-tester-2" },
+      cameraFeeds(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.id).toBeUndefined();
+    expect(result.serial).toBeUndefined();
+    expect(result.error).toContain('"j5-tester-1"');
+    expect(result.error).toContain('"j5-tester-2"');
+    expect(result.error).toContain("5560");
+  });
+
+  test("stops only the emulator process it spawned, never the serial's owner", async () => {
+    scenario.online = Promise.resolve({ value: "j5-tester-1", error: null });
+
+    await bootHubDevice({ platform: "android", id: "", name: "j5-tester-2" }, cameraFeeds());
+
+    expect(signals).toEqual([{ pid: 4242, signal: "SIGTERM" }]);
+    expect(calls).not.toContain("shutdownDevice emulator-5560");
+  });
+
+  test("leaves the emulator running when the requested AVD comes online", async () => {
+    const result = await bootHubDevice(bootRequest(), cameraFeeds());
+
+    expect(result).toEqual({
+      ok: true,
+      id: "emulator-5560",
+      serial: "emulator-5560",
+      errors: [],
+    });
+    expect(signals).toEqual([]);
+  });
+
+  test("leaves the emulator running when the wait times out", async () => {
+    scenario.online = Promise.resolve({ value: null, error: null });
+
+    const result = await bootHubDevice(bootRequest(), cameraFeeds());
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("Timed out waiting for the emulator to come online");
+    expect(signals).toEqual([]);
   });
 });
 
