@@ -157,7 +157,7 @@ describe("bootHubDevice camera feeds", () => {
 });
 
 describe("bootHubDevice emulator identity", () => {
-  test("fails at once when another AVD already holds the allocated serial", async () => {
+  test("fails when another AVD already holds the allocated serial", async () => {
     scenario.online = Promise.resolve({ value: "j5-tester-1", error: null });
 
     const result = await bootHubDevice(
@@ -180,6 +180,39 @@ describe("bootHubDevice emulator identity", () => {
 
     expect(signals).toEqual([{ pid: 4242, signal: "SIGTERM" }]);
     expect(calls).not.toContain("shutdownDevice emulator-5560");
+  });
+
+  test("reports an emulator it could not stop", async () => {
+    scenario.online = Promise.resolve({ value: "j5-tester-1", error: null });
+    killSpy.mockImplementation(() => {
+      throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+    });
+
+    const result = await bootHubDevice(
+      { platform: "android", id: "", name: "j5-tester-2" },
+      cameraFeeds(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("could not be stopped");
+    expect(result.errors.map((error) => error.message)).toEqual([
+      "Failed to stop the emulator spawned for j5-tester-2",
+    ]);
+  });
+
+  test("treats an emulator that already exited as stopped", async () => {
+    scenario.online = Promise.resolve({ value: "j5-tester-1", error: null });
+    killSpy.mockImplementation(() => {
+      throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+    });
+
+    const result = await bootHubDevice(
+      { platform: "android", id: "", name: "j5-tester-2" },
+      cameraFeeds(),
+    );
+
+    expect(result.error).toContain("was told to stop");
+    expect(result.errors).toEqual([]);
   });
 
   test("leaves the emulator running when the requested AVD comes online", async () => {

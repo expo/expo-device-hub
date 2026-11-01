@@ -51,47 +51,51 @@ describe("freeEmulatorPort", () => {
   });
 });
 
-describe("freeEmulatorPort with the default adb listing", () => {
-  const savedHome = process.env.ANDROID_HOME;
-  let sdk = "";
+// The fake SDK is a POSIX shell script; Windows resolves `adb.exe` instead.
+describe.skipIf(process.platform === "win32")(
+  "freeEmulatorPort with the default adb listing",
+  () => {
+    const savedHome = process.env.ANDROID_HOME;
+    let sdk = "";
 
-  beforeAll(() => {
-    // A fake SDK whose adb lists one online emulator, one still booting
-    // (`offline`) and one mid-handshake (`authorizing`).
-    sdk = mkdtempSync(join(tmpdir(), "hub-free-port-"));
-    mkdirSync(join(sdk, "platform-tools"));
-    const adb = join(sdk, "platform-tools", "adb");
-    writeFileSync(
-      adb,
-      [
-        "#!/bin/sh",
-        'if [ "$1" = devices ]; then',
-        "  echo 'List of devices attached'",
-        "  echo 'emulator-5554          offline transport_id:1'",
-        "  echo 'emulator-5556          device product:sdk_gphone64 transport_id:2'",
-        "  echo 'emulator-5558          authorizing transport_id:3'",
-        "fi",
-        "",
-      ].join("\n"),
-    );
-    chmodSync(adb, 0o755);
-    // An empty avdmanager, so no lookup falls through to a real SDK.
-    const bin = join(sdk, "cmdline-tools", "latest", "bin");
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(join(bin, "avdmanager"), "#!/bin/sh\n");
-    chmodSync(join(bin, "avdmanager"), 0o755);
-    process.env.ANDROID_HOME = sdk;
-    clearSdkRootsCache();
-  });
+    beforeAll(() => {
+      // A fake SDK whose adb lists one online emulator, one still booting
+      // (`offline`) and one mid-handshake (`authorizing`).
+      sdk = mkdtempSync(join(tmpdir(), "hub-free-port-"));
+      mkdirSync(join(sdk, "platform-tools"));
+      const adb = join(sdk, "platform-tools", "adb");
+      writeFileSync(
+        adb,
+        [
+          "#!/bin/sh",
+          'if [ "$1" = devices ]; then',
+          "  echo 'List of devices attached'",
+          "  echo 'emulator-5554          offline transport_id:1'",
+          "  echo 'emulator-5556          device product:sdk_gphone64 transport_id:2'",
+          "  echo 'emulator-5558          authorizing transport_id:3'",
+          "fi",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(adb, 0o755);
+      // An empty avdmanager, so no lookup falls through to a real SDK.
+      const bin = join(sdk, "cmdline-tools", "latest", "bin");
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, "avdmanager"), "#!/bin/sh\n");
+      chmodSync(join(bin, "avdmanager"), 0o755);
+      process.env.ANDROID_HOME = sdk;
+      clearSdkRootsCache();
+    });
 
-  afterAll(() => {
-    if (savedHome === undefined) delete process.env.ANDROID_HOME;
-    else process.env.ANDROID_HOME = savedHome;
-    clearSdkRootsCache();
-    rmSync(sdk, { recursive: true, force: true });
-  });
+    afterAll(() => {
+      if (savedHome === undefined) delete process.env.ANDROID_HOME;
+      else process.env.ANDROID_HOME = savedHome;
+      clearSdkRootsCache();
+      rmSync(sdk, { recursive: true, force: true });
+    });
 
-  test("counts the ports of emulators that are booting or offline as used", async () => {
-    expect(await freeEmulatorPort()).toEqual({ value: 5560, error: null });
-  });
-});
+    test("counts the ports of emulators that are booting or offline as used", async () => {
+      expect(await freeEmulatorPort()).toEqual({ value: 5560, error: null });
+    });
+  },
+);

@@ -364,13 +364,16 @@ async function bootAndroidHubDevice(
     // spawned can never become this serial; left alone it lingers, holding
     // the AVD and its memory. Stop it by our own PID: the serial, and so
     // `adb emu kill`, belongs to the other emulator.
-    stopSpawnedEmulator(booted.pid);
+    const stopError = stopSpawnedEmulator(avdName, booted.pid);
     return {
       ok: false,
       error:
         `"${runningAvd}" is already running on ${booted.serial}, so "${avdName}" could not ` +
-        `start on that port. The new emulator was stopped; try booting it again.`,
-      errors: seedErrors,
+        `start on that port. ` +
+        (stopError === null
+          ? "The new emulator was told to stop; boot it again once it has exited."
+          : "The new emulator could not be stopped; stop it before booting again."),
+      errors: [...seedErrors, ...errorList(stopError)],
     };
   }
 
@@ -385,12 +388,19 @@ async function bootAndroidHubDevice(
       };
 }
 
-/** Send SIGTERM to an emulator this Hub spawned. One that already exited is ignored. */
-function stopSpawnedEmulator(pid: number | null): void {
-  if (pid === null) return;
+/**
+ * Send SIGTERM to an emulator this Hub spawned. Returns `null` once the signal
+ * is sent or the process has already exited (`ESRCH`), and an error otherwise.
+ */
+function stopSpawnedEmulator(avdName: string, pid: number | null): SerializableError | null {
+  const failed = (error: unknown) =>
+    toSerializableError({ message: `Failed to stop the emulator spawned for ${avdName}`, error });
+  if (pid === null) return failed(new Error("The emulator process has no PID"));
   try {
     process.kill(pid, "SIGTERM");
-  } catch {
-    // Already gone.
+    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return null;
+    return failed(error);
   }
 }
