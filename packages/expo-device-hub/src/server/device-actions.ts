@@ -358,7 +358,23 @@ async function bootAndroidHubDevice(
     };
   }
 
-  return outcome.online.value
+  const runningAvd = outcome.online.value;
+  if (runningAvd !== null && runningAvd !== avdName) {
+    // Another emulator already held this console port, so the process we
+    // spawned can never become this serial; left alone it lingers, holding
+    // the AVD and its memory. Stop it by our own PID: the serial, and so
+    // `adb emu kill`, belongs to the other emulator.
+    stopSpawnedEmulator(booted.pid);
+    return {
+      ok: false,
+      error:
+        `"${runningAvd}" is already running on ${booted.serial}, so "${avdName}" could not ` +
+        `start on that port. The new emulator was stopped; try booting it again.`,
+      errors: seedErrors,
+    };
+  }
+
+  return runningAvd !== null
     ? { ok: true, id: booted.serial, serial: booted.serial, errors: seedErrors }
     : {
         ok: false,
@@ -367,4 +383,14 @@ async function bootAndroidHubDevice(
         error: "Timed out waiting for the emulator to come online",
         errors: seedErrors,
       };
+}
+
+/** Send SIGTERM to an emulator this Hub spawned. One that already exited is ignored. */
+function stopSpawnedEmulator(pid: number | null): void {
+  if (pid === null) return;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    // Already gone.
+  }
 }
