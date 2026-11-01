@@ -13,12 +13,7 @@ import type { AppleDevice } from "./types";
  */
 export async function listDevices(): Promise<AppleUtilsResult<AppleDevice[]>> {
   try {
-    // `devicectl` 518.33 on EAS VMs always returned an empty devices array.
-    const listed = await runSimctl(["list", "devices", "--json"]);
-    if (listed.error) return result([], listed.error);
-    if (!listed.value) return result([]);
-
-    const parsed = parseDevicesJson(listed.value);
+    const parsed = await listDeviceStates();
     if (parsed.error) return parsed;
 
     const enriched = await Promise.all(
@@ -35,6 +30,25 @@ export async function listDevices(): Promise<AppleUtilsResult<AppleDevice[]>> {
       enriched.map(({ value }) => value),
       enriched.find(({ error }) => error !== null)?.error ?? null,
     );
+  } catch (error) {
+    return result([], reportError("[apple-utils] Failed to list devices:", error));
+  }
+}
+
+/**
+ * List the simulators from `xcrun simctl list devices --json` with their
+ * state, without reading each `device.plist`. Callers that only need which
+ * devices are running use this, so a plist read failure cannot hide them.
+ * The simctl or parse failure is returned in `error`. Never throws.
+ */
+export async function listDeviceStates(): Promise<AppleUtilsResult<AppleDevice[]>> {
+  try {
+    // `devicectl` 518.33 on EAS VMs always returned an empty devices array.
+    const listed = await runSimctl(["list", "devices", "--json"]);
+    if (listed.error) return result([], listed.error);
+    if (!listed.value) return result([]);
+
+    return parseDevicesJson(listed.value);
   } catch (error) {
     return result([], reportError("[apple-utils] Failed to list devices:", error));
   }

@@ -111,6 +111,34 @@ launch actions are disabled because an AVD name does not pin an adb serial.
 WebKit DevTools is unavailable in this mode because its bridge cannot reliably
 associate targets with a simulator UDID.
 
+### Limit booted devices on a shared host
+
+When several Hubs run under one OS account, for example one per agent environment, a
+host policy caps how many simulators and emulators they boot in total:
+
+```sh
+mkdir -p ~/.expo/device-hub
+echo '{"maxVirtualDevices": 2}' > ~/.expo/device-hub/host-policy.json
+```
+
+Every boot or create, and every device start through the Hub's serve-sim
+(`grid/api/start`) and serve-emu (`api/avds/start`) routes, first counts the simulators
+that are not shut down, the emulators adb lists, in any state, and the emulator processes
+`ps` lists for this account, plus boots that are still starting. At the limit, the
+request answers `{ "ok": false, "error": "Device host capacity reached: …" }` and nothing
+boots. Physical devices do not count. Reopening a device that is already booted is
+allowed. A device keeps its slot until it is shut down; the Hub never shuts one down to
+make room.
+
+The file is read on every boot, and the Hub never creates it. Without it, boots are
+unconstrained. `~` is the account's home from the system user database, so a different
+`HOME` does not move or disable the policy, and no flag or variable overrides it. A file
+that cannot be read or parsed, or a `maxVirtualDevices` that is not an integer of 0 or
+more, refuses every boot with an error that names the file. `0` allows no new boots. A host
+whose `ps` cannot be run refuses every boot too. The Hub
+keeps its lock and boot records in `~/.expo/device-hub/boot-admission/`.
+[LLP 0018](../../llp/0018-hub-boot-admission.decision.md) describes the design.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.
