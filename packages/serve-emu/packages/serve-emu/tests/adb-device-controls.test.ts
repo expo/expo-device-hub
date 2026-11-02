@@ -401,6 +401,11 @@ describe("ADB display controls", () => {
     await expect(
       getUserRotation("device-1", read(result("", { status: 1, stderr: "wm failed" }))),
     ).resolves.toMatchObject({ orientation: "unknown", pose: null });
+    const widened = result("Physical size: 1080x2400\nOverride size: 2400x1080");
+    await expect(getUserRotation("device-1", read(widened))).resolves.toMatchObject({
+      orientation: "portrait",
+      pose: "portrait_upside_down",
+    });
   });
 
   test("reads the shown pose from the rotation and the natural size, both in the background lane", async () => {
@@ -415,12 +420,16 @@ describe("ADB display controls", () => {
     // Another AVD can reuse the serial, so the size is read again each time.
     size = "Physical size: 2560x1600";
     await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("landscape_right");
+    // Android rotates from the override size, so a widened phone at rotation 0 is landscape.
+    size = "Physical size: 1080x2400\nOverride size: 2400x1080";
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("landscape_right");
     expect(new Set(lanes.map(([, lane]) => lane))).toEqual(new Set(["background"]));
   });
 
   test("locks the rotation that shows the requested pose and reads that pose back", async () => {
     const phone = "Physical size: 1080x2400";
     const tablet = "Physical size: 2560x1600";
+    const widened = "Physical size: 1080x2400\nOverride size: 2400x1080";
     const cases = [
       { size: phone, requested: "auto", rotation: null, pose: null },
       { size: phone, requested: "portrait", rotation: 0, pose: "portrait" },
@@ -432,6 +441,9 @@ describe("ADB display controls", () => {
       { size: tablet, requested: "landscape", rotation: 0, pose: "landscape_right" },
       { size: tablet, requested: "portrait", rotation: 3, pose: "portrait" },
       { size: tablet, requested: "landscape_left", rotation: 2, pose: "landscape_left" },
+      // An override that turns a phone wide makes Android treat it like a tablet.
+      { size: widened, requested: "portrait", rotation: 3, pose: "portrait" },
+      { size: widened, requested: "landscape", rotation: 0, pose: "landscape_right" },
     ] as const;
 
     for (const entry of cases) {

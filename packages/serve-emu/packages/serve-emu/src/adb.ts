@@ -190,11 +190,9 @@ export async function readEmuConsoleValue(
 export async function getDeviceSize(
   serial: string,
   runExec: typeof execText = execText,
-  { lane }: { lane?: ExecLane } = {},
 ): Promise<{ width: number; height: number }> {
   const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
-    lane,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
   const m = r.stdout.match(/(\d+)x(\d+)/);
@@ -239,6 +237,19 @@ export async function getDisplayRotation(
 }
 
 type NaturalSize = { width: number; height: number };
+
+/**
+ * The size Android configures rotation from: the `wm size` override when one is set, else the
+ * physical size. An override can change the aspect, so the physical panel can name poses wrong.
+ */
+async function readNaturalSize(
+  serial: string,
+  runExec: typeof execText,
+  options?: { lane?: ExecLane },
+): Promise<NaturalSize> {
+  const { widthPx, heightPx } = await readEffectiveDisplaySize(serial, runExec, options);
+  return { width: widthPx, height: heightPx };
+}
 
 /**
  * The poses in the order Android numbers its rotations. Rotation N shows the content turned
@@ -313,7 +324,7 @@ export async function getUserRotation(
   const [raw, natural] = await Promise.all([
     readUserRotation(serial, runExec),
     // Without the size a locked rotation is reported as unknown.
-    getDeviceSize(serial, runExec).catch(() => null),
+    readNaturalSize(serial, runExec).catch(() => null),
   ]);
   return orientationStatus(raw, natural);
 }
@@ -328,7 +339,7 @@ export async function setUserRotation(
   if (orientation !== "auto") {
     const pose = orientation === "landscape" ? "landscape_right" : orientation;
     // `wm size` runs before each lock: the natural size can change with the device.
-    natural = await getDeviceSize(serial, runExec);
+    natural = await readNaturalSize(serial, runExec);
     args = [
       "cmd",
       "window",
@@ -347,7 +358,7 @@ export async function setUserRotation(
 }
 
 /**
- * The pose the display shows now, from its rotation and natural size. Both reads use the
+ * The pose the display shows now, from its rotation and effective size. Both reads use the
  * background lane, because the reader polls them while the stream runs.
  */
 export async function getDisplayOrientation(
@@ -355,7 +366,7 @@ export async function getDisplayOrientation(
   runExec: typeof execText = execText,
 ): Promise<ScreenOrientation> {
   const [natural, rotation] = await Promise.all([
-    getDeviceSize(serial, runExec, { lane: "background" }),
+    readNaturalSize(serial, runExec, { lane: "background" }),
     getDisplayRotation(serial, runExec),
   ]);
   return screenOrientationForRotation(rotation, natural);
@@ -719,9 +730,11 @@ async function readDisplayDensity(
 export async function readEffectiveDisplaySize(
   serial: string,
   runExec: typeof execText = execText,
+  { lane }: { lane?: ExecLane } = {},
 ): Promise<{ widthPx: number; heightPx: number }> {
   const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
+    lane,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
   const raw = r.stdout.trim();
