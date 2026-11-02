@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 import {
+  areRecordingControlsLocked,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
   type DeviceScreenRecordingStatus,
@@ -69,7 +70,7 @@ export function StreamControls({
   onRotate,
   onSave,
   recording = null,
-  recordingControlsLocked = false,
+  recordingControlsLocked: clientLocked,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -84,9 +85,9 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** Only picks the explanation; `recordingControlsLocked` decides whether Rotate is locked. */
+  /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
   recording?: DeviceScreenRecordingStatus | null;
-  /** The client's `recordingControlsLocked`. */
+  /** The client's `recordingControlsLocked`. Overrides the lock that `recording` implies. */
   recordingControlsLocked?: boolean;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
@@ -99,6 +100,8 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
+  // Callers that pass only `recording` keep the lock it implied before this prop existed.
+  const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (

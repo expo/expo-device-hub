@@ -31,6 +31,13 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
+  test("locks Rotate from the recording status when the client's lock is not passed", () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls onRotate={() => {}} recording="recording" />,
+    );
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+  });
   test.each(["recording", "unknown"] as const)(
     "follows the client's lock, not the %s status, and explains only a locked Rotate",
     (recording) => {
