@@ -4,6 +4,7 @@ import { startServer } from "../src/server.ts";
 import type { EmulatorLaunch } from "../src/emulator.ts";
 import type { GeoFix } from "../src/location.ts";
 import type { ScrcpySession, VideoPacket } from "../src/scrcpy.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -99,6 +100,7 @@ describe("startServer device session lifecycle", () => {
       startServer(
         { serial: "A", port: 3300 },
         {
+          readOrientation: readNoOrientation,
           openScrcpy: async () => initial.session,
           serve: (() => {
             throw new Error("EADDRINUSE");
@@ -123,6 +125,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => sessions.get(serial)!.session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -210,6 +213,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -265,6 +269,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },
@@ -324,6 +329,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => {
           openCalls.push(serial);
           if (serial === "A") return a.session;
@@ -383,6 +389,7 @@ describe("startServer device session lifecycle", () => {
     const started = await startServer(
       { serial: "A", port: 3300 },
       {
+        readOrientation: readNoOrientation,
         openScrcpy: async (serial) => (serial === "A" ? a : b).session,
         listDevices: async () => [
           { serial: "A", state: "device" },

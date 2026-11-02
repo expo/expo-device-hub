@@ -57,7 +57,7 @@ import {
   startEmulator,
   stopEmulator,
 } from "./emulator.ts";
-import { DeviceSessionState } from "./device-session-state.ts";
+import { DeviceSessionState, type DeviceSessionStateOptions } from "./device-session-state.ts";
 import {
   ScreenRecording,
   ScreenRecordingConflictError,
@@ -353,6 +353,10 @@ export type CreateAppDependencies = {
   createWebRtcPublisher?: typeof createWebRtcPublisher;
   clock?: AppClock;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  /** Read the display pose, like `setLocation`, for a new device state; adb by default. */
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  /** Lock or free the rotation for a new device state; adb by default. */
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -467,6 +471,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyLocation:
         dependencies.setLocation ??
         ((serial, fix, signal) => setEmulatorLocationAsync(serial, fix, signal)),
+      readOrientation: dependencies.readOrientation,
+      applyRotation: dependencies.applyRotation,
     });
   try {
     deviceState.acquire(deviceStateOwner);

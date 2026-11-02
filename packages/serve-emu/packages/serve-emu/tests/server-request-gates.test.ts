@@ -6,6 +6,7 @@ import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts"
 import { parseFramePacket } from "../src/shared/frame-meta.ts";
 import { ScrcpyStreamError, type ScrcpySession, type VideoPacket } from "../src/scrcpy.ts";
 import { startServer, type ServerDependencies, type ServerOpts } from "../src/server.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -251,6 +252,7 @@ async function createHarness(
       streamSettings: options.streamSettings,
     },
     {
+      readOrientation: readNoOrientation,
       openScrcpy: async () => session,
       recoveryClock: INERT_RECOVERY_CLOCK,
       serve,
@@ -921,6 +923,7 @@ describe("server shutdown and errors", () => {
       startServer(
         { serial: session.serial, port: 33_041 },
         {
+          readOrientation: readNoOrientation,
           openScrcpy: async () => session,
           createInputQueue: () => {
             throw new Error("input queue construction failed");
