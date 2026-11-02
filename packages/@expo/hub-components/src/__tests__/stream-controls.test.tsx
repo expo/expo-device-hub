@@ -69,6 +69,11 @@ describe("StreamControls", () => {
       expect(rotate("android")).not.toContain("aria-disabled");
     },
   );
+  test("needs the stream status whenever the platform is given", () => {
+    // @ts-expect-error `status` is required with `platform`, so iOS Rotate cannot skip the live check.
+    const missing = <StreamControls platform="ios" />;
+    expect(missing.props.platform).toBe("ios");
+  });
   test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(<StreamControls />);
     const buttons = buttonTags(markup);
