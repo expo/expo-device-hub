@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
@@ -61,7 +61,7 @@ Each adapter resets its own status to `connecting` in the render that changes th
 - `framePresented` stays true while the session reconnects or fails.
 - Until `framePresented` is true, `DeviceScreen` keeps its media element transparent, because the element can still hold a previous session's frame [observed: `deviceScreenMediaStyle` in `DeviceScreen.tsx`]. Opacity, not `visibility` or `display`, keeps the element laid out, so the browser keeps decoding into it [inferred]. Its `<img>` has an empty `alt`, so a failed request never shows a broken-image text; the input surface names the screen [observed: `DeviceScreen.tsx`].
 
-The 3D preview loads until Xcode's model is loaded into the scene **and** the active display has a frame. Until then it is transparent, so it never shows a model with black displays; it also takes no focus, is not announced, and gives up the focus when it hides again, for example after a token change for the same device [observed: `tabIndex`, `aria-hidden`, and `useReleaseFocusWhenHidden` in `foldable/FoldableDeviceScreen.tsx`]; and the status pill says Loading even while the client already streams [observed: `hidden` in `foldable/FoldableDeviceScreen.tsx`, `modelReadyDevice` in `dashboard/PhoneFrame.tsx`, `screenLoading` in `dashboard/StreamPanel.tsx`].
+The 3D preview loads until Xcode's model is loaded into the scene **and** the active display has a frame. Until then it is transparent, so it never shows a model with black displays; it also takes no focus, is not announced, and gives up the focus when it hides again, for example after a token change for the same device [observed: `tabIndex`, `aria-hidden`, and `useReleaseFocusWhenHidden` in `foldable/FoldableDeviceScreen.tsx`]; and the status pill says Loading even while the client already streams [observed: `hidden` in `foldable/FoldableDeviceScreen.tsx`, `modelReadyDevice` in `dashboard/PhoneFrame.tsx`, `screenLoading` in `dashboard/StreamPanel.tsx`]. A model that is unavailable ends this wait as well, because the preview then shows the flat display, which has its own frame; the spinner then follows only the first frame, also when the consumer gives no `onUnavailable` [observed: `modelSettled` in `foldable/FoldableDeviceScreen.tsx`].
 
 ## Temporary drops
 

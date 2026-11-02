@@ -43,9 +43,10 @@ export interface FoldableDeviceScreenProps {
    */
   onUnavailable?: () => void;
   /**
-   * Whether Xcode's model is loaded into the scene. With `client.framePresented`, it tells
-   * when the preview has shown its first display frame; until then the
-   * preview draws nothing, and the consumer shows loading UI.
+   * Whether the preview can draw: Xcode's model is loaded into the scene, or
+   * it is unavailable and the preview shows the flat display. With
+   * `client.framePresented`, it tells when the preview has shown its first
+   * display frame; until then the consumer shows loading UI.
    */
   onModelReadyChange?: (ready: boolean) => void;
   /** Copy the device app's selected text, as on `DeviceScreen`. */
@@ -156,9 +157,11 @@ export function FoldableDeviceScreen({
   const modelReadyChange = useRef(onModelReadyChange);
   modelReadyChange.current = onModelReadyChange;
   const modelReady = modelStatus === "ready";
+  // A model that cannot load ends the wait too: its flat fallback has frames to show.
+  const modelSettled = modelStatus !== "loading";
   useEffect(() => {
-    modelReadyChange.current?.(modelReady);
-  }, [modelReady]);
+    modelReadyChange.current?.(modelSettled);
+  }, [modelSettled]);
   useEffect(() => () => modelReadyChange.current?.(false), []);
   // @ref LLP 0015#states — no black displays: the model shows once it has a frame to draw
   const hidden = modelStatus === "loading" || (modelReady && !framePresented);

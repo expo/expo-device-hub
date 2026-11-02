@@ -246,6 +246,39 @@ describe("the iPhone Duo 3D preview", () => {
     expect(testIds(renderer!)).not.toContain("device-screen-loading");
     expect(pill()).toContain("Reconnecting");
   });
+
+  test("a 3D model that fails ends the spinner over the flat fallback without onUnavailable", async () => {
+    browserGlobals();
+    const reported: boolean[] = [];
+    const duoClient = client("streaming", true, {
+      fold: { pending: false, error: null, setControl() {} },
+      displays: [
+        { id: "cover", active: true, attachVideo() {} },
+        { id: "inner", active: false, attachVideo() {} },
+      ],
+      deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
+      capabilities: { clipboard: false, fold: false },
+      videoKind: "img",
+    } as unknown as Partial<DeviceClient>);
+    // With mounted elements the scene starts, and WebGL fails without a browser canvas.
+    await act(async () => {
+      renderer = create(
+        <PhoneFrame
+          device={device("duo")}
+          client={duoClient}
+          DeviceScreen={Screen}
+          FoldableDeviceScreen={FoldableDeviceScreen}
+          foldPreview={{ mode: "3d" }}
+          displayScreen={(screen) => screen ?? null}
+          onLoadingChange={(loading) => reported.push(loading)}
+        />,
+        { createNodeMock: () => ({ contains: () => false, focus() {} }) },
+      );
+    });
+    expect(renderer!.root.findByProps({ "data-duo-model": "unavailable" })).toBeDefined();
+    expect(testIds(renderer!)).not.toContain("device-screen-loading");
+    expect(reported.at(-1)).toBe(false);
+  });
 });
 
 test("the status pill names the first load with the spinner's label", () => {
