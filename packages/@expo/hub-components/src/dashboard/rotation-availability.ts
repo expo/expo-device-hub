@@ -10,6 +10,7 @@ import type {
  * stream: iOS sends the pose over the helper's input socket, which drops queued input after
  * 1.5 s. Android sends it over HTTP (`POST /api/orientation`), which works without the stream.
  */
+// @ref LLP 0013#orientation — iOS sends the pose over the input socket, Android over HTTP
 export function rotationUnavailableReason({
   platform,
   status,
