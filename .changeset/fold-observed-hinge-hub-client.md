@@ -2,4 +2,4 @@
 "@expo/hub-client": patch
 ---
 
-On the iPhone Duo, `fold` now shows the hinge state that serve-sim reads from the simulator, so a fold made with the Simulator's own controls appears in `fold.angle`, `fold.pose`, `fold.tableMode`, and `fold.physical`. Before, `fold` showed only the state of the last command sent through serve-sim. A command's preview now holds until serve-sim reads the new state, or for at most 500 ms, and its `confirmed` event comes then.
+On the iPhone Duo, `client.fold` now shows the fold angle, pose, Table Mode, face down state, and active display that the simulator reports, so a fold made in Simulator's own controls shows up too. It updates as soon as the simulator reports a change, and a change you request shows right away until the simulator confirms it, for up to about half a second.
