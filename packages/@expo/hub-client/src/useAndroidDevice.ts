@@ -501,6 +501,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     : orientationState.reports
       ? ORIENTATION_CAPABILITIES
       : LEGACY_ORIENTATION_CAPABILITIES;
+  // @ref LLP 0013#orientation — one request at a time, and only the newest queued choice is sent
   // One writer for the hook's lifetime, so requests never overlap, also across a device or token
   // change: each request carries its own URL and fetch. Only the newest request's answer or
   // failure is shown, and only for the device it was sent to.
@@ -572,6 +573,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     },
     [orientationCapabilities, sendOrientation],
   );
+  // @ref LLP 0013#orientation — the slower pose report joins `screen` only when it agrees with the frame
   // serve-emu frames already show the display upright, so only the pose is added. The pose
   // comes from a slower `/api` poll than the frame size, so it is added only when both agree;
   // otherwise a turned frame would show in the box of the previous pose.
@@ -1059,6 +1061,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             ? current
             : { scope: deviceScope, reports, orientation },
         );
+        // @ref LLP 0013#orientation — an answered choice waits for a matching report or the grace
         // A report read after serve-emu answered a choice replaces that choice once it shows the
         // answered pose, or after the readback grace: the display can turn after the answer, and
         // an app can keep its own orientation.
