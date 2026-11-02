@@ -90,6 +90,7 @@ export function InspectorSections({
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
+          deviceId={device?.id}
           deviceFrame={deviceFrame}
           showDeviceSettings={client?.capabilities.deviceSettings ?? false}
           onShutdown={onShutdown}

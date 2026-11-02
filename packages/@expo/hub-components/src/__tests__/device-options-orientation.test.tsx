@@ -108,3 +108,57 @@ test("the Orientation row stays while a report briefly disagrees with the frame,
   });
   expect(hasRow()).toBe(false);
 });
+
+test("a pose reported by one device does not show the row for an older server's device after a Rotate", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("HTMLFormElement", class {});
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const client = (overrides: object) =>
+    ({
+      platform: "android",
+      status: "streaming",
+      screenRecording: null,
+      recordingControlsLocked: false,
+      orientationPending: false,
+      orientationError: null,
+      setOrientation: () => {},
+      deviceSettings: null,
+      deviceSettingsStatus: "idle",
+      deviceSettingsPending: new Set(),
+      ...overrides,
+    }) as unknown as DeviceClient;
+  const hasRow = () =>
+    renderer!.root.findAll((node) => node.props.ariaLabel === "Orientation").length > 0;
+  await act(async () => {
+    renderer = create(
+      <DeviceOptionsSection
+        deviceId="emulator-5554"
+        client={client({
+          capabilities: { orientation: { orientations: ["portrait", "landscape_left"] } },
+          screen: { width: 390, height: 844, orientation: "portrait" },
+          orientation: "portrait",
+        })}
+      />,
+    );
+  });
+  expect(hasRow()).toBe(true);
+  // Another device on an older server: it offers two poses, reports none, and a Rotate set a pick.
+  await act(async () => {
+    renderer!.update(
+      <DeviceOptionsSection
+        deviceId="emulator-5556"
+        client={client({
+          capabilities: { orientation: { orientations: ["portrait", "landscape_right"] } },
+          screen: { width: 390, height: 844 },
+          orientation: "landscape_right",
+        })}
+      />,
+    );
+  });
+  expect(hasRow()).toBe(false);
+});

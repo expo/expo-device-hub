@@ -110,12 +110,15 @@ export type DeviceFrameOption = {
  */
 export function DeviceOptionsSection({
   client,
+  deviceId,
   deviceFrame,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
+  /** The selected device, so what one device reported is not used for another. */
+  deviceId?: string;
   deviceFrame?: DeviceFrameOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
@@ -180,14 +183,18 @@ export function DeviceOptionsSection({
         orientationCapabilities.orientations.includes(value),
       )
     : [];
-  // Shown once the device has reported a pose, so an older serve-emu server, which reports
-  // none, never shows the row after a Rotate. It stays while the report briefly disagrees with
-  // a turned frame, and goes when the client loses its orientation capability (a new device).
+  // @ref LLP 0013#orientation — the row waits for a reported pose, so older serve-emu servers never show it
+  // Shown once the selected device has reported a pose, so a Rotate on an older serve-emu server,
+  // which reports none, never shows the row. It stays while the report briefly disagrees with a
+  // turned frame, and is forgotten for another device or without an orientation capability.
   // It shows the last pick at once, then the device's report. Rotate still works before that.
   const reportedOrientation = client?.screen?.orientation;
-  const [poseReported, setPoseReported] = useState(false);
-  if (reportedOrientation && !poseReported) setPoseReported(true);
-  if (!orientationCapabilities && poseReported) setPoseReported(false);
+  const [poseReportedBy, setPoseReportedBy] = useState<{ deviceId: string | undefined } | null>(
+    null,
+  );
+  const poseReported = poseReportedBy !== null && poseReportedBy.deviceId === deviceId;
+  if (reportedOrientation && !poseReported) setPoseReportedBy({ deviceId });
+  if (!orientationCapabilities && poseReportedBy) setPoseReportedBy(null);
   const currentOrientation =
     poseReported || reportedOrientation
       ? (client?.orientation ?? reportedOrientation ?? null)
