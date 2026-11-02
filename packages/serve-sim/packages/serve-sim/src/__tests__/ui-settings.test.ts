@@ -195,13 +195,15 @@ function timeZoneDeps(script: Scripted, capability: Error | null = null) {
 }
 
 describe("writeTimeZone", () => {
-  test("writes the zone file, sets TZ and enables the capability, without restarting SpringBoard", async () => {
+  // TZ first: an app that starts between the two steps gets the new zone, and its dylib skips
+  // the older file. The other order leaves that app in the old zone.
+  test("sets TZ, writes the zone file and enables the capability, without restarting SpringBoard", async () => {
     const { deps, steps } = timeZoneDeps([
       [GETENV, ""],
       [setenv("Asia/Tokyo"), ""],
     ]);
     await writeTimeZone(UDID, "Asia/Tokyo", deps);
-    expect(steps).toEqual([GETENV, "file Asia/Tokyo", setenv("Asia/Tokyo"), "capability on"]);
+    expect(steps).toEqual([GETENV, setenv("Asia/Tokyo"), "file Asia/Tokyo", "capability on"]);
   });
 
   test("keeps the zone file for host, so loaded dylibs unset TZ, and disables the capability", async () => {
@@ -210,7 +212,7 @@ describe("writeTimeZone", () => {
       [UNSETENV, ""],
     ]);
     await writeTimeZone(UDID, HOST_TIME_ZONE, deps);
-    expect(steps).toEqual([GETENV, `file ${HOST_TIME_ZONE}`, UNSETENV, "capability off"]);
+    expect(steps).toEqual([GETENV, UNSETENV, `file ${HOST_TIME_ZONE}`, "capability off"]);
   });
 
   test("still applies an unchanged zone", async () => {
@@ -231,7 +233,6 @@ describe("writeTimeZone", () => {
     await expect(writeTimeZone(UDID, "Asia/Tokyo", deps)).rejects.toThrow(/Could not set/);
     expect(steps).toEqual([
       GETENV,
-      "file Asia/Tokyo",
       setenv("Asia/Tokyo"),
       "file Europe/Berlin",
       setenv("Europe/Berlin"),
@@ -276,11 +277,11 @@ describe("writeTimeZone", () => {
     const first = steps[0]!.split(" ")[0];
     const second = first === "a" ? "b" : "a";
     expect(steps).toEqual([
-      `${first} file`,
       `${first} setenv`,
+      `${first} file`,
       `${first} capability`,
-      `${second} file`,
       `${second} setenv`,
+      `${second} file`,
       `${second} capability`,
     ]);
   });

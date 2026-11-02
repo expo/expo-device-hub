@@ -388,8 +388,10 @@ export interface TimeZoneDeps {
 }
 
 /**
- * The zone file goes first, so loaded dylibs switch at once; `host` writes it too, because a
- * loaded dylib stays loaded after the capability is disabled. A failure restores the previous zone.
+ * TZ goes first: an app that starts between the two steps gets the new zone from launchd, and its
+ * dylib skips the older file. The file then switches loaded dylibs; `host` writes it too,
+ * because a loaded dylib stays loaded after the capability is disabled. A failure restores the
+ * previous zone.
  */
 export async function writeTimeZone(
   udid: string,
@@ -402,9 +404,9 @@ export async function writeTimeZone(
 ): Promise<void> {
   await withTimeZoneLock(udid, async () => {
     const previous = await readTimeZone(udid, exec);
-    writeZoneFile(udid, zone);
     try {
       await setLaunchdTimeZone(udid, zone, exec);
+      writeZoneFile(udid, zone);
       await setCapability(udid, zone !== HOST_TIME_ZONE);
     } catch (e) {
       try {
