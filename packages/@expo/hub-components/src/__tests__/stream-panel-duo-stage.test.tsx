@@ -42,19 +42,19 @@ function render(error: string | null) {
   );
 }
 
-test("the 3D stage fills the stream area between the reserved title and controls", () => {
+test("the 3D stage stays inside the stream area between the reserved title and controls", () => {
   const markup = render(null);
   expect(markup).toContain('data-testid="model-screen"');
   // The viewport's content box is what remains after the title and the
-  // controls with their gaps; the stage takes all of it and nothing more, so
-  // the title above and the controls below never overlap the model.
+  // controls with their gaps; the stage takes at most all of it, so the title
+  // above and the controls below never overlap the model.
   const viewport = markup.match(/data-testid="device-frame-viewport" style="([^"]*)"/)?.[1];
   expect(viewport).toContain(
     `padding:${DEVICE_TITLE_HEIGHT + 32}px 0 ${STREAM_CONTROLS_HEIGHT + 32}px`,
   );
   expect(viewport).toContain("container-type:size");
   const stage = markup.match(/data-device-frame-kind="duo-model"[^>]*style="([^"]*)"/)?.[1];
-  expect(stage).toStartWith("width:100cqw;height:100cqh;");
+  expect(stage).toStartWith("width:min(762.369px, 100cqw);height:min(762.369px, 100cqh);");
 });
 
 test("a fold error stays inside the measured controls block below the 3D stage", () => {

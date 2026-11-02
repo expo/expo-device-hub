@@ -37,15 +37,20 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
 
-// The iPhone Duo's 3D stage takes the whole stream area that StreamPanel keeps
-// clear of the device title and the controls. Only that container sizes it,
-// never a native screen configuration, so the stage keeps its footprint as the
-// device folds and changes active displays: resizing it then would animate on
-// top of the hinge motion. Window and sidebar resizes do resize it.
-// @ref LLP 0004#stage-size — the Hub fills the stream area; serve-sim keeps a fixed 1:1 stage
+// The iPhone Duo's 3D stage is as large as the flat Duo can be: the cover's
+// long side at the MAX_SHORT_SIDE cap (DeviceKit's 1398 x 2034 framebuffer),
+// on both axes so that any pose or rotation fits, plus the model's 32 px fill
+// inset (`DUO_FILL_INSET`) on each side. Below that size it shrinks to the
+// stream area that StreamPanel keeps clear of the device title and the
+// controls. Only that container sizes it, never a native screen configuration,
+// so the stage keeps its footprint as the device folds and changes active
+// displays: resizing it then would animate on top of the hinge motion. Window
+// and sidebar resizes do resize it.
+// @ref LLP 0004#stage-size — the Hub caps the stage at the flat Duo's size; serve-sim keeps a fixed 1:1 stage
+const DUO_STAGE_MAX_SIDE = (MAX_SHORT_SIDE * 2034) / 1398 + 2 * 32;
 const DUO_STAGE_STYLE: CSSProperties = {
-  width: "100cqw",
-  height: "100cqh",
+  width: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqw)`,
+  height: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqh)`,
   flexShrink: 0,
   position: "relative",
   isolation: "isolate",
@@ -81,7 +86,7 @@ const CONFIG: Record<
  * shrinking to the available height or panel width). Without artwork, the frame
  * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
  * clips a centered, undistorted stream and may crop its edges to prevent leaks.
- * The iPhone Duo's 3D model instead fills the whole stream area.
+ * The iPhone Duo's 3D stage is capped at the flat Duo's long side on both axes.
  */
 // @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({

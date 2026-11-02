@@ -94,7 +94,7 @@ const IOS_LANDSCAPE_CLIP =
 const ANDROID_CLIP =
   "position:absolute;inset:0;background-color:var(--expo-theme-background-element);clip-path:shape(from 2.564cqw -0.5px, hline to calc(100% - 2.564cqw), curve to 100% calc(2.564cqw - 0.5px) with 1.416cqw 0 from start / 0 -1.416cqw from end, vline to calc(100% - 2.564cqw + 0.5px), curve to calc(100% - 2.564cqw) calc(100% + 0.5px) with 0 1.416cqw from start / 1.416cqw 0 from end, hline to 2.564cqw, curve to 0 calc(100% - 2.564cqw + 0.5px) with -1.416cqw 0 from start / 0 1.416cqw from end, vline to calc(2.564cqw - 0.5px), curve to 2.564cqw -0.5px with 0 -1.416cqw from start / -1.416cqw 0 from end, close)";
 
-// Captured from the 2D preview before the 3D stage filled the stream area:
+// Captured from the 2D preview before the 3D stage changed size:
 // the frame, stream, and framed clip styles on #248 (fbe2fe54), the unframed
 // clips on #435 (c4b445a1). The 3D stage must not change any of them. The Duo
 // frames since use the other devices' 480px short side instead of serve-sim's
@@ -231,4 +231,31 @@ test.each(CASES)("the 2D preview keeps its size and layout: $name", (entry) => {
   expect(sizes.frame).toBe(entry.expected.frame);
   expect(sizes.stream).toBe(entry.expected.stream);
   expect(sizes.clip).toBe(entry.expected.clip);
+});
+
+test("the 3D stage is capped at the flat Duo's size, so both modes fill the stream area alike", () => {
+  const render = (mode: "2d" | "3d", screen: DeviceClient["screen"]) =>
+    layout(
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={DUO}
+          client={client(screen, { fold: true, model: true })}
+          DeviceScreen={() => <div />}
+          FoldableDeviceScreen={() => <div data-testid="model-screen" />}
+          foldPreview={{ mode, sizeMode: "fill" }}
+          displayScreen={(next) => next ?? null}
+        />,
+      ),
+    ).frame;
+  const cover = { width: 1398, height: 2034 };
+  // The flat cover: 480 px wide at the cap, so its long side is 480 / ratio.
+  expect(render("2d", cover)).toStartWith("width:min(480px, 100cqw, 68.731563cqh);");
+  const coverLongSide = (480 * cover.height) / cover.width;
+  // The stage holds that long side on both axes, plus the model's 32 px fill inset on each side.
+  const cap = `${(coverLongSide + 2 * 32).toFixed(3)}px`;
+  for (const screen of [cover, { width: 2853, height: 2007 }, null]) {
+    expect(render("3d", screen)).toStartWith(
+      `width:min(${cap}, 100cqw);height:min(${cap}, 100cqh);`,
+    );
+  }
 });

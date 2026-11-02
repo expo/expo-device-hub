@@ -31,10 +31,10 @@ function visitBoxCorners(box: Box3, point: Vector3, visit: (point: Vector3) => v
 /**
  * The camera zoom for the scene's base view: its vertical field of view spans
  * the largest centered square of the stage. On serve-sim's fixed 1:1 stage this
- * is its stage.height / viewport.height zoom. The Hub's stage fills the stream
- * area instead, so its short side limits the base view, and at rest the
- * physical size never crosses the edges of a stage that is narrower than it
- * is tall.
+ * is its stage.height / viewport.height zoom. The Hub's stage shrinks to the
+ * stream area below its cap instead, so its short side limits the base view,
+ * and at rest the physical size never crosses the edges of a stage that is
+ * narrower than it is tall.
  */
 // @ref LLP 0004#stage-size — the Hub's stage has any aspect ratio; serve-sim's is square
 export function duoStageZoom(viewport: DuoViewportSize, stage: DuoViewportSize): number {

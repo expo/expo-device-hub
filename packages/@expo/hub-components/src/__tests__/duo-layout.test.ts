@@ -148,8 +148,9 @@ const POSES = [
   [80, "tent", 0],
 ] as const;
 
-// The Hub's stage fills the stream area, so it can be wider or taller than
-// serve-sim's fixed 1:1 stage.
+// The Hub's stage shrinks to the stream area below its cap, so it can be wider
+// or taller than serve-sim's fixed 1:1 stage. The fit also holds for stages
+// larger than the cap, for consumers that size the stage themselves.
 const STAGES = [
   { width: 640, height: 640 },
   { width: 1600, height: 900 },

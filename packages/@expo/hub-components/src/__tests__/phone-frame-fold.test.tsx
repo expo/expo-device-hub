@@ -76,7 +76,7 @@ describe("PhoneFrame with an iPhone Duo", () => {
     expect(render(2853, 2007)).toContain("width:min(682.3318385650225px,");
     expect(render(2853, 2007)).toContain("aspect-ratio 250ms ease");
   });
-  test("renders the injected 3D screen on a stage that fills the stream area, without a screen clip", () => {
+  test("renders the injected 3D screen on a stage capped at the flat Duo's size, without a screen clip", () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}
@@ -94,11 +94,12 @@ describe("PhoneFrame with an iPhone Duo", () => {
     expect(markup).not.toContain("data-mode");
     expect(markup).not.toContain('data-testid="flat-screen"');
     expect(markup).not.toContain("clip-path");
-    // The whole content box of the panel's viewport, which StreamPanel keeps
-    // clear of the title and the controls. No fixed size or aspect ratio.
-    expect(markup).toContain("width:100cqw;height:100cqh");
+    // The flat cover's long side at the 480 px short-side cap, plus the 32 px
+    // fill inset on each side, on both axes; below that, the content box of
+    // the panel's viewport, which StreamPanel keeps clear of the title and the
+    // controls. No aspect ratio, so any pose or rotation fits.
+    expect(markup).toContain("width:min(762.369px, 100cqw);height:min(762.369px, 100cqh)");
     expect(markup).not.toContain("aspect-ratio");
-    expect(markup).not.toContain("min(");
   });
 
   test("never resizes the 3D stage while the device folds, rotates, or changes displays", () => {
