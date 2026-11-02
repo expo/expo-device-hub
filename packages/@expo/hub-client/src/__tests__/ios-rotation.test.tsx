@@ -1,4 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import type { DeviceClient, DeviceOrientation } from "../types";
@@ -64,7 +65,7 @@ afterEach(async () => {
   Socket.instances = [];
 });
 
-async function mount({ inputAdmission = false, initialScreen = true } = {}) {
+async function mount({ inputAdmission = false, initialScreen = true, strict = false } = {}) {
   now = 0;
   clock = spyOn(performance, "now").mockImplementation(() => now);
   queueClock = spyOn(Date, "now").mockImplementation(() => now);
@@ -110,7 +111,15 @@ async function mount({ inputAdmission = false, initialScreen = true } = {}) {
     return null;
   }
   await act(async () => {
-    renderer = create(<Harness device="DEVICE-A" />);
+    renderer = create(
+      strict ? (
+        <StrictMode>
+          <Harness device="DEVICE-A" />
+        </StrictMode>
+      ) : (
+        <Harness device="DEVICE-A" />
+      ),
+    );
   });
   const helper = () => Socket.instances.filter((socket) => socket.url.includes("/helper/")).at(-1)!;
   if (initialScreen) await act(async () => helper().screen("portrait"));
@@ -454,4 +463,10 @@ test("an iOS client without a connection offers no orientations and ignores a ch
   expect(disabled.orientationPending).toBe(false);
   expect(disabled.orientation).toBeNull();
   expect(disabled.orientationError).toBeNull();
+});
+
+test("an iOS orientation choice is still sent under Strict Mode, which runs effects twice", async () => {
+  const { client, helper } = await mount({ strict: true });
+  await act(async () => client().setOrientation("landscape_right"));
+  expect(helper().rotations()).toEqual(["landscape_right"]);
 });

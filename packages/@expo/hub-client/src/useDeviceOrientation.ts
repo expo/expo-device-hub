@@ -79,6 +79,8 @@ export function useDeviceOrientation(
   );
 
   useEffect(() => {
+    // Strict Mode runs this setup again after a cleanup, with the same backend.
+    if (backend) retired.delete(backend);
     generationRef.current++;
     setState(NO_ORIENTATION);
     return () => {
