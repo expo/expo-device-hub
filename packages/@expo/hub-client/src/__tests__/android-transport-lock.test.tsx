@@ -57,7 +57,12 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-function stubBrowser(api: object, apiStatus = 200) {
+function stubBrowser(
+  api: object,
+  apiStatus = 200,
+  apiResponse?: (attempt: number, signal: AbortSignal | undefined) => Response | undefined,
+) {
+  let apiAttempts = 0;
   const sockets: string[] = [];
   const requests: string[] = [];
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -100,20 +105,26 @@ function stubBrowser(api: object, apiStatus = 200) {
       close() {}
     },
   );
-  stubGlobal("fetch", async (url: string) => {
+  stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     requests.push(String(url));
     const path = new URL(url).pathname;
-    if (path === "/api") return Response.json(api, { status: apiStatus });
+    if (path === "/api") {
+      const response = apiResponse?.(++apiAttempts, init?.signal ?? undefined);
+      return response ?? Response.json(api, { status: apiStatus });
+    }
     if (path === "/webrtc/offer") return Response.json({ type: "answer", sdp: "answer" });
     return Response.json({}, { status: 404 });
   });
   return { sockets, requests };
 }
 
+// The client from the latest render, for a test that waits across re-renders.
+let latestClient: ReturnType<typeof useAndroidDeviceClient> | undefined;
+
 async function renderAndroid() {
   let client!: ReturnType<typeof useAndroidDeviceClient>;
   function Harness() {
-    client = useAndroidDeviceClient({
+    latestClient = client = useAndroidDeviceClient({
       baseUrl: "https://hub.test",
       device: "emulator-5554",
       streamMode: "h264",
@@ -168,3 +179,39 @@ test("an H.264 viewer still gets WebSocket video when /api fails", async () => {
   expect(requests.some((url) => url.includes("/webrtc/offer"))).toBe(false);
   expect(client.videoKind).toBe("canvas");
 });
+
+test("a stalled /api read is aborted, so a later poll discovers a WebRTC-only host", async () => {
+  // The first `/api` answers its headers, then its body never arrives. Like a real fetch, the body
+  // fails only when the request's signal aborts.
+  const { requests } = stubBrowser(
+    {
+      stream: WEBRTC_STREAM,
+      viewerTransports: { default: "webrtc", available: ["webrtc"], webrtc: WEBRTC_STREAM },
+    },
+    200,
+    (attempt, signal) =>
+      attempt === 1
+        ? new Response(
+            new ReadableStream({
+              start(controller) {
+                signal?.addEventListener("abort", () => controller.error(signal.reason));
+              },
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          )
+        : undefined,
+  );
+  await renderAndroid();
+  // The read deadline (3 s) passes, then the next 1.5 s poll runs.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  });
+  expect(requests.filter((url) => new URL(url).pathname === "/api").length).toBeGreaterThan(1);
+  expect(latestClient?.streamCapabilities?.modeAvailability).toEqual({
+    mjpeg: false,
+    h264: false,
+    webrtc: true,
+  });
+  expect(requests.some((url) => url.endsWith("/webrtc/offer?device=emulator-5554"))).toBe(true);
+  expect(latestClient?.videoKind).toBe("video");
+}, 10_000);

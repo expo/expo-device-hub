@@ -939,7 +939,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       polling = true;
       controller = new AbortController();
       try {
-        const response = await sessionFetch(url, { cache: "no-store", signal: controller.signal });
+        // A deadline on the fetch and its body read, as in `useIosDevice`, so a stalled read
+        // cannot hold `polling` and block every later poll.
+        const response = await sessionFetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(STREAM_METADATA_FALLBACK_MS),
+          ]),
+        });
         if (!response.ok) {
           markFailed();
           return;
