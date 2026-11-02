@@ -18,6 +18,13 @@ import { resolveAdbPath, resolveAvdmanagerPath } from "./sdk-paths";
 import type { AndroidDevice } from "./types";
 
 /**
+ * How long `adb devices -l` may run. A wedged adb server accepts connections
+ * but never answers, so without a limit every poll leaves another `adb` child
+ * behind and the hub's device list, iOS included, never returns.
+ */
+const ADB_DEVICES_TIMEOUT_MS = 5_000;
+
+/**
  * List the Android devices known to the SDK.
  *
  * Combines the AVDs from `avdmanager list avd` with the devices currently
@@ -26,7 +33,9 @@ import type { AndroidDevice } from "./types";
  * described from `getprop`. The result's `value` contains every device it could
  * read, with the first invocation-specific failure in `error`.
  */
-export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>> {
+export async function listDevices({
+  adbTimeoutMs = ADB_DEVICES_TIMEOUT_MS,
+}: { adbTimeoutMs?: number } = {}): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
     const env = process.env;
     const home = homedir();
@@ -36,7 +45,7 @@ export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>
     const avdList = await runAvdmanagerListAvd(avdmanager);
     if (avdList.error) return result([], avdList.error);
 
-    const adbList = await runAdbDevices(adb);
+    const adbList = await runAdbDevices(adb, { timeoutMs: adbTimeoutMs });
     if (adbList.error) return result([], adbList.error);
 
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
