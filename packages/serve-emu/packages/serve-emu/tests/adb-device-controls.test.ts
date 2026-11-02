@@ -266,7 +266,9 @@ describe("ADB display controls", () => {
       return result("DisplayRotation\n  mRotation=0\n");
     }) as typeof execText;
 
-    await expect(getDisplayRotation("device-1", runExec, controller.signal)).resolves.toBe(0);
+    await expect(
+      getDisplayRotation("device-1", runExec, { signal: controller.signal, lane: "background" }),
+    ).resolves.toBe(0);
     expect(options?.signal).toBe(controller.signal);
     expect(options?.lane).toBe("background");
   });

@@ -119,7 +119,7 @@ export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> 
         client.ws.close(code, reason);
       });
     this.inputQueue = opts.inputQueue ?? opts.stream.controls;
-    const applyLocation = opts.applyLocation;
+    const { applyLocation, readOrientation, applyRotation } = opts;
     this.deviceState =
       opts.deviceState ??
       new DeviceSessionState({
@@ -130,8 +130,18 @@ export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> 
           }
           await applyLocation(serial, fix, signal);
         },
-        readOrientation: opts.readOrientation,
-        applyRotation: opts.applyRotation,
+        readOrientation: async (serial) => {
+          if (!readOrientation) {
+            throw new Error("readOrientation is required for a new device state");
+          }
+          return readOrientation(serial);
+        },
+        applyRotation: async (serial, mode) => {
+          if (!applyRotation) {
+            throw new Error("applyRotation is required for a new device state");
+          }
+          return applyRotation(serial, mode);
+        },
       });
     if (this.deviceState.serial !== this.serial) {
       throw new Error(

@@ -33,6 +33,8 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
+  getDisplayOrientation,
+  setUserRotation,
   type NightMode,
 } from "./adb.ts";
 import {
@@ -558,8 +560,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       generation,
       stream,
       applyLocation: setLocation,
-      readOrientation: dependencies.readOrientation,
-      applyRotation: dependencies.applyRotation,
+      readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+      applyRotation:
+        dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
       deviceState,
     });
     context.registerCleanup(() =>

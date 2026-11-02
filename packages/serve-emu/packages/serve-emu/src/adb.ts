@@ -206,12 +206,12 @@ export type DisplayRotation = 0 | 1 | 2 | 3;
 export async function getDisplayRotation(
   serial: string,
   runExec: typeof execText = execText,
-  signal?: AbortSignal,
+  { signal, lane }: { signal?: AbortSignal; lane?: ExecLane } = {},
 ): Promise<DisplayRotation> {
   const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "window", "displays"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
     signal,
-    lane: "background",
+    lane,
   });
   if (execFailed(r)) {
     throw new Error(`dumpsys window displays failed: ${execFailure(r)}`);
@@ -367,7 +367,7 @@ export async function getDisplayOrientation(
 ): Promise<ScreenOrientation> {
   const [natural, rotation] = await Promise.all([
     readNaturalSize(serial, runExec, { lane: "background" }),
-    getDisplayRotation(serial, runExec),
+    getDisplayRotation(serial, runExec, { lane: "background" }),
   ]);
   return screenOrientationForRotation(rotation, natural);
 }

@@ -1,4 +1,4 @@
-import { getDisplayOrientation, setUserRotation, type OrientationStatus } from "./adb.ts";
+import type { OrientationStatus } from "./adb.ts";
 import {
   createDisplayOrientationReader,
   type DisplayOrientationReader,
@@ -25,10 +25,10 @@ type ReplayInputTarget = {
 type DeviceSessionStateOptions = {
   serial: string;
   applyLocation(serial: string, fix: GeoFix, signal: AbortSignal): Promise<void>;
-  /** Read the pose the display shows; adb by default. */
-  readOrientation?: (serial: string) => Promise<ScreenOrientation>;
-  /** Lock or free the rotation; adb by default. */
-  applyRotation?: (serial: string, mode: OrientationMode) => Promise<OrientationStatus>;
+  /** Read the pose the display shows. */
+  readOrientation(serial: string): Promise<ScreenOrientation>;
+  /** Lock or free the rotation. */
+  applyRotation(serial: string, mode: OrientationMode): Promise<OrientationStatus>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -61,7 +61,7 @@ export class DeviceSessionState {
   readonly orientation: DisplayOrientationReader;
 
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
-  readonly #applyRotation: NonNullable<DeviceSessionStateOptions["applyRotation"]>;
+  readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
   readonly #recordLock: (pose: ScreenOrientation | null) => void;
   readonly #now: () => number;
   readonly #owners = new Set<DeviceStateOwner>();
@@ -72,12 +72,9 @@ export class DeviceSessionState {
   constructor(options: DeviceSessionStateOptions) {
     this.serial = options.serial;
     this.#applyLocation = options.applyLocation;
-    this.#applyRotation =
-      options.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode));
-    const readOrientation =
-      options.readOrientation ?? ((serial: string) => getDisplayOrientation(serial));
+    this.#applyRotation = options.applyRotation;
     const display = createDisplayOrientationReader({
-      read: () => readOrientation(options.serial),
+      read: () => options.readOrientation(options.serial),
     });
     this.orientation = display.reader;
     this.#recordLock = display.locked;

@@ -23,6 +23,8 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
+  getDisplayOrientation,
+  setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
@@ -471,8 +473,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyLocation:
         dependencies.setLocation ??
         ((serial, fix, signal) => setEmulatorLocationAsync(serial, fix, signal)),
-      readOrientation: dependencies.readOrientation,
-      applyRotation: dependencies.applyRotation,
+      readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+      applyRotation:
+        dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
     });
   try {
     deviceState.acquire(deviceStateOwner);

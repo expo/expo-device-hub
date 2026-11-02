@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "bun:test";
 import { DeviceSessionState } from "../src/device-session-state.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 import { LogcatHub } from "../src/logcat.ts";
 import { SessionRecorder } from "../src/session-recorder.ts";
 
@@ -74,6 +75,10 @@ describe("DeviceSessionState source ownership", () => {
       logcat: logcat.hub,
       applyLocation: async (_serial, fix) => {
         appliedLocations.push(`${fix.latitude},${fix.longitude}`);
+      },
+      readOrientation: readNoOrientation,
+      applyRotation: async () => {
+        throw new Error("not used");
       },
       now: () => 1_000,
     });
