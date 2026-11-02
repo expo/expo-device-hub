@@ -66,6 +66,7 @@ interface ZoneRecord {
   name: string;
   offset: number;
   notes: number;
+  significant: number;
 }
 
 function zoneRecords(): ZoneRecord[] {
@@ -76,8 +77,14 @@ function zoneRecords(): ZoneRecord[] {
       .filter((line) => line.startsWith("tz\t"))
       .map((line) => {
         const [, pid, detail = ""] = line.split("\t");
-        const [name = "", offset = "", notes = ""] = detail.split("|");
-        return { pid: Number(pid), name, offset: Number(offset), notes: Number(notes) };
+        const [name = "", offset = "", notes = "", significant = ""] = detail.split("|");
+        return {
+          pid: Number(pid),
+          name,
+          offset: Number(offset),
+          notes: Number(notes),
+          significant: Number(significant),
+        };
       });
   } catch {
     return [];
@@ -145,7 +152,12 @@ describe.skipIf(!ready)("time-zone capability on a real simulator", () => {
     const host = await waitForZone(pid, () => true);
 
     await writeTimeZone(udid!, "Asia/Tokyo");
-    const tokyo = await waitForZone(pid, (r) => r.name === "Asia/Tokyo");
+    // Apps such as Calendar keep their own zone until a significant time change, so it must
+    // arrive after the apply: the first record that counts it already names the new zone.
+    const signalled = (r: ZoneRecord) => r.pid === pid && r.significant > host.significant;
+    await waitForZone(pid, signalled);
+    const tokyo = zoneRecords().find(signalled)!;
+    expect(tokyo.name).toBe("Asia/Tokyo");
     // Tokyo has no daylight saving, so libc's offset is fixed.
     expect(tokyo.offset).toBe(9 * 3600);
     expect(tokyo.notes).toBeGreaterThan(host.notes);

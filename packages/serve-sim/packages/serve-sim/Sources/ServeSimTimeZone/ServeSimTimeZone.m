@@ -1,10 +1,13 @@
 // Time-zone capability: follows the zone file serve-sim writes (an IANA name or
 // "host"), so a running app switches zones without a restart. A change runs
 // tzset (libc, Hermes `Date`), resetSystemTimeZone (Foundation, Hermes `Intl`)
-// and posts NSSystemTimeZoneDidChangeNotification, which Foundation skips here.
+// and posts NSSystemTimeZoneDidChangeNotification, which Foundation skips here. It also
+// posts the significant time change iOS sends for a zone change, which apps such as
+// Calendar refresh on; every process in the simulator receives that one.
 
 #import <Foundation/Foundation.h>
 #include <fcntl.h>
+#include <notify.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -67,6 +70,8 @@ static void applyZone(BOOL atLoad) {
   [NSTimeZone resetSystemTimeZone];
   [NSNotificationCenter.defaultCenter postNotificationName:NSSystemTimeZoneDidChangeNotification
                                                     object:nil];
+  // After the apply, so this process refreshes in the new zone even when another app posted first.
+  notify_post("SignificantTimeChangeNotification");
 }
 
 // serve-sim replaces the file by rename, so watch the directory, as the loader does.

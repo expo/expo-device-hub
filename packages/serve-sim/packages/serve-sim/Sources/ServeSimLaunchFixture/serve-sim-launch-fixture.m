@@ -305,17 +305,20 @@ static void RecordScroll(NSString *kind, NSDictionary *data) {
 
 // The time-zone E2E reads what the process itself sees, from both places an app
 // asks: Foundation's zone name, and libc's offset for now, which is what Hermes
-// `Date` uses. Recorded once at launch and again whenever either changes.
+// `Date` uses. Recorded once at launch and again whenever either changes, with how many
+// zone and significant-time-change notifications arrived, which is what Calendar refreshes on.
 static NSUInteger zoneChangeNotifications = 0;
+static NSUInteger significantTimeChanges = 0;
 static NSString *lastZoneRecord = nil;
 
 static void RecordTimeZoneIfChanged(void) {
   time_t now = time(NULL);
   struct tm local;
   localtime_r(&now, &local);
-  NSString *detail = [NSString stringWithFormat:@"%@|%ld|%lu", NSTimeZone.systemTimeZone.name,
+  NSString *detail = [NSString stringWithFormat:@"%@|%ld|%lu|%lu", NSTimeZone.systemTimeZone.name,
                                                  (long)local.tm_gmtoff,
-                                                 (unsigned long)zoneChangeNotifications];
+                                                 (unsigned long)zoneChangeNotifications,
+                                                 (unsigned long)significantTimeChanges];
   if ([detail isEqualToString:lastZoneRecord]) return;
   lastZoneRecord = detail;
   Record(@"tz", detail);
@@ -327,6 +330,13 @@ static void StartTimeZoneRecording(void) {
                                                    queue:NSOperationQueue.mainQueue
                                               usingBlock:^(__unused NSNotification *note) {
     zoneChangeNotifications++;
+    RecordTimeZoneIfChanged();
+  }];
+  [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationSignificantTimeChangeNotification
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(__unused NSNotification *note) {
+    significantTimeChanges++;
     RecordTimeZoneIfChanged();
   }];
   RecordTimeZoneIfChanged();
