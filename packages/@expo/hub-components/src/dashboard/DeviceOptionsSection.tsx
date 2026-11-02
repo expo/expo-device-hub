@@ -1,10 +1,6 @@
 import { useId, useState } from "react";
 
-import {
-  areRecordingControlsLocked,
-  type DeviceClient,
-  type DeviceSettingKey,
-} from "@expo/hub-client";
+import { type DeviceClient, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { KeyboardSection } from "./KeyboardSection";
@@ -121,7 +117,7 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
+  const recordingControlsLocked = client?.recordingControlsLocked ?? false;
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
     : client?.screenRecording === "unknown"

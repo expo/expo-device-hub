@@ -79,7 +79,7 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { parseScreenRecordingStatus } from "./screen-recording";
+import { areRecordingControlsLocked, parseScreenRecordingStatus } from "./screen-recording";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { resolveDeviceStreamMode } from "./stream-mode";
@@ -350,13 +350,26 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceScope = `${active ? "active" : "inactive"}\0${baseUrl ?? ""}\0${targetDevice ?? ""}`;
+  // A connected device's recording status is unknown until its first `/api` answer.
+  const initialRecording = active ? "unknown" : null;
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
-  }>({ scope: deviceScope, status: active ? "unknown" : null });
+  }>({ scope: deviceScope, status: initialRecording });
   if (recordingSnapshot.scope !== deviceScope) {
-    setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
+    setRecordingSnapshot({ scope: deviceScope, status: initialRecording });
   }
+  const screenRecording =
+    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : initialRecording;
+  // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
+  // Turning the device or changing the stream can end the host recording, so the three places
+  // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
+  // backend) ignore them while it could break.
+  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
+  const recordingLockedRef = useRef(recordingControlsLocked);
+  useLayoutEffect(() => {
+    recordingLockedRef.current = recordingControlsLocked;
+  }, [recordingControlsLocked]);
   // Whether this server reports the display pose, and its last report. Null until the
   // first `/api` answer for this device.
   const [orientationReport, setOrientationReport] = useState<{
@@ -505,6 +518,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             orientationKind,
             sessionFetch,
             deviceApiUrl(baseUrl, "/api/orientation", targetDevice),
+            () => !recordingLockedRef.current,
           )
         : null,
     [orientationKind, baseUrl, targetDevice, sessionFetch],
@@ -759,6 +773,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       inputSource?: DeviceInputSource;
     }) => {
       if (
+        recordingLockedRef.current ||
         !streamSourceUrl ||
         streamSourceLoadingRef.current ||
         isStreamSwitchPending(streamSwitchRef.current)
@@ -1155,7 +1170,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
-      if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current)) return;
+      if (
+        recordingLockedRef.current ||
+        streamSourceLoadingRef.current ||
+        isStreamSwitchPending(streamSwitchRef.current)
+      ) {
+        return;
+      }
       const write = writeStreamSettings(patch);
       if (!write || !useWebRtc) return;
       const request = ++streamSourceRequestRef.current;
@@ -2280,12 +2301,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
     updateStreamSettings,
     streamSource,
-    screenRecording:
-      recordingSnapshot.scope === deviceScope
-        ? recordingSnapshot.status
-        : active
-          ? "unknown"
-          : null,
+    screenRecording,
+    recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
     setStreamSource,

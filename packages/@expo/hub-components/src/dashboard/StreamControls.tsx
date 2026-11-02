@@ -70,6 +70,7 @@ export function StreamControls({
   onRotate,
   onSave,
   recording = null,
+  recordingControlsLocked: clientLocked,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -84,7 +85,10 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
   recording?: DeviceScreenRecordingStatus | null;
+  /** The client's `recordingControlsLocked`. Overrides the lock that `recording` implies. */
+  recordingControlsLocked?: boolean;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -96,7 +100,8 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = areRecordingControlsLocked(recording);
+  // Callers that pass only `recording` keep the lock it implied before this prop existed.
+  const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
@@ -181,11 +186,11 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            recording === "unknown"
-              ? "Rotation is unavailable until recording status is known."
-              : recordingControlsLocked
-                ? "Rotation is unavailable while recording."
-                : undefined
+            !recordingControlsLocked
+              ? undefined
+              : recording === "unknown"
+                ? "Rotation is unavailable until recording status is known."
+                : "Rotation is unavailable while recording."
           }
           aria-disabled={recordingControlsLocked || undefined}
           onClick={recordingControlsLocked ? undefined : onRotate}

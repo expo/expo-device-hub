@@ -12,13 +12,17 @@ function buttonTags(markup: string) {
 
 describe("StreamControls", () => {
   test("locks Rotate and explains the pending recording check", () => {
-    const markup = renderToStaticMarkup(<StreamControls recording="unknown" />);
+    const markup = renderToStaticMarkup(
+      <StreamControls recording="unknown" recordingControlsLocked />,
+    );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
     expect(rotate).toContain("Rotation is unavailable until recording status is known.");
   });
   test("explains why Rotate is unavailable during recording without disabling app controls", () => {
-    const markup = renderToStaticMarkup(<StreamControls recording="recording" />);
+    const markup = renderToStaticMarkup(
+      <StreamControls recording="recording" recordingControlsLocked />,
+    );
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -27,6 +31,28 @@ describe("StreamControls", () => {
       expect(tag).not.toContain("disabled");
     }
   });
+  test("locks Rotate from the recording status when the client's lock is not passed", () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls onRotate={() => {}} recording="recording" />,
+    );
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+  });
+  test.each(["recording", "unknown"] as const)(
+    "follows the client's lock, not the %s status, and explains only a locked Rotate",
+    (recording) => {
+      const markup = renderToStaticMarkup(
+        <StreamControls
+          onRotate={() => {}}
+          recording={recording}
+          recordingControlsLocked={false}
+        />,
+      );
+      const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+      expect(rotate).not.toContain("aria-disabled");
+      expect(rotate).not.toContain("Rotation is unavailable");
+    },
+  );
   test("groups Save, Home, and Reload in one pill and keeps Rotate separate", () => {
     const markup = renderToStaticMarkup(<StreamControls />);
     const buttons = buttonTags(markup);
@@ -159,6 +185,41 @@ describe("StreamControls", () => {
 });
 
 describe("StreamPanel", () => {
+  test("locks Rotate from the client's recordingControlsLocked, not from the recording status", () => {
+    const device: Device = {
+      id: "android",
+      name: "Pixel 9",
+      version: "Android 16",
+      platform: "android",
+      booted: true,
+      physical: false,
+      supported: true,
+      deviceFrame: null,
+    };
+    const rotate = (overrides: Partial<DeviceClient>) =>
+      buttonTags(
+        renderToStaticMarkup(
+          <StreamPanel
+            device={device}
+            client={
+              {
+                status: "streaming",
+                capabilities: { clipboard: false },
+                clipboardPending: null,
+                screenRecording: "recording",
+                recordingControlsLocked: false,
+                ...overrides,
+              } as DeviceClient
+            }
+            DeviceScreen={() => null}
+            displayScreen={() => null}
+          />,
+        ),
+      ).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate({})).not.toContain("aria-disabled");
+    expect(rotate({ recordingControlsLocked: true })).toContain('aria-disabled="true"');
+  });
+
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {
     let onCopy: DeviceScreenProps["onCopy"];
     let copies = 0;

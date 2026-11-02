@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
 import {
-  areRecordingControlsLocked,
   resolveDeviceStreamMode,
   type DeviceClient,
   type DeviceGrpcImageMode,
@@ -136,7 +135,7 @@ export function StreamOptionsSection({
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
+  const recordingControlsLocked = client.recordingControlsLocked;
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
     : client.screenRecording === "unknown"

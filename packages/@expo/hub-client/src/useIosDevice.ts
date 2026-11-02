@@ -2117,6 +2117,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clipboardWarning: clipboardState.warning,
     streamCapabilities,
     screenRecording: null,
+    recordingControlsLocked: false,
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,

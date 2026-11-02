@@ -230,13 +230,14 @@ test("Android ignores a report from a poll that started before the answer, also 
   expect(client().orientation).toBe("landscape_left");
 });
 
-test("Android Rotate before the first /api answer waits, because the server's poses are not known yet", async () => {
+test("Android Rotate before the first /api answer waits, because the recording status is unknown", async () => {
   const { client, locks, silence, switchDevice, settle } = await mount({
     pose: "portrait",
   });
   silence("emulator-5556", true);
   await switchDevice("emulator-5556");
   expect(client().capabilities.orientation).toBe(false);
+  expect(client().recordingControlsLocked).toBe(true);
   await act(async () => client().rotate());
   await settle();
   expect(locks()).toEqual([]);
