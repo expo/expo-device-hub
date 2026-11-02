@@ -133,26 +133,27 @@ async function mount({ inputAdmission = false, initialScreen = true, strict = fa
   };
 }
 
-test("rapid iOS rotations advance requests without optimistically changing the screen", async () => {
+test("each iOS Rotate shows the next pose at once without changing the screen", async () => {
   const { client, helper } = await mount();
-  client().rotate();
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([
     "landscape_left",
     "portrait_upside_down",
     "landscape_right",
   ]);
   expect(client().screen?.orientation).toBe("portrait");
+  expect(client().orientation).toBe("landscape_right");
 });
 
 test("an earlier acknowledgement cannot reset a newer iOS rotation request", async () => {
   const { client, helper } = await mount();
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   now = 500;
   await act(async () => helper().screen("landscape_left"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([
     "landscape_left",
     "portrait_upside_down",
@@ -163,52 +164,38 @@ test("an earlier acknowledgement cannot reset a newer iOS rotation request", asy
 
 test("iOS rotations follow external orientation again after the readback grace expires", async () => {
   const { client, helper } = await mount();
-  client().rotate();
+  await act(async () => client().rotate());
   now = 500;
   await act(async () => helper().screen("landscape_right"));
   now = 2000;
   await act(async () => helper().screen("portrait"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "landscape_left"]);
-});
-
-test.each([
-  [1499, "portrait_upside_down"],
-  [1500, "portrait"],
-] as const)("repeated deferred iOS readback at %i ms requests %s next", async (time, next) => {
-  const { client, helper } = await mount();
-  client().rotate();
-  now = 500;
-  await act(async () => helper().screen("landscape_right"));
-  now = time;
-  await act(async () => helper().screen("landscape_right"));
-  client().rotate();
-  expect(helper().rotations()).toEqual(["landscape_left", next]);
 });
 
 test("acknowledging the latest iOS request permits external rotation immediately", async () => {
   const { client, helper } = await mount();
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   now = 500;
   await act(async () => helper().screen("portrait_upside_down"));
   now = 600;
   await act(async () => helper().screen("landscape_right"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down", "portrait"]);
 });
 
 test("repeated deferred readback cannot acknowledge a newer request for the same pose", async () => {
   const { client, helper } = await mount();
-  client().rotate();
+  await act(async () => client().rotate());
   now = 500;
   await act(async () => helper().screen("landscape_right"));
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   now = 600;
   await act(async () => helper().screen("landscape_right"));
   await act(async () => helper().screen("landscape_left"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([
     "landscape_left",
     "portrait_upside_down",
@@ -219,36 +206,36 @@ test("repeated deferred readback cannot acknowledge a newer request for the same
 
 test("a declined iOS pose still advances after a pause without new orientation readback", async () => {
   const { client, helper } = await mount();
-  client().rotate();
+  await act(async () => client().rotate());
   now = 5000;
   await act(async () => helper().screen("portrait"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
 
 test("changing the iOS helper resets pending rotation requests to its first screen config", async () => {
   const { client, helper, switchDevice } = await mount();
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   const previous = helper();
   await switchDevice("DEVICE-B");
   expect(helper()).not.toBe(previous);
   await act(async () => helper().screen("landscape_right"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["portrait"]);
 });
 
 test("a replayed iOS rotation advances the cursor before the next click or readback", async () => {
   const { client, helper } = await mount();
   helper().readyState = 0;
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([]);
   helper().readyState = 1;
   await act(async () => helper().onopen?.());
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
   await act(async () => helper().screen("landscape_left"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([
     "landscape_left",
     "portrait_upside_down",
@@ -259,11 +246,11 @@ test("a replayed iOS rotation advances the cursor before the next click or readb
 test("an open but unadmitted socket queues iOS rotations until admission", async () => {
   const { client, helper } = await mount({ inputAdmission: true, initialScreen: false });
   await act(async () => helper().onopen?.());
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   expect(helper().sent).toEqual([]);
   await act(async () => helper().admit());
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([
     "landscape_left",
     "portrait_upside_down",
@@ -271,7 +258,7 @@ test("an open but unadmitted socket queues iOS rotations until admission", async
   ]);
   // The initial config can precede those requests on the server.
   await act(async () => helper().screen("portrait"));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations().at(-1)).toBe("portrait");
 });
 
@@ -279,7 +266,7 @@ test("refused input does not skip the first iOS pose on retry", async () => {
   const { client, helper } = await mount({ inputAdmission: true, initialScreen: false });
   const refused = helper();
   await act(async () => refused.onopen?.());
-  client().rotate();
+  await act(async () => client().rotate());
   expect(refused.rotations()).toEqual([]);
   await act(async () => refused.onclose?.({ code: 1013, reason: "busy" }));
   now = 1600; // Refused input expires before the normal reconnect.
@@ -290,70 +277,23 @@ test("refused input does not skip the first iOS pose on retry", async () => {
     retry.onopen?.();
     retry.admit();
   });
-  client().rotate();
+  await act(async () => client().rotate());
   expect(retry.rotations()).toEqual(["landscape_left"]);
 });
 
-test("queued clicks use screen readback but wait for the explicit admission frame", async () => {
+test("queued clicks wait for the explicit admission frame, and the newest one wins", async () => {
   const { client, helper } = await mount({ inputAdmission: true, initialScreen: false });
-  client().rotate();
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   await act(async () => helper().screen("landscape_right"));
   expect(helper().rotations()).toEqual([]);
+  expect(client().orientationPending).toBe(true);
   await act(async () => helper().admit());
-  expect(helper().rotations()).toEqual(["portrait", "landscape_left", "portrait_upside_down"]);
-  client().rotate();
-  expect(helper().rotations().at(-1)).toBe("landscape_right");
-});
-
-test("expired and capacity-evicted iOS rotations do not advance the cursor", async () => {
-  const { client, helper } = await mount({ inputAdmission: true, initialScreen: false });
-  client().rotate();
-  now = 2000;
-  client().rotate();
-  // The second click is then evicted by ordinary input, not another rotation.
-  for (let i = 0; i < 32; i++) client().pressButton("home");
-  await act(async () => helper().admit());
-  expect(helper().rotations()).toEqual([]);
-  client().rotate();
-  expect(helper().rotations()).toEqual(["landscape_left"]);
-});
-
-test("a failed iOS rotation send leaves the cursor unchanged", async () => {
-  const { client, helper } = await mount();
-  const send = helper().send.bind(helper());
-  helper().send = () => {
-    throw new Error("send failed");
-  };
-  expect(() => client().rotate()).not.toThrow();
-  expect(helper().rotations()).toEqual([]);
-  helper().send = send;
-  client().rotate();
-  expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
-});
-
-test("a partial queued flush does not apply a successfully sent rotation twice", async () => {
-  const { client, helper } = await mount();
-  helper().readyState = 0;
-  client().rotate();
-  client().rotate();
-  const send = helper().send.bind(helper());
-  let attempts = 0;
-  helper().send = (data) => {
-    if (++attempts >= 2) throw new Error("send failed");
-    send(data);
-  };
-  helper().readyState = 1;
-  expect(() => helper().onopen?.()).not.toThrow();
-  expect(helper().rotations()).toEqual(["landscape_left"]);
-  helper().send = send;
-  client().rotate();
-  expect(helper().rotations()).toEqual([
-    "landscape_left",
-    "portrait_upside_down",
-    "landscape_right",
-  ]);
+  // The first click was already in the input queue; later clicks replace each other.
+  expect(helper().rotations()).toEqual(["landscape_left", "landscape_right"]);
+  await act(async () => client().rotate());
+  expect(helper().rotations().at(-1)).toBe("portrait");
 });
 
 test("changing devices discards queued rotations instead of advancing the new cursor", async () => {
@@ -361,22 +301,22 @@ test("changing devices discards queued rotations instead of advancing the new cu
     inputAdmission: true,
     initialScreen: false,
   });
-  client().rotate();
-  client().rotate();
+  await act(async () => client().rotate());
+  await act(async () => client().rotate());
   await switchDevice("DEVICE-B");
   await act(async () => helper().screen("landscape_right"));
   expect(helper().rotations()).toEqual([]);
   await act(async () => helper().admit());
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["portrait"]);
 });
 
 test("legacy helpers still deliver queued rotations on open without admission frames", async () => {
   const { client, helper } = await mount({ initialScreen: false });
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual([]);
   await act(async () => helper().onopen?.());
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
 
@@ -384,20 +324,20 @@ test.each(["unknown", "toString"])(
   "malformed orientation readback %s cannot poison iOS rotation requests",
   async (orientation) => {
     const { client, helper } = await mount();
-    client().rotate();
+    await act(async () => client().rotate());
     now = 2000;
     await act(async () => helper().screen(orientation as DeviceOrientation));
-    client().rotate();
+    await act(async () => client().rotate());
     expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
   },
 );
 
 test("a non-string orientation readback cannot throw or poison iOS rotation requests", async () => {
   const { client, helper } = await mount();
-  client().rotate();
+  await act(async () => client().rotate());
   now = 2000;
   await act(async () => helper().screen({ toString: null } as unknown as DeviceOrientation));
-  client().rotate();
+  await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
 
@@ -414,8 +354,10 @@ test("an iOS orientation choice sends that pose and Rotate continues from it", a
   await act(async () => client().rotate());
   expect(helper().rotations()).toEqual(["landscape_right", "portrait"]);
 
+  expect(client().orientation).toBe("portrait");
+  // The readback of the older choice does not replace the newer one.
   await act(async () => helper().screen("landscape_right"));
-  expect(client().orientation).toBe("landscape_right");
+  expect(client().orientation).toBe("portrait");
   await act(async () => helper().screen("portrait"));
   expect(client().orientation).toBe("portrait");
 });

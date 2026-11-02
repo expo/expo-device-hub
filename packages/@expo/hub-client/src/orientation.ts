@@ -32,6 +32,16 @@ export function homeIndicatorEdge({
   return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
+/**
+ * How long a backend's answer outranks a report of another pose: the display can turn after
+ * the answer, and an app can keep its own orientation.
+ */
+export const READBACK_GRACE_MS = 1500;
+
+export function isDeviceOrientation(value: unknown): value is DeviceOrientation {
+  return (DEVICE_ORIENTATIONS as readonly unknown[]).includes(value);
+}
+
 /** The four poses, in the order Rotate steps through them on iOS and Android. */
 export const DEVICE_ORIENTATIONS = [
   "portrait",

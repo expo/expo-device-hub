@@ -35,10 +35,16 @@ test("times out a request that does not answer, and a body that never ends", asy
   await expect(writeAndroidOrientation(stalled, URL, "portrait", 20)).rejects.toThrow(
     "did not answer",
   );
-  const endless = async () =>
-    new Response(new ReadableStream({ start() {} }), {
-      headers: { "content-type": "application/json" },
-    });
+  // A real fetch ends its body read when the request's signal aborts; this fake does the same.
+  const endless = async (_url: string, init?: RequestInit) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+        },
+      }),
+      { headers: { "content-type": "application/json" } },
+    );
   await expect(writeAndroidOrientation(endless, URL, "portrait", 20)).rejects.toThrow(
     "did not answer",
   );

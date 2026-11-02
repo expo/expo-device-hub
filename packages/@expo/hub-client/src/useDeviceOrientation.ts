@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { createLatestWriter } from "./latest-writer";
-import { READBACK_GRACE_MS } from "./rotation-cursor";
+import { READBACK_GRACE_MS } from "./orientation";
 import { type DeviceOrientation, type DeviceOrientationCapabilities } from "./types";
 
 export interface DeviceOrientationBackend {
@@ -30,12 +30,6 @@ interface OrientationState {
   error: string | null;
 }
 
-interface Request {
-  generation: number;
-  backend: DeviceOrientationBackend;
-  orientation: DeviceOrientation;
-}
-
 const NO_ORIENTATION: OrientationState = { choice: null, error: null };
 
 function failureMessage(reason: unknown): string {
@@ -56,43 +50,44 @@ export function useDeviceOrientation(
   reported: DeviceOrientation | null,
 ) {
   const [state, setState] = useState<OrientationState>(NO_ORIENTATION);
-  const generationRef = useRef(0);
-  // Backends of a device, token or connection that is gone, or of an unmounted client.
-  const [retired] = useState(() => new WeakSet<DeviceOrientationBackend>());
-  const [writer] = useState(() =>
-    createLatestWriter(
-      async (request: Request) => {
-        // A choice queued for a retired backend must not reach the device.
-        if (retired.has(request.backend)) return null;
-        return request.backend.set(request.orientation);
-      },
-      (outcome) => {
-        if (outcome.value.generation !== generationRef.current) return;
-        if (outcome.ok) {
-          const orientation = outcome.result ?? outcome.value.orientation;
-          setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
-        } else {
-          setState({ choice: null, error: failureMessage(outcome.error) });
-        }
-      },
-    ),
+  // The backend in use; null after its device, token or connection is gone, or on unmount.
+  const currentRef = useRef<DeviceOrientationBackend | null>(null);
+  // One writer per backend, so another device never waits behind a stalled request.
+  const writer = useMemo(
+    () =>
+      backend &&
+      createLatestWriter(
+        async (orientation: DeviceOrientation) => {
+          // A choice queued for a retired backend must not reach the device.
+          if (backend !== currentRef.current) return null;
+          return backend.set(orientation);
+        },
+        (outcome) => {
+          if (backend !== currentRef.current) return;
+          if (outcome.ok) {
+            const orientation = outcome.result ?? outcome.value;
+            setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
+          } else {
+            setState({ choice: null, error: failureMessage(outcome.error) });
+          }
+        },
+      ),
+    [backend],
   );
 
   useEffect(() => {
-    // Strict Mode runs this setup again after a cleanup, with the same backend.
-    if (backend) retired.delete(backend);
-    generationRef.current++;
+    currentRef.current = backend;
     setState(NO_ORIENTATION);
     return () => {
-      if (backend) retired.add(backend);
+      currentRef.current = null;
     };
-  }, [backend, retired]);
+  }, [backend]);
 
   const setOrientation = useCallback(
     (orientation: DeviceOrientation) => {
-      if (!backend || !backend.orientations.includes(orientation)) return;
+      if (!backend || !writer || !backend.orientations.includes(orientation)) return;
       setState({ choice: { orientation, answeredAt: null }, error: null });
-      writer({ generation: generationRef.current, backend, orientation });
+      writer(orientation);
     },
     [backend, writer],
   );

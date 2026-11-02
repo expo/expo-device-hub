@@ -1,5 +1,5 @@
 import { asRecord, errorMessage } from "./app-permissions";
-import { DEVICE_ORIENTATIONS } from "./orientation";
+import { DEVICE_ORIENTATIONS, isDeviceOrientation } from "./orientation";
 import { type DeviceOrientation } from "./types";
 import { type DeviceOrientationBackend } from "./useDeviceOrientation";
 
@@ -13,16 +13,15 @@ export type AndroidOrientationKind = "poses" | "legacy";
 const LEGACY_ORIENTATIONS: readonly DeviceOrientation[] = ["portrait", "landscape_right"];
 /** `POST /api/orientation` locks with adb, which can take a few seconds. */
 const ORIENTATION_REQUEST_TIMEOUT_MS = 10_000;
-const ORIENTATION_TIMEOUT_MESSAGE =
-  "The orientation change did not answer in 10 s. Check the device, then choose the pose again.";
 
 export function parseAndroidOrientation(value: unknown): DeviceOrientation | null {
-  return DEVICE_ORIENTATIONS.find((orientation) => orientation === value) ?? null;
+  return isDeviceOrientation(value) ? value : null;
 }
 
 /**
  * POST /api/orientation. Resolves the locked pose that the answer reports, or null for servers
- * that do not report one. One deadline covers the request and its body.
+ * that do not report one. The request's signal times out the request and its body read, as in
+ * the `/api` poll.
  */
 export async function writeAndroidOrientation(
   fetchImpl: (input: string, init?: RequestInit) => Promise<Response>,
@@ -31,35 +30,27 @@ export async function writeAndroidOrientation(
   timeoutMs = ORIENTATION_REQUEST_TIMEOUT_MS,
 ): Promise<DeviceOrientation | null> {
   const signal = AbortSignal.timeout(timeoutMs);
-  // The deadline also ends a body read that does not watch the request's signal.
-  const deadline = new Promise<never>((_, reject) =>
-    signal.addEventListener("abort", () => reject(signal.reason), { once: true }),
-  );
   try {
-    const response = await Promise.race([
-      fetchImpl(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ orientation }),
-        signal,
-      }),
-      deadline,
-    ]);
-    const payload: unknown = await Promise.race([
-      response.json().catch((error: unknown) => {
-        if (signal.aborted) throw error;
-        return null;
-      }),
-      deadline,
-    ]);
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ orientation }),
+      signal,
+    });
+    const payload: unknown = await response.json().catch((error: unknown) => {
+      if (signal.aborted) throw error;
+      return null;
+    });
     const data = asRecord(payload);
     if (!response.ok || data?.ok !== true) {
       throw new Error(errorMessage(payload, `Orientation change failed (${response.status})`));
     }
     return parseAndroidOrientation(asRecord(data.orientation)?.pose);
   } catch (error) {
-    if (signal.aborted) throw new Error(ORIENTATION_TIMEOUT_MESSAGE);
-    throw error;
+    if (!signal.aborted) throw error;
+    throw new Error(
+      `The orientation change did not answer in ${timeoutMs / 1000} s. Check the device, then choose the pose again.`,
+    );
   }
 }
 

@@ -70,7 +70,6 @@ import {
   type DeviceClipboardAction,
   type DeviceConnectionOptions,
   type DeviceLog,
-  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
@@ -93,8 +92,7 @@ import { ClipboardActionError } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { DEVICE_ORIENTATIONS } from "./orientation";
-import { createRotationCursor } from "./rotation-cursor";
+import { DEVICE_ORIENTATIONS, isDeviceOrientation, nextOrientation } from "./orientation";
 import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";
 import {
@@ -121,6 +119,7 @@ import {
   discardUnfinishedQueuedGestures,
   enqueueWsMessage,
   sendOrQueueWsMessage,
+  WS_QUEUE_MAX_AGE_MS,
   type QueuedWsMessage,
   type WsMessagePayload,
   type WsMessageSent,
@@ -141,8 +140,6 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
-// Queued input expires after 1.5 s; a choice still unsent after this is reported as failed.
-const ORIENTATION_SEND_TIMEOUT_MS = 2_000;
 const ORIENTATION_NOT_SENT_MESSAGE =
   "The orientation was not sent because simulator input is not connected. Try again.";
 // Native scroll (wheel/trackpad) in raw device fractions, anchored under the pointer.
@@ -547,10 +544,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
-  const rotationCursorRef = useRef(createRotationCursor());
-  useEffect(() => {
-    rotationCursorRef.current.updateReadback(screen?.orientation);
-  }, [screen?.orientation]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -847,24 +840,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key("up", HID_USAGE_R);
   }, [sendWs]);
 
-  // Keep cycling from requested poses while the helper's readback is delayed
-  // or an app declines a pose. Screen state still comes only from readback.
-  const rotate = useCallback(() => {
-    // Resolve each queued click in delivery order; refused, expired or evicted
-    // input must not advance the cursor.
-    sendWs(
-      WS_MSG_ORIENTATION,
-      () => ({ orientation: rotationCursorRef.current.peekNext() }),
-      (payload) =>
-        rotationCursorRef.current.recordSent(
-          (payload as { orientation: DeviceOrientation }).orientation,
-        ),
-    );
-  }, [sendWs]);
-
-  // A chosen pose goes through the same queue as Rotate, so the cursor records it only on
-  // delivery and the next Rotate continues from it. The answer is the send: serve-sim has no
-  // reply, so the shown pose then waits for the helper's readback.
+  // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
+  // helper's readback. A choice the queue drops for age, which the queue notices only at its
+  // next flush, fails when the queue's age limit has passed.
+  const readbackOrientation = isDeviceOrientation(screen?.orientation) ? screen.orientation : null;
   const orientationBackend = useMemo<DeviceOrientationBackend | null>(
     () =>
       connectionScope === null
@@ -876,11 +855,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               new Promise((resolve, reject) => {
                 const timer = setTimeout(
                   () => reject(new Error(ORIENTATION_NOT_SENT_MESSAGE)),
-                  ORIENTATION_SEND_TIMEOUT_MS,
+                  WS_QUEUE_MAX_AGE_MS,
                 );
                 const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
                   clearTimeout(timer);
-                  rotationCursorRef.current.recordSent(orientation);
                   resolve(orientation);
                 });
                 if (!queued) {
@@ -898,10 +876,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientationCapabilities,
     setOrientation,
     acceptReport: acceptOrientationReport,
-  } = useDeviceOrientation(orientationBackend, screen?.orientation ?? null);
+  } = useDeviceOrientation(orientationBackend, readbackOrientation);
+  // A malformed readback is not a report, so it cannot replace a choice.
   useEffect(() => {
-    acceptOrientationReport(screen?.orientation ?? null, performance.now());
-  }, [screen?.orientation, acceptOrientationReport]);
+    if (readbackOrientation) acceptOrientationReport(readbackOrientation, performance.now());
+  }, [readbackOrientation, acceptOrientationReport]);
+  // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
+  const rotate = useCallback(() => {
+    setOrientation(nextOrientation(orientation ?? "portrait"));
+  }, [orientation, setOrientation]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
@@ -1461,9 +1444,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsUrl = config?.wsUrl ?? null;
   const requireInputAdmission = config?.inputAdmission ?? false;
   const controlDevice = config?.device ?? null;
-  useEffect(() => {
-    rotationCursorRef.current = createRotationCursor(screenRef.current?.orientation ?? "portrait");
-  }, [wsUrl, controlDevice, videoSessionKey]);
   // A replacement helper cannot restore lost input, so its notice outlives the socket.
   // A helper can report a null config while it restarts; that gap keeps the notice.
   const lostInputTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1523,7 +1503,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== "boolean")
             )
               return false;
-            rotationCursorRef.current.updateReadback(c.orientation);
             setInputUnavailable(c.inputUnavailable === true);
             hasWsConfigRef.current = true;
             setScreen((prev) =>

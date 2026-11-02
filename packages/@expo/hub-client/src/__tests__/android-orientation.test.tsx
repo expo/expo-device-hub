@@ -237,17 +237,17 @@ test("Android Rotate before the first /api answer waits, because the server's po
   expect(locks()).toEqual([]);
 });
 
-test("Android sends one request at a time across a device change and shows only the new device's answer", async () => {
-  const { client, locks, lockDevices, hold, release, switchDevice } = await mount({
+test("Android sends a new device's choice without waiting for the old device's request", async () => {
+  const { client, lockDevices, hold, release, switchDevice } = await mount({
     orientation: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
   await switchDevice("emulator-5556");
   await act(async () => client().rotate());
-  expect(locks()).toEqual(["landscape_left"]);
-  await release();
+  // The old device's request is still held; the new device's goes out beside it.
   expect(lockDevices()).toEqual(["emulator-5554", "emulator-5556"]);
+  await release();
   expect(client().orientationPending).toBe(false);
 });
 
