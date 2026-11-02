@@ -79,7 +79,7 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { areRecordingControlsLocked, parseScreenRecordingStatus } from "./screen-recording";
+import { isRecordingLockStatus, parseScreenRecordingStatus } from "./screen-recording";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { resolveDeviceStreamMode } from "./stream-mode";
@@ -365,7 +365,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Turning the device or changing the stream can end the host recording, so the three places
   // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
   // backend) ignore them while it could break.
-  const recordingControlsLocked = areRecordingControlsLocked(screenRecording);
+  const recordingControlsLocked = isRecordingLockStatus(screenRecording);
   const recordingLockedRef = useRef(recordingControlsLocked);
   useLayoutEffect(() => {
     recordingLockedRef.current = recordingControlsLocked;

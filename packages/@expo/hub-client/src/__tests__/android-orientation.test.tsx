@@ -404,3 +404,17 @@ test("Android keeps a device's requests in order after switching away and back",
   expect(locks()).toEqual(["landscape_left", "portrait_upside_down"]);
   expect(lockDevices()).toEqual(["emulator-5554", "emulator-5554"]);
 });
+
+test("Android keeps the last error and pose when a choice is made while a recording locks it", async () => {
+  const { client, locks, answerWith, report, settle } = await mount({ orientation: "portrait" });
+  answerWith(() => ({ status: 400, body: { ok: false, error: "orientation refused" } }));
+  await act(async () => client().setOrientation("landscape_left"));
+  await settle();
+  expect(client().orientationError).toBe("orientation refused");
+  await report({ screenRecording: { status: "recording" } });
+  expect(client().recordingControlsLocked).toBe(true);
+  await act(async () => client().setOrientation("landscape_right"));
+  expect(client().orientationError).toBe("orientation refused");
+  expect(client().orientation).toBe("portrait");
+  expect(locks()).toEqual(["landscape_left"]);
+});
