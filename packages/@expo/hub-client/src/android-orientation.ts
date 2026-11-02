@@ -60,6 +60,8 @@ export function androidOrientationBackend(
   url: string,
 ): DeviceOrientationBackend {
   return {
+    // The URL names the server and the serial, not the token.
+    device: url,
     orientations: kind === "poses" ? DEVICE_ORIENTATIONS : LEGACY_ORIENTATIONS,
     set: (orientation) =>
       writeAndroidOrientation(

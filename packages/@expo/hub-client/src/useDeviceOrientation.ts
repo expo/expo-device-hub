@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { createLatestWriter } from "./latest-writer";
-import { READBACK_GRACE_MS } from "./orientation";
+import { nextOrientation, READBACK_GRACE_MS } from "./orientation";
 import { type DeviceOrientation, type DeviceOrientationCapabilities } from "./types";
 
 export interface DeviceOrientationBackend {
+  /**
+   * The device this backend turns. A new backend for the same device, for example after a
+   * token change, keeps that device's requests in order; another device does not wait.
+   */
+  device: string;
   /** The poses `set` accepts. */
   orientations: readonly DeviceOrientation[];
   /**
@@ -32,6 +37,34 @@ interface OrientationState {
 
 const NO_ORIENTATION: OrientationState = { choice: null, error: null };
 
+interface Request {
+  backend: DeviceOrientationBackend;
+  orientation: DeviceOrientation;
+}
+
+/** One request at a time for one device; only the current backend's answers are shown. */
+function createOrientationWriter(
+  currentRef: { readonly current: DeviceOrientationBackend | null },
+  setState: (state: OrientationState) => void,
+) {
+  return createLatestWriter(
+    async ({ backend, orientation }: Request) => {
+      // A choice queued for a retired backend must not reach the device.
+      if (backend !== currentRef.current) return null;
+      return backend.set(orientation);
+    },
+    (outcome) => {
+      if (outcome.value.backend !== currentRef.current) return;
+      if (outcome.ok) {
+        const orientation = outcome.result ?? outcome.value.orientation;
+        setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
+      } else {
+        setState({ choice: null, error: failureMessage(outcome.error) });
+      }
+    },
+  );
+}
+
 function failureMessage(reason: unknown): string {
   const message = reason instanceof Error ? reason.message : "";
   return message || "Orientation change failed";
@@ -52,28 +85,16 @@ export function useDeviceOrientation(
   const [state, setState] = useState<OrientationState>(NO_ORIENTATION);
   // The backend in use; null after its device, token or connection is gone, or on unmount.
   const currentRef = useRef<DeviceOrientationBackend | null>(null);
-  // One writer per backend, so another device never waits behind a stalled request.
-  const writer = useMemo(
-    () =>
-      backend &&
-      createLatestWriter(
-        async (orientation: DeviceOrientation) => {
-          // A choice queued for a retired backend must not reach the device.
-          if (backend !== currentRef.current) return null;
-          return backend.set(orientation);
-        },
-        (outcome) => {
-          if (backend !== currentRef.current) return;
-          if (outcome.ok) {
-            const orientation = outcome.result ?? outcome.value;
-            setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
-          } else {
-            setState({ choice: null, error: failureMessage(outcome.error) });
-          }
-        },
-      ),
-    [backend],
-  );
+  // One writer per device, so another device never waits behind a stalled request.
+  const device = backend?.device ?? null;
+  const [writerSlot, setWriterSlot] = useState(() => ({
+    device,
+    writer: createOrientationWriter(currentRef, setState),
+  }));
+  if (writerSlot.device !== device) {
+    setWriterSlot({ device, writer: createOrientationWriter(currentRef, setState) });
+  }
+  const { writer } = writerSlot;
 
   useEffect(() => {
     currentRef.current = backend;
@@ -83,13 +104,31 @@ export function useDeviceOrientation(
     };
   }, [backend]);
 
+  // The shown pose, updated at once by each choice, so two Rotate calls before a render step
+  // through two poses.
+  const orientation = state.choice?.orientation ?? reported;
+  const shownRef = useRef(orientation);
+  useLayoutEffect(() => {
+    shownRef.current = orientation;
+  }, [orientation]);
+
   const setOrientation = useCallback(
-    (orientation: DeviceOrientation) => {
-      if (!backend || !writer || !backend.orientations.includes(orientation)) return;
-      setState({ choice: { orientation, answeredAt: null }, error: null });
-      writer(orientation);
+    (next: DeviceOrientation) => {
+      if (!backend || !backend.orientations.includes(next)) return;
+      shownRef.current = next;
+      setState({ choice: { orientation: next, answeredAt: null }, error: null });
+      writer({ backend, orientation: next });
     },
     [backend, writer],
+  );
+
+  /** Choose the pose after the shown one, or after `fallback` when no pose is known. */
+  const rotate = useCallback(
+    (fallback: DeviceOrientation) => {
+      if (!backend) return;
+      setOrientation(nextOrientation(shownRef.current ?? fallback, backend.orientations));
+    },
+    [backend, setOrientation],
   );
 
   /** Apply one report of the shown pose, read from `startedAt` on (`performance.now()` time). */
@@ -125,11 +164,12 @@ export function useDeviceOrientation(
   );
 
   return {
-    orientation: state.choice?.orientation ?? reported,
+    orientation,
     orientationPending: state.choice?.answeredAt === null,
     orientationError: state.error,
     orientationCapabilities,
     setOrientation,
+    rotate,
     acceptReport,
   };
 }

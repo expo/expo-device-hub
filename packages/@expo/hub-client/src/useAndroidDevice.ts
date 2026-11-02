@@ -55,7 +55,7 @@ import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from "./h264";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
 import { androidOrientationBackend, parseAndroidOrientation } from "./android-orientation";
-import { isLandscapeOrientation, nextOrientation } from "./orientation";
+import { isLandscapeOrientation } from "./orientation";
 import { useDeviceOrientation } from "./useDeviceOrientation";
 import { androidMessageForKeyboardInput } from "./keyboard";
 import { MsePlayer } from "./mse-player";
@@ -516,6 +516,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     orientationError,
     orientationCapabilities,
     setOrientation,
+    rotate: rotateOrientation,
     acceptReport: acceptOrientationReport,
   } = useDeviceOrientation(orientationBackend, reportedOrientation);
   // @ref LLP 0013#orientation — the slower pose report joins `screen` only when it agrees with the frame
@@ -535,11 +536,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // landscape on an older server. Without a known pose it starts from the frame's aspect.
   // Locking, rather than `auto`, turns the display even when auto-rotate is off.
   const rotate = useCallback(() => {
-    if (!orientationBackend) return;
-    const current =
-      orientation ?? (screen && screen.width > screen.height ? "landscape_right" : "portrait");
-    setOrientation(nextOrientation(current, orientationBackend.orientations));
-  }, [orientation, orientationBackend, screen, setOrientation]);
+    rotateOrientation(screen && screen.width > screen.height ? "landscape_right" : "portrait");
+  }, [rotateOrientation, screen]);
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →

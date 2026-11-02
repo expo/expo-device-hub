@@ -92,7 +92,7 @@ import { ClipboardActionError } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { DEVICE_ORIENTATIONS, isDeviceOrientation, nextOrientation } from "./orientation";
+import { DEVICE_ORIENTATIONS, isDeviceOrientation } from "./orientation";
 import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";
 import {
@@ -849,6 +849,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       connectionScope === null
         ? null
         : {
+            // The simulator, not the token: a reconnect keeps its choices in order.
+            device: JSON.stringify([baseUrl, targetDevice]),
             orientations: DEVICE_ORIENTATIONS,
             pushesReports: true,
             set: (orientation) =>
@@ -867,7 +869,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                 }
               }),
           },
-    [connectionScope, sendWs],
+    [baseUrl, connectionScope, sendWs, targetDevice],
   );
   const {
     orientation,
@@ -875,6 +877,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientationError,
     orientationCapabilities,
     setOrientation,
+    rotate: rotateOrientation,
     acceptReport: acceptOrientationReport,
   } = useDeviceOrientation(orientationBackend, readbackOrientation);
   // A malformed readback is not a report, so it cannot replace a choice.
@@ -882,9 +885,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (readbackOrientation) acceptOrientationReport(readbackOrientation, performance.now());
   }, [readbackOrientation, acceptOrientationReport]);
   // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
-  const rotate = useCallback(() => {
-    setOrientation(nextOrientation(orientation ?? "portrait"));
-  }, [orientation, setOrientation]);
+  const rotate = useCallback(() => rotateOrientation("portrait"), [rotateOrientation]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back

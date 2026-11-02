@@ -77,10 +77,11 @@ async function mount(initialInfo: Record<string, unknown>) {
     return Response.json({}, { status: 404 });
   });
   let client!: DeviceClient;
-  function Harness({ device }: { device: string }) {
+  function Harness({ device, token }: { device: string; token?: string }) {
     client = useAndroidDeviceClient({
       baseUrl: "https://hub.test/",
       device,
+      token,
       enabled: true,
       streamMode: "h264",
     });
@@ -126,6 +127,10 @@ async function mount(initialInfo: Record<string, unknown>) {
     switchDevice: (device: string) =>
       act(async () => {
         renderer?.update(<Harness device={device} />);
+      }),
+    switchToken: (token: string) =>
+      act(async () => {
+        renderer?.update(<Harness device="emulator-5554" token={token} />);
       }),
     settle,
   };
@@ -351,4 +356,31 @@ test("Android drops a queued choice when the client unmounts", async () => {
   renderer = undefined;
   await release();
   expect(locks()).toEqual(["landscape_left"]);
+});
+
+test("Android keeps one emulator's requests in order across a token change", async () => {
+  const { client, locks, hold, release, switchToken, report } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  await switchToken("next-token");
+  await report({ orientation: "portrait" });
+  await act(async () => client().setOrientation("landscape_right"));
+  // The new token's lock waits for the old one, so the emulator ends in the newer pose.
+  expect(locks()).toEqual(["landscape_left"]);
+  await release();
+  expect(locks()).toEqual(["landscape_left", "landscape_right"]);
+});
+
+test("Android Rotate called twice before a render steps through two poses", async () => {
+  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  hold();
+  await act(async () => {
+    client().rotate();
+    client().rotate();
+  });
+  expect(client().orientation).toBe("portrait_upside_down");
+  await release();
+  expect(locks()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
