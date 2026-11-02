@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-03 (the native hinge observation wins over the last command; no face-down command)
+**Revised:** 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -106,7 +106,7 @@ While `physical.faceDown` is undefined, a half-open iPhone Duo keeps the panel t
 
 The preview of a command holds only the fields that commands set, and the fold reads every other field from the observation. `fold.physical.pose` compares a new observed preset with the one observed while the last command was pending, so a readback that still lags that command does not undo it [observed: `setHingeControl` and `observedPoseRef` in `useIosDevice.ts`].
 
-The helper sends the command's config before its native readback moves. A command's preview therefore holds until the observation reaches it, or for 500 ms after the command's config matched, as serve-sim's client holds it. The `confirmed` event comes when the preview ends [observed: `isHingePreviewObserved` in `hinge-control.ts` and `useIosDevice.ts`; `use-duo-framing.ts` in serve-sim's `src/client/hooks`].
+The helper sends the command's config before its native readback moves. A command's preview therefore holds until the observation reaches it, or for 500 ms after the command's config matched; a later config does not restart the 500 ms. serve-sim's client also holds it for 500 ms, counted from the acknowledgement. The `confirmed` event comes when the preview ends. Its `observed` is true when the observation reached the request, or when the config has no observation and the command's fields match; it is false when the 500 ms ran out, and the fold then shows the observation, not the request [observed: `isHingePreviewObserved` in `hinge-control.ts` and `useIosDevice.ts`; `use-duo-framing.ts` in serve-sim's `src/client/hooks`].
 
 ### Android emulators
 

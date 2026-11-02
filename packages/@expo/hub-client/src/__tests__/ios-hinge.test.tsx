@@ -385,7 +385,7 @@ test("a pose command is reported from request to confirmation, and its display a
   expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "acknowledged", command, ok: true });
   expect(commandOf(events.at(-1))).toBe(commandOf(events[0]));
   await act(async () => socket.push(0x82, INNER_OPEN));
-  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: true });
   expect(client().fold?.angle).toBe(180);
   expect(client().fold?.pose).toBe("open");
   expect(client().fold?.tableMode?.available).toBe(true);
@@ -1120,7 +1120,7 @@ test("a command's preview holds until the observation reaches it", async () => {
       observedDeviceState: { ...open, hingeAngle: 90.2, physicalOrientation: "landscape-left" },
     }),
   );
-  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: true });
   expect(client().fold?.angle).toBe(90.2);
   expect(client().fold?.pose).toBe("laptop");
 
@@ -1136,7 +1136,7 @@ test("a command's preview holds until the observation reaches it", async () => {
   await act(async () =>
     socket.push(0x82, { ...tableCommand, observedDeviceState: { ...laptop, tableMode: true } }),
   );
-  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: true });
   expect(client().fold?.tableMode?.enabled).toBe(true);
 });
 
@@ -1158,9 +1158,31 @@ test("a command whose observation does not arrive ends its preview after 500 ms"
   );
   expect(client().fold?.angle).toBe(120);
   await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
-  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  // A listener can tell that the simulator never reported the request.
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: false });
   // The fold then shows what the simulator reports.
   expect(client().fold?.angle).toBe(180);
+});
+
+test("later configs without the observation do not extend a preview past 500 ms", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  const open = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, observedDeviceState: open }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 120 }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  const command = { ...INNER_OPEN, hingeAngle: 120, hingePose: null };
+  await act(async () => socket.push(0x82, { ...command, observedDeviceState: open }));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+  // The readback moves, but has not reached the request yet.
+  await act(async () =>
+    socket.push(0x82, { ...command, observedDeviceState: { ...open, hingeAngle: 160 } }),
+  );
+  expect(events.at(-1)?.type).toBe("acknowledged");
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: false });
+  expect(client().fold?.angle).toBe(160);
 });
 
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {

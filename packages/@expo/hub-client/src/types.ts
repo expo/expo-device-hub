@@ -137,8 +137,14 @@ export type FoldCommandEvent =
   | { type: "sent"; command: FoldControlCommand; display?: DeviceDisplayId }
   /** The device answered the command. A rejection is followed by `failed`. */
   | { type: "acknowledged"; command: FoldControlCommand; ok: boolean }
-  /** The device reports the requested state, so the preview ends. */
-  | { type: "confirmed" }
+  /**
+   * The preview of the acknowledged commands ends, and the fold shows what the
+   * device reports again. `observed` is true when the device reported the
+   * requested state. It is false when the iOS simulator's native readback did
+   * not reach that state within 500 ms of the command's config: the fold then
+   * shows the readback, not the request.
+   */
+  | { type: "confirmed"; observed: boolean }
   /** A command failed, `error` says why, and the client dropped every unconfirmed command. */
   | { type: "failed"; error: string }
   /**
@@ -161,7 +167,10 @@ export type FoldCommandEvent =
 
 /** The persistent table state of {@link DeviceFold}, present when `capabilities.fold.tableMode`. */
 export interface DeviceFoldTableMode {
-  /** The acknowledged control setting; undefined until reported. */
+  /**
+   * The pending request while a command awaits confirmation, then the setting
+   * that the device reports; undefined until reported.
+   */
   enabled?: boolean;
   /** Whether the current pose allows it to be turned on; undefined until reported. */
   available?: boolean;
@@ -189,8 +198,8 @@ export interface DeviceFoldPhysical {
 
 /**
  * Fold state and controls of a foldable device. Angles and poses show the
- * pending request while a command awaits acknowledgement, then the device's
- * confirmed values. `DeviceClient.capabilities.fold` says which commands the
+ * pending request until its `confirmed` event, then the values that the
+ * device reports, which need not match the request. `DeviceClient.capabilities.fold` says which commands the
  * device accepts.
  */
 export interface DeviceFold {

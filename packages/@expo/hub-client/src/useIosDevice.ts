@@ -2288,33 +2288,40 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (previous !== null) emitHingeEvent({ type: "reset" });
   }, [hingeSessionKey, emitHingeEvent, endRotation]);
 
+  // Configs from earlier commands can arrive while the latest request is
+  // queued. Hold the requested pose until both its acknowledgement and its
+  // matching config arrive, so rapid preset changes never animate backwards.
+  const hingeCommanded =
+    !!hingePreview &&
+    !hingePending &&
+    !!screen &&
+    (hingePreview.hingeAngle === undefined || hingePreview.hingeAngle === screen.hingeAngle) &&
+    (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
+    (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode);
+  // The observation, which the fold shows, can lag the command. A helper
+  // without one reports the requested state with the command's config.
+  const hingeObserved =
+    !!hingePreview &&
+    !hingePending &&
+    !!screen &&
+    (screen.observedDeviceState === undefined
+      ? hingeCommanded
+      : isHingePreviewObserved(hingePreview, observedScreenConfig(screen)));
   useEffect(() => {
-    if (!hingePreview || hingePending || !screen) return;
-    // Configs from earlier commands can arrive while the latest request is
-    // queued. Hold the requested pose until both its acknowledgement and its
-    // matching config arrive, so rapid preset changes never animate backwards.
-    const commanded =
-      (hingePreview.hingeAngle === undefined || hingePreview.hingeAngle === screen.hingeAngle) &&
-      (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
-      (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode);
-    // The observation, which the fold shows, can lag the command. As serve-sim's
-    // client does, hold the preview until it arrives, for at most 500 ms.
-    const observed =
-      screen.observedDeviceState === undefined
-        ? commanded
-        : isHingePreviewObserved(hingePreview, observedScreenConfig(screen));
-    if (!commanded && !observed) return;
-    const confirm = () => {
+    if (!hingeObserved) return;
+    setHingePreview(null);
+    emitHingeEvent({ type: "confirmed", observed: true });
+  }, [hingePreview, hingeObserved, emitHingeEvent]);
+  // As serve-sim's client does, a preview whose observation does not arrive
+  // ends 500 ms after its command's config, which later configs do not extend.
+  useEffect(() => {
+    if (!hingeCommanded || hingeObserved) return;
+    const timer = setTimeout(() => {
       setHingePreview(null);
-      emitHingeEvent({ type: "confirmed" });
-    };
-    if (observed) {
-      confirm();
-      return;
-    }
-    const timer = setTimeout(confirm, 500);
+      emitHingeEvent({ type: "confirmed", observed: false });
+    }, 500);
     return () => clearTimeout(timer);
-  }, [hingePreview, hingePending, screen, emitHingeEvent]);
+  }, [hingePreview, hingeCommanded, hingeObserved, emitHingeEvent]);
 
   const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
   useEffect(() => {
