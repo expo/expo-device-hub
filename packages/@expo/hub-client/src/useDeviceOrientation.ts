@@ -85,16 +85,15 @@ export function useDeviceOrientation(
   const [state, setState] = useState<OrientationState>(NO_ORIENTATION);
   // The backend in use; null after its device, token or connection is gone, or on unmount.
   const currentRef = useRef<DeviceOrientationBackend | null>(null);
-  // One writer per device, so another device never waits behind a stalled request.
-  const device = backend?.device ?? null;
-  const [writerSlot, setWriterSlot] = useState(() => ({
-    device,
-    writer: createOrientationWriter(currentRef, setState),
-  }));
-  if (writerSlot.device !== device) {
-    setWriterSlot({ device, writer: createOrientationWriter(currentRef, setState) });
+  // One writer per device for the hook's life, so another device never waits behind a stalled
+  // request, and a device that is selected again keeps its earlier request in order.
+  const [writers] = useState(() => new Map<string, ReturnType<typeof createOrientationWriter>>());
+  const device = backend?.device;
+  let writer = device === undefined ? undefined : writers.get(device);
+  if (device !== undefined && !writer) {
+    writer = createOrientationWriter(currentRef, setState);
+    writers.set(device, writer);
   }
-  const { writer } = writerSlot;
 
   useEffect(() => {
     currentRef.current = backend;
@@ -114,7 +113,7 @@ export function useDeviceOrientation(
 
   const setOrientation = useCallback(
     (next: DeviceOrientation) => {
-      if (!backend || !backend.orientations.includes(next)) return;
+      if (!backend || !writer || !backend.orientations.includes(next)) return;
       shownRef.current = next;
       setState({ choice: { orientation: next, answeredAt: null }, error: null });
       writer({ backend, orientation: next });

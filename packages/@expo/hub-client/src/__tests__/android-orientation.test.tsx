@@ -384,3 +384,19 @@ test("Android Rotate called twice before a render steps through two poses", asyn
   await release();
   expect(locks()).toEqual(["landscape_left", "portrait_upside_down"]);
 });
+
+test("Android keeps a device's requests in order after switching away and back", async () => {
+  const { client, locks, lockDevices, hold, release, switchDevice } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  await switchDevice("emulator-5556");
+  await switchDevice("emulator-5554");
+  await act(async () => client().setOrientation("portrait_upside_down"));
+  // The second lock for emulator-5554 waits for its first one.
+  expect(locks()).toEqual(["landscape_left"]);
+  await release();
+  expect(locks()).toEqual(["landscape_left", "portrait_upside_down"]);
+  expect(lockDevices()).toEqual(["emulator-5554", "emulator-5554"]);
+});
