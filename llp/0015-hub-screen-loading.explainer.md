@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-02 (decision 6 confirmed by Krystof Woldrich, with a minor version bump; Claude Code, directed by Krystof Woldrich); 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
@@ -108,14 +108,14 @@ LLP 0004 [3D preview in the Hub](0004-serve-sim-hinge-controls.explainer.md#3d-p
 
 ## Decisions for review
 
-The orchestrating agent decided these on 2026-10-21. A human has not reviewed them yet.
+The orchestrating agent decided these on 2026-10-21. A human has not reviewed them yet, except decision 6.
 
 1. One loading label, "Loading", for the status pill and as the spinner's accessible name.
 2. The first load reports an error after 30 s without a frame, and the client keeps retrying. On iOS, a drop does not take Android's 5 s limit. Android's drop timing stays as it was.
 3. On iOS, a drop that lasts 30 s, the first load's limit, shows "Disconnected — retrying…" over the last frame, and the client keeps retrying (round-1 review, 2026-10-21).
 4. Xcode's model gets the same 30 s, counted in a visible tab, before the 3D preview falls back to 2D (round-1 review, 2026-10-21).
 5. A transport switch counts as a first load.
-6. `DeviceScreen` loses its overlay; a consumer that uses it without `PhoneFrame` must draw loading and errors.
+6. `DeviceScreen` loses its overlay; a consumer that uses it without `PhoneFrame` must draw loading and errors. Krystof Woldrich confirmed this and kept it a minor version bump, because the packages are in an early phase and the Expo website draws its own connecting, reconnecting, and failure states [confirmed] (Krystof Woldrich, 2026-11-02). The rule is in LLP 0013 [Input feedback](0013-hub-client-input-and-control.explainer.md#input-feedback).
 7. The spinner's look is not compared with the website's `ActivityIndicator`, whose source is not in this repository.
 8. The status pill does not say Live while the 3D preview loads.
 

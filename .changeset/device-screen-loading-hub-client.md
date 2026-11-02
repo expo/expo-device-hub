@@ -6,5 +6,5 @@ Report the same device-screen loading states on iOS and Android. `status` is `'c
 
 Two kinds of consumers must change code:
 
-- If you render `DeviceScreen` without the Hub's `PhoneFrame`, for example on the Expo website, you lose its loading and error overlay. `DeviceScreen` no longer draws a black background, "Connecting…", "Not connected", or the error text, and its `<img>` has an empty `alt`. Draw these states yourself from `status`, `error`, and `framePresented`. If you render `DeviceScreen` inside `PhoneFrame`, you need no change.
+- `DeviceScreen` now renders only the media and the input surface. It no longer draws a black background, "Connecting…", "Not connected", or the error text, and its `<img>` has an empty `alt`. If you relied on that overlay, draw your own connecting, reconnecting, and error states from `status`, `error`, and `framePresented`.
 - Custom `DeviceClient` and `DeviceScreenClient` implementations and mocks must add the new required `framePresented` field: `true` once the current screen session has presented a frame, also while it reconnects; `false` before that.
