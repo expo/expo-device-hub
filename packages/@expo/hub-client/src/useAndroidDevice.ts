@@ -54,9 +54,9 @@ import { NO_CLIPBOARD } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from "./h264";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { createLatestWriter } from "./latest-writer";
-import { isLandscapeOrientation } from "./orientation";
-import { DEVICE_ORIENTATIONS, nextOrientation, READBACK_GRACE_MS } from "./rotation-cursor";
+import { androidOrientationBackend, parseAndroidOrientation } from "./android-orientation";
+import { isLandscapeOrientation, nextOrientation } from "./orientation";
+import { useDeviceOrientation } from "./useDeviceOrientation";
 import { androidMessageForKeyboardInput } from "./keyboard";
 import { MsePlayer } from "./mse-player";
 import {
@@ -140,38 +140,6 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
-// Servers that report `orientation` in `/api` lock every pose; older ones only portrait and
-// landscape (rotation 0 or 1; rotation 1 turns a phone counterclockwise, `landscape_right`).
-const ORIENTATION_CAPABILITIES: { orientations: readonly DeviceOrientation[] } = {
-  orientations: DEVICE_ORIENTATIONS,
-};
-const LEGACY_ORIENTATION_CAPABILITIES: { orientations: readonly DeviceOrientation[] } = {
-  orientations: ["portrait", "landscape_right"],
-};
-
-function parseReportedOrientation(value: unknown): DeviceOrientation | null {
-  return DEVICE_ORIENTATIONS.find((orientation) => orientation === value) ?? null;
-}
-
-/** The pose in a `POST /api/orientation` answer; older servers do not send one. */
-function parseLockedOrientation(value: unknown): DeviceOrientation | null {
-  if (typeof value !== "object" || value === null) return null;
-  const status = (value as { orientation?: unknown }).orientation;
-  if (typeof status !== "object" || status === null) return null;
-  return parseReportedOrientation((status as { pose?: unknown }).pose);
-}
-
-async function orientationFailure(response: Response): Promise<Error> {
-  const body: unknown = await response.json().catch(() => null);
-  const message =
-    typeof body === "object" &&
-    body !== null &&
-    typeof (body as { error?: unknown }).error === "string"
-      ? (body as { error: string }).error
-      : null;
-  return new Error(message ?? `Orientation change failed (${response.status})`);
-}
-
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
   return (
@@ -397,18 +365,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     orientation: DeviceOrientation | null;
   } | null>(null);
   const orientationState = orientationReport?.scope === deviceScope ? orientationReport : null;
-  // The last pose chosen with setOrientation or Rotate. `answeredAt` is null while the request
-  // is in flight; the choice gives way to the first `/api` report that starts after the answer.
-  const [orientationChoice, setOrientationChoice] = useState<{
-    scope: string;
-    orientation: DeviceOrientation;
-    answeredAt: number | null;
-  } | null>(null);
-  const [orientationFailureState, setOrientationFailureState] = useState<{
-    scope: string;
-    message: string;
-  } | null>(null);
-  const chosenOrientation = orientationChoice?.scope === deviceScope ? orientationChoice : null;
   const deviceScopeRef = useRef(deviceScope);
   const inputIdentity = useMemo(() => ({ deviceScope, token }), [deviceScope, token]);
   const committedInputIdentityRef = useRef(inputIdentity);
@@ -540,88 +496,32 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
 
-  const orientationCapabilities = !orientationState
-    ? false
-    : orientationState.reports
-      ? ORIENTATION_CAPABILITIES
-      : LEGACY_ORIENTATION_CAPABILITIES;
-  // @ref LLP 0013#orientation — one request at a time, and only the newest queued choice is sent
-  // One writer for the hook's lifetime, so requests never overlap, also across a device or token
-  // change: each request carries its own URL and fetch. Only the newest request's answer or
-  // failure is shown, and only for the device it was sent to.
-  const [orientationWriter] = useState(() =>
-    createLatestWriter(
-      async (request: {
-        scope: string;
-        orientation: DeviceOrientation;
-        wire: DeviceOrientation | "landscape";
-        url: string;
-        fetch: typeof sessionFetch;
-      }) => {
-        const response = await request.fetch(request.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orientation: request.wire }),
-        });
-        if (!response.ok) throw await orientationFailure(response);
-        return parseLockedOrientation(await response.json().catch(() => null));
-      },
-      (outcome) => {
-        const { scope, orientation } = outcome.value;
-        if (deviceScopeRef.current !== scope) return;
-        if (outcome.ok) {
-          setOrientationChoice({
-            scope,
-            orientation: outcome.result ?? orientation,
-            answeredAt: performance.now(),
-          });
-          return;
-        }
-        setOrientationChoice(null);
-        setOrientationFailureState({
-          scope,
-          message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
-        });
-      },
-    ),
+  const orientationKind = orientationState ? (orientationState.reports ? "poses" : "legacy") : null;
+  // No backend before the first `/api` answer: the kind of server is not known yet.
+  const orientationBackend = useMemo(
+    () =>
+      orientationKind && baseUrl
+        ? androidOrientationBackend(
+            orientationKind,
+            sessionFetch,
+            deviceApiUrl(baseUrl, "/api/orientation", targetDevice),
+          )
+        : null,
+    [orientationKind, baseUrl, targetDevice, sessionFetch],
   );
-  const sendOrientation = useCallback(
-    (orientation: DeviceOrientation, wire: DeviceOrientation | "landscape") => {
-      if (!baseUrl) return;
-      setOrientationChoice({ scope: deviceScope, orientation, answeredAt: null });
-      setOrientationFailureState(null);
-      orientationWriter({
-        scope: deviceScope,
-        orientation,
-        wire,
-        url: deviceApiUrl(baseUrl, "/api/orientation", targetDevice),
-        fetch: sessionFetch,
-      });
-    },
-    [baseUrl, deviceScope, orientationWriter, sessionFetch, targetDevice],
-  );
-  // Older serve-emu servers only take portrait or landscape.
-  const setOrientation = useCallback(
-    (orientation: DeviceOrientation) => {
-      if (!orientationCapabilities || !orientationCapabilities.orientations.includes(orientation)) {
-        return;
-      }
-      sendOrientation(
-        orientation,
-        orientationCapabilities === ORIENTATION_CAPABILITIES
-          ? orientation
-          : orientation === "portrait"
-            ? "portrait"
-            : "landscape",
-      );
-    },
-    [orientationCapabilities, sendOrientation],
-  );
+  const reportedOrientation = orientationState?.orientation ?? null;
+  const {
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationCapabilities,
+    setOrientation,
+    acceptReport: acceptOrientationReport,
+  } = useDeviceOrientation(orientationBackend, reportedOrientation);
   // @ref LLP 0013#orientation — the slower pose report joins `screen` only when it agrees with the frame
   // serve-emu frames already show the display upright, so only the pose is added. The pose
   // comes from a slower `/api` poll than the frame size, so it is added only when both agree;
   // otherwise a turned frame would show in the box of the previous pose.
-  const reportedOrientation = orientationState?.orientation ?? null;
   const orientedScreen = useMemo(
     () =>
       screen &&
@@ -631,22 +531,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         : screen,
     [screen, reportedOrientation],
   );
-  const orientation = chosenOrientation?.orientation ?? reportedOrientation;
-  // Rotate continues the same four-pose cycle as iOS from the chosen or reported pose. Without
-  // a pose (older servers), it locks the opposite of the streamed frame's aspect; locking
-  // rather than `auto` turns the display even when auto-rotate is off.
-  // Before the first `/api` answer it also uses the aspect, which every server accepts.
+  // Rotate steps to the next pose the server accepts: the same four as iOS, or portrait and
+  // landscape on an older server. Without a known pose it starts from the frame's aspect.
+  // Locking, rather than `auto`, turns the display even when auto-rotate is off.
   const rotate = useCallback(() => {
-    if (orientationCapabilities === ORIENTATION_CAPABILITIES && orientation) {
-      sendOrientation(nextOrientation(orientation), nextOrientation(orientation));
-      return;
-    }
-    const landscape = !!screen && screen.width > screen.height;
-    sendOrientation(
-      landscape ? "portrait" : "landscape_right",
-      landscape ? "portrait" : "landscape",
-    );
-  }, [orientation, orientationCapabilities, screen, sendOrientation]);
+    if (!orientationBackend) return;
+    const current =
+      orientation ?? (screen && screen.width > screen.height ? "landscape_right" : "portrait");
+    setOrientation(nextOrientation(current, orientationBackend.orientations));
+  }, [orientation, orientationBackend, screen, setOrientation]);
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
@@ -1120,7 +1013,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             : nextViewerTransports,
         );
         const reports = info.orientation !== undefined;
-        const orientation = parseReportedOrientation(info.orientation);
+        const orientation = parseAndroidOrientation(info.orientation);
         setOrientationReport((current) =>
           current?.scope === deviceScope &&
           current.reports === reports &&
@@ -1128,19 +1021,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             ? current
             : { scope: deviceScope, reports, orientation },
         );
-        // @ref LLP 0013#orientation — an answered choice waits for a matching report or the grace
-        // A report read after serve-emu answered a choice replaces that choice once it shows the
-        // answered pose, or after the readback grace: the display can turn after the answer, and
-        // an app can keep its own orientation.
-        setOrientationChoice((current) =>
-          current?.scope === deviceScope &&
-          current.answeredAt !== null &&
-          current.answeredAt <= startedAt &&
-          (current.orientation === orientation ||
-            performance.now() - current.answeredAt >= READBACK_GRACE_MS)
-            ? null
-            : current,
-        );
+        acceptOrientationReport(orientation, startedAt);
         const width = Number(info.size?.width);
         const height = Number(info.size?.height);
         if (width > 0 && height > 0) {
@@ -1165,7 +1046,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       clearInterval(timer);
       controller?.abort();
     };
-  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, acceptOrientationReport]);
 
   const { h264: h264Available, webrtc: webRtcAvailable } = androidModeAvailability(
     serverStreamSettings,
@@ -2429,9 +2310,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     reload,
     rotate,
     orientation,
-    orientationPending: chosenOrientation?.answeredAt === null,
-    orientationError:
-      orientationFailureState?.scope === deviceScope ? orientationFailureState.message : null,
+    orientationPending,
+    orientationError,
     setOrientation,
     screenshot,
     appearance,

@@ -93,7 +93,9 @@ import { ClipboardActionError } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { createRotationCursor, DEVICE_ORIENTATIONS, READBACK_GRACE_MS } from "./rotation-cursor";
+import { DEVICE_ORIENTATIONS } from "./orientation";
+import { createRotationCursor } from "./rotation-cursor";
+import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";
 import {
   createOrderedKeyboardInput,
@@ -139,7 +141,6 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
-const IOS_ORIENTATION_CAPABILITIES = { orientations: DEVICE_ORIENTATIONS } as const;
 // Queued input expires after 1.5 s; a choice still unsent after this is reported as failed.
 const ORIENTATION_SEND_TIMEOUT_MS = 2_000;
 const ORIENTATION_NOT_SENT_MESSAGE =
@@ -550,38 +551,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     rotationCursorRef.current.updateReadback(screen?.orientation);
   }, [screen?.orientation]);
-  // The last pose chosen with setOrientation. `sentAt` is null until the input queue sends it.
-  // It shows until the helper reports that pose or the readback grace ends, as the cursor does.
-  const [orientationChoice, setOrientationChoice] = useState<{
-    scope: string | null;
-    orientation: DeviceOrientation;
-    sentAt: number | null;
-  } | null>(null);
-  const [orientationFailure, setOrientationFailure] = useState<{
-    scope: string | null;
-    message: string;
-  } | null>(null);
-  const chosenOrientation = orientationChoice?.scope === connectionScope ? orientationChoice : null;
-  const readbackOrientation = screen?.orientation;
-  useEffect(() => {
-    if (!chosenOrientation) return;
-    const choice = chosenOrientation;
-    const clear = () => setOrientationChoice((current) => (current === choice ? null : current));
-    if (choice.sentAt !== null && readbackOrientation === choice.orientation) {
-      clear();
-      return;
-    }
-    const timer = setTimeout(
-      () => {
-        clear();
-        if (choice.sentAt === null) {
-          setOrientationFailure({ scope: choice.scope, message: ORIENTATION_NOT_SENT_MESSAGE });
-        }
-      },
-      choice.sentAt === null ? ORIENTATION_SEND_TIMEOUT_MS : READBACK_GRACE_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [chosenOrientation, readbackOrientation]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -893,28 +862,46 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     );
   }, [sendWs]);
 
-  // A chosen pose goes through the same queue as Rotate, so the cursor records
-  // it only on delivery and the next Rotate continues from it.
-  const setOrientation = useCallback(
-    (orientation: DeviceOrientation) => {
-      if (!(DEVICE_ORIENTATIONS as readonly DeviceOrientation[]).includes(orientation)) return;
-      const choice = { scope: connectionScope, orientation, sentAt: null };
-      // Record the choice first: a connected socket can call back before sendWs returns.
-      setOrientationChoice(choice);
-      setOrientationFailure(null);
-      const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
-        rotationCursorRef.current.recordSent(orientation);
-        setOrientationChoice((current) =>
-          current === choice ? { ...choice, sentAt: performance.now() } : current,
-        );
-      });
-      if (!queued) {
-        setOrientationChoice((current) => (current === choice ? null : current));
-        setOrientationFailure({ scope: connectionScope, message: ORIENTATION_NOT_SENT_MESSAGE });
-      }
-    },
+  // A chosen pose goes through the same queue as Rotate, so the cursor records it only on
+  // delivery and the next Rotate continues from it. The answer is the send: serve-sim has no
+  // reply, so the shown pose then waits for the helper's readback.
+  const orientationBackend = useMemo<DeviceOrientationBackend | null>(
+    () =>
+      connectionScope === null
+        ? null
+        : {
+            orientations: DEVICE_ORIENTATIONS,
+            pushesReports: true,
+            set: (orientation) =>
+              new Promise((resolve, reject) => {
+                const timer = setTimeout(
+                  () => reject(new Error(ORIENTATION_NOT_SENT_MESSAGE)),
+                  ORIENTATION_SEND_TIMEOUT_MS,
+                );
+                const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
+                  clearTimeout(timer);
+                  rotationCursorRef.current.recordSent(orientation);
+                  resolve(orientation);
+                });
+                if (!queued) {
+                  clearTimeout(timer);
+                  reject(new Error(ORIENTATION_NOT_SENT_MESSAGE));
+                }
+              }),
+          },
     [connectionScope, sendWs],
   );
+  const {
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationCapabilities,
+    setOrientation,
+    acceptReport: acceptOrientationReport,
+  } = useDeviceOrientation(orientationBackend, screen?.orientation ?? null);
+  useEffect(() => {
+    acceptOrientationReport(screen?.orientation ?? null, performance.now());
+  }, [screen?.orientation, acceptOrientationReport]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
@@ -2076,7 +2063,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
-      orientation: IOS_ORIENTATION_CAPABILITIES,
+      orientation: orientationCapabilities,
     }),
     [
       deviceSettingsAvailable,
@@ -2087,6 +2074,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       locationCapabilities,
       clipboardPaste,
       clipboardCopy,
+      orientationCapabilities,
     ],
   );
 
@@ -2169,10 +2157,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     rotate,
-    orientation: chosenOrientation?.orientation ?? screen?.orientation ?? null,
-    orientationPending: chosenOrientation?.sentAt === null,
-    orientationError:
-      orientationFailure?.scope === connectionScope ? orientationFailure.message : null,
+    orientation,
+    orientationPending,
+    orientationError,
     setOrientation,
     screenshot,
     appearance,

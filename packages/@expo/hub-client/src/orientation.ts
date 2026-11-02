@@ -32,6 +32,22 @@ export function homeIndicatorEdge({
   return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
+/** The four poses, in the order Rotate steps through them on iOS and Android. */
+export const DEVICE_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const satisfies readonly DeviceOrientation[];
+
+/** The pose after `orientation` in `orientations`, or the first one when it is not listed. */
+export function nextOrientation(
+  orientation: DeviceOrientation,
+  orientations: readonly DeviceOrientation[] = DEVICE_ORIENTATIONS,
+): DeviceOrientation {
+  return orientations[(orientations.indexOf(orientation) + 1) % orientations.length]!;
+}
+
 export function isLandscapeOrientation(orientation?: DeviceOrientation | null): boolean {
   return orientation === "landscape_left" || orientation === "landscape_right";
 }

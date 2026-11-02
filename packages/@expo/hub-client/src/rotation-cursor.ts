@@ -1,25 +1,10 @@
+import { DEVICE_ORIENTATIONS, nextOrientation } from "./orientation";
 import type { DeviceOrientation } from "./types";
 
 export const READBACK_GRACE_MS = 1500;
 
-/** The four poses in the order Rotate steps through them on iOS and Android. */
-export const DEVICE_ORIENTATIONS = [
-  "portrait",
-  "landscape_left",
-  "portrait_upside_down",
-  "landscape_right",
-] as const satisfies readonly DeviceOrientation[];
-
-const ROTATE_LEFT_CYCLE: Record<DeviceOrientation, DeviceOrientation> = {
-  portrait: "landscape_left",
-  landscape_left: "portrait_upside_down",
-  portrait_upside_down: "landscape_right",
-  landscape_right: "portrait",
-};
-
-/** The pose that Rotate turns the device to next. */
-export function nextOrientation(orientation: DeviceOrientation): DeviceOrientation {
-  return ROTATE_LEFT_CYCLE[orientation];
+function isOrientation(value: unknown): value is DeviceOrientation {
+  return (DEVICE_ORIENTATIONS as readonly unknown[]).includes(value);
 }
 
 // @ref LLP 0003#rotation-readback — advance requests independently of app readback
@@ -27,15 +12,14 @@ export function createRotationCursor(
   initial: DeviceOrientation = "portrait",
   now: () => number = () => performance.now(),
 ) {
-  let orientation =
-    typeof initial === "string" && Object.hasOwn(ROTATE_LEFT_CYCLE, initial) ? initial : "portrait";
+  let orientation = isOrientation(initial) ? initial : "portrait";
   let readback = orientation;
   let readbackDeferred = false;
   let pending: DeviceOrientation | null = null;
   let pendingUntil = 0;
   return {
     peekNext(): DeviceOrientation {
-      return ROTATE_LEFT_CYCLE[orientation];
+      return nextOrientation(orientation);
     },
     recordSent(requested: DeviceOrientation): void {
       orientation = requested;
@@ -43,7 +27,7 @@ export function createRotationCursor(
       pendingUntil = now() + READBACK_GRACE_MS;
     },
     updateReadback(reported?: DeviceOrientation | null): void {
-      if (typeof reported !== "string" || !Object.hasOwn(ROTATE_LEFT_CYCLE, reported)) return;
+      if (!isOrientation(reported)) return;
       // A duplicate cannot acknowledge a newer request for the same pose.
       if (reported === readback && (!readbackDeferred || now() < pendingUntil)) return;
       readback = reported;

@@ -225,8 +225,8 @@ test("Android ignores a report from a poll that started before the answer, also 
   expect(client().orientation).toBe("landscape_left");
 });
 
-test("Android Rotate before the first /api answer locks the opposite of the frame's aspect", async () => {
-  const { client, locks, lockDevices, silence, switchDevice, settle } = await mount({
+test("Android Rotate before the first /api answer waits, because the server's poses are not known yet", async () => {
+  const { client, locks, silence, switchDevice, settle } = await mount({
     orientation: "portrait",
   });
   silence("emulator-5556", true);
@@ -234,8 +234,7 @@ test("Android Rotate before the first /api answer locks the opposite of the fram
   expect(client().capabilities.orientation).toBe(false);
   await act(async () => client().rotate());
   await settle();
-  expect(locks()).toEqual(["landscape"]);
-  expect(lockDevices()).toEqual(["emulator-5556"]);
+  expect(locks()).toEqual([]);
 });
 
 test("Android sends one request at a time across a device change and shows only the new device's answer", async () => {
@@ -324,4 +323,32 @@ test("Android forgets the previous device's pose and sends to the new device", a
   expect(client().orientation).toBe("portrait");
   await act(async () => client().setOrientation("landscape_left"));
   expect(lockDevices()).toEqual(["emulator-5556"]);
+});
+
+test("Android drops a queued choice when the device changes, and still finishes the one in flight", async () => {
+  const { client, locks, lockDevices, hold, release, switchDevice, report } = await mount({
+    orientation: "portrait",
+  });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  await act(async () => client().setOrientation("landscape_right"));
+  await switchDevice("emulator-5556");
+  await release();
+  expect(locks()).toEqual(["landscape_left"]);
+  expect(lockDevices()).toEqual(["emulator-5554"]);
+  // The answer for the old device does not show on the new one.
+  await report({ orientation: "portrait" });
+  expect(client().orientation).toBe("portrait");
+  expect(client().orientationPending).toBe(false);
+});
+
+test("Android drops a queued choice when the client unmounts", async () => {
+  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  hold();
+  await act(async () => client().setOrientation("landscape_left"));
+  await act(async () => client().setOrientation("landscape_right"));
+  await act(async () => renderer?.unmount());
+  renderer = undefined;
+  await release();
+  expect(locks()).toEqual(["landscape_left"]);
 });

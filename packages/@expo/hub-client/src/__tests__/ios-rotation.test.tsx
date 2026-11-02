@@ -434,7 +434,7 @@ test("an iOS orientation choice that the input queue does not send in 2 s fails"
   expect(client().orientation).toBe("portrait");
 });
 
-test("an iOS orientation choice fails at once when this client cannot send input", async () => {
+test("an iOS client without a connection offers no orientations and ignores a choice", async () => {
   await mount();
   let disabled!: DeviceClient;
   function Disabled() {
@@ -449,8 +449,9 @@ test("an iOS orientation choice fails at once when this client cannot send input
   await act(async () => {
     renderer!.update(<Disabled />);
   });
+  expect(disabled.capabilities.orientation).toBe(false);
   await act(async () => disabled.setOrientation("landscape_left"));
   expect(disabled.orientationPending).toBe(false);
   expect(disabled.orientation).toBeNull();
-  expect(disabled.orientationError).toContain("was not sent");
+  expect(disabled.orientationError).toBeNull();
 });
