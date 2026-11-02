@@ -66,7 +66,7 @@
     },
     "packages/@expo/hub-client": {
       "name": "@expo/hub-client",
-      "version": "1.2.0",
+      "version": "1.8.1",
       "dependencies": {
         "use-sync-external-store": "^1.7.0",
       },
@@ -123,7 +123,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.14.0",
+      "version": "0.19.1",
       "bin": {
         "expo-device-hub": "dist/server/cli.mjs",
       },
@@ -184,7 +184,7 @@
     },
     "packages/serve-sim/packages/serve-sim": {
       "name": "@expo/serve-sim",
-      "version": "0.5.0",
+      "version": "0.13.0",
       "bin": {
         "serve-sim": "dist/serve-sim.js",
       },
@@ -219,6 +219,9 @@
       },
     },
   },
+  "trustedDependencies": [
+    "node-datachannel",
+  ],
   "catalog": {
     "@expo/metro-runtime": "~57.0.3",
     "expo": "~57.0.4",
@@ -227,9 +230,6 @@
     "react-native": "0.86.0",
     "react-native-web": "^0.21.2",
   },
-  "trustedDependencies": [
-    "node-datachannel",
-  ],
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
