@@ -209,7 +209,7 @@ describe("emulator lifecycle", () => {
     expect(spawnCalls).toEqual([
       [
         "/sdk/emulator",
-        ["@Pixel_8", "-port", "5558", "-gpu", "host"],
+        ["@Pixel_8", "-port", "5558", "-no-metrics", "-gpu", "host"],
         { stdio: ["ignore", "inherit", "inherit"] },
       ],
     ]);

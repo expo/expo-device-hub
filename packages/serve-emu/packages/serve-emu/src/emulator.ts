@@ -353,7 +353,7 @@ export async function startEmulator(
   validateEmulatorPort(port);
 
   const serial = `emulator-${port}`;
-  const args = [emulatorAvdArg(name), "-port", String(port)];
+  const args = [emulatorAvdArg(name), "-port", String(port), "-no-metrics"];
   if (opts.gpu) args.push("-gpu", opts.gpu);
   if (opts.camera) {
     await seedCameraFeeds(serial);
