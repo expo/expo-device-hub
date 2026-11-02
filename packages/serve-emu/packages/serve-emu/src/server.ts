@@ -33,10 +33,8 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
-  setUserRotation,
   type NightMode,
 } from "./adb.ts";
-import { displayOrientationReader } from "./display-orientation.ts";
 import {
   findAccessibilityNode,
   getAccessibilitySnapshot,
@@ -96,7 +94,7 @@ import {
   DeviceSessionManager,
   SessionChangedError,
 } from "./device-session-context.ts";
-import type { DeviceSessionState } from "./device-session-state.ts";
+import type { DeviceSessionState, DeviceSessionStateOptions } from "./device-session-state.ts";
 import { routePlaybackErrorResponse } from "./route-playback-api.ts";
 import { JsonResponseTracker } from "./json-response.ts";
 import { parseSessionPageQuery } from "./session-api.ts";
@@ -325,6 +323,10 @@ export type ServerDependencies = {
   readCameraWiring?: typeof readCameraWiring;
   loadAccessibility?: (serial: string, signal: AbortSignal) => Promise<AccessibilitySnapshot>;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  /** Read the display pose, like `setLocation`, for each device's state; adb by default. */
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  /** Lock or free the rotation for each device's state; adb by default. */
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
@@ -332,8 +334,6 @@ export type ServerDependencies = {
   installApk?: typeof installApk;
   importMediaFile?: typeof importMediaFile;
   createWebRtcPublisher?: (options: WebRtcPublisherOptions) => Promise<WebRtcPublisherLike>;
-  displayOrientationReader?: typeof displayOrientationReader;
-  setUserRotation?: typeof setUserRotation;
 };
 
 function serverLimit(
@@ -374,8 +374,6 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
   }
   const defaultInputSource = requestedDefaultInputSource;
   const serve = dependencies.serve ?? Bun.serve;
-  const orientationReader = dependencies.displayOrientationReader ?? displayOrientationReader;
-  const lockRotation = dependencies.setUserRotation ?? setUserRotation;
   const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
   const listDevices = dependencies.listDevices ?? dependencies.listAllDevices ?? listAllDevices;
   const launchEmulator = dependencies.startEmulator ?? startEmulator;
@@ -560,6 +558,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       generation,
       stream,
       applyLocation: setLocation,
+      readOrientation: dependencies.readOrientation,
+      applyRotation: dependencies.applyRotation,
       deviceState,
     });
     context.registerCleanup(() =>
@@ -639,7 +639,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       inputSource: context.stream.inputSource,
       grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
       size: { width: context.screen.width, height: context.screen.height },
-      orientation: orientationReader(context.serial).current(),
+      orientation: context.deviceState.orientation.current(),
       clients: context.clients.size,
       videoClients: Array.from(context.clients).filter((client) => client.video).length,
       stream: redactedStreamSettings(streamSettings),
@@ -1838,7 +1838,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               width: requestContext.screen.width,
               height: requestContext.screen.height,
             },
-            orientation: await orientationReader(requestContext.serial).fresh(),
+            orientation: await requestContext.deviceState.orientation.fresh(),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -2165,11 +2165,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
             if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
             return Response.json({
               ok: true,
-              orientation: await runForContext(requestContext, async (context) => {
-                const status = await lockRotation(context.serial, orientation);
-                orientationReader(context.serial).locked(status.pose);
-                return status;
-              }),
+              orientation: await runForContext(requestContext, (context) =>
+                context.deviceState.setOrientation(orientation),
+              ),
             });
           } catch (err) {
             return errorResponse(err);

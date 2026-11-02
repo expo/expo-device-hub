@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { execBuffer, execText, type ExecLane, type ExecResult } from "./exec.ts";
-import type { OrientationMode, ScreenOrientation } from "./shared/api-contracts.ts";
+import type {
+  OrientationMode,
+  OrientationStatus as ContractOrientationStatus,
+  ScreenOrientation,
+} from "./shared/api-contracts.ts";
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
 const ADB_MUTATION_TIMEOUT_MS = 5_000;
@@ -9,13 +13,8 @@ const EMU_CONSOLE_TIMEOUT_MS = 5_000;
 
 export type Device = { serial: string; state: string };
 export type NightMode = "auto" | "dark" | "light";
-export type OrientationStatus = {
-  mode: "free" | "lock" | "unknown";
-  rotation: number | null;
-  orientation: "auto" | "portrait" | "landscape" | "unknown";
-  pose: ScreenOrientation | null;
-  raw: string;
-};
+/** The contract's status; this server always reports `pose`. */
+export type OrientationStatus = ContractOrientationStatus & { pose: ScreenOrientation | null };
 export type FontScaleStatus = {
   scale: number;
   raw: string;
@@ -191,7 +190,7 @@ export async function readEmuConsoleValue(
 export async function getDeviceSize(
   serial: string,
   runExec: typeof execText = execText,
-  lane?: ExecLane,
+  { lane }: { lane?: ExecLane } = {},
 ): Promise<{ width: number; height: number }> {
   const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
@@ -275,33 +274,48 @@ export function rotationForScreenOrientation(
   return ((index - naturalOffset(natural) + 4) % 4) as DisplayRotation;
 }
 
-export async function getUserRotation(
-  serial: string,
-  runExec: typeof execText = execText,
-): Promise<OrientationStatus> {
+/** The lock status that `cmd window user-rotation` printed, named from the natural size. */
+export function orientationStatus(raw: string, natural: NaturalSize | null): OrientationStatus {
+  const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
+  if (!match) return { mode: "unknown", rotation: null, orientation: "unknown", pose: null, raw };
+  const mode = match[1] as "free" | "lock";
+  const rotation = match[2] === undefined ? null : Number(match[2]);
+  if (mode === "free") return { mode, rotation, orientation: "auto", pose: null, raw };
+  // A tablet locked at rotation 0 shows landscape, so the name needs the natural size.
+  if (rotation === null || rotation > 3 || !natural) {
+    return { mode, rotation, orientation: "unknown", pose: null, raw };
+  }
+  // The portrait poses sit at the even indexes of COUNTERCLOCKWISE_POSES.
+  const turns = naturalOffset(natural) + rotation;
+  return {
+    mode,
+    rotation,
+    orientation: turns % 2 === 0 ? "portrait" : "landscape",
+    pose: COUNTERCLOCKWISE_POSES[turns % 4],
+    raw,
+  };
+}
+
+async function readUserRotation(serial: string, runExec: typeof execText): Promise<string> {
   const r = await runExec("adb", ["-s", serial, "shell", "cmd", "window", "user-rotation"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) {
     throw new Error(`cmd window user-rotation failed: ${execFailure(r)}`);
   }
-  const raw = r.stdout.trim();
-  const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
-  if (!match) {
-    return { mode: "unknown", rotation: null, orientation: "unknown", pose: null, raw };
-  }
-  const mode = match[1] as "free" | "lock";
-  const rotation = match[2] === undefined ? null : Number(match[2]);
-  if (mode === "free") return { mode, rotation, orientation: "auto", pose: null, raw };
-  if (rotation === null || rotation > 3) {
-    return { mode, rotation, orientation: "unknown", pose: null, raw };
-  }
-  // A tablet locked at rotation 0 shows landscape, so the name needs the natural size.
-  const natural = await getDeviceSize(serial, runExec).catch(() => null);
-  if (!natural) return { mode, rotation, orientation: "unknown", pose: null, raw };
-  const pose = screenOrientationForRotation(rotation as DisplayRotation, natural);
-  const orientation = pose.startsWith("portrait") ? "portrait" : "landscape";
-  return { mode, rotation, orientation, pose, raw };
+  return r.stdout.trim();
+}
+
+export async function getUserRotation(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<OrientationStatus> {
+  const [raw, natural] = await Promise.all([
+    readUserRotation(serial, runExec),
+    // Without the size a locked rotation is reported as unknown.
+    getDeviceSize(serial, runExec).catch(() => null),
+  ]);
+  return orientationStatus(raw, natural);
 }
 
 export async function setUserRotation(
@@ -310,11 +324,18 @@ export async function setUserRotation(
   runExec: typeof execText = execText,
 ): Promise<OrientationStatus> {
   let args = ["cmd", "window", "user-rotation", "free"];
+  let natural: NaturalSize | null = null;
   if (orientation !== "auto") {
     const pose = orientation === "landscape" ? "landscape_right" : orientation;
     // `wm size` runs before each lock: the natural size can change with the device.
-    const rotation = rotationForScreenOrientation(pose, await getDeviceSize(serial, runExec));
-    args = ["cmd", "window", "user-rotation", "lock", String(rotation)];
+    natural = await getDeviceSize(serial, runExec);
+    args = [
+      "cmd",
+      "window",
+      "user-rotation",
+      "lock",
+      String(rotationForScreenOrientation(pose, natural)),
+    ];
   }
   const r = await runExec("adb", ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
@@ -322,7 +343,22 @@ export async function setUserRotation(
   if (execFailed(r)) {
     throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
-  return getUserRotation(serial, runExec);
+  return orientationStatus(await readUserRotation(serial, runExec), natural);
+}
+
+/**
+ * The pose the display shows now, from its rotation and natural size. Both reads use the
+ * background lane, because the reader polls them while the stream runs.
+ */
+export async function getDisplayOrientation(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<ScreenOrientation> {
+  const [natural, rotation] = await Promise.all([
+    getDeviceSize(serial, runExec, { lane: "background" }),
+    getDisplayRotation(serial, runExec),
+  ]);
+  return screenOrientationForRotation(rotation, natural);
 }
 
 export async function getFontScale(

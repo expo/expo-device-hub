@@ -1,6 +1,6 @@
 import type { AccessibilitySnapshot } from "./accessibility.ts";
 import { ControlInputQueue } from "./control-input-queue.ts";
-import { DeviceSessionState } from "./device-session-state.ts";
+import { DeviceSessionState, type DeviceSessionStateOptions } from "./device-session-state.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
 import type { Screen } from "./input.ts";
 import type { GeoFix } from "./location.ts";
@@ -36,6 +36,8 @@ type ActiveDeviceSessionOpts<TClient extends SessionClient> = {
   generation: number;
   stream: EmuSession;
   applyLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
   deviceState?: DeviceSessionState;
   closeClient?: (client: TClient, code: number, reason: string) => void;
   inputQueue?: ControlInputQueue;
@@ -128,6 +130,8 @@ export class ActiveDeviceSession<TClient extends SessionClient = SessionClient> 
           }
           await applyLocation(serial, fix, signal);
         },
+        readOrientation: opts.readOrientation,
+        applyRotation: opts.applyRotation,
       });
     if (this.deviceState.serial !== this.serial) {
       throw new Error(

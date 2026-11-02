@@ -1,3 +1,2 @@
 [test]
 coverageSkipTestFiles = true
-preload = ["./tests/setup/device-free.ts"]

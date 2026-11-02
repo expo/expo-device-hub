@@ -63,6 +63,10 @@ export type ApiDependencies = {
   stopAvd: (input: { serial?: string; avd?: string }) => Promise<AvdStopResponse>;
 
   getOrientation: () => Promise<OrientationStatus>;
+  /**
+   * Lock or free the rotation and record the lock, as `DeviceSessionState.setOrientation`
+   * does, so `/api` right after a lock reports the locked pose.
+   */
   setOrientation: (orientation: OrientationMode) => Promise<OrientationStatus>;
   getFold: () => Promise<FoldStatus>;
   setFold: (posture: "closed" | "opened") => Promise<FoldStatus>;

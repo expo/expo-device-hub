@@ -1,9 +1,3 @@
-import {
-  getDeviceSize,
-  getDisplayRotation,
-  screenOrientationForRotation,
-  type DisplayRotation,
-} from "./adb.ts";
 import type { ScreenOrientation } from "./shared/api-contracts.ts";
 
 const MAX_AGE_MS = 1_000;
@@ -21,30 +15,27 @@ export type DisplayOrientationReader = {
    * polls after a turn sees the new pose instead of the one before it.
    */
   fresh(): Promise<ScreenOrientation | null>;
-  /** Read now. Concurrent calls share one adb query; a failure keeps the last reading. */
-  refresh(): Promise<ScreenOrientation | null>;
-  /**
-   * Record a lock. A locked pose becomes the reading for the next second; null (a free
-   * rotation) makes the reading stale. Reads that started before the lock are discarded, and
-   * the next read waits for them instead of sharing their result.
-   */
-  locked(pose: ScreenOrientation | null): void;
 };
 
 export type DisplayOrientationReaderOptions = {
-  readRotation?: (serial: string) => Promise<DisplayRotation>;
-  readNaturalSize?: (serial: string) => Promise<{ width: number; height: number }>;
+  /** Read the pose the display shows now. */
+  read: () => Promise<ScreenOrientation>;
   now?: () => number;
 };
 
-export function createDisplayOrientationReader(
-  serial: string,
-  {
-    readRotation = (target) => getDisplayRotation(target),
-    readNaturalSize = (target) => getDeviceSize(target, undefined, "background"),
-    now = () => performance.now(),
-  }: DisplayOrientationReaderOptions = {},
-): DisplayOrientationReader {
+/**
+ * A reader of the display pose, and `locked` for the owner that changes the lock. A locked
+ * pose becomes the reading for the next second; null (a free rotation) makes the reading
+ * stale. A read that started before a lock never replaces the reading, and a caller after a
+ * lock never shares that read.
+ */
+export function createDisplayOrientationReader({
+  read,
+  now = () => performance.now(),
+}: DisplayOrientationReaderOptions): {
+  reader: DisplayOrientationReader;
+  locked(pose: ScreenOrientation | null): void;
+} {
   let orientation: ScreenOrientation | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
   // Each lock starts a new generation; a read only counts for the generation it started in.
@@ -54,49 +45,46 @@ export function createDisplayOrientationReader(
   const refresh = () => {
     if (pending?.generation === generation) return pending.read;
     const readGeneration = generation;
-    const previous = pending?.read;
-    let read!: Promise<ScreenOrientation | null>;
-    read = (async () => {
-      // A read from before a lock can still be running; adb answers it first.
-      if (previous) await previous;
-      const startedAt = now();
+    const startedAt = now();
+    const entry = { generation: readGeneration } as {
+      generation: number;
+      read: Promise<ScreenOrientation | null>;
+    };
+    pending = entry;
+    entry.read = (async () => {
       try {
-        // Read the natural size with each rotation: another AVD can reuse the serial, and a
-        // foldable changes its display.
-        const [size, rotation] = await Promise.all([readNaturalSize(serial), readRotation(serial)]);
-        if (readGeneration === generation) {
-          orientation = screenOrientationForRotation(rotation, size);
-        }
+        const next = await read();
+        if (readGeneration === generation) orientation = next;
       } catch {
         // Keep the last reading.
       } finally {
         if (readGeneration === generation) readAt = startedAt;
-        if (pending?.read === read) pending = null;
+        if (pending === entry) pending = null;
       }
       return orientation;
     })();
-    pending = { generation: readGeneration, read };
-    return read;
+    return entry.read;
   };
 
   return {
-    current() {
-      if (now() - readAt > MAX_AGE_MS) void refresh();
-      return orientation;
+    reader: {
+      current() {
+        if (now() - readAt > MAX_AGE_MS) void refresh();
+        return orientation;
+      },
+      async fresh() {
+        if (now() - readAt <= MAX_AGE_MS) return orientation;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<ScreenOrientation | null>((resolve) => {
+          timer = setTimeout(() => resolve(orientation), FRESH_WAIT_MS);
+        });
+        try {
+          return await Promise.race([refresh(), timeout]);
+        } finally {
+          clearTimeout(timer);
+        }
+      },
     },
-    async fresh() {
-      if (now() - readAt <= MAX_AGE_MS) return orientation;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const timeout = new Promise<ScreenOrientation | null>((resolve) => {
-        timer = setTimeout(() => resolve(orientation), FRESH_WAIT_MS);
-      });
-      try {
-        return await Promise.race([refresh(), timeout]);
-      } finally {
-        clearTimeout(timer);
-      }
-    },
-    refresh,
     locked(pose) {
       generation++;
       if (pose) {
@@ -107,16 +95,4 @@ export function createDisplayOrientationReader(
       }
     },
   };
-}
-
-const readers = new Map<string, DisplayOrientationReader>();
-
-/** One shared reader per device serial, for the standalone server and the middleware. */
-export function displayOrientationReader(serial: string): DisplayOrientationReader {
-  let reader = readers.get(serial);
-  if (!reader) {
-    reader = createDisplayOrientationReader(serial);
-    readers.set(serial, reader);
-  }
-  return reader;
 }

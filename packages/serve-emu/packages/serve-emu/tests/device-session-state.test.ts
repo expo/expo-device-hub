@@ -136,3 +136,32 @@ describe("DeviceSessionState source ownership", () => {
     expect(logcat.killed()).toBe(true);
   });
 });
+
+describe("DeviceSessionState orientation", () => {
+  test("setOrientation locks the rotation and reports the locked pose without reading again", async () => {
+    const reads: string[] = [];
+    const locks: string[] = [];
+    const state = new DeviceSessionState({
+      serial: "emulator-5554",
+      applyLocation: async () => {},
+      readOrientation: async (serial) => (reads.push(serial), "portrait"),
+      applyRotation: async (serial, mode) => {
+        locks.push(`${serial} ${mode}`);
+        return {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        };
+      },
+    });
+    await expect(state.orientation.fresh()).resolves.toBe("portrait");
+    await expect(state.setOrientation("landscape_left")).resolves.toMatchObject({
+      pose: "landscape_left",
+    });
+    expect(locks).toEqual(["emulator-5554 landscape_left"]);
+    await expect(state.orientation.fresh()).resolves.toBe("landscape_left");
+    expect(reads).toEqual(["emulator-5554"]);
+  });
+});

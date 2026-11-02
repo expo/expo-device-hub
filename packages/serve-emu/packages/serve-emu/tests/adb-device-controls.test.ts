@@ -13,7 +13,9 @@ import {
   clearHardwareKeyboardCache,
   hardwareKeyboardFromClasses,
   getSoftwareKeyboard,
+  getDisplayOrientation,
   getUserRotation,
+  orientationStatus,
   listAllDevices,
   listDevices,
   pickDevice,
@@ -286,39 +288,46 @@ describe("ADB display controls", () => {
     await expect(getDeviceSize("device-1", failed)).rejects.toThrow("wm size failed: wm failed");
   });
 
-  test("maps free and locked rotations to poses from the natural display", async () => {
-    const phone = "Physical size: 1080x2400";
-    const tablet = "Physical size: 2560x1600";
+  test("names a lock status from the natural display", () => {
+    const phone = { width: 1080, height: 2400 };
+    const tablet = { width: 2560, height: 1600 };
     const cases = [
-      { raw: "free\n", size: phone, mode: "free", rotation: null, orientation: "auto", pose: null },
-      { raw: "free 3\n", size: phone, mode: "free", rotation: 3, orientation: "auto", pose: null },
       {
-        raw: "lock 0\n",
-        size: phone,
+        raw: "free",
+        natural: phone,
+        mode: "free",
+        rotation: null,
+        orientation: "auto",
+        pose: null,
+      },
+      { raw: "free 3", natural: null, mode: "free", rotation: 3, orientation: "auto", pose: null },
+      {
+        raw: "lock 0",
+        natural: phone,
         mode: "lock",
         rotation: 0,
         orientation: "portrait",
         pose: "portrait",
       },
       {
-        raw: "lock 1\n",
-        size: phone,
+        raw: "lock 1",
+        natural: phone,
         mode: "lock",
         rotation: 1,
         orientation: "landscape",
         pose: "landscape_right",
       },
       {
-        raw: "lock 2\n",
-        size: phone,
+        raw: "lock 2",
+        natural: phone,
         mode: "lock",
         rotation: 2,
         orientation: "portrait",
         pose: "portrait_upside_down",
       },
       {
-        raw: "lock 3\n",
-        size: phone,
+        raw: "lock 3",
+        natural: phone,
         mode: "lock",
         rotation: 3,
         orientation: "landscape",
@@ -326,58 +335,87 @@ describe("ADB display controls", () => {
       },
       // A tablet shows landscape at rotation 0 and portrait at rotation 3.
       {
-        raw: "lock 0\n",
-        size: tablet,
+        raw: "lock 0",
+        natural: tablet,
         mode: "lock",
         rotation: 0,
         orientation: "landscape",
         pose: "landscape_right",
       },
       {
-        raw: "lock 3\n",
-        size: tablet,
+        raw: "lock 3",
+        natural: tablet,
         mode: "lock",
         rotation: 3,
         orientation: "portrait",
         pose: "portrait",
       },
       {
-        raw: "lock\n",
-        size: phone,
+        raw: "lock",
+        natural: phone,
         mode: "lock",
         rotation: null,
         orientation: "unknown",
         pose: null,
       },
       {
-        raw: "lock 1\n",
-        size: "size unavailable",
+        raw: "lock 4",
+        natural: phone,
+        mode: "lock",
+        rotation: 4,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "lock 1",
+        natural: null,
         mode: "lock",
         rotation: 1,
         orientation: "unknown",
         pose: null,
       },
       {
-        raw: "unexpected\n",
-        size: phone,
+        raw: "unexpected",
+        natural: phone,
         mode: "unknown",
         rotation: null,
         orientation: "unknown",
         pose: null,
       },
     ] as const;
-
-    for (const entry of cases) {
-      const runExec = (async (_command, args) =>
-        result(args.includes("wm") ? entry.size : entry.raw)) as typeof execText;
-      await expect(getUserRotation("device-1", runExec)).resolves.toEqual({
-        mode: entry.mode,
-        rotation: entry.rotation,
-        orientation: entry.orientation,
-        pose: entry.pose,
-        raw: entry.raw.trim(),
-      });
+    for (const { raw, natural, ...expected } of cases) {
+      expect(orientationStatus(raw, natural)).toEqual({ ...expected, raw });
     }
+  });
+
+  test("reads the lock and the natural size, and reports a lock as unknown without the size", async () => {
+    const read = (size: ReturnType<typeof result>) =>
+      (async (_command, args) =>
+        args.includes("wm") ? size : result("lock 1\n")) as typeof execText;
+    await expect(
+      getUserRotation("device-1", read(result("Physical size: 1080x2400"))),
+    ).resolves.toMatchObject({
+      pose: "landscape_right",
+      raw: "lock 1",
+    });
+    await expect(
+      getUserRotation("device-1", read(result("", { status: 1, stderr: "wm failed" }))),
+    ).resolves.toMatchObject({ orientation: "unknown", pose: null });
+  });
+
+  test("reads the shown pose from the rotation and the natural size, both in the background lane", async () => {
+    const lanes: Array<[string, string | undefined]> = [];
+    let size = "Physical size: 1080x2400";
+    const runExec = (async (_command, args, options) => {
+      const call = args.slice(3).join(" ");
+      lanes.push([call, options?.lane]);
+      return call === "wm size" ? result(size) : result("Display: mDisplayId=0\n  mRotation=0\n");
+    }) as typeof execText;
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("portrait");
+    // Another AVD can reuse the serial, so the size is read again each time.
+    size = "Physical size: 2560x1600";
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("landscape_right");
+    expect(new Set(lanes.map(([, lane]) => lane))).toEqual(new Set(["background"]));
   });
 
   test("locks the rotation that shows the requested pose and reads that pose back", async () => {
@@ -409,7 +447,9 @@ describe("ADB display controls", () => {
       }) as typeof execText;
       const status = await setUserRotation("device-1", entry.requested, runExec);
       const command = entry.rotation === null ? "free" : `lock ${entry.rotation}`;
-      expect(calls.filter((call) => call !== "wm size")).toEqual([
+      // A lock reads the natural size once and reuses it for the answer.
+      expect(calls).toEqual([
+        ...(entry.rotation === null ? [] : ["wm size"]),
         `cmd window user-rotation ${command}`,
         "cmd window user-rotation",
       ]);

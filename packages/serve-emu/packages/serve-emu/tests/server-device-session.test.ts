@@ -420,13 +420,8 @@ describe("startServer device session lifecycle", () => {
       {
         openScrcpy: async () => a.session,
         serve: capturingServe(captured),
-        displayOrientationReader: (serial) => ({
-          current: () => (calls.push(`current ${serial}`), "portrait" as const),
-          fresh: async () => (calls.push(`fresh ${serial}`), "landscape_right" as const),
-          refresh: async () => (calls.push(`refresh ${serial}`), "landscape_right" as const),
-          locked: (pose) => calls.push(`locked ${serial} ${pose}`),
-        }),
-        setUserRotation: async (serial, orientation) => {
+        readOrientation: async (serial) => (calls.push(`read ${serial}`), "portrait"),
+        applyRotation: async (serial, orientation) => {
           calls.push(`lock ${serial} ${orientation}`);
           return {
             mode: "lock",
@@ -441,10 +436,9 @@ describe("startServer device session lifecycle", () => {
 
     try {
       const info = await invokeFetch(captured, "/api");
-      expect(await info.json()).toMatchObject({ orientation: "landscape_right" });
+      expect(await info.json()).toMatchObject({ orientation: "portrait" });
       const health = await invokeFetch(captured, "/health");
       expect(await health.json()).toMatchObject({ orientation: "portrait" });
-      expect(calls).toEqual(["fresh A", "current A"]);
 
       const locked = await invokeFetch(captured, "/api/orientation", {
         method: "POST",
@@ -455,7 +449,10 @@ describe("startServer device session lifecycle", () => {
         ok: true,
         orientation: { pose: "landscape_right" },
       });
-      expect(calls.slice(2)).toEqual(["lock A landscape_right", "locked A landscape_right"]);
+      // `/api` right after the lock reports the locked pose without another read.
+      const after = await invokeFetch(captured, "/api");
+      expect(await after.json()).toMatchObject({ orientation: "landscape_right" });
+      expect(calls).toEqual(["read A", "lock A landscape_right"]);
     } finally {
       await started.stop();
     }

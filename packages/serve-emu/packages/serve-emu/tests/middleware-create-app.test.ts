@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import { DeviceSessionState } from "../src/device-session-state.ts";
 import { createApp, type AppClock } from "../src/middleware.ts";
 import { ScreenRecording } from "../src/screen-recording.ts";
 import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/scrcpy.ts";
@@ -744,39 +745,31 @@ test("only announces video-session when the scrcpy session size changes", async 
 test("reports the display orientation in /api and /health and records the locked pose", async () => {
   const { session } = fakeScrcpySession(0);
   const calls: string[] = [];
-  const reader = {
-    current: () => (calls.push("current"), "portrait" as const),
-    fresh: async () => (calls.push("fresh"), "landscape_left" as const),
-    refresh: async () => (calls.push("refresh"), "landscape_left" as const),
-    locked: (pose: string | null) => calls.push(`locked ${pose}`),
-  };
-  const app = await createApp(
-    { serial: session.serial },
-    {
-      startSession: async () => adaptScrcpySession(session),
-      displayOrientationReader: (serial) => {
-        expect(serial).toBe(session.serial);
-        return reader;
-      },
-      setUserRotation: async (_serial, orientation) => {
-        calls.push(`lock ${orientation}`);
-        return {
-          mode: "lock",
-          rotation: 3,
-          orientation: "landscape",
-          pose: "landscape_left",
-          raw: "lock 3",
-        };
-      },
+  const deviceState = new DeviceSessionState({
+    serial: session.serial,
+    applyLocation: async () => {},
+    readOrientation: async (serial) => (calls.push(`read ${serial}`), "portrait"),
+    applyRotation: async (serial, orientation) => {
+      calls.push(`lock ${serial} ${orientation}`);
+      return {
+        mode: "lock",
+        rotation: 3,
+        orientation: "landscape",
+        pose: "landscape_left",
+        raw: "lock 3",
+      };
     },
+  });
+  const app = await createApp(
+    { serial: session.serial, deviceState },
+    { startSession: async () => adaptScrcpySession(session) },
   );
 
   try {
     const info = await app.handleRequest(new Request("http://middleware.test/api"));
-    expect(await info.json()).toMatchObject({ orientation: "landscape_left" });
+    expect(await info.json()).toMatchObject({ orientation: "portrait" });
     const health = await app.handleRequest(new Request("http://middleware.test/health"));
     expect(await health.json()).toMatchObject({ orientation: "portrait" });
-    expect(calls).toEqual(["fresh", "current"]);
 
     const locked = await app.handleRequest(
       new Request("http://middleware.test/api/orientation", {
@@ -789,7 +782,10 @@ test("reports the display orientation in /api and /health and records the locked
       ok: true,
       orientation: { pose: "landscape_left" },
     });
-    expect(calls.slice(2)).toEqual(["lock landscape_left", "locked landscape_left"]);
+    // `/api` right after the lock reports the locked pose without another read.
+    const after = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await after.json()).toMatchObject({ orientation: "landscape_left" });
+    expect(calls).toEqual([`read ${session.serial}`, `lock ${session.serial} landscape_left`]);
   } finally {
     app.stop();
   }
