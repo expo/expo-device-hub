@@ -182,8 +182,8 @@ export function DeviceOptionsSection({
         orientationCapabilities.orientations.includes(value),
       )
     : [];
-  // The row shows the client's pose: the last pick at once, then the device's report. It waits
-  // until the client knows a pose; Rotate still works before that.
+  // The row appears once the client has a pose, from a pick or a report, and shows it: the last
+  // pick at once, then the device's report. Rotate still works before that.
   const currentOrientation = client?.orientation ?? null;
   const rotationUnavailable = rotationUnavailableText(client?.orientationUnavailable ?? null);
 

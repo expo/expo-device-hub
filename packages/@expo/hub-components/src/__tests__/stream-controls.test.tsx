@@ -14,7 +14,7 @@ describe("StreamControls", () => {
   test.each([
     ["recording-status-unknown", "Rotation is unavailable until recording status is known."],
     ["recording", "Rotation is unavailable while recording."],
-    ["not-streaming", "Rotation is unavailable until the simulator stream is live."],
+    ["input-unavailable", "Rotation is unavailable until the simulator accepts input."],
   ] as const)(
     "locks Rotate while orientation is unavailable for %s, without disabling app controls",
     (orientationUnavailable, reason) => {
@@ -223,7 +223,9 @@ describe("StreamPanel", () => {
       ).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate({})).not.toContain("aria-disabled");
     expect(rotate({ orientationUnavailable: "recording" })).toContain('aria-disabled="true"');
-    expect(rotate({ orientationUnavailable: "not-streaming" })).toContain('aria-disabled="true"');
+    expect(rotate({ orientationUnavailable: "input-unavailable" })).toContain(
+      'aria-disabled="true"',
+    );
   });
 
   test("offers the clipboard actions of its client and blocks Copy while an action is pending", async () => {

@@ -14,7 +14,7 @@ export function rotationUnavailableText(
       return "Rotation is unavailable until recording status is known.";
     case "recording":
       return "Rotation is unavailable while recording.";
-    case "not-streaming":
-      return "Rotation is unavailable until the simulator stream is live.";
+    case "input-unavailable":
+      return "Rotation is unavailable until the simulator accepts input.";
   }
 }

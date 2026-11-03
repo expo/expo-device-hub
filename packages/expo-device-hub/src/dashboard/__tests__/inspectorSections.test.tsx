@@ -1258,8 +1258,8 @@ test("disables the orientation select with the client's reason, as Rotate does",
       "Rotation is unavailable until recording status is known.",
     ],
     [
-      { orientationUnavailable: "not-streaming" },
-      "Rotation is unavailable until the simulator stream is live.",
+      { orientationUnavailable: "input-unavailable" },
+      "Rotation is unavailable until the simulator accepts input.",
     ],
     // The dashboard follows the client's reason, not the status or recording it sees.
     [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
