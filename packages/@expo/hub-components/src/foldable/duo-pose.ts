@@ -5,6 +5,7 @@
  */
 
 import {
+  type DeviceOrientation,
   displayDeltaForRawDelta,
   displayPointForRawPoint,
   streamGeometry,
@@ -23,6 +24,24 @@ export const DUO_DEFAULT_VIEW_ANGLES: Record<"laptop" | "tent", DuoViewAngles> =
   laptop: { elevation: 20, rotation: -20 },
   tent: { elevation: 10, rotation: -20 },
 };
+
+/**
+ * How far an interface orientation turns a portrait display, clockwise in
+ * degrees: what the flat view rotates a raw portrait frame by. It mirrors
+ * hub-client's internal `rotationDegreesForOrientation`.
+ */
+export function orientationDegrees(orientation: DeviceOrientation | null | undefined): number {
+  switch (orientation) {
+    case "landscape_left":
+      return 90;
+    case "landscape_right":
+      return -90;
+    case "portrait_upside_down":
+      return 180;
+    default:
+      return 0;
+  }
+}
 
 /** Camera-axis roll that makes the active panel's native UI readable. */
 export function duoScreenRoll(config: DuoStreamConfig) {
@@ -125,8 +144,8 @@ export function duoScreenMapping(
   config: DuoStreamConfig,
   width: number,
   height: number,
+  rotation = config.screenId === 1 ? 0 : Math.PI / 2,
 ): DuoScreenMapping {
-  const rotation = config.screenId === 1 ? 0 : Math.PI / 2;
   const cos = Math.abs(Math.cos(rotation));
   const sin = Math.abs(Math.sin(rotation));
   const rotatedWidth = config.width * cos + config.height * sin;

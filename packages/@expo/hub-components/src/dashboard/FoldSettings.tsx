@@ -8,15 +8,15 @@ import { type FoldPreviewMode } from "./PhoneFrame";
 import { SidebarRow, SidebarSlider, SidebarSwitch } from "./SidebarRow";
 
 /**
- * Viewer-local choices for how the iPhone Duo is drawn; owned by the consumer.
- * Pass them only for a client that can feed the 3D model.
+ * Viewer-local choices for how a device with a 3D model is drawn; owned by the
+ * consumer. Pass them only for a device and client that can feed the 3D model.
  */
 export type FoldPreviewOption = {
   mode: FoldPreviewMode;
   onModeChange: (mode: FoldPreviewMode) => void;
   /** The model failed to load in this session; the flat screen shows until 3D is selected again. */
   unavailable?: boolean;
-  /** Freeze the departing panel's last frame while the device folds. */
+  /** Freeze the departing panel's last frame while the device folds. Shown only with fold controls. */
   cacheScreenOnFold: boolean;
   onCacheScreenOnFoldChange: (enabled: boolean) => void;
   /** Keep the model at its physical size, or fill the stage as the hinge moves. */
@@ -60,7 +60,6 @@ export function FoldSettings({
   const [draft, setDraft] = useState("");
   const [angleDraft, setAngleDraft] = useState<number | null>(null);
   const [adjusting, setAdjusting] = useState(false);
-  const previewDescriptionId = useId();
   const { angle, pose, pending, error } = fold;
   const tableMode = controls.tableMode ? fold.tableMode : undefined;
   const angleRange = controls.angle;
@@ -91,8 +90,6 @@ export function FoldSettings({
         ]
       : offeredPoses;
   const canChangeTableMode = (tableMode?.available ?? false) || tableMode?.enabled === true;
-  // An unavailable model shows the flat screen until 3D is selected again.
-  const viewMode: FoldPreviewMode = preview?.mode === "3d" && !preview.unavailable ? "3d" : "2d";
   const changeAngle = (value: number) => {
     setAngleDraft(value);
     fold.setControl({ control: "angle", value });
@@ -193,47 +190,67 @@ export function FoldSettings({
           </DisabledControlHint>
         </SidebarRow>
       )}
-      {preview && (
-        <>
-          <SidebarRow
-            label="Preview mode"
-            description={preview.unavailable ? MODEL_UNAVAILABLE_DESCRIPTION : undefined}
-            descriptionId={preview.unavailable ? previewDescriptionId : undefined}
-          >
-            <Select
-              ariaLabel="Preview mode"
-              ariaDescribedBy={preview.unavailable ? previewDescriptionId : undefined}
-              options={PREVIEW_MODE_OPTIONS}
-              value={viewMode}
-              onChange={preview.onModeChange}
-            />
-          </SidebarRow>
-          {viewMode === "3d" && (
-            <>
-              <SidebarRow label="Cache screen on fold">
-                <SidebarSwitch
-                  label="Cache screen on fold"
-                  checked={preview.cacheScreenOnFold}
-                  onChange={preview.onCacheScreenOnFoldChange}
-                />
-              </SidebarRow>
-              <SidebarRow label="Preview size">
-                <Select
-                  ariaLabel="Preview size"
-                  options={PREVIEW_SIZE_OPTIONS}
-                  value={preview.sizeMode}
-                  onChange={preview.onSizeModeChange}
-                />
-              </SidebarRow>
-            </>
-          )}
-        </>
-      )}
+      {preview && <ModelPreviewSettings preview={preview} folds />}
       {error && (
         <div role="alert" style={{ ...textSize.xs, color: text.danger, padding: "0 0 12px" }}>
           {error}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The viewer's 2D/3D preview choices. Fold settings show them for a foldable
+ * with fold controls; Device options show them for any other device with a 3D
+ * model. Caching the departing display needs the fold controls.
+ */
+export function ModelPreviewSettings({
+  preview,
+  folds = false,
+}: {
+  preview: FoldPreviewOption;
+  folds?: boolean;
+}) {
+  const previewDescriptionId = useId();
+  // An unavailable model shows the flat screen until 3D is selected again.
+  const viewMode: FoldPreviewMode = preview.mode === "3d" && !preview.unavailable ? "3d" : "2d";
+  return (
+    <>
+      <SidebarRow
+        label="Preview mode"
+        description={preview.unavailable ? MODEL_UNAVAILABLE_DESCRIPTION : undefined}
+        descriptionId={preview.unavailable ? previewDescriptionId : undefined}
+      >
+        <Select
+          ariaLabel="Preview mode"
+          ariaDescribedBy={preview.unavailable ? previewDescriptionId : undefined}
+          options={PREVIEW_MODE_OPTIONS}
+          value={viewMode}
+          onChange={preview.onModeChange}
+        />
+      </SidebarRow>
+      {viewMode === "3d" && (
+        <>
+          {folds && (
+            <SidebarRow label="Cache screen on fold">
+              <SidebarSwitch
+                label="Cache screen on fold"
+                checked={preview.cacheScreenOnFold}
+                onChange={preview.onCacheScreenOnFoldChange}
+              />
+            </SidebarRow>
+          )}
+          <SidebarRow label="Preview size">
+            <Select
+              ariaLabel="Preview size"
+              options={PREVIEW_SIZE_OPTIONS}
+              value={preview.sizeMode}
+              onChange={preview.onSizeModeChange}
+            />
+          </SidebarRow>
+        </>
+      )}
+    </>
   );
 }

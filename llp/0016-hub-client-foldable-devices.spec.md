@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
+**Revised:** 2026-11-03 (Expo's device models replace Xcode's; the 3D preview shows the Pixel 9 Pro Fold while Android reports no fold); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -47,7 +47,7 @@ An optional group is absent when the device does not have the feature. Inside a 
 
 There is no face-down command. serve-sim's protocol offers one (`physical`), but nothing in hub-components or the Hub sent it, and on iOS it also changes Table Mode, so it was the least portable command. Krystof Woldrich removed it from the contract [confirmed] (Krystof Woldrich, 2026-11-03). Adding it back later does not break consumers. `fold.physical.faceDown` stays: it reports what the device observes, and the 3D model frames the cover from it.
 
-`capabilities.fold` is `false` until the backend reports a hinge that it can move. `fold` can be non-null at that time. For example, the iPhone Duo is recognized from its DeviceKit chrome before its first screen config [observed: `isDuo` and `foldCapabilities` in `useIosDevice.ts`]. Fold settings, the pose shortcuts, and the 3D model's hinge handles use only what `capabilities.fold` lists [observed: `FoldSettings.tsx`, `useDeviceKeyboard.ts`, `FoldableDeviceScreen.tsx` in `packages/@expo/hub-components/src`]. The iOS adapter also rejects a command that `capabilities.fold` does not offer. It sets `error` and emits `rejected`, so a consumer that checks only `fold` cannot reach the backend too early. Unlike `failed` after a failure from the device, `rejected` leaves the other commands alone, because a command already sent still gets its reply. The 3D model therefore keeps the preview of a pending pose [observed: `foldCommandOffered` in `fold.ts`; `setHingeControl` in `useIosDevice.ts`; `useDuoFraming.ts`].
+`capabilities.fold` is `false` until the backend reports a hinge that it can move. `fold` can be non-null at that time. For example, the iPhone Duo is recognized from its DeviceKit chrome before its first screen config [observed: `isDuo` and `foldCapabilities` in `useIosDevice.ts`]. Fold settings, the pose shortcuts, and the 3D model's hinge handles use only what `capabilities.fold` lists [observed: `FoldSettings.tsx`, `useDeviceKeyboard.ts`, `DeviceModelScreen.tsx` in `packages/@expo/hub-components/src`]. The iOS adapter also rejects a command that `capabilities.fold` does not offer. It sets `error` and emits `rejected`, so a consumer that checks only `fold` cannot reach the backend too early. Unlike `failed` after a failure from the device, `rejected` leaves the other commands alone, because a command already sent still gets its reply. The 3D model therefore keeps the preview of a pending pose [observed: `foldCommandOffered` in `fold.ts`; `setHingeControl` in `useIosDevice.ts`; `useDuoFraming.ts`].
 
 ## Pose vocabulary
 
@@ -127,6 +127,8 @@ hub-client does not map serve-emu's fold yet; `fold` is `null` and `capabilities
 
 serve-emu's `half_opened` posture is not a pose by itself. At 90° it is `book`; at another angle it is `null` (custom). `flipped` and `tent` occur on fold-out profiles, whose hinge moves from 180° to 360° [observed: #352's LLP 0004 section]. #352 shows no fold for them. The contract can describe them later with `angle: { min: 180, max: 360 }` and the poses they offer.
 
+Until an adapter maps it, the Hub's 3D preview shows the Pixel 9 Pro Fold from the flat stream alone: the frame's shape tells the cover (shown at 0°) from the inner display (shown at 180°), so the model follows a fold that `/api/fold`, the emulator's controls, or an agent makes, but it offers no fold controls and shows no angle between [observed: `streamedPanel` in `duo-displays.ts` and `DeviceModelScreen.tsx` in `packages/@expo/hub-components/src/foldable`]. When `fold` is non-null, the model takes its angle. serve-emu can stream black frames, or none, for the folded Pixel 9 Pro Fold's cover on the Android 36.1 image, in both of its capture modes [observed: the Hub on 2026-11-03, while the emulator showed its cover home screen].
+
 #256 (draft, by jiunshinn) reads the posture as a string device setting, `fold`. With this contract, main's posture-only serve-emu maps to `capabilities.fold = { angle: false, poses: { closed, open }, tableMode: false }`, and Fold settings shows a pose select without a slider [observed: `FoldSettings.tsx`]. The `fold` device setting is then not needed.
 
 ## Decisions
@@ -137,10 +139,13 @@ These are Claude Code's choices while it implemented the direction above. Human 
 - **Opt-in capabilities.** #352 proposed `DeviceHinge.controls`, where `undefined` meant every iPhone Duo control. An explicit `capabilities.fold` follows the other capability groups, and a new backend offers nothing by default.
 - **Commands named after their capability.** `tableMode` replaces serve-sim's wire name `table`, so one name is used for the capability, the command, and the state group.
 - **Helpers removed from the public API.** `HINGE_POSES` (with Device Hub's angles and labels), `hingeControlState`, `isHingeControlCommand`, `isTableModeAvailable`, `HingeControlState`, and `HingePhysicalOrientation` described serve-sim's protocol. The iOS adapter keeps what it uses; `isHingeControlCommand` and `isTableModeAvailable` had no caller in hub-client and were removed [observed: `git grep` on #432's head 5721b06f]. A private `isTableModeAvailable` came back for the [native observation](#native-observation).
-- **The 3D model keeps the iPhone Duo's name.** `FoldableDeviceScreen` and the `duo-*` modules in `@expo/hub-components/foldable` render only Xcode's iPhone Duo model.
+- **One 3D preview for every model.** `DeviceModelScreen` (formerly `FoldableDeviceScreen`) renders a model description: the iPhone Duo, the iPhone 18 Pro, the Pixel 9 Pro, and the Pixel 9 Pro Fold. The entry keeps its name, `@expo/hub-components/foldable`, and the internal `duo-*` modules keep theirs, to keep the change small [observed: `foldable/index.ts`].
+- **The consumer picks the model.** The Hub server derives `Device.deviceModel` from the device type, as it derives `deviceFrame`, and the consumer passes each model's URL. hub-client stays free of models and their files; its `deviceModelUrl` is kept, and the Hub no longer reads it [observed: `device-support.ts`, `deviceModelPreview` in `device-models.ts`].
+- **One 2D/3D choice.** The Duo's stored preview choice, 3D by default, now applies to every device with a model, so the iPhone 18 Pro and the Pixel 9 Pro also open in 3D [observed: `DEFAULT_DUO_PREVIEW` in `packages/expo-device-hub/src/dashboard/dashboardStore.ts`].
+- **The device's pose turns the model.** A model without fold events rolls with `client.orientation`, which can lead the frames, so the device turns before its interface does, as a real phone does [observed: `DeviceModelScreen.tsx`].
 
 ## Open questions
 
 1. Are `cover` and `inner` the right role names? They came from the orchestrator's analysis (Claude Code), not from a maintainer. `main` instead of `inner` would also fit a fold-out device whose only display is on the outside. Neither name fits a dual-screen device.
-2. `deviceModelUrl` does not say which model it is. Only the iPhone Duo has one today. A second device with a model needs a kind, so that a consumer picks the right renderer.
+2. ~~`deviceModelUrl` does not say which model it is.~~ Resolved: the consumer picks the model from the device's identity, so hub-client needs no kind. Should hub-client drop `deviceModelUrl`, which nothing in this repository reads now?
 3. Should an Android adapter set `screen.display` from serve-emu's posture (`closed` → `cover`)? No consumer reads it on Android today.

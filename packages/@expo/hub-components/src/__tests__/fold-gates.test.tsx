@@ -6,7 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { DeviceOptionsSection } from "../dashboard/DeviceOptionsSection";
 import { LogSidebar } from "../dashboard/LogSidebar";
 import { DuoModelView } from "../foldable/DuoModelView";
-import { FoldableDeviceScreen } from "../foldable/FoldableDeviceScreen";
+import { DEVICE_MODELS } from "../foldable/device-models";
+import { DeviceModelScreen } from "../foldable/DeviceModelScreen";
 import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
 import { createGlobalStubs } from "./test-globals";
 
@@ -142,7 +143,6 @@ function duo(controls: DeviceClient["capabilities"]["fold"]): DeviceClient {
       { id: "cover", active: true, attachVideo: () => {} },
       { id: "inner", active: false, attachVideo: () => {} },
     ],
-    deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
     capabilities: { ...BASE_CLIENT.capabilities, fold: controls },
   };
 }
@@ -166,6 +166,43 @@ describe("fold controls follow capabilities.fold, not the fold state alone", () 
   });
 });
 
+describe("the 2D/3D choice", () => {
+  const preview = {
+    mode: "3d" as const,
+    onModeChange: () => {},
+    cacheScreenOnFold: false,
+    onCacheScreenOnFoldChange: () => {},
+    sizeMode: "fill" as const,
+    onSizeModeChange: () => {},
+  };
+
+  test("Device options offers it for a device with a model but without fold controls", () => {
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={BASE_CLIENT} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="3D preview"');
+    expect(markup).toContain('aria-label="Preview mode"');
+    expect(markup).toContain('aria-label="Preview size"');
+    // Only a device with fold controls caches the display it folds away from.
+    expect(markup).not.toContain("Cache screen on fold");
+    expect(markup).not.toContain('aria-label="Fold settings"');
+  });
+
+  test("a device without a model has no 2D/3D choice", () => {
+    const markup = renderToStaticMarkup(<DeviceOptionsSection client={BASE_CLIENT} />);
+    expect(markup).not.toContain('aria-label="Preview mode"');
+  });
+
+  test("a foldable keeps the choice in Fold settings, with the cache option", () => {
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={duo(DUO_FOLD_CONTROLS)} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="Fold settings"');
+    expect(markup).not.toContain('aria-label="3D preview"');
+    expect(markup).toContain("Cache screen on fold");
+  });
+});
+
 describe("the 3D model's hinge handles", () => {
   let renderer: ReactTestRenderer | undefined;
   beforeEach(() => {
@@ -182,8 +219,15 @@ describe("the 3D model's hinge handles", () => {
   async function handleCallback(client: DeviceClient) {
     // Without host elements the scene does not start, so no WebGL is needed.
     await act(async () => {
-      if (renderer) renderer.update(<FoldableDeviceScreen client={client} />);
-      else renderer = create(<FoldableDeviceScreen client={client} />);
+      const element = (
+        <DeviceModelScreen
+          client={client}
+          model={DEVICE_MODELS["ios:iphone-duo"]}
+          modelUrl="https://hub.test/assets/iphone-duo.glb"
+        />
+      );
+      if (renderer) renderer.update(element);
+      else renderer = create(element);
     });
     return renderer!.root.findByType(DuoModelView).props.onHingeAngleChange;
   }

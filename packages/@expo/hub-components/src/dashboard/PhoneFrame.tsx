@@ -6,8 +6,13 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import { duoStageMaxSide } from "../foldable/duo-stage";
-import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import {
+  type DeviceModelAssets,
+  type DeviceModelDescription,
+  deviceModelPreview,
+} from "../foldable/device-models";
+import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
+import { modelStageMaxSide } from "../foldable/duo-stage";
 import { bg } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
@@ -38,33 +43,35 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
 
-// The iPhone Duo's 3D stage is as large as the flat Duo can be: the cover's
-// long side at the MAX_SHORT_SIDE cap, on both axes so that any pose or
-// rotation fits, plus the model's fill inset on each side. Below that size it
-// shrinks to the stream area, so there the model is two fill insets (64 px)
-// smaller than the flat Duo on its limiting side. The stream area is the
-// space that StreamPanel keeps clear of the device title and the controls.
-// Only that container sizes it, never a native screen configuration,
-// so the stage keeps its footprint as the device folds and changes active
-// displays: resizing it then would animate on top of the hinge motion. Window
-// and sidebar resizes do resize it.
-// @ref LLP 0004#stage-size — the Hub caps the stage at the flat Duo's size; serve-sim keeps a fixed 1:1 stage
-const DUO_STAGE_MAX_SIDE = duoStageMaxSide(MAX_SHORT_SIDE);
-const DUO_STAGE_STYLE: CSSProperties = {
-  width: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqw)`,
-  height: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqh)`,
-  flexShrink: 0,
-  position: "relative",
-  isolation: "isolate",
-  containerType: "inline-size",
-};
+// A model's 3D stage is as large as the flat device can be: the long side of
+// its longest display at the MAX_SHORT_SIDE cap (the iPhone Duo's cover), on
+// both axes so that any pose or rotation fits, plus the model's fill inset on
+// each side. Below that size it shrinks to the stream area, so there the model
+// is two fill insets (64 px) smaller than the flat device on its limiting
+// side. The stream area is the space that StreamPanel keeps clear of the
+// device title and the controls. Only that container sizes it, never a native
+// screen configuration, so the stage keeps its footprint as the device folds,
+// turns, and changes active displays: resizing it then would animate on top of
+// the hinge motion. Window and sidebar resizes do resize it.
+// @ref LLP 0004#stage-size — the Hub caps the stage at the flat device's size; serve-sim keeps a fixed 1:1 stage
+function modelStageStyle(model: DeviceModelDescription): CSSProperties {
+  const maxSide = modelStageMaxSide(model, MAX_SHORT_SIDE);
+  return {
+    width: `min(${maxSide.toFixed(3)}px, 100cqw)`,
+    height: `min(${maxSide.toFixed(3)}px, 100cqh)`,
+    flexShrink: 0,
+    position: "relative",
+    isolation: "isolate",
+    containerType: "inline-size",
+  };
+}
 
-/** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
+/** How a device with a 3D model is presented: the flat active display, or its 3D model. */
 export type FoldPreviewMode = "2d" | "3d";
 
-/** Viewer-local 3D choices; the options pass through to `FoldableDeviceScreen`. */
+/** Viewer-local 3D choices; the options pass through to `DeviceModelScreen`. */
 export type PhoneFrameFoldPreview = { mode: FoldPreviewMode } & Pick<
-  FoldableDeviceScreenProps,
+  DeviceModelScreenProps,
   "cacheScreenOnFold" | "sizeMode" | "onUnavailable"
 >;
 
@@ -88,7 +95,7 @@ const CONFIG: Record<
  * shrinking to the available height or panel width). Without artwork, the frame
  * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
  * clips a centered, undistorted stream and may crop its edges to prevent leaks.
- * The iPhone Duo's 3D stage is capped at the flat Duo's long side on both axes.
+ * A device's 3D stage is capped at the flat device's long side on both axes.
  */
 // @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({
@@ -98,11 +105,12 @@ export function PhoneFrame({
   onCopy,
   preserveKeyboardFocus = false,
   DeviceScreen,
-  FoldableDeviceScreen,
+  DeviceModelScreen,
   foldPreview,
   displayScreen,
   showDeviceFrame = true,
   deviceFrameAssets,
+  deviceModelAssets,
   onLoadingChange,
 }: {
   device: Device;
@@ -113,10 +121,10 @@ export function PhoneFrame({
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /**
-   * iPhone Duo 3D renderer from `@expo/hub-components/foldable`, injected so
-   * that this entry never loads three.js; without it the Duo stays flat.
+   * 3D renderer from `@expo/hub-components/foldable`, injected so that this
+   * entry never loads three.js; without it every device stays flat.
    */
-  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
@@ -124,6 +132,8 @@ export function PhoneFrame({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork so this shared component remains asset-system agnostic. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
   /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
   onLoadingChange?: (loading: boolean) => void;
 }) {
@@ -175,17 +185,13 @@ export function PhoneFrame({
         .join(" ")
     : `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== "idle";
-  // The folding model needs the client's fold state, separate display streams, and Xcode's model.
-  const foldable = !!(
-    live &&
-    foldPreview?.mode === "3d" &&
-    FoldableDeviceScreen &&
-    client.fold &&
-    client.displays &&
-    client.deviceModelUrl
-  );
+  // The model needs the device's model file and, for the iPhone Duo, its fold state and both displays.
+  const modelPreview =
+    live && foldPreview?.mode === "3d" && DeviceModelScreen
+      ? deviceModelPreview(device, client, deviceModelAssets)
+      : null;
   const loading =
-    !!live && deviceScreenLoading(client, !foldable || modelSettledDevice === device.id);
+    !!live && deviceScreenLoading(client, !modelPreview || modelSettledDevice === device.id);
   useLayoutEffect(() => {
     onLoadingChange?.(loading);
   }, [onLoadingChange, loading]);
@@ -226,25 +232,28 @@ export function PhoneFrame({
     </div>
   );
 
-  // The folding model draws its own device, so neither frame artwork nor the
-  // screen clip applies; the status layer and the agent overlay still cover the stage.
-  if (foldable && client && FoldableDeviceScreen && foldPreview) {
+  // The model draws its own device, so neither frame artwork nor the screen
+  // clip applies; the status layer and the agent overlay still cover the stage.
+  if (modelPreview && client && DeviceModelScreen && foldPreview) {
     const { mode: _mode, ...modelOptions } = foldPreview;
     return (
       <div
         data-testid="device-screen-frame"
-        data-device-frame-kind="duo-model"
+        data-device-frame-kind="device-model"
+        data-device-model={modelPreview.model.id}
         data-agent-active={agentInteraction ? "true" : "false"}
-        style={DUO_STAGE_STYLE}
+        style={modelStageStyle(modelPreview.model)}
         onPointerEnter={(event) => {
           if (event.pointerType === "mouse") setHovered(true);
         }}
         onPointerLeave={() => setHovered(false)}
       >
         <div data-testid="device-screen-clip" style={{ position: "absolute", inset: 0 }}>
-          <FoldableDeviceScreen
+          <DeviceModelScreen
             key={device.id}
             client={client}
+            model={modelPreview.model}
+            modelUrl={modelPreview.url}
             onCopy={onCopy}
             onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}

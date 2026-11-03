@@ -10,12 +10,13 @@ import { DeviceTitle } from "../dashboard/DeviceTitle";
 import { type Device } from "../dashboard/data";
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { StreamPanel } from "../dashboard/StreamPanel";
-import {
-  FoldableDeviceScreen,
-  type FoldableDeviceScreenProps,
-} from "../foldable/FoldableDeviceScreen";
+import { DEVICE_MODELS } from "../foldable/device-models";
+import { DeviceModelScreen, type DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import { bg } from "../theme/tokens";
 import { createGlobalStubs } from "./test-globals";
+
+const DUO_MODEL = DEVICE_MODELS["ios:iphone-duo"];
+const DUO_ASSETS = { "ios:iphone-duo": "https://hub.test/assets/iphone-duo.glb" };
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 let renderer: ReactTestRenderer | undefined;
@@ -190,10 +191,9 @@ describe("the iPhone Duo 3D preview", () => {
         { id: "cover", active: true, attachVideo() {} },
         { id: "inner", active: false, attachVideo() {} },
       ],
-      deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
     } as Partial<DeviceClient>);
   let markModelSettled: (settled: boolean) => void = () => {};
-  function Model({ onModelSettledChange }: FoldableDeviceScreenProps) {
+  function Model({ onModelSettledChange }: DeviceModelScreenProps) {
     useEffect(() => {
       markModelSettled = (settled) => onModelSettledChange?.(settled);
     });
@@ -205,12 +205,13 @@ describe("the iPhone Duo 3D preview", () => {
     const render = async (next: DeviceClient) => {
       const element = (
         <StreamPanel
-          device={device("duo")}
+          device={{ ...device("duo"), deviceModel: "ios:iphone-duo" }}
           client={next}
           DeviceScreen={Screen}
-          FoldableDeviceScreen={Model}
+          DeviceModelScreen={Model}
           foldPreview={{ mode: "3d" }}
           displayScreen={(screen) => screen ?? null}
+          deviceModelAssets={DUO_ASSETS}
         />
       );
       await act(async () => {
@@ -256,7 +257,6 @@ describe("the iPhone Duo 3D preview", () => {
         { id: "cover", active: true, attachVideo() {} },
         { id: "inner", active: false, attachVideo() {} },
       ],
-      deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
       capabilities: { clipboard: false, fold: false },
       videoKind: "img",
     } as unknown as Partial<DeviceClient>);
@@ -264,12 +264,13 @@ describe("the iPhone Duo 3D preview", () => {
     await act(async () => {
       renderer = create(
         <PhoneFrame
-          device={device("duo")}
+          device={{ ...device("duo"), deviceModel: "ios:iphone-duo" }}
           client={duoClient}
           DeviceScreen={Screen}
-          FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceModelScreen={DeviceModelScreen}
           foldPreview={{ mode: "3d" }}
           displayScreen={(screen) => screen ?? null}
+          deviceModelAssets={DUO_ASSETS}
           onLoadingChange={(loading) => reported.push(loading)}
         />,
         { createNodeMock: () => ({ contains: () => false, focus() {} }) },
@@ -291,12 +292,16 @@ test("a flat fallback stays hidden and inert until the session's first frame, th
         { id: "cover", active: true, attachVideo() {} },
         { id: "inner", active: false, attachVideo() {} },
       ],
-      deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
       capabilities: { clipboard: false, fold: false },
       videoKind: "img",
     } as unknown as Partial<DeviceClient>);
   const render = (current: DeviceClient) => (
-    <FoldableDeviceScreen client={current} onModelSettledChange={(value) => settled.push(value)} />
+    <DeviceModelScreen
+      client={current}
+      model={DUO_MODEL}
+      modelUrl={DUO_ASSETS["ios:iphone-duo"]!}
+      onModelSettledChange={(value) => settled.push(value)}
+    />
   );
   // Without onUnavailable, WebGL fails and the preview shows its own flat fallback.
   await act(async () => {
@@ -327,14 +332,15 @@ test("the status pill names the first load with the spinner's label", () => {
 test("a loading 3D preview takes no keyboard focus and is not announced", () => {
   // Server rendering runs no effects, so the model is still loading.
   const markup = renderToStaticMarkup(
-    <FoldableDeviceScreen
+    <DeviceModelScreen
+      model={DUO_MODEL}
+      modelUrl={DUO_ASSETS["ios:iphone-duo"]!}
       client={client("streaming", true, {
         fold: { pending: false, error: null, setControl() {} },
         displays: [
           { id: "cover", active: true, attachVideo() {} },
           { id: "inner", active: false, attachVideo() {} },
         ],
-        deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
         capabilities: { clipboard: false, fold: false },
         videoKind: "img",
       } as unknown as Partial<DeviceClient>)}

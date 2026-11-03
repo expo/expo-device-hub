@@ -1,15 +1,18 @@
 /**
- * The iPhone Duo 3D scene: Xcode's model articulated by the hinge, textured
- * with the live panel streams, and raycast for input. Ported from serve-sim's
- * `src/client/simulator/duo-scene.ts` (serve-sim at 3dc61286e, #383). Input goes to
- * hub-client addressed to the hit display, in that display's coordinates, so
- * the client maps it, owns it, and cancels it as it does for the flat screen.
+ * The 3D scene of a device model: the model, folded by its hinge when it has
+ * one, textured with the live display streams, and raycast for input. Ported
+ * from serve-sim's `src/client/simulator/duo-scene.ts` (serve-sim at 3dc61286e,
+ * #383), where it drew Xcode's iPhone Duo. Input goes to hub-client in the hit
+ * display's coordinates, addressed to that display when the client streams each
+ * display on its own, so the client maps it, owns it, and cancels it as it does
+ * for the flat screen.
  */
 
 import {
   type FoldPose,
   type MultiTouchSample,
   type ScrollSample,
+  streamGeometry,
   type TouchSample,
 } from "@expo/hub-client";
 import * as THREE from "three";
@@ -27,15 +30,17 @@ import {
   type DuoScreenPoint as ProjectedPoint,
   type DuoZoomState,
 } from "./duo-layout";
+import { type DeviceModelDescription, modelDisplay } from "./device-models";
+import { type DeviceModelFolds, type DeviceModelRig, loadDeviceModel } from "./device-model-rig";
 import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
 import { DUO_FILL_INSET, DUO_HANDLE_OFFSET } from "./duo-stage";
-import { loadDuoModel } from "./duo-model";
 import {
   duoDisplayDelta,
   duoDisplayPoint,
   duoFrameMatchesDisplay,
   duoScreenMapping,
   duoScreenPoint,
+  orientationDegrees,
   stepDuoSpring,
   type DuoScreenMapping,
 } from "./duo-pose";
@@ -44,7 +49,9 @@ import { type DuoHingeCommands } from "./useDuoFraming";
 
 /** What the scene reads from React on every frame; the component supplies the latest values. */
 export interface DuoSceneState {
-  /** hub-client's `deviceModelUrl`: Xcode's `V68.usdz`, served by the backend. */
+  /** The model that the scene draws. The scene reads it once, when it starts. */
+  model: DeviceModelDescription;
+  /** The model's GLB, which the consumer serves. */
   modelUrl: string;
   angle?: number;
   pose?: FoldPose | null;
@@ -112,7 +119,10 @@ export function createDuoScene(
     "position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:block;touch-action:none;outline:none";
   host.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 120);
+  // The models' displays lie a few micrometers in front of their glass and
+  // body. Near and far planes close to the model, which stays within about
+  // 12 cm of the origin, keep the depth buffer fine enough to separate them.
+  const camera = new THREE.PerspectiveCamera(36, 1, 8, 64);
   camera.position.set(0, 0, 31);
   const root = new THREE.Group();
   scene.add(root);
@@ -157,11 +167,17 @@ export function createDuoScene(
       sawOtherActiveScreen: false,
     };
   };
-  const inner = createSurface(1600, 1125);
-  const cover = createSurface(784, 1140);
+  const description = state().model;
+  // Input names its display only for a client that streams each display on its own.
+  const addressDisplays = description.streams === "displays";
+  const mainTexture = description.displays.main.texture;
+  const coverTexture = description.displays.cover?.texture ?? { width: 2, height: 2 };
+  const inner = createSurface(mainTexture.width, mainTexture.height);
+  const cover = createSurface(coverTexture.width, coverTexture.height);
   const originals = new Set<THREE.Material>();
   let left: THREE.Object3D | undefined;
   let right: THREE.Object3D | undefined;
+  let rig: DeviceModelRig | undefined;
   let model: THREE.Group | undefined;
   let fold = 0;
   let velocity = 0;
@@ -181,18 +197,11 @@ export function createDuoScene(
       ))
     );
   }
-  function applyPanelFolds(panels: { left: number; right: number }) {
-    if (!left || !right) return;
-    left.rotation.y = panels.left;
-    right.rotation.y = panels.right;
+  function applyPanelFolds(panels: DeviceModelFolds, bend = true) {
+    if (!rig) return;
+    rig.fold(panels, bend);
     // Center the articulated body, including Laptop's stationary base.
-    center
-      .set(
-        2.025 * (Math.cos(panels.right) - Math.cos(panels.left)),
-        0,
-        2.025 * (Math.sin(panels.left) - Math.sin(panels.right)),
-      )
-      .applyQuaternion(root.quaternion);
+    rig.center(center).applyQuaternion(root.quaternion);
     root.position.copy(center).multiplyScalar(-1);
   }
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -250,46 +259,27 @@ export function createDuoScene(
     }
   }
 
-  void loadDuoModel(state().modelUrl)
+  void loadDeviceModel(description, state().modelUrl)
     .then((loaded) => {
       if (disposed || failed) {
-        disposeModel(loaded);
+        loaded.dispose();
+        disposeModel(loaded.model);
         return;
       }
-      model = loaded;
-      left = model.getObjectByName("left-half");
-      right = model.getObjectByName("right-half");
-      if (!left || !right) throw new Error("Missing iPhone Duo hinge groups");
+      rig = loaded;
+      model = loaded.model;
+      left = loaded.halves?.left;
+      right = loaded.halves?.right;
       for (const handle of hingeHandles) {
-        handle.anchor = duoPanelEdgeAnchor(handle.side === "left" ? left : right, handle.side);
+        const half = handle.side === "left" ? left : right;
+        handle.anchor = half ? duoPanelEdgeAnchor(half, handle.side) : null;
       }
-      const displays: THREE.Mesh[] = [];
-      model.traverse((child) => {
-        if (!(child instanceof THREE.Mesh)) return;
-        if (child.name.startsWith("inner-display") || child.name === "cover-display") {
-          displays.push(child);
-        }
-      });
-      // UVs span both inner halves. No duplicated stream or seam down the hinge.
+      // The rig's UVs span every mesh of a display, so a display that bends
+      // over the hinge shows one stream without a seam.
+      inner.meshes = loaded.displays.main;
+      cover.meshes = loaded.displays.cover;
       for (const surface of [inner, cover]) {
-        surface.meshes = displays.filter(
-          (mesh) => (mesh.name === "cover-display") === (surface === cover),
-        );
-        const bounds = new THREE.Box3();
         for (const mesh of surface.meshes) {
-          mesh.geometry.computeBoundingBox();
-          bounds.union(mesh.geometry.boundingBox!);
-        }
-        const size = bounds.getSize(new THREE.Vector3());
-        for (const mesh of surface.meshes) {
-          const position = mesh.geometry.getAttribute("position");
-          const uv = new Float32Array(position.count * 2);
-          for (let i = 0; i < position.count; i++) {
-            const x = (position.getX(i) - bounds.min.x) / size.x;
-            uv[i * 2] = surface === cover ? 1 - x : x;
-            uv[i * 2 + 1] = (position.getY(i) - bounds.min.y) / size.y;
-          }
-          mesh.geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
           for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
             originals.add(material);
           }
@@ -375,7 +365,8 @@ export function createDuoScene(
         : undefined;
     // UVs remain fixed to the hardware through the entire pose animation.
     // The body carries the image, including cached frames on an inactive panel.
-    const frameKey = `${config.width}:${config.height}:${binding}`;
+    const rotation = frameRotation(config);
+    const frameKey = `${config.width}:${config.height}:${rotation}:${binding}`;
     if (frameKey === surface.lastFrameKey) {
       if (source instanceof HTMLImageElement && source.src === surface.lastImage) return;
       if (source instanceof HTMLVideoElement && source.currentTime === surface.lastVideoTime)
@@ -385,7 +376,7 @@ export function createDuoScene(
     if (source instanceof HTMLImageElement) surface.lastImage = source.src;
     if (source instanceof HTMLVideoElement) surface.lastVideoTime = source.currentTime;
     const { context, canvas } = surface;
-    const mapping = duoScreenMapping(config, canvas.width, canvas.height);
+    const mapping = duoScreenMapping(config, canvas.width, canvas.height, rotation);
     surface.mapping = mapping;
     context.fillStyle = "#080a10";
     context.fillRect(0, 0, canvas.width, canvas.height);
@@ -403,6 +394,22 @@ export function createDuoScene(
     surface.mappingConfigKey = binding;
     surface.texture.needsUpdate = true;
     surface.ready = true;
+  }
+
+  /**
+   * How a frame turns onto its glass, clockwise in radians: the display's
+   * mount, and for one flat stream the turn back from an upright frame of a
+   * turned device to the hardware's own orientation. A raw frame of a turned
+   * device, which the flat view would rotate, already has that orientation.
+   */
+  // @ref LLP 0004#3d-preview-in-the-hub — the glass keeps the hardware's orientation; the model turns instead
+  function frameRotation(config: DuoStreamConfig): number {
+    const mount = modelDisplay(description, config.screenId === 1 ? 1 : 3)?.mount ?? 0;
+    const turn =
+      description.streams === "screen"
+        ? orientationDegrees(config.orientation) - streamGeometry(config).rotationDegrees
+        : 0;
+    return ((mount * 90 - turn) * Math.PI) / 180;
   }
 
   let previousIntendedScreen: 1 | 3 | undefined;
@@ -604,14 +611,17 @@ export function createDuoScene(
   function displayPoint({ x, y }: Point): Point {
     return duoDisplayPoint(state().streamConfig, x, y);
   }
+  function inputDisplay(screenId: number | undefined) {
+    return addressDisplays ? duoDisplayId(screenId) : undefined;
+  }
   function touchSample(current: Gesture, phase: TouchSample["phase"], point: Point): TouchSample {
-    return { phase, display: duoDisplayId(current.screenId), ...displayPoint(point) };
+    return { phase, display: inputDisplay(current.screenId), ...displayPoint(point) };
   }
   function multiTouchSample(current: Gesture, phase: MultiTouchSample["phase"]): MultiTouchSample {
     const { x1, y1, x2, y2 } = current.fingers;
     return {
       phase,
-      display: duoDisplayId(current.screenId),
+      display: inputDisplay(current.screenId),
       a: displayPoint({ x: x1, y: y1 }),
       b: displayPoint({ x: x2, y: y2 }),
     };
@@ -770,7 +780,7 @@ export function createDuoScene(
     event.stopPropagation();
     const config = state().streamConfig;
     send({
-      display: duoDisplayId(config?.screenId),
+      display: inputDisplay(config?.screenId),
       ...duoDisplayPoint(config, hit.point.x, hit.point.y),
       ...duoDisplayDelta(config, dx, dy),
     });
@@ -799,18 +809,18 @@ export function createDuoScene(
   }
 
   function hingeEndpoint(angle: number, handle: HingeHandle): ProjectedPoint | null {
-    if (!model || !left || !right) return null;
+    if (!model || !rig || !left || !right) return null;
     const current = state();
     const view = viewFor(current);
     const savedPosition = root.position.clone();
     const savedRotation = root.quaternion.clone();
-    const savedLeft = left.rotation.y;
-    const savedRight = right.rotation.y;
+    const savedFolds = { ...rig.folds };
     const savedZoom = camera.zoom;
     try {
       const endpointFold = ((180 - angle) * Math.PI) / 360;
       if (view.facingYaw !== undefined) root.quaternion.copy(duoViewRotation(endpointFold, view));
-      applyPanelFolds(duoViewFolds(endpointFold, view));
+      // The flexible meshes keep their shape: only the leaves place the handle.
+      applyPanelFolds(duoViewFolds(endpointFold, view), false);
       const scale =
         current.sizeMode !== "physical"
           ? duoFitScale(
@@ -831,8 +841,7 @@ export function createDuoScene(
     } finally {
       root.position.copy(savedPosition);
       root.quaternion.copy(savedRotation);
-      left.rotation.y = savedLeft;
-      right.rotation.y = savedRight;
+      rig.fold(savedFolds, false);
       camera.zoom = savedZoom;
       camera.updateProjectionMatrix();
       root.updateMatrixWorld(true);
@@ -1065,6 +1074,7 @@ export function createDuoScene(
       window.removeEventListener("blur", blur);
       window.removeEventListener("resize", resizeViewport);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      rig?.dispose();
       if (model) disposeModel(model);
       for (const surface of [inner, cover]) {
         surface.texture.dispose();

@@ -17,6 +17,7 @@ const IOS = {
   physical: false,
   supported: true,
   deviceFrame: "ios:iphone-17-pro" as const,
+  deviceModel: null,
   lastUsedAt: 123,
 };
 
@@ -29,6 +30,7 @@ const ANDROID = {
   physical: false,
   supported: true,
   deviceFrame: "android:pixel-10-pro" as const,
+  deviceModel: "android:pixel-9-pro" as const,
   lastUsedAt: 456,
 };
 
@@ -208,6 +210,12 @@ test("deviceListFingerprint ignores discovery order", () => {
 
 test("deviceListFingerprint includes device-frame capability changes", () => {
   const changed = { ...LIST, simulators: [{ ...IOS, deviceFrame: null }] };
+
+  expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
+});
+
+test("deviceListFingerprint includes 3D model changes", () => {
+  const changed = { ...LIST, simulators: [{ ...IOS, deviceModel: "ios:iphone-18-pro" as const }] };
 
   expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
 });
