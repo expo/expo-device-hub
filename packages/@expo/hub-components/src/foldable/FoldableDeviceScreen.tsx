@@ -22,7 +22,8 @@ import {
   useState,
 } from "react";
 
-import { DUO_PANEL_FOR_DISPLAY, DUO_PANEL_SIZE, duoStreamConfig } from "./duo-displays";
+import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
+import { DUO_PANEL_SIZE } from "./duo-stage";
 import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
 import { useReleaseFocusWhenHidden } from "./useReleaseFocusWhenHidden";

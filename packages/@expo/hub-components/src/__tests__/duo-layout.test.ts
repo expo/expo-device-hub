@@ -3,7 +3,6 @@ import { type FoldPose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
-  DUO_HANDLE_OFFSET,
   DUO_INITIAL_ZOOM,
   duoCameraZoom,
   duoFitExtents,
@@ -18,7 +17,7 @@ import {
   type DuoViewportSize,
   type DuoZoomState,
 } from "../foldable/duo-layout";
-import { DUO_FILL_INSET } from "../foldable/duo-displays";
+import { DUO_FILL_INSET, DUO_HANDLE_OFFSET, duoStageMaxSide } from "../foldable/duo-stage";
 import { duoPose, stepDuoSpring } from "../foldable/duo-pose";
 
 const viewport = { width: 1680, height: 1100 };
@@ -67,7 +66,7 @@ describe("Duo model fit", () => {
       [80, "tent", 0],
     ] as const) {
       model.pose(angle, pose, roll);
-      const factor = duoFitScale(model.root, model.camera, viewport, stage);
+      const factor = duoFitScale(model.root, model.camera, viewport, stage, 24);
       model.camera.zoom = (stage.height / viewport.height) * factor;
       model.camera.updateProjectionMatrix();
       let nearestMargin = Infinity;
@@ -101,11 +100,11 @@ describe("Duo model fit", () => {
       model.root.quaternion.toArray(),
       model.left.rotation.toArray(),
     ];
-    const expected = duoFitScale(model.root, model.camera, viewport, stage);
+    const expected = duoFitScale(model.root, model.camera, viewport, stage, 24);
     for (const zoom of [0.2, 0.75, 2]) {
       model.camera.zoom = zoom;
       model.camera.updateProjectionMatrix();
-      expect(duoFitScale(model.root, model.camera, viewport, stage)).toBeCloseTo(expected, 10);
+      expect(duoFitScale(model.root, model.camera, viewport, stage, 24)).toBeCloseTo(expected, 10);
       expect(model.camera.zoom).toBe(zoom);
     }
     expect([
@@ -129,13 +128,13 @@ describe("Duo model fit", () => {
 
   test("empty, hidden, zero-size, and camera-crossing geometry keep normal framing", () => {
     const model = rig();
-    expect(duoFitScale(new Group(), model.camera, viewport, stage)).toBe(1);
-    expect(duoFitScale(model.root, model.camera, viewport, { width: 0, height: 640 })).toBe(1);
+    expect(duoFitScale(new Group(), model.camera, viewport, stage, 24)).toBe(1);
+    expect(duoFitScale(model.root, model.camera, viewport, { width: 0, height: 640 }, 24)).toBe(1);
     model.root.visible = false;
-    expect(duoFitScale(model.root, model.camera, viewport, stage)).toBe(1);
+    expect(duoFitScale(model.root, model.camera, viewport, stage, 24)).toBe(1);
     model.root.visible = true;
     model.root.position.z = 31;
-    expect(duoFitScale(model.root, model.camera, viewport, stage)).toBe(1);
+    expect(duoFitScale(model.root, model.camera, viewport, stage, 24)).toBe(1);
   });
 });
 
@@ -475,5 +474,17 @@ describe("Duo physical hinge handle", () => {
     expect(duoHingeDragAngle(90, closed, closed, open, { x: -100, y: 0 })).toBe(45);
     expect(duoHingeDragAngle(0, closed, closed, open, { x: -500, y: 0 })).toBe(0);
     expect(duoHingeDragAngle(180, open, closed, open, { x: 500, y: 0 })).toBe(180);
+  });
+});
+
+describe("duo-stage", () => {
+  test("the fill inset keeps the hinge handles on the stage", () => {
+    // A smaller fill inset would leave the handle limit in charge on every frame.
+    expect(DUO_FILL_INSET).toBeGreaterThanOrEqual(DUO_HANDLE_OFFSET);
+  });
+
+  test("the stage cap is the flat cover's long side at the short-side cap, plus both insets", () => {
+    // DeviceKit's cover is 1398 x 2034; at a 480 px short side its long side is about 698 px.
+    expect(duoStageMaxSide(480)).toBeCloseTo((480 * 2034) / 1398 + 64, 6);
   });
 });

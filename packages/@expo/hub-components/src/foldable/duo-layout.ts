@@ -5,7 +5,7 @@
 
 import { Box3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera } from "three";
 
-import { DUO_FILL_INSET } from "./duo-displays";
+import { DUO_FILL_INSET, DUO_HANDLE_OFFSET } from "./duo-stage";
 import { stepDuoSpring } from "./duo-pose";
 
 export type DuoViewportSize = { width: number; height: number };
@@ -52,16 +52,13 @@ export function duoCameraZoom(
   return duoStageZoom(viewport, stage) * scale;
 }
 
-/** How far each hinge handle's center sits outside the model's outer edge. */
-export const DUO_HANDLE_OFFSET = 16;
-
 export type DuoFit = { scale: number; velocity: number };
 
 /**
  * Move the fill factor toward its target. A new pose springs, so the model
  * eases into its framing, but never past `limit`. A stage or window resize
- * snaps: the base zoom follows a resize at once, and a factor that lagged
- * behind it would push the model past the stage edge, where the host clips it.
+ * snaps: the base zoom follows a resize at once, so the model keeps its fill
+ * through the resize instead of easing back to it.
  */
 // @ref LLP 0004#stage-size — a resize snaps the fit; a new pose springs it up to a limit
 export function stepDuoFit(
@@ -178,10 +175,10 @@ export function duoFitScaleFromExtents(
   extents: DuoFitExtents | null,
   viewport: DuoViewportSize,
   stage: DuoViewportSize,
-  inset = 24,
+  inset: number,
 ): number {
   if (!extents || !validSize(viewport) || !validSize(stage)) return 1;
-  const padding = Number.isFinite(inset) ? Math.max(0, inset) : 24;
+  const padding = Math.max(0, inset);
   const availableX = Math.max(1, stage.width - 2 * padding) / viewport.width;
   const availableY = Math.max(1, stage.height - 2 * padding) / viewport.height;
   const zoom = Math.min(availableX / extents.x, availableY / extents.y);
@@ -200,7 +197,7 @@ export function duoFitScale(
   camera: PerspectiveCamera,
   viewport: DuoViewportSize,
   stage: DuoViewportSize,
-  inset = 24,
+  inset: number,
 ): number {
   if (!validSize(viewport) || !validSize(stage)) return 1;
   return duoFitScaleFromExtents(duoFitExtents(model, camera), viewport, stage, inset);
