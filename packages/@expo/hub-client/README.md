@@ -145,8 +145,8 @@ function Screen() {
 
 `client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
 `null` for other devices. `client.capabilities.fold` lists the commands that the device
-accepts: an angle range, the named poses with their hinge angles, Table Mode, and face
-down. It is `false` when the device offers no fold commands. Send only what it lists.
+accepts: an angle range, the named poses with their hinge angles, and Table Mode. It is
+`false` when the device offers no fold commands. Send only what it lists.
 
 ```tsx
 import { useDeviceClient } from "@expo/hub-client";
