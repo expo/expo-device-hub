@@ -8,6 +8,7 @@ import {
   STREAM_DISCONNECTED_ERROR,
   presentScreen,
   useScreenPresentation,
+  useSessionStatus,
 } from "../screen-presentation";
 import { STREAM_RECONNECT_GRACE_MS } from "../stream-reconnect";
 import { type ConnectionStatus, type DeviceClient } from "../types";
@@ -99,6 +100,34 @@ describe("presentScreen", () => {
     });
     expect(presentScreen("error", "Offer refused", true, false).framePresented).toBe(true);
     expect(presentScreen("idle", null, true, false).framePresented).toBe(false);
+  });
+});
+
+describe("useSessionStatus", () => {
+  test("a new session key resets the status and error in the render that changes it", async () => {
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const seen: [ConnectionStatus, string | null][] = [];
+    let session!: ReturnType<typeof useSessionStatus>;
+    function Harness({ sessionKey }: { sessionKey: string | null }) {
+      session = useSessionStatus(sessionKey);
+      seen.push([session.status, session.error]);
+      return null;
+    }
+    await act(async () => {
+      renderer = create(<Harness sessionKey="device-a" />);
+    });
+    await act(async () => {
+      session.setStatus("error");
+      session.setError("Offer refused");
+    });
+    seen.length = 0;
+    await act(async () => renderer!.update(<Harness sessionKey="device-b" />));
+    // No render of the new session sees the old error.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(([status, error]) => status === "connecting" && error === null)).toBe(true);
+    seen.length = 0;
+    await act(async () => renderer!.update(<Harness sessionKey={null} />));
+    expect(seen.at(-1)).toEqual(["idle", null]);
   });
 });
 

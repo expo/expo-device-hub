@@ -84,7 +84,11 @@ import {
   recordingLockReason,
   recordingOrientationUnavailable,
 } from "./screen-recording";
-import { STREAM_DISCONNECTED_ERROR, useScreenPresentation } from "./screen-presentation";
+import {
+  STREAM_DISCONNECTED_ERROR,
+  useScreenPresentation,
+  useSessionStatus,
+} from "./screen-presentation";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { resolveDeviceStreamMode } from "./stream-mode";
@@ -93,7 +97,6 @@ import { PLAYBACK_STALL_POLL_MS, PLAYBACK_STALL_POLLS } from "./webrtc-playback-
 import { presentedVideoFrameDelta } from "./video-frame-metadata";
 import { preserveVideoFrame } from "./video-frame-poster";
 import {
-  type ConnectionStatus,
   type DeviceAppearance,
   type DeviceClient,
   type DeviceCapabilities,
@@ -283,8 +286,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const socketProtocols = useMemo(() => sessionTokenProtocols("android", token), [token]);
 
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
@@ -949,16 +950,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     return () => clearTimeout(timer);
   }, [dispatchStreamSwitch, streamSwitch]);
 
-  // Feed the switch tracker from the connection status: a live stream that
-  // drops is the old session closing; the next live frame is the replacement.
-  useEffect(() => {
-    const live = status === "streaming";
-    const wasLive = streamLiveRef.current;
-    streamLiveRef.current = live;
-    if (wasLive && !live) dispatchStreamSwitch({ type: "stream-interrupted" });
-    else if (!wasLive && live) dispatchStreamSwitch({ type: "stream-live" });
-  }, [dispatchStreamSwitch, status]);
-
   // Stream options share one timer and pause while the page is hidden.
   useEffect(() => {
     if (!streamSettingsUrl && !streamSourceUrl) return;
@@ -1094,13 +1085,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const screenSessionKey = active
     ? JSON.stringify([baseUrl, targetDevice, token, useWebRtc ? "video" : "canvas"])
     : null;
-  const [statusSessionKey, setStatusSessionKey] = useState(screenSessionKey);
-  if (statusSessionKey !== screenSessionKey) {
-    // The previous session's `streaming` is still in state during this render.
-    setStatusSessionKey(screenSessionKey);
-    setStatus(screenSessionKey ? "connecting" : "idle");
-    setError(null);
-  }
+  const { status, setStatus, error, setError } = useSessionStatus(screenSessionKey);
+
+  // Feed the switch tracker from the connection status: a live stream that
+  // drops is the old session closing; the next live frame is the replacement.
+  useEffect(() => {
+    const live = status === "streaming";
+    const wasLive = streamLiveRef.current;
+    streamLiveRef.current = live;
+    if (wasLive && !live) dispatchStreamSwitch({ type: "stream-interrupted" });
+    else if (!wasLive && live) dispatchStreamSwitch({ type: "stream-live" });
+  }, [dispatchStreamSwitch, status]);
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: "reset-video" });
   }, [send]);
@@ -1252,6 +1247,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     webRtcLive,
     webRtcWasLive,
     streamSwitch.phase,
+    setError,
+    setStatus,
   ]);
 
   // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — resume only the owned surface
@@ -1779,7 +1776,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } catch {}
       if (wsRef.current === ws) wsRef.current = null;
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
+  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols, setError]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {

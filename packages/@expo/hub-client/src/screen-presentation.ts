@@ -82,12 +82,30 @@ const freshSession = (key: string | null): SessionState => ({
   dropTimedOut: false,
 });
 
+// @ref LLP 0015#screen-sessions — a new session starts as connecting in the render that changes its key
+/**
+ * An adapter's own status and error for one screen session. `sessionKey`
+ * names the session (null while inactive). A new key resets both in the
+ * render that changes it, so a previous session's `streaming` never counts
+ * for the new one.
+ */
+export function useSessionStatus(sessionKey: string | null) {
+  const [status, setStatus] = useState<ConnectionStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [statusKey, setStatusKey] = useState(sessionKey);
+  if (statusKey === sessionKey) return { status, setStatus, error, setError };
+  // React renders again before it commits, and this render already sees the reset.
+  const reset: ConnectionStatus = sessionKey ? "connecting" : "idle";
+  setStatusKey(sessionKey);
+  setStatus(reset);
+  setError(null);
+  return { status: reset, setStatus, error: null, setError };
+}
+
 /**
  * Track one screen session: its first frame, its load timeout, and its
  * optional drop timeout. `sessionKey` names the session (null while
- * inactive). The adapter must reset its own status in the same render that
- * changes the key, so a previous session's `streaming` never counts for the
- * new one.
+ * inactive). Pass the status of {@link useSessionStatus} with the same key.
  */
 export function useScreenPresentation(
   sessionKey: string | null,

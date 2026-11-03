@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-02 (decision 6 confirmed by Krystof Woldrich, with a minor version bump; Claude Code, directed by Krystof Woldrich); 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-03 (round-2 review: one hook owns the session status, and a 3D scene that fails after it loads falls back; Claude Code, directed by Krystof Woldrich); 2026-11-02 (decision 6 confirmed by Krystof Woldrich, with a minor version bump; Claude Code, directed by Krystof Woldrich); 2026-11-02 (an unavailable 3D model ends the first-load wait; Claude Code, directed by Krystof Woldrich); 2026-10-29 (the iOS screen session is keyed on the device that `/api` resolved; Claude Code, directed by Krystof Woldrich); 2026-10-21 (round-1 review: MJPEG frame keeping, helper restarts, the iOS drop limit, the model timeout; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0004, LLP 0012, LLP 0013
 
 ## Summary
@@ -42,7 +42,7 @@ A change of any part starts a new session, which loads again with the spinner. T
 - a transport switch, also the automatic fallback from H.264 to MJPEG, because the new element has no frame to keep;
 - a helper that restarts for a different device.
 
-Each adapter resets its own status to `connecting` in the render that changes the session. That render still holds the previous session's `streaming`, and it must never count as the new session's first frame [observed: the in-render resets in both adapters; `useScreenPresentation` in `screen-presentation.ts`].
+Each adapter keeps its own status in `useSessionStatus`, which resets it to `connecting` in the render that changes the session. Without that reset, the render would still hold the previous session's `streaming`, which must never count as the new session's first frame [observed: `useSessionStatus` and `useScreenPresentation` in `screen-presentation.ts`].
 
 ## States
 

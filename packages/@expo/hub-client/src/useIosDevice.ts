@@ -91,7 +91,11 @@ import {
   screenSizesEqual,
   simScreenSize,
 } from "./screen-config";
-import { SCREEN_LOAD_TIMEOUT_MS, useScreenPresentation } from "./screen-presentation";
+import {
+  SCREEN_LOAD_TIMEOUT_MS,
+  useScreenPresentation,
+  useSessionStatus,
+} from "./screen-presentation";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -104,7 +108,6 @@ import { clearIosLocation, setIosLocation } from "./ios-location";
 import { fetchScreenshot } from "./screenshot";
 import { iosMessageForKeyboardInput } from "./keyboard";
 import {
-  type ConnectionStatus,
   type DeviceActivity,
   type DeviceAppearance,
   type DeviceClient,
@@ -470,8 +473,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     useDeviceSettingsReadStatus(connectionScope);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
   // A refusal stays visible until server admission confirms recovery.
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
@@ -727,13 +728,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         useWebRtc ? "video" : useAvcc ? "canvas" : "img",
       ])
     : null;
-  const [statusSessionKey, setStatusSessionKey] = useState(screenSessionKey);
-  if (statusSessionKey !== screenSessionKey) {
-    // The previous session's `streaming` is still in state during this render.
-    setStatusSessionKey(screenSessionKey);
-    setStatus(screenSessionKey ? "connecting" : "idle");
-    setError(null);
-  }
+  const { status, setStatus, error, setError } = useSessionStatus(screenSessionKey);
   const screenSessionKeyRef = useRef(screenSessionKey);
   useLayoutEffect(() => {
     screenSessionKeyRef.current = screenSessionKey;
@@ -1615,7 +1610,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (refreshConfigRef.current === refresh) refreshConfigRef.current = null;
       if (applyPreviewConfigRef.current === applyConfig) applyPreviewConfigRef.current = null;
     };
-  }, [active, baseUrl, targetDevice, setInitialWebRtcCodec, sessionFetch, token, settleRead]);
+  }, [
+    active,
+    baseUrl,
+    targetDevice,
+    setInitialWebRtcCodec,
+    sessionFetch,
+    token,
+    settleRead,
+    setError,
+    setStatus,
+  ]);
 
   // A replacement helper/session at the same URL still needs new video readers.
   const videoSessionKey = config
@@ -1783,6 +1788,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     webRtcStream,
     webRtcCodecsExhausted,
     streamTransportLocked,
+    setError,
+    setStatus,
   ]);
 
   // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — surface remounts keep the peer
@@ -1856,7 +1863,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         video.cancelVideoFrameCallback(frameCallback);
       }
     };
-  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded, onAvccFrame]);
+  }, [
+    useWebRtc,
+    webRtcStream,
+    webRtcVideoElement,
+    markWebRtcFrameDecoded,
+    onAvccFrame,
+    setError,
+    setStatus,
+  ]);
 
   // Detach the media only when this surface stops showing WebRTC or a new
   // screen session starts on it; a lost stream alone keeps its last frame.
@@ -2083,7 +2098,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);
     };
-  }, [streamUrl, videoSessionKey, applyStreamSrc]);
+  }, [streamUrl, videoSessionKey, applyStreamSrc, setError, setStatus]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
@@ -2402,7 +2417,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setStatus(panelStreaming ? "streaming" : "connecting");
       setError(null);
     }
-  }, [displayStreaming, panelError, panelStreaming]);
+  }, [displayStreaming, panelError, panelStreaming, setError, setStatus]);
   useEffect(() => {
     if (!displayStreaming) return;
     return () => {
@@ -2410,7 +2425,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setError(null);
       setFps(0);
     };
-  }, [displayStreaming]);
+  }, [displayStreaming, setError, setStatus]);
 
   const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;
