@@ -1,10 +1,9 @@
 import { type ReactNode } from "react";
 
 import {
-  areRecordingControlsLocked,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
-  type DeviceScreenRecordingStatus,
+  type DeviceRecordingLockReason,
 } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
@@ -69,7 +68,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
-  recording = null,
+  recordingLock,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -84,7 +83,8 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  recording?: DeviceScreenRecordingStatus | null;
+  /** The client's `recordingLock`. Locks Rotate and picks the explanation while it is set. */
+  recordingLock: DeviceRecordingLockReason | null;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -96,7 +96,7 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  const recordingControlsLocked = areRecordingControlsLocked(recording);
+  const recordingControlsLocked = recordingLock !== null;
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
@@ -181,11 +181,11 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            recording === "unknown"
-              ? "Rotation is unavailable until recording status is known."
-              : recordingControlsLocked
-                ? "Rotation is unavailable while recording."
-                : undefined
+            recordingLock === null
+              ? undefined
+              : recordingLock === "status-unknown"
+                ? "Rotation is unavailable until recording status is known."
+                : "Rotation is unavailable while recording."
           }
           aria-disabled={recordingControlsLocked || undefined}
           onClick={recordingControlsLocked ? undefined : onRotate}

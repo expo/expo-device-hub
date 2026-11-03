@@ -24,6 +24,12 @@ export interface DeviceOrientationBackend {
    */
   set: (orientation: DeviceOrientation) => Promise<DeviceOrientation | null>;
   /**
+   * False while changes must not go out, as during an Android recording. A call is then
+   * ignored, and a choice still waiting behind another one is cleared when its turn comes;
+   * neither sets an error.
+   */
+  available?: () => boolean;
+  /**
    * True when the backend pushes a report only when the pose changes (serve-sim). A choice the
    * device does not take then gives way after the readback grace without a new report.
    */
@@ -42,6 +48,8 @@ interface OrientationState {
 }
 
 const NO_ORIENTATION: OrientationState = { choice: null, error: null };
+/** The writer's result for a choice that was not sent. */
+const DROPPED = Symbol("dropped");
 
 interface Request {
   backend: DeviceOrientationBackend;
@@ -55,18 +63,24 @@ function createOrientationWriter(
 ) {
   return createLatestWriter(
     async ({ backend, orientation }: Request) => {
-      // A choice queued for a retired backend must not reach the device.
-      if (backend !== currentRef.current) return null;
+      // A choice that waited behind another one is not sent for a retired backend, or once the
+      // backend became unavailable.
+      if (backend !== currentRef.current || backend.available?.() === false) return DROPPED;
       return backend.set(orientation);
     },
     (outcome) => {
       if (outcome.value.backend !== currentRef.current) return;
-      if (outcome.ok) {
-        const orientation = outcome.result ?? outcome.value.orientation;
-        setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
-      } else {
+      if (!outcome.ok) {
         setState({ choice: null, error: failureMessage(outcome.error) });
+        return;
       }
+      const { result } = outcome;
+      if (result === DROPPED) {
+        setState(NO_ORIENTATION);
+        return;
+      }
+      const orientation = result ?? outcome.value.orientation;
+      setState({ choice: { orientation, answeredAt: performance.now() }, error: null });
     },
   );
 }
@@ -120,6 +134,9 @@ export function useDeviceOrientation(
   const choose = useCallback(
     (next: DeviceOrientation) => {
       if (!backend || !writer || !backend.orientations.includes(next)) return;
+      // A call while unavailable leaves the shown pose and the last error as they are. The
+      // writer checks again for a choice that was still waiting when the backend became so.
+      if (backend.available?.() === false) return;
       shownRef.current = next;
       setState({ choice: { orientation: next, answeredAt: null }, error: null });
       writer({ backend, orientation: next });

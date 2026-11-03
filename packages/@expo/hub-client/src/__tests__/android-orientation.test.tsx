@@ -230,13 +230,14 @@ test("Android ignores a report from a poll that started before the answer, also 
   expect(client().orientation).toBe("landscape_left");
 });
 
-test("Android Rotate before the first /api answer waits, because the server's poses are not known yet", async () => {
+test("Android Rotate before the first /api answer waits, because the recording status is unknown", async () => {
   const { client, locks, silence, switchDevice, settle } = await mount({
     pose: "portrait",
   });
   silence("emulator-5556", true);
   await switchDevice("emulator-5556");
   expect(client().capabilities.orientation).toBe(false);
+  expect(client().recordingControlsLocked).toBe(true);
   await act(async () => client().rotate());
   await settle();
   expect(locks()).toEqual([]);
@@ -402,4 +403,18 @@ test("Android keeps a device's requests in order after switching away and back",
   await release();
   expect(locks()).toEqual(["landscape_left", "portrait_upside_down"]);
   expect(lockDevices()).toEqual(["emulator-5554", "emulator-5554"]);
+});
+
+test("Android keeps the last error and pose when a choice is made while a recording locks it", async () => {
+  const { client, locks, answerWith, report, settle } = await mount({ pose: "portrait" });
+  answerWith(() => ({ status: 400, body: { ok: false, error: "orientation refused" } }));
+  await act(async () => client().setOrientation("landscape_left"));
+  await settle();
+  expect(client().orientationError).toBe("orientation refused");
+  await report({ screenRecording: { status: "recording" } });
+  expect(client().recordingControlsLocked).toBe(true);
+  await act(async () => client().setOrientation("landscape_right"));
+  expect(client().orientationError).toBe("orientation refused");
+  expect(client().orientation).toBe("portrait");
+  expect(locks()).toEqual(["landscape_left"]);
 });

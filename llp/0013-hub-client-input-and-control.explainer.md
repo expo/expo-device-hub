@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-29 (orientation)
+**Revised:** 2026-10-29 (orientation; recording lock)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -189,6 +189,12 @@ may reconnect under its original serial
 The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
 explains helper and control-channel restrictions. A single-device session is
 an application policy layered on authentication, not host-wide device isolation.
+
+## Recording lock
+
+On Android, turning the device or changing the stream can end the host screen recording. The Hub README says that rotation invalidates the recording and that the recording continues across a capture restart only when the encoder configuration is unchanged, and the Device options section disabled these controls "because this would interrupt the recording" before this lock moved into the client [observed: `packages/expo-device-hub/README.md`, `DeviceOptionsSection.tsx` on `main` before this change]. `DeviceClient.recordingLock` is `status-unknown` until the first recording status arrives and `recording` while it is waiting, recording or finalizing, and null otherwise; `recordingControlsLocked` is true while it is set, and `orientationUnavailable` reports it as `recording-status-unknown` or `recording` [observed: `recordingLockReason` and `recordingOrientationUnavailable` in `screen-recording.ts`]. `rotate`, `setOrientation`, `updateStreamSettings`, `setStreamSource` and the three gRPC setters are silently ignored meanwhile, so the Hub dashboard disables its controls and picks its explanation from this one value instead of checking the status itself [observed: `useAndroidDevice.ts`, `DeviceOptionsSection.tsx`, `StreamControls.tsx`, `StreamOptionsSection.tsx`]. Once recordings survive rotation and stream changes, `recordingLock` is always null and `recordingControlsLocked` always false, and `recordingControlsLocked` is then deprecated. The three places that send these changes check the lock: `putStreamMode`, `updateStreamSettings`, and the orientation backend, which `useDeviceOrientation` asks when a call comes and again when a waiting choice's turn comes. A direct call is ignored, and a choice that waited behind another request is cleared; neither sets an error [observed: `useAndroidDevice.ts`, `useDeviceOrientation.ts`]. iOS reports no recording and never locks.
+
+The lock is temporary. The team plans to record the screen in a way that survives rotation and stream changes; then this lock can go [confirmed: Krystof Woldrich, 2026-10-27].
 
 ## Hub shutdown
 

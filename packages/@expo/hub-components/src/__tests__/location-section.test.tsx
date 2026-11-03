@@ -10,6 +10,8 @@ const BASE_CLIENT: DeviceClient = {
   error: null,
   inputError: null,
   screenRecording: null,
+  recordingLock: null,
+  recordingControlsLocked: false,
   screen: { width: 1080, height: 2400 },
   fps: 60,
   devices: [],

@@ -1,4 +1,8 @@
-import { type DeviceScreenRecordingStatus } from "./types";
+import {
+  type DeviceOrientationUnavailableReason,
+  type DeviceRecordingLockReason,
+  type DeviceScreenRecordingStatus,
+} from "./types";
 
 export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordingStatus | null {
   if (!value || typeof value !== "object" || !("status" in value)) return null;
@@ -14,11 +18,34 @@ export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordin
   }
 }
 
+/** Why a rotation or stream change could end a recording with this status, or null. */
+export function recordingLockReason(
+  status: DeviceScreenRecordingStatus | null,
+): DeviceRecordingLockReason | null {
+  switch (status) {
+    case "unknown":
+      return "status-unknown";
+    case "waiting":
+    case "recording":
+    case "finalizing":
+      return "recording";
+    default:
+      return null;
+  }
+}
+
+/** The orientation reason for a recording lock. */
+export function recordingOrientationUnavailable(
+  lock: DeviceRecordingLockReason | null,
+): DeviceOrientationUnavailableReason | null {
+  return lock === "status-unknown" ? "recording-status-unknown" : lock;
+}
+
+/**
+ * True while a recording status could end with a rotation or stream change.
+ *
+ * @deprecated Read `DeviceClient.recordingLock`, which also ignores the locked controls.
+ */
 export function areRecordingControlsLocked(status: DeviceScreenRecordingStatus | null): boolean {
-  return (
-    status === "unknown" ||
-    status === "waiting" ||
-    status === "recording" ||
-    status === "finalizing"
-  );
+  return recordingLockReason(status) !== null;
 }
