@@ -156,7 +156,6 @@ export function FoldableDeviceScreen({
   const [modelStatus, setModelStatus] = useState<DuoModelStatus>("loading");
   const modelSettledChange = useRef(onModelSettledChange);
   modelSettledChange.current = onModelSettledChange;
-  const modelReady = modelStatus === "ready";
   // A model that cannot load ends the wait too: its flat fallback has frames to show.
   const modelSettled = modelStatus !== "loading";
   useEffect(() => {
@@ -164,7 +163,9 @@ export function FoldableDeviceScreen({
   }, [modelSettled]);
   useEffect(() => () => modelSettledChange.current?.(false), []);
   // @ref LLP 0015#states — no black displays: the model shows once it has a frame to draw
-  const hidden = modelStatus === "loading" || (modelReady && !framePresented);
+  // The flat fallback of a model that cannot load waits for the frame too: a
+  // retained element can still hold a previous session's pixels.
+  const hidden = modelStatus === "loading" || !framePresented;
   useReleaseFocusWhenHidden(hostRef, hidden);
   if (!fold || !displays || !deviceModelUrl) return null;
   const activeScreenId = displays.find((display) => display.active)?.id === "cover" ? 1 : 3;

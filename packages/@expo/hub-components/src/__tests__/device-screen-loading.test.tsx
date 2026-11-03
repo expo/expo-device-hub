@@ -281,6 +281,41 @@ describe("the iPhone Duo 3D preview", () => {
   });
 });
 
+test("a flat fallback stays hidden and inert until the session's first frame, though the model has settled", async () => {
+  browserGlobals();
+  const settled: boolean[] = [];
+  const duo = (status: DeviceClient["status"], framePresented: boolean) =>
+    client(status, framePresented, {
+      fold: { pending: false, error: null, setControl() {} },
+      displays: [
+        { id: "cover", active: true, attachVideo() {} },
+        { id: "inner", active: false, attachVideo() {} },
+      ],
+      deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
+      capabilities: { clipboard: false, fold: false },
+      videoKind: "img",
+    } as unknown as Partial<DeviceClient>);
+  const render = (current: DeviceClient) => (
+    <FoldableDeviceScreen client={current} onModelSettledChange={(value) => settled.push(value)} />
+  );
+  // Without onUnavailable, WebGL fails and the preview shows its own flat fallback.
+  await act(async () => {
+    renderer = create(render(duo("connecting", false)), {
+      createNodeMock: () => ({ contains: () => false, focus() {} }),
+    });
+  });
+  expect(renderer!.root.findByProps({ "data-duo-model": "unavailable" })).toBeDefined();
+  expect(settled.at(-1)).toBe(true);
+  const host = () => renderer!.root.findByProps({ role: "application" }).props;
+  // The session has no frame yet: a retained canvas may still hold old pixels.
+  expect(host().tabIndex).toBe(-1);
+  expect(host()["aria-hidden"]).toBe(true);
+  expect(host().inert).toBe(true);
+  await act(async () => renderer!.update(render(duo("streaming", true))));
+  expect(host().tabIndex).toBe(0);
+  expect(host()["aria-hidden"]).toBeUndefined();
+});
+
 test("the status pill names the first load with the spinner's label", () => {
   const markup = renderToStaticMarkup(
     <DeviceTitle device={{ id: "a", name: "iPhone" }} status="connecting" />,
