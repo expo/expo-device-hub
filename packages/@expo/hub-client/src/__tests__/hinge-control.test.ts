@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import { FOLD_POSES } from "../fold";
-import { DUO_POSE_ANGLES, hingeControlState, hingeWireCommand } from "../hinge-control";
+import {
+  DUO_POSE_ANGLES,
+  hingeControlState,
+  hingeWireCommand,
+  isHingePreviewObserved,
+  observedHingePose,
+} from "../hinge-control";
 
 describe("Device Hub hinge controls", () => {
   test("keeps the five physical poses distinct, including the two 90 degree poses", () => {
@@ -53,4 +59,16 @@ test("maps fold commands to serve-sim's wire commands", () => {
     control: "table",
     value: true,
   });
+});
+
+test("an observation that confirms a pose request also names that pose", () => {
+  const laptop = hingeControlState({ control: "pose", value: "laptop" });
+  const observed = {
+    hingeAngle: 90.7,
+    physicalOrientation: "landscape-left",
+    tableMode: false,
+  } as const;
+  expect(isHingePreviewObserved(laptop, observed)).toBe(true);
+  expect(observedHingePose(90.7, "landscape-left", false)).toBe("laptop");
+  expect(observedHingePose(91.5, "landscape-left", false)).toBeNull();
 });
