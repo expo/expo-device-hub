@@ -1177,6 +1177,116 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
+test("offers the client's orientations and shows the client's pose", () => {
+  const all = {
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  } as const;
+  const ios = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("ios"),
+        capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
+        orientation: "landscape_right",
+      }}
+    />,
+  );
+  expect(selectOptionLabels(ios, "Orientation")).toEqual([
+    "Portrait",
+    "Landscape left",
+    "Landscape right",
+    "Upside down",
+  ]);
+  expect(selectValue(ios, "Orientation")).toBe("Landscape right");
+
+  // A pick shows at once, before the frame turns.
+  const picked = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 390, height: 844, orientation: "portrait", framesUpright: true },
+        orientation: "portrait_upside_down",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(selectValue(picked, "Orientation")).toBe("Upside down");
+
+  // The client offers poses before it knows the shown one, so the select waits instead of guessing.
+  const unknownPose = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 844, height: 390 },
+      }}
+    />,
+  );
+  expect(unknownPose).not.toContain('aria-label="Orientation"');
+
+  // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  const olderServer = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        screen: { width: 390, height: 844 },
+        orientation: "landscape_right",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(olderServer).not.toContain('aria-label="Orientation"');
+
+  const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(unsupported).not.toContain('aria-label="Orientation"');
+});
+
+test("disables the orientation select with the client's reason, as Rotate does", () => {
+  const ios = inspectorClient("ios");
+  const client = {
+    ...ios,
+    capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
+    orientation: "portrait",
+  } as const;
+  for (const [overrides, reason] of [
+    [{}, null],
+    [{ orientationUnavailable: "recording" }, "Rotation is unavailable while recording."],
+    [
+      { orientationUnavailable: "recording-status-unknown" },
+      "Rotation is unavailable until recording status is known.",
+    ],
+    [
+      { orientationUnavailable: "input-unavailable" },
+      "Rotation is unavailable until the simulator accepts input.",
+    ],
+    // The dashboard follows the client's reason, not the status or recording it sees.
+    [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
+  ] as const) {
+    const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
+    const select = selectMarkup(html, "Orientation");
+    expect(select.includes('disabled=""')).toBe(reason !== null);
+    if (reason) expect(html).toContain(`aria-description="${reason}"`);
+  }
+});
+
+test("shows why an orientation change failed", () => {
+  const ios = inspectorClient("ios");
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        screen: { width: 390, height: 844, orientation: "portrait" },
+        orientation: "portrait",
+        orientationError: "The orientation was not sent.",
+      }}
+    />,
+  );
+  expect(html).toContain("The orientation was not sent.");
+});
+
 test("renders the Android display-size control the backend reports", () => {
   const client = {
     ...inspectorClient("android"),

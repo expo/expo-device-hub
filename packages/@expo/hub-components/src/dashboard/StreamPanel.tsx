@@ -164,7 +164,7 @@ export function StreamPanel({
 
   const controls = (
     <StreamControls
-      recordingLock={client.recordingLock}
+      orientationUnavailable={client.orientationUnavailable}
       onHome={() => client.pressButton("home")}
       onReload={() => client.reload()}
       onRotate={() => client.rotate()}
