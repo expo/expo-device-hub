@@ -21,6 +21,18 @@ export function isDeviceFrameProfileId(value: unknown): value is DeviceFrameProf
   return DEVICE_FRAME_PROFILE_IDS.some((profileId) => profileId === value);
 }
 
+/**
+ * A screen's physical corner radii, each as a fraction of the portrait screen
+ * width. Corners are named as seen on a portrait-held device, so an asymmetric
+ * screen such as iPhone Duo's keeps its small corners on the correct side.
+ */
+export type ScreenCornerRadii = {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+};
+
 export type Device = {
   id: string;
   name: string;
@@ -37,6 +49,11 @@ export type Device = {
   supported: boolean;
   /** Frame artwork available for this exact device model, or null when none is available. */
   deviceFrame: DeviceFrameProfileId | null;
+  /**
+   * Physical screen corner radii read from the device, or null/absent when the
+   * host cannot read them. Without them, the frame uses a generic radius.
+   */
+  cornerRadii?: ScreenCornerRadii | null;
   /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.

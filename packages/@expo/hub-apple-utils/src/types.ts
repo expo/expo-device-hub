@@ -104,3 +104,14 @@ export interface BootDeviceOptions {
   /** UDID of the simulator to boot (e.g. the value returned by {@link createDevice}). */
   udid: string;
 }
+
+/**
+ * A screen's physical corner radii, each as a fraction of the portrait screen
+ * width. Corners are named as seen on a portrait-held device.
+ */
+export interface ScreenCornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
