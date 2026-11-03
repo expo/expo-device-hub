@@ -1,7 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { DuoPanelStreams } from "../duo/DuoPanelStreams";
 import { type DeviceClient } from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
@@ -14,9 +13,18 @@ afterEach(async () => {
   restoreGlobals();
 });
 
+const nativeTimeout = setTimeout;
+
 class Peer {
+  static instances: Peer[] = [];
+  connectionState = "connected";
   iceGatheringState = "complete";
   localDescription = { type: "offer", sdp: "offer" };
+  ontrack?: (event: { streams: object[]; track: object }) => void;
+  onconnectionstatechange?: () => void;
+  constructor() {
+    Peer.instances.push(this);
+  }
   addTransceiver() {
     return {};
   }
@@ -25,17 +33,34 @@ class Peer {
   }
   async setLocalDescription() {}
   async setRemoteDescription() {}
+  // No video RTP arrives.
+  async getStats() {
+    return new Map();
+  }
   close() {}
 }
 
-/** A Duo in the 3D preview whose serve-sim session is locked to VP8 over WebRTC. */
+const fakeVideo = () => ({
+  srcObject: null,
+  addEventListener() {},
+  removeEventListener() {},
+  async play() {},
+});
+
+/** A Duo streaming both displays from a serve-sim session locked to VP8 over WebRTC. */
 async function connectLockedVp8Duo() {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // The test fires the panels' 4 s first-frame deadlines itself.
+  const firstFrameDeadlines: Array<() => void> = [];
   stubGlobal("window", {
     location: { href: "https://hub.test/", protocol: "https:", host: "hub.test" },
     addEventListener() {},
     removeEventListener() {},
-    setTimeout,
+    setTimeout: (callback: () => void, ms: number) => {
+      if (ms !== 4_000) return nativeTimeout(callback, ms);
+      firstFrameDeadlines.push(callback);
+      return 0;
+    },
     clearTimeout,
   });
   stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
@@ -49,14 +74,7 @@ async function connectLockedVp8Duo() {
   );
   stubGlobal("RTCPeerConnection", Peer);
   stubGlobal("RTCRtpReceiver", { getCapabilities: () => null });
-  // The ladder's first restart waits 2 s; the test fires it instead.
-  const restarts: Array<() => void> = [];
-  const nativeTimeout = setTimeout;
-  stubGlobal("setTimeout", (callback: () => void, ms: number) => {
-    if (ms !== 2_000) return nativeTimeout(callback, ms);
-    restarts.push(callback);
-    return 0;
-  });
+  Peer.instances = [];
   const offers: string[] = [];
   stubGlobal("fetch", async (input: RequestInfo | URL) => {
     const { pathname } = new URL(String(input));
@@ -70,11 +88,13 @@ async function connectLockedVp8Duo() {
         chrome: { identifier: "phone15", screen: { width: 466, height: 678 }, screenRadius: 33.5 },
       });
     }
-    if (pathname.endsWith("/webrtc/offer")) {
+    // The flat stream's offer before the displays attach is not of interest here.
+    if (pathname.includes("/panel/") && pathname.endsWith("/webrtc/offer")) {
       offers.push(pathname);
       return Response.json({ type: "answer", sdp: "answer" });
     }
-    return Response.json({}, { status: 404 });
+    // The sender's stats say nothing about its encoder, so a silent panel blames the codec.
+    return Response.json({});
   });
 
   let client!: DeviceClient;
@@ -84,39 +104,48 @@ async function connectLockedVp8Duo() {
       device: "duo",
       enabled: true,
       streamMode: "webrtc",
-      duoPreview: "3d",
     });
-    const panels = client.hinge?.panels;
-    return panels ? <DuoPanelStreams feeds={panels} activeScreenId={1} /> : null;
+    return null;
   }
   await act(async () => {
-    renderer = create(<Harness />, { createNodeMock: () => null });
+    renderer = create(<Harness />);
   });
   await act(async () => {});
-  return { client: () => client, offers, restarts };
+  await act(async () => {
+    for (const display of client.displays!) {
+      display.attachVideo(fakeVideo() as unknown as HTMLVideoElement);
+    }
+  });
+  await act(async () => {});
+  return { offers, firstFrameDeadlines };
 }
 
-test("a locked VP8 panel failure restarts the panel feeds, which the flat stream cannot", async () => {
-  const { client, offers, restarts } = await connectLockedVp8Duo();
-  const panels = client().hinge!.panels!;
-  expect(panels).toMatchObject({ mode: "webrtc", codec: "vp8", transportLocked: true });
+test("a locked VP8 display failure restarts the display streams, which the flat stream cannot", async () => {
+  const { offers, firstFrameDeadlines } = await connectLockedVp8Duo();
   expect(offers).toEqual(["/helper/duo/panel/1/webrtc/offer", "/helper/duo/panel/3/webrtc/offer"]);
 
-  // VP8 has no codec to fall back to, so the locked ladder restarts on VP8.
-  await act(async () => panels.onWebRtcFailure({ kind: "codec", codec: "vp8", sessionId: "s1" }));
-  expect(restarts).toHaveLength(1);
-  await act(async () => restarts[0]!());
-  await act(async () => {});
+  // Both displays connect, but the shown one never paints, so its first-frame verdict blames VP8.
+  for (const peer of Peer.instances) {
+    await act(async () => {
+      peer.onconnectionstatechange?.();
+      peer.ontrack?.({ streams: [{}], track: {} });
+    });
+  }
+  expect(firstFrameDeadlines).toHaveLength(1);
+  await act(async () => firstFrameDeadlines[0]!());
+  // The verdict reads the receiver and sender stats, then closes the remote session.
+  for (let tick = 0; tick < 5; tick++) await act(async () => {});
+
+  // VP8 has no codec to fall back to, so the locked ladder restarts on VP8
+  // after its first 2 s backoff.
+  const deadline = Date.now() + 3_000;
+  while (offers.length < 4 && Date.now() < deadline) {
+    await act(async () => {
+      await new Promise((resolve) => nativeTimeout(resolve, 100));
+    });
+  }
   expect(offers.slice(2).sort()).toEqual([
     "/helper/duo/panel/1/webrtc/offer",
     "/helper/duo/panel/3/webrtc/offer",
   ]);
-
-  // Reselecting the failed codec retries the panels at once.
-  await act(async () =>
-    client().hinge!.panels!.onWebRtcFailure({ kind: "codec", codec: "vp8", sessionId: "s2" }),
-  );
-  await act(async () => client().setWebRtcCodec("vp8"));
-  await act(async () => {});
-  expect(offers).toHaveLength(6);
-});
+}, 10_000);

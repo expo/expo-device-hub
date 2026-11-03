@@ -1,9 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { duoPresetView, duoRotateView } from "../duo/duo-view";
-import { type DeviceClient, type DeviceConnectionOptions } from "../types";
+import { type HingeControlCommand } from "../hinge-control";
+import {
+  type DeviceClient,
+  type DeviceConnectionOptions,
+  type DeviceHinge,
+  type HingeCommandEvent,
+} from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
@@ -54,6 +59,7 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
   FakeSocket.instances = [];
+  requests.length = 0;
   apiExtra = {};
   restoreGlobals();
 });
@@ -97,6 +103,32 @@ const INNER_OPEN = {
   tableModeAvailable: true,
 };
 
+const JPEG = [0xff, 0xd8, 0xff, 0xd9];
+const MJPEG_PART = new Uint8Array([
+  ...new TextEncoder().encode(
+    `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${JPEG.length}\r\n\r\n`,
+  ),
+  ...JPEG,
+]);
+/** Panel stream requests, with the session token they carried. */
+const requests: Array<{ url: string; authorization: string | null }> = [];
+
+/** An `<img>` that the test finishes loading, as a browser would decode a frame. */
+function fakeImage() {
+  return {
+    src: "",
+    naturalWidth: 0,
+    naturalHeight: 0,
+    onload: null as (() => void) | null,
+    onerror: null as (() => void) | null,
+    addEventListener() {},
+    removeEventListener() {},
+    removeAttribute(name: string) {
+      if (name === "src") this.src = "";
+    },
+  };
+}
+
 /** Extra `/api` fields, such as an exec-ws token and a helper pid. */
 let apiExtra: Record<string, unknown> = {};
 
@@ -133,7 +165,7 @@ function installBrowser({ duo }: { duo: boolean }) {
   });
   stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal("WebSocket", FakeSocket);
-  stubGlobal("fetch", async (url: string) => {
+  stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     const { pathname, searchParams } = new URL(url);
     if (pathname === "/api") {
       // device-1 is the Duo under test (or a plain iPhone); device-2 is always a plain iPhone.
@@ -145,6 +177,19 @@ function installBrowser({ duo }: { duo: boolean }) {
         });
       }
       return Response.json(previewApi(device, foldable));
+    }
+    if (pathname.includes("/panel/")) {
+      requests.push({
+        url: String(url),
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(MJPEG_PART);
+          },
+        }),
+      );
     }
     if (pathname === "/grid/api") {
       return Response.json({
@@ -177,21 +222,27 @@ async function connect(options: Partial<DeviceConnectionOptions> = {}) {
   const socket = FakeSocket.instances.find((instance) => instance.url.includes("/helper/ws"));
   if (!socket) throw new Error("The hook did not open the helper input socket");
   await act(async () => socket.open());
+  const events: HingeCommandEvent[] = [];
   return {
     socket,
     client: () => client,
+    /** Hinge events from the moment the Duo is recognized. */
+    events,
+    observe: () => client.hinge!.observe!((event) => events.push(event)),
     update: (props: Partial<DeviceConnectionOptions>) =>
       act(async () => renderer!.update(<Harness {...options} {...props} />)),
   };
 }
 
-test("a device without a hinge exposes no hinge state and rotates counterclockwise", async () => {
+test("a device without a hinge exposes no hinge, no displays, no model, and rotates counterclockwise", async () => {
   installBrowser({ duo: false });
   const { socket, client } = await connect();
   await act(async () =>
     socket.push(0x82, { width: 1206, height: 2622, orientation: "portrait", screenId: 1 }),
   );
   expect(client().hinge).toBeNull();
+  expect(client().displays).toBeNull();
+  expect(client().deviceModelUrl).toBeNull();
   expect(client().screen?.screenId).toBe(1);
   // Only the Duo trades the generic iPhone shape for its own glass corners.
   expect(client().displayCorners).toBeNull();
@@ -235,7 +286,7 @@ test("the flat view gets the active display's glass corners, turned with the dev
   });
 });
 
-test("the Duo reports its hinge from the pushed screen config and keeps the flat stream by default", async () => {
+test("the Duo reports its fold state, displays, and model, and keeps the flat stream by default", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   // DeviceKit's cover chrome identifies the Duo before native capability metadata.
@@ -244,22 +295,43 @@ test("the Duo reports its hinge from the pushed screen config and keeps the flat
   expect(client().hinge?.supported).toBeUndefined();
   await act(async () => socket.push(0x82, COVER));
   const hinge = client().hinge!;
+  // Fold controls and state only: no renderer state in the contract.
+  expect(Object.keys(hinge).sort()).toEqual([
+    "angle",
+    "error",
+    "faceDown",
+    "observe",
+    "pending",
+    "physicalPose",
+    "pose",
+    "setControl",
+    "supported",
+    "tableMode",
+    "tableModeAvailable",
+  ]);
   expect(hinge.supported).toBe(true);
   expect(hinge.angle).toBe(0);
   expect(hinge.pose).toBe("closed");
   expect(hinge.tableMode).toBe(false);
-  expect(hinge.activeScreenId).toBe(1);
   expect(hinge.pending).toBe(false);
-  expect(hinge.modelActive).toBe(false);
-  expect(hinge.panels).toBeNull();
-  expect(hinge.modelUrl).toBe("https://hub.test/grid/api/devicekit-model");
+  expect(client().displays?.map(({ id, active }) => ({ id, active }))).toEqual([
+    { id: 1, active: true },
+    { id: 3, active: false },
+  ]);
+  expect(client().deviceModelUrl).toBe("https://hub.test/grid/api/devicekit-model");
   expect(client().screen?.supportsHingeAngle).toBe(true);
+  // Nothing attached a display, so the flat stream runs.
+  const img = fakeImage();
+  await act(async () => client().attachVideo(img as unknown as HTMLImageElement));
+  expect(img.src).toContain("https://hub.test/helper/device-1/stream.mjpeg");
+  expect(requests).toEqual([]);
 });
 
-test("pose commands go out acknowledged on the input socket and preview until the config confirms them", async () => {
+test("a pose command is reported from request to confirmation, and its display activates at once", async () => {
   installBrowser({ duo: true });
-  const { socket, client } = await connect();
+  const { socket, client, events, observe } = await connect();
   await act(async () => socket.push(0x82, COVER));
+  observe();
   await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
   expect(socket.frames().at(-1)).toEqual({
     tag: 0x10,
@@ -268,13 +340,25 @@ test("pose commands go out acknowledged on the input socket and preview until th
   expect(client().hinge?.pending).toBe(true);
   expect(client().hinge?.angle).toBe(180);
   expect(client().hinge?.pose).toBe("open");
-  expect(client().hinge?.activeScreenId).toBe(3);
+  expect(client().displays?.find(({ active }) => active)?.id).toBe(3);
+  const command = { control: "pose", value: "open" } as const;
+  expect(events).toEqual<HingeCommandEvent[]>([
+    { type: "requested", command },
+    { type: "sent", command, display: 3 },
+  ]);
+  // Listeners can follow one command object through its replies.
+  const commandOf = (event: HingeCommandEvent | undefined) =>
+    event && "command" in event ? event.command : undefined;
+  expect(commandOf(events[1])).toBe(commandOf(events[0]));
 
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   expect(client().hinge?.pending).toBe(false);
   // The preview holds until the helper's config catches up, so nothing animates backwards.
   expect(client().hinge?.angle).toBe(180);
+  expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "acknowledged", command, ok: true });
+  expect(commandOf(events.at(-1))).toBe(commandOf(events[0]));
   await act(async () => socket.push(0x82, INNER_OPEN));
+  expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "confirmed" });
   expect(client().hinge?.angle).toBe(180);
   expect(client().hinge?.pose).toBe("open");
   expect(client().hinge?.tableModeAvailable).toBe(true);
@@ -315,30 +399,7 @@ test("a fold made with the Simulator's own controls shows, though the command fi
   expect(client().hinge?.tableModeAvailable).toBeUndefined();
 });
 
-for (const preset of ["tent", "laptop"] as const) {
-  test(`another client's ${preset} preset after Closed frames the 3D model as ${preset}`, async () => {
-    installBrowser({ duo: true });
-    const { socket, client } = await connect();
-    await act(async () => socket.push(0x82, COVER));
-    const closedView = client().hinge!.view;
-    const presetView = duoPresetView(preset);
-    expect(closedView).not.toEqual(presetView);
-    const angle = preset === "tent" ? 80 : 90;
-    await act(async () =>
-      socket.push(0x82, {
-        ...INNER_OPEN,
-        hingeAngle: angle,
-        hingePose: preset,
-        tableMode: preset === "tent",
-        physicalOrientation: preset === "tent" ? "facedown" : "landscape-left",
-      }),
-    );
-    expect(client().hinge?.physicalPose).toBe(preset);
-    expect(client().hinge?.view).toEqual(presetView);
-  });
-}
-
-test("a readback that still lags a local preset does not undo its framing", async () => {
+test("a readback that still lags a local preset does not undo its physical pose", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   const observedClosed = {
@@ -348,7 +409,6 @@ test("a readback that still lags a local preset does not undo its framing", asyn
   };
   await act(async () => socket.push(0x82, observedClosed));
   await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  const laptopView = client().hinge!.view;
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   // The command's config confirms Laptop while the native readback still says Closed.
   await act(async () =>
@@ -361,10 +421,9 @@ test("a readback that still lags a local preset does not undo its framing", asyn
     }),
   );
   expect(client().hinge?.physicalPose).toBe("laptop");
-  expect(client().hinge?.view).toEqual(laptopView);
 });
 
-test("a Rotate holds the view until it lands; then a preset from the Simulator frames the model", async () => {
+test("a Rotate waits for its readback; then a preset from the Simulator reaches the fold", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   // The helper keeps the last command, Open, in the top-level fields throughout.
@@ -375,10 +434,7 @@ test("a Rotate holds the view until it lands; then a preset from the Simulator f
   };
   await act(async () => socket.push(0x82, open));
   await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
-  // Before the rotation lands, an unchanged observation keeps the turned view.
-  await act(async () => socket.push(0x82, { ...open }));
-  expect(client().hinge?.view).toEqual(rotatedView);
+  expect(client().hinge?.physicalPose).toBeNull();
   // The observation reports the turn, which no preset matches.
   await act(async () =>
     socket.push(0x82, {
@@ -390,7 +446,6 @@ test("a Rotate holds the view until it lands; then a preset from the Simulator f
       },
     }),
   );
-  expect(client().hinge?.view).toEqual(rotatedView);
   // The Simulator's own controls then select Laptop.
   await act(async () =>
     socket.push(0x82, {
@@ -403,7 +458,6 @@ test("a Rotate holds the view until it lands; then a preset from the Simulator f
     }),
   );
   expect(client().hinge?.physicalPose).toBe("laptop");
-  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
 /** A config whose native observation shows `angle` and `physicalOrientation`, after a Laptop command. */
@@ -431,55 +485,46 @@ function holdReadbackGrace() {
   return () => act(async () => graces.splice(0).forEach((callback) => callback()));
 }
 
-test("turning Laptop to portrait keeps the turned view when the readback reads as Book; a later preset frames it", async () => {
+test("turning Laptop to portrait keeps no physical pose when the readback reads as Book, until a later preset", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
   expect(client().hinge?.physicalPose).toBe("laptop");
   // A quarter turn counterclockwise from landscape-left is portrait.
   await act(async () => client().setOrientation("landscape_left"));
-  const rotatedView = client().hinge!.view;
   // The turn lands: a 90° hinge in portrait is Book's shape, but nobody selected Book.
   await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_left")));
   expect(client().hinge?.pose).toBe("book");
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(rotatedView);
-  // The Simulator then selects Laptop, which frames the model.
+  // The Simulator then selects Laptop, which the 3D view frames.
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
   expect(client().hinge?.physicalPose).toBe("laptop");
-  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
-test("a Rotate from Laptop lands upside down and keeps the turned view until a preset", async () => {
+test("a Rotate from Laptop lands upside down and keeps no physical pose until a preset", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
   await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
   // As on an iPhone Duo: the device turns from landscape-left to upside down.
   await act(async () => socket.push(0x82, observed(90, "pud", "landscape_right")));
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(rotatedView);
   await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_right")));
   expect(client().hinge?.physicalPose).toBe("book");
-  expect(client().hinge?.view).toEqual(duoPresetView("book"));
 });
 
-test("turning Book to landscape keeps the turned view when the readback reads as Laptop", async () => {
+test("turning Book to landscape keeps no physical pose when the readback reads as Laptop", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, observed(90, "portrait")));
   expect(client().hinge?.physicalPose).toBe("book");
   await act(async () => client().setOrientation("landscape_right"));
-  const turnedView = client().hinge!.view;
   await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
   expect(client().hinge?.pose).toBe("laptop");
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(turnedView);
-  // The Simulator then selects Book, which frames the model.
+  // The Simulator then selects Book, which the 3D view frames.
   await act(async () => socket.push(0x82, observed(90, "portrait")));
   expect(client().hinge?.physicalPose).toBe("book");
-  expect(client().hinge?.view).toEqual(duoPresetView("book"));
 });
 
 test("a Rotate that the device does not take ends after the readback grace", async () => {
@@ -489,15 +534,13 @@ test("a Rotate that the device does not take ends after the readback grace", asy
   const open = observed(180, "portrait");
   await act(async () => socket.push(0x82, open));
   await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
   // The device stays in portrait.
   await act(async () => socket.push(0x82, { ...open }));
   await passGrace();
-  expect(client().hinge?.view).toEqual(rotatedView);
-  // Later the Simulator selects Book, which frames the model.
+  expect(client().hinge?.physicalPose).toBeNull();
+  // Later the Simulator selects Book, which the 3D view frames.
   await act(async () => socket.push(0x82, observed(90, "portrait")));
   expect(client().hinge?.physicalPose).toBe("book");
-  expect(client().hinge?.view).toEqual(duoPresetView("book"));
 });
 
 test("a pose command's own readback does not end a Rotate sent before its acknowledgement", async () => {
@@ -510,7 +553,6 @@ test("a pose command's own readback does not end a Rotate sent before its acknow
     tag: 0x07,
     payload: { orientation: "portrait_upside_down" },
   });
-  const rotatedView = client().hinge!.view;
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   // Open's readback turns the device to portrait before the rotation lands.
   await act(async () =>
@@ -521,7 +563,6 @@ test("a pose command's own readback does not end a Rotate sent before its acknow
     }),
   );
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(rotatedView);
 });
 
 test("a Rotate right after a preset turns from the preset, so the preset's readback does not end it", async () => {
@@ -532,18 +573,16 @@ test("a Rotate right after a preset turns from the preset, so the preset's readb
   await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
   // Before Laptop's readback, a quarter turn counterclockwise from Laptop's landscape-left.
   await act(async () => client().setOrientation("landscape_right"));
-  const turnedView = client().hinge!.view;
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   // Laptop's readback, at the physical orientation that the Rotate started from.
   await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
-  expect(client().hinge?.view).toEqual(turnedView);
+  expect(client().hinge?.physicalPose).toBeNull();
   // The turn lands in portrait, which reads as Book, but nobody selected Book.
   await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_right")));
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(turnedView);
 });
 
-test("a preset in the same batch as a Rotate ends it, so a later preset at its target frames the model", async () => {
+test("a preset in the same batch as a Rotate ends it, so a later preset at its target reaches the fold", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, observed(180, "portrait")));
@@ -558,7 +597,6 @@ test("a preset in the same batch as a Rotate ends it, so a later preset at its t
   // The Simulator then selects Laptop, at the old Rotate's target.
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
   expect(client().hinge?.physicalPose).toBe("laptop");
-  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
 test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {
@@ -585,20 +623,45 @@ test("an angle edit after Table Mode goes out after it, so the last action wins"
   ]);
 });
 
-test("switching to another simulator forgets the previous screen config at once", async () => {
+test("a submitted command names the display it elects; Table Mode and the hysteresis band do not", async () => {
   installBrowser({ duo: true });
-  const { socket, client, update } = await connect({ duoPreview: "3d" });
+  const { socket, client, events, observe } = await connect();
   await act(async () => socket.push(0x82, INNER_OPEN));
-  expect(client().hinge?.modelActive).toBe(true);
+  observe();
+  for (const [index, command] of [
+    { control: "angle", value: 40 },
+    { control: "table", value: true },
+    { control: "angle", value: 54.5 },
+    { control: "angle", value: 120 },
+  ].entries()) {
+    await act(async () => client().hinge!.setControl(command as HingeControlCommand));
+    await act(async () => socket.push(0x90, { requestId: index + 1, ok: true }));
+  }
+  expect(
+    events.flatMap((event) => (event.type === "sent" ? [event.display ?? "none"] : [])),
+  ).toEqual([1, "none", "none", 3]);
+});
+
+test("switching to another simulator forgets the previous screen config and displays at once", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, update } = await connect();
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  const panels = [fakeImage(), fakeImage()];
+  await act(async () => {
+    client().displays![0]!.attachVideo(panels[0] as unknown as HTMLImageElement);
+    client().displays![1]!.attachVideo(panels[1] as unknown as HTMLImageElement);
+  });
+  expect(requests).toHaveLength(2);
 
   gate.hold = true;
   await update({ device: "device-2" });
   await act(async () => {});
   // Before the new device's config resolves, nothing of the old Duo remains:
-  // no hinge, no parked stream, no stale screen under the new name.
+  // no hinge, no displays, no stale screen under the new name.
   expect(client().status).toBe("connecting");
   expect(client().screen).toBeNull();
   expect(client().hinge).toBeNull();
+  expect(client().displays).toBeNull();
   gate.hold = false;
   await act(async () => gate.release?.());
   await act(async () => {});
@@ -614,61 +677,43 @@ test("switching to another simulator forgets the previous screen config at once"
   );
   expect(client().screen?.width).toBe(1206);
   expect(client().hinge).toBeNull();
+  expect(client().displays).toBeNull();
+  const flat = fakeImage();
+  await act(async () => client().attachVideo(flat as unknown as HTMLImageElement));
+  expect(flat.src).toContain("https://hub.test/helper/device-2/stream.mjpeg");
 });
 
-test("a rejected preset restores the 3D view it replaced, unless a rotation superseded it", async () => {
+test("a command still pending when the connection changes ends with a reset event", async () => {
   installBrowser({ duo: true });
-  const { socket, client } = await connect();
-  await act(async () => socket.push(0x82, INNER_OPEN));
-  const openView = client().hinge!.view;
-  expect(openView.fixedLeftFold).toBeUndefined();
-
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  expect(client().hinge?.view.fixedLeftFold).toBeDefined();
-  await act(async () =>
-    socket.push(0x90, {
-      requestId: 1,
-      ok: false,
-      error: "Simulator could not change the device pose.",
-    }),
-  );
-  expect(client().hinge?.error).toBe("Simulator could not change the device pose.");
-  expect(client().hinge?.view).toEqual(openView);
-
-  // A rotation during the request owns the view; the rejection keeps it.
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
-  expect(rotatedView).not.toEqual(openView);
-  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: "Rejected" }));
-  expect(client().hinge?.view).toEqual(rotatedView);
-
-  // An acknowledged preset keeps its own view: a later failed edit does not undo it.
+  const { socket, client, events, observe, update } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  observe();
   await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  await act(async () => socket.push(0x90, { requestId: 3, ok: true }));
-  const acknowledged = client().hinge!.view;
-  await act(async () => client().hinge!.setControl({ control: "angle", value: 120 }));
-  await act(async () => socket.push(0x90, { requestId: 4, ok: false, error: "Rejected" }));
-  expect(client().hinge?.view).toEqual(acknowledged);
-  await act(async () => socket.push(0x82, INNER_OPEN));
-
-  // A preset queued behind a failing edit is discarded with the queue, so its
-  // view goes too.
-  const beforeEdit = client().hinge!.view;
-  await act(async () => client().hinge!.setControl({ control: "angle", value: 100 }));
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  expect(client().hinge?.view.fixedLeftFold).toBeDefined();
-  expect(socket.frames().filter((frame) => frame.tag === 0x10)).toHaveLength(5);
-  await act(async () => socket.push(0x90, { requestId: 5, ok: false, error: "Rejected" }));
-  expect(client().hinge?.pending).toBe(false);
-  expect(socket.frames().filter((frame) => frame.tag === 0x10)).toHaveLength(5);
-  expect(client().hinge?.view).toEqual(beforeEdit);
+  expect(client().hinge?.pending).toBe(true);
+  // A reply for the old connection's command never comes.
+  await update({ device: "device-2" });
+  await act(async () => {});
+  const open = { control: "pose", value: "open" } as const;
+  expect(events).toEqual<HingeCommandEvent[]>([
+    { type: "requested", command: open },
+    { type: "sent", command: open, display: 3 },
+    { type: "reset" },
+  ]);
 });
 
-/** Connects with configs pushed over exec-ws, as serve-sim pushes them. */
-async function connectOverExecWs({ strict = false } = {}) {
+/**
+ * A consumer that observes the hinge from its first render, as a child does:
+ * its effect subscribes before the client's own effects run. Configs arrive
+ * over exec-ws, as serve-sim pushes them.
+ */
+async function connectObserved({ strict = false } = {}) {
   apiExtra = { execToken: "exec-1", pid: 1 };
   let client!: DeviceClient;
+  const events: HingeCommandEvent[] = [];
+  function Observer({ observe }: { observe?: DeviceHinge["observe"] }) {
+    useEffect(() => observe?.((event) => events.push(event)), [observe]);
+    return null;
+  }
   function Harness() {
     client = useIosDeviceClient({
       baseUrl: "https://hub.test",
@@ -676,7 +721,7 @@ async function connectOverExecWs({ strict = false } = {}) {
       enabled: true,
       streamMode: "mjpeg",
     });
-    return null;
+    return <Observer observe={client.hinge?.observe} />;
   }
   await act(async () => {
     renderer = create(
@@ -705,6 +750,7 @@ async function connectOverExecWs({ strict = false } = {}) {
   if (!subscription) throw new Error("The hook did not subscribe to config updates");
   return {
     client: () => client,
+    events,
     helperSockets,
     socket: () => helperSockets().at(-1)!,
     /** A config pushed over exec-ws for the same device. */
@@ -721,21 +767,32 @@ async function connectOverExecWs({ strict = false } = {}) {
 }
 
 for (const strict of [false, true]) {
-  test(`a replaced helper at the same URL ends a pending preview${strict ? " in strict mode" : ""}`, async () => {
+  test(`a replaced helper at the same URL ends a pending command with a reset event${strict ? " in strict mode" : ""}`, async () => {
     installBrowser({ duo: true });
-    const { client, socket, helperSockets, pushConfig } = await connectOverExecWs({ strict });
+    const { client, events, socket, helperSockets, pushConfig } = await connectObserved({
+      strict,
+    });
     await act(async () => socket().push(0x82, COVER));
-    await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+    // Connecting emitted nothing.
+    expect(events).toEqual([]);
+    const open = { control: "pose", value: "open" } as const;
+    await act(async () => client().hinge!.setControl(open));
     expect(client().hinge?.pending).toBe(true);
     // A refresh for the same helper session keeps the command pending.
     await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
     expect(helperSockets()).toHaveLength(1);
     expect(client().hinge?.pending).toBe(true);
+    expect(events).toEqual<HingeCommandEvent[]>([
+      { type: "requested", command: open },
+      { type: "sent", command: open, display: 3 },
+    ]);
     // A new helper process at the same URL replaces the input socket and its queue.
     await pushConfig({ pid: 2 });
     expect(helperSockets()).toHaveLength(2);
+    expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "reset" });
+    expect(events.filter(({ type }) => type === "reset")).toHaveLength(1);
     expect(client().hinge?.pending).toBe(false);
-    // The preview of the dropped command ends, so the replacement's Closed shows.
+    // The preview of the dropped command ends, so it cannot stay forever.
     await act(async () => socket().open());
     await act(async () => socket().push(0x82, COVER));
     expect(client().hinge?.pose).toBe("closed");
@@ -743,8 +800,37 @@ for (const strict of [false, true]) {
   });
 }
 
+test("a replaced helper at the same URL restarts both panel streams; a refresh does not", async () => {
+  installBrowser({ duo: true });
+  const { client, socket, pushConfig } = await connectObserved();
+  await act(async () => socket().push(0x82, COVER));
+  await act(async () => {
+    client().displays![0]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+    client().displays![1]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+  });
+  await act(async () => {});
+  const panelRequests = () => requests.map(({ url }) => new URL(url).pathname);
+  expect(panelRequests()).toEqual([
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+  ]);
+  // The same helper session keeps its readers.
+  await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
+  await act(async () => {});
+  expect(panelRequests()).toHaveLength(2);
+  // A new helper process at the same URL needs new readers for both panels.
+  await pushConfig({ pid: 2 });
+  await act(async () => {});
+  expect(panelRequests()).toEqual([
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+    "/helper/device-1/panel/1/stream.mjpeg",
+    "/helper/device-1/panel/3/stream.mjpeg",
+  ]);
+});
+
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
-  test(`a queued preset ${failure} restores the last accepted preset's view`, async () => {
+  test(`a queued preset ${failure} reports a failure after the accepted preset`, async () => {
     installBrowser({ duo: true });
     const deadlines: (() => void)[] = [];
     const nativeTimeout = setTimeout;
@@ -757,21 +843,17 @@ for (const failure of ["rejection", "timeout", "disconnect"] as const) {
         return nativeTimeout(callback, ms);
       });
     }
-    const { socket, client } = await connect();
+    const { socket, client, events, observe } = await connect();
     await act(async () => socket.push(0x82, COVER));
+    observe();
     await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-    const acceptedView = client().hinge!.view;
     await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-    const laptopView = client().hinge!.view;
-    expect(laptopView).not.toEqual(acceptedView);
     await act(async () => socket.push(0x82, INNER_OPEN));
     await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
     expect(socket.frames().at(-1)?.payload).toEqual({
       requestId: 2,
       command: { control: "pose", value: "laptop" },
     });
-    // Acknowledging Open must not interrupt the optimistic Laptop preview.
-    expect(client().hinge?.view).toEqual(laptopView);
     await act(async () => {
       if (failure === "rejection")
         socket.push(0x90, { requestId: 2, ok: false, error: "Rejected" });
@@ -781,56 +863,21 @@ for (const failure of ["rejection", "timeout", "disconnect"] as const) {
     expect(client().hinge?.pending).toBe(false);
     expect(client().hinge?.error).toBeTruthy();
     expect(client().hinge?.pose).toBe("open");
-    expect(client().hinge?.view).toEqual(acceptedView);
+    const open = { control: "pose", value: "open" } as const;
+    const laptop = { control: "pose", value: "laptop" } as const;
+    expect(events).toEqual<HingeCommandEvent[]>([
+      { type: "requested", command: open },
+      { type: "sent", command: open, display: 3 },
+      { type: "requested", command: laptop },
+      { type: "acknowledged", command: open, ok: true },
+      { type: "sent", command: laptop, display: 3 },
+      ...(failure === "rejection"
+        ? [{ type: "acknowledged", command: laptop, ok: false } as const]
+        : []),
+      { type: "failed", error: client().hinge!.error! },
+    ]);
   });
 }
-
-test("a rotation supersedes recovery even when an earlier queued preset succeeds", async () => {
-  installBrowser({ duo: true });
-  const { socket, client } = await connect();
-  await act(async () => socket.push(0x82, COVER));
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
-  await act(async () => socket.push(0x82, INNER_OPEN));
-  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
-  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: "Rejected" }));
-  expect(client().hinge?.view).toEqual(rotatedView);
-});
-
-test("a preset rejected after a rotation restores the turned view", async () => {
-  installBrowser({ duo: true });
-  const { socket, client } = await connect();
-  await act(async () => socket.push(0x82, COVER));
-  // Open is accepted, but the helper still reports Closed when the user rotates.
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
-  await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  expect(client().hinge?.view).not.toEqual(rotatedView);
-  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: "Rejected" }));
-  expect(client().hinge?.view).toEqual(rotatedView);
-});
-
-test("a preset from before a rotation, accepted later, keeps the turned recovery view", async () => {
-  installBrowser({ duo: true });
-  const { socket, client } = await connect();
-  await act(async () => socket.push(0x82, COVER));
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  await act(async () => client().rotate());
-  const rotatedView = client().hinge!.view;
-  // Laptop queues behind Open; accepting Open must not drop the turn from recovery.
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
-  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
-  expect(socket.frames().at(-1)?.payload).toEqual({
-    requestId: 2,
-    command: { control: "pose", value: "laptop" },
-  });
-  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: "Rejected" }));
-  expect(client().hinge?.view).toEqual(rotatedView);
-});
 
 test("a rejected hinge command surfaces its error and drops the preview", async () => {
   installBrowser({ duo: true });
@@ -882,36 +929,39 @@ for (const duo of [true, false]) {
 
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {
   installBrowser({ duo: true });
-  const { socket, client } = await connect();
+  const { socket, client, events, observe } = await connect();
   await act(async () => socket.push(0x82, INNER_OPEN));
+  observe();
   await act(async () => client().rotate());
   expect(socket.frames().at(-1)).toEqual({
     tag: 0x07,
     payload: { orientation: "landscape_right" },
   });
   expect(client().hinge?.physicalPose).toBeNull();
+  expect(events).toEqual<HingeCommandEvent[]>([{ type: "rotated", quarterTurns: 1 }]);
 });
 
-test("choosing an orientation on the Duo turns its 3D view by the same quarter turns", async () => {
+test("choosing an orientation on the Duo reports its quarter turns to the 3D view", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, INNER_OPEN));
-  const before = client().hinge!.view;
+  const events: HingeCommandEvent[] = [];
+  client().hinge!.observe!((event) => events.push(event));
   await act(async () => client().setOrientation("landscape_left"));
   expect(socket.frames().at(-1)).toEqual({
     tag: 0x07,
     payload: { orientation: "landscape_left" },
   });
   // Landscape left is a quarter turn counterclockwise from portrait.
-  expect(client().hinge?.view).toEqual(duoRotateView(before, -1));
+  expect(events).toEqual<HingeCommandEvent[]>([{ type: "rotated", quarterTurns: -1 }]);
   expect(client().hinge?.physicalPose).toBeNull();
 });
 
 test("two orientation choices in one render turn the 3D view as far as the device", async () => {
   installBrowser({ duo: true });
-  const { socket, client } = await connect();
+  const { socket, client, events, observe } = await connect();
   await act(async () => socket.push(0x82, INNER_OPEN));
-  const before = client().hinge!.view;
+  observe();
   await act(async () => {
     client().setOrientation("landscape_right");
     client().setOrientation("portrait_upside_down");
@@ -923,76 +973,105 @@ test("two orientation choices in one render turn the 3D view as far as the devic
       .map((frame) => frame.payload.orientation),
   ).toEqual(["landscape_right", "portrait_upside_down"]);
   // Each choice is one quarter turn clockwise from the one before it.
-  expect(client().hinge?.view).toEqual(duoRotateView(duoRotateView(before, 1), 1));
+  expect(events).toEqual<HingeCommandEvent[]>([
+    { type: "rotated", quarterTurns: 1 },
+    { type: "rotated", quarterTurns: 1 },
+  ]);
 });
 
-test("the 3D preview feeds both panels through the helper mount and parks the flat stream", async () => {
+test("attached displays stream through the helper mount, park the flat stream, and resume it when detached", async () => {
   installBrowser({ duo: true });
-  const { socket, client, update } = await connect({ duoPreview: "3d" });
+  const { socket, client } = await connect();
+  // The flat screen mounts with the connection, as DeviceScreen does.
+  const flat = fakeImage();
+  await act(async () => client().attachVideo(flat as unknown as HTMLImageElement));
   await act(async () => socket.push(0x82, COVER));
-  const hinge = client().hinge!;
-  expect(hinge.modelActive).toBe(true);
-  expect(hinge.panels).toMatchObject({ url: "https://hub.test/helper/device-1", mode: "mjpeg" });
+  expect(flat.src).toContain("stream.mjpeg");
+
+  // A consumer replaces the flat screen: React detaches the flat ref first.
+  const panels = [fakeImage(), fakeImage()];
+  await act(async () => {
+    client().attachVideo(null);
+    client().displays![0]!.attachVideo(panels[0] as unknown as HTMLImageElement);
+    client().displays![1]!.attachVideo(panels[1] as unknown as HTMLImageElement);
+  });
+  await act(async () => {});
+  expect(flat.src).toBe("");
+  expect(requests.map(({ url }) => url)).toEqual([
+    "https://hub.test/helper/device-1/panel/1/stream.mjpeg?raw=1",
+    "https://hub.test/helper/device-1/panel/3/stream.mjpeg?raw=1",
+  ]);
   expect(client().status).toBe("connecting");
-  await act(async () => hinge.panels!.onStreamingChange(true));
+  // Each panel paints its frames as blob URLs, so a sampling consumer sees every frame.
+  expect(panels[0]!.src).toStartWith("blob:");
+  // The inner panel's frame does not stand for the active cover.
+  await act(async () => panels[1]!.onload?.());
+  expect(client().status).toBe("connecting");
+  await act(async () => panels[0]!.onload?.());
   expect(client().status).toBe("streaming");
-  await act(async () => hinge.panels!.onStreamError("WebRTC streaming failed for this display."));
-  expect(client().status).toBe("error");
-  expect(client().error).toBe("WebRTC streaming failed for this display.");
 
-  await update({ duoPreview: "2d" });
-  expect(client().hinge?.modelActive).toBe(false);
-  expect(client().hinge?.panels).toBeNull();
-  expect(client().hinge?.angle).toBe(0);
+  await act(async () => {
+    client().displays![0]!.attachVideo(null);
+    client().displays![1]!.attachVideo(null);
+  });
+  expect(client().status).toBe("connecting");
+  const resumed = fakeImage();
+  await act(async () => client().attachVideo(resumed as unknown as HTMLImageElement));
+  expect(resumed.src).toContain("https://hub.test/helper/device-1/stream.mjpeg");
 });
 
-test("switching to 3D stops the flat MJPEG request even after the <img> unmounted", async () => {
+test("the device model and both panel streams carry the session token", async () => {
   installBrowser({ duo: true });
-  const { socket, client, update } = await connect({ duoPreview: "3d" });
+  const { socket, client } = await connect({ token: "duo-token" });
   await act(async () => socket.push(0x82, COVER));
-  const img = {
-    src: "",
-    naturalWidth: 0,
-    naturalHeight: 0,
-    addEventListener() {},
-    removeEventListener() {},
-    removeAttribute(name: string) {
-      if (name === "src") this.src = "";
-    },
-  };
-  await act(async () => client().attachVideo(img as unknown as HTMLImageElement));
-  await update({ duoPreview: "2d" });
-  expect(img.src).toContain("stream.mjpeg");
-  // The 3D model replaces the flat screen: React detaches the ref first.
-  await act(async () => client().attachVideo(null));
-  await update({ duoPreview: "3d" });
-  expect(img.src).toBe("");
+  expect(client().deviceModelUrl).toBe("https://hub.test/grid/api/devicekit-model?token=duo-token");
+  await act(async () => {
+    client().displays![0]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+    client().displays![1]!.attachVideo(fakeImage() as unknown as HTMLImageElement);
+  });
+  await act(async () => {});
+  expect(requests.map(({ authorization }) => authorization)).toEqual([
+    "Bearer duo-token",
+    "Bearer duo-token",
+  ]);
 });
 
-test("the 3D preview authenticates its model and passes the token to both panels", async () => {
-  installBrowser({ duo: true });
-  const { socket, client } = await connect({ duoPreview: "3d", token: "duo-token" });
-  await act(async () => socket.push(0x82, COVER));
-  expect(client().hinge?.modelUrl).toBe(
-    "https://hub.test/grid/api/devicekit-model?token=duo-token",
-  );
-  expect(client().hinge?.panels?.token).toBe("duo-token");
-});
-
-test("raw model input bypasses the display-orientation remap", async () => {
+test("input addressed to a display maps like the flat stream and drops a gesture on another display", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, { ...INNER_OPEN, orientation: "landscape_left" }));
-  await act(async () =>
-    client().hinge!.sendModelTouch({ type: "begin", x: 0.25, y: 0.75, edge: 3 }),
-  );
-  expect(socket.frames().at(-1)).toEqual({
-    tag: 0x03,
-    payload: { type: "begin", x: 0.25, y: 0.75, edge: 3 },
+  const sent = () => socket.frames().filter((frame) => frame.tag !== 0x0e);
+  const before = sent().length;
+  // The cover is not the display native readback reports, so its whole gesture is dropped.
+  await act(async () => {
+    client().sendTouch({ phase: "begin", display: 1, x: 0.2, y: 0.2 });
+    client().sendTouch({ phase: "move", display: 1, x: 0.3, y: 0.3 });
+    client().sendTouch({ phase: "end", display: 1, x: 0.3, y: 0.3 });
+    client().sendScroll!({ display: 1, dx: 0.1, dy: 0.1, x: 0.5, y: 0.5 });
   });
-  await act(async () => client().hinge!.sendModelScroll({ dx: 0.1, dy: -0.2, x: 0.5, y: 0.5 }));
-  expect(socket.frames().at(-1)).toEqual({
+  expect(sent()).toHaveLength(before);
+  // The inner display gets the flat stream's display-to-raw mapping and home-indicator edge.
+  await act(async () => client().sendTouch({ phase: "begin", display: 3, x: 0.25, y: 0.95 }));
+  expect(sent().at(-1)).toEqual({
+    tag: 0x03,
+    payload: { type: "begin", x: 0.95, y: 0.75, edge: 4 },
+  });
+  await act(async () => client().sendTouch({ phase: "end", display: 3, x: 0.25, y: 0.95 }));
+  await act(async () => client().sendScroll!({ display: 3, dx: 0.1, dy: -0.2, x: 0.5, y: 0.5 }));
+  expect(sent().at(-1)).toEqual({
     tag: 0x0b,
-    payload: { dx: 0.1, dy: -0.2, x: 0.5, y: 0.5 },
+    payload: { dx: -0.2, dy: -0.1, x: 0.5, y: 0.5 },
+  });
+  await act(async () =>
+    client().sendMultiTouch!({
+      phase: "begin",
+      display: 3,
+      a: { x: 0.25, y: 0.5 },
+      b: { x: 0.75, y: 0.5 },
+    }),
+  );
+  expect(sent().at(-1)).toEqual({
+    tag: 0x05,
+    payload: { type: "begin", x1: 0.5, y1: 0.75, x2: 0.5, y2: 0.25 },
   });
 });

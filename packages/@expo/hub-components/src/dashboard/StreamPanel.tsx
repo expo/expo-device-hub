@@ -6,9 +6,9 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
-  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import {
   bg,
   border,
@@ -60,12 +60,7 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /**
-   * iPhone Duo 3D renderer, injected from `@expo/hub-client`. Pass it whenever
-   * the client was created with `duoPreview: '3d'`: that client parks the flat
-   * streams, so without this component the Duo shows "Connecting…" and no video.
-   * With a `'2d'` client the Duo renders flat and this prop is not used.
-   */
+  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */

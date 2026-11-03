@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import {
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
+  type DeviceOrientation,
+  type ScreenSize,
+} from "@expo/hub-client";
 import { Euler, Vector2, Vector3 } from "three";
 
-import { duoPose, duoScreenMapping, duoScreenPoint, stepDuoSpring } from "../duo/duo-pose";
-import { type DeviceOrientation } from "../types";
+import {
+  duoDisplayDelta,
+  duoDisplayPoint,
+  duoPose,
+  duoScreenMapping,
+  duoScreenPoint,
+  stepDuoSpring,
+} from "../foldable/duo-pose";
 
 function advanceSpring(
   value: number,
@@ -347,5 +359,41 @@ describe("iPhone Duo screen hit mapping", () => {
     const inner = duoScreenMapping({ width: 2, height: 3, screenId: 3 }, 3, 6);
     expect(duoScreenPoint(0.5, 0, inner).x).toBeLessThan(0);
     expect(duoScreenPoint(0.5, 1, inner).x).toBeGreaterThan(1);
+  });
+});
+
+describe("iPhone Duo model input", () => {
+  const orientations: DeviceOrientation[] = [
+    "portrait",
+    "landscape_left",
+    "landscape_right",
+    "portrait_upside_down",
+  ];
+
+  test("raw panel hits leave as the display points that hub-client maps back to them", () => {
+    for (const orientation of orientations) {
+      // A portrait inner raster that the client rotates for a landscape app.
+      const config = { width: 2007, height: 2853, screenId: 3, orientation };
+      expect(duoDisplayPoint(config, 0.95, 0.75)).toEqual(
+        displayPointForRawPoint(orientation, 0.95, 0.75),
+      );
+      expect(duoDisplayDelta(config, 0.1, -0.2)).toEqual(
+        displayDeltaForRawDelta(orientation, 0.1, -0.2),
+      );
+    }
+    // The client test sends this display point and expects this raw point.
+    const landscape = { width: 2007, height: 2853, screenId: 3, orientation: "landscape_left" };
+    expect(duoDisplayPoint(landscape as ScreenSize, 0.95, 0.75)).toEqual({ x: 0.25, y: 0.95 });
+  });
+
+  test("a raster already in landscape needs no mapping", () => {
+    const config = {
+      width: 2853,
+      height: 2007,
+      screenId: 3,
+      orientation: "landscape_left" as const,
+    };
+    expect(duoDisplayPoint(config, 0.2, 0.3)).toEqual({ x: 0.2, y: 0.3 });
+    expect(duoDisplayDelta(config, 0.2, 0.3)).toEqual({ dx: 0.2, dy: 0.3 });
   });
 });

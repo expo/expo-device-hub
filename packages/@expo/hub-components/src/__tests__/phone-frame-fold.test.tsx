@@ -19,6 +19,7 @@ const device: Device = {
 function client(
   hinge: Partial<DeviceHinge> | null,
   displayCorners: DeviceClient["displayCorners"] = null,
+  { model = true }: { model?: boolean } = {},
 ): DeviceClient {
   return {
     status: "streaming",
@@ -26,26 +27,38 @@ function client(
     displayCorners,
     hinge: hinge && {
       faceDown: false,
-      activeScreenId: 1,
       pending: false,
       error: null,
-      commands: { pending: false, coverDepartures: 0, innerDepartures: 0 },
-      view: { rotation: [0, 0, 0, 1] },
-      modelActive: false,
-      modelUrl: null,
-      panels: null,
       setControl: () => {},
-      sendModelTouch: () => {},
-      sendModelMultiTouch: () => {},
-      sendModelScroll: () => {},
       ...hinge,
     },
+    // A device without separate display streams or Xcode's model, such as an
+    // Android foldable, has a hinge but cannot feed the 3D model.
+    displays:
+      hinge && model
+        ? [
+            { id: 1, active: true, attachVideo: () => {} },
+            { id: 3, active: false, attachVideo: () => {} },
+          ]
+        : null,
+    deviceModelUrl: hinge && model ? "https://hub.test/grid/api/devicekit-model" : null,
   } as unknown as DeviceClient;
 }
 
+const MODEL_PREVIEW = {
+  mode: "3d",
+  cacheScreenOnFold: false,
+  sizeMode: "physical",
+  onUnavailable: () => {},
+} as const;
+
 const FlatScreen = () => <div data-testid="flat-screen" />;
-const ModelScreen = ({ sizeMode }: { sizeMode?: string }) => (
-  <div data-testid="model-screen" data-size-mode={sizeMode} />
+const ModelScreen = (props: { sizeMode?: string }) => (
+  <div
+    data-testid="model-screen"
+    data-size-mode={props.sizeMode}
+    data-mode={(props as { mode?: string }).mode}
+  />
 );
 
 describe("PhoneFrame with an iPhone Duo", () => {
@@ -54,7 +67,7 @@ describe("PhoneFrame with an iPhone Duo", () => {
       renderToStaticMarkup(
         <PhoneFrame
           device={device}
-          client={{ ...client({ modelActive: false }), screen: { width, height } }}
+          client={{ ...client({}), screen: { width, height } }}
           DeviceScreen={FlatScreen}
           displayScreen={(screen) => screen ?? null}
         />,
@@ -67,26 +80,38 @@ describe("PhoneFrame with an iPhone Duo", () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}
-        client={client({ modelActive: true })}
+        client={client({})}
         DeviceScreen={FlatScreen}
         FoldableDeviceScreen={ModelScreen}
-        foldPreview={{ cacheScreenOnFold: false, sizeMode: "physical", onUnavailable: () => {} }}
+        foldPreview={MODEL_PREVIEW}
         displayScreen={(screen) => screen ?? null}
       />,
     );
     expect(markup).toContain('data-device-frame-kind="duo-model"');
     expect(markup).toContain('data-testid="model-screen"');
     expect(markup).toContain('data-size-mode="physical"');
+    // The preview mode is the frame's choice, not a prop of the model.
+    expect(markup).not.toContain("data-mode");
     expect(markup).not.toContain('data-testid="flat-screen"');
     expect(markup).not.toContain("clip-path");
     expect(markup).toContain("aspect-ratio:1");
   });
 
-  test("keeps the flat screen for the 2D preview and for consumers without the model", () => {
+  test("keeps the flat screen for the 2D preview, for consumers without the model, and for clients that cannot feed it", () => {
     for (const props of [
-      { client: client({ modelActive: false }), FoldableDeviceScreen: ModelScreen },
-      { client: client({ modelActive: true }), FoldableDeviceScreen: undefined },
-      { client: client(null), FoldableDeviceScreen: ModelScreen },
+      {
+        client: client({}),
+        FoldableDeviceScreen: ModelScreen,
+        foldPreview: { ...MODEL_PREVIEW, mode: "2d" as const },
+      },
+      { client: client({}), FoldableDeviceScreen: undefined, foldPreview: MODEL_PREVIEW },
+      { client: client({}), FoldableDeviceScreen: ModelScreen, foldPreview: undefined },
+      { client: client(null), FoldableDeviceScreen: ModelScreen, foldPreview: MODEL_PREVIEW },
+      {
+        client: client({}, null, { model: false }),
+        FoldableDeviceScreen: ModelScreen,
+        foldPreview: MODEL_PREVIEW,
+      },
     ]) {
       const markup = renderToStaticMarkup(
         <PhoneFrame
@@ -115,7 +140,7 @@ describe("PhoneFrame with a display that describes its own glass", () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}
-        client={client({ modelActive: false }, corners)}
+        client={client({}, corners)}
         DeviceScreen={FlatScreen}
         displayScreen={(screen) => screen ?? null}
       />,

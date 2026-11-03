@@ -14,6 +14,8 @@ const BASE_CLIENT: DeviceClient = {
   recordingControlsLocked: false,
   screen: { width: 1080, height: 2400 },
   hinge: null,
+  displays: null,
+  deviceModelUrl: null,
   displayCorners: null,
   fps: 60,
   devices: [],

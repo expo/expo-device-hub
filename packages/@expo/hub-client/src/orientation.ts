@@ -212,6 +212,42 @@ export function rawDeltaForDisplayDelta(
   }
 }
 
+/** The inverse of {@link rawPointForDisplayPoint}: a raw frame point back to display space. */
+export function displayPointForRawPoint(
+  orientation: DeviceOrientation | null | undefined,
+  x: number,
+  y: number,
+): { x: number; y: number } {
+  switch (orientation) {
+    case "landscape_left":
+      return { x: 1 - y, y: x };
+    case "landscape_right":
+      return { x: y, y: 1 - x };
+    case "portrait_upside_down":
+      return { x: 1 - x, y: 1 - y };
+    default:
+      return { x, y };
+  }
+}
+
+/** The inverse of {@link rawDeltaForDisplayDelta}. */
+export function displayDeltaForRawDelta(
+  orientation: DeviceOrientation | null | undefined,
+  dx: number,
+  dy: number,
+): { dx: number; dy: number } {
+  switch (orientation) {
+    case "landscape_left":
+      return { dx: -dy, dy: dx };
+    case "landscape_right":
+      return { dx: dy, dy: -dx };
+    case "portrait_upside_down":
+      return { dx: -dx, dy: -dy };
+    default:
+      return { dx, dy };
+  }
+}
+
 /** Map a display-space HID edge to the raw-frame edge for the current orientation. */
 export function rawEdgeForDisplayEdge(
   orientation: DeviceOrientation | null | undefined,
