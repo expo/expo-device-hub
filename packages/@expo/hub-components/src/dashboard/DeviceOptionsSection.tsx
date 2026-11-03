@@ -1,9 +1,10 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { rotationUnavailableText } from "./rotation-availability";
+import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -107,16 +108,20 @@ export type DeviceFrameOption = {
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
  * keyboard controls, the viewer-local device frame option, and device-level
  * actions (Android Back and Recents keys, shutting down or removing the device).
+ * An iPhone Duo leads with its fold controls, as serve-sim's settings do.
  */
 export function DeviceOptionsSection({
   client,
   deviceFrame,
+  foldPreview,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
   deviceFrame?: DeviceFrameOption;
+  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
   /** Shut the device down on the host. */
@@ -125,6 +130,11 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  // Like serve-sim's settings, a failed hinge command opens the section to show its error.
+  const hingeError = client?.hinge?.error ?? null;
+  useEffect(() => {
+    if (hingeError) setOpen(true);
+  }, [hingeError]);
   const recordingLock = client?.recordingLock ?? null;
   const recordingControlsLocked = recordingLock !== null;
   const recordingDisabledReason =
@@ -189,6 +199,8 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {client?.hinge && <FoldSettings hinge={client.hinge} preview={foldPreview} />}
+
       {showDeviceSettings &&
         visible("appearance") &&
         settingSelect("appearance", "Appearance", APPEARANCE_OPTIONS)}

@@ -53,6 +53,7 @@
     "format:check": "oxfmt --check"
   },
   "dependencies": {
+    "three": "^0.186.0",
     "use-sync-external-store": "^1.7.0"
   },
   "devDependencies": {
@@ -62,6 +63,7 @@
     "@types/react": "~19.2.2",
     "@types/react-dom": "19.2.3",
     "@types/react-test-renderer": "19.1.0",
+    "@types/three": "^0.186.0",
     "@types/use-sync-external-store": "1.5.0",
     "happy-dom": "^20.14.5",
     "oxfmt": "^0.56.0",

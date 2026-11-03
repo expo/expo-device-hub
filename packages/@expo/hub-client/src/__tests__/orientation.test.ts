@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  CLOCKWISE_ORIENTATIONS,
+  clockwiseQuarterTurns,
   HID_EDGE_BOTTOM,
   HOME_INDICATOR_BAND_NORM,
   homeIndicatorEdge,
+  physicalOrientationForInterface,
   rawDeltaForDisplayDelta,
   rawPointForDisplayPoint,
   streamGeometry,
+  turnedPhysicalOrientation,
 } from "../orientation";
 
 describe("homeIndicatorEdge", () => {
@@ -60,5 +64,39 @@ describe("streamGeometry", () => {
     expect(
       streamGeometry({ ...portrait, orientation: "portrait_upside_down", framesUpright: true }),
     ).toMatchObject({ rotationDegrees: 0, needsRotation: false, inputOrientation: undefined });
+  });
+});
+
+describe("turnedPhysicalOrientation", () => {
+  test("counts quarter turns clockwise as serve-sim's rotation tracker does", () => {
+    // Measured on an iPhone Duo: Rotate from Laptop (landscape-left) lands upside down.
+    expect(turnedPhysicalOrientation("landscape-left", 1)).toBe("pud");
+    expect(turnedPhysicalOrientation("portrait", 1)).toBe("landscape-left");
+    expect(turnedPhysicalOrientation("portrait", -1)).toBe("landscape-right");
+    expect(turnedPhysicalOrientation("landscape-left", 2)).toBe("landscape-right");
+  });
+
+  test("has no target for a device that is not upright", () => {
+    expect(turnedPhysicalOrientation("facedown", 1)).toBeUndefined();
+    expect(turnedPhysicalOrientation(undefined, 1)).toBeUndefined();
+  });
+
+  test("turns between two interface orientations as far as between their physical ones", () => {
+    expect(CLOCKWISE_ORIENTATIONS.map(physicalOrientationForInterface)).toEqual([
+      "portrait",
+      "landscape-left",
+      "pud",
+      "landscape-right",
+    ]);
+    for (const from of CLOCKWISE_ORIENTATIONS) {
+      for (const to of CLOCKWISE_ORIENTATIONS) {
+        expect(
+          turnedPhysicalOrientation(
+            physicalOrientationForInterface(from),
+            clockwiseQuarterTurns(from, to),
+          ),
+        ).toBe(physicalOrientationForInterface(to));
+      }
+    }
   });
 });

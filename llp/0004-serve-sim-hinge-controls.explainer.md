@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -75,6 +75,33 @@ rotations made after that preset was queued remain part of the view.
 [observed: `src/device-session.ts` `applyDeviceState`, `screenConfig`;
 `src/client/simulator/screen-config-state.ts` `previewScreenConfig`;
 `src/client/hooks/use-duo-framing.ts` `useDuoFraming`]
+
+The Hub's iOS client reads the same snapshot: when `observedDeviceState` is
+present, it replaces the command fields for the fold that the Hub shows, so a
+fold made with the Simulator's own controls shows there too. A config without
+it keeps the command fields. The Hub's preview of a local command ends when the
+command's config matches it. A preset that another client or the Simulator
+selects frames the 3D model as a local preset does, once a local Rotate has
+landed. The helper keeps the last command's pose, so with an observation, a
+Rotate lands when the observed physical orientation reaches its target: the
+physical orientation that the Rotate starts from, turned by its quarter turns,
+as serve-sim's rotation tracker (`duo-rotation-state.ts`, serve-sim at
+ace59bf34, #385) counts them (Rotate from Laptop lands upside
+down, observed on an iPhone Duo on 2026-11-03); without one, when the command
+pose clears. A Rotate starts from the target of a Rotate that has not landed,
+else from the orientation of a sent pose command that the device does not show
+yet, because that command moves the device first, else from the observed
+orientation. A pose command still queued behind another hinge command goes out
+after the Rotate, so it does not count. Another orientation change, such as the
+readback of a pose command sent before the Rotate, does not end it. As in
+serve-sim's rotation tracker, a Rotate that the device does not take ends after
+the 1500 ms readback grace. The observation that ends a Rotate is the new pose
+baseline: a turned Laptop reads as Book, but nobody selected Book, so the turned
+view stays until a later preset. The Hub compares the observed pose with the one it saw while its last
+command was pending, so a readback that still lags that command does not undo
+it [observed: `observedScreenConfig` in
+`packages/@expo/hub-client/src/screen-config.ts`, `isRotationReadback`,
+`turnedPhysicalOrientation` in `orientation.ts`, `turnDuo` and `landRotation` in `useIosDevice.ts`].
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view
@@ -384,6 +411,11 @@ display and mapped back to its streamed coordinates.
 In the flat framed view used for AX inspection, the closed screen uses
 DeviceKit's `phone15` frame; half-folded and fully open use the same `phone14`
 inner-display frame. The frame and hardware buttons rotate around the stream.
+When a hinge command switches panels, the departing panel keeps its last
+geometry until native readback identifies the destination panel. The new panel
+ID, dimensions, orientation, and glass corners are then published together.
+Failed commands release this hold; a two-second limit lets native geometry
+recover even if the expected display election never arrives.
 The inner frame's button PDFs declare `/Rotate 270`; both asset dimensions and
 PNG conversion must apply that page rotation.
 

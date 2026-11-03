@@ -101,6 +101,15 @@ function failureMessage(reason: unknown): string {
 export function useDeviceOrientation(
   backend: DeviceOrientationBackend | null,
   reported: DeviceOrientation | null,
+  {
+    onChoose,
+  }: {
+    /**
+     * Called for each accepted choice with the shown pose before it, which an earlier choice in
+     * the same render already moved. Null when no pose is known.
+     */
+    onChoose?: (from: DeviceOrientation | null, to: DeviceOrientation) => void;
+  } = {},
 ) {
   const [state, setState] = useState<OrientationState>(NO_ORIENTATION);
   // The backend in use; null after its device, token or connection is gone, or on unmount.
@@ -137,11 +146,13 @@ export function useDeviceOrientation(
       // A call while unavailable leaves the shown pose and the last error as they are. The
       // writer checks again for a choice that was still waiting when the backend became so.
       if (backend.available?.() === false) return;
+      const from = shownRef.current;
       shownRef.current = next;
       setState({ choice: { orientation: next, answeredAt: null }, error: null });
       writer({ backend, orientation: next });
+      onChoose?.(from, next);
     },
-    [backend, writer],
+    [backend, writer, onChoose],
   );
 
   const setOrientation = useCallback(

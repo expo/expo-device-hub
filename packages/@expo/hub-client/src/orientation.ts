@@ -10,6 +10,7 @@
  *     device, the client rotates the video for display ({@link streamGeometry}).
  */
 
+import { type HingePhysicalOrientation } from "./hinge-control";
 import { type DeviceOrientation, type ScreenSize, type TouchSample } from "./types";
 
 export const HID_EDGE_LEFT = 1;
@@ -49,6 +50,58 @@ export const DEVICE_ORIENTATIONS = [
   "portrait_upside_down",
   "landscape_right",
 ] as const satisfies readonly DeviceOrientation[];
+
+/** The four poses clockwise. The iPhone Duo rotates in this order, as Xcode's Device Hub and serve-sim turn it. */
+export const CLOCKWISE_ORIENTATIONS = [
+  "portrait",
+  "landscape_right",
+  "portrait_upside_down",
+  "landscape_left",
+] as const satisfies readonly DeviceOrientation[];
+
+/**
+ * The physical orientation of the device for each interface orientation. As in
+ * UIKit, a landscape interface is the opposite physical landscape.
+ */
+const PHYSICAL_ORIENTATIONS: Readonly<Record<DeviceOrientation, HingePhysicalOrientation>> = {
+  portrait: "portrait",
+  landscape_right: "landscape-left",
+  portrait_upside_down: "pud",
+  landscape_left: "landscape-right",
+};
+
+/** The physical orientation that shows `orientation`. */
+export function physicalOrientationForInterface(
+  orientation: DeviceOrientation,
+): HingePhysicalOrientation {
+  return PHYSICAL_ORIENTATIONS[orientation];
+}
+
+// The same clockwise order, physically. serve-sim's rotation tracker
+// (`src/client/simulator/duo-rotation-state.ts`, serve-sim at ace59bf34, #385)
+// counts physical quarter turns in this order, so a quarter turn between two
+// interface orientations is also one between their physical orientations.
+const CLOCKWISE_PHYSICAL_ORIENTATIONS = CLOCKWISE_ORIENTATIONS.map(physicalOrientationForInterface);
+
+/**
+ * The physical orientation `quarterTurns` clockwise from `start`, as serve-sim's
+ * rotation tracker counts them. Undefined when `start` is not upright, for
+ * example face up.
+ */
+export function turnedPhysicalOrientation(
+  start: HingePhysicalOrientation | undefined,
+  quarterTurns: number,
+): HingePhysicalOrientation | undefined {
+  const index = start === undefined ? -1 : CLOCKWISE_PHYSICAL_ORIENTATIONS.indexOf(start);
+  if (index < 0) return undefined;
+  return CLOCKWISE_PHYSICAL_ORIENTATIONS[(((index + quarterTurns) % 4) + 4) % 4];
+}
+
+/** Quarter turns from one pose to another, clockwise positive, the shorter way for a half turn. */
+export function clockwiseQuarterTurns(from: DeviceOrientation, to: DeviceOrientation): number {
+  const steps = (CLOCKWISE_ORIENTATIONS.indexOf(to) - CLOCKWISE_ORIENTATIONS.indexOf(from) + 4) % 4;
+  return steps === 3 ? -1 : steps;
+}
 
 /** The pose after `orientation` in `orientations`, or the first one when it is not listed. */
 export function nextOrientation(
