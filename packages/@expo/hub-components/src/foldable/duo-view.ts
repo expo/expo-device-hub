@@ -1,13 +1,14 @@
 /**
- * Saved 3D view orientation for the iPhone Duo model, ported from serve-sim's
- * `src/client/simulator/duo-view.ts` (serve-sim at 3dc61286e, #383).
+ * Saved 3D view orientation for a device model, ported from serve-sim's
+ * `src/client/simulator/duo-view.ts` (serve-sim at 3dc61286e, #383), where it
+ * framed the iPhone Duo.
  */
 
-import { type FoldPose } from "@expo/hub-client";
+import { type DeviceOrientation, type FoldPose } from "@expo/hub-client";
 import { Euler, Quaternion, Vector3 } from "three";
 
 import { type DuoStreamConfig } from "./duo-displays";
-import { duoFacingYaw, duoPose } from "./duo-pose";
+import { duoFacingYaw, duoPose, orientationDegrees } from "./duo-pose";
 
 /** Saved orientation controls; ordinary folding adds a hinge-dependent facing turn. */
 export type DuoView = {
@@ -40,6 +41,21 @@ export function duoInitialView(
  */
 export function duoPresetView(pose: FoldPose, angle: number): DuoView {
   return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
+}
+
+/**
+ * The view of a model that follows the device's orientation instead of fold
+ * events: front-on, as a preset is, and rolled so that the active display's
+ * interface reads upright. `mount` is that display's mount in quarter turns.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — a model without fold events turns with the device's orientation
+export function deviceModelView(
+  angle: number,
+  mount: number,
+  orientation: DeviceOrientation | null | undefined,
+): DuoView {
+  const roll = ((mount * 90 - orientationDegrees(orientation)) * Math.PI) / 180;
+  return captureView(duoPose(angle, null, undefined, undefined, roll), null);
 }
 
 /** The view saved before another client turned the device face down. */

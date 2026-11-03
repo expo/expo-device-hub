@@ -1,6 +1,7 @@
 /**
- * Mounts the iPhone Duo 3D scene over hidden panel streams, ported from
- * serve-sim's `src/client/components/duo-model-view.tsx` (serve-sim at 3dc61286e, #383).
+ * Mounts a device model's 3D scene over its hidden display streams, ported from
+ * serve-sim's `src/client/components/duo-model-view.tsx` (serve-sim at 3dc61286e, #383),
+ * where it showed the iPhone Duo.
  */
 
 import { SCREEN_LOAD_TIMEOUT_MS, useVisibleTimeout } from "@expo/hub-client";
@@ -17,7 +18,7 @@ import { bg, border, radius, text, textSize } from "../theme/tokens";
 import { createDuoScene, type DuoSceneState } from "./duo-scene";
 import { DuoHingeHandle } from "./DuoHingeHandle";
 
-/** Xcode's model: still loading, loaded into the scene, or unavailable (missing, broken, or too slow). */
+/** The model: still loading, loaded into the scene, or unavailable (missing, broken, or too slow). */
 export type DuoModelStatus = "loading" | "ready" | "unavailable";
 
 export interface DuoModelViewProps extends DuoSceneState {
@@ -121,9 +122,13 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
       <div
         ref={host}
         role="img"
-        aria-label={`iPhone Duo 3D preview, ${props.pose ?? "custom"} pose${
-          props.angle === undefined ? "" : `, ${Math.round(props.angle)} degrees`
-        }`}
+        aria-label={
+          props.model.hinge
+            ? `${props.model.name} 3D preview, ${props.pose ?? "custom"} pose${
+                props.angle === undefined ? "" : `, ${Math.round(props.angle)} degrees`
+              }`
+            : `${props.model.name} 3D preview`
+        }
         style={{
           position: "absolute",
           inset: 0,
@@ -132,18 +137,22 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
           touchAction: "none",
         }}
       />
-      <DuoHingeHandle
-        handleRef={hingeHandle}
-        side="left"
-        angle={angle}
-        onChange={onHingeAngleChange}
-      />
-      <DuoHingeHandle
-        handleRef={oppositeHingeHandle}
-        side="right"
-        angle={angle}
-        onChange={onHingeAngleChange}
-      />
+      {props.model.hinge && (
+        <>
+          <DuoHingeHandle
+            handleRef={hingeHandle}
+            side="left"
+            angle={angle}
+            onChange={onHingeAngleChange}
+          />
+          <DuoHingeHandle
+            handleRef={oppositeHingeHandle}
+            side="right"
+            angle={angle}
+            onChange={onHingeAngleChange}
+          />
+        </>
+      )}
       {status === "unavailable" && (
         <span role="status" style={NOTICE_STYLE}>
           3D preview unavailable. Showing the live display.

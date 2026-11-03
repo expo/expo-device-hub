@@ -25,13 +25,20 @@ import {
   font,
   text,
   type ClipboardRequest,
+  type Device,
+  type DeviceModelAssets,
+  deviceModelPreview,
   type FoldPreviewOption,
   type SidebarProps,
 } from "@expo/hub-components";
-import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
+import { DeviceModelScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import iphone18ProModel from "../assets/device-models/iphone-18-pro.glb";
+import iphoneDuoModel from "../assets/device-models/iphone-duo.glb";
+import pixel9ProFoldModel from "../assets/device-models/pixel-9-pro-fold.glb";
+import pixel9ProModel from "../assets/device-models/pixel-9-pro.glb";
 import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
@@ -61,6 +68,14 @@ import { dashboardPlatformFilter } from "./platform-filter";
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
+
+// The 3D preview's models ship with the dashboard; `expo export` copies them into dist/client.
+const DEVICE_MODEL_ASSETS: DeviceModelAssets = {
+  "ios:iphone-duo": String(iphoneDuoModel),
+  "ios:iphone-18-pro": String(iphone18ProModel),
+  "android:pixel-9-pro": String(pixel9ProModel),
+  "android:pixel-9-pro-fold": String(pixel9ProFoldModel),
+};
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -113,8 +128,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const setShowScreenShape = useDashboardStore((state) => state.setShowScreenShape);
   const duoPreview = useDashboardStore((state) => state.duoPreview);
   const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
-  // Xcode's model failed to load (or WebGL did) for this device; show the flat
-  // screen until the viewer picks 3D again, as serve-sim does.
+  // The device's model failed to load (or WebGL did); show the flat screen
+  // until the viewer picks 3D again, as serve-sim does.
   const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
@@ -218,8 +233,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     client,
     selected,
   );
-  // The 3D choices apply only to a device that can feed the model.
-  const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
+  // The 3D choices apply only to a device with a model that its client can feed.
+  const modelAvailable = deviceModelPreview(selected, client, DEVICE_MODEL_ASSETS) !== null;
   const foldPreview: FoldPreviewOption = {
     mode: duoPreview.mode,
     onModeChange: (mode) => {
@@ -344,7 +359,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
-          FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceModelScreen={DeviceModelScreen}
           DeviceShape={DeviceShape}
           foldPreview={{
             mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
@@ -355,6 +370,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           displayScreen={displayScreen}
           framed={framed}
           showScreenShape={showScreenShape}
+          deviceModelAssets={DEVICE_MODEL_ASSETS}
           screenShape={screenShape}
           onClipboardFallback={handleClipboardFallback}
         />

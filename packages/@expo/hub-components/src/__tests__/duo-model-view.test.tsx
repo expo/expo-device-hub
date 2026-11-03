@@ -1,6 +1,7 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
+import { DEVICE_MODELS } from "../foldable/device-models";
 import * as scene from "../foldable/duo-scene";
 import { createGlobalStubs } from "./test-globals";
 
@@ -41,7 +42,8 @@ test("a scene error after the model is ready falls back to the flat displays", a
   await act(async () => {
     renderer = create(
       <DuoModelView
-        modelUrl="https://hub.test/grid/api/devicekit-model"
+        model={DEVICE_MODELS["ios:iphone-duo"]}
+        modelUrl="https://hub.test/assets/iphone-duo.glb"
         activeScreenId={1}
         onStatusChange={(status) => statuses.push(status)}
         onUnavailable={() => unavailable++}

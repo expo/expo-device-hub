@@ -17,9 +17,16 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
 import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
+import { type DeviceModelId } from "@expo/hub-components";
+
 import { type PlatformFilter } from "../platform-filter";
 import { androidDeviceModel, createAppleDeviceTypeNames } from "./device-models";
-import { isSupportedAndroidDevice, isSupportedAppleDevice } from "./device-support";
+import {
+  androidDevice3DModel,
+  appleDevice3DModel,
+  isSupportedAndroidDevice,
+  isSupportedAppleDevice,
+} from "./device-support";
 import { filterSessionDevices } from "./single-device";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
@@ -47,6 +54,8 @@ export interface HubDevice {
    * Android, such as "pixel_9". Null when unknown, such as for a physical device.
    */
   model: string | null;
+  /** The 3D preview's model of this exact device model, or null when it has none. */
+  deviceModel: DeviceModelId | null;
   /**
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the
@@ -99,6 +108,7 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           model: device.deviceTypeIdentifier
             ? (deviceTypeNames.get(device.deviceTypeIdentifier) ?? null)
             : null,
+          deviceModel: appleDevice3DModel(device),
           lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
       })
@@ -125,6 +135,7 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
         model: androidDeviceModel(device),
+        deviceModel: androidDevice3DModel(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
       }))
       .filter((device) => device.booted || device.lastUsedAt !== undefined),
