@@ -90,7 +90,7 @@ const freshSession = (key: string | null): SessionState => ({
  * for the new one.
  */
 export function useSessionStatus(sessionKey: string | null) {
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
+  const [status, setStatus] = useState<ConnectionStatus>(sessionKey ? "connecting" : "idle");
   const [error, setError] = useState<string | null>(null);
   const [statusKey, setStatusKey] = useState(sessionKey);
   if (statusKey === sessionKey) return { status, setStatus, error, setError };

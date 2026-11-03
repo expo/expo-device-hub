@@ -116,6 +116,8 @@ describe("useSessionStatus", () => {
     await act(async () => {
       renderer = create(<Harness sessionKey="device-a" />);
     });
+    // A session that is active from the first render starts as connecting.
+    expect(seen.every(([status]) => status === "connecting")).toBe(true);
     await act(async () => {
       session.setStatus("error");
       session.setError("Offer refused");
