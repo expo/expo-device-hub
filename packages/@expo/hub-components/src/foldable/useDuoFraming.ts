@@ -130,6 +130,9 @@ export function useDuoFraming(
           setOwned(false);
           return;
         }
+        case "rejected":
+          // Refused before its request, so it never took the framing.
+          return;
         case "reset":
           // A new helper session: no view from the old one comes back, and
           // the model is framed as on connect. Departure counts stay monotonic,

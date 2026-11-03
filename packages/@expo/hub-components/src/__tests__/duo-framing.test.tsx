@@ -151,6 +151,23 @@ test("a rejected preset restores the view it replaced, unless a rotation superse
   expect(view()).toEqual(beforeEdit);
 });
 
+test("a rejected command keeps the preview of a pending preset", async () => {
+  const { view, emit } = await mount(COVER);
+  const closedView = view();
+  const open = pose("open");
+  // The sequence hub-client reports when a command that capabilities.fold
+  // does not offer follows a sent preset.
+  await emit({ type: "requested", command: open });
+  await emit({ type: "sent", command: open, display: "inner" });
+  const openView = view();
+  expect(openView).not.toEqual(closedView);
+  await emit({ type: "rejected", command: angle(200), error: "Not offered" });
+  expect(view()).toEqual(openView);
+  // The preset still owns the framing, so a later failure restores the closed view.
+  await emit({ type: "failed", error: "Device control timed out." });
+  expect(view()).toEqual(closedView);
+});
+
 test("a queued preset failure restores the last accepted preset's view", async () => {
   const { view, emit } = await mount(COVER);
   const open = pose("open");

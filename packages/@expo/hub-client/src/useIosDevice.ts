@@ -1219,7 +1219,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // Only this command fails: a command already sent still gets its reply.
         const message = `The device does not offer the fold command ${JSON.stringify(input)}.`;
         setHingeError(message);
-        emitHingeEvent({ type: "failed", error: message });
+        emitHingeEvent({ type: "rejected", command, error: message });
         return;
       }
       setHingeError(null);

@@ -658,11 +658,17 @@ test("a command that capabilities.fold does not offer fails without reaching the
   expect(client().capabilities.fold).toBe(false);
   await act(async () => client().fold!.setControl({ control: "pose", value: "open" }));
   expect(client().fold?.error).toMatch(/does not offer/);
-  expect(events.map(({ type }) => type)).toEqual(["failed"]);
+  expect(events).toEqual<FoldCommandEvent[]>([
+    {
+      type: "rejected",
+      command: { control: "pose", value: "open" },
+      error: client().fold!.error!,
+    },
+  ]);
 
   await act(async () => socket.push(0x82, COVER));
   await act(async () => client().fold!.setControl({ control: "angle", value: 200 }));
-  expect(events.map(({ type }) => type)).toEqual(["failed", "failed"]);
+  expect(events.map(({ type }) => type)).toEqual(["rejected", "rejected"]);
   expect(socket.frames().filter(({ tag }) => tag === 0x10)).toEqual([]);
   expect(client().fold?.angle).toBe(0);
 
@@ -674,6 +680,7 @@ test("a command that capabilities.fold does not offer fails without reaching the
   });
   // A rejected command does not cancel the one already sent.
   await act(async () => client().fold!.setControl({ control: "angle", value: 200 }));
+  expect(events.at(-1)?.type).toBe("rejected");
   expect(client().fold?.pending).toBe(true);
   expect(client().fold?.angle).toBe(90);
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
