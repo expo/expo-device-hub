@@ -5,6 +5,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
 import { DuoPanelStreams } from "../duo/DuoPanelStreams";
 import { useMjpegPanel } from "../duo/useMjpegPanel";
+import { sessionTokenFetch } from "../session-token";
 import { type DuoPanelFeeds } from "../types";
 import { createGlobalStubs } from "./test-globals";
 
@@ -77,6 +78,7 @@ async function connect(token?: string) {
   const events = { frames: 0, fallbacks: 0, streaming: false };
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
+    fetch: sessionTokenFetch(token),
     token,
     mode: "avcc",
     codec: "h264",
@@ -127,7 +129,7 @@ async function connect(token?: string) {
         renderer!.update(
           <DuoPanelStreams
             activeScreenId={activeScreenId}
-            feeds={{ ...feeds, url, token: nextToken }}
+            feeds={{ ...feeds, url, fetch: sessionTokenFetch(nextToken), token: nextToken }}
           />,
         );
       }),
@@ -182,6 +184,7 @@ test("both MJPEG panels authenticate and reconnect when the token changes", asyn
   });
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
+    fetch: sessionTokenFetch("first-token"),
     token: "first-token",
     mode: "mjpeg",
     codec: "h264",
@@ -204,7 +207,10 @@ test("both MJPEG panels authenticate and reconnect when the token changes", asyn
   requests.length = 0;
   await act(async () => {
     renderer!.update(
-      <DuoPanelStreams activeScreenId={1} feeds={{ ...feeds, token: "next-token" }} />,
+      <DuoPanelStreams
+        activeScreenId={1}
+        feeds={{ ...feeds, fetch: sessionTokenFetch("next-token"), token: "next-token" }}
+      />,
     );
   });
   expect(requests).toEqual(
@@ -325,6 +331,7 @@ test("WebRTC statistics follow the shown panel and stop when collection is disab
   let stats: import("../types").DeviceStreamStats | null = null;
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
+    fetch: sessionTokenFetch("stats-token"),
     token: "stats-token",
     mode: "webrtc",
     codec: "h264",
@@ -395,6 +402,7 @@ test("a WebRTC panel's first loaded frame counts without frame callbacks, as in 
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
     mode: "webrtc",
+    fetch: sessionTokenFetch("duo-token"),
     token: "duo-token",
     codec: "h264",
     onFrame: () => events.frames++,
@@ -465,7 +473,7 @@ async function connectWebRtc(feedsOverride: Partial<DuoPanelFeeds> = {}) {
   const videos: PausableVideo[] = [];
   const feeds: DuoPanelFeeds = {
     url: "https://hub.test/helper/duo",
-    session: "helper-1",
+    fetch: sessionTokenFetch(null),
     mode: "webrtc",
     codec: "h264",
     onStreamingChange() {},
@@ -552,7 +560,8 @@ test("a replaced helper at the same URL gives both WebRTC panels new offers; a h
   await update(3);
   await act(async () => {});
   expect(offers).toHaveLength(2);
-  await update(3, { session: "helper-2" });
+  // The client's fetch for a new helper session is a new function.
+  await update(3, { fetch: sessionTokenFetch(null) });
   await act(async () => {});
   expect(offers.slice(2).sort()).toEqual([
     "https://hub.test/helper/duo/panel/1/webrtc/offer",

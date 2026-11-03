@@ -7,10 +7,10 @@
  * `SimulatorView`; only the 3D scene handles input.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
-import { type SessionFetch, sessionTokenFetch, withSessionTokenQuery } from "../session-token";
+import { withSessionTokenQuery } from "../session-token";
 import { type DuoPanelFeeds } from "../types";
 import { useAvccStream } from "../useAvccStream";
 import { useWebRtcStream } from "../useWebRtcStream";
@@ -35,12 +35,8 @@ function DuoPanelStream({
   activeScreenId: DuoPanelId;
   onStatusChange: (screenId: DuoPanelId, status: DuoPanelStatus) => void;
 }) {
-  const { mode, codec, iceServers, token = null, session = null } = feeds;
-  // Every reader depends on this function, so a new helper session gets new readers.
-  const sessionFetch = useMemo<SessionFetch>(() => {
-    const tokenFetch = sessionTokenFetch(token);
-    return session === null ? tokenFetch : (input, init) => tokenFetch(input, init);
-  }, [token, session]);
+  // Every reader depends on `fetch`, so a new helper session gets new readers.
+  const { mode, codec, iceServers, token = null, fetch: sessionFetch } = feeds;
   const url = duoPanelUrl(feeds.url, screenId);
   const active = activeScreenId === screenId;
   const imgRef = useRef<HTMLImageElement | null>(null);

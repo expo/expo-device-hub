@@ -2043,8 +2043,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!modelActive || !config) return null;
     return {
       url: config.url,
+      fetch: videoFetch,
       token,
-      session: videoSessionKey,
       mode: useWebRtc ? "webrtc" : useAvcc ? "avcc" : "mjpeg",
       codec: activeWebRtcCodec,
       iceServers: config.webRtcIceServers,
@@ -2062,7 +2062,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     modelActive,
     config,
     token,
-    videoSessionKey,
+    videoFetch,
     useWebRtc,
     useAvcc,
     activeWebRtcCodec,

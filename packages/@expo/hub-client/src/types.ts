@@ -28,6 +28,7 @@ import {
   type ObservedHingeState,
   type HingePose,
 } from "./hinge-control";
+import { type SessionFetch } from "./session-token";
 import { type WebRtcStreamFailure } from "./webrtc-fallback";
 
 export type DevicePlatform = "ios" | "android";
@@ -117,13 +118,13 @@ export interface DeviceIceServer {
 export interface DuoPanelFeeds {
   /** Helper base URL; each panel streams from `${url}/panel/<1|3>/…`. */
   url: string;
-  /** Session token for the same backend as the flat stream. */
-  token?: string | null;
   /**
-   * The helper session, as for the flat stream's readers. A replaced helper at
-   * the same URL changes it, which restarts both panels' readers.
+   * The flat stream's `fetch`, with its session token. A replaced helper at the
+   * same URL gives a new function, which restarts both panels' readers.
    */
-  session?: string | null;
+  fetch: SessionFetch;
+  /** Session token for the WebRTC close beacon, which cannot send a header. */
+  token?: string | null;
   mode: DuoPanelStreamMode;
   codec: DeviceWebRtcCodec;
   iceServers?: DeviceIceServer[];
