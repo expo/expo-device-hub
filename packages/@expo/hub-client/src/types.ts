@@ -235,12 +235,20 @@ export interface DeviceGeoFix {
 export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
 /**
- * Orientations that `setOrientation` can turn the device to. `false` hides orientation
- * controls; `rotate` still works where the backend supports it.
+ * Orientations that `setOrientation` can turn the device to. `false` when the backend cannot
+ * turn the device to one pose or cannot report the pose it shows (an older serve-emu server);
+ * `rotate` still works where the backend supports it.
  */
 export type DeviceOrientationCapabilities =
   | false
   | Readonly<{ orientations: readonly DeviceOrientation[] }>;
+
+/**
+ * Why an orientation change cannot go out now. `"not-streaming"`: the serve-sim client
+ * {@link ConnectionStatus} is not `"streaming"`; serve-sim sends the pose over the helper's
+ * input socket, which drops input queued for longer than a short time.
+ */
+export type DeviceOrientationUnavailableReason = "not-streaming";
 
 /** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
 export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
@@ -870,6 +878,13 @@ export interface DeviceClient {
   orientationPending: boolean;
   /** Last failed orientation change, cleared when the next one starts. */
   orientationError: string | null;
+  /**
+   * Why {@link rotate} and {@link setOrientation} cannot turn the device now, or null when they
+   * can. Disable orientation controls while it is set. serve-sim needs a streaming connection;
+   * serve-emu sends the pose over HTTP and does not need the stream.
+   */
+  // @ref LLP 0013#orientation — iOS sends the pose over the input socket, Android over HTTP
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
   /**
    * Turn the device to one orientation, and show it in {@link orientation} at once.
    * serve-sim sends it over the helper's orientation channel, and a later {@link rotate}

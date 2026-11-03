@@ -157,6 +157,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     orientation: null,
     orientationPending: false,
     orientationError: null,
+    orientationUnavailable: null,
     setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",

@@ -407,6 +407,24 @@ test("an iOS client without a connection offers no orientations and ignores a ch
   expect(disabled.orientationError).toBeNull();
 });
 
+test("an iOS client reports orientation as unavailable until the stream is live", async () => {
+  const { client } = await mount();
+  expect(client().status).toBe("connecting");
+  expect(client().orientationUnavailable).toBe("not-streaming");
+  const image = {
+    naturalWidth: 1170,
+    naturalHeight: 2532,
+    addEventListener() {},
+    removeEventListener() {},
+    removeAttribute() {},
+  };
+  await act(async () => client().attachVideo(image as unknown as HTMLImageElement));
+  // The stream effect checks the image every 400 ms.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 450)));
+  expect(client().status).toBe("streaming");
+  expect(client().orientationUnavailable).toBeNull();
+});
+
 test("an iOS orientation choice is still sent under Strict Mode, which runs effects twice", async () => {
   const { client, helper } = await mount({ strict: true });
   await act(async () => client().setOrientation("landscape_right"));

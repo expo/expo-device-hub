@@ -852,6 +852,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             // The simulator, not the token: a reconnect keeps its choices in order.
             device: JSON.stringify([baseUrl, targetDevice]),
             orientations: DEVICE_ORIENTATIONS,
+            reportsPose: true,
             pushesReports: true,
             set: (orientation) =>
               new Promise((resolve, reject) => {
@@ -2140,6 +2141,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientation,
     orientationPending,
     orientationError,
+    orientationUnavailable: status === "streaming" ? null : "not-streaming",
     setOrientation,
     screenshot,
     appearance,

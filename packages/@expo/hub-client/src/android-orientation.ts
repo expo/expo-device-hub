@@ -63,6 +63,7 @@ export function androidOrientationBackend(
     // The URL names the server and the serial, not the token.
     device: url,
     orientations: kind === "poses" ? DEVICE_ORIENTATIONS : LEGACY_ORIENTATIONS,
+    reportsPose: kind === "poses",
     set: (orientation) =>
       writeAndroidOrientation(
         fetchImpl,

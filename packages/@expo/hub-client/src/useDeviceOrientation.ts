@@ -10,8 +10,14 @@ export interface DeviceOrientationBackend {
    * token change, keeps that device's requests in order; another device does not wait.
    */
   device: string;
-  /** The poses `set` accepts. */
+  /** The poses `set` accepts, in the order Rotate steps through them. */
   orientations: readonly DeviceOrientation[];
+  /**
+   * False when the backend cannot report the pose it shows (an older serve-emu server). It
+   * then offers no poses in `capabilities.orientation` and ignores `setOrientation`, but
+   * Rotate still turns the device.
+   */
+  reportsPose: boolean;
   /**
    * Turn the device. Resolves the pose the backend applied, or null when it does not say. A
    * rejection's message becomes `orientationError`; the client does not retry it.
@@ -111,7 +117,7 @@ export function useDeviceOrientation(
     shownRef.current = orientation;
   }, [orientation]);
 
-  const setOrientation = useCallback(
+  const choose = useCallback(
     (next: DeviceOrientation) => {
       if (!backend || !writer || !backend.orientations.includes(next)) return;
       shownRef.current = next;
@@ -121,13 +127,20 @@ export function useDeviceOrientation(
     [backend, writer],
   );
 
+  const setOrientation = useCallback(
+    (next: DeviceOrientation) => {
+      if (backend?.reportsPose) choose(next);
+    },
+    [backend, choose],
+  );
+
   /** Choose the pose after the shown one, or after `fallback` when no pose is known. */
   const rotate = useCallback(
     (fallback: DeviceOrientation) => {
       if (!backend) return;
-      setOrientation(nextOrientation(shownRef.current ?? fallback, backend.orientations));
+      choose(nextOrientation(shownRef.current ?? fallback, backend.orientations));
     },
-    [backend, setOrientation],
+    [backend, choose],
   );
 
   /** Apply one report of the shown pose, read from `startedAt` on (`performance.now()` time). */
@@ -156,7 +169,7 @@ export function useDeviceOrientation(
     return () => clearTimeout(timer);
   }, [answeredAt, pushesReports]);
 
-  const orientations = backend?.orientations;
+  const orientations = backend?.reportsPose ? backend.orientations : undefined;
   const orientationCapabilities = useMemo<DeviceOrientationCapabilities>(
     () => (orientations ? { orientations } : false),
     [orientations],

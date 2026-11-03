@@ -137,7 +137,7 @@ async function mount(initialInfo: Record<string, unknown>) {
 }
 
 test("Android reports the server's pose and offers every pose in the shared order", async () => {
-  const { client } = await mount({ orientation: "portrait_upside_down" });
+  const { client } = await mount({ pose: "portrait_upside_down" });
   expect(client().capabilities.orientation).toEqual({
     orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
   });
@@ -153,7 +153,7 @@ test("Android reports the server's pose and offers every pose in the shared orde
 test("Android adds the reported pose to the screen only while it agrees with the frame", async () => {
   const { client, report } = await mount({
     size: { width: 2400, height: 1080 },
-    orientation: "landscape_left",
+    pose: "landscape_left",
   });
   expect(client().screen?.orientation).toBe("landscape_left");
 
@@ -162,13 +162,13 @@ test("Android adds the reported pose to the screen only while it agrees with the
   expect(client().screen).toEqual({ width: 1080, height: 2400 });
   expect(displayScreen(client().screen)).toEqual({ width: 1080, height: 2400 });
 
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().screen?.orientation).toBe("portrait");
 });
 
 test("Android shows a choice at once, then the server's answer, then a matching report", async () => {
   const { client, locks, hold, release, answerWith, report } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_right"));
@@ -177,7 +177,7 @@ test("Android shows a choice at once, then the server's answer, then a matching 
   expect(client().orientationPending).toBe(true);
 
   // A report during the request does not replace the choice.
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().orientation).toBe("landscape_right");
   expect(client().orientationPending).toBe(true);
 
@@ -188,41 +188,41 @@ test("Android shows a choice at once, then the server's answer, then a matching 
   expect(client().orientation).toBe("landscape_left");
 
   // A report that shows the answered pose takes over, and later reports follow the device.
-  await report({ size: { width: 2400, height: 1080 }, orientation: "landscape_left" });
-  await report({ orientation: "landscape_right" });
+  await report({ size: { width: 2400, height: 1080 }, pose: "landscape_left" });
+  await report({ pose: "landscape_right" });
   expect(client().orientation).toBe("landscape_right");
 });
 
 test("Android keeps the answer over an older report until the readback grace ends", async () => {
   const { client, hold, release, holdApi, releaseApi, startPoll, report, advance } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
   // A poll starts before the answer and returns the pose from before the lock.
   holdApi();
-  await startPoll({ orientation: "portrait" });
+  await startPoll({ pose: "portrait" });
   await release();
   expect(client().orientation).toBe("landscape_left");
   await releaseApi();
   expect(client().orientation).toBe("landscape_left");
 
   // A later report that still shows the old pose waits for the grace, then wins.
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().orientation).toBe("landscape_left");
   advance(1_500);
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().orientation).toBe("portrait");
 });
 
 test("Android ignores a report from a poll that started before the answer, also after the grace", async () => {
   const { client, hold, release, holdApi, releaseApi, startPoll, advance } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
   holdApi();
-  await startPoll({ orientation: "portrait" });
+  await startPoll({ pose: "portrait" });
   await release();
   // The old poll answers after the grace has passed; it still read the pre-lock pose.
   advance(1_600);
@@ -232,7 +232,7 @@ test("Android ignores a report from a poll that started before the answer, also 
 
 test("Android Rotate before the first /api answer waits, because the server's poses are not known yet", async () => {
   const { client, locks, silence, switchDevice, settle } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   silence("emulator-5556", true);
   await switchDevice("emulator-5556");
@@ -244,7 +244,7 @@ test("Android Rotate before the first /api answer waits, because the server's po
 
 test("Android sends a new device's choice without waiting for the old device's request", async () => {
   const { client, lockDevices, hold, release, switchDevice } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
@@ -257,7 +257,7 @@ test("Android sends a new device's choice without waiting for the old device's r
 });
 
 test("Android reports a refused orientation and clears the error with the next choice", async () => {
-  const { client, answerWith } = await mount({ orientation: "portrait" });
+  const { client, answerWith } = await mount({ pose: "portrait" });
   answerWith(() => ({ status: 400, body: { ok: false, error: "orientation must be one of" } }));
   await act(async () => client().setOrientation("landscape_left"));
   await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
@@ -273,23 +273,23 @@ test("Android reports a refused orientation and clears the error with the next c
   expect(client().orientationError).toBeNull();
 });
 
-test("Android keeps portrait and landscape on servers that do not report the orientation", async () => {
+test("Android offers no poses on servers that do not report one, but Rotate still turns", async () => {
   const { client, locks, settle } = await mount({});
-  expect(client().capabilities.orientation).toEqual({
-    orientations: ["portrait", "landscape_right"],
-  });
+  expect(client().capabilities.orientation).toBe(false);
+  expect(client().orientationUnavailable).toBeNull();
   expect(client().screen?.orientation).toBeUndefined();
-  await act(async () => {
-    client().setOrientation("landscape_left");
-    client().setOrientation("landscape_right");
-  });
+  await act(async () => client().setOrientation("landscape_right"));
   await settle();
-  await act(async () => client().setOrientation("portrait"));
+  expect(locks()).toEqual([]);
+  await act(async () => client().rotate());
+  await settle();
+  await act(async () => client().rotate());
+  await settle();
   expect(locks()).toEqual(["landscape", "portrait"]);
 });
 
 test("Android sends one orientation at a time and keeps only the latest queued choice", async () => {
-  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  const { client, locks, hold, release } = await mount({ pose: "portrait" });
   hold();
   await act(async () => {
     client().setOrientation("landscape_left");
@@ -303,7 +303,7 @@ test("Android sends one orientation at a time and keeps only the latest queued c
 });
 
 test("Android Rotate continues the four-pose cycle through the same writer", async () => {
-  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  const { client, locks, hold, release } = await mount({ pose: "portrait" });
   hold();
   await act(async () => client().rotate());
   await act(async () => client().rotate());
@@ -316,7 +316,7 @@ test("Android Rotate continues the four-pose cycle through the same writer", asy
 
 test("Android forgets the previous device's pose and sends to the new device", async () => {
   const { client, switchDevice, report, lockDevices, silence } = await mount({
-    orientation: "portrait_upside_down",
+    pose: "portrait_upside_down",
   });
   expect(client().orientation).toBe("portrait_upside_down");
   silence("emulator-5556", true);
@@ -324,7 +324,7 @@ test("Android forgets the previous device's pose and sends to the new device", a
   expect(client().orientation).toBeNull();
   expect(client().capabilities.orientation).toBe(false);
   silence("emulator-5556", false);
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().orientation).toBe("portrait");
   await act(async () => client().setOrientation("landscape_left"));
   expect(lockDevices()).toEqual(["emulator-5556"]);
@@ -332,7 +332,7 @@ test("Android forgets the previous device's pose and sends to the new device", a
 
 test("Android drops a queued choice when the device changes, and still finishes the one in flight", async () => {
   const { client, locks, lockDevices, hold, release, switchDevice, report } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
@@ -342,13 +342,13 @@ test("Android drops a queued choice when the device changes, and still finishes 
   expect(locks()).toEqual(["landscape_left"]);
   expect(lockDevices()).toEqual(["emulator-5554"]);
   // The answer for the old device does not show on the new one.
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   expect(client().orientation).toBe("portrait");
   expect(client().orientationPending).toBe(false);
 });
 
 test("Android drops a queued choice when the client unmounts", async () => {
-  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  const { client, locks, hold, release } = await mount({ pose: "portrait" });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
   await act(async () => client().setOrientation("landscape_right"));
@@ -360,12 +360,12 @@ test("Android drops a queued choice when the client unmounts", async () => {
 
 test("Android keeps one emulator's requests in order across a token change", async () => {
   const { client, locks, hold, release, switchToken, report } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));
   await switchToken("next-token");
-  await report({ orientation: "portrait" });
+  await report({ pose: "portrait" });
   await act(async () => client().setOrientation("landscape_right"));
   // The new token's lock waits for the old one, so the emulator ends in the newer pose.
   expect(locks()).toEqual(["landscape_left"]);
@@ -374,7 +374,7 @@ test("Android keeps one emulator's requests in order across a token change", asy
 });
 
 test("Android Rotate called twice before a render steps through two poses", async () => {
-  const { client, locks, hold, release } = await mount({ orientation: "portrait" });
+  const { client, locks, hold, release } = await mount({ pose: "portrait" });
   hold();
   await act(async () => {
     client().rotate();
@@ -387,7 +387,7 @@ test("Android Rotate called twice before a render steps through two poses", asyn
 
 test("Android keeps a device's requests in order after switching away and back", async () => {
   const { client, locks, lockDevices, hold, release, switchDevice } = await mount({
-    orientation: "portrait",
+    pose: "portrait",
   });
   hold();
   await act(async () => client().setOrientation("landscape_left"));

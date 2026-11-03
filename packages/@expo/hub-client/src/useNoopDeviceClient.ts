@@ -90,6 +90,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   orientation: null,
   orientationPending: false,
   orientationError: null,
+  orientationUnavailable: null,
   setOrientation: () => {},
   screenshot: async () => null,
   appearance: null,

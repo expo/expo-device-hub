@@ -95,6 +95,7 @@ const BASE_CLIENT: DeviceClient = {
   orientation: null,
   orientationPending: false,
   orientationError: null,
+  orientationUnavailable: null,
   setOrientation: () => {},
   screenshot: async () => null,
   appearance: "light",

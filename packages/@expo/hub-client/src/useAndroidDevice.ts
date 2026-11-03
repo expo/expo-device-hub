@@ -191,7 +191,7 @@ type ServeEmuApiInfo = {
   screenRecording?: unknown;
   size?: { width?: unknown; height?: unknown };
   /** The display's current pose. Absent on servers that cannot report it. */
-  orientation?: unknown;
+  pose?: unknown;
   stream?: unknown;
   viewerTransports?: unknown;
 };
@@ -357,7 +357,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   if (recordingSnapshot.scope !== deviceScope) {
     setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
   }
-  // Whether this server reports the display orientation, and its last report. Null until the
+  // Whether this server reports the display pose, and its last report. Null until the
   // first `/api` answer for this device.
   const [orientationReport, setOrientationReport] = useState<{
     scope: string;
@@ -1010,8 +1010,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             ? current
             : nextViewerTransports,
         );
-        const reports = info.orientation !== undefined;
-        const orientation = parseAndroidOrientation(info.orientation);
+        const reports = info.pose !== undefined;
+        const orientation = parseAndroidOrientation(info.pose);
         setOrientationReport((current) =>
           current?.scope === deviceScope &&
           current.reports === reports &&
@@ -2310,6 +2310,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     orientation,
     orientationPending,
     orientationError,
+    orientationUnavailable: null,
     setOrientation,
     screenshot,
     appearance,
