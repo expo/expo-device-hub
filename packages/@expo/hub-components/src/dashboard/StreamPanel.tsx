@@ -21,6 +21,7 @@ import {
 import { MOBILE_CORNER_BUTTON_TOP } from "./cornerButtons";
 import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
+import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
 import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
@@ -160,6 +161,8 @@ export function StreamPanel({
     observer.observe(element);
     return () => observer.disconnect();
   }, [viewport.mobile]);
+  // PhoneFrame also knows whether the 3D model is loaded; until then the pill says Loading too.
+  const [screenLoading, setScreenLoading] = useState(() => deviceScreenLoading(client));
   const captureScreenshot = useScreenshotToast(client, device.name);
   // Leave presentation in the same update that opens the inspector, restoring its
   // sibling interactivity before the Clipboard section can take focus.
@@ -320,6 +323,7 @@ export function StreamPanel({
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
+            onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (
             <div
@@ -339,7 +343,7 @@ export function StreamPanel({
               <DeviceTitle
                 key={device.id}
                 device={device}
-                status={client.status}
+                status={screenLoading ? "connecting" : client.status}
                 recording={client.screenRecording}
               />
             </div>

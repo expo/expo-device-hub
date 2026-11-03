@@ -24,7 +24,7 @@ function renderFrame(
   return renderToStaticMarkup(
     <PhoneFrame
       device={device}
-      client={{ status, inputError } as DeviceClient}
+      client={{ status, inputError, framePresented: status === "streaming" } as DeviceClient}
       DeviceScreen={() => <video data-testid="live-media" />}
       displayScreen={() => null}
     />,

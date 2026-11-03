@@ -199,6 +199,8 @@ export function useWebRtcStream({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A transport retry is under way: the hook reconnects by itself, and `error` says why.
+  const [retrying, setRetrying] = useState(false);
   const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
@@ -253,6 +255,7 @@ export function useWebRtcStream({
     }
     setFailure(null);
     setError(null);
+    setRetrying(false);
   }, []);
 
   // A server restart can be known before ICE detects that the old peer is gone.
@@ -294,6 +297,7 @@ export function useWebRtcStream({
   useEffect(() => {
     if (!enabled || !offerUrl) return;
     setFailure(null);
+    setRetrying(false);
     if (typeof RTCPeerConnection === "undefined" || typeof RTCRtpReceiver === "undefined") {
       setStream(null);
       setStatsConnection(null);
@@ -382,6 +386,7 @@ export function useWebRtcStream({
     const failPermanently = (message: string) => {
       if (stopped || failing) return;
       failing = true;
+      setRetrying(false);
       setError(message);
       setFailure({ sessionId, kind: "permanent" });
       closePeer();
@@ -391,6 +396,7 @@ export function useWebRtcStream({
     const failCodec = () => {
       if (stopped || failing) return;
       failing = true;
+      setRetrying(false);
       closePeer();
       void closeRemoteSession().finally(() => {
         if (!stopped) setFailure({ sessionId, kind: "codec", codec });
@@ -408,6 +414,7 @@ export function useWebRtcStream({
       );
       requestKeyframe();
       setError(`${message} Retrying...`);
+      setRetrying(true);
       closePeer();
       void closeRemoteSession();
       retryTimer = window.setTimeout(() => {
@@ -684,6 +691,7 @@ export function useWebRtcStream({
     stream,
     failure,
     error,
+    retrying,
     markFrameDecoded,
     restart,
     streamStats,

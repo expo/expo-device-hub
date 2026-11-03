@@ -91,6 +91,11 @@ import {
   screenSizesEqual,
   simScreenSize,
 } from "./screen-config";
+import {
+  SCREEN_LOAD_TIMEOUT_MS,
+  useScreenPresentation,
+  useSessionStatus,
+} from "./screen-presentation";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -103,7 +108,6 @@ import { clearIosLocation, setIosLocation } from "./ios-location";
 import { fetchScreenshot } from "./screenshot";
 import { iosMessageForKeyboardInput } from "./keyboard";
 import {
-  type ConnectionStatus,
   type DeviceActivity,
   type DeviceAppearance,
   type DeviceClient,
@@ -168,6 +172,7 @@ import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
 import { useWebRtcStream, type WebRtcIceServer } from "./useWebRtcStream";
 import { presentedVideoFrameDelta } from "./video-frame-metadata";
+import { preserveVideoFrame } from "./video-frame-poster";
 import {
   type WebRtcCodec,
   type WebRtcStreamFailure,
@@ -189,6 +194,40 @@ import { WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+
+/** A new multipart request for the same MJPEG stream. */
+function freshStreamSrc(url: string): string {
+  return `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
+}
+
+/**
+ * Show `frame`'s picture behind `img` while `img` loads a new request: a
+ * browser clears an `<img>` when its `src` changes. Best effort.
+ */
+function bridgeMjpegFrame(img: HTMLImageElement, frame: HTMLImageElement): void {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = frame.naturalWidth;
+    canvas.height = frame.naturalHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.drawImage(frame, 0, 0);
+    const picture = canvas.toDataURL("image/jpeg");
+    if (!picture || picture === "data:,") return;
+    img.style.backgroundImage = `url("${picture}")`;
+    img.style.backgroundSize = "cover";
+    img.style.backgroundPosition = "center";
+  } catch {
+    // Without the bridge, the hand-over can show the empty surface briefly.
+  }
+}
+
+function clearMjpegBridge(img: HTMLImageElement | null): void {
+  if (!img?.style?.backgroundImage) return;
+  img.style.backgroundImage = "";
+  img.style.backgroundSize = "";
+  img.style.backgroundPosition = "";
+}
 const DEVICE_SETTINGS_POLL_MS = 5000;
 const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
 const ACTIVITY_STALE_MS = 8000;
@@ -434,8 +473,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     useDeviceSettingsReadStatus(connectionScope);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
   // A refusal stays visible until server admission confirms recovery.
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
@@ -464,6 +501,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } | null>(null);
   const connection = resolvedConfig?.key === connectionScope ? resolvedConfig : null;
   const config = connection?.config ?? null;
+  // @ref LLP 0015#temporary-drops — a helper restart keeps the stream mode and the device it showed
+  // While a helper restarts, `/api` has no config for the same connection. The
+  // last one still names the device, its transport, and its 3D model, so the
+  // screen keeps its surface and media element instead of loading again.
+  const lastConfigRef = useRef<{ scope: string | null; config: ResolvedConfig } | null>(null);
+  if (config) lastConfigRef.current = { scope: connectionScope, config };
+  const knownConfig =
+    config ??
+    (lastConfigRef.current?.scope === connectionScope ? lastConfigRef.current.config : null);
+  // The helper's screen config goes with it. The view keeps the device's last
+  // one until the replacement helper reports its own; a different device never
+  // inherits it, so its hinge state cannot classify the next simulator.
+  const screenOwner = JSON.stringify([connectionScope, knownConfig?.device ?? null]);
+  const lastScreenRef = useRef<{ owner: string; screen: SimScreenConfig } | null>(null);
+  const screenOwnerRef = useRef<{ owner: string; stale: SimScreenConfig | null }>({
+    owner: screenOwner,
+    stale: null,
+  });
+  if (screenOwnerRef.current.owner !== screenOwner) {
+    // This render still holds the previous owner's config, until the helper effect clears it.
+    screenOwnerRef.current = { owner: screenOwner, stale: screen };
+    lastScreenRef.current = null;
+  }
+  if (screen && screen !== screenOwnerRef.current.stale) {
+    lastScreenRef.current = { owner: screenOwner, screen };
+  }
+  const viewScreen =
+    screen ?? (lastScreenRef.current?.owner === screenOwner ? lastScreenRef.current.screen : null);
   const activityScope = active
     ? JSON.stringify([
         baseUrl,
@@ -482,9 +547,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
   const configUpdatesReadyRef = useRef(false);
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
+  const knownStreamCapabilities = knownConfig
+    ? iosStreamCapabilities(knownConfig.initialStreamSettings)
+    : null;
   // Preserve supported viewer choices; map unavailable ones to the server's transport.
-  const streamMode = streamCapabilities
-    ? resolveDeviceStreamMode(requestedStreamMode, streamCapabilities.modeAvailability)
+  const streamMode = knownStreamCapabilities
+    ? resolveDeviceStreamMode(requestedStreamMode, knownStreamCapabilities.modeAvailability)
     : requestedStreamMode;
   // @ref LLP 0013#shared-ios-control-channel — one channel per exec-ws identity, so a null config keeps it open
   // Exec-ws details outlive a null config, so its subscriptions can await a replacement helper.
@@ -595,6 +663,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  // The flat MJPEG <img>, so its stream effect follows a replaced element.
+  const [mjpegImageElement, setMjpegImageElement] = useState<HTMLImageElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>("h264");
@@ -616,11 +686,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Before native capability metadata arrives, recognize the Duo by Xcode's
   // DeviceKit chrome identifiers (phone15 is the cover profile and phone14 the
   // inner display variant) or by its name.
-  const currentDeviceId = config?.device ?? targetDevice;
+  const currentDeviceId = knownConfig?.device ?? targetDevice;
   const deviceName = devices.find((device) => device.id === currentDeviceId)?.name;
-  const chromeIdentifier = config?.chrome?.identifier;
+  const chromeIdentifier = knownConfig?.chrome?.identifier;
   const isDuo =
-    screen?.supportsHingeAngle === true ||
+    viewScreen?.supportsHingeAngle === true ||
     chromeIdentifier === "phone14" ||
     chromeIdentifier === "phone15" ||
     /\biphone\s+duo\b/i.test(deviceName ?? "");
@@ -628,21 +698,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // 3D model shows them head-on. Other devices keep the Hub's calibrated shape.
   const displayCorners = useMemo<DisplayCornerRadii | null>(
     () =>
-      isDuo && config?.chrome
+      isDuo && knownConfig?.chrome
         ? displayCornerRadii(
-            displayChromeForScreen(config.chrome, screen?.screenId),
-            displayClipOrientation(screen),
+            displayChromeForScreen(knownConfig.chrome, viewScreen?.screenId),
+            displayClipOrientation(viewScreen),
           )
         : null,
-    [isDuo, config?.chrome, screen],
+    [isDuo, knownConfig?.chrome, viewScreen],
   );
   // Consumers get the platform-neutral screen. serve-sim's hinge fields and
   // display IDs stay here, and a hinge move alone keeps the same object.
   const publicScreenRef = useRef<ScreenSize | null>(null);
   const publicScreen = useMemo(() => {
-    const next = screen ? simScreenSize(screen, isDuo) : null;
+    const next = viewScreen ? simScreenSize(viewScreen, isDuo) : null;
     return screenSizesEqual(publicScreenRef.current, next) ? publicScreenRef.current : next;
-  }, [screen, isDuo]);
+  }, [viewScreen, isDuo]);
   publicScreenRef.current = publicScreen;
   // Elements a consumer attached through `displays`, by the kind each was attached as.
   const [panelElements, setPanelElements] = useState<
@@ -650,6 +720,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   >({ 1: null, 3: null });
   // The consumer streams the displays itself, so the flat stream parks meanwhile.
   const displayStreaming = isDuo && (panelElements[1] !== null || panelElements[3] !== null);
+  // @ref LLP 0015#screen-sessions — a new device, server, token, surface, or media element loads again
+  // Without a requested device, `/api` picks one; another pick is another session.
+  const screenSessionKey = connectionScope
+    ? JSON.stringify([
+        connectionScope,
+        knownConfig?.device ?? targetDevice,
+        displayStreaming ? "displays" : "flat",
+        useWebRtc ? "video" : useAvcc ? "canvas" : "img",
+      ])
+    : null;
+  const { status, setStatus, error, setError } = useSessionStatus(screenSessionKey);
+  const screenSessionKeyRef = useRef(screenSessionKey);
+  useLayoutEffect(() => {
+    screenSessionKeyRef.current = screenSessionKey;
+  }, [screenSessionKey]);
   const [hingePending, setHingePending] = useState(false);
   const [hingeError, setHingeError] = useState<string | null>(null);
   // The requested state, shown until its acknowledgement and matching config arrive.
@@ -690,7 +775,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, []);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   // @ref LLP 0004#live-pose-observation — the native observation wins over the last command, so a fold made in the Simulator shows
-  const hingeScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
+  const hingeScreen = useMemo(
+    () => (viewScreen ? observedScreenConfig(viewScreen) : null),
+    [viewScreen],
+  );
   const previewHingeAngle = hingePreview?.hingeAngle ?? hingeScreen?.hingeAngle;
   const previewHingePose = hingePreview ? hingePreview.hingePose : hingeScreen?.hingePose;
   // A pending angle or preset releases Table Mode, so the preview wins over a
@@ -708,11 +796,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const activeScreenId = duoIntendedScreen(
     previewHingeAngle,
     electedPose,
-    screen?.screenId,
+    viewScreen?.screenId,
     knownFaceDown ? previewFaceDown : null,
   );
   // Like serve-sim, fold controls show once the helper reports hinge support or an angle.
-  const hingeReported = screen?.supportsHingeAngle ?? screen?.hingeAngle !== undefined;
+  const hingeReported = viewScreen?.supportsHingeAngle ?? viewScreen?.hingeAngle !== undefined;
   const foldCapabilities = useMemo<DeviceFoldCapabilities>(
     () =>
       isDuo && hingeReported
@@ -736,18 +824,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
   const screenRef = useRef<SimScreenConfig | null>(null);
-  useEffect(() => {
+  // Layout effects, so an input event right after a paint already maps with the new screen.
+  useLayoutEffect(() => {
     screenRef.current = screen;
   }, [screen]);
+  // @ref LLP 0015#temporary-drops — input maps with the screen the view shows, also a kept one
+  // Pointer input is measured on the shown frame, so it maps back with the
+  // same orientation: the helper's config, or the kept one while a helper restarts.
+  const viewScreenRef = useRef<SimScreenConfig | null>(null);
+  useLayoutEffect(() => {
+    viewScreenRef.current = viewScreen;
+  }, [viewScreen]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
-
-  const applyStreamSrc = useCallback(() => {
-    const img = imgRef.current;
-    const url = streamUrlRef.current;
-    if (!img || !url) return;
-    img.src = `${url}${url.includes("?") ? "&" : "?"}t=${Date.now()}`;
-  }, []);
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
@@ -756,23 +845,24 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setWebRtcVideoElement(videoRef.current);
         canvasRef.current = null;
         imgRef.current = null;
+        setMjpegImageElement(null);
       } else if (useAvcc) {
         canvasRef.current = (el as HTMLCanvasElement) ?? null;
         videoRef.current = null;
         setWebRtcVideoElement(null);
         imgRef.current = null;
+        setMjpegImageElement(null);
       } else {
-        // The stream effect may have started before this element attached, so
-        // only here can a detached <img> stop its multipart request.
-        if (imgRef.current && imgRef.current !== el) imgRef.current.removeAttribute("src");
         imgRef.current = (el as HTMLImageElement) ?? null;
         canvasRef.current = null;
         videoRef.current = null;
         setWebRtcVideoElement(null);
-        if (el) applyStreamSrc();
+        // The stream effect starts the attached <img>'s request and stops a
+        // detached one's, so the same <img> attached again keeps its stream.
+        setMjpegImageElement(imgRef.current);
       }
     },
-    [applyStreamSrc, useAvcc, useWebRtc],
+    [useAvcc, useWebRtc],
   );
 
   // Every helper-socket message goes through here so a brief reconnect queues
@@ -825,7 +915,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const sendTouch = useCallback(
     (sample: TouchSample) => {
       if (!ownsInput() || dropsDisplayInput("touch", sample.display, sample.phase)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
 
       let displayEdge: number | undefined;
       if (sample.phase === "begin") {
@@ -858,7 +948,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const sendMultiTouch = useCallback(
     (sample: MultiTouchSample) => {
       if (dropsDisplayInput("multi", sample.display, sample.phase)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
       const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
       const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
       sendWs(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
@@ -875,7 +965,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!Number.isFinite(sample.dx) || !Number.isFinite(sample.dy)) return;
       if (sample.dx === 0 && sample.dy === 0) return;
       if (!isNativeDisplay(sample.display)) return;
-      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
       const delta = rawDeltaForDisplayDelta(orientation, sample.dx, sample.dy);
       const anchor = rawPointForDisplayPoint(orientation, sample.x, sample.y);
       sendWs(WS_MSG_SCROLL, { dx: delta.dx, dy: delta.dy, x: anchor.x, y: anchor.y });
@@ -1516,7 +1606,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (refreshConfigRef.current === refresh) refreshConfigRef.current = null;
       if (applyPreviewConfigRef.current === applyConfig) applyPreviewConfigRef.current = null;
     };
-  }, [active, baseUrl, targetDevice, setInitialWebRtcCodec, sessionFetch, token, settleRead]);
+  }, [
+    active,
+    baseUrl,
+    targetDevice,
+    setInitialWebRtcCodec,
+    sessionFetch,
+    token,
+    settleRead,
+    setError,
+    setStatus,
+  ]);
 
   // A replacement helper/session at the same URL still needs new video readers.
   const videoSessionKey = config
@@ -1543,11 +1643,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setFps((previous) => (previous === next ? previous : next));
   }, []);
 
+  // The stream this hook attached to the flat video, and its screen session.
+  const webRtcAttachedRef = useRef<{
+    video: HTMLVideoElement;
+    stream: MediaStream;
+    session: string | null;
+  } | null>(null);
+  // @ref LLP 0015#temporary-drops — as on Android, a reconnect keeps the last frame as a poster
+  const preserveWebRtcFrame = useCallback(() => {
+    const video = videoRef.current;
+    const attached = webRtcAttachedRef.current;
+    // Another session's frame must never stay on this surface.
+    if (
+      !video ||
+      !video.srcObject ||
+      attached?.video !== video ||
+      attached.stream !== video.srcObject ||
+      attached.session !== screenSessionKeyRef.current
+    )
+      return;
+    if (preserveVideoFrame(video)) video.srcObject = null;
+  }, []);
+
   // ── WebRTC with codec retries, confined to the advertised transport. ──
   const {
     stream: webRtcStream,
     failure: webRtcFailure,
     error: webRtcError,
+    retrying: webRtcRetrying,
     markFrameDecoded: markWebRtcFrameDecoded,
     restart: restartWebRtc,
     streamStats: flatStreamStats,
@@ -1563,6 +1686,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     fetchImpl: videoFetch,
     transportLocked: streamTransportLocked,
     raiseH264Level: true,
+    onBeforeDisconnect: preserveWebRtcFrame,
   });
   // Statistics come from the stream on screen: the flat stream, or the active
   // display while the consumer streams the displays.
@@ -1639,7 +1763,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   useEffect(() => {
     if (!useWebRtc || displayStreaming) return;
-    if (webRtcError || webRtcCodecsExhausted) {
+    // A transport retry reconnects by itself, so it is not a failure to show.
+    if ((webRtcError && !webRtcRetrying) || webRtcCodecsExhausted) {
       setStatus("error");
       setError(
         webRtcError ??
@@ -1655,16 +1780,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     useWebRtc,
     displayStreaming,
     webRtcError,
+    webRtcRetrying,
     webRtcStream,
     webRtcCodecsExhausted,
     streamTransportLocked,
+    setError,
+    setStatus,
   ]);
 
   // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — surface remounts keep the peer
   useEffect(() => {
     if (!useWebRtc) return;
     const video = webRtcVideoElement;
-    if (!video) return;
+    // A pending negotiation leaves the last frame, or its poster, in place.
+    if (!video || !webRtcStream) return;
     let stopped = false;
     let firstFrame = true;
     let frameCallback = 0;
@@ -1684,6 +1813,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       markWebRtcFrameDecoded(presentedFrameDelta);
       if (firstFrame) {
         firstFrame = false;
+        video.removeAttribute("poster");
         setStatus("streaming");
         setError(null);
       }
@@ -1708,14 +1838,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
 
     video.srcObject = webRtcStream;
-    if (webRtcStream) {
-      const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
-      if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
-      else video.addEventListener("timeupdate", onTimeUpdate);
-      video.addEventListener("loadeddata", onLoadedData, { once: true });
-      document.addEventListener("visibilitychange", onVisibilityChange);
-      void video.play().catch(() => {});
-    }
+    webRtcAttachedRef.current = {
+      video,
+      stream: webRtcStream,
+      session: screenSessionKeyRef.current,
+    };
+    const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === "function";
+    if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+    else video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("loadeddata", onLoadedData, { once: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void video.play().catch(() => {});
 
     return () => {
       stopped = true;
@@ -1725,15 +1858,40 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
         video.cancelVideoFrameCallback(frameCallback);
       }
+    };
+  }, [
+    useWebRtc,
+    webRtcStream,
+    webRtcVideoElement,
+    markWebRtcFrameDecoded,
+    onAvccFrame,
+    setError,
+    setStatus,
+  ]);
+
+  // Detach the media only when this surface stops showing WebRTC or a new
+  // screen session starts on it; a lost stream alone keeps its last frame.
+  useEffect(() => {
+    if (!useWebRtc) return;
+    const video = webRtcVideoElement;
+    if (!video) return;
+    return () => {
+      video.removeAttribute("poster");
       video.srcObject = null;
     };
-  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded, onAvccFrame]);
+  }, [useWebRtc, webRtcVideoElement, screenSessionKey]);
 
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
+  // The fallback is about this browser and this device's stream, so a
+  // replacement helper for the same device (a new pid) keeps it, as does the
+  // gap while that helper starts.
+  const avccFallbackScope = knownConfig
+    ? JSON.stringify([knownConfig.url, knownConfig.device])
+    : null;
   useEffect(() => {
     dispatchAvccFallback("reset");
     setFps(0);
-  }, [streamMode, videoSessionKey, config?.webRtcCodec]);
+  }, [streamMode, avccFallbackScope, knownConfig?.webRtcCodec]);
 
   useEffect(() => {
     if (!useAvcc || !config?.url || displayStreaming) return;
@@ -1746,6 +1904,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     enabled: active && useAvcc && !!config && !displayStreaming,
     canvasRef,
     fetchImpl: videoFetch,
+    // Each read starts a gap until its first frame; the canvas keeps the last one.
+    onConnecting: () => setStatus("connecting"),
     onFirstFrame: () => {
       setStatus("streaming");
       setError(null);
@@ -1770,23 +1930,56 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── MJPEG video (<img>) ──
   const streamUrl = useAvcc || useWebRtc || displayStreaming ? null : (config?.streamUrl ?? null);
+  // An unmount stops the visible request; a new config for the same screen may keep its frame.
+  const unmountedRef = useRef(false);
+  useLayoutEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+  // The stream that the MJPEG effect last started. A replaced <img> for the
+  // same stream keeps the status until the new element paints or fails.
+  const mjpegStreamRef = useRef<string | null>(null);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
+      mjpegStreamRef.current = null;
       return;
     }
     streamUrlRef.current = streamUrl;
-    setStatus("connecting");
-    setError(null);
+    const stream = JSON.stringify([streamUrl, videoSessionKey]);
+    if (mjpegStreamRef.current !== stream) {
+      mjpegStreamRef.current = stream;
+      setStatus("connecting");
+      setError(null);
+    }
 
     let cancelled = false;
     let settled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const img = imgRef.current;
+    // A request that loads off screen while the visible <img> keeps its last frame.
+    let probe: HTMLImageElement | null = null;
+    // After a failed request, the frame on screen is old until a new request paints.
+    let failed = false;
+    // A retry's frame behind the visible <img>, until that <img> paints its own.
+    let bridging: { target: HTMLImageElement; sawEmpty: boolean; until: number } | null = null;
+    const session = screenSessionKeyRef.current;
+    // The effect follows this element; a replaced <img> starts it again.
+    const img = mjpegImageElement;
+
+    const stopProbe = () => {
+      if (!probe) return;
+      probe.onload = null;
+      probe.onerror = null;
+      probe.removeAttribute("src");
+      probe = null;
+    };
 
     const markStreaming = () => {
-      if (cancelled || settled) return;
-      const el = imgRef.current;
+      // While a probe loads, or after a failure, the visible frame is the old one.
+      if (cancelled || settled || probe || failed) return;
+      const el = img;
       if (!el || el.naturalWidth === 0 || el.naturalHeight === 0) return;
       settled = true;
       setStatus("streaming");
@@ -1802,36 +1995,101 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         );
       }
     };
+    const scheduleRetry = () => {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!cancelled) load();
+      }, RECONNECT_MS);
+    };
+    // @ref LLP 0015#temporary-drops — a retry loads off screen, so a failed request never replaces the last frame
+    const load = () => {
+      const visible = img;
+      const url = streamUrlRef.current;
+      if (!visible || !url) return;
+      // An <img> without a frame has nothing to keep; a detached image needs `Image`.
+      if (!(visible.complete && visible.naturalWidth > 0) || typeof Image === "undefined") {
+        // The new request paints from an empty element, so its frame is new.
+        failed = false;
+        visible.src = freshStreamSrc(url);
+        return;
+      }
+      stopProbe();
+      const next = freshStreamSrc(url);
+      const candidate = new Image();
+      probe = candidate;
+      candidate.onload = () => handOver(candidate, visible, next);
+      candidate.onerror = () => {
+        if (cancelled || probe !== candidate) return;
+        stopProbe();
+        scheduleRetry();
+      };
+      candidate.src = next;
+    };
+    const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
+      if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
+      // The browser clears the visible <img> until its new request paints; the
+      // retry's frame stays behind it meanwhile.
+      bridgeMjpegFrame(visible, candidate);
+      bridging = { target: visible, sawEmpty: false, until: Date.now() + 5_000 };
+      stopProbe();
+      failed = false;
+      visible.src = next;
+      // The retry painted, so the stream is back.
+      settled = true;
+      setStatus("streaming");
+      setError(null);
+    };
+    // The <img> retries by itself, so a failed request is a gap, not an error.
     const onError = () => {
       if (cancelled) return;
       settled = false;
-      setStatus("error");
-      setError("Stream unavailable — retrying…");
-      retryTimer = setTimeout(() => {
-        if (!cancelled) applyStreamSrc();
-      }, RECONNECT_MS);
+      failed = true;
+      setStatus("connecting");
+      setError(null);
+      scheduleRetry();
     };
     img?.addEventListener("load", markStreaming);
     img?.addEventListener("error", onError);
-    applyStreamSrc();
-    const poll = setInterval(markStreaming, 400);
+    load();
+    // A multipart stream need not fire `load` per frame, so poll both elements.
+    const poll = setInterval(() => {
+      const candidate = probe;
+      if (candidate && img) handOver(candidate, img, candidate.src);
+      if (bridging) {
+        const { target } = bridging;
+        if (target.naturalWidth === 0) bridging.sawEmpty = true;
+        else if (bridging.sawEmpty || Date.now() > bridging.until) {
+          clearMjpegBridge(target);
+          bridging = null;
+        }
+      }
+      markStreaming();
+    }, 400);
 
     return () => {
       cancelled = true;
       clearInterval(poll);
       if (retryTimer) clearTimeout(retryTimer);
+      stopProbe();
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
-      // A consumer that streams the displays may have unmounted the flat <img>
-      // already, which nulls the ref, so stop the multipart request on the
-      // element this effect started.
-      img?.removeAttribute("src");
-      imgRef.current?.removeAttribute("src");
+      clearMjpegBridge(bridging?.target ?? null);
+      // A helper restart for the same screen keeps the last frame. A detached
+      // or replaced <img>, another screen session, or an unmount stops the
+      // multipart request on the element this effect started.
+      if (
+        imgRef.current !== img ||
+        unmountedRef.current ||
+        screenSessionKeyRef.current !== session
+      ) {
+        img?.removeAttribute("src");
+      }
       // The helper's pushed config outlives a transport switch.
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);
     };
-  }, [streamUrl, videoSessionKey, applyStreamSrc]);
+  }, [streamUrl, videoSessionKey, mjpegImageElement, setError, setStatus]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
@@ -2044,12 +2302,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [hingePreview, hingePending, screen, emitHingeEvent]);
 
+  const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
   useEffect(() => {
     // Also learn poses applied outside this browser. An older queued reply
     // must not replace the orientation chosen by the latest local request.
     // Rotate clears the known native physical pose. Ignore an older
     // preset acknowledgement until native reports that its pose was cleared.
-    const pose = hingeScreen?.hingePose;
+    const pose = observedScreen?.hingePose;
     const previousPose = observedPoseRef.current;
     if (hingePending || !hingePreview) observedPoseRef.current = pose;
     if (orientationOverride || hingePreview || hingePending) return;
@@ -2058,7 +2317,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (pose === previousPose && physicalPose !== undefined) return;
       setPhysicalPose(pose);
       sentHingePoseRef.current = pose;
-    } else if (duoPhysicalPoseChanged(physicalPose, hingeScreen?.physicalOrientation)) {
+    } else if (duoPhysicalPoseChanged(physicalPose, observedScreen?.physicalOrientation)) {
       // Another client turned the device over without a preset.
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
@@ -2067,8 +2326,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientationOverride,
     hingePreview,
     hingePending,
-    hingeScreen?.hingePose,
-    hingeScreen?.physicalOrientation,
+    observedScreen?.hingePose,
+    observedScreen?.physicalOrientation,
     physicalPose,
   ]);
 
@@ -2149,7 +2408,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setStatus(panelStreaming ? "streaming" : "connecting");
       setError(null);
     }
-  }, [displayStreaming, panelError, panelStreaming]);
+  }, [displayStreaming, panelError, panelStreaming, setError, setStatus]);
   useEffect(() => {
     if (!displayStreaming) return;
     return () => {
@@ -2157,7 +2416,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setError(null);
       setFps(0);
     };
-  }, [displayStreaming]);
+  }, [displayStreaming, setError, setStatus]);
 
   const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;
@@ -2688,15 +2947,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     ],
   );
 
+  // iOS reconnects until a real error, so a loaded screen gets the first load's limit too.
+  const presentation = useScreenPresentation(screenSessionKey, status, error, {
+    dropTimeoutMs: SCREEN_LOAD_TIMEOUT_MS,
+  });
+
   return {
     platform: "ios",
-    status,
-    error,
+    status: presentation.status,
+    error: presentation.error,
+    framePresented: presentation.framePresented,
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
     screen: publicScreen,
     fold,
     displays,
-    deviceModelUrl: isDuo ? (config?.deviceKitModelUrl ?? null) : null,
+    deviceModelUrl: isDuo ? (knownConfig?.deviceKitModelUrl ?? null) : null,
     displayCorners,
     fps,
     devices,

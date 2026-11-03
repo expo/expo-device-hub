@@ -3,27 +3,40 @@
  * serve-sim's `src/client/components/duo-model-view.tsx` (serve-sim at 3dc61286e, #383).
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { SCREEN_LOAD_TIMEOUT_MS, useVisibleTimeout } from "@expo/hub-client";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 
+import { bg, border, radius, text, textSize } from "../theme/tokens";
 import { createDuoScene, type DuoSceneState } from "./duo-scene";
 import { DuoHingeHandle } from "./DuoHingeHandle";
+
+/** Xcode's model: still loading, loaded into the scene, or unavailable (missing, broken, or too slow). */
+export type DuoModelStatus = "loading" | "ready" | "unavailable";
 
 export interface DuoModelViewProps extends DuoSceneState {
   /** The displays' elements. They stay mounted while their frames texture the model. */
   children: ReactNode;
+  onStatusChange?: (status: DuoModelStatus) => void;
 }
 
-const STATUS_STYLE: CSSProperties = {
+const NOTICE_STYLE: CSSProperties = {
+  ...textSize.xs,
   position: "absolute",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
+  left: 16,
+  right: 16,
+  bottom: 8,
   padding: "6px 12px",
-  borderRadius: 8,
-  backgroundColor: "rgba(0, 0, 0, 0.55)",
-  color: "rgba(255, 255, 255, 0.85)",
-  fontSize: 12,
-  fontFamily: "var(--expo-font-mono)",
+  borderRadius: radius.md,
+  border: `1px solid ${border.default}`,
+  backgroundColor: bg.default,
+  color: text.secondary,
   textAlign: "center",
   pointerEvents: "none",
 };
@@ -36,7 +49,29 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
   const oppositeHingeHandle = useRef<HTMLDivElement>(null);
   const latest = useRef<DuoSceneState>(props);
   latest.current = props;
-  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
+  const [status, setStatus] = useState<DuoModelStatus>("loading");
+  const onStatusChange = useRef(props.onStatusChange);
+  onStatusChange.current = props.onStatusChange;
+  useEffect(() => {
+    onStatusChange.current?.(status);
+  }, [status]);
+
+  // A timeout before the scene is ready wins, and a scene error at any time
+  // falls back to the flat displays for good.
+  const statusRef = useRef<DuoModelStatus>("loading");
+  const ready = useCallback(() => {
+    if (statusRef.current !== "loading") return;
+    statusRef.current = "ready";
+    setStatus("ready");
+  }, []);
+  const unavailable = useCallback(() => {
+    if (statusRef.current === "unavailable") return;
+    statusRef.current = "unavailable";
+    setStatus("unavailable");
+    latest.current.onUnavailable?.();
+  }, []);
+  // @ref LLP 0015#errors — a model that does not load in time takes the 2D fallback instead of spinning
+  useVisibleTimeout(status === "loading", SCREEN_LOAD_TIMEOUT_MS, unavailable);
 
   useEffect(() => {
     if (!host.current || !source.current) return;
@@ -47,13 +82,10 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
       () => latest.current,
       {
         ready: () => {
-          if (!disposed) setStatus("ready");
+          if (!disposed) ready();
         },
         error: () => {
-          if (!disposed) {
-            setStatus("unavailable");
-            latest.current.onUnavailable?.();
-          }
+          if (!disposed) unavailable();
         },
       },
       { left: hingeHandle.current ?? undefined, right: oppositeHingeHandle.current ?? undefined },
@@ -62,7 +94,7 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
       disposed = true;
       scene.dispose();
     };
-  }, []);
+  }, [ready, unavailable]);
 
   const angle = props.angle ?? (props.streamConfig?.screenId === 1 ? 0 : 180);
   const onHingeAngleChange = status === "ready" ? props.onHingeAngleChange : undefined;
@@ -112,31 +144,8 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
         angle={angle}
         onChange={onHingeAngleChange}
       />
-      {status === "loading" && (
-        <span
-          role="status"
-          style={{ ...STATUS_STYLE, left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
-        >
-          Loading iPhone Duo…
-        </span>
-      )}
-      {props.streamError && (
-        <span
-          role="alert"
-          style={{
-            ...STATUS_STYLE,
-            left: 16,
-            right: 16,
-            bottom: 16,
-            backgroundColor: "rgba(0, 0, 0, 0.9)",
-            color: "#fca5a5",
-          }}
-        >
-          {props.streamError}
-        </span>
-      )}
       {status === "unavailable" && (
-        <span role="status" style={{ ...STATUS_STYLE, left: 16, right: 16, bottom: 8 }}>
+        <span role="status" style={NOTICE_STYLE}>
           3D preview unavailable. Showing the live display.
         </span>
       )}

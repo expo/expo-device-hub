@@ -50,7 +50,6 @@ export interface DuoSceneState {
   streamConfig?: DuoStreamConfig | null;
   hingeCommands?: DuoHingeCommands;
   onUnavailable?: () => void;
-  streamError?: string | null;
   cacheScreenOnFold?: boolean;
   sizeMode?: "physical" | "fill";
   onHingeAngleChange?: (angle: number) => void;

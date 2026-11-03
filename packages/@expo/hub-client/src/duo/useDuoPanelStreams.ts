@@ -134,6 +134,7 @@ function useDuoPanelStream(
     stream: webRtcStream,
     failure: webRtcFailure,
     error: webRtcError,
+    retrying: webRtcRetrying,
     markFrameDecoded,
     streamStats,
     setStreamStatsEnabled,
@@ -270,7 +271,8 @@ function useDuoPanelStream(
 
   return {
     streaming,
-    error: video ? webRtcError : null,
+    // A transport retry reconnects by itself, as on the flat stream.
+    error: video && !webRtcRetrying ? webRtcError : null,
     failure: video ? webRtcFailure : null,
     stats: video ? streamStats : null,
   };
