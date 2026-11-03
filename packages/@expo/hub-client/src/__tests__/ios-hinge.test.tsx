@@ -1205,6 +1205,55 @@ test("later configs without the observation do not extend a preview past 500 ms"
   expect(client().fold?.angle).toBe(160);
 });
 
+test("another viewer's hinge config does not cancel a preview's 500 ms", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  const open = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, observedDeviceState: open }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 120 }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  const command = { ...INNER_OPEN, hingeAngle: 120, hingePose: null };
+  await act(async () => socket.push(0x82, { ...command, observedDeviceState: open }));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+  // Another viewer sets 100°, so the config no longer matches this preview.
+  await act(async () =>
+    socket.push(0x82, {
+      ...command,
+      hingeAngle: 100,
+      observedDeviceState: { ...open, hingeAngle: 100 },
+    }),
+  );
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: false });
+  expect(client().fold?.angle).toBe(100);
+});
+
+test("a new local command restarts the 500 ms from its own config", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  const open = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, observedDeviceState: open }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 120 }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  const command = { ...INNER_OPEN, hingeAngle: 120, hingePose: null };
+  await act(async () => socket.push(0x82, { ...command, observedDeviceState: open }));
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+  await act(async () => client().fold!.setControl({ control: "angle", value: 140 }));
+  await act(async () => socket.push(0x90, { requestId: 2, ok: true }));
+  await act(async () =>
+    socket.push(0x82, { ...command, hingeAngle: 140, observedDeviceState: open }),
+  );
+  // The first command's 500 ms has passed, but the second one's has not.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+  expect(events.at(-1)?.type).toBe("acknowledged");
+  expect(client().fold?.angle).toBe(140);
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 250)));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: false });
+  expect(client().fold?.angle).toBe(180);
+});
+
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();

@@ -2316,15 +2316,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     emitHingeEvent({ type: "confirmed", observed: true });
   }, [hingePreview, hingeObserved, emitHingeEvent]);
   // As serve-sim's client does, a preview whose observation does not arrive
-  // ends 500 ms after its command's config, which later configs do not extend.
+  // ends 500 ms after its command's config first matched. The deadline is
+  // latched to that preview, so a later config, such as another viewer's,
+  // neither cancels nor extends it; a new command or a reset replaces the
+  // preview and so clears it.
+  const [hingeDeadlinePreview, setHingeDeadlinePreview] = useState<HingeControlState | null>(null);
   useEffect(() => {
-    if (!hingeCommanded || hingeObserved) return;
+    if (hingeCommanded) setHingeDeadlinePreview(hingePreview);
+  }, [hingeCommanded, hingePreview]);
+  useEffect(() => {
+    if (!hingePreview || hingeDeadlinePreview !== hingePreview) return;
     const timer = setTimeout(() => {
       setHingePreview(null);
       emitHingeEvent({ type: "confirmed", observed: false });
     }, 500);
     return () => clearTimeout(timer);
-  }, [hingePreview, hingeCommanded, hingeObserved, emitHingeEvent]);
+  }, [hingePreview, hingeDeadlinePreview, emitHingeEvent]);
 
   useEffect(() => {
     // Also learn poses applied outside this browser. An older queued reply
