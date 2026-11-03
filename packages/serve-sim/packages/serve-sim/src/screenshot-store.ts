@@ -67,6 +67,23 @@ export const ScreenshotDisplay = z.number().int().min(1).max(0xffff_ffff);
 export const SCREENSHOT_DISPLAY_CHANGED =
   "The active display kept changing. Retry the screenshot once the fold has finished.";
 
+/** Keep native pixels in memory until their panel identity has been validated. */
+export async function captureNativeScreenshotAsync(
+  display: number,
+  readActiveDisplay: (() => Promise<number>) | undefined,
+  capture: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
+  timeoutMs?: number,
+): Promise<Uint8Array> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const pixels = await capture(display, timeoutMs);
+    if (!readActiveDisplay) return pixels;
+    const current = await readActiveDisplay();
+    if (current === display) return pixels;
+    display = current;
+  }
+  throw new Error(SCREENSHOT_DISPLAY_CHANGED);
+}
+
 /** Same panel election and bounded retry for host actions and HTTP downloads. */
 export async function captureScreenshotFileAsync(
   p: {
@@ -78,23 +95,37 @@ export async function captureScreenshotFileAsync(
   readActiveDisplay?: () => Promise<number>,
   captureNative?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
 ): Promise<HostActionResult> {
+  if (captureNative && p.display !== undefined) {
+    let pixels: Uint8Array;
+    try {
+      pixels = await captureNativeScreenshotAsync(
+        p.display,
+        readActiveDisplay,
+        captureNative,
+        p.timeoutMs,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED)
+        return { stdout: "", stderr: SCREENSHOT_DISPLAY_CHANGED, exitCode: 1 };
+      throw error;
+    }
+    await writeFile(p.file, pixels);
+    return ok(p.file);
+  }
   let display = p.display;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const shot =
-      captureNative && display !== undefined
-        ? await writeFile(p.file, await captureNative(display, p.timeoutMs)).then(() => ok(p.file))
-        : await runInvocation({
-            file: "xcrun",
-            args: [
-              "simctl",
-              "io",
-              p.udid,
-              "screenshot",
-              ...(display === undefined ? [] : [`--display=${display}`]),
-              p.file,
-            ],
-            timeoutMs: p.timeoutMs,
-          });
+    const shot = await runInvocation({
+      file: "xcrun",
+      args: [
+        "simctl",
+        "io",
+        p.udid,
+        "screenshot",
+        ...(display === undefined ? [] : [`--display=${display}`]),
+        p.file,
+      ],
+      timeoutMs: p.timeoutMs,
+    });
     if (shot.exitCode !== 0 || !readActiveDisplay) return shot;
     const current = await readActiveDisplay();
     if (current === display) return shot;

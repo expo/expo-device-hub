@@ -69,6 +69,13 @@ const DeviceUdid = z
     /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
     "must be a simulator udid",
   );
+
+export const ScreenshotParams = z.object({
+  udid: Device,
+  fileName: ScreenshotName.optional(),
+  display: ScreenshotDisplay.optional(),
+  output: z.enum(["path", "binary"]).default("path"),
+});
 const CaptureRequestId = z
   .string()
   .max(64)
@@ -420,16 +427,10 @@ const ACTION_SCHEMAS = {
   "file.readBase64": z
     .object({ path: ConfinedPath })
     .meta({ description: "Download a file from the simulator host.", output: "base64" }),
-  "screenshot.capture": z
-    .object({
-      udid: Device,
-      fileName: ScreenshotName.optional(),
-      display: ScreenshotDisplay.optional(),
-    })
-    .meta({
-      description: "Take a screenshot of the active display, or the specified simctl display ID.",
-      output: "path",
-    }),
+  "screenshot.capture": ScreenshotParams.meta({
+    description: "Take a screenshot of the active display, or the specified simctl display ID.",
+    output: "path",
+  }),
   "screenshot.thumbnail": z.object({ fileName: ScreenshotName }).meta({ hidden: true }),
   "upload.append": z
     .object({
@@ -936,6 +937,8 @@ async function runProcedureAsync(
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
+      if (p.output === "binary")
+        throw new InvalidHostActionError("Binary screenshot output requires exec-ws.");
       let failure = "Could not resolve that simulator. Specify a booted simulator UDID.";
       try {
         const { resolveBootedDeviceAsync } = await import("./device");
