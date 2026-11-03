@@ -5,8 +5,8 @@
  * the edge of the model.
  *
  * `DUO_PANEL_FOR_DISPLAY` and `duoDisplayId` intentionally copy hub-client's
- * internal `duo/duo-fold.ts`, which hub-client does not export. Keep the two
- * copies the same.
+ * internal `duo/duo-fold.ts`, which hub-client does not export.
+ * `__tests__/duo-displays.test.ts` checks that the two copies match.
  */
 
 import { type DeviceDisplayId, type ScreenSize } from "@expo/hub-client";
