@@ -352,15 +352,46 @@ test("a readback that still lags a local preset does not undo its framing", asyn
   expect(client().hinge?.view).toEqual(laptopView);
 });
 
-test("an external preset leaves the view of a local rotation", async () => {
+test("a Rotate holds the view until it lands; then a preset from the Simulator frames the model", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
-  await act(async () => socket.push(0x82, COVER));
+  // The helper keeps the last command, Open, in the top-level fields throughout.
+  const open = {
+    ...INNER_OPEN,
+    physicalOrientation: "portrait",
+    observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false },
+  };
+  await act(async () => socket.push(0x82, open));
   await act(async () => client().rotate());
-  await act(async () => socket.push(0x82, { ...COVER, hingePose: null }));
   const rotatedView = client().hinge!.view;
-  await act(async () => socket.push(0x82, { ...INNER_OPEN, hingeAngle: 90, hingePose: "book" }));
+  // Before the rotation lands, an unchanged observation keeps the turned view.
+  await act(async () => socket.push(0x82, { ...open }));
   expect(client().hinge?.view).toEqual(rotatedView);
+  // The observation reports the turn, which no preset matches.
+  await act(async () =>
+    socket.push(0x82, {
+      ...open,
+      observedDeviceState: {
+        hingeAngle: 180,
+        physicalOrientation: "landscape-left",
+        tableMode: false,
+      },
+    }),
+  );
+  expect(client().hinge?.view).toEqual(rotatedView);
+  // The Simulator's own controls then select Laptop.
+  await act(async () =>
+    socket.push(0x82, {
+      ...open,
+      observedDeviceState: {
+        hingeAngle: 90,
+        physicalOrientation: "landscape-left",
+        tableMode: false,
+      },
+    }),
+  );
+  expect(client().hinge?.physicalPose).toBe("laptop");
+  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
 test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {

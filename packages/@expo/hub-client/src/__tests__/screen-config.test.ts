@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { observedScreenConfig, screenConfigsEqual } from "../screen-config";
+import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "../screen-config";
 
 describe("screenConfigsEqual", () => {
   const inner = { width: 2007, height: 2853, orientation: "portrait" as const, screenId: 3 };
@@ -99,5 +99,25 @@ describe("observedScreenConfig", () => {
     expect(shown.tableMode).toBeUndefined();
     expect(shown.hingePose).toBeUndefined();
     expect(shown.tableModeAvailable).toBeUndefined();
+  });
+});
+
+describe("isRotationReadback", () => {
+  const open = { width: 2007, height: 2853, hingeAngle: 180, hingePose: "open" as const };
+  const portrait = { hingeAngle: 180, physicalOrientation: "portrait" as const, tableMode: false };
+
+  test("reads the cleared command pose when the helper sends no observation", () => {
+    expect(isRotationReadback(open, undefined)).toBe(false);
+    expect(isRotationReadback({ ...open, hingePose: null }, undefined)).toBe(true);
+  });
+
+  test("reads the observation, though the command pose stays", () => {
+    const observed = { ...open, observedDeviceState: portrait };
+    expect(isRotationReadback(observed, "portrait")).toBe(false);
+    const turned = { ...portrait, physicalOrientation: "landscape-left" as const };
+    expect(isRotationReadback({ ...open, observedDeviceState: turned }, "portrait")).toBe(true);
+    // A turned Laptop is Book, a preset, yet the orientation shows the turn.
+    const book = { hingeAngle: 90, physicalOrientation: "portrait" as const, tableMode: false };
+    expect(isRotationReadback({ ...open, observedDeviceState: book }, "landscape-left")).toBe(true);
   });
 });

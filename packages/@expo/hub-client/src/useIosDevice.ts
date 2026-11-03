@@ -67,6 +67,7 @@ import {
 import {
   type HingeControlCommand,
   type HingeControlState,
+  type HingePhysicalOrientation,
   type HingePose,
   hingeControlState,
 } from "./hinge-control";
@@ -82,7 +83,7 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from "./orientation";
-import { observedScreenConfig, screenConfigsEqual } from "./screen-config";
+import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "./screen-config";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -631,8 +632,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
   // A local rotation cleared the native preset; ignore older preset acknowledgements.
   const [orientationOverride, setOrientationOverride] = useState(false);
-  // The view is a local rotation's until the next hinge command.
-  const rotatedViewRef = useRef(false);
+  // The observed physical orientation when the last local rotation was sent.
+  const rotationOrientationRef = useRef<HingePhysicalOrientation | undefined>(undefined);
   // The pose observed while no local command owned the hinge, or while one was
   // pending. A readback that still lags a local preset matches it.
   const observedPoseRef = useRef<HingePose | null | undefined>(undefined);
@@ -1038,7 +1039,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
-    rotatedViewRef.current = true;
+    const current = screenRef.current;
+    rotationOrientationRef.current = current
+      ? observedScreenConfig(current).physicalOrientation
+      : undefined;
     setOrientationOverride(true);
   }, []);
   // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
@@ -1105,7 +1109,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const { initialView } = duoRef.current;
     setHingeError(null);
     faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
-    rotatedViewRef.current = false;
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === "pose") {
@@ -1818,7 +1821,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             hasWsConfigRef.current = true;
             // A rotation clears the native named pose. Observe the received
             // config even when its values equal the previous React state.
-            if (c.hingePose === null && !hingePendingRef.current) setOrientationOverride(false);
+            // @ref LLP 0004#live-pose-observation — with a native observation, the observation says when the rotation landed
+            if (!hingePendingRef.current && isRotationReadback(c, rotationOrientationRef.current)) {
+              setOrientationOverride(false);
+            }
             setScreen((prev) => (screenConfigsEqual(prev, c) ? prev : c));
             return true;
           } catch {
@@ -1899,7 +1905,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     faceDownFramingRef.current = { saved: null, held: false };
     presetRestoreRef.current = null;
     sentHingePoseRef.current = undefined;
-    rotatedViewRef.current = false;
     observedPoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
@@ -1937,9 +1942,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (hingePending || !hingePreview) observedPoseRef.current = pose;
     if (orientationOverride || hingePreview || hingePending) return;
     if (pose) {
-      // @ref LLP 0004#live-pose-observation — an external preset frames the model as a local one does, unless a local rotation owns the view
+      // @ref LLP 0004#live-pose-observation — an external preset frames the model as a local one does, once a local rotation has landed
       if (pose === previousPose && physicalPose !== undefined) return;
-      if (physicalPose !== undefined && !(rotatedViewRef.current && physicalPose === null)) {
+      if (physicalPose !== undefined) {
         setDuoView(duoPresetView(pose));
         faceDownFramingRef.current = { saved: null, held: false };
       }
@@ -1950,7 +1955,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       // on connect; face-down framing below still turns it to the cover.
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
-      rotatedViewRef.current = false;
       setDuoView(null);
     }
   }, [

@@ -5,7 +5,7 @@
  * hinge move or a display switch visible even when the pixel size is unchanged.
  */
 
-import { observedHingeState } from "./hinge-control";
+import { type HingePhysicalOrientation, observedHingeState } from "./hinge-control";
 import { type ScreenSize } from "./types";
 
 export function screenConfigsEqual(a: ScreenSize | null, b: ScreenSize): boolean {
@@ -38,4 +38,22 @@ export function screenConfigsEqual(a: ScreenSize | null, b: ScreenSize): boolean
 export function observedScreenConfig(config: ScreenSize): ScreenSize {
   if (config.observedDeviceState === undefined) return config;
   return { ...config, ...observedHingeState(config.observedDeviceState) };
+}
+
+/**
+ * Whether a config shows that a local rotation reached the device. The helper
+ * keeps the last command's pose in the top-level fields, so with a native
+ * observation, the observation says it: the observed pose clears, or the
+ * observed orientation turns away from the one at the rotation.
+ */
+export function isRotationReadback(
+  config: ScreenSize,
+  orientationAtRotation: HingePhysicalOrientation | undefined,
+): boolean {
+  if (config.observedDeviceState === undefined) return config.hingePose === null;
+  const shown = observedScreenConfig(config);
+  return (
+    shown.hingePose === null ||
+    (shown.physicalOrientation !== undefined && shown.physicalOrientation !== orientationAtRotation)
+  );
 }
