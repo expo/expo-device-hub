@@ -133,7 +133,11 @@ export type FoldCommandEvent =
   | { type: "acknowledged"; command: FoldControlCommand; ok: boolean }
   /** The device reports the requested state, so the preview ends. */
   | { type: "confirmed" }
-  /** A command failed, so the client dropped every unconfirmed command, and `error` says why. */
+  /**
+   * A command failed, and `error` says why. After a failure from the device the
+   * client dropped every unconfirmed command. A command that
+   * `capabilities.fold` does not offer fails alone; other commands go on.
+   */
   | { type: "failed"; error: string }
   /**
    * The client left the helper session that owned the commands, for example
@@ -201,8 +205,8 @@ export interface DeviceFold {
   physical?: DeviceFoldPhysical;
   /**
    * Send a fold command that `capabilities.fold` offers. A command that it does
-   * not offer fails at once, as a failure from the device does: `error` says
-   * why, and `observe` gets `failed`.
+   * not offer never reaches the device: `error` says why, and `observe` gets
+   * `failed`. Commands already queued or sent go on.
    */
   setControl: (command: FoldControlCommand) => void;
   /**

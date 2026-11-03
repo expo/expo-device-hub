@@ -672,6 +672,16 @@ test("a command that capabilities.fold does not offer fails without reaching the
     tag: 0x10,
     payload: { requestId: 1, command: { control: "angle", value: 90 } },
   });
+  // A rejected command does not cancel the one already sent.
+  await act(async () => client().fold!.setControl({ control: "angle", value: 200 }));
+  expect(client().fold?.pending).toBe(true);
+  expect(client().fold?.angle).toBe(90);
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({
+    type: "acknowledged",
+    command: { control: "angle", value: 90 },
+    ok: true,
+  });
 });
 
 test("a submitted command names the display it elects; Table Mode and the hysteresis band do not", async () => {

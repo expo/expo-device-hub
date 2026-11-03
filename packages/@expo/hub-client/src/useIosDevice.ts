@@ -1216,8 +1216,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const command = { ...input };
       const { foldCapabilities } = duoRef.current;
       if (!foldCommandOffered(foldCapabilities, command)) {
-        hingeQueueRef.current?.clear();
-        failHingeCommands(`The device does not offer the fold command ${JSON.stringify(input)}.`);
+        // Only this command fails: a command already sent still gets its reply.
+        const message = `The device does not offer the fold command ${JSON.stringify(input)}.`;
+        setHingeError(message);
+        emitHingeEvent({ type: "failed", error: message });
         return;
       }
       setHingeError(null);
@@ -1236,7 +1238,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         replaceQueued: command.control === "pose",
       });
     },
-    [emitHingeEvent, failHingeCommands, endRotation],
+    [emitHingeEvent, endRotation],
   );
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
