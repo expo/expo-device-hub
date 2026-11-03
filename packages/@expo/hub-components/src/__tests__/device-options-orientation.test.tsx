@@ -30,6 +30,7 @@ test("a pick in the Orientation select calls client.setOrientation", async () =>
     status: "streaming",
     screenRecording: null,
     recordingControlsLocked: false,
+    orientationUnavailable: null,
     capabilities: { orientation: { orientations: ["portrait", "landscape_left"] } },
     screen: { width: 390, height: 844, orientation: "portrait" },
     orientation: "portrait",
@@ -50,7 +51,7 @@ test("a pick in the Orientation select calls client.setOrientation", async () =>
   expect(picks).toEqual(["landscape_left"]);
 });
 
-test("the Orientation row stays while a report briefly disagrees with the frame, and goes with the capability", async () => {
+test("the Orientation row follows the client's pose, not the frame, and goes with the capability", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("HTMLFormElement", class {});
   stubGlobal("window", {
@@ -64,6 +65,7 @@ test("the Orientation row stays while a report briefly disagrees with the frame,
     status: "streaming",
     screenRecording: null,
     recordingControlsLocked: false,
+    orientationUnavailable: null,
     capabilities: { orientation: { orientations: ["portrait", "landscape_left"] } },
     orientationPending: false,
     orientationError: null,
@@ -102,60 +104,6 @@ test("the Orientation row stays while a report briefly disagrees with the frame,
           capabilities: { orientation: false },
           screen: { width: 844, height: 390 },
           orientation: "landscape_left",
-        })}
-      />,
-    );
-  });
-  expect(hasRow()).toBe(false);
-});
-
-test("a pose reported by one device does not show the row for an older server's device after a Rotate", async () => {
-  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  stubGlobal("HTMLFormElement", class {});
-  stubGlobal("window", {
-    addEventListener() {},
-    removeEventListener() {},
-    setTimeout,
-    clearTimeout,
-  });
-  const client = (overrides: object) =>
-    ({
-      platform: "android",
-      status: "streaming",
-      screenRecording: null,
-      recordingControlsLocked: false,
-      orientationPending: false,
-      orientationError: null,
-      setOrientation: () => {},
-      deviceSettings: null,
-      deviceSettingsStatus: "idle",
-      deviceSettingsPending: new Set(),
-      ...overrides,
-    }) as unknown as DeviceClient;
-  const hasRow = () =>
-    renderer!.root.findAll((node) => node.props.ariaLabel === "Orientation").length > 0;
-  await act(async () => {
-    renderer = create(
-      <DeviceOptionsSection
-        deviceId="emulator-5554"
-        client={client({
-          capabilities: { orientation: { orientations: ["portrait", "landscape_left"] } },
-          screen: { width: 390, height: 844, orientation: "portrait" },
-          orientation: "portrait",
-        })}
-      />,
-    );
-  });
-  expect(hasRow()).toBe(true);
-  // Another device on an older server: it offers two poses, reports none, and a Rotate set a pick.
-  await act(async () => {
-    renderer!.update(
-      <DeviceOptionsSection
-        deviceId="emulator-5556"
-        client={client({
-          capabilities: { orientation: { orientations: ["portrait", "landscape_right"] } },
-          screen: { width: 390, height: 844 },
-          orientation: "landscape_right",
         })}
       />,
     );

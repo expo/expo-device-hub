@@ -1,12 +1,9 @@
 import { type ReactNode } from "react";
 
 import {
-  areRecordingControlsLocked,
-  type ConnectionStatus,
-  type DevicePlatform,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
-  type DeviceScreenRecordingStatus,
+  type DeviceOrientationUnavailableReason,
 } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
@@ -25,7 +22,7 @@ import {
   radius,
   text,
 } from "../primitives";
-import { rotationUnavailableReason } from "./rotation-availability";
+import { rotationUnavailableText } from "./rotation-availability";
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 16;
@@ -56,39 +53,6 @@ function ControlGroup({ children }: { children: ReactNode }) {
 }
 
 /**
- * The client's platform and connection status. On iOS, Rotate waits for a live stream, like
- * the Orientation select, so `status` is required whenever `platform` is given.
- */
-type StreamControlsRotation =
-  | { platform?: undefined; status?: ConnectionStatus }
-  | { platform: DevicePlatform; status: ConnectionStatus };
-
-type StreamControlsProps = StreamControlsRotation & {
-  /** Press the device Home button. */
-  onHome?: () => void;
-  /** Reload the running React Native/Expo bundle. */
-  onReload?: () => void;
-  /** Rotate the device. */
-  onRotate?: () => void;
-  /** Save a screenshot of the device (triggers a file download). */
-  onSave?: () => void;
-  /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
-  recording?: DeviceScreenRecordingStatus | null;
-  /** The client's `recordingControlsLocked`. Overrides the lock that `recording` implies. */
-  recordingControlsLocked?: boolean;
-  /** The clipboard actions the device offers. Each one shows only when the device has it. */
-  clipboard?: DeviceClipboardCapabilities;
-  /** Disable both clipboard actions while either is in flight. */
-  clipboardPending?: DeviceClipboardAction | null;
-  /** Paste the browser clipboard into the device app. */
-  onPaste?: () => void;
-  /** Copy the text selected in the device app to the browser clipboard. */
-  onCopy?: () => void;
-  /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
-  keyboard?: { open: boolean; onToggle: () => void };
-};
-
-/**
  * Controls under the device stream. Both platforms share one toolbar: a pill
  * with Save · Home · Reload, a pill with the Clipboard menu for a device with
  * clipboard support (Copy then Paste, as in serve-sim) and, on a phone, the
@@ -105,24 +69,35 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
-  platform,
-  status = "streaming",
-  recording = null,
-  recordingControlsLocked: clientLocked,
+  orientationUnavailable,
   clipboard = false,
   clipboardPending = null,
   onPaste,
   onCopy,
   keyboard,
-}: StreamControlsProps) {
-  // Callers that pass only `recording` keep the lock it implied before this prop existed.
-  const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
-  const rotateUnavailable = rotationUnavailableReason({
-    platform,
-    status,
-    recording,
-    recordingControlsLocked,
-  });
+}: {
+  /** Press the device Home button. */
+  onHome?: () => void;
+  /** Reload the running React Native/Expo bundle. */
+  onReload?: () => void;
+  /** Rotate the device. */
+  onRotate?: () => void;
+  /** Save a screenshot of the device (triggers a file download). */
+  onSave?: () => void;
+  /** The client's `orientationUnavailable`. Locks Rotate and picks the explanation while set. */
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
+  /** The clipboard actions the device offers. Each one shows only when the device has it. */
+  clipboard?: DeviceClipboardCapabilities;
+  /** Disable both clipboard actions while either is in flight. */
+  clipboardPending?: DeviceClipboardAction | null;
+  /** Paste the browser clipboard into the device app. */
+  onPaste?: () => void;
+  /** Copy the text selected in the device app to the browser clipboard. */
+  onCopy?: () => void;
+  /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
+  keyboard?: { open: boolean; onToggle: () => void };
+}) {
+  const rotateUnavailable = rotationUnavailableText(orientationUnavailable);
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (

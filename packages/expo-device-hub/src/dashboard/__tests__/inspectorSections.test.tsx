@@ -1213,43 +1213,36 @@ test("offers the client's orientations and shows the client's pose", () => {
   );
   expect(selectValue(picked, "Orientation")).toBe("Upside down");
 
-  // An older serve-emu takes two poses but reports none, so the select waits instead of guessing.
-  const unreported = renderToStaticMarkup(
+  // The client offers poses before it knows the shown one, so the select waits instead of guessing.
+  const unknownPose = renderToStaticMarkup(
     <LogSidebar
       client={{
         ...inspectorClient("android"),
-        capabilities: {
-          ...inspectorClient("android").capabilities,
-          orientation: { orientations: ["portrait", "landscape_right"] },
-        },
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
         screen: { width: 844, height: 390 },
       }}
     />,
   );
-  expect(unreported).not.toContain('aria-label="Orientation"');
+  expect(unknownPose).not.toContain('aria-label="Orientation"');
 
-  // After a Rotate on that server, the client shows the pick, but the device reported nothing.
-  const pickedUnreported = renderToStaticMarkup(
+  // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  const olderServer = renderToStaticMarkup(
     <LogSidebar
       client={{
         ...inspectorClient("android"),
-        capabilities: {
-          ...inspectorClient("android").capabilities,
-          orientation: { orientations: ["portrait", "landscape_right"] },
-        },
         screen: { width: 390, height: 844 },
         orientation: "landscape_right",
         orientationPending: true,
       }}
     />,
   );
-  expect(pickedUnreported).not.toContain('aria-label="Orientation"');
+  expect(olderServer).not.toContain('aria-label="Orientation"');
 
   const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
   expect(unsupported).not.toContain('aria-label="Orientation"');
 });
 
-test("disables the orientation select with the same reason as Rotate", () => {
+test("disables the orientation select with the client's reason, as Rotate does", () => {
   const ios = inspectorClient("ios");
   const client = {
     ...ios,
@@ -1259,16 +1252,17 @@ test("disables the orientation select with the same reason as Rotate", () => {
   } as const;
   for (const [overrides, reason] of [
     [{}, null],
+    [{ orientationUnavailable: "recording" }, "Rotation is unavailable while recording."],
     [
-      { recordingControlsLocked: true, screenRecording: "recording" },
-      "Rotation is unavailable while recording.",
-    ],
-    [
-      { recordingControlsLocked: true, screenRecording: "unknown" },
+      { orientationUnavailable: "recording-status-unknown" },
       "Rotation is unavailable until recording status is known.",
     ],
-    [{ status: "reconnecting" }, "Rotation is unavailable until the simulator stream is live."],
-    [{ platform: "android", status: "reconnecting" }, null],
+    [
+      { orientationUnavailable: "not-streaming" },
+      "Rotation is unavailable until the simulator stream is live.",
+    ],
+    // The dashboard follows the client's reason, not the status or recording it sees.
+    [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
   ] as const) {
     const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
     const select = selectMarkup(html, "Orientation");

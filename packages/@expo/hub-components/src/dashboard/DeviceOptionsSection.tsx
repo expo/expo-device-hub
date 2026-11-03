@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
-import { rotationUnavailableReason } from "./rotation-availability";
+import { rotationUnavailableText } from "./rotation-availability";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -110,15 +110,12 @@ export type DeviceFrameOption = {
  */
 export function DeviceOptionsSection({
   client,
-  deviceId,
   deviceFrame,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
-  /** The selected device, so what one device reported is not used for another. */
-  deviceId?: string;
   deviceFrame?: DeviceFrameOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
@@ -185,30 +182,10 @@ export function DeviceOptionsSection({
         orientationCapabilities.orientations.includes(value),
       )
     : [];
-  // @ref LLP 0013#orientation — the row waits for a reported pose, so older serve-emu servers never show it
-  // Shown once the selected device has reported a pose, so a Rotate on an older serve-emu server,
-  // which reports none, never shows the row. It stays while the report briefly disagrees with a
-  // turned frame, and is forgotten for another device or without an orientation capability.
-  // It shows the last pick at once, then the device's report. Rotate still works before that.
-  const reportedOrientation = client?.screen?.orientation;
-  const [poseReportedBy, setPoseReportedBy] = useState<{ deviceId: string | undefined } | null>(
-    null,
-  );
-  const poseReported = poseReportedBy !== null && poseReportedBy.deviceId === deviceId;
-  if (reportedOrientation && !poseReported) setPoseReportedBy({ deviceId });
-  if (!orientationCapabilities && poseReportedBy) setPoseReportedBy(null);
-  const currentOrientation =
-    poseReported || reportedOrientation
-      ? (client?.orientation ?? reportedOrientation ?? null)
-      : null;
-  const rotationUnavailable = client
-    ? rotationUnavailableReason({
-        platform: client.platform,
-        status: client.status,
-        recording: client.screenRecording,
-        recordingControlsLocked: client.recordingControlsLocked,
-      })
-    : undefined;
+  // The row shows the client's pose: the last pick at once, then the device's report. It waits
+  // until the client knows a pose; Rotate still works before that.
+  const currentOrientation = client?.orientation ?? null;
+  const rotationUnavailable = rotationUnavailableText(client?.orientationUnavailable ?? null);
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
