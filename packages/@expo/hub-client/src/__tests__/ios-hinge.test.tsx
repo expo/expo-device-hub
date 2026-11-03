@@ -406,6 +406,124 @@ test("a Rotate holds the view until it lands; then a preset from the Simulator f
   expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
+/** A config whose native observation shows `angle` and `physicalOrientation`, after a Laptop command. */
+function observed(angle: number, physicalOrientation: string, orientation = "portrait") {
+  return {
+    ...INNER_OPEN,
+    hingeAngle: 90,
+    hingePose: "laptop",
+    orientation,
+    observedDeviceState: { hingeAngle: angle, physicalOrientation, tableMode: false },
+  };
+}
+
+/** Collects the rotation readback grace timers, so a test can let the grace pass. */
+function holdReadbackGrace() {
+  const graces: (() => void)[] = [];
+  const nativeTimeout = setTimeout;
+  stubGlobal("setTimeout", (callback: () => void, ms: number) => {
+    if (ms === 1_500) {
+      graces.push(callback);
+      return 0;
+    }
+    return nativeTimeout(callback, ms);
+  });
+  return () => act(async () => graces.splice(0).forEach((callback) => callback()));
+}
+
+test("turning Laptop to portrait keeps the turned view when the readback reads as Book; a later preset frames it", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, observed(90, "landscape-left")));
+  expect(client().hinge?.physicalPose).toBe("laptop");
+  // A quarter turn counterclockwise from landscape-left is portrait.
+  await act(async () => client().setOrientation("landscape_left"));
+  const rotatedView = client().hinge!.view;
+  // The turn lands: a 90° hinge in portrait is Book's shape, but nobody selected Book.
+  await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_left")));
+  expect(client().hinge?.pose).toBe("book");
+  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().hinge?.view).toEqual(rotatedView);
+  // The Simulator then selects Laptop, which frames the model.
+  await act(async () => socket.push(0x82, observed(90, "landscape-left")));
+  expect(client().hinge?.physicalPose).toBe("laptop");
+  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
+});
+
+test("a Rotate from Laptop lands upside down and keeps the turned view until a preset", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, observed(90, "landscape-left")));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  // As on an iPhone Duo: the device turns from landscape-left to upside down.
+  await act(async () => socket.push(0x82, observed(90, "pud", "landscape_right")));
+  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().hinge?.view).toEqual(rotatedView);
+  await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_right")));
+  expect(client().hinge?.physicalPose).toBe("book");
+  expect(client().hinge?.view).toEqual(duoPresetView("book"));
+});
+
+test("turning Book to landscape keeps the turned view when the readback reads as Laptop", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, observed(90, "portrait")));
+  expect(client().hinge?.physicalPose).toBe("book");
+  await act(async () => client().setOrientation("landscape_right"));
+  const turnedView = client().hinge!.view;
+  await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
+  expect(client().hinge?.pose).toBe("laptop");
+  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().hinge?.view).toEqual(turnedView);
+  // The Simulator then selects Book, which frames the model.
+  await act(async () => socket.push(0x82, observed(90, "portrait")));
+  expect(client().hinge?.physicalPose).toBe("book");
+  expect(client().hinge?.view).toEqual(duoPresetView("book"));
+});
+
+test("a Rotate that the device does not take ends after the readback grace", async () => {
+  installBrowser({ duo: true });
+  const passGrace = holdReadbackGrace();
+  const { socket, client } = await connect();
+  const open = observed(180, "portrait");
+  await act(async () => socket.push(0x82, open));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  // The device stays in portrait.
+  await act(async () => socket.push(0x82, { ...open }));
+  await passGrace();
+  expect(client().hinge?.view).toEqual(rotatedView);
+  // Later the Simulator selects Book, which frames the model.
+  await act(async () => socket.push(0x82, observed(90, "portrait")));
+  expect(client().hinge?.physicalPose).toBe("book");
+  expect(client().hinge?.view).toEqual(duoPresetView("book"));
+});
+
+test("a pose command's own readback does not end a Rotate sent before its acknowledgement", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  await act(async () => client().rotate());
+  expect(socket.frames().at(-1)).toEqual({
+    tag: 0x07,
+    payload: { orientation: "portrait_upside_down" },
+  });
+  const rotatedView = client().hinge!.view;
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  // Open's readback turns the device to portrait before the rotation lands.
+  await act(async () =>
+    socket.push(0x82, {
+      ...INNER_OPEN,
+      orientation: "landscape_right",
+      observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false },
+    }),
+  );
+  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().hinge?.view).toEqual(rotatedView);
+});
+
 test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

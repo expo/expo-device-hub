@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "../screen-config";
+import {
+  isRotationReadback,
+  observedScreenConfig,
+  screenConfigsEqual,
+  turnedPhysicalOrientation,
+} from "../screen-config";
 
 describe("screenConfigsEqual", () => {
   const inner = { width: 2007, height: 2853, orientation: "portrait" as const, screenId: 3 };
@@ -107,17 +112,40 @@ describe("isRotationReadback", () => {
   const portrait = { hingeAngle: 180, physicalOrientation: "portrait" as const, tableMode: false };
 
   test("reads the cleared command pose when the helper sends no observation", () => {
-    expect(isRotationReadback(open, undefined)).toBe(false);
-    expect(isRotationReadback({ ...open, hingePose: null }, undefined)).toBe(true);
+    expect(isRotationReadback(open, "landscape-left")).toBe(false);
+    expect(isRotationReadback({ ...open, hingePose: null }, "landscape-left")).toBe(true);
   });
 
   test("reads the observation, though the command pose stays", () => {
     const observed = { ...open, observedDeviceState: portrait };
-    expect(isRotationReadback(observed, "portrait")).toBe(false);
+    expect(isRotationReadback(observed, "landscape-left")).toBe(false);
     const turned = { ...portrait, physicalOrientation: "landscape-left" as const };
-    expect(isRotationReadback({ ...open, observedDeviceState: turned }, "portrait")).toBe(true);
+    expect(isRotationReadback({ ...open, observedDeviceState: turned }, "landscape-left")).toBe(
+      true,
+    );
     // A turned Laptop is Book, a preset, yet the orientation shows the turn.
     const book = { hingeAngle: 90, physicalOrientation: "portrait" as const, tableMode: false };
-    expect(isRotationReadback({ ...open, observedDeviceState: book }, "landscape-left")).toBe(true);
+    expect(isRotationReadback({ ...open, observedDeviceState: book }, "portrait")).toBe(true);
+  });
+
+  test("another orientation change, such as a pose command's readback, is not the rotation", () => {
+    expect(isRotationReadback({ ...open, observedDeviceState: portrait }, "pud")).toBe(false);
+    // Without a known target, only the readback grace ends the rotation.
+    expect(isRotationReadback({ ...open, observedDeviceState: portrait }, undefined)).toBe(false);
+  });
+});
+
+describe("turnedPhysicalOrientation", () => {
+  test("counts quarter turns clockwise as serve-sim's rotation tracker does", () => {
+    // Measured on an iPhone Duo: Rotate from Laptop (landscape-left) lands upside down.
+    expect(turnedPhysicalOrientation("landscape-left", 1)).toBe("pud");
+    expect(turnedPhysicalOrientation("portrait", 1)).toBe("landscape-left");
+    expect(turnedPhysicalOrientation("portrait", -1)).toBe("landscape-right");
+    expect(turnedPhysicalOrientation("landscape-left", 2)).toBe("landscape-right");
+  });
+
+  test("has no target for a device that is not upright", () => {
+    expect(turnedPhysicalOrientation("facedown", 1)).toBeUndefined();
+    expect(turnedPhysicalOrientation(undefined, 1)).toBeUndefined();
   });
 });

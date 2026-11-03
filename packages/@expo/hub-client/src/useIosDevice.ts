@@ -83,7 +83,12 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from "./orientation";
-import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "./screen-config";
+import {
+  isRotationReadback,
+  observedScreenConfig,
+  screenConfigsEqual,
+  turnedPhysicalOrientation,
+} from "./screen-config";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -138,6 +143,7 @@ import {
   DEVICE_ORIENTATIONS,
   CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
+  READBACK_GRACE_MS,
 } from "./orientation";
 import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";
@@ -632,8 +638,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
   // A local rotation cleared the native preset; ignore older preset acknowledgements.
   const [orientationOverride, setOrientationOverride] = useState(false);
-  // The observed physical orientation when the last local rotation was sent.
-  const rotationOrientationRef = useRef<HingePhysicalOrientation | undefined>(undefined);
+  // The physical orientation that the pending local rotation turns to, null
+  // without a rotation; the target is unknown when the device was not upright.
+  const rotationRef = useRef<{ target: HingePhysicalOrientation | undefined } | null>(null);
+  // Restarts the readback grace for each rotation.
+  const [rotationRequest, setRotationRequest] = useState(0);
   // The pose observed while no local command owned the hinge, or while one was
   // pending. A readback that still lags a local preset matches it.
   const observedPoseRef = useRef<HingePose | null | undefined>(undefined);
@@ -1024,12 +1033,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
+    // A rotation that is still pending turns on from its own target.
     const current = screenRef.current;
-    rotationOrientationRef.current = current
-      ? observedScreenConfig(current).physicalOrientation
-      : undefined;
+    const start = rotationRef.current
+      ? rotationRef.current.target
+      : current
+        ? observedScreenConfig(current).physicalOrientation
+        : undefined;
+    rotationRef.current = { target: turnedPhysicalOrientation(start, quarterTurns) };
+    setRotationRequest((request) => request + 1);
     setOrientationOverride(true);
   }, []);
+  // @ref LLP 0004#live-pose-observation — the observation that ends a rotation is the pose baseline, so a turned Laptop that reads as Book keeps the turned view
+  const landRotation = useCallback((config: ScreenSize | null) => {
+    if (rotationRef.current === null) return;
+    rotationRef.current = null;
+    if (config) observedPoseRef.current = observedScreenConfig(config).hingePose;
+    setOrientationOverride(false);
+  }, []);
+  // Every other end of the override also ends the rotation.
+  useLayoutEffect(() => {
+    if (!orientationOverride) rotationRef.current = null;
+  }, [orientationOverride]);
+  // As in serve-sim's rotation tracker, a rotation whose readback does not
+  // arrive ends after the readback grace.
+  useEffect(() => {
+    if (!orientationOverride) return;
+    const timer = setTimeout(() => landRotation(screenRef.current), READBACK_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [orientationOverride, rotationRequest, landRotation]);
   // Each choice turns the 3D view from the pose before it, so two choices in
   // one render turn it as far as the device.
   const turnDuoForChoice = useCallback(
@@ -1817,8 +1849,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             // A rotation clears the native named pose. Observe the received
             // config even when its values equal the previous React state.
             // @ref LLP 0004#live-pose-observation — with a native observation, the observation says when the rotation landed
-            if (!hingePendingRef.current && isRotationReadback(c, rotationOrientationRef.current)) {
-              setOrientationOverride(false);
+            const rotation = rotationRef.current;
+            if (!hingePendingRef.current && rotation && isRotationReadback(c, rotation.target)) {
+              landRotation(c);
             }
             setScreen((prev) => (screenConfigsEqual(prev, c) ? prev : c));
             return true;
@@ -1887,7 +1920,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setHardwareKeyboardConnectedState(null);
       setInputAdmitted(false);
     };
-  }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
+  }, [
+    wsUrl,
+    requireInputAdmission,
+    controlDevice,
+    socketProtocols,
+    videoSessionKey,
+    keyboard,
+    landRotation,
+  ]);
 
   // ── iPhone Duo: pose bookkeeping and the 3D model's panel feeds ──
   // The hinge queue belongs to one input socket. Every change that replaces
