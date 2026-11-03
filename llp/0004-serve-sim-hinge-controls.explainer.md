@@ -562,14 +562,16 @@ client's fold state, so it follows the native observation [observed:
 ### Stage size
 
 In the Hub, the 3D stage is as large as the flat (2D) Duo can be, so that
-the Duo has the same size in 2D and 3D and every device fills the stream area
-by the same rule: a 480 px cap on the device's short side
+in a large window the Duo has about the same size in 2D and 3D, and every
+device fills the stream area by the same rule: a 480 px cap on the device's short side
 [confirmed] (Krystof Woldrich, 2026-10-30, after a review found that the
 unbounded stage made the Duo more than twice as large in 3D as in 2D on a
 2560 x 1440 window). The flat Duo cover is 480 px wide at that cap, so its long
 side is 698 px (DeviceKit's 1398 x 2034 framebuffer). The stage caps both of
 its sides at that long side plus the 32 px fill inset on each side (762 px),
-so that any pose or rotation fits. Below the cap, the stage shrinks to the
+so that any pose or rotation fits. At the cap, the model in "Fill available
+space" keeps the 32 px inset, so its limiting side is about the cover's 698 px.
+Below the cap, the stage shrinks to the
 stream area: the space that `StreamPanel` keeps clear of the device title
 above and the controls below, including the fold error line [observed:
 `DUO_STAGE_STYLE` in `PhoneFrame.tsx`, `duoStageMaxSide` in `duo-stage.ts`].
