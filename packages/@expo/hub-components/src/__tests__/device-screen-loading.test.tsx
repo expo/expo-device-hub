@@ -308,4 +308,6 @@ test("a loading 3D preview takes no keyboard focus and is not announced", () => 
   const host = markup.slice(markup.indexOf('role="application"'), markup.indexOf(">"));
   expect(host).toContain('tabindex="-1"');
   expect(host).toContain('aria-hidden="true"');
+  // The hinge handles inside keep tabIndex 0, so the whole subtree is inert.
+  expect(host).toContain('inert=""');
 });

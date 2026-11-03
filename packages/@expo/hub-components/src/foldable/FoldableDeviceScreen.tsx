@@ -176,9 +176,10 @@ export function FoldableDeviceScreen({
       ref={hostRef}
       role="application"
       aria-label="Interactive iPhone Duo. Focus to control it with your keyboard. Press Shift and Escape to stop keyboard control."
-      // A hidden preview takes no focus and is not announced.
+      // A hidden preview takes no focus, for its hinge handles too, and is not announced.
       tabIndex={hidden ? -1 : 0}
       aria-hidden={hidden || undefined}
+      inert={hidden || undefined}
       style={hidden ? { ...HOST_STYLE, opacity: 0, pointerEvents: "none" } : HOST_STYLE}
       onPointerDownCapture={() => hostRef.current?.focus({ preventScroll: true })}
       onBlur={releasePressedKeys}
