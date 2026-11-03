@@ -514,6 +514,35 @@ class PausableVideo extends FakeVideo {
   }
 }
 
+test("a panel video that the browser paused in a background tab plays again on return", async () => {
+  const { videos, setHidden, offers } = await connectWebRtc();
+  const [cover, inner] = videos;
+  const playsBefore = cover!.plays;
+  await setHidden(true);
+  cover!.paused = true;
+  await setHidden(false);
+  expect(cover!.plays).toBe(playsBefore + 1);
+  expect(cover!.paused).toBe(false);
+  // A playing video is left alone, and the peer is not replaced.
+  expect(inner!.plays).toBe(playsBefore);
+  expect(offers).toHaveLength(2);
+  expect(Peer.instances).toHaveLength(2);
+});
+
+test("a retired panel video stays paused when the tab returns, and no listener stays", async () => {
+  const { videos, visibility, setHidden, update } = await connectWebRtc();
+  const [cover] = videos;
+  await update(1, { mode: "mjpeg" });
+  const plays = cover!.plays;
+  await setHidden(true);
+  cover!.paused = true;
+  await setHidden(false);
+  expect(cover!.plays).toBe(plays);
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  expect(visibility.size).toBe(0);
+});
+
 test("a replaced helper at the same URL gives both WebRTC panels new offers; a handoff does not", async () => {
   const { offers, update } = await connectWebRtc();
   expect(offers).toEqual([

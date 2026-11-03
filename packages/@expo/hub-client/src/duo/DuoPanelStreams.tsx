@@ -161,6 +161,11 @@ function DuoPanelStream({
       markFrameDecoded(0);
       onFrame();
     };
+    // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — a browser can pause a background tab's video; the same peer plays again
+    const onVisibilityChange = () => {
+      if (stopped || document.hidden || videoRef.current !== video || !video.paused) return;
+      void video.play().catch(() => {});
+    };
     video.srcObject = webRtcStream;
     if (webRtcStream) {
       if (typeof video.requestVideoFrameCallback === "function") {
@@ -169,10 +174,12 @@ function DuoPanelStream({
         video.addEventListener("timeupdate", onTimeUpdate);
       }
       video.addEventListener("loadeddata", onLoadedData, { once: true });
+      document.addEventListener("visibilitychange", onVisibilityChange);
       void video.play().catch(() => {});
     }
     return () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       video.removeEventListener("loadeddata", onLoadedData);
       video.removeEventListener("timeupdate", onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === "function") {
