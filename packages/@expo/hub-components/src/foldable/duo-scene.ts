@@ -7,9 +7,8 @@
  */
 
 import {
-  type HingePose,
+  type FoldPose,
   type MultiTouchSample,
-  type ScreenSize,
   type ScrollSample,
   type TouchSample,
 } from "@expo/hub-client";
@@ -23,6 +22,7 @@ import {
   duoProjectAnchor,
   type DuoScreenPoint as ProjectedPoint,
 } from "./duo-layout";
+import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
 import { loadDuoModel } from "./duo-model";
 import {
   duoDisplayDelta,
@@ -41,13 +41,13 @@ export interface DuoSceneState {
   /** hub-client's `deviceModelUrl`: Xcode's `V68.usdz`, served by the backend. */
   modelUrl: string;
   angle?: number;
-  pose?: HingePose | null;
+  pose?: FoldPose | null;
   /** Physical pose for the initial view; undefined follows the confirmed pose, null is unknown. */
-  physicalPose?: HingePose | null;
+  physicalPose?: FoldPose | null;
   /** The display the device presents: hub-client's active `displays` entry. */
   activeScreenId: 1 | 3;
   view?: DuoView;
-  streamConfig?: ScreenSize | null;
+  streamConfig?: DuoStreamConfig | null;
   hingeCommands?: DuoHingeCommands;
   onUnavailable?: () => void;
   streamError?: string | null;
@@ -358,8 +358,8 @@ export function createDuoScene(
 
   function uploadScreen(
     source: FrameSource,
-    config: ScreenSize,
-    inputConfig?: ScreenSize | null,
+    config: DuoStreamConfig,
+    inputConfig?: DuoStreamConfig | null,
     cacheScreenOnFold = false,
   ) {
     const surface = config.screenId === 1 ? cover : inner;
@@ -612,13 +612,13 @@ export function createDuoScene(
     return duoDisplayPoint(state().streamConfig, x, y);
   }
   function touchSample(current: Gesture, phase: TouchSample["phase"], point: Point): TouchSample {
-    return { phase, display: current.screenId, ...displayPoint(point) };
+    return { phase, display: duoDisplayId(current.screenId), ...displayPoint(point) };
   }
   function multiTouchSample(current: Gesture, phase: MultiTouchSample["phase"]): MultiTouchSample {
     const { x1, y1, x2, y2 } = current.fingers;
     return {
       phase,
-      display: current.screenId,
+      display: duoDisplayId(current.screenId),
       a: displayPoint({ x: x1, y: y1 }),
       b: displayPoint({ x: x2, y: y2 }),
     };
@@ -777,7 +777,7 @@ export function createDuoScene(
     event.stopPropagation();
     const config = state().streamConfig;
     send({
-      display: config?.screenId,
+      display: duoDisplayId(config?.screenId),
       ...duoDisplayPoint(config, hit.point.x, hit.point.y),
       ...duoDisplayDelta(config, dx, dy),
     });

@@ -194,7 +194,7 @@ export function StreamPanel({
       }
     />
   );
-  const hingeError = client.hinge?.error && (
+  const foldError = client.fold?.error && (
     <div
       role="alert"
       style={{
@@ -205,7 +205,7 @@ export function StreamPanel({
         margin: "8px auto 0",
       }}
     >
-      {client.hinge.error}
+      {client.fold.error}
     </div>
   );
 
@@ -357,7 +357,7 @@ export function StreamPanel({
               }}
             >
               {controls}
-              {hingeError}
+              {foldError}
             </div>
           )}
           <ClipboardToaster />
@@ -378,7 +378,7 @@ export function StreamPanel({
           }}
         >
           {controls}
-          {hingeError}
+          {foldError}
         </div>
       )}
       <ScreenshotToaster />

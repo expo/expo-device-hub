@@ -121,7 +121,7 @@ export function PhoneFrame({
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
     ...deviceViewportStyle({ maxShortSide: MAX_SHORT_SIDE, ratio }),
-    ...(client?.hinge ? { transition: "width 250ms ease, aspect-ratio 250ms ease" } : {}),
+    ...(client?.fold ? { transition: "width 250ms ease, aspect-ratio 250ms ease" } : {}),
     containerType: "inline-size",
   };
 
@@ -187,7 +187,7 @@ export function PhoneFrame({
     live &&
     foldPreview?.mode === "3d" &&
     FoldableDeviceScreen &&
-    client.hinge &&
+    client.fold &&
     client.displays &&
     client.deviceModelUrl
   ) {

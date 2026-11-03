@@ -1,26 +1,35 @@
-import { type HingePose } from "@expo/hub-client";
+import { type DeviceFoldCapabilities, FOLD_POSES, type FoldPose } from "@expo/hub-client";
 
-/** serve-sim's labels for the iPhone Duo's five presets, listed by the inspector's Fold pose select. */
+/**
+ * serve-sim's labels for the five fold poses, listed by the inspector's Fold
+ * pose select. The shortcut is the pose's place in `FOLD_POSES`, which
+ * `useDeviceKeyboard` reads.
+ */
 export const FOLD_POSE_OPTIONS: ReadonlyArray<{
-  value: HingePose;
+  value: FoldPose;
   label: string;
   shortcut: string;
-}> = [
-  { value: "closed", label: "Fully folded", shortcut: "⌥⇧1" },
-  { value: "book", label: "Partially open", shortcut: "⌥⇧4" },
-  { value: "open", label: "Fully open", shortcut: "⌥⇧2" },
-  { value: "laptop", label: "Laptop", shortcut: "⌥⇧3" },
-  { value: "tent", label: "Tent", shortcut: "⌥⇧5" },
-];
+}> = (
+  [
+    { value: "closed", label: "Fully folded" },
+    { value: "book", label: "Partially open" },
+    { value: "open", label: "Fully open" },
+    { value: "laptop", label: "Laptop" },
+    { value: "tent", label: "Tent" },
+  ] as const
+).map((option) => ({ ...option, shortcut: `⌥⇧${FOLD_POSES.indexOf(option.value) + 1}` }));
 
 /**
  * The preset a fold control shows as selected. A reported pose wins, including
  * an explicit `null` for a custom angle; before any pose is reported the two
- * endpoints are inferred from the angle.
+ * endpoints that the device offers are inferred from the angle.
  */
 export function selectedFoldPose(
   angle: number | undefined,
-  pose: HingePose | null | undefined,
-): HingePose | null {
-  return pose !== undefined ? pose : angle === 0 ? "closed" : angle === 180 ? "open" : null;
+  pose: FoldPose | null | undefined,
+  poses: Exclude<DeviceFoldCapabilities, false>["poses"],
+): FoldPose | null {
+  if (pose !== undefined) return pose;
+  if (angle === undefined) return null;
+  return angle === poses.closed?.angle ? "closed" : angle === poses.open?.angle ? "open" : null;
 }

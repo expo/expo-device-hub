@@ -2246,6 +2246,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       // serve-emu has no clipboard API.
       clipboard: false,
       orientation: orientationCapabilities,
+      // @ref LLP 0016#android-emulators — serve-emu's /api/fold maps onto the fold contract; not wired yet
+      fold: false,
     }),
     [
       cameraSupported,
@@ -2258,7 +2260,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   return {
     platform: "android",
-    hinge: null,
+    fold: null,
     displays: null,
     deviceModelUrl: null,
     displayCorners: null,

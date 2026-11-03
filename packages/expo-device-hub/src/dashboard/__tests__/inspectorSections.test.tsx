@@ -27,7 +27,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     recordingLock: null,
     recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
-    hinge: null,
+    fold: null,
     displays: null,
     deviceModelUrl: null,
     displayCorners: null,
@@ -151,6 +151,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
       location: false,
+      fold: false,
     },
     foregroundApp: null,
     videoKind: "img",
@@ -1711,6 +1712,7 @@ test("keeps the frame option disabled with an explanation for unsupported device
         clipboard: false,
         streamSettings: false,
         location: false,
+        fold: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
@@ -1743,6 +1745,7 @@ test("shows only the viewer-local frame option while iOS device settings are una
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
@@ -1804,6 +1807,7 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;

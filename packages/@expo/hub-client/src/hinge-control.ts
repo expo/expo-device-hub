@@ -1,58 +1,47 @@
 /**
  * iPhone Duo hinge control protocol, ported from serve-sim's `src/hinge-control.ts`
- * and `src/hinge-angle.ts` (serve-sim at 3dc61286e, #383). The command shapes travel over
- * the helper's input WebSocket (tag `0x10`, acknowledged with `0x90`).
+ * (serve-sim at 3dc61286e, #383). The iOS adapter maps the public fold commands of
+ * `./fold.ts` onto these wire commands, which travel over the helper's input
+ * WebSocket (tag `0x10`, acknowledged with `0x90`). Nothing here is public.
  */
 
-/** Xcode 27.1 Device Hub's physical poses, in its keyboard shortcut order. */
-export const HINGE_POSES = [
-  { id: "closed", label: "Closed", angle: 0 },
-  { id: "open", label: "Open", angle: 180 },
-  { id: "laptop", label: "Laptop", angle: 90 },
-  { id: "book", label: "Book", angle: 90 },
-  { id: "tent", label: "Tent", angle: 80 },
-] as const;
+import { FOLD_POSES, type FoldControlCommand, type FoldPose } from "./fold";
 
-export type HingePose = (typeof HINGE_POSES)[number]["id"];
+/** Xcode 27.1 Device Hub's hinge angle for each iPhone Duo pose. */
+export const DUO_POSE_ANGLES: Readonly<Record<FoldPose, number>> = {
+  closed: 0,
+  open: 180,
+  laptop: 90,
+  book: 90,
+  tent: 80,
+};
 
+/** serve-sim's hinge command, as the helper reads it. */
 export type HingeControlCommand =
   | { control: "angle"; value: number }
-  | { control: "pose"; value: HingePose }
-  | { control: "table"; value: boolean }
-  | { control: "physical"; value: "faceup" | "facedown" };
+  | { control: "pose"; value: FoldPose }
+  | { control: "table"; value: boolean };
 
-export function isHingeAngle(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 180;
-}
-
-export function isHingeControlCommand(value: unknown): value is HingeControlCommand {
-  if (!value || typeof value !== "object") return false;
-  const command = value as Record<string, unknown>;
-  return command.control === "angle"
-    ? isHingeAngle(command.value)
-    : command.control === "physical"
-      ? command.value === "faceup" || command.value === "facedown"
-      : command.control === "table"
-        ? typeof command.value === "boolean"
-        : command.control === "pose" && HINGE_POSES.some((pose) => pose.id === command.value);
+export function hingeWireCommand(command: FoldControlCommand): HingeControlCommand {
+  return command.control === "tableMode" ? { control: "table", value: command.value } : command;
 }
 
 /** Confirmed command state, separate from the app's reported screen orientation. */
-export function hingeControlState(command: HingeControlCommand): HingeControlState {
-  if (command.control === "physical") {
-    return { hingePose: null, tableMode: command.value === "facedown" };
-  }
-  if (command.control === "table") return { tableMode: command.value, hingePose: null };
+export function hingeControlState(command: FoldControlCommand): HingeControlState {
+  if (command.control === "tableMode") return { tableMode: command.value, hingePose: null };
   if (command.control === "angle") {
     return { hingeAngle: command.value, hingePose: null, tableMode: false };
   }
-  const pose = HINGE_POSES.find((pose) => pose.id === command.value)!;
-  return { hingeAngle: pose.angle, hingePose: pose.id, tableMode: pose.id === "tent" };
+  return {
+    hingeAngle: DUO_POSE_ANGLES[command.value],
+    hingePose: command.value,
+    tableMode: command.value === "tent",
+  };
 }
 
 export type HingeControlState = {
   hingeAngle?: number;
-  hingePose?: HingePose | null;
+  hingePose?: FoldPose | null;
   tableMode?: boolean;
   tableModeAvailable?: boolean;
 };
@@ -65,19 +54,8 @@ export type HingePhysicalOrientation =
   | "faceup"
   | "facedown";
 
-export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation {
+export function hingePoseOrientation(pose: FoldPose): HingePhysicalOrientation {
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
-}
-
-/** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */
-export function isTableModeAvailable(
-  angle: number | undefined,
-  orientation: HingePhysicalOrientation | undefined,
-): boolean {
-  if (angle === undefined || orientation === undefined) return false;
-  if (angle === 0) return orientation === "landscape-left" || orientation === "landscape-right";
-  if (angle === 180) return orientation === "portrait";
-  return orientation !== "faceup";
 }
 
 /** serve-sim's native hinge observation; a field that the native reader omits is unknown. */
@@ -95,15 +73,15 @@ export function observedHingePose(
   angle: number | undefined,
   orientation: HingePhysicalOrientation | undefined,
   tableMode: boolean | undefined,
-): HingePose | null | undefined {
+): FoldPose | null | undefined {
   if (angle === undefined || orientation === undefined || tableMode === undefined) return undefined;
   return (
-    HINGE_POSES.find(
+    FOLD_POSES.find(
       (pose) =>
-        Math.abs(pose.angle - angle) <= OBSERVED_POSE_ANGLE_TOLERANCE &&
-        hingePoseOrientation(pose.id) === orientation &&
-        (pose.id === "tent") === tableMode,
-    )?.id ?? null
+        Math.abs(DUO_POSE_ANGLES[pose] - angle) <= OBSERVED_POSE_ANGLE_TOLERANCE &&
+        hingePoseOrientation(pose) === orientation &&
+        (pose === "tent") === tableMode,
+    ) ?? null
   );
 }
 
@@ -120,4 +98,11 @@ export function observedHingeState(state: ObservedHingeState) {
         ? undefined
         : isTableModeAvailable(hingeAngle, physicalOrientation),
   };
+}
+
+/** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */
+function isTableModeAvailable(angle: number, orientation: HingePhysicalOrientation): boolean {
+  if (angle === 0) return orientation === "landscape-left" || orientation === "landscape-right";
+  if (angle === 180) return orientation === "portrait";
+  return orientation !== "faceup";
 }
