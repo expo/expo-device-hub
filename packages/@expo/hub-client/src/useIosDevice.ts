@@ -83,12 +83,7 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from "./orientation";
-import {
-  isRotationReadback,
-  observedScreenConfig,
-  screenConfigsEqual,
-  turnedPhysicalOrientation,
-} from "./screen-config";
+import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "./screen-config";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -144,6 +139,7 @@ import {
   CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
   READBACK_GRACE_MS,
+  turnedPhysicalOrientation,
 } from "./orientation";
 import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";

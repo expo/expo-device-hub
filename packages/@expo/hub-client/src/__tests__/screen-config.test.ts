@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  isRotationReadback,
-  observedScreenConfig,
-  screenConfigsEqual,
-  turnedPhysicalOrientation,
-} from "../screen-config";
+import { isRotationReadback, observedScreenConfig, screenConfigsEqual } from "../screen-config";
 
 describe("screenConfigsEqual", () => {
   const inner = { width: 2007, height: 2853, orientation: "portrait" as const, screenId: 3 };
@@ -132,20 +127,5 @@ describe("isRotationReadback", () => {
     expect(isRotationReadback({ ...open, observedDeviceState: portrait }, "pud")).toBe(false);
     // Without a known target, only the readback grace ends the rotation.
     expect(isRotationReadback({ ...open, observedDeviceState: portrait }, undefined)).toBe(false);
-  });
-});
-
-describe("turnedPhysicalOrientation", () => {
-  test("counts quarter turns clockwise as serve-sim's rotation tracker does", () => {
-    // Measured on an iPhone Duo: Rotate from Laptop (landscape-left) lands upside down.
-    expect(turnedPhysicalOrientation("landscape-left", 1)).toBe("pud");
-    expect(turnedPhysicalOrientation("portrait", 1)).toBe("landscape-left");
-    expect(turnedPhysicalOrientation("portrait", -1)).toBe("landscape-right");
-    expect(turnedPhysicalOrientation("landscape-left", 2)).toBe("landscape-right");
-  });
-
-  test("has no target for a device that is not upright", () => {
-    expect(turnedPhysicalOrientation("facedown", 1)).toBeUndefined();
-    expect(turnedPhysicalOrientation(undefined, 1)).toBeUndefined();
   });
 });

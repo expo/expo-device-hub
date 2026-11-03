@@ -40,28 +40,6 @@ export function observedScreenConfig(config: ScreenSize): ScreenSize {
   return { ...config, ...observedHingeState(config.observedDeviceState) };
 }
 
-// serve-sim's rotation tracker counts physical quarter turns in this order.
-const CLOCKWISE_PHYSICAL_ORIENTATIONS: readonly HingePhysicalOrientation[] = [
-  "portrait",
-  "landscape-left",
-  "pud",
-  "landscape-right",
-];
-
-/**
- * The physical orientation `quarterTurns` clockwise from `start`, as serve-sim's
- * rotation tracker counts them. Undefined when `start` is not upright, for
- * example face up.
- */
-export function turnedPhysicalOrientation(
-  start: HingePhysicalOrientation | undefined,
-  quarterTurns: number,
-): HingePhysicalOrientation | undefined {
-  const index = start === undefined ? -1 : CLOCKWISE_PHYSICAL_ORIENTATIONS.indexOf(start);
-  if (index < 0) return undefined;
-  return CLOCKWISE_PHYSICAL_ORIENTATIONS[(((index + quarterTurns) % 4) + 4) % 4];
-}
-
 /**
  * Whether a config shows that a local rotation reached the device. The helper
  * keeps the last command's pose in the top-level fields, so with a native
