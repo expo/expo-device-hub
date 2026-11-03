@@ -596,16 +596,16 @@ test("a Rotate right after a preset turns from the preset, so the preset's readb
   const { socket, client } = await connect();
   // Upside down at 90°, which no preset names.
   await act(async () => socket.push(0x82, observed(90, "pud", "portrait_upside_down")));
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+  await act(async () => client().fold!.setControl({ control: "pose", value: "laptop" }));
   // Before Laptop's readback, a quarter turn counterclockwise from Laptop's landscape-left.
   await act(async () => client().setOrientation("landscape_right"));
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   // Laptop's readback, at the physical orientation that the Rotate started from.
   await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
-  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().fold?.physical?.pose).toBeNull();
   // The turn lands in portrait, which reads as Book, but nobody selected Book.
   await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_right")));
-  expect(client().hinge?.physicalPose).toBeNull();
+  expect(client().fold?.physical?.pose).toBeNull();
 });
 
 test("a preset in the same batch as a Rotate ends it, so a later preset at its target reaches the fold", async () => {
@@ -615,14 +615,14 @@ test("a preset in the same batch as a Rotate ends it, so a later preset at its t
   // The Rotate would turn the device to landscape-left; Book replaces it at once.
   await act(async () => {
     client().rotate();
-    client().hinge!.setControl({ control: "pose", value: "book" });
+    client().fold!.setControl({ control: "pose", value: "book" });
   });
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   await act(async () => socket.push(0x82, { ...observed(90, "portrait"), hingePose: "book" }));
-  expect(client().hinge?.physicalPose).toBe("book");
+  expect(client().fold?.physical?.pose).toBe("book");
   // The Simulator then selects Laptop, at the old Rotate's target.
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
-  expect(client().hinge?.physicalPose).toBe("laptop");
+  expect(client().fold?.physical?.pose).toBe("laptop");
 });
 
 test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {
