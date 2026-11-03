@@ -179,8 +179,9 @@ function Displays() {
 }
 ```
 
-`hinge.observe` reports every hinge command from its request to its outcome, whichever
-control sent it. `deviceModelUrl` is Xcode's 3D model of the device; the Hub's 3D
+`hinge.observe` reports the steps of each hinge command, from its request to its outcome,
+whichever control sent it. A queued command that a newer one replaces gets only its
+request. `deviceModelUrl` is Xcode's 3D model of the device; the Hub's 3D
 preview uses both.
 
 ### Show CPU usage
