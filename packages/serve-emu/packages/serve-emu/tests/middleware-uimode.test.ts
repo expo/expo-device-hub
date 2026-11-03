@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
@@ -8,10 +8,12 @@ import { createApp, type EmuApp } from "../src/middleware.ts";
 const fixtureDir = process.env.SERVE_EMU_UIMODE_TEST_DIR;
 
 if (!fixtureDir) {
-  // Bun resolves bare executable names using its startup PATH. Isolate the ADB
-  // fixture in a child test process so other tests never inherit its PATH.
+  // serve-emu runs the adb in the first Android SDK it finds. Isolate the ADB
+  // fixture as the SDK of a child test process, so other tests never use it.
   test("middleware Appearance subprocess regressions", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "serve-emu-uimode-"));
+    const sdk = await mkdtemp(join(tmpdir(), "serve-emu-uimode-"));
+    const dir = join(sdk, "platform-tools");
+    await mkdir(dir);
     try {
       await writeFile(
         join(dir, "adb"),
@@ -39,7 +41,7 @@ else console.log(existsSync(join(dir, "output"))
       const child = Bun.spawn([process.execPath, "test", import.meta.path], {
         env: {
           ...process.env,
-          PATH: `${dir}:${process.env.PATH ?? ""}`,
+          ANDROID_HOME: sdk,
           SERVE_EMU_UIMODE_TEST_DIR: dir,
         },
         stdout: "pipe",
@@ -52,7 +54,7 @@ else console.log(existsSync(join(dir, "output"))
       ]);
       if (code !== 0) throw new Error(`Appearance regressions failed:\n${stdout}${stderr}`);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await rm(sdk, { recursive: true, force: true });
     }
   }, 30_000);
 } else {

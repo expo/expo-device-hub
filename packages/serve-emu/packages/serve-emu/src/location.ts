@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { adbCommand } from "./adb-command.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execText } from "./exec.ts";
 
@@ -79,7 +80,7 @@ export function parseGeoFix(value: unknown): GeoFix {
 }
 
 export function setEmulatorLocation(serial: string, fix: GeoFix): void {
-  const r = spawnSync("adb", geoFixArgs(serial, fix), { encoding: "utf8", timeout: 5_000 });
+  const r = spawnSync(adbCommand(), geoFixArgs(serial, fix), { encoding: "utf8", timeout: 5_000 });
   const output = `${r.stdout}${r.stderr}`.trim();
   assertGeoFixOutput(r.status, output);
 }
@@ -95,7 +96,7 @@ export async function setEmulatorLocationAsync(
   if (signal?.aborted) {
     throw signal.reason instanceof Error ? signal.reason : new Error("location update aborted");
   }
-  const result = await runExec("adb", geoFixArgs(serial, fix), {
+  const result = await runExec(adbCommand(), geoFixArgs(serial, fix), {
     timeout: 5_000,
     maxBuffer: 64 * 1024,
     lane: "interactive",

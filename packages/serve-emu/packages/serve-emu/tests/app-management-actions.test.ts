@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { adbCommand } from "../src/adb-command.ts";
 import {
   AppManagementError,
   activityName,
@@ -122,7 +123,7 @@ describe("app management actions", () => {
       ["-s", "device-a", "shell", "am", "start", "-n", "com.example.app/.MainActivity"],
       ["-s", "device-a", "shell", "am", "start", "-n", "com.other/.Entry"],
     ]);
-    expect(calls.every((call) => call.cmd === "adb")).toBe(true);
+    expect(calls.every((call) => call.cmd === adbCommand())).toBe(true);
     expect(calls.every((call) => call.opts.timeout === 30_000)).toBe(true);
     expect(calls.every((call) => call.opts.lane === "background")).toBe(true);
     expect(calls.every((call) => call.opts.signal === undefined)).toBe(true);

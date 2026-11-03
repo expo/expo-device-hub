@@ -14,7 +14,7 @@ Required for the device-free development and CI checks:
 
 Optional prerequisites for manual runtime validation:
 
-- Android platform-tools with `adb` on `PATH`
+- Android platform-tools: `adb` in the Android SDK or on `PATH` (see the README requirements)
 - A booted Android emulator or attached Android device
 - Chrome, Edge, or Safari 16.4+ for WebCodecs support
 
