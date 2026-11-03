@@ -230,7 +230,7 @@ client.setOrientation("landscape_left");
 // While an Android recording could break, client.recordingLock is "status-unknown" or
 // "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
 // those controls from it. client.orientationUnavailable gives the reason orientation cannot
-// change now, also when the iOS stream is not live.
+// change now, also while the iOS input socket cannot take input.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 
