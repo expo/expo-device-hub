@@ -631,6 +631,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
   // A local rotation cleared the native preset; ignore older preset acknowledgements.
   const [orientationOverride, setOrientationOverride] = useState(false);
+  // The view is a local rotation's until the next hinge command.
+  const rotatedViewRef = useRef(false);
+  // The pose observed while no local command owned the hinge, or while one was
+  // pending. A readback that still lags a local preset matches it.
+  const observedPoseRef = useRef<HingePose | null | undefined>(undefined);
   const hingePendingRef = useRef(false);
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>(INITIAL_DUO_HINGE_COMMANDS);
   const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
@@ -1033,6 +1038,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
+    rotatedViewRef.current = true;
     setOrientationOverride(true);
   }, []);
   // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
@@ -1099,6 +1105,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const { initialView } = duoRef.current;
     setHingeError(null);
     faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
+    rotatedViewRef.current = false;
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === "pose") {
@@ -1892,6 +1899,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     faceDownFramingRef.current = { saved: null, held: false };
     presetRestoreRef.current = null;
     sentHingePoseRef.current = undefined;
+    rotatedViewRef.current = false;
+    observedPoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
   }, [config?.url]);
@@ -1923,15 +1932,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // must not replace the orientation chosen by the latest local request.
     // Rotate clears the known native physical pose. Ignore an older
     // preset acknowledgement until native reports that its pose was cleared.
+    const pose = hingeScreen?.hingePose;
+    const previousPose = observedPoseRef.current;
+    if (hingePending || !hingePreview) observedPoseRef.current = pose;
     if (orientationOverride || hingePreview || hingePending) return;
-    if (hingeScreen?.hingePose) {
-      setPhysicalPose(hingeScreen.hingePose);
-      sentHingePoseRef.current = hingeScreen.hingePose;
+    if (pose) {
+      // @ref LLP 0004#live-pose-observation — an external preset frames the model as a local one does, unless a local rotation owns the view
+      if (pose === previousPose && physicalPose !== undefined) return;
+      if (physicalPose !== undefined && !(rotatedViewRef.current && physicalPose === null)) {
+        setDuoView(duoPresetView(pose));
+        faceDownFramingRef.current = { saved: null, held: false };
+      }
+      setPhysicalPose(pose);
+      sentHingePoseRef.current = pose;
     } else if (duoPhysicalPoseChanged(physicalPose, hingeScreen?.physicalOrientation)) {
       // Another client turned the device over without a preset. Frame it as
       // on connect; face-down framing below still turns it to the cover.
       setPhysicalPose(null);
       sentHingePoseRef.current = null;
+      rotatedViewRef.current = false;
       setDuoView(null);
     }
   }, [

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { duoRotateView } from "../duo/duo-view";
+import { duoPresetView, duoRotateView } from "../duo/duo-view";
 import { type DeviceClient, type DeviceConnectionOptions } from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
@@ -301,6 +301,66 @@ test("a fold made with the Simulator's own controls shows, though the command fi
   expect(client().hinge?.pose).toBeUndefined();
   expect(client().hinge?.tableMode).toBeUndefined();
   expect(client().hinge?.tableModeAvailable).toBeUndefined();
+});
+
+for (const preset of ["tent", "laptop"] as const) {
+  test(`another client's ${preset} preset after Closed frames the 3D model as ${preset}`, async () => {
+    installBrowser({ duo: true });
+    const { socket, client } = await connect();
+    await act(async () => socket.push(0x82, COVER));
+    const closedView = client().hinge!.view;
+    const presetView = duoPresetView(preset);
+    expect(closedView).not.toEqual(presetView);
+    const angle = preset === "tent" ? 80 : 90;
+    await act(async () =>
+      socket.push(0x82, {
+        ...INNER_OPEN,
+        hingeAngle: angle,
+        hingePose: preset,
+        tableMode: preset === "tent",
+        physicalOrientation: preset === "tent" ? "facedown" : "landscape-left",
+      }),
+    );
+    expect(client().hinge?.physicalPose).toBe(preset);
+    expect(client().hinge?.view).toEqual(presetView);
+  });
+}
+
+test("a readback that still lags a local preset does not undo its framing", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  const observedClosed = {
+    ...COVER,
+    physicalOrientation: "portrait",
+    observedDeviceState: { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false },
+  };
+  await act(async () => socket.push(0x82, observedClosed));
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+  const laptopView = client().hinge!.view;
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  // The command's config confirms Laptop while the native readback still says Closed.
+  await act(async () =>
+    socket.push(0x82, {
+      ...observedClosed,
+      ...INNER_OPEN,
+      hingeAngle: 90,
+      hingePose: "laptop",
+      physicalOrientation: "landscape-left",
+    }),
+  );
+  expect(client().hinge?.physicalPose).toBe("laptop");
+  expect(client().hinge?.view).toEqual(laptopView);
+});
+
+test("an external preset leaves the view of a local rotation", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  await act(async () => client().rotate());
+  await act(async () => socket.push(0x82, { ...COVER, hingePose: null }));
+  const rotatedView = client().hinge!.view;
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, hingeAngle: 90, hingePose: "book" }));
+  expect(client().hinge?.view).toEqual(rotatedView);
 });
 
 test("switching to another simulator forgets the previous screen config at once", async () => {

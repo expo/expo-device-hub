@@ -80,7 +80,11 @@ The Hub's iOS client reads the same snapshot: when `observedDeviceState` is
 present, it replaces the command fields for the fold that the Hub shows, so a
 fold made with the Simulator's own controls shows there too. A config without
 it keeps the command fields. The Hub's preview of a local command ends when the
-command's config matches it [observed: `observedScreenConfig` in
+command's config matches it. A preset that another client or the Simulator
+selects frames the 3D model as a local preset does, unless a local Rotate owns
+the view. The Hub compares the observed pose with the one it saw while its last
+command was pending, so a readback that still lags that command does not undo
+it [observed: `observedScreenConfig` in
 `packages/@expo/hub-client/src/screen-config.ts`, `useIosDevice.ts`].
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
