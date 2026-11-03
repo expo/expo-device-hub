@@ -1,12 +1,16 @@
 import { describe, expect, test } from "bun:test";
+import { HOST_CLOCK } from "../clock";
 import { HOST_TIME_ZONE } from "../time-zone";
 import {
   CONTENT_SIZE_CATEGORIES,
   UI_OPTIONS,
   normalizeUiValue,
   parseUiArgs,
+  readClock,
   readTimeZone,
+  writeClock,
   writeTimeZone,
+  type ClockDeps,
   type SimExec,
   type TimeZoneDeps,
 } from "../ui-settings";
@@ -108,6 +112,7 @@ describe("option catalogue", () => {
     expect(Object.keys(UI_OPTIONS).sort()).toEqual(
       [
         "appearance",
+        "clock",
         "color-filter",
         "hardware-keyboard",
         "time-zone",
@@ -284,5 +289,147 @@ describe("writeTimeZone", () => {
       `${second} file`,
       `${second} capability`,
     ]);
+  });
+});
+
+const NOW = Date.UTC(2026, 10, 3);
+
+function clockDeps(zone = HOST_TIME_ZONE, capability: Error | null = null) {
+  const steps: string[] = [];
+  const deps: ClockDeps = {
+    now: () => NOW,
+    readZone: async () => zone,
+    hostZone: () => "Europe/Berlin",
+    readOffset: () => 5_000,
+    writeOffset: (_udid, offset) => void steps.push(`offset ${offset}`),
+    setCapability: async (_udid, enabled) => {
+      steps.push(`capability ${enabled ? "on" : "off"}`);
+      if (capability) throw capability;
+    },
+  };
+  return { deps, steps };
+}
+
+describe("writeClock", () => {
+  // The offset first: a dylib that loads when the capability turns on finds its directory.
+  test("writes the offset to a time in UTC, then enables the capability", async () => {
+    const { deps, steps } = clockDeps();
+    await writeClock(UDID, "2026-11-04T00:00:00Z", deps);
+    expect(steps).toEqual(["offset 86400000", "capability on"]);
+  });
+
+  test("reads a time without a zone in the simulator's zone", async () => {
+    const { deps, steps } = clockDeps("Asia/Tokyo");
+    await writeClock(UDID, "2026-11-03T10:00:00", deps);
+    expect(steps[0]).toBe("offset 3600000");
+  });
+
+  test("names no host zone when it refuses a time in it", async () => {
+    const { deps } = clockDeps();
+    // Berlin skips 02:30 on 2030-03-31; the reason may go to a remote caller.
+    await expect(writeClock(UDID, "2030-03-31T02:30", deps)).rejects.toThrow(
+      "2030-03-31T02:30 does not exist in the host's zone: daylight saving time skips it. Choose another time.",
+    );
+  });
+
+  test("reads it in the Mac's zone when the simulator uses the Mac's", async () => {
+    const { deps, steps } = clockDeps();
+    // Berlin is UTC+1 in November.
+    await writeClock(UDID, "2026-11-03T02:00:00", deps);
+    expect(steps[0]).toBe("offset 3600000");
+  });
+
+  test("host writes no offset, so loaded dylibs return, then disables the capability", async () => {
+    const { deps, steps } = clockDeps();
+    await writeClock(UDID, HOST_CLOCK, deps);
+    expect(steps).toEqual(["offset 0", "capability off"]);
+  });
+
+  test("puts the previous offset back when no session owns the device", async () => {
+    const { deps, steps } = clockDeps(HOST_TIME_ZONE, new Error("needs a serve-sim session"));
+    await expect(writeClock(UDID, "2026-11-04T00:00:00Z", deps)).rejects.toThrow(/session/);
+    expect(steps).toEqual(["offset 86400000", "capability on", "offset 5000"]);
+  });
+
+  test("needs no zone for a time that names its own", async () => {
+    const { deps, steps } = clockDeps();
+    deps.readZone = async () => {
+      throw new Error("simctl timed out");
+    };
+    await writeClock(UDID, "2026-11-04T00:00:00Z", deps);
+    expect(steps).toEqual(["offset 86400000", "capability on"]);
+  });
+
+  test("refuses a time before 1970", async () => {
+    const { deps, steps } = clockDeps();
+    await expect(writeClock(UDID, "1969-12-31T23:59:00Z", deps)).rejects.toThrow(/1970/);
+    expect(steps).toEqual([]);
+  });
+
+  test("refuses a wall time that daylight saving time skips in the simulator's zone", async () => {
+    const { deps, steps } = clockDeps("America/New_York");
+    await expect(writeClock(UDID, "2030-03-10T02:30", deps)).rejects.toThrow(
+      /does not exist in America\/New_York/,
+    );
+    expect(steps).toEqual([]);
+  });
+
+  test("refuses a time more than about 200 years away", async () => {
+    const { deps, steps } = clockDeps();
+    await expect(writeClock(UDID, "2299-01-01T00:00:00Z", deps)).rejects.toThrow(/200 years/);
+    expect(steps).toEqual([]);
+  });
+});
+
+describe("readClock", () => {
+  test("reports host without an offset, else the shifted time now in the simulator's zone", async () => {
+    const deps = (offset: number, zone: string, enabled = true): ClockDeps => ({
+      readOffset: () => offset,
+      now: () => NOW,
+      readZone: async () => zone,
+      hostZone: () => "Europe/Berlin",
+      clockEnabled: () => enabled,
+    });
+    expect(await readClock(UDID, deps(0, "Asia/Tokyo"))).toBe(HOST_CLOCK);
+    expect(await readClock(UDID, deps(60_000, "Asia/Tokyo"))).toBe("2026-11-03T09:01:00+09:00");
+    expect(await readClock(UDID, deps(60_000, HOST_TIME_ZONE))).toBe("2026-11-03T01:01:00+01:00");
+  });
+
+  test("reports UTC when the simulator's zone cannot be read, so the time can still be reset", async () => {
+    const value = await readClock(UDID, {
+      readOffset: () => 60_000,
+      now: () => NOW,
+      readZone: async () => {
+        throw new Error("simctl timed out");
+      },
+      clockEnabled: () => true,
+    });
+    expect(value).toBe("2026-11-03T00:01:00Z");
+  });
+
+  // The file outlives the session; apps launched after it use the host time.
+  test("reports host once the session that set the time has ended", async () => {
+    expect(
+      await readClock(UDID, {
+        readOffset: () => 60_000,
+        now: () => NOW,
+        readZone: async () => "Asia/Tokyo",
+        clockEnabled: () => false,
+      }),
+    ).toBe(HOST_CLOCK);
+  });
+});
+
+describe("the clock option", () => {
+  test("parses a time and host, and lists what it accepts on a bad value", () => {
+    expect(parseUiArgs(["clock", "2030-01-01T09:00"])).toMatchObject({
+      command: "set",
+      option: "clock",
+      value: "2030-01-01T09:00:00",
+    });
+    expect(normalizeUiValue("clock", "reset")).toBe(HOST_CLOCK);
+    expect(parseUiArgs(["clock", "tomorrow"])).toMatchObject({
+      error: expect.stringMatching(/host/),
+    });
   });
 });

@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
+**Revised:** 2026-11-02 (added the wall clock wrappers for the clock capability)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -222,6 +222,31 @@ Capture's startup image resolves existing Objective-C runtime functions and enum
 session factory methods without sending Objective-C messages during initialization.
 Proxy dictionaries are constructed only when those factories are called. Its build checks
 that no framework or Objective-C runtime dependency has been linked into the image.
+
+## The wall clock
+
+dyld interposes functions only for images inserted at `exec`. A capability that the loader
+`dlopen`s later cannot replace a C function in other images, and `dyld_dynamic_interpose`
+had no effect on iOS 26.5. So the loader carries the clock capability's hooks itself: it
+interposes `clock_gettime`, `clock_gettime_nsec_np`, `gettimeofday`, `time` and
+`timespec_get`, and adds an offset for `CLOCK_REALTIME` only. Monotonic clocks stay real, so
+timers and animations are not affected. Foundation's `NSDate` and JavaScriptCore's `Date` read
+these functions, so they move too.
+
+Deadlines need the real clock. libpthread and the kernel judge an absolute deadline with it, so
+`pthread_cond_timedwait` and `dispatch_walltime` move a deadline back by the offset. libdispatch
+also reads the wall clock itself to judge its deadlines, so its own reads, from its `__TEXT`, stay
+real. Without this, a later time hangs timed waits, and an earlier one ends them at once.
+
+The offset is 0 until the clock capability calls `serve_sim_set_wall_clock_offset`, through
+`wall-clock.h`, and with 0 each wrapper passes straight through. The wrappers are in every
+process that carries the loader, daemons included, at the cost of one atomic read per call.
+The clock capability is `startupAndDeferred` and links libSystem only, so an app launched after
+a change reads the new time from its first call, and an app that was running loads it later.
+When the loader's config no longer names the clock image, the session has ended, and the app
+goes back to the host time
+[observed: `Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c`,
+`Sources/ServeSimClock/ServeSimClock.c`].
 
 ## Host resource lifecycle
 

@@ -114,6 +114,18 @@ describe("the socket's own wiring into the middleware", () => {
 
     expect(reply.error).toContain("unknown option");
   });
+
+  // A refused time names only the value the caller sent, so the caller can correct it.
+  it("keeps the reason a clock time is refused", async () => {
+    const socket = await connect();
+    expect(await socket.next()).toMatchObject({ ready: true });
+
+    socket.send({ id: 4, ui: { device: DEVICE, option: "clock", value: "1969-07-20T20:17Z" } });
+    const reply = (await socket.next()) as { error?: string };
+    socket.close();
+
+    expect(reply.error).toBe("1969-07-20T20:17:00Z is before 1970; choose a later time.");
+  });
 });
 
 describe("devtools proxy", () => {
