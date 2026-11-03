@@ -192,10 +192,10 @@ describe("the iPhone Duo 3D preview", () => {
       ],
       deviceModelUrl: "https://hub.test/grid/api/devicekit-model",
     } as Partial<DeviceClient>);
-  let markModelReady: (ready: boolean) => void = () => {};
-  function Model({ onModelReadyChange }: FoldableDeviceScreenProps) {
+  let markModelSettled: (settled: boolean) => void = () => {};
+  function Model({ onModelSettledChange }: FoldableDeviceScreenProps) {
     useEffect(() => {
-      markModelReady = (ready) => onModelReadyChange?.(ready);
+      markModelSettled = (settled) => onModelSettledChange?.(settled);
     });
     return <div data-testid="model" />;
   }
@@ -237,7 +237,7 @@ describe("the iPhone Duo 3D preview", () => {
     expect(pill()).toContain(LOADING_LABEL);
     expect(pill()).not.toContain("Live");
 
-    await act(async () => markModelReady(true));
+    await act(async () => markModelSettled(true));
     expect(testIds(renderer!)).not.toContain("device-screen-loading");
     expect(pill()).toContain("Live");
 

@@ -48,7 +48,7 @@ export interface FoldableDeviceScreenProps {
    * `client.framePresented`, it tells when the preview has shown its first
    * display frame; until then the consumer shows loading UI.
    */
-  onModelReadyChange?: (ready: boolean) => void;
+  onModelSettledChange?: (settled: boolean) => void;
   /** Copy the device app's selected text, as on `DeviceScreen`. */
   onCopy?: () => Promise<void>;
 }
@@ -114,7 +114,7 @@ export function FoldableDeviceScreen({
   cacheScreenOnFold = false,
   sizeMode = "fill",
   onUnavailable,
-  onModelReadyChange,
+  onModelSettledChange,
   onCopy,
 }: FoldableDeviceScreenProps) {
   const {
@@ -154,15 +154,15 @@ export function FoldableDeviceScreen({
     [fold],
   );
   const [modelStatus, setModelStatus] = useState<DuoModelStatus>("loading");
-  const modelReadyChange = useRef(onModelReadyChange);
-  modelReadyChange.current = onModelReadyChange;
+  const modelSettledChange = useRef(onModelSettledChange);
+  modelSettledChange.current = onModelSettledChange;
   const modelReady = modelStatus === "ready";
   // A model that cannot load ends the wait too: its flat fallback has frames to show.
   const modelSettled = modelStatus !== "loading";
   useEffect(() => {
-    modelReadyChange.current?.(modelSettled);
+    modelSettledChange.current?.(modelSettled);
   }, [modelSettled]);
-  useEffect(() => () => modelReadyChange.current?.(false), []);
+  useEffect(() => () => modelSettledChange.current?.(false), []);
   // @ref LLP 0015#states — no black displays: the model shows once it has a frame to draw
   const hidden = modelStatus === "loading" || (modelReady && !framePresented);
   useReleaseFocusWhenHidden(hostRef, hidden);

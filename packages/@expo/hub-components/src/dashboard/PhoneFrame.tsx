@@ -110,8 +110,8 @@ export function PhoneFrame({
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  // The device whose 3D model is loaded; the 3D preview loads until it has one.
-  const [modelReadyDevice, setModelReadyDevice] = useState<string | null>(null);
+  // The device whose 3D model is loaded or unavailable; the 3D preview loads until it has one.
+  const [modelSettledDevice, setModelSettledDevice] = useState<string | null>(null);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
 
@@ -167,7 +167,7 @@ export function PhoneFrame({
     client.deviceModelUrl
   );
   const loading =
-    !!live && deviceScreenLoading(client, !foldable || modelReadyDevice === device.id);
+    !!live && deviceScreenLoading(client, !foldable || modelSettledDevice === device.id);
   useLayoutEffect(() => {
     onLoadingChange?.(loading);
   }, [onLoadingChange, loading]);
@@ -231,7 +231,7 @@ export function PhoneFrame({
             key={device.id}
             client={client}
             onCopy={onCopy}
-            onModelReadyChange={(ready) => setModelReadyDevice(ready ? device.id : null)}
+            onModelSettledChange={(settled) => setModelSettledDevice(settled ? device.id : null)}
             {...modelOptions}
           />
           {screenStatus}
