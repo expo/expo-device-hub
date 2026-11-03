@@ -136,7 +136,7 @@ import { KeyedWriteTracker } from "./keyed-write-tracker";
 import {
   clockwiseQuarterTurns,
   DEVICE_ORIENTATIONS,
-  DUO_ROTATE_ORIENTATIONS,
+  CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
 } from "./orientation";
 import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
@@ -992,7 +992,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             // The simulator, not the token: a reconnect keeps its choices in order.
             device: JSON.stringify([baseUrl, targetDevice]),
             // Xcode's Device Hub turns the iPhone Duo clockwise.
-            orientations: isDuo ? DUO_ROTATE_ORIENTATIONS : DEVICE_ORIENTATIONS,
+            orientations: isDuo ? CLOCKWISE_ORIENTATIONS : DEVICE_ORIENTATIONS,
             reportsPose: true,
             pushesReports: true,
             set: (orientation) =>
