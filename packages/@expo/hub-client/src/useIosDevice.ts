@@ -642,6 +642,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const rotationRef = useRef<{ target: HingePhysicalOrientation | undefined } | null>(null);
   // Restarts the readback grace for each rotation.
   const [rotationRequest, setRotationRequest] = useState(0);
+  // Every end of the override ends the rotation at once, so a later config
+  // cannot land a rotation that a pose command already replaced.
+  const endRotation = useCallback(() => {
+    rotationRef.current = null;
+    setOrientationOverride(false);
+  }, []);
   // The pose observed while no local command owned the hinge, or while one was
   // pending. A readback that still lags a local preset matches it.
   const observedPoseRef = useRef<HingePose | null | undefined>(undefined);
@@ -1052,16 +1058,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setOrientationOverride(true);
   }, []);
   // @ref LLP 0004#live-pose-observation — the observation that ends a rotation is the pose baseline, so a turned Laptop that reads as Book keeps the turned view
-  const landRotation = useCallback((config: ScreenSize | null) => {
-    if (rotationRef.current === null) return;
-    rotationRef.current = null;
-    if (config) observedPoseRef.current = observedScreenConfig(config).hingePose;
-    setOrientationOverride(false);
-  }, []);
-  // Every other end of the override also ends the rotation.
-  useLayoutEffect(() => {
-    if (!orientationOverride) rotationRef.current = null;
-  }, [orientationOverride]);
+  const landRotation = useCallback(
+    (config: ScreenSize | null) => {
+      if (rotationRef.current === null) return;
+      if (config) observedPoseRef.current = observedScreenConfig(config).hingePose;
+      endRotation();
+    },
+    [endRotation],
+  );
   // As in serve-sim's rotation tracker, a rotation whose readback does not
   // arrive ends after the readback grace.
   useEffect(() => {
@@ -1132,39 +1136,42 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setHingePreview(null);
         setPhysicalPose(undefined);
         sentHingePoseRef.current = undefined;
-        setOrientationOverride(false);
+        endRotation();
       },
     });
   }
 
-  const setHingeControl = useCallback((input: HingeControlCommand) => {
-    // Its own object per request, so recovery knows which burst sent a reply.
-    const command = { ...input };
-    const { initialView } = duoRef.current;
-    setHingeError(null);
-    faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
-    // Editing the hinge or Table Mode clears the named preset, but preserves
-    // the simulator's physical orientation (for example Laptop on a table).
-    if (command.control === "pose") {
-      // Remember the view before the first preset of a burst; each successful
-      // acknowledgement advances it without changing the optimistic preview.
-      presetRestoreRef.current ??= { view: duoViewRef.current, presets: new WeakSet() };
-      presetRestoreRef.current.presets.add(command);
-      setPhysicalPose(command.value);
-      setOrientationOverride(false);
-      setDuoView(duoPresetView(command.value));
-    } else {
-      // Lock even an early edit before the first complete native config.
-      setDuoView((previous) => previous ?? initialView);
-    }
-    // The preview holds only what commands set; the rest reads the live
-    // observation, which the command's config need not match.
-    setHingePreview((previous) => ({ ...previous, ...hingeControlState(command) }));
-    hingeQueueRef.current?.enqueue(command, {
-      key: command.control,
-      replaceQueued: command.control === "pose",
-    });
-  }, []);
+  const setHingeControl = useCallback(
+    (input: HingeControlCommand) => {
+      // Its own object per request, so recovery knows which burst sent a reply.
+      const command = { ...input };
+      const { initialView } = duoRef.current;
+      setHingeError(null);
+      faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
+      // Editing the hinge or Table Mode clears the named preset, but preserves
+      // the simulator's physical orientation (for example Laptop on a table).
+      if (command.control === "pose") {
+        // Remember the view before the first preset of a burst; each successful
+        // acknowledgement advances it without changing the optimistic preview.
+        presetRestoreRef.current ??= { view: duoViewRef.current, presets: new WeakSet() };
+        presetRestoreRef.current.presets.add(command);
+        setPhysicalPose(command.value);
+        endRotation();
+        setDuoView(duoPresetView(command.value));
+      } else {
+        // Lock even an early edit before the first complete native config.
+        setDuoView((previous) => previous ?? initialView);
+      }
+      // The preview holds only what commands set; the rest reads the live
+      // observation, which the command's config need not match.
+      setHingePreview((previous) => ({ ...previous, ...hingeControlState(command) }));
+      hingeQueueRef.current?.enqueue(command, {
+        key: command.control,
+        replaceQueued: command.control === "pose",
+      });
+    },
+    [endRotation],
+  );
   // The 3D scene already mapped these to the raw framebuffer of the panel it hit.
   const sendModelTouch = useCallback(
     (sample: DuoModelTouch) => sendWs(WS_MSG_TOUCH, sample),
@@ -1873,7 +1880,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           setHardwareKeyboardConnectedState(null);
           setPhysicalPose(undefined);
           sentHingePoseRef.current = undefined;
-          setOrientationOverride(false);
+          endRotation();
           if (hingePendingRef.current) {
             hingeQueueRef.current?.clear();
             restorePresetView();
@@ -1935,6 +1942,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     videoSessionKey,
     keyboard,
     landRotation,
+    endRotation,
   ]);
 
   // ── iPhone Duo: pose bookkeeping and the 3D model's panel feeds ──
@@ -1961,9 +1969,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     presetRestoreRef.current = null;
     sentHingePoseRef.current = undefined;
     observedPoseRef.current = undefined;
-    setOrientationOverride(false);
+    endRotation();
     hingeQueueRef.current?.clear();
-  }, [hingeSessionKey]);
+  }, [hingeSessionKey, endRotation]);
 
   useEffect(() => {
     // Use native orientation once when connecting, never as a live view control.
