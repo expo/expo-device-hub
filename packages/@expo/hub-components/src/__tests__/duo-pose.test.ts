@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { type DeviceOrientation, type ScreenSize } from "@expo/hub-client";
+import {
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
+  type DeviceOrientation,
+  type ScreenSize,
+} from "@expo/hub-client";
 import { Euler, Vector2, Vector3 } from "three";
 
 import {
@@ -358,36 +363,23 @@ describe("iPhone Duo screen hit mapping", () => {
 });
 
 describe("iPhone Duo model input", () => {
-  // hub-client maps display points to raw points like this (`rawPointForDisplayPoint`).
-  const rawPoint: Record<DeviceOrientation, (x: number, y: number) => { x: number; y: number }> = {
-    portrait: (x, y) => ({ x, y }),
-    landscape_left: (x, y) => ({ x: y, y: 1 - x }),
-    landscape_right: (x, y) => ({ x: 1 - y, y: x }),
-    portrait_upside_down: (x, y) => ({ x: 1 - x, y: 1 - y }),
-  };
-  const rawDelta: Record<
-    DeviceOrientation,
-    (dx: number, dy: number) => { dx: number; dy: number }
-  > = {
-    portrait: (dx, dy) => ({ dx, dy }),
-    landscape_left: (dx, dy) => ({ dx: dy, dy: -dx }),
-    landscape_right: (dx, dy) => ({ dx: -dy, dy: dx }),
-    portrait_upside_down: (dx, dy) => ({ dx: -dx, dy: -dy }),
-  };
+  const orientations: DeviceOrientation[] = [
+    "portrait",
+    "landscape_left",
+    "landscape_right",
+    "portrait_upside_down",
+  ];
 
   test("raw panel hits leave as the display points that hub-client maps back to them", () => {
-    for (const orientation of Object.keys(rawPoint) as DeviceOrientation[]) {
+    for (const orientation of orientations) {
       // A portrait inner raster that the client rotates for a landscape app.
       const config = { width: 2007, height: 2853, screenId: 3, orientation };
-      const rotates = orientation !== "portrait";
-      const display = duoDisplayPoint(config, 0.95, 0.75);
-      const back = rotates ? rawPoint[orientation](display.x, display.y) : display;
-      expect(back.x).toBeCloseTo(0.95, 12);
-      expect(back.y).toBeCloseTo(0.75, 12);
-      const delta = duoDisplayDelta(config, 0.1, -0.2);
-      const raw = rotates ? rawDelta[orientation](delta.dx, delta.dy) : delta;
-      expect(raw.dx).toBeCloseTo(0.1, 12);
-      expect(raw.dy).toBeCloseTo(-0.2, 12);
+      expect(duoDisplayPoint(config, 0.95, 0.75)).toEqual(
+        displayPointForRawPoint(orientation, 0.95, 0.75),
+      );
+      expect(duoDisplayDelta(config, 0.1, -0.2)).toEqual(
+        displayDeltaForRawDelta(orientation, 0.1, -0.2),
+      );
     }
     // The client test sends this display point and expects this raw point.
     const landscape = { width: 2007, height: 2853, screenId: 3, orientation: "landscape_left" };

@@ -45,7 +45,13 @@ export {
   agentInteractionEndMs,
   agentInteractionPointsAt,
 } from "./agent-interaction-animation";
-export { DEVICE_ORIENTATIONS, displayScreen, streamGeometry } from "./orientation";
+export {
+  DEVICE_ORIENTATIONS,
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
+  displayScreen,
+  streamGeometry,
+} from "./orientation";
 export { useIosDeviceClient } from "./useIosDevice";
 export { useAndroidDeviceClient } from "./useAndroidDevice";
 export {

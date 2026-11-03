@@ -4,7 +4,13 @@
  * fold elects is fold state, so `@expo/hub-client` owns it.
  */
 
-import { streamGeometry, type HingePose, type ScreenSize } from "@expo/hub-client";
+import {
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
+  streamGeometry,
+  type HingePose,
+  type ScreenSize,
+} from "@expo/hub-client";
 import { Euler, Quaternion } from "three";
 
 export interface DuoViewAngles {
@@ -149,31 +155,12 @@ export function duoScreenPoint(x: number, y: number, mapping: DuoScreenMapping) 
 /**
  * The scene hits raw framebuffer points, but the client takes display points,
  * as `DeviceScreen` sends them, and maps them back with the same orientation.
- * This is the inverse of hub-client's display-to-raw mapping.
  */
 export function duoDisplayPoint(config: ScreenSize | null | undefined, x: number, y: number) {
-  switch (streamGeometry(config).inputOrientation) {
-    case "landscape_left":
-      return { x: 1 - y, y: x };
-    case "landscape_right":
-      return { x: y, y: 1 - x };
-    case "portrait_upside_down":
-      return { x: 1 - x, y: 1 - y };
-    default:
-      return { x, y };
-  }
+  return displayPointForRawPoint(streamGeometry(config).inputOrientation, x, y);
 }
 
 /** The linear part of {@link duoDisplayPoint}, for scroll deltas. */
 export function duoDisplayDelta(config: ScreenSize | null | undefined, dx: number, dy: number) {
-  switch (streamGeometry(config).inputOrientation) {
-    case "landscape_left":
-      return { dx: -dy, dy: dx };
-    case "landscape_right":
-      return { dx: dy, dy: -dx };
-    case "portrait_upside_down":
-      return { dx: -dx, dy: -dy };
-    default:
-      return { dx, dy };
-  }
+  return displayDeltaForRawDelta(streamGeometry(config).inputOrientation, dx, dy);
 }

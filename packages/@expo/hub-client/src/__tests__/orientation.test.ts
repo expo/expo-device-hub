@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   CLOCKWISE_ORIENTATIONS,
   clockwiseQuarterTurns,
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
   HID_EDGE_BOTTOM,
   HOME_INDICATOR_BAND_NORM,
   homeIndicatorEdge,
@@ -12,6 +14,7 @@ import {
   streamGeometry,
   turnedPhysicalOrientation,
 } from "../orientation";
+import type { DeviceOrientation } from "../types";
 
 describe("homeIndicatorEdge", () => {
   test("tags a pointer begin inside the bottom band as the home-indicator edge", () => {
@@ -97,6 +100,28 @@ describe("turnedPhysicalOrientation", () => {
           ),
         ).toBe(physicalOrientationForInterface(to));
       }
+    }
+  });
+});
+
+describe("displayPointForRawPoint", () => {
+  const orientations: DeviceOrientation[] = [
+    "portrait",
+    "landscape_left",
+    "landscape_right",
+    "portrait_upside_down",
+  ];
+
+  test("undoes the display-to-raw mapping in every orientation", () => {
+    for (const orientation of orientations) {
+      const display = displayPointForRawPoint(orientation, 0.95, 0.75);
+      const raw = rawPointForDisplayPoint(orientation, display.x, display.y);
+      expect(raw.x).toBeCloseTo(0.95, 12);
+      expect(raw.y).toBeCloseTo(0.75, 12);
+      const delta = displayDeltaForRawDelta(orientation, 0.1, -0.2);
+      const rawDelta = rawDeltaForDisplayDelta(orientation, delta.dx, delta.dy);
+      expect(rawDelta.dx).toBeCloseTo(0.1, 12);
+      expect(rawDelta.dy).toBeCloseTo(-0.2, 12);
     }
   });
 });
