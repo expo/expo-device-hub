@@ -57,11 +57,17 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
     onStatusChange.current?.(status);
   }, [status]);
 
-  // The scene answers once; a timeout that comes first wins.
-  const settled = useRef(false);
+  // A timeout before the scene is ready wins, and a scene error at any time
+  // falls back to the flat displays for good.
+  const statusRef = useRef<DuoModelStatus>("loading");
+  const ready = useCallback(() => {
+    if (statusRef.current !== "loading") return;
+    statusRef.current = "ready";
+    setStatus("ready");
+  }, []);
   const unavailable = useCallback(() => {
-    if (settled.current) return;
-    settled.current = true;
+    if (statusRef.current === "unavailable") return;
+    statusRef.current = "unavailable";
     setStatus("unavailable");
     latest.current.onUnavailable?.();
   }, []);
@@ -70,26 +76,26 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
 
   useEffect(() => {
     if (!host.current || !source.current) return;
-    settled.current = false;
+    let disposed = false;
     const scene = createDuoScene(
       host.current,
       source.current,
       () => latest.current,
       {
         ready: () => {
-          if (settled.current) return;
-          settled.current = true;
-          setStatus("ready");
+          if (!disposed) ready();
         },
-        error: unavailable,
+        error: () => {
+          if (!disposed) unavailable();
+        },
       },
       { left: hingeHandle.current ?? undefined, right: oppositeHingeHandle.current ?? undefined },
     );
     return () => {
-      settled.current = true;
+      disposed = true;
       scene.dispose();
     };
-  }, [unavailable]);
+  }, [ready, unavailable]);
 
   const angle = props.angle ?? (props.streamConfig?.screenId === 1 ? 0 : 180);
   const onHingeAngleChange = status === "ready" ? props.onHingeAngleChange : undefined;
