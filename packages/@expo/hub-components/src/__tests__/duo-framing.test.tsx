@@ -270,6 +270,16 @@ test("a device turned over elsewhere is framed as on connect, but a local rotati
   expect(view()).toEqual(duoRotateView(presetView, 1));
 });
 
+test("a rotation turns the view even when its cleared pose commits in a later render", async () => {
+  const { view, emit, update } = await mount(INNER_OPEN);
+  await update({ physicalPose: "laptop" });
+  const before = view();
+  await emit({ type: "rotated", quarterTurns: 1 });
+  await update({}, { ...INNER_OPEN, orientation: "landscape_left" });
+  await update({ physicalPose: null });
+  expect(view()).toEqual(duoRotateView(before, 1));
+});
+
 test("a device turned face down elsewhere frames its cover like Tent until it turns back", async () => {
   const half = { ...INNER_OPEN, hingeAngle: 90, hingePose: null, tableMode: true };
   const { view, update } = await mount(half);

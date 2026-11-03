@@ -148,20 +148,24 @@ export function useDuoFraming(hinge: DeviceHinge | null, screen: ScreenSize | nu
   // The client forgets the physical pose when the device was turned over
   // elsewhere without a preset, or when it rotated. Only the first is framed
   // as on connect; face-down framing below still turns it to the cover.
+  // A rotation clears the pose before it emits `rotated`, so the flag is set
+  // before the cleared pose commits, and the next pose change consumes it.
   const physicalPose = hinge?.physicalPose;
   const pending = hinge?.pending ?? false;
   const faceDown = hinge?.faceDown ?? false;
   const previousPoseRef = useRef(physicalPose);
   useEffect(() => {
     const previous = previousPoseRef.current;
+    if (previous === physicalPose) return;
+    const rotated = rotatedRef.current;
     previousPoseRef.current = physicalPose;
-    if (previous && physicalPose === null && !rotatedRef.current) {
+    rotatedRef.current = false;
+    if (previous && physicalPose === null && !rotated) {
       setView(() => null);
     } else if (
       // @ref LLP 0004#3d-preview-in-the-hub — an external preset frames the model as a local one does; the client waits for a rotation to land first
       physicalPose &&
       previous !== undefined &&
-      physicalPose !== previous &&
       !owned &&
       !pending
     ) {
@@ -169,9 +173,6 @@ export function useDuoFraming(hinge: DeviceHinge | null, screen: ScreenSize | nu
       setView(() => duoPresetView(physicalPose));
     }
   }, [physicalPose, owned, pending, setView]);
-  useEffect(() => {
-    rotatedRef.current = false;
-  });
 
   useEffect(() => {
     // Another client can turn a half-open device face down without a preset.
