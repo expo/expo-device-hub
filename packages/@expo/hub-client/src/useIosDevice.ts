@@ -365,6 +365,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
+  // True while the helper input socket is admitted, so sends reach the simulator.
+  const [inputAdmitted, setInputAdmitted] = useState(false);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
@@ -1471,6 +1473,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHardwareKeyboardConnectedState(null);
     setInputSocketError((current) => (lostInputTimerRef.current === undefined ? null : current));
     setInputUnavailable(false);
+    setInputAdmitted(false);
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1486,6 +1489,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(false);
+          setInputAdmitted(true);
         },
         onMessage(data) {
           if (!(data instanceof ArrayBuffer) || keyboard.receive(data)) return false;
@@ -1520,6 +1524,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         },
         onDisconnect() {
+          setInputAdmitted(false);
           keyboard.cancelRequests();
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(null);
@@ -1566,6 +1571,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
+      setInputAdmitted(false);
     };
   }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
 
@@ -2141,7 +2147,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientation,
     orientationPending,
     orientationError,
-    orientationUnavailable: status === "streaming" ? null : "not-streaming",
+    // @ref LLP 0013#orientation — iOS sends the pose over the input socket, not the video stream
+    orientationUnavailable: inputAdmitted && !inputUnavailable ? null : "input-unavailable",
     setOrientation,
     screenshot,
     appearance,

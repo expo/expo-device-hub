@@ -110,12 +110,12 @@ export function useDeviceOrientation(
   }, [backend]);
 
   // The shown pose, updated at once by each choice, so two Rotate calls before a render step
-  // through two poses.
-  const orientation = state.choice?.orientation ?? reported;
-  const shownRef = useRef(orientation);
+  // through two poses. A backend that reports no pose keeps it only for Rotate.
+  const shown = state.choice?.orientation ?? reported;
+  const shownRef = useRef(shown);
   useLayoutEffect(() => {
-    shownRef.current = orientation;
-  }, [orientation]);
+    shownRef.current = shown;
+  }, [shown]);
 
   const choose = useCallback(
     (next: DeviceOrientation) => {
@@ -176,7 +176,7 @@ export function useDeviceOrientation(
   );
 
   return {
-    orientation,
+    orientation: backend?.reportsPose ? shown : null,
     orientationPending: state.choice?.answeredAt === null,
     orientationError: state.error,
     orientationCapabilities,

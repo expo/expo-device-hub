@@ -283,9 +283,12 @@ test("Android offers no poses on servers that do not report one, but Rotate stil
   expect(locks()).toEqual([]);
   await act(async () => client().rotate());
   await settle();
+  // The client cannot show the pose, so it does not show the Rotate choice either.
+  expect(client().orientation).toBeNull();
   await act(async () => client().rotate());
   await settle();
   expect(locks()).toEqual(["landscape", "portrait"]);
+  expect(client().orientation).toBeNull();
 });
 
 test("Android sends one orientation at a time and keeps only the latest queued choice", async () => {

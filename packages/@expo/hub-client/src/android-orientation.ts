@@ -4,7 +4,7 @@ import { type DeviceOrientation } from "./types";
 import { type DeviceOrientationBackend } from "./useDeviceOrientation";
 
 /**
- * `poses`: the server reports `orientation` in `/api` and locks every pose. `legacy`: an older
+ * `poses`: the server reports `pose` in `/api` and locks every pose. `legacy`: an older
  * server that only takes `portrait` and `landscape`, which locks rotation 1, a phone turned a
  * quarter turn counterclockwise (`landscape_right`).
  */

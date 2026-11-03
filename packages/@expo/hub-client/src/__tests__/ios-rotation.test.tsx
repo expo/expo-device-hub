@@ -28,9 +28,9 @@ class Socket {
     this.onmessage?.({ data: new Uint8Array([0x83]).buffer });
   }
 
-  screen(orientation: DeviceOrientation) {
+  screen(orientation: DeviceOrientation, extra: Record<string, unknown> = {}) {
     const json = new TextEncoder().encode(
-      JSON.stringify({ width: 1206, height: 2622, orientation }),
+      JSON.stringify({ width: 1206, height: 2622, orientation, ...extra }),
     );
     const frame = new Uint8Array(json.length + 1);
     frame[0] = 0x82;
@@ -407,22 +407,47 @@ test("an iOS client without a connection offers no orientations and ignores a ch
   expect(disabled.orientationError).toBeNull();
 });
 
-test("an iOS client reports orientation as unavailable until the stream is live", async () => {
-  const { client } = await mount();
+const liveImage = {
+  naturalWidth: 1170,
+  naturalHeight: 2532,
+  addEventListener() {},
+  removeEventListener() {},
+  removeAttribute() {},
+};
+
+async function streamVideo(client: () => DeviceClient) {
+  await act(async () => client().attachVideo(liveImage as unknown as HTMLImageElement));
+  // The stream effect checks the image every 400 ms; wait for two checks under load.
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 850)));
+}
+
+test("iOS orientation follows the input socket, not the video: no video, admitted input", async () => {
+  const { client, helper } = await mount();
   expect(client().status).toBe("connecting");
-  expect(client().orientationUnavailable).toBe("not-streaming");
-  const image = {
-    naturalWidth: 1170,
-    naturalHeight: 2532,
-    addEventListener() {},
-    removeEventListener() {},
-    removeAttribute() {},
-  };
-  await act(async () => client().attachVideo(image as unknown as HTMLImageElement));
-  // The stream effect checks the image every 400 ms.
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 450)));
+  expect(client().orientationUnavailable).toBeNull();
+  await act(async () => client().setOrientation("landscape_left"));
+  expect(helper().rotations()).toEqual(["landscape_left"]);
+});
+
+test("iOS orientation follows the input socket, not the video: live video, input unavailable", async () => {
+  const { client, helper } = await mount();
+  await streamVideo(client);
   expect(client().status).toBe("streaming");
   expect(client().orientationUnavailable).toBeNull();
+  await act(async () => helper().screen("portrait", { inputUnavailable: true }));
+  expect(client().status).toBe("streaming");
+  expect(client().orientationUnavailable).toBe("input-unavailable");
+  await act(async () => helper().screen("portrait"));
+  expect(client().orientationUnavailable).toBeNull();
+});
+
+test("iOS orientation is unavailable until the helper admits input, and after a disconnect", async () => {
+  const { client, helper } = await mount({ inputAdmission: true });
+  expect(client().orientationUnavailable).toBe("input-unavailable");
+  await act(async () => helper().admit());
+  expect(client().orientationUnavailable).toBeNull();
+  await act(async () => helper().onclose?.({ code: 1006, reason: "" }));
+  expect(client().orientationUnavailable).toBe("input-unavailable");
 });
 
 test("an iOS orientation choice is still sent under Strict Mode, which runs effects twice", async () => {
