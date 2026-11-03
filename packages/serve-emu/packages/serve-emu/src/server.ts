@@ -559,11 +559,15 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       serial,
       generation,
       stream,
-      applyLocation: setLocation,
-      readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
-      applyRotation:
-        dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
-      deviceState,
+      ...(deviceState
+        ? { deviceState }
+        : {
+            applyLocation: setLocation,
+            readOrientation:
+              dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+            applyRotation:
+              dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
+          }),
     });
     context.registerCleanup(() =>
       uploads.cancelGeneration(
