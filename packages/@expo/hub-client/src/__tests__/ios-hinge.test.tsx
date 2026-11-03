@@ -662,6 +662,25 @@ test("choosing an orientation on the Duo turns its 3D view by the same quarter t
   expect(client().hinge?.physicalPose).toBeNull();
 });
 
+test("two orientation choices in one render turn the 3D view as far as the device", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  const before = client().hinge!.view;
+  await act(async () => {
+    client().setOrientation("landscape_right");
+    client().setOrientation("portrait_upside_down");
+  });
+  expect(
+    socket
+      .frames()
+      .filter((frame) => frame.tag === 0x07)
+      .map((frame) => frame.payload.orientation),
+  ).toEqual(["landscape_right", "portrait_upside_down"]);
+  // Each choice is one quarter turn clockwise from the one before it.
+  expect(client().hinge?.view).toEqual(duoRotateView(duoRotateView(before, 1), 1));
+});
+
 test("the 3D preview feeds both panels through the helper mount and parks the flat stream", async () => {
   installBrowser({ duo: true });
   const { socket, client, update } = await connect({ duoPreview: "3d" });

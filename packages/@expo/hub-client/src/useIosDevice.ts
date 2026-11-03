@@ -1013,21 +1013,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           },
     [baseUrl, connectionScope, sendWs, targetDevice, isDuo],
   );
-  const {
-    orientation,
-    orientationPending,
-    orientationError,
-    orientationCapabilities,
-    setOrientation: chooseOrientation,
-    rotate: rotateOrientation,
-    acceptReport: acceptOrientationReport,
-  } = useDeviceOrientation(orientationBackend, readbackOrientation);
-  // A malformed readback is not a report, so it cannot replace a choice.
-  useEffect(() => {
-    if (readbackOrientation) acceptOrientationReport(readbackOrientation, performance.now());
-  }, [readbackOrientation, acceptOrientationReport]);
-  const shownOrientationRef = useRef(orientation);
-  shownOrientationRef.current = orientation;
   // An iPhone Duo's 3D view turns at once, and the native preset, which a
   // rotation clears, is forgotten.
   const turnDuo = useCallback((quarterTurns: number) => {
@@ -1045,20 +1030,30 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       : undefined;
     setOrientationOverride(true);
   }, []);
-  // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
-  const rotate = useCallback(() => {
-    if (!orientationBackend) return;
-    turnDuo(1);
-    rotateOrientation("portrait");
-  }, [orientationBackend, turnDuo, rotateOrientation]);
-  const setOrientation = useCallback(
-    (next: DeviceOrientation) => {
-      if (!orientationBackend) return;
-      turnDuo(clockwiseQuarterTurns(shownOrientationRef.current ?? "portrait", next));
-      chooseOrientation(next);
-    },
-    [orientationBackend, turnDuo, chooseOrientation],
+  // Each choice turns the 3D view from the pose before it, so two choices in
+  // one render turn it as far as the device.
+  const turnDuoForChoice = useCallback(
+    (from: DeviceOrientation | null, to: DeviceOrientation) =>
+      turnDuo(clockwiseQuarterTurns(from ?? "portrait", to)),
+    [turnDuo],
   );
+  const {
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationCapabilities,
+    setOrientation,
+    rotate: rotateOrientation,
+    acceptReport: acceptOrientationReport,
+  } = useDeviceOrientation(orientationBackend, readbackOrientation, {
+    onChoose: turnDuoForChoice,
+  });
+  // A malformed readback is not a report, so it cannot replace a choice.
+  useEffect(() => {
+    if (readbackOrientation) acceptOrientationReport(readbackOrientation, performance.now());
+  }, [readbackOrientation, acceptOrientationReport]);
+  // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
+  const rotate = useCallback(() => rotateOrientation("portrait"), [rotateOrientation]);
 
   function restorePresetView() {
     const restore = presetRestoreRef.current;
