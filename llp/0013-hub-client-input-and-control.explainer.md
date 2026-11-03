@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
+**Revised:** 2026-10-29 (orientation)
 **Related:** LLP 0000, LLP 0003
 
 ## Summary
@@ -147,6 +148,17 @@ The Hub dashboard reads and writes the browser clipboard for HubClient. Paths in
 Browser clipboard writes from toolbar Copy are serialized. An older write that has already started cannot be cancelled; a newer result waits for it and writes last. A queued write whose action has been superseded is skipped [observed: `copyWrites` in `ClipboardToast.tsx`].
 
 Clipboard fallbacks belong to the selected device and are discarded on a selection change. A new fallback clears an earlier inspector error. A new inspector Copy clears its previous result before reading, including on failure. Key warnings are shown even when React batches an action's start and completion. The toolbar wraps at narrow widths; its measured height reserves space below the stream [observed: `Dashboard.tsx`, `ClipboardSection.tsx`, `ClipboardToast.tsx`, `StreamPanel.tsx`].
+
+## Orientation
+
+`DeviceClient.setOrientation` turns the device to one pose from `capabilities.orientation`, on both platforms. Both use the same four poses, named as serve-sim names them [observed: `Orientation` in serve-sim `src/native.ts`; `COUNTERCLOCKWISE_POSES` in serve-emu `src/adb.ts`], and Rotate steps through them in `DEVICE_ORIENTATIONS` order [observed: `orientation.ts`]. One hook, `useDeviceOrientation`, holds the choice for both, as `useDeviceLocation` holds the location; each platform supplies a backend [observed: `useDeviceOrientation.ts`].
+
+- **Choice and answer**: `orientation` shows a choice at once, `orientationPending` stays true until the backend answers, and `orientationError` keeps the last failure, like `appearance` and `location`. Each device has one writer for the hook's life, so its requests run one at a time, also across a token change or after the device is selected again, and a choice made while one is in flight replaces the queued one; only the newest answer or failure is shown [observed: `latest-writer.ts`]. Another device does not wait for it. A retired backend's queued choice is dropped, while its request in flight finishes. Rotate chooses the pose after the one shown, which a choice updates at once, so two Rotate calls before a render step through two poses [observed: `useDeviceOrientation.ts`]. After the answer, the choice stays until a report that started after it shows that pose, or until the 1.5 s readback grace has passed, because a report can still show the pose from before the change and an app can keep its own orientation [observed: `useDeviceOrientation.ts`].
+- **Unavailable**: `orientationUnavailable` gives the reason a change cannot go out now, or null. iOS reports `input-unavailable` while the helper input socket is not admitted or the helper reports `inputUnavailable`, because the pose goes over that socket, and the input queue drops a choice after 1.5 s. The video stream does not matter: video can fail while input works, and the reverse. A call still tries and can fail with `orientationError`. Android sends over HTTP. New reasons can be added [observed: `useIosDevice.ts`, `useAndroidDevice.ts`].
+- **iOS** sends the pose through the input queue. The send is the answer. serve-sim pushes a report only when the pose changes, so the choice also ends when the readback grace ends. A choice that the queue has not sent within its 1.5 s age limit fails. Rotate is a choice of the next pose, as on Android ([LLP 0003](0003-serve-sim-http-api.spec.md#rotation-readback)) [observed: `useIosDevice.ts`].
+- **Android** sends `POST /api/orientation` with a 10 s timeout on the request's signal, which also ends the body read, as in the `/api` poll; a timeout is reported and not retried [observed: `android-orientation.ts`]. The answer's `pose` replaces the choice, and each `/api` poll is a report [observed: `useAndroidDevice.ts`].
+- **Older serve-emu servers** do not send `pose` in `GET /api`. HubClient then sets `capabilities.orientation` to `false`, keeps `orientation` null, also after a Rotate, and ignores `setOrientation`, because it cannot show which pose the device is in. Rotate still works: it alternates between `portrait` and `landscape_right`, sent as `portrait` and `landscape`, which lock rotation 0 and 1, from the last choice or, without one, from the frame's aspect. Before the first `/api` answer the kind of server is not known, so Rotate waits [observed: `useAndroidDevice.ts`, `android-orientation.ts`].
+- **`screen.framesUpright`**: serve-emu frames already show the display as it faces, so Android sets `framesUpright` and `DeviceScreen` never turns the video. serve-sim can send raw portrait frames for a turned simulator, which `DeviceScreen` turns [observed: `streamGeometry` in `orientation.ts`]. The reported pose comes from the 1.5 s `/api` poll, and the frame size changes first, so Android adds the pose to `screen` only while both show the same portrait or landscape shape [observed: `useAndroidDevice.ts`].
 
 ## Single-device sessions
 

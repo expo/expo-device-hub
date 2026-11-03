@@ -38,7 +38,7 @@ export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
  */
 export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "streaming" | "error";
 
-/** Device orientation, as reported by serve-sim's stream config. */
+/** How the device faces: serve-sim's stream config, or serve-emu's display rotation. */
 export type DeviceOrientation =
   | "portrait"
   | "portrait_upside_down"
@@ -49,8 +49,13 @@ export type DeviceOrientation =
 export interface ScreenSize {
   width: number;
   height: number;
-  /** Last known orientation, when the backend reports it (serve-sim). */
+  /** Last known orientation, when the backend reports it (serve-sim, serve-emu). */
   orientation?: DeviceOrientation;
+  /**
+   * True when frames already show the display as it faces (serve-emu), so the client never
+   * turns the video. serve-sim can send raw portrait frames for a turned device instead.
+   */
+  framesUpright?: boolean;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -229,6 +234,24 @@ export interface DeviceGeoFix {
  */
 export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
+/**
+ * Orientations that `setOrientation` can turn the device to. `false` when the backend cannot
+ * turn the device to one pose or cannot report the pose it shows (an older serve-emu server);
+ * `rotate` still works where the backend supports it.
+ */
+export type DeviceOrientationCapabilities =
+  | false
+  | Readonly<{ orientations: readonly DeviceOrientation[] }>;
+
+/**
+ * Why an orientation change cannot go out now. New reasons can be added, so handle unknown
+ * values. `"input-unavailable"`: serve-sim sends the pose over the helper's input socket, which
+ * is not admitted or reports that the simulator cannot take input. A call still tries: the
+ * input queue keeps it for a short time and then reports an `orientationError`. The video
+ * stream does not matter.
+ */
+export type DeviceOrientationUnavailableReason = "input-unavailable";
+
 /** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
 export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
 
@@ -387,6 +410,8 @@ export interface DeviceCapabilities {
   permissions: boolean;
   /** Text clipboard actions, in order with keyboard input. */
   clipboard: DeviceClipboardCapabilities;
+  /** Orientations that `setOrientation` accepts. */
+  orientation: DeviceOrientationCapabilities;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -839,12 +864,43 @@ export interface DeviceClient {
    */
   reload: () => void;
   /**
-   * Rotate the device. serve-sim sets the next orientation in the
-   * counterclockwise cycle over the helper's orientation channel; serve-emu
-   * locks the opposite portrait/landscape orientation via `POST
-   * /api/orientation`. A no-op if nothing is connected.
+   * Rotate the device to the next pose in `DEVICE_ORIENTATIONS` order. serve-sim sends it
+   * over the helper's orientation channel; serve-emu locks it via `POST /api/orientation`,
+   * like {@link setOrientation}. A serve-emu server that does not report its pose gets the
+   * opposite of the frame's portrait or landscape aspect. A no-op if nothing is connected.
    */
   rotate: () => void;
+  /**
+   * The pose the device is turned to: the last choice from {@link setOrientation} while it is
+   * pending and until the backend reports again, then the backend's report. Null when the
+   * backend reports no pose, also after a {@link rotate}; `capabilities.orientation` is then
+   * `false`. Unlike `screen.orientation`, it can lead the video frames.
+   */
+  orientation: DeviceOrientation | null;
+  /**
+   * True while the backend has not answered a {@link setOrientation} choice: serve-sim has not
+   * sent it yet, or serve-emu has not answered its `POST /api/orientation`.
+   */
+  orientationPending: boolean;
+  /** Last failed orientation change, cleared when the next one starts. */
+  orientationError: string | null;
+  /**
+   * Why {@link rotate} and {@link setOrientation} cannot turn the device now, or null when they
+   * can. Disable orientation controls while it is set. See
+   * {@link DeviceOrientationUnavailableReason} for what each reason means. serve-sim needs an
+   * admitted input socket; serve-emu sends the pose over HTTP.
+   */
+  // @ref LLP 0013#orientation — iOS sends the pose over the input socket, Android over HTTP
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
+  /**
+   * Turn the device to one orientation, and show it in {@link orientation} at once.
+   * serve-sim sends it over the helper's orientation channel, and a later {@link rotate}
+   * continues the cycle from it; serve-emu locks the matching user rotation via
+   * `POST /api/orientation`, one request at a time, so the last choice wins and only its
+   * answer or failure is shown. Ignores values missing from `capabilities.orientation`. A
+   * foreground app that does not support the orientation can keep its layout.
+   */
+  setOrientation: (orientation: DeviceOrientation) => void;
   /**
    * Capture a still PNG of the device via the backend's `POST /api/screenshot`
    * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving

@@ -70,7 +70,6 @@ import {
   type DeviceClipboardAction,
   type DeviceConnectionOptions,
   type DeviceLog,
-  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
@@ -93,7 +92,8 @@ import { ClipboardActionError } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { createRotationCursor } from "./rotation-cursor";
+import { DEVICE_ORIENTATIONS, isDeviceOrientation } from "./orientation";
+import { type DeviceOrientationBackend, useDeviceOrientation } from "./useDeviceOrientation";
 import { copySimulatorText } from "./ios-clipboard";
 import {
   createOrderedKeyboardInput,
@@ -119,6 +119,7 @@ import {
   discardUnfinishedQueuedGestures,
   enqueueWsMessage,
   sendOrQueueWsMessage,
+  WS_QUEUE_MAX_AGE_MS,
   type QueuedWsMessage,
   type WsMessagePayload,
   type WsMessageSent,
@@ -139,6 +140,8 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
+const ORIENTATION_NOT_SENT_MESSAGE =
+  "The orientation was not sent because simulator input is not connected. Try again.";
 // Native scroll (wheel/trackpad) in raw device fractions, anchored under the pointer.
 const WS_MSG_SCROLL = 0x0b;
 const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
@@ -362,6 +365,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
+  // True while the helper input socket is admitted, so sends reach the simulator.
+  const [inputAdmitted, setInputAdmitted] = useState(false);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
@@ -541,10 +546,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
-  const rotationCursorRef = useRef(createRotationCursor());
-  useEffect(() => {
-    rotationCursorRef.current.updateReadback(screen?.orientation);
-  }, [screen?.orientation]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -841,20 +842,53 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key("up", HID_USAGE_R);
   }, [sendWs]);
 
-  // Keep cycling from requested poses while the helper's readback is delayed
-  // or an app declines a pose. Screen state still comes only from readback.
-  const rotate = useCallback(() => {
-    // Resolve each queued click in delivery order; refused, expired or evicted
-    // input must not advance the cursor.
-    sendWs(
-      WS_MSG_ORIENTATION,
-      () => ({ orientation: rotationCursorRef.current.peekNext() }),
-      (payload) =>
-        rotationCursorRef.current.recordSent(
-          (payload as { orientation: DeviceOrientation }).orientation,
-        ),
-    );
-  }, [sendWs]);
+  // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
+  // helper's readback. A choice the queue drops for age, which the queue notices only at its
+  // next flush, fails when the queue's age limit has passed.
+  const readbackOrientation = isDeviceOrientation(screen?.orientation) ? screen.orientation : null;
+  const orientationBackend = useMemo<DeviceOrientationBackend | null>(
+    () =>
+      connectionScope === null
+        ? null
+        : {
+            // The simulator, not the token: a reconnect keeps its choices in order.
+            device: JSON.stringify([baseUrl, targetDevice]),
+            orientations: DEVICE_ORIENTATIONS,
+            reportsPose: true,
+            pushesReports: true,
+            set: (orientation) =>
+              new Promise((resolve, reject) => {
+                const timer = setTimeout(
+                  () => reject(new Error(ORIENTATION_NOT_SENT_MESSAGE)),
+                  WS_QUEUE_MAX_AGE_MS,
+                );
+                const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
+                  clearTimeout(timer);
+                  resolve(orientation);
+                });
+                if (!queued) {
+                  clearTimeout(timer);
+                  reject(new Error(ORIENTATION_NOT_SENT_MESSAGE));
+                }
+              }),
+          },
+    [baseUrl, connectionScope, sendWs, targetDevice],
+  );
+  const {
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationCapabilities,
+    setOrientation,
+    rotate: rotateOrientation,
+    acceptReport: acceptOrientationReport,
+  } = useDeviceOrientation(orientationBackend, readbackOrientation);
+  // A malformed readback is not a report, so it cannot replace a choice.
+  useEffect(() => {
+    if (readbackOrientation) acceptOrientationReport(readbackOrientation, performance.now());
+  }, [readbackOrientation, acceptOrientationReport]);
+  // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
+  const rotate = useCallback(() => rotateOrientation("portrait"), [rotateOrientation]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
@@ -1414,9 +1448,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsUrl = config?.wsUrl ?? null;
   const requireInputAdmission = config?.inputAdmission ?? false;
   const controlDevice = config?.device ?? null;
-  useEffect(() => {
-    rotationCursorRef.current = createRotationCursor(screenRef.current?.orientation ?? "portrait");
-  }, [wsUrl, controlDevice, videoSessionKey]);
   // A replacement helper cannot restore lost input, so its notice outlives the socket.
   // A helper can report a null config while it restarts; that gap keeps the notice.
   const lostInputTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -1442,6 +1473,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHardwareKeyboardConnectedState(null);
     setInputSocketError((current) => (lostInputTimerRef.current === undefined ? null : current));
     setInputUnavailable(false);
+    setInputAdmitted(false);
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1457,6 +1489,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (!input.trySend(WS_MSG_HARDWARE_KEYBOARD, { enabled: false })) return false;
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(false);
+          setInputAdmitted(true);
         },
         onMessage(data) {
           if (!(data instanceof ArrayBuffer) || keyboard.receive(data)) return false;
@@ -1476,7 +1509,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== "boolean")
             )
               return false;
-            rotationCursorRef.current.updateReadback(c.orientation);
             setInputUnavailable(c.inputUnavailable === true);
             hasWsConfigRef.current = true;
             setScreen((prev) =>
@@ -1492,6 +1524,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         },
         onDisconnect() {
+          setInputAdmitted(false);
           keyboard.cancelRequests();
           hardwareKeyboardIntentRef.current = { pending: false };
           setHardwareKeyboardConnectedState(null);
@@ -1538,6 +1571,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);
+      setInputAdmitted(false);
     };
   }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
 
@@ -2016,6 +2050,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       permissions: false,
       clipboard:
         clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
+      orientation: orientationCapabilities,
     }),
     [
       deviceSettingsAvailable,
@@ -2026,6 +2061,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       locationCapabilities,
       clipboardPaste,
       clipboardCopy,
+      orientationCapabilities,
     ],
   );
 
@@ -2108,6 +2144,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     rotate,
+    orientation,
+    orientationPending,
+    orientationError,
+    // @ref LLP 0013#orientation — iOS sends the pose over the input socket, not the video stream
+    orientationUnavailable: inputAdmitted && !inputUnavailable ? null : "input-unavailable",
+    setOrientation,
     screenshot,
     appearance,
     setAppearance,

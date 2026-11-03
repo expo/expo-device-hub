@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-10-29 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -435,27 +435,25 @@ physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
 
-The standalone preview and HubClient advance Rotate from requested poses, so
-rapid clicks or an app-declined pose do not repeat the same request. They ignore
-mismatched orientation readback for up to 1,500 ms after the latest request;
-its acknowledgement releases that protection early. Only orientation changes
-update the cursor; HubClient also reconciles a repeated changed readback that it
-deferred during the grace period once protection expires. An unchanged,
-previously reconciled pose does not reset an app-declined request. HubClient
-resets the cursor when the helper or capture session changes. The displayed
-screen remains server-owned
-[observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
+The standalone preview advances Rotate from requested poses, so rapid clicks or
+an app-declined pose do not repeat the same request. It ignores mismatched
+orientation readback for up to 1,500 ms after the latest request; its
+acknowledgement releases that protection early. The displayed screen remains
+server-owned [observed: `src/client/simulator/rotation-cursor.ts`].
 
-HubClient advances its cursor only after the browser socket's `send` returns.
-Queued Rotate clicks resolve their next pose at delivery, in queue order;
-expired or evicted clicks never advance it. Helpers advertising `inputAdmission`
-must send `0x83` or a valid `0x82` screen config before HubClient sends input.
-A screen config that establishes admission reconciles orientation before queued
-clicks flush, while an older initial config cannot overwrite newer sent poses
-during the grace period.
-Legacy helpers retain send-on-open compatibility. Browser submission does not
-prove native delivery or app acceptance
-[observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
+HubClient treats Rotate as a choice of the next pose after the one it shows, the
+same choice `setOrientation` makes, so `client.orientation` follows a click at
+once. Choices go out one at a time and the newest one wins, so a click that
+waits in the input queue behind another one replaces any later queued click.
+The send is the answer: a choice shows until readback that arrives after the
+send reports that pose, or until 1,500 ms have passed. A malformed readback is
+ignored. A choice that the input queue has not sent within its 1,500 ms age
+limit fails with `orientationError`
+[observed: `packages/@expo/hub-client/src/useDeviceOrientation.ts` and `useIosDevice.ts`].
+Helpers advertising `inputAdmission` must send `0x83` or a valid `0x82` screen
+config before HubClient sends input. Legacy helpers retain send-on-open
+compatibility. Browser submission does not prove native delivery or app
+acceptance [observed: `packages/@expo/hub-client/src/ws-send-queue.ts`].
 
 ### Printable key characters
 

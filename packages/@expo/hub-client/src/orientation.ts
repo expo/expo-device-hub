@@ -32,6 +32,32 @@ export function homeIndicatorEdge({
   return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
+/**
+ * How long a backend's answer outranks a report of another pose: the display can turn after
+ * the answer, and an app can keep its own orientation.
+ */
+export const READBACK_GRACE_MS = 1500;
+
+export function isDeviceOrientation(value: unknown): value is DeviceOrientation {
+  return (DEVICE_ORIENTATIONS as readonly unknown[]).includes(value);
+}
+
+/** The four poses, in the order Rotate steps through them on iOS and Android. */
+export const DEVICE_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const satisfies readonly DeviceOrientation[];
+
+/** The pose after `orientation` in `orientations`, or the first one when it is not listed. */
+export function nextOrientation(
+  orientation: DeviceOrientation,
+  orientations: readonly DeviceOrientation[] = DEVICE_ORIENTATIONS,
+): DeviceOrientation {
+  return orientations[(orientations.indexOf(orientation) + 1) % orientations.length]!;
+}
+
 export function isLandscapeOrientation(orientation?: DeviceOrientation | null): boolean {
   return orientation === "landscape_left" || orientation === "landscape_right";
 }
@@ -83,7 +109,8 @@ export function streamGeometry(config?: ScreenSize | null): StreamGeometry {
   const orientationRotation = rotationDegreesForOrientation(config?.orientation);
   const rotatesSideways = Math.abs(orientationRotation) === 90;
   const rawIsLandscape = !!config && config.width > config.height;
-  const needsRotation = orientationRotation === 180 || (rotatesSideways && !rawIsLandscape);
+  const needsRotation =
+    !config?.framesUpright && (orientationRotation === 180 || (rotatesSideways && !rawIsLandscape));
   return {
     display,
     rotationDegrees: needsRotation ? orientationRotation : 0,
