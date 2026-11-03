@@ -8,11 +8,21 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Box, FoldHorizontal, Image, Laptop, Maximize, SlidersHorizontal } from "lucide-react";
+import {
+  Box,
+  FoldHorizontal,
+  Image,
+  Laptop,
+  Maximize,
+  RotateCw,
+  SlidersHorizontal,
+  TriangleAlert,
+} from "lucide-react";
 import { HOST_TIME_ZONE, supportedTimeZones, timeZoneOffsetLabel } from "../../time-zone";
 import { hostUiRequest, runHostAction } from "../../socket/client-control";
 import { parseRuntime } from "../utils/grid";
 import { CollapsibleSection } from "./collapsible-section";
+import { Tooltip } from "./tooltip";
 import { Select, type SelectOption } from "./select";
 import { SettingSwitch } from "./setting-switch";
 import { FOLD_POSE_OPTIONS, type HingeControlsProps } from "./hinge-controls";
@@ -124,6 +134,45 @@ const TOGGLE_OPTIONS = [
   { key: "reduce-transparency", label: "Reduce Transparency" },
   { key: "voiceover", label: "VoiceOver" },
 ] as const;
+
+const STALE_CLOCK_WARNING =
+  "The status bar clock shows the old zone until SpringBoard restarts. Relaunch an app that did not switch.";
+
+/** After a zone change: a warning, and the restart that updates the status bar clock. */
+export function StaleClockControls({
+  disabled,
+  onRestart,
+}: {
+  disabled: boolean;
+  onRestart: () => void;
+}) {
+  return (
+    <>
+      <Tooltip label={STALE_CLOCK_WARNING} align="right">
+        {/* Focusable, so a keyboard user can open the tooltip too. */}
+        <span
+          tabIndex={0}
+          role="img"
+          aria-label={STALE_CLOCK_WARNING}
+          className="flex h-6 w-6 items-center justify-center rounded text-amber-400 outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+        >
+          <TriangleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
+        </span>
+      </Tooltip>
+      <Tooltip label="Restart SpringBoard" align="right">
+        <button
+          type="button"
+          aria-label="Restart SpringBoard"
+          onClick={onRestart}
+          disabled={disabled}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-white/60 outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-default disabled:opacity-50"
+        >
+          <RotateCw aria-hidden="true" size={14} strokeWidth={1.75} />
+        </button>
+      </Tooltip>
+    </>
+  );
+}
 
 export function SettingRow({
   icon,
@@ -868,32 +917,24 @@ export function SimulatorSettingsTool({
             </SettingRow>
 
             <SettingRow icon={I.timeZone} label="Time Zone">
-              <SettingSelect
-                label="Time Zone"
-                value={timeZone}
-                options={zoneChoices}
-                disabled={!ready || pending === "time-zone" || timeZone === UNREADABLE}
-                onChange={(v) => apply("time-zone", v)}
-                searchable
-                searchPlaceholder="Search zones…"
-              />
+              <span className="flex min-w-0 items-center gap-0.5">
+                <SettingSelect
+                  label="Time Zone"
+                  value={timeZone}
+                  options={zoneChoices}
+                  disabled={!ready || pending === "time-zone" || timeZone === UNREADABLE}
+                  onChange={(v) => apply("time-zone", v)}
+                  searchable
+                  searchPlaceholder="Search zones…"
+                />
+                {staleClockUdid === udid && (
+                  <StaleClockControls
+                    disabled={!ready || pending !== null}
+                    onRestart={() => void restartSpringBoard()}
+                  />
+                )}
+              </span>
             </SettingRow>
-            {staleClockUdid === udid && (
-              <div className="flex flex-col items-start gap-1 pl-[26px] -mt-1 text-[11px] text-white/45">
-                <span role="status">
-                  Running apps use the new zone; one that does not switch needs a relaunch. The
-                  status bar clock changes after a SpringBoard restart.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void restartSpringBoard()}
-                  disabled={!ready || pending !== null}
-                  className="cursor-pointer rounded border border-white/15 bg-transparent px-1.5 py-0.5 text-white/70 disabled:cursor-default disabled:opacity-50"
-                >
-                  Restart SpringBoard
-                </button>
-              </div>
-            )}
 
             {TOGGLE_OPTIONS.map(({ key, label }) => (
               <SettingRow

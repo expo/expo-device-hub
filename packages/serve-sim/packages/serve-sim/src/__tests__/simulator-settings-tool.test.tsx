@@ -4,6 +4,7 @@ import { HOST_TIME_ZONE } from "../time-zone";
 import {
   isIosRuntime,
   SimulatorSettingsTool,
+  StaleClockControls,
   timeZoneChoices,
   timeZoneOptions,
 } from "../client/components/simulator-settings-tool";
@@ -102,6 +103,16 @@ describe("time zone picker", () => {
     expect(timeZoneChoices(timeZoneOptions(), "unsupported")).toEqual([
       { value: "unsupported", label: "Unavailable" },
     ]);
+  });
+
+  test("after a change, shows a warning icon and a restart icon button instead of a note", () => {
+    const html = renderToStaticMarkup(<StaleClockControls disabled={false} onRestart={() => {}} />);
+    expect(html).toContain('role="img"');
+    expect(html).toMatch(/aria-label="[^"]*status bar[^"]*"/);
+    // Icon only: the button holds the reload icon and no text.
+    expect(html).toMatch(
+      /<button[^>]*aria-label="Restart SpringBoard"[^>]*><svg[\s\S]*?<\/svg><\/button>/,
+    );
   });
 
   test("renders a Time Zone row naming the current zone, disabled until state arrives", () => {
