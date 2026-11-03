@@ -1890,7 +1890,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey, keyboard]);
 
   // ── iPhone Duo: pose bookkeeping and the 3D model's panel feeds ──
+  // The hinge queue belongs to one input socket. Every change that replaces
+  // that socket also changes this key: the helper and its process, the socket
+  // URL, and its admission. A changed token or device first drops the config.
+  const hingeSessionKey = config
+    ? JSON.stringify([videoSessionKey, config.wsUrl, config.inputAdmission])
+    : null;
+  const hingeSessionRef = useRef<string | null>(null);
   useEffect(() => {
+    const previous = hingeSessionRef.current;
+    hingeSessionRef.current = hingeSessionKey;
+    // A config refresh for the same session, or a strict-mode rerun, keeps
+    // the pending commands.
+    if (previous === hingeSessionKey) return;
     setHingePending(false);
     setHingeError(null);
     setHingePreview(null);
@@ -1903,7 +1915,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     observedPoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
-  }, [config?.url]);
+  }, [hingeSessionKey]);
 
   useEffect(() => {
     // Use native orientation once when connecting, never as a live view control.

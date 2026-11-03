@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { StrictMode } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { duoPresetView, duoRotateView } from "../duo/duo-view";
@@ -8,21 +9,23 @@ import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
-/** The helper's binary input socket: `[tag][JSON]` both ways. */
+/** The helper's binary input socket: `[tag][JSON]` both ways. Exec-ws sends text. */
 class FakeSocket {
   static instances: FakeSocket[] = [];
   binaryType = "blob";
   readyState = 0;
   sent: Uint8Array[] = [];
+  texts: string[] = [];
   onopen: (() => void) | null = null;
-  onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
+  onmessage: ((event: { data: ArrayBuffer | string }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(public url: string) {
     FakeSocket.instances.push(this);
   }
-  send(data: ArrayBuffer) {
-    this.sent.push(new Uint8Array(data));
+  send(data: ArrayBuffer | string) {
+    if (typeof data === "string") this.texts.push(data);
+    else this.sent.push(new Uint8Array(data));
   }
   close() {
     this.readyState = 3;
@@ -51,6 +54,7 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
   FakeSocket.instances = [];
+  apiExtra = {};
   restoreGlobals();
 });
 
@@ -93,8 +97,25 @@ const INNER_OPEN = {
   tableModeAvailable: true,
 };
 
+/** Extra `/api` fields, such as an exec-ws token and a helper pid. */
+let apiExtra: Record<string, unknown> = {};
+
 /** Holds device-2's `/api` answer so a test can observe the switch before it resolves. */
 const gate: { hold: boolean; release: (() => void) | null } = { hold: false, release: null };
+
+function previewApi(device: string, foldable: boolean) {
+  return {
+    url: `https://hub.test/helper/${device}`,
+    wsUrl: `wss://hub.test/helper/${device}/ws`,
+    device,
+    basePath: "/",
+    gridApiEndpoint: "/grid/api",
+    chrome: foldable
+      ? DUO_CHROME
+      : { identifier: "phone17pro", screen: { width: 402, height: 874 }, screenRadius: 62 },
+    ...apiExtra,
+  };
+}
 
 function installBrowser({ duo }: { duo: boolean }) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -123,16 +144,7 @@ function installBrowser({ duo }: { duo: boolean }) {
           gate.release = resolve;
         });
       }
-      return Response.json({
-        url: `https://hub.test/helper/${device}`,
-        wsUrl: `wss://hub.test/helper/${device}/ws`,
-        device,
-        basePath: "/",
-        gridApiEndpoint: "/grid/api",
-        chrome: foldable
-          ? DUO_CHROME
-          : { identifier: "phone17pro", screen: { width: 402, height: 874 }, screenRadius: 62 },
-      });
+      return Response.json(previewApi(device, foldable));
     }
     if (pathname === "/grid/api") {
       return Response.json({
@@ -497,6 +509,84 @@ test("a rejected preset restores the 3D view it replaced, unless a rotation supe
   expect(socket.frames().filter((frame) => frame.tag === 0x10)).toHaveLength(5);
   expect(client().hinge?.view).toEqual(beforeEdit);
 });
+
+/** Connects with configs pushed over exec-ws, as serve-sim pushes them. */
+async function connectOverExecWs({ strict = false } = {}) {
+  apiExtra = { execToken: "exec-1", pid: 1 };
+  let client!: DeviceClient;
+  function Harness() {
+    client = useIosDeviceClient({
+      baseUrl: "https://hub.test",
+      device: "device-1",
+      enabled: true,
+      streamMode: "mjpeg",
+    });
+    return null;
+  }
+  await act(async () => {
+    renderer = create(
+      strict ? (
+        <StrictMode>
+          <Harness />
+        </StrictMode>
+      ) : (
+        <Harness />
+      ),
+    );
+  });
+  await act(async () => {});
+  const helperSockets = () =>
+    FakeSocket.instances.filter((instance) => instance.url.includes("/helper/ws"));
+  const control = FakeSocket.instances.find((instance) => instance.url.endsWith("/exec-ws"));
+  if (!control) throw new Error("The hook did not open exec-ws");
+  await act(async () => {
+    helperSockets().at(-1)!.open();
+    control.open();
+    control.onmessage?.({ data: JSON.stringify({ ready: true }) });
+  });
+  const subscription = control.texts
+    .map((text) => JSON.parse(text) as { sub?: number; path?: string })
+    .find(({ sub, path }) => typeof sub === "number" && path?.includes("/api/events"));
+  if (!subscription) throw new Error("The hook did not subscribe to config updates");
+  return {
+    client: () => client,
+    helperSockets,
+    socket: () => helperSockets().at(-1)!,
+    /** A config pushed over exec-ws for the same device. */
+    pushConfig: (changes: Record<string, unknown>) =>
+      act(async () =>
+        control.onmessage?.({
+          data: JSON.stringify({
+            sub: subscription.sub,
+            data: `data: ${JSON.stringify({ ...previewApi("device-1", true), ...changes })}\n\n`,
+          }),
+        }),
+      ),
+  };
+}
+
+for (const strict of [false, true]) {
+  test(`a replaced helper at the same URL ends a pending preview${strict ? " in strict mode" : ""}`, async () => {
+    installBrowser({ duo: true });
+    const { client, socket, helperSockets, pushConfig } = await connectOverExecWs({ strict });
+    await act(async () => socket().push(0x82, COVER));
+    await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+    expect(client().hinge?.pending).toBe(true);
+    // A refresh for the same helper session keeps the command pending.
+    await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
+    expect(helperSockets()).toHaveLength(1);
+    expect(client().hinge?.pending).toBe(true);
+    // A new helper process at the same URL replaces the input socket and its queue.
+    await pushConfig({ pid: 2 });
+    expect(helperSockets()).toHaveLength(2);
+    expect(client().hinge?.pending).toBe(false);
+    // The preview of the dropped command ends, so the replacement's Closed shows.
+    await act(async () => socket().open());
+    await act(async () => socket().push(0x82, COVER));
+    expect(client().hinge?.pose).toBe("closed");
+    expect(client().hinge?.angle).toBe(0);
+  });
+}
 
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
   test(`a queued preset ${failure} restores the last accepted preset's view`, async () => {
