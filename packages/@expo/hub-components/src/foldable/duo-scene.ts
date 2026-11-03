@@ -16,7 +16,6 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 import {
-  DUO_FILL_INSET,
   DUO_HANDLE_OFFSET,
   DUO_INITIAL_ZOOM,
   duoCameraZoom,
@@ -29,7 +28,7 @@ import {
   type DuoScreenPoint as ProjectedPoint,
   type DuoZoomState,
 } from "./duo-layout";
-import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
+import { DUO_FILL_INSET, duoDisplayId, type DuoStreamConfig } from "./duo-displays";
 import { loadDuoModel } from "./duo-model";
 import {
   duoDisplayDelta,

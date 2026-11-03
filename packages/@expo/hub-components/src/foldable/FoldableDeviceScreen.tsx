@@ -22,7 +22,7 @@ import {
   useState,
 } from "react";
 
-import { DUO_PANEL_FOR_DISPLAY, duoStreamConfig } from "./duo-displays";
+import { DUO_PANEL_FOR_DISPLAY, DUO_PANEL_SIZE, duoStreamConfig } from "./duo-displays";
 import { type DuoModelStatus, DuoModelView } from "./DuoModelView";
 import { useDuoFraming } from "./useDuoFraming";
 import { useReleaseFocusWhenHidden } from "./useReleaseFocusWhenHidden";
@@ -59,13 +59,6 @@ const HOST_STYLE: CSSProperties = {
   outline: "none",
   // Keep the hinge handles' stacking inside the model, under a consumer's overlay.
   isolation: "isolate",
-};
-
-// Framebuffer dimensions only establish the hidden source view's layout.
-// The scene reads each decoded frame's actual size for its texture mapping.
-const DUO_PANEL_SIZE: Record<number, { width: number; height: number }> = {
-  1: { width: 1398, height: 2034 },
-  3: { width: 2007, height: 2853 },
 };
 
 const PANEL_MEDIA_STYLE: CSSProperties = {

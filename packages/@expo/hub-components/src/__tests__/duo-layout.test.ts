@@ -3,7 +3,6 @@ import { type FoldPose } from "@expo/hub-client";
 import { BoxGeometry, Euler, Group, Mesh, PerspectiveCamera, Vector3 } from "three";
 
 import {
-  DUO_FILL_INSET,
   DUO_HANDLE_OFFSET,
   DUO_INITIAL_ZOOM,
   duoCameraZoom,
@@ -19,6 +18,7 @@ import {
   type DuoViewportSize,
   type DuoZoomState,
 } from "../foldable/duo-layout";
+import { DUO_FILL_INSET } from "../foldable/duo-displays";
 import { duoPose, stepDuoSpring } from "../foldable/duo-pose";
 
 const viewport = { width: 1680, height: 1100 };

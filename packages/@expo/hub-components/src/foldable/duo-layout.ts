@@ -5,6 +5,7 @@
 
 import { Box3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera } from "three";
 
+import { DUO_FILL_INSET } from "./duo-displays";
 import { stepDuoSpring } from "./duo-pose";
 
 export type DuoViewportSize = { width: number; height: number };
@@ -50,9 +51,6 @@ export function duoCameraZoom(
 ): number {
   return duoStageZoom(viewport, stage) * scale;
 }
-
-/** The fill inset at rest, as in serve-sim. */
-export const DUO_FILL_INSET = 32;
 
 /** How far each hinge handle's center sits outside the model's outer edge. */
 export const DUO_HANDLE_OFFSET = 16;

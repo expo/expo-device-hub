@@ -6,6 +6,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import { DUO_FILL_INSET, DUO_PANEL_FOR_DISPLAY, DUO_PANEL_SIZE } from "../foldable/duo-displays";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import { bg } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
@@ -38,16 +39,17 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 const MAX_SHORT_SIDE = 480;
 
 // The iPhone Duo's 3D stage is as large as the flat Duo can be: the cover's
-// long side at the MAX_SHORT_SIDE cap (DeviceKit's 1398 x 2034 framebuffer),
-// on both axes so that any pose or rotation fits, plus the model's 32 px fill
-// inset (`DUO_FILL_INSET`) on each side. Below that size it shrinks to the
+// long side at the MAX_SHORT_SIDE cap, on both axes so that any pose or
+// rotation fits, plus the model's fill inset on each side. Below that size it shrinks to the
 // stream area that StreamPanel keeps clear of the device title and the
 // controls. Only that container sizes it, never a native screen configuration,
 // so the stage keeps its footprint as the device folds and changes active
 // displays: resizing it then would animate on top of the hinge motion. Window
 // and sidebar resizes do resize it.
 // @ref LLP 0004#stage-size — the Hub caps the stage at the flat Duo's size; serve-sim keeps a fixed 1:1 stage
-const DUO_STAGE_MAX_SIDE = (MAX_SHORT_SIDE * 2034) / 1398 + 2 * 32;
+const DUO_COVER = DUO_PANEL_SIZE[DUO_PANEL_FOR_DISPLAY.cover];
+const DUO_STAGE_MAX_SIDE =
+  (MAX_SHORT_SIDE * DUO_COVER.height) / DUO_COVER.width + 2 * DUO_FILL_INSET;
 const DUO_STAGE_STYLE: CSSProperties = {
   width: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqw)`,
   height: `min(${DUO_STAGE_MAX_SIDE.toFixed(3)}px, 100cqh)`,
