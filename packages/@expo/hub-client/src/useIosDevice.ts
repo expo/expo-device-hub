@@ -1956,7 +1956,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     observedPoseRef.current = undefined;
     endRotation();
     hingeQueueRef.current?.clear();
-  }, [hingeSessionKey, endRotation]);
+    // Every command of the old session gets a final event, so no listener
+    // waits for a reply or a confirmation that cannot come.
+    if (previous !== null) emitHingeEvent({ type: "reset" });
+  }, [hingeSessionKey, emitHingeEvent, endRotation]);
 
   useEffect(() => {
     if (!hingePreview || hingePending || !screen) return;

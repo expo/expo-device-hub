@@ -223,6 +223,8 @@ function useDuoPanelStream(
   }, [url, mode, element, sessionFetch, webRtcStream, resetStreaming]);
 
   useEffect(() => {
+    // Every iOS client runs this hook; a panel without an element has nothing to watch.
+    if (!element) return;
     const check = () => {
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       const staleAfter = mode === "webrtc" ? 3_000 : 2_000;
@@ -237,7 +239,7 @@ function useDuoPanelStream(
       clearInterval(timer);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", check);
     };
-  }, [mode]);
+  }, [mode, element]);
 
   useEffect(() => {
     // Codec verdicts are only meaningful for the shown panel; permanent

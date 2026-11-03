@@ -14,11 +14,11 @@ const isClipboardShortcut = (event: ReactKeyboardEvent, code: "KeyC" | "KeyV") =
 /**
  * Physical-keyboard forwarding of {@link DeviceScreen}, for any focusable
  * device surface, such as the iPhone Duo's 3D model in `@expo/hub-components`.
- * Spread the returned handlers on the surface. A focused device surface owns keyboard input. The caller releases held
- * keys and resets shortcuts when input is cancelled, so modifiers never stick in
- * the device. Option+Shift+1–5 select the Duo's five poses, like serve-sim and
- * Xcode's Device Hub, and never reach the device as keystrokes. Command+C and
- * Command+V copy and paste text.
+ * Spread the returned handlers on the surface. A focused device surface owns
+ * keyboard input. The caller releases held keys and resets shortcuts when
+ * input is cancelled, so modifiers never stick in the device. Option+Shift+1–5
+ * select the Duo's five poses, like serve-sim and Xcode's Device Hub, and never
+ * reach the device as keystrokes. Command+C and Command+V copy and paste text.
  */
 export function useDeviceKeyboard(
   client: Pick<DeviceClient, "sendKey" | "hinge" | "pasteText" | "capabilities">,

@@ -156,21 +156,27 @@ import { useDeviceClient } from "@expo/hub-client";
 
 function Displays() {
   const client = useDeviceClient();
+  // A tap in the middle of the inner display.
+  const tapInner = () => {
+    client.sendTouch({ phase: "begin", display: 3, x: 0.5, y: 0.5 });
+    client.sendTouch({ phase: "end", display: 3, x: 0.5, y: 0.5 });
+  };
 
-  return client.displays?.map((display) =>
-    client.videoKind === "video" ? (
-      <video key={display.id} ref={display.attachVideo} autoPlay muted playsInline />
-    ) : client.videoKind === "canvas" ? (
-      <canvas key={display.id} ref={display.attachVideo} />
-    ) : (
-      <img key={display.id} ref={display.attachVideo} alt="" />
-    ),
+  return (
+    <>
+      {client.displays?.map((display) =>
+        client.videoKind === "video" ? (
+          <video key={display.id} ref={display.attachVideo} autoPlay muted playsInline />
+        ) : client.videoKind === "canvas" ? (
+          <canvas key={display.id} ref={display.attachVideo} />
+        ) : (
+          <img key={display.id} ref={display.attachVideo} alt="" />
+        ),
+      )}
+      <button onClick={tapInner}>Tap the inner display</button>
+    </>
   );
 }
-
-// A tap on the inner display:
-client.sendTouch({ phase: "begin", display: 3, x: 0.5, y: 0.5 });
-client.sendTouch({ phase: "end", display: 3, x: 0.5, y: 0.5 });
 ```
 
 `hinge.observe` reports every hinge command from its request to its outcome, whichever

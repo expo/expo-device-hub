@@ -112,12 +112,18 @@ export type HingeCommandEvent =
   | { type: "acknowledged"; command: HingeControlCommand; ok: boolean }
   /** The device reports the requested state, so the preview ends. */
   | { type: "confirmed" }
-  /** The client dropped every unconfirmed command, and `error` says why. */
+  /** A command failed, so the client dropped every unconfirmed command, and `error` says why. */
   | { type: "failed"; error: string }
   /**
+   * The client left the device connection, for example for another device or a
+   * restarted helper. It dropped every unconfirmed command without an error,
+   * and forgot the physical pose.
+   */
+  | { type: "reset" }
+  /**
    * The viewer rotated the device, which clears its named pose, by
-   * `quarterTurns` (clockwise positive): Rotate turns one, an orientation
-   * choice the turns to that pose.
+   * `quarterTurns` (clockwise positive): one for Rotate, or the turns to the
+   * orientation that the viewer chose.
    */
   | { type: "rotated"; quarterTurns: number };
 
