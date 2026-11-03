@@ -175,7 +175,7 @@ export function startProxy(options: {
           { headers: { "content-type": "text/html", "x-frame-options": "DENY" } },
         );
       const name = url.pathname.slice(1);
-      if (!/^[\w.-]+\.(js|css|png)$/.test(name)) return new Response(null, { status: 404 });
+      if (!/^[\w.-]+\.(js|css|png|glb)$/.test(name)) return new Response(null, { status: 404 });
       const file = Bun.file(join(options.assets, name));
       return (await file.exists()) ? new Response(file) : new Response(null, { status: 404 });
     },
