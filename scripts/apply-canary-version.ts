@@ -34,14 +34,31 @@ if (!/^\d{8}-[0-9a-f]{7,40}$/.test(canaryId)) {
 }
 
 console.log(`::group::Applying canary versions (${canaryId})`);
-for (const pkg of await getPublicPackages()) {
+const packages = await getPublicPackages();
+const canaryVersions = new Map<string, string>();
+for (const pkg of packages) {
   const path = `${pkg.dir}/package.json`;
   const json = await Bun.file(path).json();
   const committedVersion = JSON.parse(await $`git show ${`HEAD:${pkg.path}`}`.text()).version;
   const baseVersion = pkg.version === committedVersion ? nextMinor(pkg.version) : pkg.version;
   const canaryVersion = `${baseVersion}-canary-${canaryId}`;
   json.version = canaryVersion;
+  canaryVersions.set(pkg.name, canaryVersion);
   await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
   console.log(`${pkg.name}: ${committedVersion} -> ${pkg.version} -> ${canaryVersion}`);
+}
+
+// Runtime dependencies must resolve to this canary's packages, including first releases.
+for (const pkg of packages) {
+  if (!canaryVersions.has(pkg.name)) continue;
+  const path = `${pkg.dir}/package.json`;
+  const json = await Bun.file(path).json();
+  for (const field of ["dependencies", "optionalDependencies"]) {
+    for (const name of Object.keys(json[field] ?? {})) {
+      const version = canaryVersions.get(name);
+      if (version) json[field][name] = version;
+    }
+  }
+  await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
 }
 console.log("::endgroup::");

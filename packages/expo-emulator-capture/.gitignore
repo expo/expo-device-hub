@@ -1,0 +1,37 @@
+# Installed dependencies, downloaded sources/devkits, and generated binaries.
+/node_modules/
+/dist/
+/build/
+/.venv/
+/nv-codec-headers/
+/ffmpeg-source/
+/deps/
+/sources/ffmpeg/
+/sources/nv-codec-headers/
+/sources/frida/
+/sources/emulator/
+
+# Local benchmark evidence and disposable workflow helpers.
+/artifacts/
+/results/
+/eval/
+/tmp/
+/workflow-helpers/
+
+# Capture output and compilation intermediates outside the standard directories.
+*.log
+*.pid
+*.sock
+*.h264
+*.h264.csv
+*.mp4
+*.o
+*.a
+*.so
+*.ptx
+scale-ptx.h
+*.tgz
+__pycache__/
+*.pyc
+.DS_Store
+._*

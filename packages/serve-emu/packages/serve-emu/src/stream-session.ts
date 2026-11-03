@@ -4,6 +4,7 @@ import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
 import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
 import type {
+  ExperimentalGpuCaptureDiagnostics,
   GrpcCaptureDiagnostics,
   GrpcEncoder,
   GrpcImageMode,
@@ -18,7 +19,11 @@ const MAX_SCRCPY_STARTUP_BYTES = 64 * 1024 * 1024;
 const STARTUP_READY: unique symbol = Symbol("scrcpy-startup-ready");
 const NEVER_ABORTED = new AbortController().signal;
 
-export type { GrpcCaptureDiagnostics, RollingTimingSummary } from "./shared/api-contracts.ts";
+export type {
+  ExperimentalGpuCaptureDiagnostics,
+  GrpcCaptureDiagnostics,
+  RollingTimingSummary,
+} from "./shared/api-contracts.ts";
 
 export type StreamFailure = {
   message: string;
@@ -29,6 +34,7 @@ export type StreamFailure = {
 export type StreamMeta = ScrcpySession["meta"];
 
 export type EmuSessionDiagnostics = {
+  experimentalGpuCapture?: ExperimentalGpuCaptureDiagnostics;
   /** Present only for the grpc-screenshot capture implementation. */
   grpcCapture?: GrpcCaptureDiagnostics;
 };
@@ -65,6 +71,16 @@ export type StartEmuSessionOptions = StartOpts & {
 };
 
 export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
+  const gpuSocket = process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET;
+  if (gpuSocket) {
+    const serial = process.env.SERVE_EMU_EXPERIMENTAL_GPU_SERIAL;
+    if (!serial || !isEmulatorSerial(serial))
+      throw new Error("GPU experiment requires an explicit emulator serial");
+    if (options.serial === serial) {
+      const { startGpuExperimentSession } = await import("./gpu-session.ts");
+      return startGpuExperimentSession(options, gpuSocket);
+    }
+  }
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {
       throw new Error(
