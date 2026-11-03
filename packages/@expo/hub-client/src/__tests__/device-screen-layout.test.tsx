@@ -20,6 +20,18 @@ describe("DeviceScreen layout", () => {
     });
   }
 
+  for (const rotation of [0, 90, -90, 180]) {
+    test(`pins ${rotation}-degree media top-left so unused frame columns stay outside the screen`, () => {
+      // serve-sim draws an iPhone Duo cover screen from the top-left corner of a
+      // canvas shaped for the inner screen; centering would cut the picture's left
+      // edge and show the unused columns on the right.
+      const mediaStyle = deviceScreenMediaStyle(rotation);
+
+      expect(mediaStyle.objectFit).toBe("cover");
+      expect(mediaStyle.objectPosition).toBe("0 0");
+    });
+  }
+
   test("keeps connection status layers inside the shared screen surface", () => {
     expect(DEVICE_SCREEN_SURFACE_LAYOUT_STYLE.position).toBe("absolute");
     expect(DEVICE_SCREEN_SURFACE_LAYOUT_STYLE.inset).toBe(0);

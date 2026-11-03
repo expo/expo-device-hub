@@ -4,9 +4,9 @@ import Metal
 import MetalPerformanceShaders
 import StreamingPolicy
 
-/// Produces a frame of the requested size from a captured frame, aspect-fit with
-/// bars where the shapes differ. A backend does the pixel work; the resizer
-/// owns ordering, replacement, and counting.
+/// Produces a frame of the requested size from a captured frame, aspect-fit from the
+/// top-left corner. Where the shapes differ, black bars fill the right or bottom.
+/// A backend does the pixel work; the resizer owns ordering, replacement, and counting.
 protocol ViewerResizeBackend: AnyObject {
     var name: String { get }
     var poolDrops: UInt64 { get }
@@ -217,13 +217,14 @@ final class LetterboxResizeBackend: ViewerResizeBackend {
 
     func resize(_ source: CVPixelBuffer, to target: Dimensions,
                 completion: @escaping (CVPixelBuffer?) -> Void) {
-        completion(letterboxer.place(source, width: target.width, height: target.height))
+        completion(letterboxer.place(source, width: target.width, height: target.height, topLeft: true))
     }
 }
 
 /// Bilinear scale of the Y and CbCr planes on the GPU. Bars, when the shapes
 /// differ, come from scaling a constant 2×2 plane over the whole output first.
 /// The bars are video-range black (Y 16), the range the capture copy uses.
+/// @ref LLP 0001#viewer-frame-placement — black bars start right after the picture
 final class MetalResizeBackend: ViewerResizeBackend {
     let name = "metal"
     private(set) var poolDrops: UInt64 = 0
@@ -284,7 +285,7 @@ final class MetalResizeBackend: ViewerResizeBackend {
             completion(nil)
             return
         }
-        let placement = LetterboxPlacement(
+        let placement = LetterboxPlacement.topLeft(
             sourceWidth: CVPixelBufferGetWidth(source), sourceHeight: CVPixelBufferGetHeight(source),
             canvasWidth: target.width, canvasHeight: target.height
         )
@@ -295,16 +296,17 @@ final class MetalResizeBackend: ViewerResizeBackend {
             completion(nil)
             return
         }
-        let fillsCanvas = placement.x == 0 && placement.y == 0
-            && placement.width == target.width && placement.height == target.height
+        let fillsCanvas = placement.width == target.width && placement.height == target.height
         if !fillsCanvas {
-            encodeScale(commandBuffer, from: barsY, to: outputY.texture, region: nil)
-            encodeScale(commandBuffer, from: barsCbCr, to: outputCbCr.texture, region: nil)
+            encodeScale(commandBuffer, from: barsY, to: outputY.texture,
+                        region: MTLRegionMake2D(0, 0, target.width, target.height))
+            encodeScale(commandBuffer, from: barsCbCr, to: outputCbCr.texture,
+                        region: MTLRegionMake2D(0, 0, target.width / 2, target.height / 2))
         }
         encodeScale(commandBuffer, from: sourceY.texture, to: outputY.texture,
-                    region: fillsCanvas ? nil : MTLRegionMake2D(placement.x, placement.y, placement.width, placement.height))
+                    region: MTLRegionMake2D(placement.x, placement.y, placement.width, placement.height))
         encodeScale(commandBuffer, from: sourceCbCr.texture, to: outputCbCr.texture,
-                    region: fillsCanvas ? nil : MTLRegionMake2D(placement.x / 2, placement.y / 2, placement.width / 2, placement.height / 2))
+                    region: MTLRegionMake2D(placement.x / 2, placement.y / 2, placement.width / 2, placement.height / 2))
         // The CVMetalTexture wrappers must outlive the GPU work.
         let retained = [sourceY, sourceCbCr, outputY, outputCbCr]
         commandBuffer.addCompletedHandler { buffer in
@@ -315,12 +317,22 @@ final class MetalResizeBackend: ViewerResizeBackend {
         commandBuffer.commit()
     }
 
-    /// Fits `source` into `region` of the destination, or into the whole destination.
-    /// With no scale transform, MPS fits the source to the clip rect.
+    /// Fits `source` into `region` of the destination and writes only that region. Without a
+    /// scale transform, MPS scales the source to the whole destination and the clip rect only
+    /// limits what it writes, which stretches and cuts a picture meant for a region.
     private func encodeScale(_ commandBuffer: MTLCommandBuffer, from source: MTLTexture,
-                             to destination: MTLTexture, region: MTLRegion?) {
-        scale.clipRect = region ?? MTLRegionMake2D(0, 0, destination.width, destination.height)
-        scale.encode(commandBuffer: commandBuffer, sourceTexture: source, destinationTexture: destination)
+                             to destination: MTLTexture, region target: MTLRegion) {
+        scale.clipRect = target
+        var transform = MPSScaleTransform(
+            scaleX: Double(target.size.width) / Double(source.width),
+            scaleY: Double(target.size.height) / Double(source.height),
+            translateX: Double(target.origin.x), translateY: Double(target.origin.y)
+        )
+        withUnsafePointer(to: &transform) { transform in
+            scale.scaleTransform = transform
+            scale.encode(commandBuffer: commandBuffer, sourceTexture: source, destinationTexture: destination)
+        }
+        scale.scaleTransform = nil
     }
 
     private func texture(_ buffer: CVPixelBuffer, plane: Int) -> (texture: MTLTexture, wrapper: CVMetalTexture)? {
