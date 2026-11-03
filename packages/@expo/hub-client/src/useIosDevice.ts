@@ -62,7 +62,7 @@ import {
   type DuoPanelFeeds,
   useDuoPanelStreams,
 } from "./duo/useDuoPanelStreams";
-import { FOLD_POSES, type FoldControlCommand, type FoldPose } from "./fold";
+import { FOLD_POSES, foldCommandOffered, type FoldControlCommand, type FoldPose } from "./fold";
 import {
   DUO_POSE_ANGLES,
   type HingeControlState,
@@ -711,10 +711,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     screen?.screenId,
     knownFaceDown ? previewFaceDown : null,
   );
+  // Like serve-sim, fold controls show once the helper reports hinge support or an angle.
+  const hingeReported = screen?.supportsHingeAngle ?? screen?.hingeAngle !== undefined;
+  const foldCapabilities = useMemo<DeviceFoldCapabilities>(
+    () =>
+      isDuo && hingeReported
+        ? {
+            angle: DUO_FOLD_ANGLE,
+            poses: DUO_FOLD_POSES,
+            tableMode: true,
+          }
+        : false,
+    [isDuo, hingeReported],
+  );
   // Control callbacks read the latest native state without re-registering
   // listeners on every config broadcast.
-  const duoRef = useRef({ isDuo });
-  duoRef.current = { isDuo };
+  const duoRef = useRef({ isDuo, foldCapabilities });
+  duoRef.current = { isDuo, foldCapabilities };
   useEffect(() => {
     if (streamMode === "webrtc") return;
     setActiveWebRtcCodec(webRtcCodec);
@@ -1156,6 +1169,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Rotate is a choice of the next pose, like on Android, so `orientation` follows it at once.
   const rotate = useCallback(() => rotateOrientation("portrait"), [rotateOrientation]);
 
+  // A failure discards the whole queue, including any preset whose preview is
+  // already showing but was never sent or confirmed.
+  const failHingeCommands = useCallback(
+    (message: string) => {
+      setHingeError(message);
+      setHingePreview(null);
+      setPhysicalPose(undefined);
+      sentHingePoseRef.current = undefined;
+      endRotation();
+      emitHingeEvent({ type: "failed", error: message });
+    },
+    [emitHingeEvent, endRotation],
+  );
+
   // One command at a time: a live slider coalesces into the newest value and a
   // preset replaces queued edits. Replies arrive as 0x90 on the helper socket.
   if (!hingeQueueRef.current) {
@@ -1179,16 +1206,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       onResult: (command, reply) => {
         emitHingeEvent({ type: "acknowledged", command, ok: reply.ok });
       },
-      onError: (message) => {
-        // A failure discards the whole queue, including any preset whose
-        // preview is already showing but was never sent or confirmed.
-        setHingeError(message);
-        setHingePreview(null);
-        setPhysicalPose(undefined);
-        sentHingePoseRef.current = undefined;
-        endRotation();
-        emitHingeEvent({ type: "failed", error: message });
-      },
+      onError: failHingeCommands,
     });
   }
 
@@ -1196,6 +1214,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (input: FoldControlCommand) => {
       // Its own object per request, so a listener can follow each one to its reply.
       const command = { ...input };
+      const { foldCapabilities } = duoRef.current;
+      if (!foldCommandOffered(foldCapabilities, command)) {
+        hingeQueueRef.current?.clear();
+        failHingeCommands(`The device does not offer the fold command ${JSON.stringify(input)}.`);
+        return;
+      }
       setHingeError(null);
       // Editing the hinge or Table Mode clears the named preset, but preserves
       // the simulator's physical orientation (for example Laptop on a table).
@@ -1212,7 +1236,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         replaceQueued: command.control === "pose",
       });
     },
-    [emitHingeEvent, endRotation],
+    [emitHingeEvent, failHingeCommands, endRotation],
   );
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -2133,19 +2157,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [displayStreaming]);
 
-  // Like serve-sim, fold controls show once the helper reports hinge support or an angle.
-  const hingeReported = screen?.supportsHingeAngle ?? screen?.hingeAngle !== undefined;
-  const foldCapabilities = useMemo<DeviceFoldCapabilities>(
-    () =>
-      isDuo && hingeReported
-        ? {
-            angle: DUO_FOLD_ANGLE,
-            poses: DUO_FOLD_POSES,
-            tableMode: true,
-          }
-        : false,
-    [isDuo, hingeReported],
-  );
   const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;
     const state: DeviceFold = {

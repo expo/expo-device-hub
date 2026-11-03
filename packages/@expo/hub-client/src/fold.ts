@@ -4,6 +4,8 @@
  * Duo, serve-emu's `/api/fold` for an Android emulator.
  */
 
+import { type DeviceFoldCapabilities } from "./types";
+
 /**
  * Named poses of a foldable device, in Option+Shift+1–5 order (the order of
  * Xcode Device Hub's pose shortcuts). A device offers a subset, listed in
@@ -31,3 +33,23 @@ export type FoldControlCommand =
   | { control: "pose"; value: FoldPose }
   /** Turn the device's persistent table state on or off (Xcode's Table Mode). */
   | { control: "tableMode"; value: boolean };
+
+/** Whether `capabilities` offer `command`: its control, its pose, or its angle inside the range. */
+export function foldCommandOffered(
+  capabilities: DeviceFoldCapabilities,
+  command: FoldControlCommand,
+): boolean {
+  if (!capabilities) return false;
+  switch (command.control) {
+    case "angle":
+      return (
+        capabilities.angle !== false &&
+        command.value >= capabilities.angle.min &&
+        command.value <= capabilities.angle.max
+      );
+    case "pose":
+      return capabilities.poses[command.value] !== undefined;
+    case "tableMode":
+      return capabilities.tableMode;
+  }
+}

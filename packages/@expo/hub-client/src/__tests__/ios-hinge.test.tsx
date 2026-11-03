@@ -649,6 +649,31 @@ test("an angle edit after Table Mode goes out after it, so the last action wins"
   ]);
 });
 
+test("a command that capabilities.fold does not offer fails without reaching the device", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  observe();
+  // The chrome names the Duo before the helper reports its hinge.
+  expect(client().fold).not.toBeNull();
+  expect(client().capabilities.fold).toBe(false);
+  await act(async () => client().fold!.setControl({ control: "pose", value: "open" }));
+  expect(client().fold?.error).toMatch(/does not offer/);
+  expect(events.map(({ type }) => type)).toEqual(["failed"]);
+
+  await act(async () => socket.push(0x82, COVER));
+  await act(async () => client().fold!.setControl({ control: "angle", value: 200 }));
+  expect(events.map(({ type }) => type)).toEqual(["failed", "failed"]);
+  expect(socket.frames().filter(({ tag }) => tag === 0x10)).toEqual([]);
+  expect(client().fold?.angle).toBe(0);
+
+  await act(async () => client().fold!.setControl({ control: "angle", value: 90 }));
+  expect(client().fold?.error).toBeNull();
+  expect(socket.frames().at(-1)).toEqual({
+    tag: 0x10,
+    payload: { requestId: 1, command: { control: "angle", value: 90 } },
+  });
+});
+
 test("a submitted command names the display it elects; Table Mode and the hysteresis band do not", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();

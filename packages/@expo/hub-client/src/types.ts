@@ -199,7 +199,11 @@ export interface DeviceFold {
   tableMode?: DeviceFoldTableMode;
   /** Present when the backend reports how the device is held. */
   physical?: DeviceFoldPhysical;
-  /** Send a fold command that `capabilities.fold` offers. */
+  /**
+   * Send a fold command that `capabilities.fold` offers. A command that it does
+   * not offer fails at once, as a failure from the device does: `error` says
+   * why, and `observe` gets `failed`.
+   */
   setControl: (command: FoldControlCommand) => void;
   /**
    * Follow every fold command and rotation of this client, whichever control
