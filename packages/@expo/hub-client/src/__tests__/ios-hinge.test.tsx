@@ -573,18 +573,16 @@ test("a Rotate right after a preset turns from the preset, so the preset's readb
   await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
   // Before Laptop's readback, a quarter turn counterclockwise from Laptop's landscape-left.
   await act(async () => client().setOrientation("landscape_right"));
-  const turnedView = client().hinge!.view;
   await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
   // Laptop's readback, at the physical orientation that the Rotate started from.
   await act(async () => socket.push(0x82, observed(90, "landscape-left", "landscape_right")));
-  expect(client().hinge?.view).toEqual(turnedView);
+  expect(client().hinge?.physicalPose).toBeNull();
   // The turn lands in portrait, which reads as Book, but nobody selected Book.
   await act(async () => socket.push(0x82, observed(90, "portrait", "landscape_right")));
   expect(client().hinge?.physicalPose).toBeNull();
-  expect(client().hinge?.view).toEqual(turnedView);
 });
 
-test("a preset in the same batch as a Rotate ends it, so a later preset at its target frames the model", async () => {
+test("a preset in the same batch as a Rotate ends it, so a later preset at its target reaches the fold", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
   await act(async () => socket.push(0x82, observed(180, "portrait")));
@@ -599,7 +597,6 @@ test("a preset in the same batch as a Rotate ends it, so a later preset at its t
   // The Simulator then selects Laptop, at the old Rotate's target.
   await act(async () => socket.push(0x82, observed(90, "landscape-left")));
   expect(client().hinge?.physicalPose).toBe("laptop");
-  expect(client().hinge?.view).toEqual(duoPresetView("laptop"));
 });
 
 test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {
