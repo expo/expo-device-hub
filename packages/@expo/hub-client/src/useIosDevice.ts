@@ -663,6 +663,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  // The flat MJPEG <img>, so its stream effect follows a replaced element.
+  const [mjpegImageElement, setMjpegImageElement] = useState<HTMLImageElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>("h264");
@@ -850,23 +852,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setWebRtcVideoElement(videoRef.current);
         canvasRef.current = null;
         imgRef.current = null;
+        setMjpegImageElement(null);
       } else if (useAvcc) {
         canvasRef.current = (el as HTMLCanvasElement) ?? null;
         videoRef.current = null;
         setWebRtcVideoElement(null);
         imgRef.current = null;
+        setMjpegImageElement(null);
       } else {
-        // The stream effect may have started before this element attached, so
-        // only here can a detached <img> stop its multipart request.
+        // A detached <img> stops its multipart request at once.
         if (imgRef.current && imgRef.current !== el) imgRef.current.removeAttribute("src");
         imgRef.current = (el as HTMLImageElement) ?? null;
         canvasRef.current = null;
         videoRef.current = null;
         setWebRtcVideoElement(null);
-        if (el) applyStreamSrc();
+        // The stream effect starts the attached <img>'s request.
+        setMjpegImageElement(imgRef.current);
       }
     },
-    [applyStreamSrc, useAvcc, useWebRtc],
+    [useAvcc, useWebRtc],
   );
 
   // Every helper-socket message goes through here so a brief reconnect queues
@@ -1942,28 +1946,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       unmountedRef.current = true;
     };
   }, []);
+  // The stream that the MJPEG effect last started. A replaced <img> for the
+  // same stream keeps the status until the new element paints or fails.
+  const mjpegStreamRef = useRef<string | null>(null);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
+      mjpegStreamRef.current = null;
       return;
     }
     streamUrlRef.current = streamUrl;
-    setStatus("connecting");
-    setError(null);
+    const stream = JSON.stringify([streamUrl, videoSessionKey]);
+    if (mjpegStreamRef.current !== stream) {
+      mjpegStreamRef.current = stream;
+      setStatus("connecting");
+      setError(null);
+    }
 
     let cancelled = false;
     let settled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    // A request that loads off screen while the visible <img> keeps its last
-    // frame, and the <img> it is for.
+    // A request that loads off screen while the visible <img> keeps its last frame.
     let probe: HTMLImageElement | null = null;
-    let probeTarget: HTMLImageElement | null = null;
     // After a failed request, the frame on screen is old until a new request paints.
     let failed = false;
     // A retry's frame behind the visible <img>, until that <img> paints its own.
     let bridging: { target: HTMLImageElement; sawEmpty: boolean; until: number } | null = null;
     const session = screenSessionKeyRef.current;
-    const img = imgRef.current;
+    // The effect follows this element; a replaced <img> starts it again.
+    const img = mjpegImageElement;
 
     const stopProbe = () => {
       if (!probe) return;
@@ -1971,13 +1982,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       probe.onerror = null;
       probe.removeAttribute("src");
       probe = null;
-      probeTarget = null;
     };
 
     const markStreaming = () => {
       // While a probe loads, or after a failure, the visible frame is the old one.
       if (cancelled || settled || probe || failed) return;
-      const el = imgRef.current;
+      const el = img;
       if (!el || el.naturalWidth === 0 || el.naturalHeight === 0) return;
       settled = true;
       setStatus("streaming");
@@ -2002,7 +2012,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     // @ref LLP 0015#temporary-drops — a retry loads off screen, so a failed request never replaces the last frame
     const load = () => {
-      const visible = imgRef.current;
+      const visible = img;
       const url = streamUrlRef.current;
       if (!visible || !url) return;
       // An <img> without a frame has nothing to keep; a detached image needs `Image`.
@@ -2016,7 +2026,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const next = freshStreamSrc(url);
       const candidate = new Image();
       probe = candidate;
-      probeTarget = visible;
       candidate.onload = () => handOver(candidate, visible, next);
       candidate.onerror = () => {
         if (cancelled || probe !== candidate) return;
@@ -2025,17 +2034,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       };
       candidate.src = next;
     };
-    // A newly attached <img> got its own request from `attachVideo`, so the
-    // retry is moot, and that request's first frame counts as new.
-    const dropProbeForNewImage = () => {
-      if (!probe || imgRef.current === probeTarget) return false;
-      stopProbe();
-      failed = false;
-      return true;
-    };
     const handOver = (candidate: HTMLImageElement, visible: HTMLImageElement, next: string) => {
       if (cancelled || probe !== candidate || candidate.naturalWidth === 0) return;
-      if (dropProbeForNewImage()) return;
       // The browser clears the visible <img> until its new request paints; the
       // retry's frame stays behind it meanwhile.
       bridgeMjpegFrame(visible, candidate);
@@ -2062,9 +2062,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     load();
     // A multipart stream need not fire `load` per frame, so poll both elements.
     const poll = setInterval(() => {
-      dropProbeForNewImage();
       const candidate = probe;
-      if (candidate && probeTarget) handOver(candidate, probeTarget, candidate.src);
+      if (candidate && img) handOver(candidate, img, candidate.src);
       if (bridging) {
         const { target } = bridging;
         if (target.naturalWidth === 0) bridging.sawEmpty = true;
@@ -2086,19 +2085,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       clearMjpegBridge(bridging?.target ?? null);
       // A helper restart for the same screen keeps the last frame. Another
       // screen session, or an unmount, stops the multipart request on the
-      // element this effect started: a consumer that streams the displays may
-      // have unmounted the flat <img> already, which nulls the ref.
-      const keepFrame =
-        !unmountedRef.current && screenSessionKeyRef.current === session && imgRef.current === img;
-      if (!keepFrame) {
+      // element this effect started. `attachVideo` stops a replaced one.
+      if (unmountedRef.current || screenSessionKeyRef.current !== session) {
         img?.removeAttribute("src");
-        imgRef.current?.removeAttribute("src");
       }
       // The helper's pushed config outlives a transport switch.
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);
     };
-  }, [streamUrl, videoSessionKey, applyStreamSrc, setError, setStatus]);
+  }, [streamUrl, videoSessionKey, mjpegImageElement, applyStreamSrc, setError, setStatus]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;

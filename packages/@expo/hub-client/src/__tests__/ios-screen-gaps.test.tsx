@@ -350,6 +350,49 @@ test("an <img> attached during a retry loads its own request; the retry does not
   expect(hub.client.error).toBeNull();
 });
 
+test("an <img> that paints before the failed one's retry ends the gap, and no retry runs", async () => {
+  const hub = await iosClient();
+  const first = new FakeImage();
+  await act(async () => hub.client.attachVideo(first as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => first.paint());
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
+  await act(async () => first.fail());
+  expect(hub.client.status).toBe("reconnecting");
+  // DeviceScreen mounts a new <img>, which paints before the 1.5 s retry.
+  const second = new FakeImage();
+  await act(async () => hub.client.attachVideo(second as unknown as HTMLImageElement));
+  await act(async () => second.paint());
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
+  // The failed image's retry is gone, so it cannot report an error over the new stream.
+  await hub.fireTimers(1500);
+  expect(FakeImage.instances.filter((image) => image !== first && image !== second)).toEqual([]);
+  expect(second.srcs).toHaveLength(1);
+  await hub.fireTimers(30_000);
+  expect(hub.client.status).toBe("streaming");
+  expect(hub.client.error).toBeNull();
+});
+
+test("a replaced <img> whose own request fails retries it", async () => {
+  const hub = await iosClient();
+  const first = new FakeImage();
+  await act(async () => hub.client.attachVideo(first as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => first.paint());
+  await hub.tick();
+  const second = new FakeImage();
+  await act(async () => hub.client.attachVideo(second as unknown as HTMLImageElement));
+  await act(async () => second.fail());
+  expect(hub.client.status).toBe("reconnecting");
+  await hub.fireTimers(1500);
+  expect(second.srcs).toHaveLength(2);
+  await act(async () => second.paint());
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
+});
+
 test("a retry that paints after a new <img> attached does not hold the screen in reconnecting", async () => {
   const hub = await iosClient();
   const first = new FakeImage();
