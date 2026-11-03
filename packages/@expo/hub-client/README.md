@@ -182,8 +182,9 @@ function FoldButtons() {
 
 `fold.tableMode` and `fold.physical` are present only on a device that has them. The
 poses share one vocabulary, `FOLD_POSES`: `closed`, `open`, `laptop`, `book`, and
-`tent`. `fold.observe` reports every fold command from its request to its outcome,
-whichever control sent it.
+`tent`. `fold.observe` reports the steps of each fold command, from its request to its
+outcome, whichever control sent it. A queued command that a newer one replaces gets only
+its request.
 
 ### Show each display of a foldable
 
