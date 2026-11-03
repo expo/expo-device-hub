@@ -57,7 +57,7 @@ describe("acknowledged control queue", () => {
     expect(results.map(({ command }) => command)).toEqual([{ angle: 90 }, { angle: 110 }]);
   });
 
-  test("keeps different controls in their original queue order when coalescing", () => {
+  test("sends a coalesced command after the other controls queued before it", () => {
     const { queue, sent } = setup();
     queue.enqueue({ angle: 90 }, { key: "angle" });
     queue.enqueue({ tilt: 10 }, { key: "tilt" });
@@ -68,8 +68,8 @@ describe("acknowledged control queue", () => {
     queue.receive({ requestId: 3, ok: true });
     expect(sent.map(({ command }) => command)).toEqual([
       { angle: 90 },
-      { tilt: 20 },
       { angle: 100 },
+      { tilt: 20 },
     ]);
   });
 

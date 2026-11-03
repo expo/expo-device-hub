@@ -363,6 +363,30 @@ test("an external preset leaves the view of a local rotation", async () => {
   expect(client().hinge?.view).toEqual(rotatedView);
 });
 
+test("an angle edit after Table Mode goes out after it, so the last action wins", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 100 }));
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 110 }));
+  await act(async () => client().hinge!.setControl({ control: "table", value: true }));
+  await act(async () => client().hinge!.setControl({ control: "angle", value: 120 }));
+  // An angle edit releases Table Mode, so the preview shows it off.
+  expect(client().hinge?.tableMode).toBe(false);
+  for (const requestId of [1, 2, 3]) {
+    await act(async () => socket.push(0x90, { requestId, ok: true }));
+  }
+  const commands = socket
+    .frames()
+    .filter((frame) => frame.tag === 0x10)
+    .map((frame) => frame.payload.command);
+  expect(commands).toEqual([
+    { control: "angle", value: 100 },
+    { control: "table", value: true },
+    { control: "angle", value: 120 },
+  ]);
+});
+
 test("switching to another simulator forgets the previous screen config at once", async () => {
   installBrowser({ duo: true });
   const { socket, client, update } = await connect({ duoPreview: "3d" });

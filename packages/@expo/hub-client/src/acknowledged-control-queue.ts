@@ -1,6 +1,7 @@
 /**
  * Ported from serve-sim's `src/client/utils/acknowledged-control-queue.ts`
- * (@expo/serve-sim 0.5.0).
+ * (@expo/serve-sim 0.5.0). Unlike that version, a coalesced command moves to
+ * the end of the queue.
  */
 
 export type AcknowledgedControlRequest<T extends object> = {
@@ -80,12 +81,11 @@ export function createAcknowledgedControlQueue<T extends object>(options: QueueO
   return {
     enqueue(command: T, { key, replaceQueued }: EnqueueOptions) {
       if (replaceQueued) queued.length = 0;
+      // The replacement goes to the end: it is the latest action, so it must
+      // not overtake a command of another control queued before it.
       const existing = queued.findIndex((entry) => entry.key === key);
-      if (existing >= 0) {
-        queued[existing] = { key, command };
-      } else {
-        queued.push({ key, command });
-      }
+      if (existing >= 0) queued.splice(existing, 1);
+      queued.push({ key, command });
       sendNext();
     },
 
