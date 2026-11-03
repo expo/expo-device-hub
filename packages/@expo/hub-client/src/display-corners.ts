@@ -2,7 +2,7 @@
  * Glass corners of a simulator display, from the DeviceKit chrome descriptor
  * serve-sim advertises in its `/api` config. Mirrors serve-sim's
  * `deviceKitChromeForScreen` and `deviceKitScreenRadius`
- * (`src/client/components/device-chrome-frame.tsx`, @expo/serve-sim 0.5.0),
+ * (`src/client/components/device-chrome-frame.tsx`, serve-sim at 3dc61286e, #383),
  * which round the flat stream with the active display's own corners.
  */
 

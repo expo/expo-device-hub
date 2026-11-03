@@ -1,7 +1,7 @@
 /**
  * Keeps both iPhone Duo panel feeds decoding while the 3D model shows one of
  * them, following serve-sim's `src/client/components/duo-panel-streams.tsx`
- * (@expo/serve-sim 0.5.0). Each panel paints into a hidden element under
+ * (serve-sim at 3dc61286e, #383). Each panel paints into a hidden element under
  * `[data-duo-panel]`, which the scene samples for its textures. Transport
  * handling reuses the Hub's AVCC and WebRTC hooks instead of serve-sim's
  * `SimulatorView`; only the 3D scene handles input.

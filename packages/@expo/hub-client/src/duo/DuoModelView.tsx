@@ -1,6 +1,6 @@
 /**
  * Mounts the iPhone Duo 3D scene over hidden panel streams, ported from
- * serve-sim's `src/client/components/duo-model-view.tsx` (@expo/serve-sim 0.5.0).
+ * serve-sim's `src/client/components/duo-model-view.tsx` (serve-sim at 3dc61286e, #383).
  */
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";

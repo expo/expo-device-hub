@@ -1,6 +1,6 @@
 /**
  * Composes Xcode's `V68.usdz` into a three.js group, ported from serve-sim's
- * `src/client/simulator/devicekit-usdz.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/devicekit-usdz.ts` (serve-sim at 3dc61286e, #383).
  */
 
 import { unzipSync } from "three/addons/libs/fflate.module.js";

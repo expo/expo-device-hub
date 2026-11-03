@@ -1,6 +1,6 @@
 /**
  * Stage fitting and hinge-handle projection for the iPhone Duo model, ported
- * from serve-sim's `src/client/simulator/duo-layout.ts` (@expo/serve-sim 0.5.0).
+ * from serve-sim's `src/client/simulator/duo-layout.ts` (serve-sim at 3dc61286e, #383).
  */
 
 import { Box3, Matrix4, Mesh, Vector3, type Object3D, type PerspectiveCamera } from "three";

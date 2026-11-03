@@ -1,7 +1,7 @@
 /**
  * The iPhone Duo 3D scene: Xcode's model articulated by the hinge, textured
  * with the live panel streams, and raycast for input. Ported from serve-sim's
- * `src/client/simulator/duo-scene.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/duo-scene.ts` (serve-sim at 3dc61286e, #383).
  */
 
 import * as THREE from "three";

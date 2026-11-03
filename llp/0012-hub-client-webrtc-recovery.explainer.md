@@ -85,7 +85,7 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 
 - The first-frame timeout stops while the tab is hidden, and starts again when the tab is visible. A grace period that was already used stays used [observed: `useWebRtcStream.ts`].
 - When no video RTP arrives before the first frame, the client asks serve-sim's per-session stats (2 s limit, cancelled on teardown) whether the encoder produced frames. If it did, the client retries the transport and keeps the codec [observed: `requestWebRtcServerStats` in `useWebRtcStream.ts`; `webRtcFailureDisposition` in `webrtc-fallback.ts`].
-- On iOS and Android, the currently owned paused video plays again when the tab returns; retired surfaces and rejected play attempts do not replace the peer The iPhone Duo's 3D panel videos do the same [observed: the media attachment effects in `useIosDevice.ts`, `useAndroidDevice.ts`, and `DuoPanelStreams.tsx`].
+- On iOS and Android, the currently owned paused video plays again when the tab returns; retired surfaces and rejected play attempts do not replace the peer. The iPhone Duo's 3D panel videos do the same [observed: the media attachment effects in `useIosDevice.ts`, `useAndroidDevice.ts`, and `DuoPanelStreams.tsx`].
 - Replacing an iOS or Android video element reattaches the existing stream without renegotiating its peer or reconnecting input [observed: stateful `webRtcVideoElement` in both adapters].
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].

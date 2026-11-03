@@ -1,6 +1,6 @@
 /**
  * Saved 3D view orientation for the iPhone Duo model, ported from serve-sim's
- * `src/client/simulator/duo-view.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/duo-view.ts` (serve-sim at 3dc61286e, #383).
  */
 
 import { Euler, Quaternion, Vector3 } from "three";

@@ -1,7 +1,7 @@
 /**
  * Incremental parser for an MJPEG (`multipart/x-mixed-replace`) byte stream,
  * ported from serve-sim's `src/client/utils/mjpeg-frame-parser.ts`
- * (@expo/serve-sim 0.5.0). Feed it chunks via `push`; it emits each complete
+ * (serve-sim at 3dc61286e, #383). Feed it chunks via `push`; it emits each complete
  * JPEG frame as a `Uint8Array` view into its internal buffer (copy it if you
  * need to retain it past the call).
  *

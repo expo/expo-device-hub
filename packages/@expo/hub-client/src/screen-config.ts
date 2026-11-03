@@ -1,6 +1,6 @@
 /**
  * Screen-config equality, ported from serve-sim's
- * `src/client/simulator/screen-config-state.ts` (@expo/serve-sim 0.5.0). The
+ * `src/client/simulator/screen-config-state.ts` (serve-sim at 3dc61286e, #383). The
  * helper pushes a new config on every change; comparing every field keeps a
  * hinge move or a display switch visible even when the pixel size is unchanged.
  */

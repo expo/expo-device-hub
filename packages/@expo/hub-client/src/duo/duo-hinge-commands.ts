@@ -1,6 +1,6 @@
 /**
  * Ported from serve-sim's `src/client/simulator/duo-hinge-commands.ts`
- * (@expo/serve-sim 0.5.0).
+ * (serve-sim at 3dc61286e, #383).
  */
 
 import { hingeControlState, type HingeControlCommand, type HingePose } from "../hinge-control";

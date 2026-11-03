@@ -1,6 +1,6 @@
 /**
  * Ported from serve-sim's `src/client/utils/acknowledged-control-queue.ts`
- * (@expo/serve-sim 0.5.0). Unlike that version, a coalesced command moves to
+ * (serve-sim at 3dc61286e, #383). Unlike that version, a coalesced command moves to
  * the end of the queue.
  */
 

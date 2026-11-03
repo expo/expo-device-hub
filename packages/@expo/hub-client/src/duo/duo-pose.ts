@@ -1,6 +1,6 @@
 /**
  * iPhone Duo physical poses and framebuffer mapping, ported from serve-sim's
- * `src/client/simulator/duo-pose.ts` (@expo/serve-sim 0.5.0).
+ * `src/client/simulator/duo-pose.ts` (serve-sim at 3dc61286e, #383).
  */
 
 import { Euler, Quaternion } from "three";

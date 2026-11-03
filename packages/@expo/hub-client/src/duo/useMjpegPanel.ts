@@ -1,7 +1,7 @@
 /**
  * Paints one panel's MJPEG feed into an `<img>` as per-frame blob URLs,
  * following serve-sim's `use-mjpeg-stream.ts` and the `SimulatorView` painter
- * (@expo/serve-sim 0.5.0). A fresh object URL per frame lets the 3D scene
+ * (serve-sim at 3dc61286e, #383). A fresh object URL per frame lets the 3D scene
  * detect new frames by `img.src`, which a long-lived multipart `<img>` would
  * never change.
  */

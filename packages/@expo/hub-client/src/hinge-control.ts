@@ -1,6 +1,6 @@
 /**
  * iPhone Duo hinge control protocol, ported from serve-sim's `src/hinge-control.ts`
- * and `src/hinge-angle.ts` (@expo/serve-sim 0.5.0). The command shapes travel over
+ * and `src/hinge-angle.ts` (serve-sim at 3dc61286e, #383). The command shapes travel over
  * the helper's input WebSocket (tag `0x10`, acknowledged with `0x90`).
  */
 

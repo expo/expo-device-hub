@@ -1,6 +1,6 @@
 /**
  * Per-panel stream routes and health for the iPhone Duo model, ported from
- * serve-sim's `src/client/components/duo-panel-streams.tsx` (@expo/serve-sim 0.5.0).
+ * serve-sim's `src/client/components/duo-panel-streams.tsx` (serve-sim at 3dc61286e, #383).
  */
 
 import { type DuoPanelStreamMode, type ScreenSize } from "../types";
