@@ -70,6 +70,7 @@ import {
   type HingePhysicalOrientation,
   type HingePose,
   hingeControlState,
+  hingePoseOrientation,
 } from "./hinge-control";
 import { appendActivitySample, parseActivityHostCores, parseActivitySample } from "./activity";
 import { useActivityStatus } from "./useActivityStatus";
@@ -629,6 +630,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [hingeError, setHingeError] = useState<string | null>(null);
   // The requested state, shown until its acknowledgement and matching config arrive.
   const [hingePreview, setHingePreview] = useState<HingeControlState | null>(null);
+  const hingePreviewRef = useRef(hingePreview);
+  hingePreviewRef.current = hingePreview;
   const [physicalPose, setPhysicalPose] = useState<HingePose | null | undefined>(undefined);
   const [duoView, setDuoView] = useState<DuoView | null>(null);
   const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
@@ -1023,19 +1026,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const turnDuo = useCallback((quarterTurns: number) => {
     const duo = duoRef.current;
     if (!duo.isDuo || quarterTurns === 0) return;
+    // A sent pose command that the device does not show yet moves it before
+    // the turn. A queued one goes out after the turn, which the input socket
+    // sends at once, so it does not count.
+    const commandPose =
+      hingePendingRef.current || hingePreviewRef.current ? sentHingePoseRef.current : null;
     presetRestoreRef.current = null;
     setDuoView((previous) => duoRotateView(previous ?? duo.initialView, quarterTurns));
     faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
-    // A rotation that is still pending turns on from its own target.
+    // A rotation that is still pending turns on from its own target, and one
+    // after a pose command from that pose's orientation.
     const current = screenRef.current;
     const start = rotationRef.current
       ? rotationRef.current.target
-      : current
-        ? observedScreenConfig(current).physicalOrientation
-        : undefined;
+      : commandPose
+        ? hingePoseOrientation(commandPose)
+        : current
+          ? observedScreenConfig(current).physicalOrientation
+          : undefined;
     rotationRef.current = { target: turnedPhysicalOrientation(start, quarterTurns) };
     setRotationRequest((request) => request + 1);
     setOrientationOverride(true);

@@ -84,9 +84,14 @@ command's config matches it. A preset that another client or the Simulator
 selects frames the 3D model as a local preset does, once a local Rotate has
 landed. The helper keeps the last command's pose, so with an observation, a
 Rotate lands when the observed physical orientation reaches its target: the
-physical orientation at the Rotate, turned by its quarter turns, as serve-sim's
-rotation tracker counts them (Rotate from Laptop lands upside down, observed on
-an iPhone Duo on 2026-11-03); without one, when the command pose clears. Another orientation change, such as the
+physical orientation that the Rotate starts from, turned by its quarter turns,
+as serve-sim's rotation tracker counts them (Rotate from Laptop lands upside
+down, observed on an iPhone Duo on 2026-11-03); without one, when the command
+pose clears. A Rotate starts from the target of a Rotate that has not landed,
+else from the orientation of a sent pose command that the device does not show
+yet, because that command moves the device first, else from the observed
+orientation. A pose command still queued behind another hinge command goes out
+after the Rotate, so it does not count. Another orientation change, such as the
 readback of a pose command sent before the Rotate, does not end it. As in
 serve-sim's rotation tracker, a Rotate that the device does not take ends after
 the 1500 ms readback grace. The observation that ends a Rotate is the new pose
