@@ -79,3 +79,45 @@ export function isTableModeAvailable(
   if (angle === 180) return orientation === "portrait";
   return orientation !== "faceup";
 }
+
+/** serve-sim's native hinge observation; a field that the native reader omits is unknown. */
+export type ObservedHingeState = {
+  hingeAngle?: number;
+  physicalOrientation?: HingePhysicalOrientation;
+  tableMode?: boolean;
+};
+
+/** serve-sim names an observed preset when its angle is within half a degree. */
+const OBSERVED_POSE_ANGLE_TOLERANCE = 0.5;
+
+/** The preset that observed native state describes, whichever client produced it. */
+export function observedHingePose(
+  angle: number | undefined,
+  orientation: HingePhysicalOrientation | undefined,
+  tableMode: boolean | undefined,
+): HingePose | null | undefined {
+  if (angle === undefined || orientation === undefined || tableMode === undefined) return undefined;
+  return (
+    HINGE_POSES.find(
+      (pose) =>
+        Math.abs(pose.angle - angle) <= OBSERVED_POSE_ANGLE_TOLERANCE &&
+        hingePoseOrientation(pose.id) === orientation &&
+        (pose.id === "tent") === tableMode,
+    )?.id ?? null
+  );
+}
+
+/** Native observations replace command state, including fields the native reader omits. */
+export function observedHingeState(state: ObservedHingeState) {
+  const { hingeAngle, physicalOrientation, tableMode } = state;
+  return {
+    hingeAngle,
+    physicalOrientation,
+    tableMode,
+    hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
+    tableModeAvailable:
+      hingeAngle === undefined || physicalOrientation === undefined
+        ? undefined
+        : isTableModeAvailable(hingeAngle, physicalOrientation),
+  };
+}

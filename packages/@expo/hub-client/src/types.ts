@@ -25,6 +25,7 @@ import {
   type HingeControlCommand,
   type HingeControlState,
   type HingePhysicalOrientation,
+  type ObservedHingeState,
   type HingePose,
 } from "./hinge-control";
 import { type WebRtcStreamFailure } from "./webrtc-fallback";
@@ -80,6 +81,8 @@ export interface ScreenSize extends HingeControlState {
   supportsPhysicalOrientation?: boolean;
   /** Last confirmed physical orientation, separate from the app's screen orientation. */
   physicalOrientation?: HingePhysicalOrientation;
+  /** Native hinge snapshot. It also reports a fold made with the Simulator's own controls. */
+  observedDeviceState?: ObservedHingeState;
 }
 
 /**

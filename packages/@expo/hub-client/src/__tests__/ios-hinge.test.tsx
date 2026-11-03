@@ -269,6 +269,40 @@ test("pose commands go out acknowledged on the input socket and preview until th
   expect(client().screen?.screenId).toBe(3);
 });
 
+test("a fold made with the Simulator's own controls shows, though the command fields stay", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  const observedOpen = {
+    ...INNER_OPEN,
+    physicalOrientation: "portrait",
+    observedDeviceState: { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false },
+  };
+  await act(async () => socket.push(0x82, observedOpen));
+  expect(client().hinge?.pose).toBe("open");
+  // Only the observation changes: the helper keeps its last command in the top-level fields.
+  await act(async () =>
+    socket.push(0x82, {
+      ...observedOpen,
+      observedDeviceState: {
+        hingeAngle: 90,
+        physicalOrientation: "landscape-left",
+        tableMode: false,
+      },
+    }),
+  );
+  expect(client().hinge?.angle).toBe(90);
+  expect(client().hinge?.pose).toBe("laptop");
+  expect(client().hinge?.physicalPose).toBe("laptop");
+  // A field that the native reader omits is unknown, not the saved command's value.
+  await act(async () =>
+    socket.push(0x82, { ...observedOpen, observedDeviceState: { hingeAngle: 120 } }),
+  );
+  expect(client().hinge?.angle).toBe(120);
+  expect(client().hinge?.pose).toBeUndefined();
+  expect(client().hinge?.tableMode).toBeUndefined();
+  expect(client().hinge?.tableModeAvailable).toBeUndefined();
+});
+
 test("switching to another simulator forgets the previous screen config at once", async () => {
   installBrowser({ duo: true });
   const { socket, client, update } = await connect({ duoPreview: "3d" });

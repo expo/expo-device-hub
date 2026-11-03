@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-03 (the Hub reads the native observation); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -75,6 +75,13 @@ rotations made after that preset was queued remain part of the view.
 [observed: `src/device-session.ts` `applyDeviceState`, `screenConfig`;
 `src/client/simulator/screen-config-state.ts` `previewScreenConfig`;
 `src/client/hooks/use-duo-framing.ts` `useDuoFraming`]
+
+The Hub's iOS client reads the same snapshot: when `observedDeviceState` is
+present, it replaces the command fields for the fold that the Hub shows, so a
+fold made with the Simulator's own controls shows there too. A config without
+it keeps the command fields. The Hub's preview of a local command ends when the
+command's config matches it [observed: `observedScreenConfig` in
+`packages/@expo/hub-client/src/screen-config.ts`, `useIosDevice.ts`].
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view

@@ -82,7 +82,7 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from "./orientation";
-import { screenConfigsEqual } from "./screen-config";
+import { observedScreenConfig, screenConfigsEqual } from "./screen-config";
 import { startIosHelper } from "./connections";
 import {
   clearIosEventLogState,
@@ -650,21 +650,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [panelError, setPanelError] = useState<string | null>(null);
   const [panelStats, setPanelStats] = useState<DeviceClient["streamStats"]>(null);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
-  const previewHingeAngle = hingePreview?.hingeAngle ?? screen?.hingeAngle;
-  const previewHingePose = hingePreview ? hingePreview.hingePose : screen?.hingePose;
+  // @ref LLP 0004#live-pose-observation — the native observation wins over the last command, so a fold made in the Simulator shows
+  const hingeScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
+  const previewHingeAngle = hingePreview?.hingeAngle ?? hingeScreen?.hingeAngle;
+  const previewHingePose = hingePreview ? hingePreview.hingePose : hingeScreen?.hingePose;
   // A pending angle or preset releases Table Mode, so the preview wins over a
   // face-down orientation that another client confirmed.
   const previewFaceDown =
-    (hingePreview?.tableMode ?? screen?.tableMode) === true &&
-    screen?.physicalOrientation === "facedown";
+    (hingePreview?.tableMode ?? hingeScreen?.tableMode) === true &&
+    hingeScreen?.physicalOrientation === "facedown";
   const initialDuoView = useMemo(
-    () => duoInitialView(screen?.hingeAngle, screen?.hingePose, screen),
-    [screen],
+    () => duoInitialView(hingeScreen?.hingeAngle, hingeScreen?.hingePose, hingeScreen),
+    [hingeScreen],
   );
   // Control callbacks read the latest native state without re-registering
   // listeners on every config broadcast.
-  const duoRef = useRef({ isDuo, initialView: initialDuoView, screen });
-  duoRef.current = { isDuo, initialView: initialDuoView, screen };
+  const duoRef = useRef({ isDuo, initialView: initialDuoView });
+  duoRef.current = { isDuo, initialView: initialDuoView };
   useEffect(() => {
     if (streamMode === "webrtc") return;
     setActiveWebRtcCodec(webRtcCodec);
@@ -1094,7 +1096,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const setHingeControl = useCallback((input: HingeControlCommand) => {
     // Its own object per request, so recovery knows which burst sent a reply.
     const command = { ...input };
-    const { screen, initialView } = duoRef.current;
+    const { initialView } = duoRef.current;
     setHingeError(null);
     faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
     // Editing the hinge or Table Mode clears the named preset, but preserves
@@ -1111,12 +1113,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       // Lock even an early edit before the first complete native config.
       setDuoView((previous) => previous ?? initialView);
     }
-    setHingePreview((previous) => ({
-      hingeAngle: previous?.hingeAngle ?? screen?.hingeAngle,
-      hingePose: previous ? previous.hingePose : screen?.hingePose,
-      tableMode: previous?.tableMode ?? screen?.tableMode,
-      ...hingeControlState(command),
-    }));
+    // The preview holds only what commands set; the rest reads the live
+    // observation, which the command's config need not match.
+    setHingePreview((previous) => ({ ...previous, ...hingeControlState(command) }));
     hingeQueueRef.current?.enqueue(command, {
       key: command.control,
       replaceQueued: command.control === "pose",
@@ -1925,10 +1924,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Rotate clears the known native physical pose. Ignore an older
     // preset acknowledgement until native reports that its pose was cleared.
     if (orientationOverride || hingePreview || hingePending) return;
-    if (screen?.hingePose) {
-      setPhysicalPose(screen.hingePose);
-      sentHingePoseRef.current = screen.hingePose;
-    } else if (duoPhysicalPoseChanged(physicalPose, screen?.physicalOrientation)) {
+    if (hingeScreen?.hingePose) {
+      setPhysicalPose(hingeScreen.hingePose);
+      sentHingePoseRef.current = hingeScreen.hingePose;
+    } else if (duoPhysicalPoseChanged(physicalPose, hingeScreen?.physicalOrientation)) {
       // Another client turned the device over without a preset. Frame it as
       // on connect; face-down framing below still turns it to the cover.
       setPhysicalPose(null);
@@ -1939,8 +1938,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     orientationOverride,
     hingePreview,
     hingePending,
-    screen?.hingePose,
-    screen?.physicalOrientation,
+    hingeScreen?.hingePose,
+    hingeScreen?.physicalOrientation,
     physicalPose,
   ]);
 
@@ -1948,8 +1947,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Another client can turn a half-open device face down without a preset.
     // Frame the elected cover as Tent does, and restore the previous view when
     // the device turns back. Local hinge and rotation controls own the view.
-    if (hingePreview || hingePending || screen?.hingePose === "tent") return;
-    const faceDown = screen?.tableMode === true && screen.physicalOrientation === "facedown";
+    if (hingePreview || hingePending || hingeScreen?.hingePose === "tent") return;
+    const faceDown =
+      hingeScreen?.tableMode === true && hingeScreen.physicalOrientation === "facedown";
     const { state, view } = duoFaceDownFraming(
       faceDownFramingRef.current,
       faceDown,
@@ -1960,9 +1960,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [
     hingePreview,
     hingePending,
-    screen?.hingePose,
-    screen?.tableMode,
-    screen?.physicalOrientation,
+    hingeScreen?.hingePose,
+    hingeScreen?.tableMode,
+    hingeScreen?.physicalOrientation,
     duoView,
     initialDuoView,
   ]);
@@ -2031,8 +2031,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       angle: previewHingeAngle,
       pose: previewHingePose,
       physicalPose,
-      tableMode: hingePreview?.tableMode ?? screen?.tableMode,
-      tableModeAvailable: screen?.tableModeAvailable,
+      tableMode: hingePreview?.tableMode ?? hingeScreen?.tableMode,
+      tableModeAvailable: hingeScreen?.tableModeAvailable,
       faceDown: previewFaceDown,
       activeScreenId: duoIntendedScreen(
         previewHingeAngle,
@@ -2059,8 +2059,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     previewHingePose,
     previewHingeAngle,
     hingePreview?.tableMode,
-    screen?.tableMode,
-    screen?.tableModeAvailable,
+    hingeScreen?.tableMode,
+    hingeScreen?.tableModeAvailable,
     screen?.screenId,
     previewFaceDown,
     hingePending,
