@@ -57,6 +57,7 @@ import {
   withBearerToken,
 } from "./session-auth";
 import { FRAME_ANCESTORS, SESSION_TOKEN } from "./session-token";
+import { admitVendorStart, serveEmuStartRoute, serveSimStartRoute } from "./vendor-boot-gate";
 import {
   SERVER_SINGLE_DEVICE,
   allowsSessionDeviceAction,
@@ -74,6 +75,8 @@ const REMOVE_DEVICE_ROUTE = "/api/devices/remove";
 const BOOT_DEVICE_ROUTE = "/api/devices/boot";
 const CREATE_DEVICE_ROUTE = "/api/devices/create";
 const NEW_DEVICE_OPTIONS_ROUTE = "/api/new-device-options";
+const SIM_START_ROUTE = serveSimStartRoute(SIM_PREFIX);
+const EMU_START_ROUTE = serveEmuStartRoute(EMU_PREFIX);
 const DEVICES_WEBSOCKET_ROUTE = "/api/devices/ws";
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = "/api/argent-interactions/ws";
 
@@ -223,11 +226,12 @@ async function routeRequest(request: Request): Promise<Response | null> {
     return serveClientIndexHtml();
   }
 
+  // The servers' start routes boot devices, so the host policy admits them first.
   if (isSimPath(pathname)) {
-    return handleSimRequest(request);
+    return admitVendorStart(request, SIM_START_ROUTE, handleSimRequest);
   }
   if (isEmuPath(pathname)) {
-    return handleEmuRequest(request);
+    return admitVendorStart(request, EMU_START_ROUTE, handleEmuRequest);
   }
 
   if (pathname === DEVICES_ROUTE) {

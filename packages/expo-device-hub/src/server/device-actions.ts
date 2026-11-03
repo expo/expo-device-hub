@@ -8,6 +8,7 @@
  */
 
 import {
+  type BootedDevice,
   bootDevice as bootAndroidEmulator,
   createDevice as createAndroidDevice,
   emulatorSerial,
@@ -24,6 +25,7 @@ import {
   shutdownDevice as shutdownAppleDevice,
 } from "@expo/hub-apple-utils";
 
+import { type BootAdmission, type BootTicket, defaultBootAdmission } from "./boot-admission";
 import { type HubDevicePlatform } from "./devices";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
@@ -207,6 +209,9 @@ export interface BootDeviceResult {
  * waits until the new adb serial is online; iOS returns after `simctl` accepts
  * the boot and uses the existing UDID as its stream id.
  *
+ * `admission` refuses the boot first when the host's virtual-device capacity
+ * is used up; without a host policy it admits everything.
+ *
  * The wait races against the emulator process dying: a bad AVD/config kills the
  * process within seconds, and burning the full 3-minute timeout on a corpse
  * would leave the dashboard with a meaningless "timed out". The emulator's
@@ -216,9 +221,16 @@ export interface BootDeviceResult {
 export async function bootHubDevice(
   { platform, id, name }: DeviceActionRequest,
   cameraFeeds: EmulatorCameraFeeds,
+  admission: BootAdmission = defaultBootAdmission,
 ): Promise<BootDeviceResult> {
   if (platform === "ios") {
+    const admitted = await admission.admit({ platform, udid: id, name: name || id });
+    if (!admitted.ok) return { ok: false, error: admitted.error, errors: admitted.errors };
+
+    // A failed `simctl boot` may still have started the simulator; its native
+    // state decides when the slot is free.
     const booted = await bootAppleSimulator({ udid: id });
+    await admitted.ticket.finish();
     const errors = errorList(toSerializableError(booted.error));
     return booted.value
       ? { ok: true, id, errors }
@@ -228,18 +240,33 @@ export async function bootHubDevice(
   const avdName = name || id;
   if (!avdName) return { ok: false, error: "Missing AVD name", errors: [] };
 
-  return bootAndroidHubDevice(avdName, cameraFeeds);
+  const admitted = await admission.admit({ platform, avdName, serial: id || null, name: avdName });
+  if (!admitted.ok) return { ok: false, error: admitted.error, errors: admitted.errors };
+  return bootAndroidHubDevice(avdName, cameraFeeds, admitted.ticket);
 }
 
-/** Create a new virtual device, then boot it through the same platform utility. */
+/**
+ * Create a new virtual device, then boot it through the same platform utility.
+ * Admission runs before the create, since the new device will take a slot.
+ */
 export async function createHubDevice(
   { platform, name, runtime, deviceType }: CreateDeviceActionRequest,
   cameraFeeds: EmulatorCameraFeeds,
+  admission: BootAdmission = defaultBootAdmission,
 ): Promise<BootDeviceResult> {
+  const admitted = await admission.admit(
+    platform === "ios"
+      ? { platform, udid: null, name }
+      : { platform, avdName: name, serial: null, name },
+  );
+  if (!admitted.ok) return { ok: false, error: admitted.error, errors: admitted.errors };
+  const { ticket } = admitted;
+
   if (platform === "ios") {
     const created = await createAppleSimulator({ name, runtime, deviceType });
     const udid = created.value;
     if (created.error || !udid) {
+      await ticket.rollback();
       return {
         ok: false,
         error: `Failed to create iOS simulator ${name}`,
@@ -247,7 +274,9 @@ export async function createHubDevice(
       };
     }
 
+    await ticket.identify(udid);
     const booted = await bootAppleSimulator({ udid });
+    await ticket.finish();
     const errors = errorList(toSerializableError(booted.error));
     return booted.value
       ? { ok: true, id: udid, errors }
@@ -265,6 +294,7 @@ export async function createHubDevice(
     device: deviceType,
   });
   if (created.error || !created.value) {
+    await ticket.rollback();
     return {
       ok: false,
       error: `Failed to create Android emulator ${name}`,
@@ -272,7 +302,7 @@ export async function createHubDevice(
     };
   }
 
-  return bootAndroidHubDevice(name, cameraFeeds);
+  return bootAndroidHubDevice(name, cameraFeeds, ticket);
 }
 
 /**
@@ -281,46 +311,69 @@ export async function createHubDevice(
  * Camera feeds are optional. A seeding failure only costs the fake camera, so
  * the boot continues without the feed launch args and reports the failure in
  * `errors` next to whatever the boot itself produced.
+ *
+ * The admission `ticket` is rolled back only while no emulator process can
+ * exist. Once one was spawned, every outcome finishes it: an emulator that
+ * failed to come online may still be running.
+ *
+ * @ref LLP 0018#rollback — only a proven-unused attempt frees its slot at once
  */
 async function bootAndroidHubDevice(
   avdName: string,
   cameraFeeds: EmulatorCameraFeeds,
+  ticket: BootTicket,
 ): Promise<BootDeviceResult> {
-  const allocated = await freeEmulatorPort();
-  if (allocated.error || allocated.value === null) {
-    return {
-      ok: false,
-      error: `Failed to allocate an emulator port for ${avdName}`,
-      errors: errorList(toSerializableError(allocated.error)),
-    };
-  }
-
-  const serial = emulatorSerial(allocated.value);
-  let seedError: SerializableError | null = null;
+  let spawned = false;
   try {
-    await cameraFeeds.seedPlaceholders(serial);
-  } catch (error) {
-    seedError = toSerializableError({
-      message: `Failed to prepare camera feeds for ${avdName}`,
-      error,
+    const allocated = await freeEmulatorPort();
+    if (allocated.error || allocated.value === null) {
+      return {
+        ok: false,
+        error: `Failed to allocate an emulator port for ${avdName}`,
+        errors: errorList(toSerializableError(allocated.error)),
+      };
+    }
+
+    const serial = emulatorSerial(allocated.value);
+    await ticket.reserveSerial(serial);
+    let seedError: SerializableError | null = null;
+    try {
+      await cameraFeeds.seedPlaceholders(serial);
+    } catch (error) {
+      seedError = toSerializableError({
+        message: `Failed to prepare camera feeds for ${avdName}`,
+        error,
+      });
+    }
+    const seedErrors = errorList(seedError);
+
+    const bootedResult = await bootAndroidEmulator({
+      name: avdName,
+      port: allocated.value,
+      extraArgs: seedError === null ? cameraFeeds.launchArgs(serial) : undefined,
     });
-  }
-  const seedErrors = errorList(seedError);
+    const booted = bootedResult.value;
+    if (bootedResult.error || !booted) {
+      return {
+        ok: false,
+        error: `Failed to spawn emulator for ${avdName}`,
+        errors: [...seedErrors, ...errorList(toSerializableError(bootedResult.error))],
+      };
+    }
 
-  const bootedResult = await bootAndroidEmulator({
-    name: avdName,
-    port: allocated.value,
-    extraArgs: seedError === null ? cameraFeeds.launchArgs(serial) : undefined,
-  });
-  const booted = bootedResult.value;
-  if (bootedResult.error || !booted) {
-    return {
-      ok: false,
-      error: `Failed to spawn emulator for ${avdName}`,
-      errors: [...seedErrors, ...errorList(toSerializableError(bootedResult.error))],
-    };
+    spawned = true;
+    await ticket.spawned(booted.pid);
+    return await waitForSpawnedEmulator(avdName, booted, seedErrors);
+  } finally {
+    await (spawned ? ticket.finish() : ticket.rollback());
   }
+}
 
+async function waitForSpawnedEmulator(
+  avdName: string,
+  booted: BootedDevice,
+  seedErrors: SerializableError[],
+): Promise<BootDeviceResult> {
   const abort = new AbortController();
   const outcome = await Promise.race([
     waitForAdbOnline(booted.serial, BOOT_READY_TIMEOUT_MS, { signal: abort.signal }).then(
