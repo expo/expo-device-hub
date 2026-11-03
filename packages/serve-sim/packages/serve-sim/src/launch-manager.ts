@@ -70,16 +70,22 @@ function releaseLaunchStateUnlocked(
 ): boolean {
   const previous = readLaunchState(udid, ownerPid);
   if (!previous) return false;
-  const kept = Object.fromEntries(
-    Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
-  );
+  const kept: Record<string, RecordedCapability> = {};
+  const released: RecordedCapability[] = [];
+  for (const [name, record] of Object.entries(previous.capabilities)) {
+    if (!record.ownerPids.includes(ownerPid)) {
+      kept[name] = record;
+      continue;
+    }
+    const owners = record.ownerPids.filter((pid) => pid !== ownerPid);
+    if (owners.length > 0) kept[name] = { ...record, ownerPids: owners };
+    else released.push(record);
+  }
   const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
   const exclusivePid = previous.exclusivePid;
   if (exclusivePid === ownerPid || (exclusivePid !== undefined && ownerIsGone(exclusivePid)))
     delete previous.exclusivePid;
-  for (const record of Object.values(previous.capabilities)) {
-    if (record.ownerPid === ownerPid) onRelease?.(record);
-  }
+  for (const record of released) onRelease?.(record);
   if (
     Object.keys(kept).length === 0 &&
     !sessionPids?.length &&
@@ -342,9 +348,14 @@ async function publishLaunchState(
   // a failed update never lets a running app load something rollback cannot take back.
   const published = readLaunchState(udid)?.capabilities ?? {};
   const kept = Object.fromEntries(
-    Object.entries(state.capabilities).filter(
-      ([name, capability]) => JSON.stringify(published[name]) === JSON.stringify(capability),
-    ),
+    Object.entries(state.capabilities).filter(([name, capability]) => {
+      const previous = published[name];
+      return (
+        previous !== undefined &&
+        renderCapabilityConfig({ ...state, capabilities: { [name]: previous } }) ===
+          renderCapabilityConfig({ ...state, capabilities: { [name]: capability } })
+      );
+    }),
   );
   const withdrawnOnly = renderCapabilityConfig({ ...state, capabilities: kept });
 
@@ -624,7 +635,8 @@ function hasForeignCapabilityOwner(
 ): boolean {
   if (!definition.exclusive) return false;
   const existing = readLaunchState(udid)?.capabilities[definition.name];
-  return existing !== undefined && existing.ownerPid !== ownerPid;
+  if (!existing) return false;
+  return ownerPid === null ? existing.ownerPids.length > 0 : !existing.ownerPids.includes(ownerPid);
 }
 
 function assertCapabilityOwner(
@@ -791,6 +803,16 @@ export async function enableCapabilities(
   );
 }
 
+// A second session joins the owners. An empty list, from a one-shot enable, stays empty.
+function ownersFor(previous: RecordedCapability | undefined, ownerPid: number | null): number[] {
+  if (ownerPid === null) return [];
+  if (!previous) return [ownerPid];
+  if (previous.ownerPids.length === 0) return [];
+  return previous.ownerPids.includes(ownerPid)
+    ? previous.ownerPids
+    : [...previous.ownerPids, ownerPid];
+}
+
 async function enableCapabilitiesUnlocked(
   udid: string,
   bundleId: string | null,
@@ -809,7 +831,14 @@ async function enableCapabilitiesUnlocked(
 
   const previous = readLaunchState(udid);
   const added = Object.fromEntries(
-    capabilities.map((capability) => [capability.name, { ...capability, bundleId, ownerPid }]),
+    capabilities.map((capability) => [
+      capability.name,
+      {
+        ...capability,
+        bundleId,
+        ownerPids: ownersFor(previous?.capabilities[capability.name], ownerPid),
+      },
+    ]),
   );
   const state: LaunchState = {
     ...(previous ?? { launchArgs: [], capabilities: {} }),
@@ -873,6 +902,47 @@ export async function disableCapability(
   await withLaunchStateLock(udid, () => disableCapabilityUnlocked(udid, bundleId, name, options));
 }
 
+/** Release one session's share without withdrawing capabilities that other sessions still own. */
+export async function releaseCapabilityOwnership(
+  udid: string,
+  name: string,
+  ownerPid: number,
+): Promise<void> {
+  await withLaunchStateLock(udid, async () => {
+    const state = readLaunchState(udid, ownerPid);
+    const capability = state?.capabilities[name];
+    if (!state || !capability?.ownerPids.includes(ownerPid)) return;
+    const owners = capability.ownerPids.filter((pid) => pid !== ownerPid);
+    if (owners.length === 0) {
+      await disableCapabilityUnlocked(udid, null, name, { relaunch: false });
+    } else {
+      // Only ownership changed; the config and the running app's reader stay in place.
+      writeLaunchState(udid, {
+        ...state,
+        capabilities: { ...state.capabilities, [name]: { ...capability, ownerPids: owners } },
+      });
+    }
+  });
+}
+
+async function removeCapabilityLoaderWithRollback(udid: string): Promise<void> {
+  const previous = await snapshotCapabilityLaunch(udid);
+  try {
+    await removeCapabilityLoader(udid);
+  } catch (error) {
+    if (isDeviceNotBooted(error)) throw error;
+    try {
+      await restoreCapabilityLaunch(udid, previous, []);
+    } catch (rollbackError) {
+      throw new CapabilityRollbackError(
+        [error, rollbackError],
+        `Could not restore capability launch state on ${udid}. Retry cleanup before launching apps.`,
+      );
+    }
+    throw error;
+  }
+}
+
 // launchctl values end with the boot, so a device that is off only needs its saved state.
 async function withdrawLaunchState(udid: string, state: LaunchState): Promise<boolean> {
   try {
@@ -892,18 +962,51 @@ async function disableCapabilityUnlocked(
   { relaunch = true }: EnableOptions = {},
 ): Promise<void> {
   const previous = readLaunchState(udid);
-  if (!previous || !(name in previous.capabilities)) {
-    if (managedStartupDylibs(udid).length > 0) {
-      await withdrawLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+  const removed = !!previous && name in previous.capabilities;
+  let staleConfig = false;
+  if (!removed && previous && Object.keys(previous.capabilities).length === 0) {
+    try {
+      // Reading state drops dead owners; explicit disable must still withdraw their old config.
+      staleConfig = readFileSync(capabilityConfigPath(udid), "utf8").trim().length > 0;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+  }
+  // @ref LLP 0007#lifecycle — Dead idle sessions still need explicit loader teardown.
+  const abandonedSession =
+    previous?.sessionPids?.length === 0 &&
+    previous.exclusivePid === undefined &&
+    Object.keys(previous.capabilities).length === 0;
+  if (!removed && !staleConfig && !abandonedSession && managedStartupDylibs(udid).length === 0)
+    return;
+  const rest = Object.fromEntries(
+    Object.entries(previous?.capabilities ?? {}).filter(([key]) => key !== name),
+  );
+  const state: LaunchState = { ...(previous ?? { launchArgs: [] }), capabilities: rest };
+  let booted: boolean;
+  if (
+    previous &&
+    Object.keys(rest).length === 0 &&
+    !state.sessionPids?.length &&
+    state.exclusivePid === undefined
+  ) {
+    // A one-shot enable armed the loader with no session to take it out again.
+    booted = await removeCapabilityLoaderWithRollback(udid).then(
+      () => true,
+      (error: unknown) => {
+        if (!isDeviceNotBooted(error)) throw error;
+        return false;
+      },
+    );
+    if (state.bundleId || state.launchArgs.length > 0)
+      writeLaunchState(udid, { ...state, sessionPids: undefined });
+    else clearLaunchState(udid);
+  } else if (removed || managedStartupDylibs(udid).length > 0) {
+    booted = await withdrawLaunchState(udid, state);
+  } else {
     return;
   }
-  const rest = Object.fromEntries(
-    Object.entries(previous.capabilities).filter(([key]) => key !== name),
-  );
-  const state: LaunchState = { ...previous, capabilities: rest };
-  const booted = await withdrawLaunchState(udid, state);
-  if (relaunch && booted) await relaunchTarget(udid, bundleId, state);
+  if (relaunch && removed && booted) await relaunchTarget(udid, bundleId, state);
 }
 
 const URL_SCHEME_APPROVAL_DOMAIN = "com.apple.launchservices.schemeapproval";

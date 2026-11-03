@@ -5,6 +5,7 @@ import {
   readLaunchState,
   rearmCapabilityLoader,
   releaseSession,
+  releaseCapabilityOwnership,
   releaseSessionSync,
 } from "./launch-manager";
 import { LaunchStateLockedError } from "./launch-state-lock";
@@ -24,7 +25,7 @@ function ownedByThisProcess(udid: string): boolean {
   const state = readLaunchState(udid);
   return (
     !!state &&
-    (Object.values(state.capabilities).some(({ ownerPid }) => ownerPid === process.pid) ||
+    (Object.values(state.capabilities).some(({ ownerPids }) => ownerPids.includes(process.pid)) ||
       (state.sessionPids ?? []).includes(process.pid))
   );
 }
@@ -133,15 +134,9 @@ export function createClipboardSession(
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
       const results = await Promise.allSettled(
         [...initializedHere].map(async (udid) => {
-          const clipboard = readLaunchState(udid)?.capabilities[CLIPBOARD_CAPABILITY];
-          if (clipboard?.ownerPid === process.pid) {
-            await configureCapability(udid, clipboardCapability, {
-              enabled: false,
-              relaunch: false,
-            });
-          }
+          await releaseCapabilityOwnership(udid, CLIPBOARD_CAPABILITY, process.pid);
           const remaining = Object.values(readLaunchState(udid)?.capabilities ?? {});
-          if (!remaining.some(({ ownerPid }) => ownerPid === process.pid)) {
+          if (!remaining.some(({ ownerPids }) => ownerPids.includes(process.pid))) {
             await releaseSession(udid, process.pid, () => {});
           }
           initializedHere.delete(udid);
