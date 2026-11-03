@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
+import { DeviceSessionState } from "../src/device-session-state.ts";
 import { createApp, type AppClock } from "../src/middleware.ts";
 import { ScreenRecording } from "../src/screen-recording.ts";
 import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/scrcpy.ts";
@@ -12,6 +13,7 @@ import {
   type GrpcCaptureDiagnostics,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -236,6 +238,7 @@ test("advertises viewer transports and lazily creates WebRTC for a websocket def
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async (options) => {
         createCalls++;
@@ -297,6 +300,7 @@ test("a close racing lazy middleware publisher startup cancels the pending viewe
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => {
         notifyFactoryStarted();
@@ -351,6 +355,7 @@ test("normalizes middleware source FPS by the actual elapsed time", async () => 
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -393,6 +398,7 @@ test("serves viewer-scoped WebRTC statistics from createApp.handleRequest", asyn
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -430,6 +436,7 @@ test("with a WebRTC transport, refuses WebSocket video and keeps WebSocket input
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -468,6 +475,7 @@ test("uses the 30 FPS middleware default when maxFps is omitted", async () => {
   const app = await createApp(
     { serial: session.serial },
     {
+      readOrientation: readNoOrientation,
       startSession: async (options) => {
         openedMaxFps = options.maxFps;
         return adaptScrcpySession(session);
@@ -496,6 +504,7 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
       },
     },
     {
+      readOrientation: readNoOrientation,
       startSession: async () => adaptScrcpySession(session),
       createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       clock,
@@ -549,6 +558,7 @@ test.each(["mmap", "rgb888"] as const)(
         },
       },
       {
+        readOrientation: readNoOrientation,
         startSession: async () => grpcSession,
         createWebRtcPublisher: async () => fakeWebRtcPublisher(),
       },
@@ -628,7 +638,7 @@ test("keeps the screen recording active when the capture ends and the app stops"
   } as unknown as ScrcpySession;
   const app = await createApp(
     { serial: session.serial, screenRecording: recorder },
-    { startSession: async () => adaptScrcpySession(session) },
+    { readOrientation: readNoOrientation, startSession: async () => adaptScrcpySession(session) },
   );
   try {
     await recorder.ready;
@@ -705,7 +715,10 @@ function pushableScrcpySession(): {
 
 test("only announces video-session when the scrcpy session size changes", async () => {
   const { session, push } = pushableScrcpySession();
-  const app = await createApp({ serial: session.serial }, { startScrcpy: async () => session });
+  const app = await createApp(
+    { serial: session.serial },
+    { readOrientation: readNoOrientation, startScrcpy: async () => session },
+  );
   const sent: (string | Uint8Array)[] = [];
   app.attachWebSocket(
     {
@@ -738,5 +751,54 @@ test("only announces video-session when the scrcpy session size changes", async 
   } finally {
     push(null);
     await app.stop();
+  }
+});
+
+test("reports the display orientation in /api and /health and records the locked pose", async () => {
+  const { session } = fakeScrcpySession(0);
+  const calls: string[] = [];
+  const deviceState = new DeviceSessionState({
+    serial: session.serial,
+    applyLocation: async () => {},
+    readOrientation: async (serial) => (calls.push(`read ${serial}`), "portrait"),
+    applyRotation: async (serial, orientation) => {
+      calls.push(`lock ${serial} ${orientation}`);
+      return {
+        mode: "lock",
+        rotation: 3,
+        orientation: "landscape",
+        pose: "landscape_left",
+        raw: "lock 3",
+      };
+    },
+  });
+  const app = await createApp(
+    { serial: session.serial, deviceState },
+    { startSession: async () => adaptScrcpySession(session) },
+  );
+
+  try {
+    const info = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await info.json()).toMatchObject({ pose: "portrait" });
+    const health = await app.handleRequest(new Request("http://middleware.test/health"));
+    expect(await health.json()).toMatchObject({ pose: "portrait" });
+
+    const locked = await app.handleRequest(
+      new Request("http://middleware.test/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape_left" }),
+      }),
+    );
+    expect(await locked.json()).toMatchObject({
+      ok: true,
+      orientation: { pose: "landscape_left" },
+    });
+    // `/api` right after the lock reports the locked pose without another read.
+    const after = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await after.json()).toMatchObject({ pose: "landscape_left" });
+    expect(calls).toEqual([`read ${session.serial}`, `lock ${session.serial} landscape_left`]);
+  } finally {
+    app.stop();
   }
 });

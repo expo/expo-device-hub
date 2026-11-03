@@ -1,7 +1,10 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, test } from "bun:test";
+import { ActiveDeviceSession } from "../src/device-session-context.ts";
 import { DeviceSessionState } from "../src/device-session-state.ts";
+import type { EmuSession } from "../src/stream-session.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 import { LogcatHub } from "../src/logcat.ts";
 import { SessionRecorder } from "../src/session-recorder.ts";
 
@@ -75,6 +78,10 @@ describe("DeviceSessionState source ownership", () => {
       applyLocation: async (_serial, fix) => {
         appliedLocations.push(`${fix.latitude},${fix.longitude}`);
       },
+      readOrientation: readNoOrientation,
+      applyRotation: async () => {
+        throw new Error("not used");
+      },
       now: () => 1_000,
     });
     const scrcpyOwner = {};
@@ -135,4 +142,45 @@ describe("DeviceSessionState source ownership", () => {
     });
     expect(logcat.killed()).toBe(true);
   });
+});
+
+describe("DeviceSessionState orientation", () => {
+  test("setOrientation locks the rotation and reports the locked pose without reading again", async () => {
+    const reads: string[] = [];
+    const locks: string[] = [];
+    const state = new DeviceSessionState({
+      serial: "emulator-5554",
+      applyLocation: async () => {},
+      readOrientation: async (serial) => (reads.push(serial), "portrait"),
+      applyRotation: async (serial, mode) => {
+        locks.push(`${serial} ${mode}`);
+        return {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        };
+      },
+    });
+    await expect(state.orientation.fresh()).resolves.toBe("portrait");
+    await expect(state.setOrientation("landscape_left")).resolves.toMatchObject({
+      pose: "landscape_left",
+    });
+    expect(locks).toEqual(["emulator-5554 landscape_left"]);
+    await expect(state.orientation.fresh()).resolves.toBe("landscape_left");
+    expect(reads).toEqual(["emulator-5554"]);
+  });
+});
+
+test("a context that creates its device state needs every device dependency", () => {
+  const partial = {
+    serial: "device-a",
+    generation: 1,
+    stream: {} as EmuSession,
+    applyLocation: async () => {},
+  };
+  // @ts-expect-error readOrientation and applyRotation are required without a deviceState.
+  const missing: ConstructorParameters<typeof ActiveDeviceSession>[0] = partial;
+  expect(missing.serial).toBe("device-a");
 });

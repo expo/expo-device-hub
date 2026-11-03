@@ -215,11 +215,41 @@ export type AvdStartResponse = ApiSuccess<{
 
 export type AvdStopResponse = ApiSuccess<{ serial: string }>;
 
-export type OrientationMode = "auto" | "portrait" | "landscape";
+/**
+ * How the display faces, named as serve-sim names iOS poses: by the interface orientation,
+ * like `UIInterfaceOrientation`. `landscape_left` has the bottom of the device on the left,
+ * so the device turned a quarter turn clockwise from portrait.
+ */
+export type ScreenOrientation = (typeof SCREEN_ORIENTATIONS)[number];
+export const SCREEN_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const;
+/**
+ * `landscape` is `landscape_right`, the pose that rotation 1 shows on a phone, as before the
+ * four poses. `auto` follows the device sensor again.
+ */
+export type OrientationMode = "auto" | "landscape" | ScreenOrientation;
+export const ORIENTATION_MODES: readonly OrientationMode[] = [
+  "auto",
+  "landscape",
+  ...SCREEN_ORIENTATIONS,
+];
+export const ORIENTATION_MODE_ERROR = `orientation must be one of ${ORIENTATION_MODES.join(", ")}`;
+
+export function isOrientationMode(value: unknown): value is OrientationMode {
+  return (ORIENTATION_MODES as readonly unknown[]).includes(value);
+}
+
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
-  orientation: OrientationMode | "unknown";
+  /** `portrait` or `landscape` for a locked rotation, from the device's natural display. */
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
+  /** The locked pose, or null when the rotation is free or unknown. Absent on older servers. */
+  pose?: ScreenOrientation | null;
   raw: string;
 };
 export type OrientationResponse = ApiSuccess<{ orientation: OrientationStatus }>;
@@ -523,6 +553,11 @@ export type HealthResponse = {
   grpcCapture?: GrpcCaptureDiagnostics | null;
   codec: string;
   size: DeviceSize;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
   clients: number;
   frames: number;
   sourceFps: number;
@@ -561,6 +596,11 @@ export type ApiInfoResponse = {
   stream: StreamSettings;
   /** Viewer-local transport choices. Optional while older servers remain supported. */
   viewerTransports?: ViewerTransports;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -789,6 +829,14 @@ function oneOf<const Values extends readonly string[]>(
     : fail(`${name} is invalid`);
 }
 
+function nullableOneOf<const Values extends readonly string[]>(
+  value: unknown,
+  values: Values,
+  name: string,
+): Values[number] | null {
+  return value === null ? null : oneOf(value, values, name);
+}
+
 /** Parse the stable failure envelope; throws when a server violates the contract. */
 export function parseApiFailure(value: unknown): ApiFailure {
   try {
@@ -938,6 +986,9 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.viewerTransports === undefined
       ? {}
       : { viewerTransports: parseViewerTransports(root.viewerTransports) }),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
   };
 }
 
@@ -1206,6 +1257,9 @@ function parseOrientationStatus(value: unknown): OrientationStatus {
       ["auto", "portrait", "landscape", "unknown"] as const,
       "orientation.orientation",
     ),
+    ...(item.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(item.pose, SCREEN_ORIENTATIONS, "orientation.pose") }),
     raw: string(item.raw, "orientation.raw"),
   };
 }
@@ -1866,6 +1920,9 @@ export function parseHealthResponse(value: unknown): HealthResponse {
         }),
     codec: string(root.codec, "health response.codec"),
     size: parseDeviceSize(root.size, "health response.size"),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "health response.pose") }),
     clients: number(root.clients, "health response.clients"),
     frames: number(root.frames, "health response.frames"),
     sourceFps: number(root.sourceFps, "health response.sourceFps"),

@@ -4,6 +4,7 @@ import type { VideoPacket, ScrcpySession } from "../src/scrcpy.ts";
 import { startServer, type ServerDependencies } from "../src/server.ts";
 import type { RecoveryWatchdogClock } from "../src/session-recovery-watchdog.ts";
 import type { StreamSettings } from "../src/stream-settings.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -337,6 +338,7 @@ async function createHarness(
   let webRtcPublisherCreateCalls = 0;
   let openedWebRtcSettings: unknown;
   const dependencies: ServerDependencies = {
+    readOrientation: readNoOrientation,
     startScrcpy: async ({ serial }) => {
       startCalls.push(serial);
       const gate = startGates.get(serial);

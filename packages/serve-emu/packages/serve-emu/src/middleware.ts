@@ -23,8 +23,8 @@ import {
   setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
+  getDisplayOrientation,
   setUserRotation,
-  type OrientationMode,
   type NightModeStatus,
 } from "./adb.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
@@ -59,7 +59,7 @@ import {
   startEmulator,
   stopEmulator,
 } from "./emulator.ts";
-import { DeviceSessionState } from "./device-session-state.ts";
+import { DeviceSessionState, type DeviceSessionStateOptions } from "./device-session-state.ts";
 import {
   ScreenRecording,
   ScreenRecordingConflictError,
@@ -121,6 +121,8 @@ import {
   INPUT_SOURCES,
   isGrpcImageMode,
   isInputSource,
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
   parseFontScale,
   parseStreamModeRequest,
@@ -353,6 +355,10 @@ export type CreateAppDependencies = {
   createWebRtcPublisher?: typeof createWebRtcPublisher;
   clock?: AppClock;
   setLocation?: (serial: string, fix: GeoFix, signal: AbortSignal) => Promise<void>;
+  /** Read the display pose, like `setLocation`, for a new device state; adb by default. */
+  readOrientation?: DeviceSessionStateOptions["readOrientation"];
+  /** Lock or free the rotation for a new device state; adb by default. */
+  applyRotation?: DeviceSessionStateOptions["applyRotation"];
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -467,6 +473,9 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyLocation:
         dependencies.setLocation ??
         ((serial, fix, signal) => setEmulatorLocationAsync(serial, fix, signal)),
+      readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
+      applyRotation:
+        dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
     });
   try {
     deviceState.acquire(deviceStateOwner);
@@ -491,6 +500,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     grpcCapture: session.diagnostics?.().grpcCapture ?? null,
     codec: session.meta.codecId,
     size: { width: screen.width, height: screen.height },
+    pose: deviceState.orientation.current(),
     clients: clients.size,
     videoClients: Array.from(clients).filter((client) => client.video).length,
     frames: frameCount,
@@ -1292,6 +1302,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
+          pose: await deviceState.orientation.fresh(),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
@@ -1737,12 +1748,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
             throw new Error("orientation payload must be an object");
           }
           const orientation = (payload as Record<string, unknown>).orientation;
-          if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
-            throw new Error("orientation must be auto, portrait, or landscape");
-          }
+          if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
           return Response.json({
             ok: true,
-            orientation: await setUserRotation(opts.serial, orientation as OrientationMode),
+            orientation: await deviceState.setOrientation(orientation),
           });
         } catch (err) {
           return Response.json(

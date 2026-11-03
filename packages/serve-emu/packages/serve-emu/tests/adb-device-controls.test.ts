@@ -13,7 +13,9 @@ import {
   clearHardwareKeyboardCache,
   hardwareKeyboardFromClasses,
   getSoftwareKeyboard,
+  getDisplayOrientation,
   getUserRotation,
+  orientationStatus,
   listAllDevices,
   listDevices,
   pickDevice,
@@ -26,6 +28,7 @@ import {
   setReduceMotion,
   setNightMode,
   setSoftwareKeyboard,
+  screenOrientationForRotation,
   setUserRotation,
   shell,
   shellSpawn,
@@ -263,7 +266,9 @@ describe("ADB display controls", () => {
       return result("DisplayRotation\n  mRotation=0\n");
     }) as typeof execText;
 
-    await expect(getDisplayRotation("device-1", runExec, controller.signal)).resolves.toBe(0);
+    await expect(
+      getDisplayRotation("device-1", runExec, { signal: controller.signal, lane: "background" }),
+    ).resolves.toBe(0);
     expect(options?.signal).toBe(controller.signal);
     expect(options?.lane).toBe("background");
   });
@@ -285,49 +290,203 @@ describe("ADB display controls", () => {
     await expect(getDeviceSize("device-1", failed)).rejects.toThrow("wm size failed: wm failed");
   });
 
-  test("maps free and locked rotations to logical orientations", async () => {
+  test("names a lock status from the natural display", () => {
+    const phone = { width: 1080, height: 2400 };
+    const tablet = { width: 2560, height: 1600 };
     const cases = [
-      { raw: "free\n", mode: "free", rotation: null, orientation: "auto" },
-      { raw: "free 3\n", mode: "free", rotation: 3, orientation: "auto" },
-      { raw: "lock 0\n", mode: "lock", rotation: 0, orientation: "portrait" },
-      { raw: "lock 2\n", mode: "lock", rotation: 2, orientation: "portrait" },
-      { raw: "lock 1\n", mode: "lock", rotation: 1, orientation: "landscape" },
-      { raw: "lock 3\n", mode: "lock", rotation: 3, orientation: "landscape" },
-      { raw: "lock\n", mode: "lock", rotation: null, orientation: "unknown" },
-      { raw: "unexpected\n", mode: "unknown", rotation: null, orientation: "unknown" },
+      {
+        raw: "free",
+        natural: phone,
+        mode: "free",
+        rotation: null,
+        orientation: "auto",
+        pose: null,
+      },
+      { raw: "free 3", natural: null, mode: "free", rotation: 3, orientation: "auto", pose: null },
+      {
+        raw: "lock 0",
+        natural: phone,
+        mode: "lock",
+        rotation: 0,
+        orientation: "portrait",
+        pose: "portrait",
+      },
+      {
+        raw: "lock 1",
+        natural: phone,
+        mode: "lock",
+        rotation: 1,
+        orientation: "landscape",
+        pose: "landscape_right",
+      },
+      {
+        raw: "lock 2",
+        natural: phone,
+        mode: "lock",
+        rotation: 2,
+        orientation: "portrait",
+        pose: "portrait_upside_down",
+      },
+      {
+        raw: "lock 3",
+        natural: phone,
+        mode: "lock",
+        rotation: 3,
+        orientation: "landscape",
+        pose: "landscape_left",
+      },
+      // A tablet shows landscape at rotation 0 and portrait at rotation 3.
+      {
+        raw: "lock 0",
+        natural: tablet,
+        mode: "lock",
+        rotation: 0,
+        orientation: "landscape",
+        pose: "landscape_right",
+      },
+      {
+        raw: "lock 3",
+        natural: tablet,
+        mode: "lock",
+        rotation: 3,
+        orientation: "portrait",
+        pose: "portrait",
+      },
+      {
+        raw: "lock",
+        natural: phone,
+        mode: "lock",
+        rotation: null,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "lock 4",
+        natural: phone,
+        mode: "lock",
+        rotation: 4,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "lock 1",
+        natural: null,
+        mode: "lock",
+        rotation: 1,
+        orientation: "unknown",
+        pose: null,
+      },
+      {
+        raw: "unexpected",
+        natural: phone,
+        mode: "unknown",
+        rotation: null,
+        orientation: "unknown",
+        pose: null,
+      },
     ] as const;
-
-    for (const entry of cases) {
-      const runExec = (async () => result(entry.raw)) as typeof execText;
-      await expect(getUserRotation("device-1", runExec)).resolves.toEqual({
-        mode: entry.mode,
-        rotation: entry.rotation,
-        orientation: entry.orientation,
-        raw: entry.raw.trim(),
-      });
+    for (const { raw, natural, ...expected } of cases) {
+      expect(orientationStatus(raw, natural)).toEqual({ ...expected, raw });
     }
   });
 
-  test("encodes rotation mutations and returns the observed state", async () => {
+  test("reads the lock and the natural size, and reports a lock as unknown without the size", async () => {
+    const read = (size: ReturnType<typeof result>) =>
+      (async (_command, args) =>
+        args.includes("wm") ? size : result("lock 1\n")) as typeof execText;
+    await expect(
+      getUserRotation("device-1", read(result("Physical size: 1080x2400"))),
+    ).resolves.toMatchObject({
+      pose: "landscape_right",
+      raw: "lock 1",
+    });
+    await expect(
+      getUserRotation("device-1", read(result("", { status: 1, stderr: "wm failed" }))),
+    ).resolves.toMatchObject({ orientation: "unknown", pose: null });
+    const widened = result("Physical size: 1080x2400\nOverride size: 2400x1080");
+    await expect(getUserRotation("device-1", read(widened))).resolves.toMatchObject({
+      orientation: "portrait",
+      pose: "portrait_upside_down",
+    });
+  });
+
+  test("reads the shown pose from the rotation and the natural size, both in the background lane", async () => {
+    const lanes: Array<[string, string | undefined]> = [];
+    let size = "Physical size: 1080x2400";
+    const runExec = (async (_command, args, options) => {
+      const call = args.slice(3).join(" ");
+      lanes.push([call, options?.lane]);
+      return call === "wm size" ? result(size) : result("Display: mDisplayId=0\n  mRotation=0\n");
+    }) as typeof execText;
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("portrait");
+    // Another AVD can reuse the serial, so the size is read again each time.
+    size = "Physical size: 2560x1600";
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("landscape_right");
+    // Android rotates from the override size, so a widened phone at rotation 0 is landscape.
+    size = "Physical size: 1080x2400\nOverride size: 2400x1080";
+    await expect(getDisplayOrientation("device-1", runExec)).resolves.toBe("landscape_right");
+    expect(new Set(lanes.map(([, lane]) => lane))).toEqual(new Set(["background"]));
+  });
+
+  test("locks the rotation that shows the requested pose and reads that pose back", async () => {
+    const phone = "Physical size: 1080x2400";
+    const tablet = "Physical size: 2560x1600";
+    const widened = "Physical size: 1080x2400\nOverride size: 2400x1080";
     const cases = [
-      { requested: "auto", command: "free", observed: "free" },
-      { requested: "portrait", command: "lock 0", observed: "lock 0" },
-      { requested: "landscape", command: "lock 1", observed: "lock 1" },
+      { size: phone, requested: "auto", rotation: null, pose: null },
+      { size: phone, requested: "portrait", rotation: 0, pose: "portrait" },
+      // `landscape` keeps locking rotation 1 on a phone, as before the four poses.
+      { size: phone, requested: "landscape", rotation: 1, pose: "landscape_right" },
+      { size: phone, requested: "landscape_right", rotation: 1, pose: "landscape_right" },
+      { size: phone, requested: "portrait_upside_down", rotation: 2, pose: "portrait_upside_down" },
+      { size: phone, requested: "landscape_left", rotation: 3, pose: "landscape_left" },
+      { size: tablet, requested: "landscape", rotation: 0, pose: "landscape_right" },
+      { size: tablet, requested: "portrait", rotation: 3, pose: "portrait" },
+      { size: tablet, requested: "landscape_left", rotation: 2, pose: "landscape_left" },
+      // An override that turns a phone wide makes Android treat it like a tablet.
+      { size: widened, requested: "portrait", rotation: 3, pose: "portrait" },
+      { size: widened, requested: "landscape", rotation: 0, pose: "landscape_right" },
     ] as const;
 
     for (const entry of cases) {
       const calls: string[] = [];
+      let locked = "free";
       const runExec = (async (_command, args) => {
-        calls.push(args.slice(3).join(" "));
-        return result(calls.length === 1 ? "" : entry.observed);
+        const call = args.slice(3).join(" ");
+        calls.push(call);
+        if (call === "wm size") return result(entry.size);
+        if (call === "cmd window user-rotation") return result(locked);
+        locked = call.replace("cmd window user-rotation ", "");
+        return result("");
       }) as typeof execText;
       const status = await setUserRotation("device-1", entry.requested, runExec);
+      const command = entry.rotation === null ? "free" : `lock ${entry.rotation}`;
+      // A lock reads the natural size once and reuses it for the answer.
       expect(calls).toEqual([
-        `cmd window user-rotation ${entry.command}`,
+        ...(entry.rotation === null ? [] : ["wm size"]),
+        `cmd window user-rotation ${command}`,
         "cmd window user-rotation",
       ]);
-      expect(status.raw).toBe(entry.observed);
+      expect(status).toMatchObject({ rotation: entry.rotation, pose: entry.pose, raw: command });
     }
+  });
+
+  test("names display rotations from the natural display", () => {
+    const phone = { width: 1080, height: 2400 };
+    const tablet = { width: 2560, height: 1600 };
+    // Android rotation 1 turns the device counterclockwise, so its bottom is on the right.
+    expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, phone))).toEqual([
+      "portrait",
+      "landscape_right",
+      "portrait_upside_down",
+      "landscape_left",
+    ]);
+    expect(([0, 1, 2, 3] as const).map((r) => screenOrientationForRotation(r, tablet))).toEqual([
+      "landscape_right",
+      "portrait_upside_down",
+      "landscape_left",
+      "portrait",
+    ]);
   });
 
   test("reports rotation command failures", async () => {
@@ -336,7 +495,11 @@ describe("ADB display controls", () => {
     await expect(getUserRotation("device-1", failed)).rejects.toThrow(
       "cmd window user-rotation failed: rotation denied",
     );
-    await expect(setUserRotation("device-1", "landscape", failed)).rejects.toThrow(
+    const lockFails = (async (_command, args) =>
+      args.includes("wm")
+        ? result("Physical size: 1080x2400")
+        : result("", { status: 1, stderr: "rotation denied" })) as typeof execText;
+    await expect(setUserRotation("device-1", "landscape", lockFails)).rejects.toThrow(
       "adb shell cmd window user-rotation lock 1 failed: rotation denied",
     );
   });
