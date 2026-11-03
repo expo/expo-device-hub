@@ -5,7 +5,7 @@
 **Systems:** HubClient, ServeEmu
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-16 (Codex, directed by Gabe Debes); 2026-10-16 (Claude Code, directed by Krystof Woldrich: serve-emu locked transport); 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248)
+**Revised:** 2026-10-16 (Codex, directed by Gabe Debes); 2026-10-16 (Claude Code, directed by Krystof Woldrich: serve-emu locked transport); 2026-10-21 (Claude Code, directed by Krystof Woldrich: inactive iPhone Duo panels, from #248); 2026-11-03 (Claude Code, directed by Krystof Woldrich: Duo panel helper replacement, from #248)
 **Related:** LLP 0000, LLP 0002
 
 ## Summary
@@ -99,6 +99,7 @@ An iPhone Duo's 3D preview keeps a WebRTC peer open for both physical panels. iO
 - Turning it on arms the first-frame timeout on the existing peer, without renegotiating.
 - The presented panel's codec failures walk the same codec ladder as the flat stream [observed: `ladderFailure` in `useIosDevice.ts`].
 - The flat stream is disabled while the panels show, so a ladder restart, or a reselect of the failed codec, restarts the panels' WebRTC sessions instead. A locked VP8 session has no other codec, so this restart is its only recovery [observed: `restartLadderStream` and `restartGeneration` in `useIosDevice.ts`, `DuoPanelStreams.tsx`].
+- A replaced helper at the same URL (a new pid or exec token) gives both panels new readers and WebRTC sessions, as it does for the flat stream. A panel handoff keeps them [observed: `session` from `videoSessionKey` in `useIosDevice.ts`, `DuoPanelStreams.tsx`].
 
 serve-sim's client uses the same rule [observed: `judgeStalls` in `hooks/use-webrtc-stream.ts` and `components/duo-panel-streams.tsx`].
 

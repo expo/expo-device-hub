@@ -1992,6 +1992,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return {
       url: config.url,
       token,
+      session: videoSessionKey,
       mode: useWebRtc ? "webrtc" : useAvcc ? "avcc" : "mjpeg",
       codec: activeWebRtcCodec,
       iceServers: config.webRtcIceServers,
@@ -2009,6 +2010,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     modelActive,
     config,
     token,
+    videoSessionKey,
     useWebRtc,
     useAvcc,
     activeWebRtcCodec,

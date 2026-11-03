@@ -119,6 +119,11 @@ export interface DuoPanelFeeds {
   url: string;
   /** Session token for the same backend as the flat stream. */
   token?: string | null;
+  /**
+   * The helper session, as for the flat stream's readers. A replaced helper at
+   * the same URL changes it, which restarts both panels' readers.
+   */
+  session?: string | null;
   mode: DuoPanelStreamMode;
   codec: DeviceWebRtcCodec;
   iceServers?: DeviceIceServer[];

@@ -435,6 +435,102 @@ test("a WebRTC panel's first loaded frame counts without frame callbacks, as in 
   expect(events.frames).toBe(1);
 });
 
+async function connectWebRtc(feedsOverride: Partial<DuoPanelFeeds> = {}) {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const visibility = new Set<() => void>();
+  const page = {
+    hidden: false,
+    addEventListener: (type: string, listener: () => void) => {
+      if (type === "visibilitychange") visibility.add(listener);
+    },
+    removeEventListener: (type: string, listener: () => void) => {
+      if (type === "visibilitychange") visibility.delete(listener);
+    },
+  };
+  stubGlobal("document", page);
+  stubGlobal("RTCPeerConnection", Peer);
+  stubGlobal("RTCRtpReceiver", { getCapabilities: () => null });
+  const offers: string[] = [];
+  stubGlobal("fetch", async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/webrtc/offer")) offers.push(String(input));
+    return Response.json({ type: "answer", sdp: "answer" });
+  });
+  Peer.instances = [];
+  const videos: PausableVideo[] = [];
+  const feeds: DuoPanelFeeds = {
+    url: "https://hub.test/helper/duo",
+    session: "helper-1",
+    mode: "webrtc",
+    codec: "h264",
+    onStreamingChange() {},
+    onStreamError() {},
+    onAvccError() {},
+    onWebRtcFailure() {},
+    ...feedsOverride,
+  };
+  const render = (activeScreenId: 1 | 3, next: DuoPanelFeeds) => (
+    <DuoPanelStreams activeScreenId={activeScreenId} feeds={next} />
+  );
+  await act(async () => {
+    renderer = create(render(1, feeds), {
+      createNodeMock: (element) => {
+        if (element.type !== "video") return null;
+        const video = new PausableVideo();
+        videos.push(video);
+        return video;
+      },
+    });
+  });
+  await act(async () => {});
+  for (const peer of Peer.instances) {
+    await act(async () => peer.ontrack?.({ streams: [{}], track: {} }));
+  }
+  return {
+    offers,
+    videos,
+    visibility,
+    setHidden: (hidden: boolean) =>
+      act(async () => {
+        page.hidden = hidden;
+        for (const listener of [...visibility]) listener();
+      }),
+    update: (activeScreenId: 1 | 3, next: Partial<DuoPanelFeeds> = {}) =>
+      act(async () => renderer!.update(render(activeScreenId, { ...feeds, ...next }))),
+  };
+}
+
+class PausableVideo extends FakeVideo {
+  paused = false;
+  plays = 0;
+  override async play() {
+    this.plays++;
+    this.paused = false;
+  }
+}
+
+test("a replaced helper at the same URL gives both WebRTC panels new offers; a handoff does not", async () => {
+  const { offers, update } = await connectWebRtc();
+  expect(offers).toEqual([
+    "https://hub.test/helper/duo/panel/1/webrtc/offer",
+    "https://hub.test/helper/duo/panel/3/webrtc/offer",
+  ]);
+  await update(3);
+  await act(async () => {});
+  expect(offers).toHaveLength(2);
+  await update(3, { session: "helper-2" });
+  await act(async () => {});
+  expect(offers.slice(2).sort()).toEqual([
+    "https://hub.test/helper/duo/panel/1/webrtc/offer",
+    "https://hub.test/helper/duo/panel/3/webrtc/offer",
+  ]);
+});
+
 test("stopping an MJPEG panel mid-decode revokes the frame it was decoding", async () => {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", { addEventListener() {}, removeEventListener() {} });
