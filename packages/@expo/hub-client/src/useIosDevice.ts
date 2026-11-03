@@ -838,13 +838,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
-  const applyStreamSrc = useCallback(() => {
-    const img = imgRef.current;
-    const url = streamUrlRef.current;
-    if (!img || !url) return;
-    img.src = freshStreamSrc(url);
-  }, []);
-
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
       if (useWebRtc) {
@@ -860,13 +853,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         imgRef.current = null;
         setMjpegImageElement(null);
       } else {
-        // A detached <img> stops its multipart request at once.
-        if (imgRef.current && imgRef.current !== el) imgRef.current.removeAttribute("src");
         imgRef.current = (el as HTMLImageElement) ?? null;
         canvasRef.current = null;
         videoRef.current = null;
         setWebRtcVideoElement(null);
-        // The stream effect starts the attached <img>'s request.
+        // The stream effect starts the attached <img>'s request and stops a
+        // detached one's, so the same <img> attached again keeps its stream.
         setMjpegImageElement(imgRef.current);
       }
     },
@@ -2019,7 +2011,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!(visible.complete && visible.naturalWidth > 0) || typeof Image === "undefined") {
         // The new request paints from an empty element, so its frame is new.
         failed = false;
-        applyStreamSrc();
+        visible.src = freshStreamSrc(url);
         return;
       }
       stopProbe();
@@ -2083,17 +2075,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       img?.removeEventListener("load", markStreaming);
       img?.removeEventListener("error", onError);
       clearMjpegBridge(bridging?.target ?? null);
-      // A helper restart for the same screen keeps the last frame. Another
-      // screen session, or an unmount, stops the multipart request on the
-      // element this effect started. `attachVideo` stops a replaced one.
-      if (unmountedRef.current || screenSessionKeyRef.current !== session) {
+      // A helper restart for the same screen keeps the last frame. A detached
+      // or replaced <img>, another screen session, or an unmount stops the
+      // multipart request on the element this effect started.
+      if (
+        imgRef.current !== img ||
+        unmountedRef.current ||
+        screenSessionKeyRef.current !== session
+      ) {
         img?.removeAttribute("src");
       }
       // The helper's pushed config outlives a transport switch.
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);
     };
-  }, [streamUrl, videoSessionKey, mjpegImageElement, applyStreamSrc, setError, setStatus]);
+  }, [streamUrl, videoSessionKey, mjpegImageElement, setError, setStatus]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;

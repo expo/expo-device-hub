@@ -411,3 +411,32 @@ test("a retry that paints after a new <img> attached does not hold the screen in
   await hub.tick();
   expect(hub.client.status).toBe("streaming");
 });
+
+test("an <img> detached and attached again in one commit keeps its stream", async () => {
+  const hub = await iosClient();
+  const visible = new FakeImage();
+  await act(async () => hub.client.attachVideo(visible as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => visible.paint());
+  await hub.tick();
+  expect(hub.client.status).toBe("streaming");
+  // An unstable ref callback detaches and attaches the same element in one commit.
+  await act(async () => {
+    hub.client.attachVideo(null);
+    hub.client.attachVideo(visible as unknown as HTMLImageElement);
+  });
+  await hub.tick();
+  expect(visible.src).toContain("/helper/device-1/stream.mjpeg");
+  expect(visible.naturalWidth).toBeGreaterThan(0);
+  expect(hub.client.status).toBe("streaming");
+});
+
+test("a detached <img> stops its multipart request", async () => {
+  const hub = await iosClient();
+  const visible = new FakeImage();
+  await act(async () => hub.client.attachVideo(visible as unknown as HTMLImageElement));
+  await hub.discover(helper());
+  await act(async () => visible.paint());
+  await act(async () => hub.client.attachVideo(null));
+  expect(visible.src).toBe("");
+});
