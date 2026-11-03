@@ -1100,6 +1100,69 @@ test("a half-open device whose face down becomes unknown keeps the panel that na
   expect(active()).toBe("inner");
 });
 
+test("a command's preview holds until the observation reaches it", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  const open = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, observedDeviceState: open }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "pose", value: "laptop" }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  // The helper confirms the command before its native readback moves.
+  const laptopCommand = { ...INNER_OPEN, hingeAngle: 90, hingePose: "laptop" };
+  await act(async () => socket.push(0x82, { ...laptopCommand, observedDeviceState: open }));
+  expect(client().fold?.angle).toBe(90);
+  expect(client().fold?.pose).toBe("laptop");
+  expect(events.at(-1)?.type).toBe("acknowledged");
+  await act(async () =>
+    socket.push(0x82, {
+      ...laptopCommand,
+      observedDeviceState: { ...open, hingeAngle: 90.2, physicalOrientation: "landscape-left" },
+    }),
+  );
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(client().fold?.angle).toBe(90.2);
+  expect(client().fold?.pose).toBe("laptop");
+
+  // A Table Mode command keeps the observed angle, which the command's config does not repeat.
+  const laptop = { ...open, hingeAngle: 90.2, physicalOrientation: "landscape-left" };
+  await act(async () => client().fold!.setControl({ control: "tableMode", value: true }));
+  expect(client().fold?.angle).toBe(90.2);
+  await act(async () => socket.push(0x90, { requestId: 2, ok: true }));
+  const tableCommand = { ...laptopCommand, hingePose: null, tableMode: true };
+  await act(async () => socket.push(0x82, { ...tableCommand, observedDeviceState: laptop }));
+  expect(client().fold?.tableMode?.enabled).toBe(true);
+  expect(events.at(-1)?.type).toBe("acknowledged");
+  await act(async () =>
+    socket.push(0x82, { ...tableCommand, observedDeviceState: { ...laptop, tableMode: true } }),
+  );
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  expect(client().fold?.tableMode?.enabled).toBe(true);
+});
+
+test("a command whose observation does not arrive ends its preview after 500 ms", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  const open = { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false };
+  await act(async () => socket.push(0x82, { ...INNER_OPEN, observedDeviceState: open }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 120 }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  await act(async () =>
+    socket.push(0x82, {
+      ...INNER_OPEN,
+      hingeAngle: 120,
+      hingePose: null,
+      observedDeviceState: open,
+    }),
+  );
+  expect(client().fold?.angle).toBe(120);
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed" });
+  // The fold then shows what the simulator reports.
+  expect(client().fold?.angle).toBe(180);
+});
+
 test("the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();

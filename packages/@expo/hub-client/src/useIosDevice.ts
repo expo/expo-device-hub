@@ -70,6 +70,7 @@ import {
   hingeControlState,
   hingePoseOrientation,
   hingeWireCommand,
+  isHingePreviewObserved,
 } from "./hinge-control";
 import { appendActivitySample, parseActivityHostCores, parseActivitySample } from "./activity";
 import { useActivityStatus } from "./useActivityStatus";
@@ -2292,14 +2293,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Configs from earlier commands can arrive while the latest request is
     // queued. Hold the requested pose until both its acknowledgement and its
     // matching config arrive, so rapid preset changes never animate backwards.
-    if (
+    const commanded =
       (hingePreview.hingeAngle === undefined || hingePreview.hingeAngle === screen.hingeAngle) &&
       (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
-      (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode)
-    ) {
+      (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode);
+    // The observation, which the fold shows, can lag the command. As serve-sim's
+    // client does, hold the preview until it arrives, for at most 500 ms.
+    const observed =
+      screen.observedDeviceState === undefined
+        ? commanded
+        : isHingePreviewObserved(hingePreview, observedScreenConfig(screen));
+    if (!commanded && !observed) return;
+    const confirm = () => {
       setHingePreview(null);
       emitHingeEvent({ type: "confirmed" });
+    };
+    if (observed) {
+      confirm();
+      return;
     }
+    const timer = setTimeout(confirm, 500);
+    return () => clearTimeout(timer);
   }, [hingePreview, hingePending, screen, emitHingeEvent]);
 
   const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);

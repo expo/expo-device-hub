@@ -100,6 +100,21 @@ export function observedHingeState(state: ObservedHingeState) {
   };
 }
 
+/** Native observation has reached every field that a local preview sets. */
+export function isHingePreviewObserved(
+  preview: HingeControlState,
+  observed: HingeControlState & { physicalOrientation?: HingePhysicalOrientation },
+): boolean {
+  return (
+    (preview.hingeAngle === undefined ||
+      (observed.hingeAngle !== undefined &&
+        Math.abs(observed.hingeAngle - preview.hingeAngle) <= 1)) &&
+    (!preview.hingePose ||
+      observed.physicalOrientation === hingePoseOrientation(preview.hingePose)) &&
+    (preview.tableMode === undefined || observed.tableMode === preview.tableMode)
+  );
+}
+
 /** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */
 function isTableModeAvailable(angle: number, orientation: HingePhysicalOrientation): boolean {
   if (angle === 0) return orientation === "landscape-left" || orientation === "landscape-right";

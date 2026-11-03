@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-03
+**Revised:** 2026-11-03 (the native hinge observation wins over the last command; no face-down command)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -104,7 +104,9 @@ While `physical.faceDown` is undefined, a half-open iPhone Duo keeps the panel t
 
 `hingeAngle`, `hingePose`, `tableMode`, and `physicalOrientation` are the state of the last successful command. serve-sim also sends `observedDeviceState`, the hinge angle, physical orientation, and Table Mode that it reads from the simulator [observed: `screenConfig` in serve-sim's `src/device-session.ts`]. When the config has it, the observation replaces the command fields in the `fold.angle`, `fold.pose`, `fold.tableMode`, and `fold.physical` rows above, and in the display that the fold elects (`displays[].active`), as in serve-sim's own client. `capabilities.fold` still reads the command fields `supportsHingeAngle` and `hingeAngle`, so an observation alone never offers fold controls [observed: `hingeReported` in `useIosDevice.ts`]. In the replaced rows, `fold.pose` is the preset that the observation matches, else `null`, `tableMode.available` follows the observed angle and orientation, and a field that the observation omits is unknown [observed: `observedScreenConfig` in `screen-config.ts`; `previewScreenConfig` in serve-sim's `src/client/simulator/screen-config-state.ts`]. A fold made with the Simulator's own controls changes only the observation, so without this `fold` would not show it: the helper sets the command fields from its own commands and from a native read when it seeds or refreshes the hinge, and a new observation sets only `observedDeviceState` [observed: the `0x10` handler, `hydrateHingeState`, and the device-state listener in serve-sim's `src/device-session.ts`]. A config that changes only the observation is a new config [observed: `screenConfigsEqual` in `screen-config.ts`].
 
-The preview of a command holds only the fields that commands set, and the fold reads every other field from the observation. The preview ends when the command's config matches it. `fold.physical.pose` compares a new observed preset with the one observed while the last command was pending, so a readback that still lags that command does not undo it [observed: `setHingeControl` and `observedPoseRef` in `useIosDevice.ts`].
+The preview of a command holds only the fields that commands set, and the fold reads every other field from the observation. `fold.physical.pose` compares a new observed preset with the one observed while the last command was pending, so a readback that still lags that command does not undo it [observed: `setHingeControl` and `observedPoseRef` in `useIosDevice.ts`].
+
+The helper sends the command's config before its native readback moves. A command's preview therefore holds until the observation reaches it, or for 500 ms after the command's config matched, as serve-sim's client holds it. The `confirmed` event comes when the preview ends [observed: `isHingePreviewObserved` in `hinge-control.ts` and `useIosDevice.ts`; `use-duo-framing.ts` in serve-sim's `src/client/hooks`].
 
 ### Android emulators
 
