@@ -65,8 +65,13 @@ export type ObservedHingeState = {
   tableMode?: boolean;
 };
 
-/** serve-sim names an observed preset when its angle is within half a degree. */
-const OBSERVED_POSE_ANGLE_TOLERANCE = 0.5;
+/**
+ * How far an observed angle may be from a preset's angle or a request's angle
+ * and still match it. serve-sim uses 0.5° for presets and 1° for requests;
+ * one value means that an observation that confirms a pose request also
+ * names that pose. No two presets with the same orientation are within 2°.
+ */
+const OBSERVED_ANGLE_TOLERANCE = 1;
 
 /** The preset that observed native state describes, whichever client produced it. */
 export function observedHingePose(
@@ -78,7 +83,7 @@ export function observedHingePose(
   return (
     FOLD_POSES.find(
       (pose) =>
-        Math.abs(DUO_POSE_ANGLES[pose] - angle) <= OBSERVED_POSE_ANGLE_TOLERANCE &&
+        Math.abs(DUO_POSE_ANGLES[pose] - angle) <= OBSERVED_ANGLE_TOLERANCE &&
         hingePoseOrientation(pose) === orientation &&
         (pose === "tent") === tableMode,
     ) ?? null
@@ -98,6 +103,21 @@ export function observedHingeState(state: ObservedHingeState) {
         ? undefined
         : isTableModeAvailable(hingeAngle, physicalOrientation),
   };
+}
+
+/** Native observation has reached every field that a local preview sets. */
+export function isHingePreviewObserved(
+  preview: HingeControlState,
+  observed: HingeControlState & { physicalOrientation?: HingePhysicalOrientation },
+): boolean {
+  return (
+    (preview.hingeAngle === undefined ||
+      (observed.hingeAngle !== undefined &&
+        Math.abs(observed.hingeAngle - preview.hingeAngle) <= OBSERVED_ANGLE_TOLERANCE)) &&
+    (!preview.hingePose ||
+      observed.physicalOrientation === hingePoseOrientation(preview.hingePose)) &&
+    (preview.tableMode === undefined || observed.tableMode === preview.tableMode)
+  );
 }
 
 /** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */

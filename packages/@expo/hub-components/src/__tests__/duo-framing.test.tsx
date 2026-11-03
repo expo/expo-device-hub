@@ -248,7 +248,7 @@ test("a confirmed preset becomes the baseline for the next burst", async () => {
   const open = pose("open");
   await emit({ type: "requested", command: open });
   await emit({ type: "acknowledged", command: open, ok: true });
-  await emit({ type: "confirmed" });
+  await emit({ type: "confirmed", observed: true });
   const confirmed = view();
   await emit({ type: "requested", command: pose("laptop") });
   await emit({ type: "failed", error: "Rejected" });
@@ -277,7 +277,7 @@ test("a device turned over elsewhere is framed as on connect, but a local rotati
   await emit({ type: "requested", command: laptop });
   await update({ physical: { pose: "laptop", faceDown: false } });
   await emit({ type: "acknowledged", command: laptop, ok: true });
-  await emit({ type: "confirmed" });
+  await emit({ type: "confirmed", observed: true });
   const laptopView = view();
   expect(laptopView).toEqual(duoPreset("laptop"));
   // The client forgets the pose when another client turns the device.
@@ -364,6 +364,6 @@ test("local commands own the framing until the device confirms them", async () =
   await emit({ type: "requested", command: { control: "tableMode", value: true } });
   await update({ physical: { faceDown: true } });
   expect(view()).toEqual(before);
-  await emit({ type: "confirmed" });
+  await emit({ type: "confirmed", observed: true });
   expect(view()).toEqual(before);
 });
