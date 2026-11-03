@@ -430,7 +430,7 @@ curl -X POST "$BASE/api/orientation" \
 # Poses count from the device's natural display, so a tablet that starts wide reads
 # landscape_right at rotation 0. landscape is landscape_right, the pose that rotation 1
 # shows on a phone; auto follows the sensor. The answer's "pose" is the locked pose.
-# GET /api and /health report the current pose as "orientation": null until the first
+# GET /api and /health report the current pose as "pose": null until the first
 # adb read succeeds, then the last successful read. serve-emu reads it again with adb
 # when a request finds a read older than a second. After a lock, the locked pose is the
 # reading for one second, and a read that started before the lock is discarded.

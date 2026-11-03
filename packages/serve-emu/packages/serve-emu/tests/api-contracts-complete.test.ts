@@ -663,13 +663,11 @@ describe("orientation in API info and health", () => {
   };
 
   test("keeps a reported pose and null, and leaves it out for older servers", () => {
-    expect(parseApiInfoResponse({ ...info, orientation: "landscape_left" }).orientation).toBe(
-      "landscape_left",
-    );
-    expect(parseApiInfoResponse({ ...info, orientation: null }).orientation).toBeNull();
-    expect("orientation" in parseApiInfoResponse(info)).toBe(false);
-    expect(() => parseApiInfoResponse({ ...info, orientation: "landscape" })).toThrow(
-      "API info response.orientation is invalid",
+    expect(parseApiInfoResponse({ ...info, pose: "landscape_left" }).pose).toBe("landscape_left");
+    expect(parseApiInfoResponse({ ...info, pose: null }).pose).toBeNull();
+    expect("pose" in parseApiInfoResponse(info)).toBe(false);
+    expect(() => parseApiInfoResponse({ ...info, pose: "landscape" })).toThrow(
+      "API info response.pose is invalid",
     );
   });
 });

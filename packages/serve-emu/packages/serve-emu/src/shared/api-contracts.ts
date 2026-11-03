@@ -553,8 +553,11 @@ export type HealthResponse = {
   grpcCapture?: GrpcCaptureDiagnostics | null;
   codec: string;
   size: DeviceSize;
-  /** How the display faces now, or null before the first adb read. Absent on older servers. */
-  orientation?: ScreenOrientation | null;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
   clients: number;
   frames: number;
   sourceFps: number;
@@ -593,8 +596,11 @@ export type ApiInfoResponse = {
   stream: StreamSettings;
   /** Viewer-local transport choices. Optional while older servers remain supported. */
   viewerTransports?: ViewerTransports;
-  /** How the display faces now, or null before the first adb read. Absent on older servers. */
-  orientation?: ScreenOrientation | null;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -980,15 +986,9 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.viewerTransports === undefined
       ? {}
       : { viewerTransports: parseViewerTransports(root.viewerTransports) }),
-    ...(root.orientation === undefined
+    ...(root.pose === undefined
       ? {}
-      : {
-          orientation: nullableOneOf(
-            root.orientation,
-            SCREEN_ORIENTATIONS,
-            "API info response.orientation",
-          ),
-        }),
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
   };
 }
 
@@ -1920,15 +1920,9 @@ export function parseHealthResponse(value: unknown): HealthResponse {
         }),
     codec: string(root.codec, "health response.codec"),
     size: parseDeviceSize(root.size, "health response.size"),
-    ...(root.orientation === undefined
+    ...(root.pose === undefined
       ? {}
-      : {
-          orientation: nullableOneOf(
-            root.orientation,
-            SCREEN_ORIENTATIONS,
-            "health response.orientation",
-          ),
-        }),
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "health response.pose") }),
     clients: number(root.clients, "health response.clients"),
     frames: number(root.frames, "health response.frames"),
     sourceFps: number(root.sourceFps, "health response.sourceFps"),

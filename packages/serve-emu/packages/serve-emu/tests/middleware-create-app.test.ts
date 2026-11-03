@@ -779,9 +779,9 @@ test("reports the display orientation in /api and /health and records the locked
 
   try {
     const info = await app.handleRequest(new Request("http://middleware.test/api"));
-    expect(await info.json()).toMatchObject({ orientation: "portrait" });
+    expect(await info.json()).toMatchObject({ pose: "portrait" });
     const health = await app.handleRequest(new Request("http://middleware.test/health"));
-    expect(await health.json()).toMatchObject({ orientation: "portrait" });
+    expect(await health.json()).toMatchObject({ pose: "portrait" });
 
     const locked = await app.handleRequest(
       new Request("http://middleware.test/api/orientation", {
@@ -796,7 +796,7 @@ test("reports the display orientation in /api and /health and records the locked
     });
     // `/api` right after the lock reports the locked pose without another read.
     const after = await app.handleRequest(new Request("http://middleware.test/api"));
-    expect(await after.json()).toMatchObject({ orientation: "landscape_left" });
+    expect(await after.json()).toMatchObject({ pose: "landscape_left" });
     expect(calls).toEqual([`read ${session.serial}`, `lock ${session.serial} landscape_left`]);
   } finally {
     app.stop();

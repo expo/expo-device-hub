@@ -443,9 +443,9 @@ describe("startServer device session lifecycle", () => {
 
     try {
       const info = await invokeFetch(captured, "/api");
-      expect(await info.json()).toMatchObject({ orientation: "portrait" });
+      expect(await info.json()).toMatchObject({ pose: "portrait" });
       const health = await invokeFetch(captured, "/health");
-      expect(await health.json()).toMatchObject({ orientation: "portrait" });
+      expect(await health.json()).toMatchObject({ pose: "portrait" });
 
       const locked = await invokeFetch(captured, "/api/orientation", {
         method: "POST",
@@ -458,7 +458,7 @@ describe("startServer device session lifecycle", () => {
       });
       // `/api` right after the lock reports the locked pose without another read.
       const after = await invokeFetch(captured, "/api");
-      expect(await after.json()).toMatchObject({ orientation: "landscape_right" });
+      expect(await after.json()).toMatchObject({ pose: "landscape_right" });
       expect(calls).toEqual(["read A", "lock A landscape_right"]);
     } finally {
       await started.stop();
