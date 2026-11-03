@@ -1066,8 +1066,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     },
     [endRotation],
   );
-  // As in serve-sim's rotation tracker, a rotation whose readback does not
-  // arrive ends after the readback grace.
+  // As in serve-sim's rotation tracker (`duo-rotation-state.ts`, serve-sim at
+  // ace59bf34, #385), a rotation whose readback does not arrive ends after the
+  // readback grace.
   useEffect(() => {
     if (!orientationOverride) return;
     const timer = setTimeout(() => landRotation(screenRef.current), READBACK_GRACE_MS);

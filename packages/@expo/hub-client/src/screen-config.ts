@@ -46,7 +46,8 @@ export function observedScreenConfig(config: ScreenSize): ScreenSize {
  * observation, the observation says it: the observed physical orientation is
  * the rotation's `target`. Another change, such as a pose command's own
  * readback, does not end the rotation. Without an observation, the cleared
- * command pose says it.
+ * command pose says it. The target follows serve-sim's rotation tracker
+ * (`duo-rotation-state.ts`, serve-sim at ace59bf34, #385).
  */
 export function isRotationReadback(
   config: ScreenSize,

@@ -85,7 +85,8 @@ selects frames the 3D model as a local preset does, once a local Rotate has
 landed. The helper keeps the last command's pose, so with an observation, a
 Rotate lands when the observed physical orientation reaches its target: the
 physical orientation that the Rotate starts from, turned by its quarter turns,
-as serve-sim's rotation tracker counts them (Rotate from Laptop lands upside
+as serve-sim's rotation tracker (`duo-rotation-state.ts`, serve-sim at
+ace59bf34, #385) counts them (Rotate from Laptop lands upside
 down, observed on an iPhone Duo on 2026-11-03); without one, when the command
 pose clears. A Rotate starts from the target of a Rotate that has not landed,
 else from the orientation of a sent pose command that the device does not show
@@ -99,7 +100,8 @@ baseline: a turned Laptop reads as Book, but nobody selected Book, so the turned
 view stays until a later preset. The Hub compares the observed pose with the one it saw while its last
 command was pending, so a readback that still lags that command does not undo
 it [observed: `observedScreenConfig` in
-`packages/@expo/hub-client/src/screen-config.ts`, `isRotationReadback`, `landRotation` in `useIosDevice.ts`].
+`packages/@expo/hub-client/src/screen-config.ts`, `isRotationReadback`,
+`turnedPhysicalOrientation` in `orientation.ts`, `turnDuo` and `landRotation` in `useIosDevice.ts`].
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view
