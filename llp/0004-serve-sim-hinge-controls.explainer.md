@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -602,6 +602,19 @@ files, their source commit, and their sizes are in
   enough to separate them; with the old 0.1 cm near plane, the closed Duo's cover
   showed bands of the glass behind it [observed: the camera in `duo-scene.ts`;
   the bands seen in the Hub on 2026-11-03].
+- **Lighting.** Krystof Woldrich asked for less reflection when a device faces
+  the camera [confirmed] (Krystof Woldrich, 2026-11-03, feedback on #559). The
+  glare came from the scene's environment, three.js's RoomEnvironment, whose
+  brightest wall panel lay behind the camera, where a face toward the camera
+  mirrors it. The iPhone 18 Pro's Dynamic Island and top bezel showed almost
+  white. Without that panel, the glare was gone; without the directional
+  lights, the hemisphere light, or the clearcoat, or at a lower exposure, it
+  stayed [observed: renders of the four models with one part changed at a
+  time, 2026-11-03]. So the scene turns the environment half a turn about the
+  vertical axis, and the panel lies behind the model. No model needs its own
+  material change. The displays use an unlit material, so no light or
+  reflection changes the stream [observed: `createSurface` and the environment
+  in `duo-scene.ts`].
 - **Streams.** The iPhone Duo streams each display on its own, and keeps its
   fold events, presets, and hinge handles. Every other model shows the flat
   stream. The frame's shape names the display it shows, so the Pixel 9 Pro Fold

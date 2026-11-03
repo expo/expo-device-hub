@@ -137,6 +137,10 @@ export function createDuoScene(
   const room = new RoomEnvironment();
   const environment = pmrem.fromScene(room, 0.04);
   scene.environment = environment.texture;
+  // The room's brightest wall panel lies on +Z, behind the camera, where a face
+  // toward the camera mirrors it: a device seen front-on showed glare on its
+  // glass and frame. Half a turn puts the panel behind the model instead.
+  scene.environmentRotation.set(0, Math.PI, 0);
   room.dispose();
   pmrem.dispose();
 
