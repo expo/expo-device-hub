@@ -1,20 +1,23 @@
-import { type DeviceFoldCapabilities, type FoldPose } from "@expo/hub-client";
+import { type DeviceFoldCapabilities, FOLD_POSES, type FoldPose } from "@expo/hub-client";
 
 /**
  * serve-sim's labels for the five fold poses, listed by the inspector's Fold
- * pose select. The shortcut is the pose's place in `FOLD_POSES`.
+ * pose select. The shortcut is the pose's place in `FOLD_POSES`, which
+ * `useDeviceKeyboard` reads.
  */
 export const FOLD_POSE_OPTIONS: ReadonlyArray<{
   value: FoldPose;
   label: string;
   shortcut: string;
-}> = [
-  { value: "closed", label: "Fully folded", shortcut: "⌥⇧1" },
-  { value: "book", label: "Partially open", shortcut: "⌥⇧4" },
-  { value: "open", label: "Fully open", shortcut: "⌥⇧2" },
-  { value: "laptop", label: "Laptop", shortcut: "⌥⇧3" },
-  { value: "tent", label: "Tent", shortcut: "⌥⇧5" },
-];
+}> = (
+  [
+    { value: "closed", label: "Fully folded" },
+    { value: "book", label: "Partially open" },
+    { value: "open", label: "Fully open" },
+    { value: "laptop", label: "Laptop" },
+    { value: "tent", label: "Tent" },
+  ] as const
+).map((option) => ({ ...option, shortcut: `⌥⇧${FOLD_POSES.indexOf(option.value) + 1}` }));
 
 /**
  * The preset a fold control shows as selected. A reported pose wins, including
