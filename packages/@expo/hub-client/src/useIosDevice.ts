@@ -813,8 +813,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         : false,
     [isDuo, hingeReported],
   );
-  // Control callbacks read the latest native state without re-registering
-  // listeners on every config broadcast.
+  // Control callbacks read the latest state without re-registering listeners
+  // on every config broadcast.
   const duoRef = useRef({ isDuo, foldCapabilities });
   duoRef.current = { isDuo, foldCapabilities };
   useEffect(() => {
@@ -1320,8 +1320,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setPhysicalPose(command.value);
         endRotation();
       }
-      // The preview holds only what commands set; the rest reads the live
-      // observation, which the command's config need not match.
+      // The preview holds only what commands set; the fold reads the rest
+      // from the live observation, which the 500 ms limit compares against.
       setHingePreview((previous) => ({ ...previous, ...hingeControlState(command) }));
       emitHingeEvent({ type: "requested", command });
       hingeQueueRef.current?.enqueue(command, {
@@ -2298,15 +2298,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     (hingePreview.hingeAngle === undefined || hingePreview.hingeAngle === screen.hingeAngle) &&
     (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
     (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode);
+  const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
   // The observation, which the fold shows, can lag the command. A helper
   // without one reports the requested state with the command's config.
   const hingeObserved =
     !!hingePreview &&
     !hingePending &&
-    !!screen &&
-    (screen.observedDeviceState === undefined
+    !!observedScreen &&
+    (observedScreen.observedDeviceState === undefined
       ? hingeCommanded
-      : isHingePreviewObserved(hingePreview, observedScreenConfig(screen)));
+      : isHingePreviewObserved(hingePreview, observedScreen));
   useEffect(() => {
     if (!hingeObserved) return;
     setHingePreview(null);
@@ -2323,7 +2324,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => clearTimeout(timer);
   }, [hingePreview, hingeCommanded, hingeObserved, emitHingeEvent]);
 
-  const observedScreen = useMemo(() => (screen ? observedScreenConfig(screen) : null), [screen]);
   useEffect(() => {
     // Also learn poses applied outside this browser. An older queued reply
     // must not replace the orientation chosen by the latest local request.

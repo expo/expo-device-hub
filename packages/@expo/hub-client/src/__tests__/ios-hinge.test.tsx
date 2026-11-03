@@ -1164,6 +1164,26 @@ test("a command whose observation does not arrive ends its preview after 500 ms"
   expect(client().fold?.angle).toBe(180);
 });
 
+test("a Table Mode command whose observation does not arrive ends after 500 ms at an observed angle", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  // Laptop, observed slightly off the command's 90°.
+  const laptop = { hingeAngle: 90.2, physicalOrientation: "landscape-left", tableMode: false };
+  const laptopCommand = { ...INNER_OPEN, hingeAngle: 90, hingePose: "laptop" };
+  await act(async () => socket.push(0x82, { ...laptopCommand, observedDeviceState: laptop }));
+  observe();
+  await act(async () => client().fold!.setControl({ control: "tableMode", value: true }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  // The command's config, but the readback never reports Table Mode.
+  const tableCommand = { ...laptopCommand, hingePose: null, tableMode: true };
+  await act(async () => socket.push(0x82, { ...tableCommand, observedDeviceState: laptop }));
+  expect(events.at(-1)?.type).toBe("acknowledged");
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+  expect(events.at(-1)).toEqual<FoldCommandEvent>({ type: "confirmed", observed: false });
+  expect(client().fold?.tableMode?.enabled).toBe(false);
+  expect(client().fold?.angle).toBe(90.2);
+});
+
 test("later configs without the observation do not extend a preview past 500 ms", async () => {
   installBrowser({ duo: true });
   const { socket, client, events, observe } = await connect();
