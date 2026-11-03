@@ -61,6 +61,7 @@ interface SimHIDHandle {
 }
 
 interface SimCaptureHandle {
+  screenshot(screenID: number): Promise<Uint8Array>;
   start(): Promise<void>;
   suspendForReboot(): Promise<void>;
   resumeAfterReboot(): Promise<void>;
@@ -394,6 +395,10 @@ export class NativeHid {
  * thread after being marshalled from the native encode thread.
  */
 export class NativeCapture {
+  screenshot(screenID: number): Promise<Uint8Array> {
+    return this.handle.screenshot(screenID);
+  }
+
   private readonly handle: SimCaptureHandle;
 
   /** A fixed screen ID captures that panel independently of active-display/input routing. */

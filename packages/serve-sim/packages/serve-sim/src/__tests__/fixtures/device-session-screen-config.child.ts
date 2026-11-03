@@ -11,6 +11,10 @@ import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-sta
 import { UDID, useTempStateDir } from "../helpers";
 
 const tempState = useTempStateDir();
+let screenshotRun: () => Promise<Uint8Array> = async () => new Uint8Array();
+let activeScreenError: Error | undefined;
+let activeScreenReadGate: Promise<void> | undefined;
+let activeScreenReads = 0;
 afterAll(() => tempState.restore());
 
 let screen: NativeScreenInfo;
@@ -289,6 +293,15 @@ mock.module("../../native", () => ({
     return softwareKeyboardVisible;
   },
   NativeCapture: class {
+    async activeScreenId() {
+      activeScreenReads++;
+      await activeScreenReadGate;
+      if (activeScreenError) throw activeScreenError;
+      return screen.screenId;
+    }
+    screenshot() {
+      return screenshotRun();
+    }
     async start() {
       if (captureStartError) throw captureStartError;
     }
@@ -296,6 +309,7 @@ mock.module("../../native", () => ({
       captureStops++;
     }
     async suspendForReboot() {}
+    async resumeAfterReboot() {}
     async screenSize() {
       screenReads++;
       const value = { ...screen };
@@ -389,6 +403,10 @@ let ws: WebSocket | undefined;
 let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
+  screenshotRun = async () => new Uint8Array();
+  activeScreenError = undefined;
+  activeScreenReadGate = undefined;
+  activeScreenReads = 0;
   deviceStateChanged = undefined;
   deviceStateSubscriptionGate = undefined;
   deviceStateUnsubscribeGate = undefined;
@@ -3650,5 +3668,115 @@ describe("physical hinge controls", () => {
     await waitUntil(() => controlResults.length === 3);
     expect(controlResults[2]).toMatchObject({ ok: true });
     expect(tableModes).toEqual([true]);
+  });
+});
+
+describe("native screenshots", () => {
+  test("native display reads reject during reboot and work after resume", async () => {
+    await start({ width: 1206, height: 2622, screenId: 7 });
+    expect(await Promise.all(Array.from({ length: 8 }, () => session!.activeScreenId()))).toEqual(
+      Array(8).fill(7),
+    );
+    screen = { width: 1206, height: 2622, screenId: 9 };
+    await screenChanged!();
+    expect(await session!.activeScreenId()).toBe(9);
+    await session!.suspendForReboot();
+    await expect(session!.activeScreenId()).rejects.toThrow();
+    await session!.resumeAfterReboot();
+    expect(await session!.activeScreenId()).toBe(9);
+  });
+
+  test("native display errors propagate without poisoning a later read", async () => {
+    await start({ width: 1206, height: 2622, screenId: 7 });
+    expect(await session!.activeScreenId()).toBe(7);
+    activeScreenError = new Error("no active display");
+    await expect(session!.activeScreenId()).rejects.toThrow("no active display");
+    activeScreenError = undefined;
+    expect(await session!.activeScreenId()).toBe(7);
+  });
+
+  test("shutdown cannot return a late native display read", async () => {
+    await start({ width: 1206, height: 2622, screenId: 7 });
+    let release!: () => void;
+    activeScreenReadGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = Promise.allSettled([session!.activeScreenId()]);
+    try {
+      await waitUntil(() => activeScreenReads === 1);
+      session!.close();
+    } finally {
+      release();
+    }
+    expect((await pending)[0]!.status).toBe("rejected");
+  });
+
+  test("timeouts keep native work serialized and skip expired queued captures", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let release!: () => void;
+    let calls = 0;
+    screenshotRun = async () => {
+      if (++calls === 1)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return new Uint8Array([calls]);
+    };
+    const results = Promise.allSettled([session!.screenshot(1, 100), session!.screenshot(1, 100)]);
+    try {
+      const timedOut = await Promise.race([
+        results,
+        Bun.sleep(1000).then(() => {
+          throw new Error("Screenshot callers did not time out");
+        }),
+      ]);
+      expect(timedOut.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+      expect(calls).toBe(1);
+    } finally {
+      release?.();
+    }
+    expect(await session!.screenshot(1)).toEqual(new Uint8Array([2]));
+    expect(calls).toBe(2);
+  });
+
+  test("serializes captures and recovers after a failed capture", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let active = 0,
+      maximum = 0,
+      calls = 0;
+    screenshotRun = async () => {
+      active++;
+      maximum = Math.max(maximum, active);
+      const call = ++calls;
+      try {
+        await Bun.sleep(10);
+        if (call === 1) throw new Error("surface unavailable");
+        return new Uint8Array([call]);
+      } finally {
+        active--;
+      }
+    };
+    const results = await Promise.allSettled([session!.screenshot(1), session!.screenshot(1)]);
+    expect(results[0]!.status).toBe("rejected");
+    expect(results[1]).toEqual({ status: "fulfilled", value: new Uint8Array([2]) });
+    expect(maximum).toBe(1);
+  });
+
+  test("shutdown rejects both in-flight and queued captures", async () => {
+    await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    let release!: () => void;
+    let entered = false;
+    screenshotRun = async () => {
+      entered = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Uint8Array([1]);
+    };
+    const results = Promise.allSettled([session!.screenshot(1), session!.screenshot(1)]);
+    await waitUntil(() => entered);
+    session!.close();
+    release();
+    expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
   });
 });

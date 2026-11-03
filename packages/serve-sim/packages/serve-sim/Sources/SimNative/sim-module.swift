@@ -249,6 +249,13 @@ private func u32(_ v: Int) -> UInt32 {
         try await engine.resumeAfterReboot()
     }
 
+    @NodeMethod func screenshot(_ value: Int) async throws -> NodeTypedArray<UInt8> {
+        guard let screenID = UInt32(exactly: value), screenID > 0 else { throw Errors.invalidScreenID }
+        let data = try await engine.screenshot(screenID)
+        var buffer = try CaptureBuffer(initialCapacity: data.count)
+        return try buffer.setData(data)
+    }
+
     @NodeMethod func startRecording(_ outputDirectory: String) async throws {
         try await engine.startRecording(outputDirectory: outputDirectory)
     }

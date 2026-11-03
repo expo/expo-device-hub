@@ -941,10 +941,15 @@ async function runProcedureAsync(
         const { resolveBootedDeviceAsync } = await import("./device");
         const { getScreenshotDisplayIdsAsync } = await import("./screenshot-display");
         p.udid = await resolveBootedDeviceAsync(p.udid);
-        const capture = (display: number, read?: () => Promise<number>) =>
+        const capture = (
+          display: number,
+          read?: () => Promise<number>,
+          native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
+        ) =>
           captureScreenshotAsync(
             { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
             read,
+            native,
           );
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {
@@ -972,7 +977,9 @@ async function runProcedureAsync(
             };
             const display = await read();
             selected = true;
-            return await capture(display, read);
+            return await capture(display, read, (id, timeoutMs) =>
+              session.screenshot(id, timeoutMs),
+            );
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election

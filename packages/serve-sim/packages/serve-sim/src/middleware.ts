@@ -2128,6 +2128,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
+    const requestStarted = performance.now();
     const rawUrl: string = req.url ?? "";
     const qIndex = rawUrl.indexOf("?");
     const url = qIndex === -1 ? rawUrl : rawUrl.slice(0, qIndex);
@@ -2797,7 +2798,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // Still-PNG capture via `simctl io <udid> screenshot`. Consumed by the
+    // Still-PNG capture from native pixels (explicit displays use simctl). Consumed by the
     // Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
     // UI when it is served through a tunnel (on loopback it uses the
     // screenshot.capture host action instead). Uses the
@@ -2844,15 +2845,28 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       // HTTP downloads avoid staging and Desktop copies, but share panel election.
       const file = join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
       try {
+        const captureStarted = performance.now();
+        let nativeDuration = 0;
         const screenId = display?.data;
-        const capture = (id: number, read?: () => Promise<number>) =>
-          captureScreenshotFileAsync({ udid, file, display: id, timeoutMs: 5_000 }, read);
+        const capture = (
+          id: number,
+          read?: () => Promise<number>,
+          native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
+        ) =>
+          captureScreenshotFileAsync({ udid, file, display: id, timeoutMs: 5_000 }, read, native);
         const result =
           screenId !== undefined
             ? await capture(screenId)
             : await withScreenshotDeviceSession(udid, streamSettings, async (session) => {
                 const read = () => session.activeScreenId();
-                return await capture(await read(), read);
+                return await capture(await read(), read, async (id, timeoutMs) => {
+                  const started = performance.now();
+                  try {
+                    return await session.screenshot(id, timeoutMs);
+                  } finally {
+                    nativeDuration += performance.now() - started;
+                  }
+                });
               }).catch(async (error) => {
                 // A sole integrated display needs no native panel election. Never
                 // fall back on an unknown profile or a multi-display device.
@@ -2861,15 +2875,22 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 if (ids?.length !== 1) throw error;
                 return await capture(ids[0]!);
               });
-        if (result.exitCode !== 0) throw new Error(result.stderr || "simctl screenshot failed");
+        if (result.exitCode !== 0) throw new Error(result.stderr || "Simulator screenshot failed");
         const png = await readFile(file);
+        const captureDuration = performance.now() - captureStarted;
+        const artifactStarted = performance.now();
         const artifact = await saveScreenshotArtifact(png);
         recordScreenshotEvent(udid, artifact);
+        const artifactDuration = performance.now() - artifactStarted;
+        // Capture includes native queueing/PNG encoding and temporary-file I/O.
+        // Total stops before response delivery; durations overlap, so do not add them.
+        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}`;
         res.writeHead(200, {
           "Cache-Control": "no-store",
           "Content-Type": "image/png",
           // The route allows configured cross-origin callers, and they can only read custom headers listed here.
-          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}`,
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
+          "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
         });
         res.end(png);
@@ -2879,7 +2900,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (typeof stderr === "string" && stderr.trim()) ||
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
-        console.error(`simctl screenshot failed for ${udid}:`, message);
+        console.error(`Simulator screenshot failed for ${udid}:`, message);
         recordScreenshotEvent(udid, {
           status: "capture-failed",
           error: "simctl screenshot failed",

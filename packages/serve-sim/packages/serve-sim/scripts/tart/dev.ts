@@ -58,7 +58,7 @@ function running(proc: Subprocess): boolean {
 }
 
 function exitReason(proc: Subprocess): string {
-  return proc.signalCode ?? `code ${proc.exitCode}`;
+  return String(proc.signalCode ?? `code ${proc.exitCode}`);
 }
 
 function stop(proc: Subprocess, signal: NodeJS.Signals = "SIGTERM"): void {
