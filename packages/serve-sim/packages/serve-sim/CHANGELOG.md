@@ -1,5 +1,12 @@
 # @expo/serve-sim
 
+## 0.13.2
+
+### Patch Changes
+
+- 6f21cf8: Capture active-display screenshots from native Simulator pixels to reduce latency while keeping full resolution and orientation.
+- 6dd111c: Return native HTTP screenshots from memory with an explicit response length. Add an opt-in binary response mode for `screenshot.capture` over exec-ws to download a PNG in one request without staging or Desktop copies.
+
 ## 0.13.1
 
 ### Patch Changes
