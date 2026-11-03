@@ -3,7 +3,7 @@
  * serve-sim's `src/client/components/duo-model-view.tsx` (serve-sim at 3dc61286e, #383).
  */
 
-import { SCREEN_LOAD_TIMEOUT_MS } from "@expo/hub-client";
+import { SCREEN_LOAD_TIMEOUT_MS, useVisibleTimeout } from "@expo/hub-client";
 import {
   useCallback,
   useEffect,
@@ -16,7 +16,6 @@ import {
 import { bg, border, radius, text, textSize } from "../theme/tokens";
 import { createDuoScene, type DuoSceneState } from "./duo-scene";
 import { DuoHingeHandle } from "./DuoHingeHandle";
-import { useVisibleTimeout } from "./useVisibleTimeout";
 
 /** Xcode's model: still loading, loaded into the scene, or unavailable (missing, broken, or too slow). */
 export type DuoModelStatus = "loading" | "ready" | "unavailable";

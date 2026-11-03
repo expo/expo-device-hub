@@ -1,11 +1,16 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Call `onTimeout` once `active` has lasted `ms` in a visible tab. A hidden
- * tab stops the wait, and the wait starts again when the tab is visible, as
- * hub-client's screen load timeout does.
+ * Call `onTimeout` once `active` has lasted `ms` in a visible tab, like the
+ * WebRTC first-frame timeout. A hidden tab stops the wait, and the wait starts
+ * again when the tab is visible. A new `resetKey` also starts it again.
  */
-export function useVisibleTimeout(active: boolean, ms: number, onTimeout: () => void): void {
+export function useVisibleTimeout(
+  active: boolean,
+  ms: number,
+  onTimeout: () => void,
+  resetKey?: unknown,
+): void {
   const callback = useRef(onTimeout);
   callback.current = onTimeout;
   useEffect(() => {
@@ -23,5 +28,5 @@ export function useVisibleTimeout(active: boolean, ms: number, onTimeout: () => 
       if (timer !== undefined) clearTimeout(timer);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", arm);
     };
-  }, [active, ms]);
+  }, [active, ms, resetKey]);
 }

@@ -19,6 +19,7 @@ export * from "./types";
 export { resolveDeviceStreamMode } from "./stream-mode";
 export { areRecordingControlsLocked } from "./screen-recording";
 export { SCREEN_LOAD_TIMEOUT_MS } from "./screen-presentation";
+export { useVisibleTimeout } from "./visible-timeout";
 export { DeviceScreen } from "./DeviceScreen";
 export { useDeviceKeyboard } from "./useDeviceKeyboard";
 export { listenForInputCancellation } from "./input-cancellation";

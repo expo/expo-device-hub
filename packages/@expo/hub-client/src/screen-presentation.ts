@@ -4,9 +4,10 @@
  * and Android report the same states to every consumer.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { type ConnectionStatus } from "./types";
+import { useVisibleTimeout } from "./visible-timeout";
 
 /** How long a screen session may wait for its first frame before it reports an error. */
 export const SCREEN_LOAD_TIMEOUT_MS = 30_000;
@@ -80,32 +81,6 @@ const freshSession = (key: string | null): SessionState => ({
   loadTimedOut: false,
   dropTimedOut: false,
 });
-
-/**
- * Run `onTimeout` after `ms` while `active`, counting only while the tab is
- * visible, like the WebRTC first-frame timeout: a hidden tab starts the wait
- * again when it becomes visible.
- */
-function useVisibleTimeout(active: boolean, ms: number, onTimeout: () => void, resetKey: unknown) {
-  useEffect(() => {
-    if (!active) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const arm = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      timer = undefined;
-      if (typeof document !== "undefined" && document.hidden) return;
-      timer = setTimeout(onTimeout, ms);
-    };
-    arm();
-    if (typeof document !== "undefined") document.addEventListener("visibilitychange", arm);
-    return () => {
-      if (timer !== undefined) clearTimeout(timer);
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", arm);
-    };
-    // `onTimeout` reads only `resetKey`, which the deps carry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, ms, resetKey]);
-}
 
 /**
  * Track one screen session: its first frame, its load timeout, and its

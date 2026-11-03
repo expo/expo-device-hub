@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { useVisibleTimeout } from "../foldable/useVisibleTimeout";
+import { useVisibleTimeout } from "../visible-timeout";
 import { createGlobalStubs } from "./test-globals";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -61,7 +61,7 @@ function setup() {
   };
 }
 
-test("the 3D model timeout counts only while the tab is visible", async () => {
+test("the timeout counts only while the tab is visible", async () => {
   const clock = setup();
   await clock.render(true);
   expect(clock.timers.size).toBe(1);
@@ -74,7 +74,7 @@ test("the 3D model timeout counts only while the tab is visible", async () => {
   expect(clock.fired).toBe(1);
 });
 
-test("a loaded model clears the timeout", async () => {
+test("an inactive wait clears the timeout", async () => {
   const clock = setup();
   await clock.render(true);
   await clock.render(false);
