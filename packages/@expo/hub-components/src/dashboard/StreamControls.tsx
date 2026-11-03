@@ -1,10 +1,9 @@
 import { type ReactNode } from "react";
 
 import {
-  areRecordingControlsLocked,
   type DeviceClipboardAction,
   type DeviceClipboardCapabilities,
-  type DeviceScreenRecordingStatus,
+  type DeviceRecordingLockReason,
 } from "@expo/hub-client";
 import {
   CONTROL_BUTTON_SIZE,
@@ -69,8 +68,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
-  recording = null,
-  recordingControlsLocked: clientLocked,
+  recordingLock,
   clipboard = false,
   clipboardPending = null,
   onPaste,
@@ -85,10 +83,8 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** Picks the explanation, and locks Rotate itself when `recordingControlsLocked` is omitted. */
-  recording?: DeviceScreenRecordingStatus | null;
-  /** The client's `recordingControlsLocked`. Overrides the lock that `recording` implies. */
-  recordingControlsLocked?: boolean;
+  /** The client's `recordingLock`. Locks Rotate and picks the explanation while it is set. */
+  recordingLock: DeviceRecordingLockReason | null;
   /** The clipboard actions the device offers. Each one shows only when the device has it. */
   clipboard?: DeviceClipboardCapabilities;
   /** Disable both clipboard actions while either is in flight. */
@@ -100,8 +96,7 @@ export function StreamControls({
   /** Type with this device's own keyboard. Joins the Clipboard pill when given. */
   keyboard?: { open: boolean; onToggle: () => void };
 }) {
-  // Callers that pass only `recording` keep the lock it implied before this prop existed.
-  const recordingControlsLocked = clientLocked ?? areRecordingControlsLocked(recording);
+  const recordingControlsLocked = recordingLock !== null;
   const clipboardDisabled = clipboardPending !== null;
   const showClipboard = !!clipboard && (clipboard.paste || clipboard.copy);
   return (
@@ -186,9 +181,9 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            !recordingControlsLocked
+            recordingLock === null
               ? undefined
-              : recording === "unknown"
+              : recordingLock === "status-unknown"
                 ? "Rotation is unavailable until recording status is known."
                 : "Rotation is unavailable while recording."
           }

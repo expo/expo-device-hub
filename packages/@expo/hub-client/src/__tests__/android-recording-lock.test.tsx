@@ -103,7 +103,7 @@ async function mount(initialRecording: { status: string } | null | "unanswered")
       if (recording === "unanswered") return Response.json({}, { status: 503 });
       return Response.json({
         size: { width: 1080, height: 2400 },
-        orientation: "portrait",
+        pose: "portrait",
         ...(recording ? { screenRecording: recording } : {}),
       });
     }
@@ -170,7 +170,9 @@ for (const [name, control, request] of CONTROLS) {
     `Android ignores ${name} while a recording is %s`,
     async (status) => {
       const harness = await mount({ status });
+      expect(harness.client().recordingLock).toBe("recording");
       expect(harness.client().recordingControlsLocked).toBe(true);
+      expect(harness.client().orientationUnavailable).toBe("recording");
       await use(harness, control);
       expect(harness.writes).toEqual([]);
       // Ignored silently: no pending choice and no error.
@@ -184,7 +186,9 @@ for (const [name, control, request] of CONTROLS) {
 test("Android locks the controls until the first recording status arrives", async () => {
   const harness = await mount("unanswered");
   expect(harness.client().screenRecording).toBe("unknown");
+  expect(harness.client().recordingLock).toBe("status-unknown");
   expect(harness.client().recordingControlsLocked).toBe(true);
+  expect(harness.client().orientationUnavailable).toBe("recording-status-unknown");
   for (const [, control] of CONTROLS) await use(harness, control);
   expect(harness.writes).toEqual([]);
 });
@@ -193,7 +197,9 @@ test.each([[{ status: "failed" }], [null]])(
   "Android unlocks the controls when the recording status is %p",
   async (recording) => {
     const harness = await mount(recording);
+    expect(harness.client().recordingLock).toBeNull();
     expect(harness.client().recordingControlsLocked).toBe(false);
+    expect(harness.client().orientationUnavailable).toBeNull();
     await use(harness, (client) => client.setOrientation("landscape_left"));
     expect(harness.writes).toEqual(['POST /api/orientation {"orientation":"landscape_left"}']);
   },

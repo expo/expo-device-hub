@@ -245,12 +245,20 @@ export type DeviceOrientationCapabilities =
 
 /**
  * Why an orientation change cannot go out now. New reasons can be added, so handle unknown
- * values. `"input-unavailable"`: serve-sim sends the pose over the helper's input socket, which
- * is not admitted or reports that the simulator cannot take input. A call still tries: the
- * input queue keeps it for a short time and then reports an `orientationError`. The video
- * stream does not matter.
+ * values.
+ *
+ * - `"recording-status-unknown"` and `"recording"` come from {@link DeviceClient.recordingLock}
+ *   (`"status-unknown"` and `"recording"`). A call is dropped silently: no request, no
+ *   `orientationPending` and no `orientationError`.
+ * - `"input-unavailable"`: serve-sim sends the pose over the helper's input socket, which is not
+ *   admitted or reports that the simulator cannot take input. The video stream does not matter.
+ *   A call still tries: the input queue keeps it for a short time and then reports an
+ *   `orientationError`.
  */
-export type DeviceOrientationUnavailableReason = "input-unavailable";
+export type DeviceOrientationUnavailableReason =
+  | "recording-status-unknown"
+  | "recording"
+  | "input-unavailable";
 
 /** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
 export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
@@ -590,6 +598,9 @@ export interface DeviceConnectionOptions {
 /** Which element the implementation paints into. */
 export type VideoSurfaceKind = "canvas" | "img" | "video";
 
+/** Why {@link DeviceClient.recordingLock} locks the controls. */
+export type DeviceRecordingLockReason = "status-unknown" | "recording";
+
 export type DeviceScreenRecordingStatus =
   | "unknown"
   | "waiting"
@@ -642,16 +653,22 @@ export interface DeviceClient {
   /** Host recording status; unknown until metadata loads, null when no recording was requested. */
   screenRecording: DeviceScreenRecordingStatus | null;
   /**
-   * True while a change could end the host recording: its status is unknown, waiting, recording
-   * or finalizing. Calls to `rotate`, `setOrientation`, `updateStreamSettings`,
-   * `setStreamSource`, `setGrpcImageMode`, `setGrpcEncoder` and `setGrpcInputSource` are
-   * silently ignored meanwhile, so UIs can disable those controls from this one value. An
-   * orientation choice that was still waiting when the lock started is dropped the same way:
-   * it is cleared from `orientation`, without an `orientationError`. Only Android reports
-   * recordings today.
+   * Why a change could end the host recording now, or null when nothing can break it:
+   * `"status-unknown"` until the first recording status arrives, `"recording"` while it is
+   * waiting, recording or finalizing. Calls to `rotate`, `setOrientation`,
+   * `updateStreamSettings`, `setStreamSource`, `setGrpcImageMode`, `setGrpcEncoder` and
+   * `setGrpcInputSource` are silently ignored while it is set, so UIs can disable those controls
+   * and explain why from this one value. An orientation choice that was still waiting when the
+   * lock started is dropped the same way: it is cleared from `orientation`, without an
+   * `orientationError`. Only Android reports recordings today.
    *
    * Temporary: Android's recording restarts with the encoder. Once recordings survive rotation
-   * and stream changes, this lock goes away.
+   * and stream changes, it is always null.
+   */
+  recordingLock: DeviceRecordingLockReason | null;
+  /**
+   * True while {@link recordingLock} is set. Once recordings survive rotation and stream
+   * changes, it is always false and then deprecated.
    */
   recordingControlsLocked: boolean;
   /** Screen size once known; null while connecting. */
@@ -899,9 +916,11 @@ export interface DeviceClient {
   orientationError: string | null;
   /**
    * Why {@link rotate} and {@link setOrientation} cannot turn the device now, or null when they
-   * can. Disable orientation controls while it is set. See
-   * {@link DeviceOrientationUnavailableReason} for what each reason means. serve-sim needs an
-   * admitted input socket; serve-emu sends the pose over HTTP.
+   * can. Disable orientation controls while it is set. Android reports
+   * `"recording-status-unknown"` or `"recording"` while {@link recordingLock} is set, and those
+   * calls are dropped silently. iOS reports `"input-unavailable"` while the helper input socket
+   * cannot take input, and those calls still try and can fail with an `orientationError`. See
+   * {@link DeviceOrientationUnavailableReason} for each reason.
    */
   // @ref LLP 0013#orientation — iOS sends the pose over the input socket, Android over HTTP
   orientationUnavailable: DeviceOrientationUnavailableReason | null;

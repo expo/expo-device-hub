@@ -24,6 +24,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     error: null,
     inputError: null,
     screenRecording: null,
+    recordingLock: null,
     recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
     fps: 60,
@@ -1821,24 +1822,27 @@ test("shows the active hardware encoder and hides unresolved encoder names", () 
 });
 
 test.each([
-  ["unknown", true],
-  ["waiting", true],
-  ["recording", true],
-  ["finalizing", true],
-  ["complete", false],
-  ["failed", false],
-  [null, false],
+  ["unknown", "status-unknown"],
+  ["waiting", "recording"],
+  ["recording", "recording"],
+  ["finalizing", "recording"],
+  ["complete", null],
+  ["failed", null],
+  [null, null],
   // The dashboard follows the client's lock, not its own reading of the status.
-  ["recording", false],
-  ["unknown", false],
-  ["complete", true],
+  ["recording", null],
+  ["unknown", null],
+  ["complete", "recording"],
+  ["recording", "status-unknown"],
 ] as const)(
-  "with recording %s and recordingControlsLocked %s, the lock disables only capture and destructive device controls",
-  (screenRecording, locked) => {
+  "with recording %s and recordingLock %s, the lock disables only capture and destructive device controls",
+  (screenRecording, recordingLock) => {
+    const locked = recordingLock !== null;
     const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
+      recordingLock,
       recordingControlsLocked: locked,
       deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
@@ -1853,7 +1857,7 @@ test.each([
         sessionGeneration: 0,
       },
     };
-    const unknownReason = locked && screenRecording === "unknown";
+    const unknownReason = recordingLock === "status-unknown";
     const stream = renderToStaticMarkup(
       <StreamOptionsSection
         client={client}

@@ -3,4 +3,4 @@
 "expo-device-hub": patch
 ---
 
-Add `recordingControlsLocked`, and while an Android recording runs, calls to the locked controls are silently ignored. `areRecordingControlsLocked` is deprecated in favor of `recordingControlsLocked`.
+Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.

@@ -406,7 +406,7 @@ test("Android keeps a device's requests in order after switching away and back",
 });
 
 test("Android keeps the last error and pose when a choice is made while a recording locks it", async () => {
-  const { client, locks, answerWith, report, settle } = await mount({ orientation: "portrait" });
+  const { client, locks, answerWith, report, settle } = await mount({ pose: "portrait" });
   answerWith(() => ({ status: 400, body: { ok: false, error: "orientation refused" } }));
   await act(async () => client().setOrientation("landscape_left"));
   await settle();

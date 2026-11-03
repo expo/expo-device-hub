@@ -79,7 +79,11 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { isRecordingLockStatus, parseScreenRecordingStatus } from "./screen-recording";
+import {
+  parseScreenRecordingStatus,
+  recordingLockReason,
+  recordingOrientationUnavailable,
+} from "./screen-recording";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
 import { resolveDeviceStreamMode } from "./stream-mode";
@@ -365,7 +369,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Turning the device or changing the stream can end the host recording, so the three places
   // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
   // backend) ignore them while it could break.
-  const recordingControlsLocked = isRecordingLockStatus(screenRecording);
+  const recordingLock = recordingLockReason(screenRecording);
+  const recordingControlsLocked = recordingLock !== null;
   const recordingLockedRef = useRef(recordingControlsLocked);
   useLayoutEffect(() => {
     recordingLockedRef.current = recordingControlsLocked;
@@ -2302,6 +2307,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     updateStreamSettings,
     streamSource,
     screenRecording,
+    recordingLock,
     recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
@@ -2327,7 +2333,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     orientation,
     orientationPending,
     orientationError,
-    orientationUnavailable: null,
+    orientationUnavailable: recordingOrientationUnavailable(recordingLock),
     setOrientation,
     screenshot,
     appearance,

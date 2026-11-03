@@ -117,12 +117,14 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const recordingControlsLocked = client?.recordingControlsLocked ?? false;
-  const recordingDisabledReason = !recordingControlsLocked
-    ? undefined
-    : client?.screenRecording === "unknown"
-      ? "Unavailable until recording status is known."
-      : "Unavailable because this would interrupt the recording.";
+  const recordingLock = client?.recordingLock ?? null;
+  const recordingControlsLocked = recordingLock !== null;
+  const recordingDisabledReason =
+    recordingLock === null
+      ? undefined
+      : recordingLock === "status-unknown"
+        ? "Unavailable until recording status is known."
+        : "Unavailable because this would interrupt the recording.";
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
