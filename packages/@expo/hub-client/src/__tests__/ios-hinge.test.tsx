@@ -1,9 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type HingeControlCommand } from "../hinge-control";
-import { type DeviceClient, type DeviceConnectionOptions, type HingeCommandEvent } from "../types";
+import {
+  type DeviceClient,
+  type DeviceConnectionOptions,
+  type DeviceHinge,
+  type HingeCommandEvent,
+} from "../types";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
@@ -54,8 +59,8 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
   FakeSocket.instances = [];
-  apiExtra = {};
   requests.length = 0;
+  apiExtra = {};
   restoreGlobals();
 });
 
@@ -98,9 +103,6 @@ const INNER_OPEN = {
   tableModeAvailable: true,
 };
 
-/** Extra `/api` fields, such as an exec-ws token and a helper pid. */
-let apiExtra: Record<string, unknown> = {};
-
 const JPEG = [0xff, 0xd8, 0xff, 0xd9];
 const MJPEG_PART = new Uint8Array([
   ...new TextEncoder().encode(
@@ -126,6 +128,9 @@ function fakeImage() {
     },
   };
 }
+
+/** Extra `/api` fields, such as an exec-ws token and a helper pid. */
+let apiExtra: Record<string, unknown> = {};
 
 /** Holds device-2's `/api` answer so a test can observe the switch before it resolves. */
 const gate: { hold: boolean; release: (() => void) | null } = { hold: false, release: null };
@@ -681,10 +686,37 @@ test("switching to another simulator forgets the previous screen config and disp
   expect(flat.src).toContain("https://hub.test/helper/device-2/stream.mjpeg");
 });
 
-/** Connects with configs pushed over exec-ws, as serve-sim pushes them. */
-async function connectOverExecWs({ strict = false } = {}) {
+test("a command still pending when the connection changes ends with a reset event", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe, update } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  observe();
+  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
+  expect(client().hinge?.pending).toBe(true);
+  // A reply for the old connection's command never comes.
+  await update({ device: "device-2" });
+  await act(async () => {});
+  const open = { control: "pose", value: "open" } as const;
+  expect(events).toEqual<HingeCommandEvent[]>([
+    { type: "requested", command: open },
+    { type: "sent", command: open, display: 3 },
+    { type: "reset" },
+  ]);
+});
+
+/**
+ * A consumer that observes the hinge from its first render, as a child does:
+ * its effect subscribes before the client's own effects run. Configs arrive
+ * over exec-ws, as serve-sim pushes them.
+ */
+async function connectObserved({ strict = false } = {}) {
   apiExtra = { execToken: "exec-1", pid: 1 };
   let client!: DeviceClient;
+  const events: HingeCommandEvent[] = [];
+  function Observer({ observe }: { observe?: DeviceHinge["observe"] }) {
+    useEffect(() => observe?.((event) => events.push(event)), [observe]);
+    return null;
+  }
   function Harness() {
     client = useIosDeviceClient({
       baseUrl: "https://hub.test",
@@ -692,7 +724,7 @@ async function connectOverExecWs({ strict = false } = {}) {
       enabled: true,
       streamMode: "mjpeg",
     });
-    return null;
+    return <Observer observe={client.hinge?.observe} />;
   }
   await act(async () => {
     renderer = create(
@@ -721,6 +753,7 @@ async function connectOverExecWs({ strict = false } = {}) {
   if (!subscription) throw new Error("The hook did not subscribe to config updates");
   return {
     client: () => client,
+    events,
     helperSockets,
     socket: () => helperSockets().at(-1)!,
     /** A config pushed over exec-ws for the same device. */
@@ -737,45 +770,38 @@ async function connectOverExecWs({ strict = false } = {}) {
 }
 
 for (const strict of [false, true]) {
-  test(`a replaced helper at the same URL ends a pending preview${strict ? " in strict mode" : ""}`, async () => {
+  test(`a replaced helper at the same URL ends a pending command with a reset event${strict ? " in strict mode" : ""}`, async () => {
     installBrowser({ duo: true });
-    const { client, socket, helperSockets, pushConfig } = await connectOverExecWs({ strict });
+    const { client, events, socket, helperSockets, pushConfig } = await connectObserved({
+      strict,
+    });
     await act(async () => socket().push(0x82, COVER));
-    await act(async () => client().hinge!.setControl({ control: "pose", value: "laptop" }));
+    // Connecting emitted nothing.
+    expect(events).toEqual([]);
+    const open = { control: "pose", value: "open" } as const;
+    await act(async () => client().hinge!.setControl(open));
     expect(client().hinge?.pending).toBe(true);
     // A refresh for the same helper session keeps the command pending.
     await pushConfig({ streamSettings: { transport: "http", codec: "mjpeg", mjpegFps: 30 } });
     expect(helperSockets()).toHaveLength(1);
     expect(client().hinge?.pending).toBe(true);
+    expect(events).toEqual<HingeCommandEvent[]>([
+      { type: "requested", command: open },
+      { type: "sent", command: open, display: 3 },
+    ]);
     // A new helper process at the same URL replaces the input socket and its queue.
     await pushConfig({ pid: 2 });
     expect(helperSockets()).toHaveLength(2);
+    expect(events.at(-1)).toEqual<HingeCommandEvent>({ type: "reset" });
+    expect(events.filter(({ type }) => type === "reset")).toHaveLength(1);
     expect(client().hinge?.pending).toBe(false);
-    // The preview of the dropped command ends, so the replacement's Closed shows.
+    // The preview of the dropped command ends, so it cannot stay forever.
     await act(async () => socket().open());
     await act(async () => socket().push(0x82, COVER));
     expect(client().hinge?.pose).toBe("closed");
     expect(client().hinge?.angle).toBe(0);
   });
 }
-
-test("a command still pending when the connection changes ends with a reset event", async () => {
-  installBrowser({ duo: true });
-  const { socket, client, events, observe, update } = await connect();
-  await act(async () => socket.push(0x82, COVER));
-  observe();
-  await act(async () => client().hinge!.setControl({ control: "pose", value: "open" }));
-  expect(client().hinge?.pending).toBe(true);
-  // A reply for the old connection's command never comes.
-  await update({ device: "device-2" });
-  await act(async () => {});
-  const open = { control: "pose", value: "open" } as const;
-  expect(events).toEqual<HingeCommandEvent[]>([
-    { type: "requested", command: open },
-    { type: "sent", command: open, display: 3 },
-    { type: "reset" },
-  ]);
-});
 
 for (const failure of ["rejection", "timeout", "disconnect"] as const) {
   test(`a queued preset ${failure} reports a failure after the accepted preset`, async () => {
