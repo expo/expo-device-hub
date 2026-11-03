@@ -107,14 +107,14 @@ describe("ActivityIndicator", () => {
 
 describe("deviceScreenLoading", () => {
   test("only a session without a frame loads; errors and idle never spin", () => {
-    expect(deviceScreenLoading({ status: "connecting", framePresented: false })).toBe(true);
-    expect(deviceScreenLoading({ status: "streaming", framePresented: true })).toBe(false);
-    expect(deviceScreenLoading({ status: "reconnecting", framePresented: true })).toBe(false);
-    expect(deviceScreenLoading({ status: "error", framePresented: false })).toBe(false);
-    expect(deviceScreenLoading({ status: "idle", framePresented: false })).toBe(false);
+    expect(deviceScreenLoading({ status: "connecting" })).toBe(true);
+    expect(deviceScreenLoading({ status: "streaming" })).toBe(false);
+    expect(deviceScreenLoading({ status: "reconnecting" })).toBe(false);
+    expect(deviceScreenLoading({ status: "error" })).toBe(false);
+    expect(deviceScreenLoading({ status: "idle" })).toBe(false);
     // A consumer's own preview, such as the 3D model, can extend the first load.
-    expect(deviceScreenLoading({ status: "streaming", framePresented: true }, false)).toBe(true);
-    expect(deviceScreenLoading({ status: "error", framePresented: true }, false)).toBe(false);
+    expect(deviceScreenLoading({ status: "streaming" }, false)).toBe(true);
+    expect(deviceScreenLoading({ status: "error" }, false)).toBe(false);
   });
 });
 

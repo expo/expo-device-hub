@@ -6,15 +6,15 @@ import { ActivityIndicator, bg, text, textSize } from "../primitives";
 // @ref LLP 0015#states — one spinner until the first frame; no spinner while a loaded screen reconnects
 /**
  * Whether the device screen shows its first-load spinner: the screen session
- * has not presented a frame, and it has not failed. `previewReady` adds a
- * consumer's own readiness, such as the 3D preview's model.
+ * is `connecting`, which means that it has not presented a frame, or it shows
+ * frames while the consumer's own preview, such as the 3D model, is not ready.
  */
 export function deviceScreenLoading(
-  client: Pick<DeviceClient, "status" | "framePresented">,
+  client: Pick<DeviceClient, "status">,
   previewReady = true,
 ): boolean {
-  if (client.status === "idle" || client.status === "error") return false;
-  return !client.framePresented || !previewReady;
+  if (client.status === "connecting") return true;
+  return !previewReady && (client.status === "streaming" || client.status === "reconnecting");
 }
 
 const LAYER_STYLE: CSSProperties = {

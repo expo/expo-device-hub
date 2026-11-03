@@ -846,7 +846,8 @@ export interface DeviceClient {
    * presented a frame. It stays true while the session reconnects, and it can
    * be true with `error` after the stream failed. Until it is true, the media
    * element shows nothing of this session; it can still hold a previous
-   * session's frame.
+   * session's frame. Outside `idle` and `error`, it is false exactly while
+   * `status` is `connecting`.
    */
   framePresented: boolean;
   /**
