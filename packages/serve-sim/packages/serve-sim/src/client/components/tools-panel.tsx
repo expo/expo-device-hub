@@ -93,7 +93,9 @@ export function ToolsPanel({
           />
           <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
+          {/* Keyed: a change still queued for one device must not touch another's state. */}
           <SimulatorSettingsTool
+            key={udid}
             udid={udid}
             runtime={deviceRuntime}
             hingeControls={hingeControls}
