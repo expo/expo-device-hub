@@ -17,3 +17,5 @@ bool SSCoreDeviceTableModeAvailable(void);
 bool SSCoreDeviceSendTableMode(void *capability, bool enabled);
 bool SSCoreDeviceKeyboardAvailable(void);
 bool SSCoreDeviceSendKey(void *capability, uint32_t usage, bool down);
+bool SSCoreDeviceButtonAvailable(void);
+bool SSCoreDeviceSendButton(void *capability, uint32_t page, uint32_t usage, bool down);

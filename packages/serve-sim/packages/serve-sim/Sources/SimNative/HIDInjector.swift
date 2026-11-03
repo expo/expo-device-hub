@@ -21,7 +21,7 @@ private func hidLog(_ message: @autoclosure () -> String) {
 /// Uses IndigoHIDMessageForMouseNSEvent to create touch messages and
 /// IndigoHIDMessageForButton for hardware button presses, sent via
 /// SimDeviceLegacyHIDClient. Supported iOS devices use per-display Universal HID
-/// touch reports and CoreDevice's HIDKeyboard. Foldables also use CoreDevice
+/// touch reports and CoreDevice's HIDKeyboard/HIDButton. Foldables also use CoreDevice
 /// vendor control for orientation; other devices use PurpleWorkspacePort / GSEvent.
 ///
 /// The real C signature for touch is:
@@ -44,6 +44,7 @@ actor HIDInjector {
     private var isFoldable = false
     private var digitizerCapability: CoreDeviceCapabilityObject?
     private var keyboardCapability: CoreDeviceCapabilityObject?
+    private var buttonCapability: CoreDeviceCapabilityObject?
     private var usesUniversalHID: Bool { digitizerCapability != nil }
     private var touchTarget = HIDTargetPolicy()
     private var multiTouchTarget = HIDTargetPolicy()
@@ -215,6 +216,18 @@ actor HIDInjector {
         )
         digitizerCapability = services.digitizer
         keyboardCapability = services.keyboard
+        // @ref LLP 0004#hardware-buttons — Indigo can acknowledge buttons that the guest drops.
+        if SSCoreDeviceButtonAvailable() {
+            do {
+                buttonCapability = try await CoreDeviceBridge.shared.capability(
+                    udid: deviceUDID,
+                    metadataSymbol: "$s10CoreDevice19ButtonHIDCapabilityVN",
+                    witnessSymbol: "$s10CoreDevice19ButtonHIDCapabilityVAA0B10CapabilityAAWP"
+                )
+            } catch {
+                print("[hid] CoreDevice buttons unavailable: \(error)")
+            }
+        }
         if !keyboardAvailable {
             print("[hid] CoreDevice keyboard unavailable; touch input remains available")
         }
@@ -598,7 +611,25 @@ actor HIDInjector {
     /// volume up/down, the action button, and the watch side button.
     /// - phase: "down" / "up" hold the button for natural long-presses (power
     ///   off slider, side-button menus); "press" sends a momentary down+up.
-    func sendButtonHID(page: UInt32, usage: UInt32, phase: String) async {
+    func sendButtonHID(page: UInt32, usage: UInt32, phase: String) async throws {
+        if usesUniversalHID {
+            func emit(_ down: Bool) throws {
+                guard let buttonCapability,
+                      SSCoreDeviceSendButton(buttonCapability.storage, page, usage, down) else {
+                    throw NSError(domain: "HIDInjector", code: 10,
+                                  userInfo: [NSLocalizedDescriptionKey: "CoreDevice button input is unavailable or failed (page=\(page) usage=\(usage))"])
+                }
+            }
+            switch phase {
+            case "down": try emit(true)
+            case "up": try emit(false)
+            default:
+                try emit(true)
+                try? await Task.sleep(for: .seconds(0.05))
+                try emit(false)
+            }
+            return
+        }
         guard let arb = hidArbitraryFunc else {
             print("[hid] Arbitrary HID injection unavailable (page=\(page) usage=\(usage))")
             return
@@ -622,7 +653,25 @@ actor HIDInjector {
         }
     }
 
-    func sendButton(button: String, deviceUDID: String) async {
+    func sendButton(button: String, deviceUDID: String) async throws {
+        // These usages are Apple's HIDUsageCode getters: expose_All, power,
+        // voiceCommand, and watchSideButton. Home keeps its SpringBoard path.
+        if usesUniversalHID {
+            let code: (UInt32, UInt32)?
+            switch button {
+            case "app_switcher": interruptScroll(); code = (0xff01, 0x10)
+            case "lock": code = (0x0c, 0x30)
+            case "siri": code = (0x0c, 0xcf)
+            case "side_button": code = (0x0c, 0x95)
+            default: code = nil
+            }
+            if let (page, usage) = code {
+                try await sendButtonHID(page: page, usage: usage, phase: "down")
+                try? await Task.sleep(for: .seconds(button == "siri" ? 0.3 : 0.05))
+                try await sendButtonHID(page: page, usage: usage, phase: "up")
+                return
+            }
+        }
         hidLog("[hid] Sending button: \(button)")
 
         switch button {

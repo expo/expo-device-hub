@@ -62,11 +62,13 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func button(_ button: String) async throws {
-        try await setup.run { await injector.sendButton(button: button, deviceUDID: udid) }
+        try await setup.run {}
+        try await injector.sendButton(button: button, deviceUDID: udid)
     }
 
     @NodeMethod func buttonHid(_ page: Int, _ usage: Int, _ phase: String) async throws {
-        try await setup.run { await injector.sendButtonHID(page: u32(page), usage: u32(usage), phase: phase) }
+        try await setup.run {}
+        try await injector.sendButtonHID(page: u32(page), usage: u32(usage), phase: phase)
     }
 
     @NodeMethod func key(_ type: String, _ usage: Int) async throws {
