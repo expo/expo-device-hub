@@ -344,7 +344,7 @@ test("an unknown face-down state keeps the face-down framing until the device is
 test("local commands own the framing until the device confirms them", async () => {
   const { view, emit, update } = await mount(HALF);
   const before = view();
-  await emit({ type: "requested", command: { control: "faceDown", value: true } });
+  await emit({ type: "requested", command: { control: "tableMode", value: true } });
   await update({ physical: { faceDown: true } });
   expect(view()).toEqual(before);
   await emit({ type: "confirmed" });

@@ -47,7 +47,6 @@ function foldCapabilities(poses: Partial<Record<FoldPose, object>>): DeviceFoldC
     angle: { min: 0, max: 180 },
     poses: poses as Record<FoldPose, { angle: number }>,
     tableMode: false,
-    faceDown: false,
   };
 }
 

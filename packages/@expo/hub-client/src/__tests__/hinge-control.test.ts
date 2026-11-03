@@ -40,15 +40,6 @@ test("Table Mode clears the preset", () => {
   });
 });
 
-test("face down preserves the hinge angle and elects the requested surface", () => {
-  for (const value of [false, true]) {
-    expect(hingeControlState({ control: "faceDown", value })).toEqual({
-      hingePose: null,
-      tableMode: value,
-    });
-  }
-});
-
 test("maps fold commands to serve-sim's wire commands", () => {
   expect(hingeWireCommand({ control: "angle", value: 45.5 })).toEqual({
     control: "angle",
@@ -61,13 +52,5 @@ test("maps fold commands to serve-sim's wire commands", () => {
   expect(hingeWireCommand({ control: "tableMode", value: true })).toEqual({
     control: "table",
     value: true,
-  });
-  expect(hingeWireCommand({ control: "faceDown", value: true })).toEqual({
-    control: "physical",
-    value: "facedown",
-  });
-  expect(hingeWireCommand({ control: "faceDown", value: false })).toEqual({
-    control: "physical",
-    value: "faceup",
   });
 });

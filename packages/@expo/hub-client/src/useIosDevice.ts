@@ -2142,10 +2142,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             angle: DUO_FOLD_ANGLE,
             poses: DUO_FOLD_POSES,
             tableMode: true,
-            faceDown: screen?.supportsPhysicalOrientation === true,
           }
         : false,
-    [isDuo, hingeReported, screen?.supportsPhysicalOrientation],
+    [isDuo, hingeReported],
   );
   const fold = useMemo<DeviceFold | null>(() => {
     if (!isDuo) return null;

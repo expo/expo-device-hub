@@ -16,7 +16,6 @@ const ANDROID_FOLD_CONTROLS: FoldControls = {
   angle: { min: 0, max: 180 },
   poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
   tableMode: false,
-  faceDown: false,
 };
 
 function fold(overrides: Partial<DeviceFold> = {}): DeviceFold {

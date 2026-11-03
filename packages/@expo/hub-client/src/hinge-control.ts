@@ -20,23 +20,14 @@ export const DUO_POSE_ANGLES: Readonly<Record<FoldPose, number>> = {
 export type HingeControlCommand =
   | { control: "angle"; value: number }
   | { control: "pose"; value: FoldPose }
-  | { control: "table"; value: boolean }
-  | { control: "physical"; value: "faceup" | "facedown" };
+  | { control: "table"; value: boolean };
 
 export function hingeWireCommand(command: FoldControlCommand): HingeControlCommand {
-  switch (command.control) {
-    case "tableMode":
-      return { control: "table", value: command.value };
-    case "faceDown":
-      return { control: "physical", value: command.value ? "facedown" : "faceup" };
-    default:
-      return command;
-  }
+  return command.control === "tableMode" ? { control: "table", value: command.value } : command;
 }
 
 /** Confirmed command state, separate from the app's reported screen orientation. */
 export function hingeControlState(command: FoldControlCommand): HingeControlState {
-  if (command.control === "faceDown") return { hingePose: null, tableMode: command.value };
   if (command.control === "tableMode") return { tableMode: command.value, hingePose: null };
   if (command.control === "angle") {
     return { hingeAngle: command.value, hingePose: null, tableMode: false };

@@ -21,8 +21,8 @@ export type FoldPose = (typeof FOLD_POSES)[number];
 
 /**
  * A fold command. A device accepts a control only when its
- * `DeviceFoldCapabilities` offers it: `angle`, a pose in `poses`, `tableMode`,
- * or `faceDown`.
+ * `DeviceFoldCapabilities` offers it: `angle`, a pose in `poses`, or
+ * `tableMode`.
  */
 export type FoldControlCommand =
   /** Move the hinge to an angle in degrees, inside `capabilities.fold.angle`. */
@@ -30,11 +30,4 @@ export type FoldControlCommand =
   /** Apply a named pose: its hinge angle, and on iOS also its physical stance. */
   | { control: "pose"; value: FoldPose }
   /** Turn the device's persistent table state on or off (Xcode's Table Mode). */
-  | { control: "tableMode"; value: boolean }
-  /**
-   * Lay the device face down or face up. The hinge does not move. On iOS the
-   * command also sets Table Mode (on for face down, off for face up) and clears
-   * the named pose, and face down needs a partly open hinge. Other adapters can
-   * apply it differently.
-   */
-  | { control: "faceDown"; value: boolean };
+  | { control: "tableMode"; value: boolean };

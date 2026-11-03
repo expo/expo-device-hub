@@ -74,7 +74,7 @@ export function duoCommandScreen(
   command: FoldControlCommand,
   physicalPose?: FoldPose | null,
 ): DuoPanelId | undefined {
-  if (command.control === "tableMode" || command.control === "faceDown") return undefined;
+  if (command.control === "tableMode") return undefined;
   if (command.control === "angle" && command.value > 54 && command.value < 55) return undefined;
   const { hingeAngle } = hingeControlState(command);
   return duoIntendedScreen(hingeAngle, command.control === "pose" ? command.value : physicalPose);

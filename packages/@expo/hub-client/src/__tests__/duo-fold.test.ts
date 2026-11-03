@@ -113,7 +113,6 @@ describe("the panel a submitted hinge command elects", () => {
     expect(duoCommandScreen({ control: "pose", value: "open" }, "tent")).toBe(3);
     expect(duoCommandScreen({ control: "pose", value: "tent" })).toBe(1);
     expect(duoCommandScreen({ control: "tableMode", value: true })).toBeUndefined();
-    expect(duoCommandScreen({ control: "faceDown", value: true })).toBeUndefined();
     expect(duoCommandScreen({ control: "angle", value: 54.5 })).toBeUndefined();
   });
 });

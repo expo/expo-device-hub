@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
+**Revised:** 2026-11-03
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -31,7 +32,7 @@
 | `error`      | The last failed command. The next command clears it.                                                                                                                                                    |
 | `tableMode`  | Optional group `{ enabled, available }`. Present only when `capabilities.fold.tableMode` is true.                                                                                                       |
 | `physical`   | Optional group `{ pose, faceDown }`: how the device is held, apart from the hinge. Present only when the backend reports it. `faceDown` is undefined while the backend has not reported enough to tell. |
-| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, `tableMode`, or `faceDown`.                                                                                                                              |
+| `setControl` | Sends a `FoldControlCommand`: `angle`, `pose`, or `tableMode`.                                                                                                                                          |
 | `observe`    | Optional. Reports each command as `FoldCommandEvent`s: `requested`, `sent`, `acknowledged`, `confirmed`, `failed`, `reset`, and `rotated`.                                                              |
 
 An optional group is absent when the device does not have the feature. Inside a group, an unknown value stays undefined; it never becomes `false`. A consumer can then keep what it last knew. For example, the 3D model keeps its face-down framing while `physical.faceDown` is undefined, as serve-sim's client does when Table Mode or the physical orientation is unknown [observed: `useDuoFraming.ts`; `knownNotFaceDown` in serve-sim's `src/client/hooks/use-duo-framing.ts`]. A device never fills a group with placeholder values. `tableMode` is present exactly when `capabilities.fold.tableMode` is true. The iOS adapter adds both groups together with `capabilities.fold`, so before the helper reports its hinge the iPhone Duo's `fold` has neither [observed: `fold` in `useIosDevice.ts`].
@@ -43,7 +44,8 @@ An optional group is absent when the device does not have the feature. Inside a 
 - `angle`: `{ min, max }` in degrees, measured as `fold.angle` is, or `false` for a device that applies poses only. The iPhone Duo and #352's Android emulators accept 0–180.
 - `poses`: the poses that the device can apply, each with the hinge angle that it sets.
 - `tableMode`: the device has Xcode's persistent table state.
-- `faceDown`: the device accepts the `faceDown` command.
+
+There is no face-down command. serve-sim's protocol offers one (`physical`), but nothing in hub-components or the Hub sent it, and on iOS it also changes Table Mode, so it was the least portable command. Krystof Woldrich removed it from the contract [confirmed] (Krystof Woldrich, 2026-11-03). Adding it back later does not break consumers. `fold.physical.faceDown` stays: it reports what the device observes, and the 3D model frames the cover from it.
 
 `capabilities.fold` is `false` until the backend reports a hinge that it can move. `fold` can be non-null at that time. For example, the iPhone Duo is recognized from its DeviceKit chrome before its first screen config [observed: `isDuo` and `foldCapabilities` in `useIosDevice.ts`]. Fold settings, the pose shortcuts, and the 3D model's hinge handles use only what `capabilities.fold` lists [observed: `FoldSettings.tsx`, `useDeviceKeyboard.ts`, `FoldableDeviceScreen.tsx` in `packages/@expo/hub-components/src`].
 
@@ -87,13 +89,12 @@ serve-sim's screen config also carries the hinge state and the display ID. The i
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `capabilities.fold`               | Set when `supportsHingeAngle` is true, or when it is absent and `hingeAngle` is reported                                                                                |
 | `.angle` / `.poses`               | `{ 0, 180 }` / all five, at Device Hub's angles                                                                                                                         |
-| `.tableMode` / `.faceDown`        | `true` / `supportsPhysicalOrientation`                                                                                                                                  |
+| `.tableMode`                      | `true`                                                                                                                                                                  |
 | `fold.angle` / `fold.pose`        | `hingeAngle` / `hingePose`, with the pending request                                                                                                                    |
 | `fold.tableMode`                  | `{ enabled: tableMode, available: tableModeAvailable }`                                                                                                                 |
 | `fold.physical`                   | `{ pose: physicalPose, faceDown }`: face down with Table Mode; undefined while `tableMode` or `physicalOrientation` is unknown and the other field does not rule it out |
 | `screen.display`, `displays[].id` | `screenId` 1 → `cover`, 3 → `inner`                                                                                                                                     |
 | `{ control: "tableMode" }`        | Wire `{ control: "table" }`                                                                                                                                             |
-| `{ control: "faceDown", value }`  | Wire `{ control: "physical", value: "facedown" \| "faceup" }`                                                                                                           |
 
 [observed: `useIosDevice.ts`, `hinge-control.ts`, `screen-config.ts`]
 
@@ -108,7 +109,7 @@ hub-client does not map serve-emu's fold yet; `fold` is `null` and `capabilities
 | `capabilities.fold`          | `false` unless `supported` is true                                                                               |
 | `.angle`                     | `hingeRange` with #352's `POST { hingeAngle }`; `false` on main, which accepts only `POST { posture }`           |
 | `.poses`                     | #352: `closed` 0°, `book` 90°, `open` 180°. Main: `closed` and `open`                                            |
-| `.tableMode` / `.faceDown`   | `false` / `false`                                                                                                |
+| `.tableMode`                 | `false`                                                                                                          |
 | `fold.angle`                 | `hingeAngle`                                                                                                     |
 | `fold.pose`                  | The offered pose whose angle equals `hingeAngle`, else `null` (#352's rule); or `closed` / `open` from `posture` |
 | `fold.tableMode`, `physical` | Absent                                                                                                           |
@@ -118,7 +119,7 @@ hub-client does not map serve-emu's fold yet; `fold` is `null` and `capabilities
 
 serve-emu's `half_opened` posture is not a pose by itself. At 90° it is `book`; at another angle it is `null` (custom). `flipped` and `tent` occur on fold-out profiles, whose hinge moves from 180° to 360° [observed: #352's LLP 0004 section]. #352 shows no fold for them. The contract can describe them later with `angle: { min: 180, max: 360 }` and the poses they offer.
 
-#256 (draft, by jiunshinn) reads the posture as a string device setting, `fold`. With this contract, main's posture-only serve-emu maps to `capabilities.fold = { angle: false, poses: { closed, open }, tableMode: false, faceDown: false }`, and Fold settings shows a pose select without a slider [observed: `FoldSettings.tsx`]. The `fold` device setting is then not needed.
+#256 (draft, by jiunshinn) reads the posture as a string device setting, `fold`. With this contract, main's posture-only serve-emu maps to `capabilities.fold = { angle: false, poses: { closed, open }, tableMode: false }`, and Fold settings shows a pose select without a slider [observed: `FoldSettings.tsx`]. The `fold` device setting is then not needed.
 
 ## Decisions
 
@@ -126,7 +127,7 @@ These are Claude Code's choices while it implemented the direction above. Human 
 
 - **`fold`, not `hinge`.** The object holds more than the hinge: the pose, Table Mode, and how the device is held. The angle is one field. The name also matches serve-emu's `/api/fold` and the Hub's Fold settings [observed: `src/shared/api-contracts.ts` in serve-emu; `FoldSettings.tsx`].
 - **Opt-in capabilities.** #352 proposed `DeviceHinge.controls`, where `undefined` meant every iPhone Duo control. An explicit `capabilities.fold` follows the other capability groups, and a new backend offers nothing by default.
-- **Commands named after their capability.** `tableMode` and `faceDown` replace serve-sim's wire names `table` and `physical`, so one name is used for the capability, the command, and the state group.
+- **Commands named after their capability.** `tableMode` replaces serve-sim's wire name `table`, so one name is used for the capability, the command, and the state group.
 - **Helpers removed from the public API.** `HINGE_POSES` (with Device Hub's angles and labels), `hingeControlState`, `isHingeControlCommand`, `isTableModeAvailable`, `HingeControlState`, and `HingePhysicalOrientation` described serve-sim's protocol. The iOS adapter keeps what it uses; `isHingeControlCommand` and `isTableModeAvailable` had no caller in hub-client and were removed [observed: `git grep` on #432's head 5721b06f].
 - **The 3D model keeps the iPhone Duo's name.** `FoldableDeviceScreen` and the `duo-*` modules in `@expo/hub-components/foldable` render only Xcode's iPhone Duo model.
 
@@ -135,4 +136,3 @@ These are Claude Code's choices while it implemented the direction above. Human 
 1. Are `cover` and `inner` the right role names? They came from the orchestrator's analysis (Claude Code), not from a maintainer. `main` instead of `inner` would also fit a fold-out device whose only display is on the outside. Neither name fits a dual-screen device.
 2. `deviceModelUrl` does not say which model it is. Only the iPhone Duo has one today. A second device with a model needs a kind, so that a consumer picks the right renderer.
 3. Should an Android adapter set `screen.display` from serve-emu's posture (`closed` → `cover`)? No consumer reads it on Android today.
-4. Is the `faceDown` command needed in the public API? It replaces #432's `physical` command, which serve-sim's protocol offers, but nothing in hub-components or the Hub sends it or reads `capabilities.fold.faceDown` [observed: `git grep` on this branch]. Keeping it costs one capability flag; removing it keeps the contract minimal.

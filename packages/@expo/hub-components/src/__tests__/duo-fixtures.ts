@@ -13,7 +13,6 @@ export const DUO_FOLD_CONTROLS: Exclude<DeviceFoldCapabilities, false> = {
     tent: { angle: 80 },
   },
   tableMode: true,
-  faceDown: true,
 };
 
 /** A preset's view at the Duo's angle for that pose. */

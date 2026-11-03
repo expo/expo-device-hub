@@ -333,7 +333,6 @@ test("the Duo reports its fold state, displays, and model, and keeps the flat st
       tent: { angle: 80 },
     },
     tableMode: true,
-    faceDown: false,
   });
   expect(client().displays?.map(({ id, active }) => ({ id, active }))).toEqual([
     { id: "cover", active: true },
