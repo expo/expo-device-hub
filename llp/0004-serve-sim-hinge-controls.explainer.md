@@ -572,9 +572,9 @@ its sides at that long side plus the 32 px fill inset on each side (762 px),
 so that any pose or rotation fits. Below the cap, the stage shrinks to the
 stream area: the space that `StreamPanel` keeps clear of the device title
 above and the controls below, including the fold error line [observed:
-`DUO_STAGE_STYLE` in `PhoneFrame.tsx`]. From 2026-10-21 to 2026-10-30 the stage
-filled the whole stream area with no cap; that direction is replaced.
-serve-sim keeps its fixed 580 px 1:1 stage [observed:
+`DUO_STAGE_STYLE` in `PhoneFrame.tsx`, `duoStageMaxSide` in `duo-stage.ts`].
+There the model keeps the fill inset on its limiting side, so below the cap it
+is 64 px smaller than the flat Duo, which fills the stream area. serve-sim keeps its fixed 580 px 1:1 stage [observed:
 `DUO_STAGE_DEFAULT_WIDTH` in `src/client/client.tsx`]. This difference is
 intended.
 
@@ -591,7 +591,7 @@ intended.
   rotates, its model can cross the edge for a few frames, as in serve-sim:
   the limit below applies only to "Fill available space". That mode fits the
   current pose in the whole stage with a 32 px inset on the limiting side
-  [observed: `duoStageZoom` and `duoFitScale` in `duo-layout.ts`].
+  [observed: `duoStageZoom` and `duoFitScaleFromExtents` in `duo-layout.ts`].
 - In "Fill available space", a new pose springs the fill factor, so the model
   eases into its framing. The fill target follows the folded geometry on every
   frame, and opening a pose widens the model faster than the spring shrinks
@@ -600,14 +600,16 @@ intended.
   crosses the stage edge, and the handles stay clear of the title and the
   controls. While the limit holds, the zoom can change faster from frame to
   frame than the spring alone would, but the model's limiting edge stays 16 px
-  from the stage edge, so it does not jump. serve-sim springs without this
+  from the stage edge, so it does not jump. The fill inset must be at least the
+  handle offset, or the limit would hold on every frame [observed:
+  `DUO_FILL_INSET` and `DUO_HANDLE_OFFSET` in `duo-stage.ts`]. serve-sim springs without this
   limit [observed: `stepDuoSpring` for `fitScale` in serve-sim's
   `src/client/simulator/duo-scene.ts`].
 - A stage or window resize sets the fill factor at once. The base zoom follows
-  a resize at once, so a factor that lagged behind it would push the model
-  past the stage edge, where the 3D view clips it. This happens when a sidebar
-  opens or is dragged and the stage's short side is its height. For the same
-  reason the render loop reads the stage's layout size before each frame: a
+  a resize at once, so the model keeps its fill through the resize instead of
+  easing back to it; the limit above already keeps it inside the stage. This
+  happens when a sidebar opens or is dragged and the stage's short side is its
+  height. So that the zoom follows the stage in the same frame, the render loop reads the stage's layout size before each frame: a
   sidebar's width transition has already moved the stage, and a
   `ResizeObserver` reports that only after the frame is drawn [observed:
   `stepDuoZoom` and `stepDuoFit` in `duo-layout.ts`, the render loop in
