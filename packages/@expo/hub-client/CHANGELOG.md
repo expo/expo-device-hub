@@ -1,5 +1,17 @@
 # @expo/hub-client
 
+## 1.9.0
+
+### Minor Changes
+
+- a6b40fa: Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.
+- 0c8f2a8: Add `setOrientation` and `capabilities.orientation` to turn a device to one pose, with `orientation`, `orientationPending` and `orientationError` showing the pick and then the backend's answer, `orientationUnavailable` giving the reason a change cannot go out now, and Android Rotate now steps through the same four poses as iOS. Custom `DeviceClient` implementations and mocks must add these required members.
+
+### Patch Changes
+
+- 8589ebf: Offer only the Android stream modes that serve-emu lists in `/api` `viewerTransports.available`. On a `--transport webrtc` host, H.264 is not offered and an H.264 choice falls back to WebRTC. Older serve-emu versions without the list keep the WebSocket video.
+- 20cc264: Fit the Hub viewer above the phone keyboard, add mobile keyboard and full-screen controls, group the inspector toggle with those controls, and give the device more room on small screens.
+
 ## 1.8.1
 
 ### Patch Changes

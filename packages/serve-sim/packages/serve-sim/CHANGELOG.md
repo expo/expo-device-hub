@@ -1,5 +1,22 @@
 # @expo/serve-sim
 
+## 0.13.1
+
+### Patch Changes
+
+- 5f000be: Fix the device jumping and scaling back when entering or leaving full screen on mobile. Keep transitions continuous when reversing direction before the animation finishes.
+
+  Keep the device in place, with its frame and screen aligned, while the phone keyboard changes the mobile preview size. Keep the phone keyboard open when leaving full screen.
+
+- a702c83: Fix the Home-button artwork appearing at the left edge of older iPhone and iPad device frames.
+- 1ce9814: Fit the mobile preview to the available screen space while keeping the existing floating controls. Hide the device name, live badge, and accessibility overlay button on small screens.
+
+  Hide the bottom action toolbar while the phone keyboard is open so the preview has more room.
+
+  Stack mobile preview controls in one vertical toolbar, including the keyboard toggle.
+
+  Keep the full device visible in presentation mode when the phone keyboard opens.
+
 ## 0.13.0
 
 ### Minor Changes

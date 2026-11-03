@@ -1,5 +1,21 @@
 # expo-device-hub
 
+## 0.20.0
+
+### Minor Changes
+
+- 91a29eb: Add an Orientation select to the dashboard's Device options, which appears once the client has a pose, from a pick or a report, and shows a pick right away. The select and Rotate are unavailable during an Android recording, and on iOS while the simulator cannot take input.
+- e262c36: serve-emu's `POST /api/orientation` now also accepts `portrait`, `landscape_left`, `portrait_upside_down` and `landscape_right`, counted from the natural display so tablets are named right, and returns the locked `pose`; `landscape` stays as an alias for `landscape_right`. `GET /api` and `/health` now report the shown pose as `pose`.
+- 8589ebf: serve-emu's `--transport webrtc` now makes WebRTC the only video transport, as serve-sim's does. A video WebSocket is refused with `stream_transport_locked` (HTTP 409 on the standalone server, close code 1008 through `createRouter`), the input-only `/ws?video=0` socket still works, and `/api` lists only `webrtc` in `viewerTransports.available`. The default `--transport websocket` still lets each viewer choose WebSocket or WebRTC.
+
+### Patch Changes
+
+- 0c8f2a8: The Hub's Android device frame now follows the pose the emulator reports, including upside down and both landscape sides.
+- a6b40fa: Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.
+- 20cc264: Fit the Hub viewer above the phone keyboard, add mobile keyboard and full-screen controls, group the inspector toggle with those controls, and give the device more room on small screens.
+- 20cc264: Show the device inspector in the left sidebar, below the device lists, and remove the right sidebar. Remove the toolbar Theme button, move the phone Keyboard toggle into the Clipboard group, and pin the phone Full screen button to the top-right corner.
+- 92f86cd: Disable Android emulator usage metrics collection explicitly when launching emulators, avoiding the metrics consent warning and future blocking prompt.
+
 ## 0.19.1
 
 ### Patch Changes
