@@ -23,10 +23,13 @@ function DuoPanelStreams({
   feeds,
   activeScreenId,
   sink = { streaming: false, error: null, stats: null },
+  elementKey = 0,
 }: {
   feeds: DuoPanelFeeds;
   activeScreenId: DuoPanelId;
   sink?: PanelSink;
+  /** A new key replaces both elements in one commit. */
+  elementKey?: number;
 }) {
   const [elements, setElements] = useState<Record<DuoPanelId, DuoPanelElement | null>>({
     1: null,
@@ -49,7 +52,7 @@ function DuoPanelStreams({
     <>
       {([1, 3] as const).map((id) =>
         kind === "canvas" ? (
-          <canvas key={id} ref={attach[id]} />
+          <canvas key={`${id}-${elementKey}`} ref={attach[id]} />
         ) : kind === "video" ? (
           <video key={id} ref={attach[id]} />
         ) : (
@@ -181,6 +184,13 @@ async function connect(token?: string) {
           />,
         );
       }),
+    /** The consumer replaces both canvases in one commit. */
+    replaceCanvases: () =>
+      act(async () => {
+        renderer!.update(
+          <DuoPanelStreams activeScreenId={1} feeds={feeds} sink={events} elementKey={1} />,
+        );
+      }),
   };
 }
 
@@ -235,6 +245,18 @@ test("both H.264 panel streams carry the connection session token", async () => 
     { url: "https://hub.test/helper/duo/panel/1/stream.avcc", authorization: "Bearer duo-token" },
     { url: "https://hub.test/helper/duo/panel/3/stream.avcc", authorization: "Bearer duo-token" },
   ]);
+});
+
+test("a canvas replaced in one commit keeps the H.264 reader and its health, so no fallback", async () => {
+  const { decode, expire, events, requests, replaceCanvases } = await connect();
+  await decode(0);
+  await replaceCanvases();
+  // The reader keeps its connection and paints the next frames into the new canvas.
+  expect(requests).toHaveLength(2);
+  await decode(0);
+  expect(events.streaming).toBe(true);
+  await expire();
+  expect(events.fallbacks).toBe(0);
 });
 
 test("a token change rearms H.264 fallback after the previous panel decoded", async () => {

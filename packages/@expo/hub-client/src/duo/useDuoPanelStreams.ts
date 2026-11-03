@@ -220,7 +220,16 @@ function useDuoPanelStream(
 
   useEffect(() => {
     resetStreaming();
-  }, [url, mode, element, sessionFetch, webRtcStream, resetStreaming]);
+  }, [url, mode, sessionFetch, webRtcStream, resetStreaming]);
+
+  // A replaced element shows nothing until its first frame. The H.264 decoder's
+  // health stays: the AVCC reader keeps its connection, and it reports a decoded
+  // frame only once per connection.
+  useEffect(() => {
+    decoded.current = false;
+    lastFrameAt.current = 0;
+    setStreaming(false);
+  }, [element]);
 
   useEffect(() => {
     // Every iOS client runs this hook; a panel without an element has nothing to watch.
