@@ -102,6 +102,22 @@ static NSDictionary *setItem(NSDictionary *operation) {
   id replaces = operation[@"replaces"];
   if (replaces != nil && ![replaces isKindOfClass:NSArray.class])
     return @{@"status" : @(errSecParam), @"error" : @"replaces must be a list"};
+  // Validate before writing: a replacement must never delete the value we are about to set.
+  // Generic is not identity, account bytes can arrive as string or data, and an omitted group
+  // searches all the app's allowed groups. Only two different explicit groups are disjoint.
+  for (id other in replaces) {
+    if (![other isKindOfClass:NSDictionary.class])
+      return @{@"status" : @(errSecParam), @"error" : @"replacement must be an item"};
+    NSMutableDictionary *replacement = itemQuery(other, &error);
+    if (replacement == nil) return @{@"status" : @(errSecParam), @"error" : error};
+    id group = query[(__bridge id)kSecAttrAccessGroup];
+    id otherGroup = replacement[(__bridge id)kSecAttrAccessGroup];
+    if ([operation[@"service"] isEqual:other[@"service"]]
+        && [base64(operation[@"account"]) isEqual:base64(other[@"account"])]
+        && (group == nil || otherGroup == nil || [group isEqual:otherGroup])) {
+      return @{@"status" : @(errSecParam), @"error" : @"replacement can match the item being set"};
+    }
+  }
   OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
   if (status == errSecItemNotFound) {
     [query addEntriesFromDictionary:attributes];

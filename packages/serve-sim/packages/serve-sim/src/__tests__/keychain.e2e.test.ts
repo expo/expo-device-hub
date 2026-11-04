@@ -170,6 +170,39 @@ describeOrSkip("keychain round trip", () => {
     expect(listed.applied && listed.results[0]?.items).toEqual([]);
   }, 30_000);
 
+  test("a replacement that can match the target is refused before writing", async () => {
+    const group = "SERVESIMFIX.dev.expo.serve-sim.launch-fixture";
+    const identities = [
+      { target: ITEM, replacement: { ...ITEM, generic: b64("other") } },
+      { target: { ...ITEM, accessGroup: group }, replacement: { ...ITEM, accessGroup: group } },
+      { target: ITEM, replacement: { ...ITEM, accessGroup: group } },
+      { target: { ...ITEM, accessGroup: group }, replacement: ITEM },
+      { target: ITEM, replacement: { ...ITEM, attributesAsData: false } },
+    ];
+    for (const { target, replacement } of identities) {
+      const value = `preserved-${Date.now()}`;
+      expect(await runKeychainOperations(udid!, APP, [set(value)], { timeoutMs: 10_000 })).toEqual({
+        applied: true,
+        results: [{ status: 0 }],
+      });
+      const outcome = await runKeychainOperations(
+        udid!,
+        APP,
+        [{ ...set("must-not-write"), ...target, replaces: [replacement] }],
+        { timeoutMs: 10_000 },
+      );
+      expect(outcome.applied && outcome.results[0]?.status).toBe(-50);
+      // List verifies the item still exists; the fixture verifies its value did not change.
+      const listed = await runKeychainOperations(udid!, APP, [
+        { op: "list", service: ITEM.service },
+      ]);
+      expect(listed.applied && listed.results[0]?.items?.map((item) => item.account)).toContain(
+        b64(KEY),
+      );
+      await waitForLastSeen(`value=${value}`);
+    }
+  }, 60_000);
+
   test("a set fails when an item it replaces cannot be deleted", async () => {
     // The app has no entitlement for this access group, so the delete fails.
     const unreachable = { ...ITEM, service: "app", accessGroup: "serve-sim.not-this-app" };
