@@ -57,6 +57,35 @@ test("the Duo's display stays flat open, and folds its right side onto the left 
   for (let i = 1; i < closed.length; i += 3) expect(closed[i]).toBe(mesh.positions[i]!);
 });
 
+test("a step of the flat display keeps its length over the bend, so the stream does not stretch at the hinge", () => {
+  // The stream is mapped once on the open display. The first port moved a
+  // step in the middle of the Duo's hinge to 1.43 times its length at 96°.
+  const xs = Array.from({ length: 241 }, (_, i) => -6 + i * 0.05);
+  for (const [model, name] of [
+    ["duo", "FLEX • continuous inner OLED"],
+    ["pixel", "FLEX • continuous inner OLED bridge"],
+  ] as const) {
+    const deformer = createFlexDeformer(model, strip(name, xs));
+    for (const angle of [5, 30, 60, 96, 120, 150, 175]) {
+      const { positions } = bend(deformer, angle, xs.length * 2);
+      for (let i = 1; i < xs.length; i++) {
+        // The first vertex of each station, at y = -10 mm.
+        const a = (i - 1) * 6;
+        const b = i * 6;
+        const bent = Math.hypot(
+          positions[b]! - positions[a]!,
+          positions[b + 2]! - positions[a + 2]!,
+        );
+        const ratio = (bent * 1000) / (xs[i]! - xs[i - 1]!);
+        // The Duo stretches up to 0.413% near flat to meet its leaves; the
+        // Pixel's tightest turn, near closed, shortens a straight step most.
+        expect(ratio).toBeGreaterThan(0.98);
+        expect(ratio).toBeLessThan(1.005);
+      }
+    }
+  }
+});
+
 test("the Pixel 9 Pro Fold's bridge bends continuously, with unit normals, at every angle", () => {
   const xs = [-8, -4.3, -2, 0, 2, 4.3, 8];
   const deformer = createFlexDeformer("pixel", strip("FLEX • continuous inner OLED bridge", xs));

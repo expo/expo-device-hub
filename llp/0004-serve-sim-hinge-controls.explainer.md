@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -597,6 +597,19 @@ files, their source commit, and their sizes are in
   repository. The body is centered on the middle of its two leaves, as Xcode's
   model was [observed: `rigDeviceModel` in `device-model-rig.ts`,
   `device-model-bend.ts`].
+- **Bend.** The scene maps the stream once, flat over the open display, and the
+  bend then moves the display's points. So a bend must keep the spacing of
+  those points, or the stream stretches. The first port, of the models
+  repository at `644e92e4`, put the points on the right curve but not evenly:
+  at 96°, a step in the middle of the Duo's hinge became 1.43 times as long,
+  and a step 2.9 mm to each side 0.72 times, so letters near the hinge grew wide
+  or disappeared [observed: a row of the Duo's inner display, measured
+  2026-11-04]. Krystof Woldrich saw it in the Hub and updated the models
+  repository [confirmed] (Krystof Woldrich, 2026-11-04). The scene now ports
+  that repository's tighter-fold runtimes at `319fd4bf`, in which flat X is arc
+  length along the bend. The GLB files did not change. A step keeps its length
+  within 0.5% on the Duo and 2% on the Pixel 9 Pro Fold, whose least spacing is
+  near closed [observed: `device-model-bend.ts` and its tests].
 - **Depth.** A display lies 2 to 4 micrometers in front of its glass and body.
   The camera's near and far planes (8 and 64 cm) keep the depth buffer fine
   enough to separate them; with the old 0.1 cm near plane, the closed Duo's cover

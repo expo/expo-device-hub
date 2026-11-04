@@ -1,10 +1,13 @@
 /**
- * Calculated bending for the foldables' flexible meshes, ported from
- * expo/expo-simulators-3d-models at 644e92e4 (`scripts/procedural_duo_bend.mjs`
- * and `scripts/procedural_pixel_bend.mjs`). The GLBs store only the open
+ * Calculated bending for the foldables' flexible meshes, ported from the
+ * "tighter fold" runtimes of expo/expo-simulators-3d-models at 319fd4bf
+ * (`scripts/procedural_duo_tight_bend.mjs` and
+ * `scripts/procedural_pixel_tight_bend.mjs`). The GLBs store only the open
  * shape of these meshes; their bend at another hinge angle is calculated
- * here. Inputs and outputs are mesh-local meters. The angle is 0 closed and
- * 180 open. The math is unchanged; only the types and names are new.
+ * here. Flat X is arc length along the bend, so the stream, mapped once on the
+ * open display, keeps its scale over the hinge. Inputs and outputs are
+ * mesh-local meters. The angle is 0 closed and 180 open. The math is
+ * unchanged; only the types and names are new.
  */
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -81,12 +84,6 @@ function angleWeightedNormals(
   }
 }
 
-// iPhone Duo: `scripts/procedural_duo_bend.mjs`, from the authored hinge formula.
-const DUO_PIVOT = 0.260577;
-const DUO_HALF_WIDTH = 4;
-
-type DuoPose = { ct: number; st: number; c: number; s: number };
-
 function write(
   out: Float64Array,
   a: number,
@@ -105,52 +102,122 @@ function write(
   return out;
 }
 
+// iPhone Duo: `scripts/procedural_duo_tight_bend.mjs`. A cubic ramp of the
+// tangent angle joins straight shoulders. The turn's width is solved from the
+// rigid leaves' end points, and stations advance evenly in arc length.
+const DUO_PIVOT = 0.260577;
+const DUO_HALF_WIDTH = 4;
+const DUO_STEPS = 1024;
+
+type DuoPose = {
+  angle: number;
+  ct: number;
+  st: number;
+  c: number;
+  s: number;
+  h: number;
+  /** Half the turn's width in flat mm; straight shoulders lie between it and DUO_HALF_WIDTH. */
+  b: number;
+  /** Half the turn's arc length in mm: `b`, stretched slightly near flat to meet the leaves. */
+  ell: number;
+  v: number;
+  /** The integrals of the cosine and the sine of the tangent angle over the turn, per step. */
+  cos: Float64Array;
+  sin: Float64Array;
+};
+
+const duoTangentProfile = (t: number) => 1.5 * t - 0.5 * t * t * t;
+
+let duoLastPose: DuoPose | undefined;
+
 function duoPose(openAngle: number): DuoPose {
-  const theta = ((180 - clamp(openAngle, 0, 180)) * Math.PI) / 180;
-  return {
+  const angle = clamp(openAngle, 0, 180);
+  if (duoLastPose?.angle === angle) return duoLastPose;
+  const theta = ((180 - angle) * Math.PI) / 180;
+  const h = theta / 2;
+  const c = Math.cos(h);
+  const s = Math.sin(h);
+  const cos = new Float64Array(DUO_STEPS + 1);
+  const sin = new Float64Array(DUO_STEPS + 1);
+  const dt = 1 / DUO_STEPS;
+  let ca = 1;
+  let sa = 0;
+  for (let i = 1; i <= DUO_STEPS; i++) {
+    const mid = h * duoTangentProfile((i - 0.5) * dt);
+    const end = h * duoTangentProfile(i * dt);
+    const cb = Math.cos(end);
+    const sb = Math.sin(end);
+    cos[i] = cos[i - 1]! + (dt * (ca + 4 * Math.cos(mid) + cb)) / 6;
+    sin[i] = sin[i - 1]! + (dt * (sa + 4 * Math.sin(mid) + sb)) / 6;
+    ca = cb;
+    sa = sb;
+  }
+  // A rigid shoulder's U is b·cos(h) + pivot·sin(h), and a turn of half-length
+  // b spans b·∫cos(φ). Past DUO_HALF_WIDTH, the fixed end points need a slight,
+  // even stretch near flat.
+  const total = cos[DUO_STEPS]!;
+  const solved = angle === 180 || total <= c ? DUO_HALF_WIDTH : (DUO_PIVOT * s) / (total - c);
+  const b = Math.min(DUO_HALF_WIDTH, solved);
+  const scale = angle === 180 ? 1 : (b * c + DUO_PIVOT * s) / (b * total);
+  duoLastPose = {
+    angle,
     ct: Math.cos(theta),
     st: Math.sin(theta),
-    c: Math.cos(theta / 2),
-    s: Math.sin(theta / 2),
+    c,
+    s,
+    h,
+    b,
+    ell: b * scale,
+    v: b * s - DUO_PIVOT * c,
+    cos,
+    sin,
   };
+  return duoLastPose;
 }
 
-function smooth(a: number, b: number, x: number) {
-  const t = clamp((x - a) / (b - a), 0, 1);
-  return t * t * (3 - 2 * t);
+/** Cubic Hermite interpolation of an integral table; its end slopes are the turn's unit tangents. */
+function duoPrimitive(table: Float64Array, t: number, q: DuoPose, isSin: boolean) {
+  const cell = Math.min(DUO_STEPS - 1, Math.floor(t * DUO_STEPS));
+  const v = t * DUO_STEPS - cell;
+  const v2 = v * v;
+  const v3 = v2 * v;
+  const a = q.h * duoTangentProfile(cell / DUO_STEPS);
+  const b = q.h * duoTangentProfile((cell + 1) / DUO_STEPS);
+  const da = isSin ? Math.sin(a) : Math.cos(a);
+  const db = isSin ? Math.sin(b) : Math.cos(b);
+  return (
+    (2 * v3 - 3 * v2 + 1) * table[cell]! +
+    ((v3 - 2 * v2 + v) * da) / DUO_STEPS +
+    (-2 * v3 + 3 * v2) * table[cell + 1]! +
+    ((v3 - v2) * db) / DUO_STEPS
+  );
 }
 
-/** The bent centerline at `x` mm: position, tangent, and its derivative, in X/Z. */
+/** The bent centerline at `x` mm: position and unit tangent in X/Z, then the curvature. */
 function duoCenterline(x: number, q: DuoPose, out: Float64Array) {
-  const A = DUO_HALF_WIDTH;
-  const P = DUO_PIVOT;
-  if (x <= -A) return write(out, x, 0, 1, 0, 0, 0);
-  if (x >= A) return write(out, x * q.ct + P * q.st, P + x * q.st - P * q.ct, q.ct, q.st, 0, 0);
-  const t = x / A;
-  const t2 = t * t;
-  const t3 = t2 * t;
-  const t4 = t2 * t2;
-  const one = 1 - t2;
-  const k = 3.7026371828962583;
-  const d = 0.762;
-  const u0 = P * (1.5 * t - 0.5 * t3) + k * t * one * one;
-  const v0 = A + 0.5 * A * (t2 - 1) - d * one * one;
-  const du0 = P * (1.5 - 1.5 * t2) + k * (1 - 6 * t2 + 5 * t4);
-  const dv0 = t * (A + 4 * d * one);
-  const ddu0 = -3 * P * t + k * (-12 * t + 20 * t3);
-  const ddv0 = A + 4 * d - 12 * d * t2;
-  const u = A * q.c * t + q.s * u0;
-  const v = -P * q.c + q.s * v0;
-  const du = A * q.c + q.s * du0;
-  const dv = q.s * dv0;
-  const ddu = q.s * ddu0;
-  const ddv = q.s * ddv0;
+  if (x <= -q.b) return write(out, x, 0, 1, 0, 0, 0);
+  if (x >= q.b) {
+    return write(
+      out,
+      x * q.ct + DUO_PIVOT * q.st,
+      DUO_PIVOT + x * q.st - DUO_PIVOT * q.ct,
+      q.ct,
+      q.st,
+      0,
+      0,
+    );
+  }
+  const t = x / q.b;
+  const at = Math.abs(t);
+  const sign = Math.sign(t);
+  const u = sign * q.ell * duoPrimitive(q.cos, at, q, false);
+  const v = q.v - q.ell * (q.sin[DUO_STEPS]! - duoPrimitive(q.sin, at, q, true));
+  const alpha = q.h * (1 + duoTangentProfile(t));
   out[0] = q.c * u - q.s * v;
-  out[1] = P + q.s * u + q.c * v;
-  out[2] = q.c * du - q.s * dv;
-  out[3] = q.s * du + q.c * dv;
-  out[4] = q.c * ddu - q.s * ddv;
-  out[5] = q.s * ddu + q.c * ddv;
+  out[1] = DUO_PIVOT + q.s * u + q.c * v;
+  out[2] = Math.cos(alpha);
+  out[3] = Math.sin(alpha);
+  out[4] = (q.h * 1.5 * (1 - t * t)) / q.ell;
   return out;
 }
 
@@ -161,31 +228,23 @@ function duoMapPoint(
   seal: boolean,
   out: Float64Array,
   scratch: Float64Array,
-  probe: Float64Array,
 ) {
-  duoCenterline(x, q, scratch);
-  const xx = scratch[0]!;
-  const zz = scratch[1]!;
-  const dx = scratch[2]!;
-  const dz = scratch[3]!;
-  const length = Math.hypot(dx, dz);
+  const p = duoCenterline(x, q, scratch);
   if (seal) {
-    let curvature = (dx * scratch[5]! - dz * scratch[4]!) / length ** 3;
     if (z > 0) z *= 1 - 0.36 * q.s ** 8 * (1 - smooth(4.5, 6, Math.abs(x)));
-    if (Math.abs(x) >= DUO_HALF_WIDTH) {
-      duoCenterline((DUO_HALF_WIDTH - 1e-7) * (x >= 0 ? 1 : -1), q, probe);
-      const distance = Math.min(1, (Math.abs(x) - DUO_HALF_WIDTH) / 2.5);
-      const taper = 1 - distance * distance * (3 - 2 * distance);
-      curvature =
-        (taper * (probe[2]! * probe[5]! - probe[3]! * probe[4]!)) /
-        Math.hypot(probe[2]!, probe[3]!) ** 3;
-    }
-    const compression = Math.max(0, z * curvature) / 0.68;
+    // The seal's hooked underside yields around the turn, clear of the rigid
+    // spine's end cap.
+    const compression = Math.abs(z * p[4]!) / (z < 0 ? 0.3 : 0.68);
     z /= (1 + compression ** 4) ** 0.25;
   }
-  out[0] = xx - (z * dz) / length;
-  out[1] = zz + (z * dx) / length;
+  out[0] = p[0]! - z * p[3]!;
+  out[1] = p[1]! + z * p[2]!;
   return out;
+}
+
+function smooth(a: number, b: number, x: number) {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function duoFlexKind(name: string): "display" | "seal" | null {
@@ -224,7 +283,6 @@ function createDuoDeformer({ name, positions, normals, indices }: FlexMesh): Fle
   }
   const evaluated = new Float64Array(stations.length * 2);
   const scratch = new Float64Array(6);
-  const probe = new Float64Array(6);
   const point = new Float64Array(2);
   const sums = new Float64Array(base.length);
   const cachedPositions = new Float32Array(base.length);
@@ -239,7 +297,7 @@ function createDuoDeformer({ name, positions, normals, indices }: FlexMesh): Fle
           const q = duoPose(angle);
           for (let i = 0; i < stations.length; i++) {
             const { x, z } = stations[i]!;
-            duoMapPoint(x, z, q, kind === "seal", point, scratch, probe);
+            duoMapPoint(x, z, q, kind === "seal", point, scratch);
             evaluated[i * 2] = point[0]! / 1000;
             evaluated[i * 2 + 1] = point[1]! / 1000;
           }
@@ -260,8 +318,25 @@ function createDuoDeformer({ name, positions, normals, indices }: FlexMesh): Fle
   };
 }
 
-// Pixel 9 Pro Fold: `scripts/procedural_pixel_bend.mjs`, from the authored builder.
+// Pixel 9 Pro Fold: `scripts/procedural_pixel_tight_bend.mjs`. A circular
+// middle, straight shoulders, and eased joins into the rigid screen planes.
+// Flat X is arc length; the bridge keeps its 8.6 mm.
 const MM = 0.001;
+const PIXEL_HALF_WIDTH = 4.3;
+const PIXEL_LOCK_X = 3.25;
+const PIXEL_EASE_LENGTH = 0.8;
+const PIXEL_EASE_START = PIXEL_LOCK_X - PIXEL_EASE_LENGTH;
+// Sixteen-point Gauss–Legendre quadrature for the eased shoulder; the circular
+// and straight parts are integrated exactly. Three weights are written in the
+// shortest form of the same 64-bit value as upstream.
+const GAUSS_X = [
+  0.09501250983763744, 0.2816035507792589, 0.4580167776572274, 0.6178762444026438,
+  0.755404408355003, 0.8656312023878318, 0.9445750230732326, 0.9894009349916499,
+];
+const GAUSS_W = [
+  0.1894506104550685, 0.1826034150449236, 0.16915651939500254, 0.14959598881657674,
+  0.12462897125553388, 0.09515851168249279, 0.06225352393864789, 0.027152459411754096,
+];
 const PIXEL_BRIDGES = new Set([
   "FLEX • continuous inner OLED bridge",
   "Top • flexible hinge edge bridge",
@@ -287,32 +362,148 @@ type PixelFrame = {
   st: number;
   c: number;
   s: number;
+  h: number;
   tx: number;
   tz: number;
-  dxoff: number;
-  dzoff: number;
+  midpointU: number;
+  /** Half the circular middle's arc length, in mm. */
+  width: number;
+  /** The tangent angle of the straight shoulders, solved to meet the rigid planes. */
+  beta: number;
+  centerV: number;
 };
+
+function pixelShoulderIntegral(to: number, f: PixelFrame, out: Float64Array) {
+  const mid = to / 2;
+  let u = 0;
+  let v = 0;
+  for (let i = 0; i < GAUSS_X.length; i++) {
+    for (const sign of [-1, 1]) {
+      const t = mid * (1 + sign * GAUSS_X[i]!);
+      const a = f.beta + (f.h - f.beta) * t * t * (3 - 2 * t);
+      u += GAUSS_W[i]! * Math.cos(a);
+      v += GAUSS_W[i]! * Math.sin(a);
+    }
+  }
+  out[0] = u * mid * PIXEL_EASE_LENGTH;
+  out[1] = v * mid * PIXEL_EASE_LENGTH;
+  return out;
+}
+
+/** The unit tangent, integrated from the center to the arc station `x` ≥ 0 mm. */
+function pixelHalfIntegral(x: number, f: PixelFrame, out: Float64Array) {
+  const central = Math.min(x, f.width);
+  const k = f.beta / f.width;
+  let u: number;
+  let v: number;
+  if (Math.abs(k) < 1e-10) {
+    u = central;
+    v = 0.5 * k * central * central;
+  } else {
+    u = Math.sin(k * central) / k;
+    v = (2 * Math.sin((k * central) / 2) ** 2) / k;
+  }
+  if (x > f.width) {
+    const straight = Math.min(x, PIXEL_EASE_START) - f.width;
+    if (straight > 0) {
+      u += straight * Math.cos(f.beta);
+      v += straight * Math.sin(f.beta);
+    }
+  }
+  if (x > PIXEL_EASE_START) {
+    pixelShoulderIntegral(Math.min(1, (x - PIXEL_EASE_START) / PIXEL_EASE_LENGTH), f, out);
+    u += out[0]!;
+    v += out[1]!;
+  }
+  if (x > PIXEL_LOCK_X) {
+    u += (x - PIXEL_LOCK_X) * f.c;
+    v += (x - PIXEL_LOCK_X) * f.s;
+  }
+  out[0] = u;
+  out[1] = v;
+  return out;
+}
+
+let pixelLastFrame: PixelFrame | undefined;
 
 function pixelFrame(openAngle: number): PixelFrame {
   const angle = clamp(openAngle, 0, 180);
+  if (pixelLastFrame?.angle === angle) return pixelLastFrame;
   const theta = ((180 - angle) * Math.PI) / 180;
+  const h = theta / 2;
   const ct = Math.cos(theta);
   const st = Math.sin(theta);
-  const c = Math.cos(theta / 2);
-  const s = Math.sin(theta / 2);
+  const c = Math.cos(h);
+  const s = Math.sin(h);
   const px = 1.085;
   const pz = -0.813486;
-  const pivot = 0.4;
   const tx = -px + 2 * px * c - px * ct + pz * st;
   const tz = pz + 2 * px * s - px * st - pz * ct;
-  return { angle, ct, st, c, s, tx, tz, dxoff: tx - pivot * st, dzoff: tz - (pivot - pivot * ct) };
+  const translationU = 2 * px * (1 - c) + 2 * pz * s;
+  const chord = 2 * PIXEL_HALF_WIDTH * c + translationU;
+  const f: PixelFrame = {
+    angle,
+    ct,
+    st,
+    c,
+    s,
+    h,
+    tx,
+    tz,
+    midpointU: translationU / 2,
+    width: (Math.PI * 0.543028) / 4 + 0.55 * c,
+    beta: 0,
+    centerV: 0,
+  };
+  if (angle !== 180) {
+    // The arc length is 2·PIXEL_HALF_WIDTH by construction; solving the
+    // shoulders' angle meets the chord between the rigid planes.
+    let low = 0;
+    let high = Math.PI * 0.65;
+    const scratch = new Float64Array(2);
+    for (let i = 0; i < 52; i++) {
+      f.beta = (low + high) / 2;
+      if (pixelHalfIntegral(PIXEL_HALF_WIDTH, f, scratch)[0]! > chord / 2) low = f.beta;
+      else high = f.beta;
+    }
+    f.beta = (low + high) / 2;
+    pixelHalfIntegral(PIXEL_HALF_WIDTH, f, scratch);
+    f.centerV = PIXEL_HALF_WIDTH * s - scratch[1]!;
+  }
+  pixelLastFrame = f;
+  return f;
+}
+
+/** The bent centerline at `x` mm: position and unit tangent in X/Z, then the tangent's derivative. */
+function pixelCenterline(x: number, f: PixelFrame, out: Float64Array) {
+  const ax = Math.abs(x);
+  const sign = Math.sign(x);
+  pixelHalfIntegral(ax, f, out);
+  const u = f.midpointU + sign * out[0]!;
+  const v = f.centerV + out[1]!;
+  let alpha: number;
+  let curvature: number;
+  if (ax <= f.width) {
+    alpha = (f.beta * ax) / f.width;
+    curvature = f.beta / f.width;
+  } else if (ax <= PIXEL_EASE_START) {
+    alpha = f.beta;
+    curvature = 0;
+  } else {
+    const t = clamp((ax - PIXEL_EASE_START) / PIXEL_EASE_LENGTH, 0, 1);
+    alpha = f.beta + (f.h - f.beta) * t * t * (3 - 2 * t);
+    curvature = ((f.h - f.beta) * 6 * t * (1 - t)) / PIXEL_EASE_LENGTH;
+  }
+  const angle = f.h + sign * alpha;
+  const dx = Math.cos(angle);
+  const dz = Math.sin(angle);
+  return write(out, f.c * u - f.s * v, f.s * u + f.c * v, dx, dz, -curvature * dz, curvature * dx);
 }
 
 /** X/Z in mm, then the 2x2 X/Z Jacobian, for the bent bridge at station (x, z). */
 function pixelBendXZ(x: number, z: number, f: PixelFrame, out: Float64Array) {
-  const a = 4.3;
-  if (x <= -a) return write(out, x, z, 1, 0, 0, 1);
-  if (x >= a) {
+  if (x <= -PIXEL_LOCK_X || f.angle === 180) return write(out, x, z, 1, 0, 0, 1);
+  if (x >= PIXEL_LOCK_X) {
     return write(
       out,
       x * f.ct + f.tx - z * f.st,
@@ -323,44 +514,14 @@ function pixelBendXZ(x: number, z: number, f: PixelFrame, out: Float64Array) {
       f.ct,
     );
   }
-  const t = x / a;
-  const tt = t * t;
-  const pivot = 0.4;
-  const k = 3.25;
-  const d = 0.94;
-  const u0 = pivot * (1.5 * t - 0.5 * t * tt) + k * t * (1 - tt) ** 2;
-  const v0 = a + 0.5 * a * (tt - 1) - d * (1 - tt) ** 2;
-  const du0 = pivot * (1.5 - 1.5 * tt) + k * (1 - 6 * tt + 5 * tt * tt);
-  const dv0 = t * (a + 4 * d * (1 - tt));
-  const ddu0 = -3 * pivot * t + k * (-12 * t + 20 * t * tt);
-  const ddv0 = a + 4 * d - 12 * d * tt;
-  const u = a * f.c * t + f.s * u0;
-  const v = -pivot * f.c + f.s * v0;
-  const du = a * f.c + f.s * du0;
-  const dv = f.s * dv0;
-  const q = (t + 1) / 2;
-  const weight = q * q * (3 - 2 * q);
-  const dw = 3 * q * (1 - q);
-  const ddw = -1.5 * t;
-  const cx = f.c * u - f.s * v + weight * f.dxoff;
-  const cz = pivot + f.s * u + f.c * v + weight * f.dzoff;
-  const dx = (f.c * du - f.s * dv + dw * f.dxoff) / a;
-  const dz = (f.s * du + f.c * dv + dw * f.dzoff) / a;
-  const ddx = (f.c * f.s * ddu0 - f.s * f.s * ddv0 + ddw * f.dxoff) / (a * a);
-  const ddz = (f.s * f.s * ddu0 + f.c * f.s * ddv0 + ddw * f.dzoff) / (a * a);
-  const length = Math.hypot(dx, dz);
-  const ux = dx / length;
-  const uz = dz / length;
-  const projected = ux * ddx + uz * ddz;
-  const dux = (ddx - ux * projected) / length;
-  const duz = (ddz - uz * projected) / length;
-  out[0] = cx - z * uz;
-  out[1] = cz + z * ux;
-  out[2] = dx - z * duz;
-  out[3] = -uz;
-  out[4] = dz + z * dux;
-  out[5] = ux;
-  return out;
+  pixelCenterline(x, f, out);
+  const cx = out[0]!;
+  const cz = out[1]!;
+  const dx = out[2]!;
+  const dz = out[3]!;
+  const ddx = out[4]!;
+  const ddz = out[5]!;
+  return write(out, cx - z * dz, cz + z * dx, dx - z * ddz, -dz, dz + z * ddx, dx);
 }
 
 function pixelLipScale(spec: { heightMM: number }, f: PixelFrame) {

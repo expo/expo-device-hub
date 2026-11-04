@@ -2,7 +2,8 @@
 
 The 3D preview's models. Expo authored them in
 [expo/expo-simulators-3d-models](https://github.com/expo/expo-simulators-3d-models).
-They were copied unchanged from that repository at `644e92e45338138535773d79f9f54c70b1370c52`.
+They were copied unchanged from that repository at `644e92e45338138535773d79f9f54c70b1370c52`,
+and they are the same at `319fd4bfe8700af422610e0a4dfcf21db6ee7e2e`.
 
 | File                   | Source path                                                | Last changed in | Bytes     | SHA-256                                                            |
 | ---------------------- | ---------------------------------------------------------- | --------------- | --------- | ------------------------------------------------------------------ |
@@ -14,8 +15,9 @@ They were copied unchanged from that repository at `644e92e45338138535773d79f9f5
 All four use meters, Y up, and the display facing +Z. They need the Meshopt
 decoder. The two foldables bend their flexible meshes with the calculated
 bending in `@expo/hub-components/foldable`, which ports that repository's
-`scripts/procedural_duo_bend.mjs` and `scripts/procedural_pixel_bend.mjs`
-at the same commit.
+tighter-fold runtimes, `scripts/procedural_duo_tight_bend.mjs` and
+`scripts/procedural_pixel_tight_bend.mjs`, at `319fd4bf`. Those runtimes keep
+the display's spacing over the hinge, so the stream does not stretch there.
 
 The dashboard imports these files as Metro assets, so `expo export` copies them
 into `dist/client`. Another consumer, such as the Expo website, hosts the same
