@@ -5,6 +5,50 @@ import XCTest
 @testable import SimNative
 
 final class ScreenshotEncoderTests: XCTestCase {
+    func testResizeKeepsOpaqueEdgesAndBlackJpegCorners() async throws {
+        let encoder = ScreenshotEncoder()
+        for (width, height, orientation, limit) in [
+            (1206, 2622, "portrait", 402),
+            (1206, 2622, "landscape_left", 402),
+            (1398, 2034, "portrait", 402),
+            (17, 31, "portrait", 1),
+        ] {
+            let input = try pixels(width: width, height: height, red: 0)
+            let full = try await encoder.encode(input, orientation: orientation)
+            for png in [
+                try await encoder.encode(input, orientation: orientation, maxWidth: limit),
+                try await encoder.convert(full, maxWidth: limit, jpegQuality: nil),
+            ] {
+                let decoded = try Self.rgba(png)
+                XCTAssertTrue(stride(from: 3, to: decoded.bytes.count, by: 4).allSatisfy {
+                    decoded.bytes[$0] == 255
+                }, "Opaque input must stay opaque through resizing")
+                let jpeg = try await encoder.convert(png, maxWidth: 0, jpegQuality: 80)
+                let result = try Self.rgba(jpeg)
+                for index in [0, result.image.width - 1,
+                    result.image.width * (result.image.height - 1),
+                    result.image.width * result.image.height - 1] {
+                    for channel in 0..<3 {
+                        XCTAssertLessThanOrEqual(result.bytes[index * 4 + channel], 2, "Black corners must stay black")
+                    }
+                }
+            }
+        }
+    }
+
+    private static func rgba(_ data: Data) throws -> (image: CGImage, bytes: [UInt8]) {
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: image.width,
+                height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return (image, bytes)
+    }
+
     func testCompressionStressPatterns() async throws {
         let encoder = ScreenshotEncoder()
         var sizes: [String: Int] = [:]
@@ -114,15 +158,7 @@ final class ScreenshotEncoderTests: XCTestCase {
                 let input = try pixels(width: 17, height: 31, red: UInt8(value * 8))
                 group.addTask {
                     let png = try await encoder.encode(input)
-                    let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
-                    let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
-                    var rgba = [UInt8](repeating: 0, count: 4)
-                    try rgba.withUnsafeMutableBytes { bytes in
-                        let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: 1, height: 1,
-                            bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
-                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-                        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-                    }
+                    let rgba = try Self.rgba(png).bytes
                     XCTAssertEqual(Int(rgba[0]), value * 8, accuracy: 1)
                     XCTAssertEqual(rgba[1], 0); XCTAssertEqual(rgba[2], 0); XCTAssertEqual(rgba[3], 255)
                 }
@@ -177,15 +213,7 @@ final class ScreenshotEncoderTests: XCTestCase {
             ("portrait_upside_down", [180, 150, 120, 90, 60, 30]),
         ] {
             let png = try await encoder.encode(input, orientation: orientation)
-            let source = try XCTUnwrap(CGImageSourceCreateWithData(png as CFData, nil))
-            let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
-            var rgba = [UInt8](repeating: 0, count: image.width * image.height * 4)
-            try rgba.withUnsafeMutableBytes { bytes in
-                let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: image.width,
-                    height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
-                    space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-                context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-            }
+            let rgba = try Self.rgba(png).bytes
             XCTAssertEqual(stride(from: 0, to: rgba.count, by: 4).map { Int(rgba[$0]) }, expected, orientation)
         }
     }

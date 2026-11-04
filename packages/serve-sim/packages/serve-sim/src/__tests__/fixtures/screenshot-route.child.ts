@@ -3,7 +3,11 @@ import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
 import * as simctl from "../../simctl";
 import * as native from "../../native";
-import { writeFileSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { describeHostActions } from "../../host-actions";
+import { clearEventLogForTests, readEventLog } from "../../event-log";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
 
@@ -17,10 +21,12 @@ const secondPanelPng = Buffer.from(
 );
 const converted: number[][] = [];
 const widths: (number | undefined)[] = [];
+let rejectConversion = false;
 const jpeg = Buffer.from([255, 216, 255, 217]);
 mock.module("../../native", () => ({
   ...native,
   convertScreenshot: async (bytes: Uint8Array, width = 0, quality = 0) => {
+    if (rejectConversion) throw new Error("Injected JPEG conversion failure");
     converted.push([width, quality]);
     return quality ? jpeg : bytes;
   },
@@ -263,4 +269,48 @@ test("image options reach native capture and JPEG response for HTTP and binary W
   );
   expect(fallback!.status).toBe(200);
   expect(converted.at(-1)).toEqual([402, 0]);
+});
+
+test("screenshot catalog keeps the filename as the first positional option", () => {
+  const entry = describeHostActions()["screenshot.capture"]!;
+  expect(
+    Object.keys(entry.properties ?? {})
+      .filter((key) => key !== "udid")
+      .slice(0, 3),
+  ).toEqual(["fileName", "display", "output"]);
+});
+
+test("JPEG conversion failure publishes only a failure and no artifact", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "jpeg-failure-"));
+  const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+  rejectConversion = true;
+  try {
+    for (const transport of ["http", "binary"]) {
+      clearEventLogForTests();
+      if (transport === "http") {
+        const response = await middleware(
+          new Request(`http://localhost/preview/api/screenshot?device=${UDID}&format=jpeg`, {
+            method: "POST",
+            headers: { authorization: "Bearer test" },
+          }),
+        );
+        expect(response!.status).toBe(500);
+      } else {
+        expect(await socketRequest({ udid: UDID, format: "jpeg" })).toEqual({
+          id: 42,
+          error: "Simulator screenshot failed",
+        });
+      }
+      expect(readEventLog().map(({ status, summary }) => ({ status, summary }))).toEqual([
+        { status: "error", summary: "Screenshot failed" },
+      ]);
+      expect(readdirSync(directory)).toEqual([]);
+    }
+  } finally {
+    rejectConversion = false;
+    if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -41,7 +41,7 @@ actor ScreenshotEncoder {
         guard maxWidth > 0, image.extent.width > CGFloat(maxWidth) else { return image }
         let scale = CGFloat(maxWidth) / image.extent.width
         let height = max(1, (image.extent.height * scale).rounded())
-        return image.applyingFilter("CILanczosScaleTransform", parameters: [
+        return image.clampedToExtent().applyingFilter("CILanczosScaleTransform", parameters: [
             kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1,
         ]).cropped(to: CGRect(x: 0, y: 0, width: CGFloat(maxWidth), height: height))
     }

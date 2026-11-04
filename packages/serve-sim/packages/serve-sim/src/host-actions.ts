@@ -72,11 +72,12 @@ const DeviceUdid = z
   );
 
 export const ScreenshotParams = z.object({
-  ...ScreenshotImageOptions.shape,
   udid: Device,
   fileName: ScreenshotName.optional(),
   display: ScreenshotDisplay.optional(),
   output: z.enum(["path", "binary"]).default("path"),
+  // The CLI infers positional arguments from catalog property order. Append new options.
+  ...ScreenshotImageOptions.shape,
 });
 const CaptureRequestId = z
   .string()

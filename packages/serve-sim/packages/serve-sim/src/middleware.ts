@@ -2908,13 +2908,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 return await capture(ids[0]!);
               });
         const captureDuration = performance.now() - captureStarted;
+        const encodeStarted = performance.now();
+        const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
+        const encodeDuration = performance.now() - encodeStarted;
         const artifactStarted = performance.now();
         const artifact = await saveScreenshotArtifact(png);
         recordScreenshotEvent(udid, artifact);
         const artifactDuration = performance.now() - artifactStarted;
-        const encodeStarted = performance.now();
-        const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
-        const encodeDuration = performance.now() - encodeStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.
         const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}, encode;dur=${encodeDuration.toFixed(3)}`;
