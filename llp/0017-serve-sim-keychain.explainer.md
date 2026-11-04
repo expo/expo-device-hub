@@ -54,7 +54,7 @@ The capability is on by default for user apps. Without a built dylib it declines
 - `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
 - `generic-password` writes the key as a string account in a given service, for other libraries.
 
-A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for its answer, so the value is in place when the app reads it at launch. If the restarted app does not answer, the request is withdrawn and the command fails. Deleting a key that does not exist succeeds.
+A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for the helper's answer. It does not order the write before an early native launch callback; an app that cached an earlier read needs another restart after acknowledgement. An unanswered request that the app has not claimed is withdrawn and the command fails; a lost answer after the app claimed it leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
 
 ## Not there yet
 
