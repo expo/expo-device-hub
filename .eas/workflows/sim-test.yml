@@ -84,7 +84,7 @@ jobs:
           path: /tmp/serve-sim-e2e.tar.gz
 
       - name: Test screenshot encoding and compression stress patterns
-        run: swift test -c release --filter ScreenshotEncoderTests
+        run: swift test --filter ScreenshotEncoderTests
         working_directory: packages/serve-sim/packages/serve-sim
 
   unit-tests:
