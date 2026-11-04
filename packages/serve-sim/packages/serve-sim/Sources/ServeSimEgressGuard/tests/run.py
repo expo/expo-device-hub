@@ -104,6 +104,11 @@ try:
             run([control, "set", counter_page, policy_mode])
             run([work / "cancellation", cancellation_mode], counter_env)
     check("allowed send and send$NOCANCEL retain libc pending-cancellation behavior")
+    publication = json.loads(run([control, "status", counter_page]))
+    observed = json.loads(run([work / "startup-check", work / "guard.dylib", counter_page], counter_env))
+    assert observed == {"policy": "passthrough", "publishedGeneration": publication["publishedGeneration"],
+                        "pageIdentity": f"{identity.st_dev}:{identity.st_ino}"}
+    check("native pass-through self-check observes the current policy and generation")
     fixture(page)
     run([control, "create", page, "passthrough"])
     env = dict(base, DYLD_INSERT_LIBRARIES=str(work / "guard-test.dylib"), SERVE_SIM_EGRESS_POLICY_FILE=str(page))
