@@ -568,12 +568,33 @@ export type HealthClient = {
   awaitingKeyFrame: boolean;
 };
 
+export type ExperimentalGpuCaptureDiagnostics = {
+  backend: "expo-emulator-capture";
+  /** "gpu" when frames are copied on the GPU, "cpu" for software renderers; null before a frame. */
+  framePath: "gpu" | "cpu" | null;
+  hardwareEncoder: boolean | null;
+  encoderName: string | null;
+  packets: number;
+  bytes: number;
+  requestedKeyFrames: number;
+  queuedBytes: number;
+  fps: number;
+  nativeSize: DeviceSize;
+  streamSize: DeviceSize;
+  maxSize: number;
+  /** Native display size changes, such as folding, since the session started. */
+  resizes: number;
+};
+
 export type HealthResponse = {
   ok: boolean;
   status: SessionStatus;
   serial: string;
   device: string;
   streamMode?: StreamMode;
+  /** The video source: the stream mode, or an experimental capture agent. */
+  captureBackend?: StreamMode | ExperimentalGpuCaptureDiagnostics["backend"];
+  experimentalGpuCapture?: ExperimentalGpuCaptureDiagnostics | null;
   encoderName?: string | null;
   grpcImageMode?: GrpcImageMode;
   inputSource?: InputSource;
@@ -1827,6 +1848,26 @@ function parseRollingTimingSummary(value: unknown, name: string): RollingTimingS
   };
 }
 
+function parseExperimentalGpuCaptureDiagnostics(value: unknown): ExperimentalGpuCaptureDiagnostics {
+  const name = "health response.experimentalGpuCapture";
+  const item = record(value, name);
+  return {
+    backend: oneOf(item.backend, ["expo-emulator-capture"] as const, `${name}.backend`),
+    framePath: nullableOneOf(item.framePath, ["gpu", "cpu"] as const, `${name}.framePath`),
+    hardwareEncoder: nullableBoolean(item.hardwareEncoder, `${name}.hardwareEncoder`),
+    encoderName: nullableString(item.encoderName, `${name}.encoderName`),
+    packets: number(item.packets, `${name}.packets`),
+    bytes: number(item.bytes, `${name}.bytes`),
+    requestedKeyFrames: number(item.requestedKeyFrames, `${name}.requestedKeyFrames`),
+    queuedBytes: number(item.queuedBytes, `${name}.queuedBytes`),
+    fps: number(item.fps, `${name}.fps`),
+    nativeSize: parseDeviceSize(item.nativeSize, `${name}.nativeSize`),
+    streamSize: parseDeviceSize(item.streamSize, `${name}.streamSize`),
+    maxSize: number(item.maxSize, `${name}.maxSize`),
+    resizes: number(item.resizes, `${name}.resizes`),
+  };
+}
+
 function parseGrpcCaptureDiagnostics(value: unknown): GrpcCaptureDiagnostics {
   const item = record(value, "health response.grpcCapture");
   const timing = (field: keyof GrpcCaptureDiagnostics) =>
@@ -1921,6 +1962,23 @@ export function parseHealthResponse(value: unknown): HealthResponse {
       ? {}
       : {
           streamMode: oneOf(root.streamMode, STREAM_MODES, "health response.streamMode"),
+        }),
+    ...(root.captureBackend === undefined
+      ? {}
+      : {
+          captureBackend: oneOf(
+            root.captureBackend,
+            [...STREAM_MODES, "expo-emulator-capture"] as const,
+            "health response.captureBackend",
+          ),
+        }),
+    ...(root.experimentalGpuCapture === undefined
+      ? {}
+      : {
+          experimentalGpuCapture:
+            root.experimentalGpuCapture === null
+              ? null
+              : parseExperimentalGpuCaptureDiagnostics(root.experimentalGpuCapture),
         }),
     ...(root.grpcImageMode === undefined
       ? {}

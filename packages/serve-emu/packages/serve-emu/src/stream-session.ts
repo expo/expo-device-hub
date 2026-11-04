@@ -1,9 +1,13 @@
 import { ControlInputQueue } from "./control-input-queue.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
+import { GpuCaptureUnavailableError, startGpuCaptureSession } from "./gpu-session.ts";
 import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
 import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type {
+  ExperimentalGpuCaptureDiagnostics,
   GrpcCaptureDiagnostics,
   GrpcEncoder,
   GrpcImageMode,
@@ -18,7 +22,11 @@ const MAX_SCRCPY_STARTUP_BYTES = 64 * 1024 * 1024;
 const STARTUP_READY: unique symbol = Symbol("scrcpy-startup-ready");
 const NEVER_ABORTED = new AbortController().signal;
 
-export type { GrpcCaptureDiagnostics, RollingTimingSummary } from "./shared/api-contracts.ts";
+export type {
+  ExperimentalGpuCaptureDiagnostics,
+  GrpcCaptureDiagnostics,
+  RollingTimingSummary,
+} from "./shared/api-contracts.ts";
 
 export type StreamFailure = {
   message: string;
@@ -29,6 +37,8 @@ export type StreamFailure = {
 export type StreamMeta = ScrcpySession["meta"];
 
 export type EmuSessionDiagnostics = {
+  /** Present only when an expo-emulator-capture agent supplies the video. */
+  experimentalGpuCapture?: ExperimentalGpuCaptureDiagnostics;
   /** Present only for the grpc-screenshot capture implementation. */
   grpcCapture?: GrpcCaptureDiagnostics;
 };
@@ -62,9 +72,40 @@ export type StartEmuSessionOptions = StartOpts & {
   encoder?: GrpcEncoder;
   /** Exact input source. scrcpy capture always requires scrcpy input. */
   inputSource: InputSource;
+  /**
+   * Experimental: a directory of expo-emulator-capture agent sockets named
+   * `<serial>.sock`. Only the middleware sets it; see `experimentalGpuCaptureSocket`.
+   */
+  experimentalGpuCaptureSocketDirectory?: string;
 };
 
+// @ref LLP 0017#integration — only the middleware passes the directory; the agent serves one consumer
+/**
+ * The capture socket that replaces scrcpy video for this session, or null.
+ * The agent serves one consumer, and only the middleware closes a session
+ * before it opens the replacement; the standalone server stages them overlapped.
+ */
+export function experimentalGpuCaptureSocket(options: StartEmuSessionOptions): string | null {
+  const directory = options.experimentalGpuCaptureSocketDirectory;
+  if (!directory || options.mode !== "scrcpy" || options.inputSource !== "scrcpy") return null;
+  if (!isEmulatorSerial(options.serial)) return null;
+  const socket = join(directory, `${options.serial}.sock`);
+  return existsSync(socket) ? socket : null;
+}
+
 export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
+  const gpuSocket = experimentalGpuCaptureSocket(options);
+  if (gpuSocket) {
+    try {
+      return await startGpuCaptureSession(options, gpuSocket);
+    } catch (error) {
+      // A socket left by an emulator that exited, or one started without the agent.
+      if (!(error instanceof GpuCaptureUnavailableError)) throw error;
+      console.warn(
+        `[GPU capture] ${options.serial}: no capture agent at ${gpuSocket} (${error.message}); using scrcpy video`,
+      );
+    }
+  }
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {
       throw new Error(
