@@ -20,13 +20,16 @@ production initialization requires the loader's all-process startup entry point.
 the same inode. There is no warmup default. Missing or invalid state blocks
 covered remote attempts. Unix sockets, files and loopback destinations continue.
 `status` checks the page, not whether the guard is loaded in another process.
+The `sendmsg_x` interposer checks every named destination before submitting any
+message; a remote destination refuses the whole batch. The self-check exercises
+this binding with an invalid descriptor, without opening a socket or sending traffic.
 The Simulator `serve-sim-egress-check` helper verifies that its startup callback
 mapped the expected page in the pinned guard image and reports the observed mode
 and generation. Host admission checks compare these with enrollment under the
 device lock. The helper does not claim to inspect every process or drain traffic.
 
 Pass-through is an atomic check followed by the original operation. Block mode
-checks supplied destinations on connect/connectx and addressed sendto/sendmsg,
+checks supplied destinations on connect/connectx and addressed sendto/sendmsg/sendmsg_x,
 including connect/sendto/sendmsg NOCANCEL symbols. It does not interpose send,
 write or writev, or inspect an existing connected peer. No fd cache is used.
 Destination classification follows build-tools' guard; event
@@ -34,7 +37,7 @@ logging/reporting is not implemented here.
 
 Existing connections and operations already in flight may continue after enable.
 This is the intended boundary, not an instantaneous network cutoff. Direct
-syscalls, sendfile/sendmsg_x, other interposers introduced by late dlopen,
+syscalls, sendfile, other interposers introduced by late dlopen,
 uninstrumented processes and concurrent fd replacement between check/use are
 outside coverage. Simulator-external processes are outside the guard. Never
 unlink, replace or truncate a live page: existing processes keep its mapping;
