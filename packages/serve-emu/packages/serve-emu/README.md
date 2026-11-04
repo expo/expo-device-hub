@@ -437,6 +437,7 @@ curl -X POST "$BASE/api/orientation" \
 
 # Emulator foldables report their current posture and hinge angle, and the
 # hingeRange of angles the AVD's hinge moves through (null when unknown).
+# Angle writes require a known hinge range; posture writes still work without it.
 curl "$BASE/api/fold"
 curl -X POST "$BASE/api/fold" \
   -H 'Content-Type: application/json' \

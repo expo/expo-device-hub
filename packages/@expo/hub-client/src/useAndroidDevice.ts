@@ -21,6 +21,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { type AccessibilityLoader, loadAndroidAccessibility } from "./accessibility";
 import { appendActivitySample } from "./activity";
 import { useActivityStatus } from "./useActivityStatus";
+import { useAndroidFold } from "./useAndroidFold";
 import {
   EMPTY_ANDROID_ACTIVITY,
   ANDROID_ACTIVITY_STALE_MS,
@@ -2229,6 +2230,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     }),
     [modeAvailability],
   );
+  const { fold, foldCapabilities } = useAndroidFold(
+    active && baseUrl ? deviceApiUrl(baseUrl, "/api/fold", targetDevice) : null,
+    sessionFetch,
+    recordingControlsLocked,
+  );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;
   const capabilities = useMemo<DeviceCapabilities>(
@@ -2244,8 +2250,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       // serve-emu has no clipboard API.
       clipboard: false,
       orientation: orientationCapabilities,
-      // @ref LLP 0016#android-emulators — serve-emu's /api/fold maps onto the fold contract; not wired yet
-      fold: false,
+      fold: foldCapabilities,
     }),
     [
       cameraSupported,
@@ -2253,6 +2258,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       locationCapabilities,
       permissionsAvailable,
       orientationCapabilities,
+      foldCapabilities,
     ],
   );
 
@@ -2260,7 +2266,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   return {
     platform: "android",
-    fold: null,
+    fold,
     displays: null,
     deviceModelUrl: null,
     displayCorners: null,

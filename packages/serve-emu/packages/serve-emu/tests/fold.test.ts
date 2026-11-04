@@ -71,6 +71,7 @@ describe("Android emulator fold controls", () => {
       commands.push(command);
       if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
       if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
+      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command === "shell cmd device_state base-state") {
         return result(`Committed state: DeviceState{identifier=2, name='${posture}'}`);
       }
@@ -274,6 +275,7 @@ describe("Android emulator fold controls", () => {
       commands.push(command);
       if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
       if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
+      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command.startsWith("emu sensor set hinge-angle0 ")) {
         angle = command.slice("emu sensor set hinge-angle0 ".length);
         return result("OK");
@@ -392,6 +394,7 @@ describe("Android emulator fold controls", () => {
     const runExec = async (_cmd: string, args: string[]) => {
       const command = args.slice(2).join(" ");
       if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
+      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command.startsWith("emu sensor set hinge-angle0 ")) {
         angle = command.slice("emu sensor set hinge-angle0 ".length);
         sent.push(angle);
@@ -441,6 +444,7 @@ describe("Android emulator fold controls", () => {
     const respond = (setOutput: string) => async (_cmd: string, args: string[]) => {
       const command = args.slice(2).join(" ");
       if (command === "emu sensor get hinge-angle0") return result("hinge-angle0 = 180\r\nOK");
+      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command.startsWith("emu sensor set ")) return result(setOutput);
       return result("Committed state: DeviceState{identifier=2, name='OPENED'}");
     };
@@ -452,4 +456,38 @@ describe("Android emulator fold controls", () => {
       "did not confirm a 90° hinge angle",
     );
   });
+});
+
+test("refuses angle writes without a verified range", async () => {
+  const commands: string[] = [];
+  const runExec = async (_cmd: string, args: string[]) => {
+    const command = args.slice(2).join(" ");
+    commands.push(command);
+    if (command === "emu sensor get hinge-angle0") return result("hinge-angle0 = 180\r\nOK");
+    if (command === "emu avd path") return result("KO: no local path");
+    return result("Committed state: DeviceState{identifier=3, name='OPENED'}");
+  };
+  await expect(setHingeAngle("emulator-5554", 90, runExec)).rejects.toThrow("Cannot determine");
+  expect(commands.some((command) => command.startsWith("emu sensor set"))).toBe(false);
+});
+
+test("rejects invalid angles before issuing adb commands", async () => {
+  const runExec = async (): Promise<ExecResult<string>> => {
+    throw new Error("must not call adb");
+  };
+  for (const angle of [-1, 181, NaN, Infinity]) {
+    await expect(setHingeAngle("emulator-5554", angle, runExec)).rejects.toThrow(
+      "between 0 and 180",
+    );
+  }
+});
+
+test("reads an externally set angle in exponent notation", async () => {
+  const runExec = async (_cmd: string, args: string[]) => {
+    const command = args.slice(2).join(" ");
+    if (command === "emu sensor get hinge-angle0") return result("hinge-angle0 = 1e-07\r\nOK");
+    if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
+    return result("Committed state: DeviceState{identifier=1, name='CLOSED'}");
+  };
+  expect((await getFoldStatus("emulator-5554", runExec)).hingeAngle).toBe(1e-7);
 });

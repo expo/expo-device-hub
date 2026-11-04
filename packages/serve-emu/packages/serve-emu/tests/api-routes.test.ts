@@ -277,19 +277,20 @@ function fakeDependencies(overrides: Partial<ApiDependencies> = {}): ApiDependen
       hingeAngle: 0,
       hingeRange: { min: 0, max: 180 },
     }),
-    setFold: async (request) => "posture" in request
-      ? {
-        supported: true,
-        posture: request.posture,
-        hingeAngle: request.posture === "closed" ? 0 : 180,
-        hingeRange: { min: 0, max: 180 },
-      }
-      : {
-        supported: true,
-        posture: "half_opened",
-        hingeAngle: request.hingeAngle,
-        hingeRange: { min: 0, max: 180 },
-      },
+    setFold: async (request) =>
+      "posture" in request
+        ? {
+            supported: true,
+            posture: request.posture,
+            hingeAngle: request.posture === "closed" ? 0 : 180,
+            hingeRange: { min: 0, max: 180 },
+          }
+        : {
+            supported: true,
+            posture: "half_opened",
+            hingeAngle: request.hingeAngle,
+            hingeRange: { min: 0, max: 180 },
+          },
     getNightMode: async () => ({ mode: "light", raw: "no" }),
     setNightMode: async (mode) => ({ mode, raw: mode }),
     getFontScale: async () => ({ scale: 1, raw: "1.0" }),
@@ -662,7 +663,12 @@ describe("domain API failures", () => {
     expect(moved.status).toBe(200);
     expect(await moved.json()).toEqual({
       ok: true,
-      fold: { supported: true, posture: "half_opened", hingeAngle: 90, hingeRange: { min: 0, max: 180 } },
+      fold: {
+        supported: true,
+        posture: "half_opened",
+        hingeAngle: 90,
+        hingeRange: { min: 0, max: 180 },
+      },
     });
     expect(requests).toEqual([{ hingeAngle: 90 }]);
 

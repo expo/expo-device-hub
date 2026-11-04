@@ -54,7 +54,9 @@ async function readFoldState(serial: string, runExec: typeof execText): Promise<
   ) {
     return UNSUPPORTED;
   }
-  const angle = Number(sensor.stdout.match(/hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)/)?.[1]);
+  const angle = Number(
+    sensor.stdout.match(/hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/)?.[1],
+  );
   if (!Number.isFinite(angle)) {
     throw new Error(
       `Emulator hinge sensor returned an unexpected response: ${sensor.stdout.trim()}`,
@@ -99,8 +101,13 @@ async function readHingeRange(
     return null;
   }
   // The value lists one range per hinge, starting with hinge-angle0's.
-  const range = config.match(/^hw\.sensor\.hinge\.ranges\s*=\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/m);
-  return range ? { min: Number(range[1]), max: Number(range[2]) } : null;
+  const range = config.match(
+    /^hw\.sensor\.hinge\.ranges\s*=\s*(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/m,
+  );
+  if (!range) return null;
+  const min = Number(range[1]);
+  const max = Number(range[2]);
+  return Number.isFinite(min) && Number.isFinite(max) && min < max ? { min, max } : null;
 }
 
 export async function setFoldPosture(
@@ -137,6 +144,9 @@ export async function setHingeAngle(
   hingeAngle: number,
   runExec: typeof execText = execText,
 ): Promise<FoldStatus> {
+  if (!Number.isFinite(hingeAngle) || hingeAngle < 0 || hingeAngle > 180) {
+    throw new Error("hingeAngle must be a number between 0 and 180");
+  }
   const current = await getFoldStatus(serial, runExec);
   if (!current.supported) throw new Error("Selected emulator does not support folding");
 
@@ -144,7 +154,8 @@ export async function setHingeAngle(
   // notation below 0.0001, so send whole thousandths of a degree.
   const angle = Math.round(hingeAngle * 1000) / 1000;
   const range = current.hingeRange;
-  if (range && (angle < range.min || angle > range.max)) {
+  if (!range) throw new Error("Cannot determine this emulator's hinge range");
+  if (angle < range.min || angle > range.max) {
     throw new Error(`This emulator's hinge moves only from ${range.min}° to ${range.max}°`);
   }
   const result = await runExec(
@@ -153,13 +164,15 @@ export async function setHingeAngle(
     { timeout: 5_000, lane: "interactive" },
   );
   if (result.status !== 0 || result.timedOut || result.error || /\bKO:/.test(result.stdout)) {
-    const detail = result.stderr.trim() || result.stdout.trim() || result.error?.message || "unknown error";
+    const detail =
+      result.stderr.trim() || result.stdout.trim() || result.error?.message || "unknown error";
     throw new Error(`Emulator hinge angle change failed: ${detail}`);
   }
 
   await waitForAndroidHingeAngle(serial, angle, runExec);
   const status = await readFoldState(serial, runExec);
-  if (status.hingeAngle !== angle) throw new Error(`Emulator did not confirm a ${angle}° hinge angle`);
+  if (status.hingeAngle !== angle)
+    throw new Error(`Emulator did not confirm a ${angle}° hinge angle`);
   return { ...status, hingeRange: range };
 }
 
@@ -180,10 +193,13 @@ async function waitForAndroidHingeAngle(
       lane: "interactive",
     });
     if (dump.status !== 0 || dump.timedOut || dump.error) {
-      const detail = dump.stderr.trim() || dump.error?.message || dump.stdout.trim() || "unknown error";
+      const detail =
+        dump.stderr.trim() || dump.error?.message || dump.stdout.trim() || "unknown error";
       throw new Error(`Android device state read failed: ${detail}`);
     }
-    const reported = dump.stdout.match(/hinge sensor0 \(in degrees\) : \[(-?\d+(?:\.\d+)?)/)?.[1];
+    const reported = dump.stdout.match(
+      /hinge sensor0 \(in degrees\) : \[(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/,
+    )?.[1];
     // A dump without sensor values gives nothing to wait for.
     if (reported === undefined) return;
     const pending = /mPendingState=Optional\[/.test(dump.stdout);
