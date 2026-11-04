@@ -72,10 +72,18 @@ function seenValues(): string[] {
 }
 
 /** The fixture records each change, so the last line is what the app reads now. */
-async function waitForLastSeen(expected: string, timeoutMs = 20_000): Promise<void> {
+async function waitForLastSeen(
+  expected: string,
+  { after = 0, timeoutMs = 20_000 } = {},
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (seenValues().at(-1) !== expected && Date.now() < deadline) await Bun.sleep(200);
-  expect(seenValues().at(-1)).toBe(expected);
+  let values = seenValues();
+  while ((values.length <= after || values.at(-1) !== expected) && Date.now() < deadline) {
+    await Bun.sleep(200);
+    values = seenValues();
+  }
+  expect(values.length).toBeGreaterThan(after);
+  expect(values.at(-1)).toBe(expected);
 }
 
 function launch(): void {
@@ -192,14 +200,18 @@ describeOrSkip("keychain round trip", () => {
         { timeoutMs: 10_000 },
       );
       expect(outcome.applied && outcome.results[0]?.status).toBe(-50);
-      // List verifies the item still exists; the fixture verifies its value did not change.
+      // List verifies the item still exists. Relaunch for a fresh value read, because the
+      // fixture only records changes while it runs and an earlier log entry could be stale.
       const listed = await runKeychainOperations(udid!, APP, [
         { op: "list", service: ITEM.service },
       ]);
       expect(listed.applied && listed.results[0]?.items?.map((item) => item.account)).toContain(
         b64(KEY),
       );
-      await waitForLastSeen(`value=${value}`);
+      terminate();
+      const after = seenValues().length;
+      launch();
+      await waitForLastSeen(`value=${value}`, { after });
     }
   }, 60_000);
 
@@ -212,7 +224,7 @@ describeOrSkip("keychain round trip", () => {
       [{ ...set(`unreplaced-${Date.now()}`), replaces: [unreachable] }],
       { timeoutMs: 10_000 },
     );
-    expect(outcome.applied && outcome.results[0]?.status).not.toBe(0);
+    expect(outcome).toEqual({ applied: true, results: [{ status: -34018 }] });
   }, 30_000);
 
   test("the app drops an expired request unread", async () => {
