@@ -3,6 +3,7 @@
 #include "policy.h"
 #include "../ServeSimCapabilityLoader/startup-capability.h"
 #include "destination.h"
+#include "sendmsg-x.h"
 #include <errno.h>
 #include <mach/mach.h>
 #include <stdlib.h>
@@ -135,6 +136,20 @@ static ssize_t name(int fd, const struct msghdr *msg, int flags) { \
 SENDMSG_WRAPPER(eg_sendmsg, sendmsg)
 SENDMSG_WRAPPER(eg_sendmsg_nc, eg_sendmsg_nc_original)
 
+// Validate the entire batch before submission; a remote entry refuses all messages.
+static ssize_t eg_sendmsg_x(int fd, const struct eg_msghdr_x *messages, unsigned int count, int flags) {
+  if (!eg_passthrough()) {
+    uintptr_t address = (uintptr_t)messages;
+    if (count > (UINTPTR_MAX - address) / sizeof *messages) { errno = EFAULT; return -1; }
+    for (unsigned int i = 0; i < count; i++) {
+      struct eg_msghdr_x copied;
+      if (!eg_copy(&copied, (const void *)(address + (size_t)i * sizeof copied), sizeof copied) ||
+          eg_check_send(copied.msg_name, copied.msg_namelen)) return -1;
+    }
+  }
+  return eg_sendmsg_x_original(fd, messages, count, flags);
+}
+
 #define EG_INTERPOSE(replacement, original) {(const void *)replacement, (const void *)original}
 __attribute__((used)) static const struct { const void *replacement; const void *original; }
 eg_interposers[] __attribute__((section("__DATA,__interpose"))) = {
@@ -142,4 +157,5 @@ eg_interposers[] __attribute__((section("__DATA,__interpose"))) = {
   EG_INTERPOSE(eg_connectx, connectx),
   EG_INTERPOSE(eg_sendto, sendto), EG_INTERPOSE(eg_sendto_nc, eg_sendto_nc_original),
   EG_INTERPOSE(eg_sendmsg, sendmsg), EG_INTERPOSE(eg_sendmsg_nc, eg_sendmsg_nc_original),
+  EG_INTERPOSE(eg_sendmsg_x, eg_sendmsg_x_original),
 };
