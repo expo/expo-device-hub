@@ -47,6 +47,9 @@ Shared options: `--format <format>` (default `expo-secure-store`; see [Formats](
 | `keychain-access`       | Generic password, service = `--service` or the bundle ID, account = key as a string            | `--service` = `Keychain(service:)` (default the bundle ID)  |
 | `react-native-keychain` | Generic password, service = key, account = username as a string, data = password               | `--username` (default empty); no `--service`                |
 
+KeychainAccess entries created with `.synchronizable(true)` are not supported: the loader writes
+non-synchronizable entries and does not replace an existing iCloud-synchronizable item.
+
 `delete` with `expo-secure-store` checks all three places SecureStore reads (`:no-auth`, `:auth`,
 and the legacy service) before deleting any alias. If the aliases match across multiple access
 groups, specify which group to use. `set` writes `:no-auth` and then removes the other two, as
