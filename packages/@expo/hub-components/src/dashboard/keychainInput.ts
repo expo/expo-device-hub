@@ -59,8 +59,7 @@ export type KeychainDraft =
 
 /** One key and its value, or, with no key, a pasted JSON object of string keys and values. */
 export function parseKeychainDraft(key: string, value: string): KeychainDraft {
-  const name = key.trim();
-  if (name) return { ok: true, values: { [name]: value } };
+  if (key) return { ok: true, values: { [key]: value } };
   let payload: unknown;
   try {
     payload = JSON.parse(value);

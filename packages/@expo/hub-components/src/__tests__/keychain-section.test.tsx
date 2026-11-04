@@ -171,6 +171,21 @@ test("a new format clears the keys of the old one", async () => {
   expect(s.text()).toContain("generic-key");
 });
 
+test("generic-password preserves spaces in a single key", async () => {
+  const { client, calls } = keychainClient();
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", "auth");
+  await s.type("Keychain key", " token ");
+  await s.type("Keychain value", "synthetic");
+  await s.click("Set");
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    appId: APP,
+    arg: { " token ": "synthetic" },
+    options: { format: "generic-password", service: "auth", relaunch: false },
+  });
+});
+
 test("a new format drops the note of a write in the old one", async () => {
   const { client } = keychainClient();
   const s = await setup(client);
@@ -313,7 +328,7 @@ test("shows a list failure with Retry", async () => {
 
 describe("parseKeychainDraft", () => {
   test("takes a key and its value, or a JSON object of strings", () => {
-    expect(parseKeychainDraft(" token ", "")).toEqual({ ok: true, values: { token: "" } });
+    expect(parseKeychainDraft(" token ", "")).toEqual({ ok: true, values: { " token ": "" } });
     expect(parseKeychainDraft("", '{"a":"1"}')).toEqual({ ok: true, values: { a: "1" } });
   });
 
