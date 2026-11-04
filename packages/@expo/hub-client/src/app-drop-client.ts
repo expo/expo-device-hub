@@ -30,7 +30,7 @@ export function createAppInstallBackend(
       if (!response.ok) throw new Error("App drops need an updated Simulator server.");
       const url = URL.createObjectURL(await response.blob());
       try {
-        const module = (await import(/* @vite-ignore */ url)) as Module;
+        const module = (await import(/* @metro-ignore */ /* @vite-ignore */ url)) as Module;
         endpoint.pathname = endpoint.pathname.replace(/app-drop-client\.js$/, "app-drop-worker.js");
         return module.createAppDropClient(transport, udid, { url: endpoint.href, headers });
       } finally {
