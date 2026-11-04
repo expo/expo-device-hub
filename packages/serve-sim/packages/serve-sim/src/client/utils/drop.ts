@@ -1,6 +1,7 @@
 import { runHostAction } from "../../socket/client-control";
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
-import { packAppFolder, type AppFolderEntry } from "./app-drop-folder";
+import type { AppFolderEntry } from "./app-drop-folder";
+import { packAppInWorker } from "./pack-app-in-worker";
 
 // ─── File drop (drag media onto the simulator) ───
 //
@@ -68,29 +69,21 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Stream `file` into `tmpPath` one slice at a time. Reading and encoding per
-// slice (instead of base64ing the whole file up front) keeps peak memory at
-// one chunk regardless of file size and never blocks the main thread long
-// enough to stall the simulator stream.
+// Bound each file read and base64 conversion to one action-channel chunk.
+// Folder tar/gzip work runs in a worker; this is not a frame-latency guarantee.
 async function streamFileToHost(
   file: File,
   uploadId: string,
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
-  let hostPath = "";
   let lastReportedPct = 0;
-  for (let offset = 0; offset < file.size; offset += DROP_CHUNK_BYTES) {
-    const slice = await file.slice(offset, offset + DROP_CHUNK_BYTES).arrayBuffer();
-    hostPath = await appendChunk(uploadId, slice, offset === 0);
-    if (!onProgress) continue;
-    const written = Math.min(offset + DROP_CHUNK_BYTES, file.size);
+  return streamToHost(file.stream(), uploadId, (written) => {
     const pct = Math.floor((written / file.size) * 100);
     if (pct !== lastReportedPct) {
       lastReportedPct = pct;
-      onProgress(written / file.size);
+      onProgress?.(written / file.size);
     }
-  }
-  return hostPath;
+  });
 }
 
 async function appendChunk(uploadId: string, bytes: ArrayBuffer, first: boolean): Promise<string> {
@@ -104,30 +97,40 @@ async function appendChunk(uploadId: string, bytes: ArrayBuffer, first: boolean)
   return result.stdout.trim();
 }
 
-async function streamArchiveToHost(stream: ReadableStream<Uint8Array>, uploadId: string) {
+async function streamToHost(
+  stream: ReadableStream<Uint8Array>,
+  uploadId: string,
+  onWritten?: (bytes: number) => void,
+) {
   const reader = stream.getReader();
   const buffer = new Uint8Array(DROP_CHUNK_BYTES);
   let used = 0,
     written = 0;
+  let hostPath = "";
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
       if (written + used + value.byteLength > DROP_MAX_FILE_SIZE)
-        throw new Error("App archive too large (max 500MB compressed)");
+        throw new Error("File too large (max 500MB)");
       for (let offset = 0; offset < value.byteLength; ) {
         const size = Math.min(buffer.length - used, value.length - offset);
         buffer.set(value.subarray(offset, offset + size), used);
         used += size;
         offset += size;
         if (used === buffer.length) {
-          await appendChunk(uploadId, buffer.buffer, written === 0);
+          hostPath = await appendChunk(uploadId, buffer.buffer, written === 0);
           written += used;
           used = 0;
+          onWritten?.(written);
         }
       }
     }
-    if (used) await appendChunk(uploadId, buffer.buffer.slice(0, used), written === 0);
+    if (used) {
+      hostPath = await appendChunk(uploadId, buffer.buffer.slice(0, used), written === 0);
+      onWritten?.(written + used);
+    }
+    return hostPath;
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
@@ -170,8 +173,8 @@ export async function uploadDroppedAppFolder(
   onProgress: (progress: number | null) => void,
 ) {
   await installDroppedSource("app", udid, "tgz", onProgress, async (uploadId) => {
-    const archive = await packAppFolder(entry, onProgress);
-    await streamArchiveToHost(archive, uploadId);
+    const archive = await packAppInWorker(entry, onProgress);
+    await streamToHost(archive, uploadId);
   });
 }
 
