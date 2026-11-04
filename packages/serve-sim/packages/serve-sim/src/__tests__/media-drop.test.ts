@@ -58,6 +58,14 @@ describe("startHostPathDrop", () => {
 
 type DropEvent = { type: string; name?: string; id?: string; ok?: boolean; message?: string };
 
+test("rejects a non-app folder without staging or cleanup requests", async () => {
+  const events = await dropFiles([new File([], "Photos")], {
+    entries: [{ name: "Photos", isDirectory: true, isFile: false }],
+  });
+  expect(events.at(-1)).toMatchObject({ type: "end", ok: false });
+  expect(actions).toEqual([]);
+});
+
 // Mount the real hook and wait for each file's completion callback, not a timer.
 async function dropFiles(
   files: File[],

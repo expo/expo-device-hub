@@ -46,7 +46,13 @@ export function dismissInputSocketError(): void {
   toast.dismiss(INPUT_SOCKET_ERROR_TOAST_ID);
 }
 
-export function UploadToastContent({ toast }: { toast: UploadToast }) {
+export function UploadToastContent({
+  toast,
+  onDismiss,
+}: {
+  toast: UploadToast;
+  onDismiss?: () => void;
+}) {
   const isError = toast.status === "error";
   const isUploading = toast.status === "uploading";
   const transferring = isUploading && toast.progress !== null;
@@ -68,7 +74,14 @@ export function UploadToastContent({ toast }: { toast: UploadToast }) {
                 : "#f87171",
           }}
         />
-        <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        <span
+          className={
+            isError
+              ? "min-w-0 flex-1 max-h-40 overflow-y-auto break-words whitespace-normal"
+              : "flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
+          }
+        >
+          {toast.status === "queued" && `Waiting to upload ${toast.name}…`}
           {isUploading && transferring && `Uploading ${toast.name}… ${pct}%`}
           {isUploading &&
             !transferring &&
@@ -77,6 +90,16 @@ export function UploadToastContent({ toast }: { toast: UploadToast }) {
             (toast.kind === "app" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
           {isError && `${toast.name}: ${toast.message ?? "Upload failed"}`}
         </span>
+        {isError && (
+          <button
+            type="button"
+            aria-label="Dismiss upload error"
+            className="shrink-0 px-1 hover:bg-white/10 rounded"
+            onClick={onDismiss}
+          >
+            ×
+          </button>
+        )}
       </div>
       {isUploading && (
         <div className="relative h-[3px] w-full bg-white/8 rounded-[2px] overflow-hidden">

@@ -7,7 +7,7 @@ export type UploadToast = {
   id: string;
   name: string;
   kind: DropKind;
-  status: "uploading" | "success" | "error";
+  status: "queued" | "uploading" | "success" | "error";
   // Determinate transfer progress 0..1; null once the upload completes
   // (install/addmedia phase has no progress signal — the bar goes indeterminate).
   progress: number | null;
@@ -25,13 +25,30 @@ export function useUploadToasts() {
   }, []);
 
   const render = useCallback((toast: UploadToast, duration = Infinity) => {
-    sonnerToast.custom(() => <UploadToastContent toast={toast} />, { id: toast.id, duration });
+    sonnerToast.custom(
+      () => (
+        <UploadToastContent
+          toast={toast}
+          onDismiss={() => {
+            toastsRef.current.delete(toast.id);
+            sonnerToast.dismiss(toast.id);
+          }}
+        />
+      ),
+      { id: toast.id, duration },
+    );
   }, []);
 
   const add = useCallback(
-    (name: string, kind: DropKind): string => {
+    (name: string, kind: DropKind, queued = false): string => {
       const id = crypto.randomUUID();
-      const next: UploadToast = { id, name, kind, status: "uploading", progress: 0 };
+      const next: UploadToast = {
+        id,
+        name,
+        kind,
+        status: queued ? "queued" : "uploading",
+        progress: 0,
+      };
       toastsRef.current.set(id, next);
       render(next);
       return id;
@@ -46,8 +63,8 @@ export function useUploadToasts() {
       clearDismissTimer(id);
       const next = { ...current, ...patch };
       toastsRef.current.set(id, next);
-      render(next, patch.status === "success" || patch.status === "error" ? 3000 : Infinity);
-      if (patch.status === "success" || patch.status === "error") {
+      render(next, patch.status === "success" ? 3000 : Infinity);
+      if (patch.status === "success") {
         const timer = setTimeout(() => {
           toastsRef.current.delete(id);
           dismissTimersRef.current.delete(id);
@@ -62,7 +79,7 @@ export function useUploadToasts() {
     (id: string, progress: number | null) => {
       const current = toastsRef.current.get(id);
       if (!current) return;
-      const next = { ...current, progress };
+      const next: UploadToast = { ...current, progress, status: "uploading" };
       toastsRef.current.set(id, next);
       render(next);
     },

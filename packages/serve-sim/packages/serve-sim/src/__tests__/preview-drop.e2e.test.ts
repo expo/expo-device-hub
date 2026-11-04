@@ -85,6 +85,10 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   }
 
   async function dropPaths(paths: string[]) {
+    // Errors now remain until dismissed; each scenario starts with a clear drop target.
+    await browser.cdp.evaluate(
+      "document.querySelectorAll('[aria-label=\"Dismiss upload error\"]').forEach(button => button.click())",
+    );
     sent.length = 0;
     replies.clear();
     const point = await browser.cdp.evaluate<{ x: number; y: number }>(`(() => {
@@ -241,6 +245,22 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
     expect(message).toContain("Simulator .app bundle or .tar.gz/.tgz archive");
     expect(message).toContain("Device .ipa builds and .zip archives are not supported");
     expect(sent).toEqual([]);
+    const errorStyle = await browser.cdp.evaluate<string>(
+      "getComputedStyle(document.querySelector('[data-testid=upload-toast] span.flex-1')).whiteSpace",
+    );
+    expect(errorStyle).toBe("normal");
+    // The guidance must still be readable after the old three-second dismissal.
+    await Bun.sleep(3200);
+    expect(
+      await browser.cdp.evaluate<boolean>(
+        "!!document.querySelector('[aria-label=\"Dismiss upload error\"]')",
+      ),
+    ).toBe(true);
+    const screenshot = process.env.SERVE_SIM_DROP_ERROR_SCREENSHOT;
+    if (screenshot) {
+      const result = await browser.cdp.send("Page.captureScreenshot", { format: "png" });
+      writeFileSync(screenshot, Buffer.from(result.data as string, "base64"));
+    }
   }, 60000);
 
   test("a PNG reaches Photos and its staged upload is removed", async () => {
