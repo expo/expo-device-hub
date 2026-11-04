@@ -8,6 +8,7 @@ const profile = process.argv
   .slice("--user-data-dir=".length);
 appendFileSync(`${state}.profiles`, `${profile}\n`);
 const stall = mode === "launch-failure" || (mode === "launch-timeout" && !existsSync(state));
+const noPage = mode === "page-failure" || (mode === "page-timeout" && !existsSync(state));
 writeFileSync(state, "started");
 
 let requests = 0;
@@ -16,6 +17,7 @@ const server = Bun.serve({
   port: 0,
   fetch(request, server) {
     if (new URL(request.url).pathname === "/json/list") {
+      if (noPage) return Response.json([]);
       if (++requests === 1) {
         if (mode === "timeout") return new Promise<Response>(() => {});
         return Response.json([]);

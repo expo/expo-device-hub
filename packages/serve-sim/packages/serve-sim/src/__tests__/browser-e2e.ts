@@ -171,7 +171,7 @@ async function startBrowserAttempt(
     });
     let pageUrl: string | undefined;
     let discoveryError: unknown;
-    const deadline = Date.now() + 15000;
+    const deadline = Date.now() + startupTimeoutMs;
     while (!pageUrl && Date.now() < deadline) {
       try {
         const response = await fetch(`http://127.0.0.1:${new URL(browserUrl).port}/json/list`, {
@@ -192,7 +192,9 @@ async function startBrowserAttempt(
       if (!pageUrl) await Bun.sleep(100);
     }
     if (!pageUrl)
-      throw new Error("Chrome opened no page target within 15 seconds", { cause: discoveryError });
+      throw new ChromeStartupTimeout(`Chrome opened no page target within ${startupTimeoutMs}ms`, {
+        cause: discoveryError,
+      });
     cdp = await Cdp.connect(pageUrl);
     await cdp.send("Page.enable");
     return { cdp, close };

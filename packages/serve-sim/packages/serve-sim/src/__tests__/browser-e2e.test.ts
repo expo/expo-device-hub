@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
-test.each(["timeout", "empty", "launch-timeout", "launch-failure"])(
+test.each(["timeout", "empty", "launch-timeout", "launch-failure", "page-timeout", "page-failure"])(
   "browser discovery tolerates a transient %s response",
   (mode) => {
     const root = mkdtempSync(join(tmpdir(), "serve-sim-browser-startup-"));
@@ -20,21 +20,26 @@ test.each(["timeout", "empty", "launch-timeout", "launch-failure"])(
             SERVE_SIM_CHROME: chrome,
             SERVE_SIM_BROWSER_FIXTURE_MODE: mode,
             SERVE_SIM_BROWSER_FIXTURE_STATE: join(root, "attempt"),
-            SERVE_SIM_BROWSER_STARTUP_TEST_MS: mode.startsWith("launch-") ? "1000" : "15000",
+            SERVE_SIM_BROWSER_STARTUP_TEST_MS:
+              mode.startsWith("launch-") || mode.startsWith("page-") ? "1000" : "15000",
           },
           encoding: "utf8",
           timeout: 20000,
         },
       );
-      if (mode === "launch-failure") {
+      if (mode.endsWith("-failure")) {
         expect(result.status).not.toBe(0);
-        expect(result.stderr).toContain("fixture launch blocked");
+        expect(result.stderr).toContain(
+          mode === "launch-failure"
+            ? "fixture launch blocked"
+            : "Chrome opened no page target within 1000ms",
+        );
       } else {
         expect(result.status, result.stderr).toBe(0);
         expect(result.stdout).toContain("BROWSER_READY");
       }
       const profiles = readFileSync(join(root, "attempt.profiles"), "utf8").trim().split("\n");
-      expect(profiles).toHaveLength(mode.startsWith("launch-") ? 2 : 1);
+      expect(profiles).toHaveLength(mode.startsWith("launch-") || mode.startsWith("page-") ? 2 : 1);
       for (const profile of profiles) expect(existsSync(profile)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
