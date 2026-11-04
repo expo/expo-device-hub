@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { execFileSync } from "child_process";
 import {
   MAX_KEYCHAIN_REQUEST_BYTES,
   QUEUED_REQUEST_TTL_MS,
@@ -116,6 +117,25 @@ describe("requestKeychain", () => {
       );
     })();
     expect(await requestKeychain(root, [SET], { timeoutMs: 100 })).toEqual([{ status: 0 }]);
+  });
+
+  test("keeps publication order across processes with the same clock", async () => {
+    const root = container();
+    const clock = Date.now();
+    const child = join(import.meta.dir, "fixtures/keychain-queue.child.ts");
+    for (const values of [["first", "second"], ["third"]]) {
+      execFileSync(process.execPath, [child, root, String(clock), JSON.stringify(values)], {
+        timeout: 10_000,
+      });
+    }
+    const names = await waitForRequests(root, 3);
+    const values = await Promise.all(
+      names.map(async (name) => {
+        const body = JSON.parse(await fs.readFile(join(mailbox(root).requests, name), "utf8"));
+        return Buffer.from(body.operations[0].data, "base64").toString("utf8");
+      }),
+    );
+    expect(values).toEqual(["first", "second", "third"]);
   });
 
   test("reports a claimed request that never gets an answer", async () => {

@@ -57,6 +57,8 @@ describe("app data files", () => {
       "",
       "tmp/serve-sim-keychain/requests/x.json",
       "TMP/Serve-Sim-Keychain",
+      "tmp/serve-sim-Keychain/requests/x.json",
+      "tmp/ſerve-sim-keychain/requests/x.json",
     ]) {
       await expect(act("app.file.remove", { relativePath })).rejects.toThrow();
     }
