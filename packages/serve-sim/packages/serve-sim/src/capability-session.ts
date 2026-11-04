@@ -23,6 +23,8 @@ export interface CapabilityController {
   set(udid: string, name: SessionCapability, enabled: boolean): Promise<void>;
   /** False when this server turned the capability off for the device, whoever set it up. */
   allows(udid: string, name: SessionCapability): boolean;
+  /** Disabling waits for admitted operations; other devices can still proceed. */
+  run<T>(udid: string, name: SessionCapability, operation: () => Promise<T>): Promise<T>;
 }
 
 const RETRY_MIN_MS = 5_000;
@@ -91,9 +93,11 @@ export function createCapabilitySession(
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
   // a reboot the middleware did not see.
   const devices = new Map<string, { work: Promise<void>; done: boolean; checkedAt: number }>();
+  const operations = new Map<string, Set<Promise<unknown>>>();
+  let disposed = false;
   // Per-device choices from `setEnabled`; the periodic check keeps them rather than `enabled`.
   const choices = new Map<string, boolean>();
-  const wanted = (udid: string) => choices.get(udid) ?? enabled;
+  const wanted = (udid: string) => !disposed && (choices.get(udid) ?? enabled);
   // A running process that set the capability up would set it up again on its next check, so
   // turning it off here leaves that record; this server's own actions still refuse it.
   const ownedElsewhere = (udid: string) => {
@@ -104,7 +108,24 @@ export function createCapabilitySession(
   // logged on every request. Each failure doubles the wait; a reboot or a choice retries at once.
   const failures = new Map<string, { retryAt: number; delayMs: number; error: unknown }>();
   const initializedHere = new Set<string>();
-  let disposed = false;
+
+  function runOperation<T>(udid: string, operation: () => Promise<T>): Promise<T> {
+    if (disposed) return Promise.reject(new Error(`The ${definition.name} session has ended.`));
+    if (!wanted(udid)) {
+      return Promise.reject(
+        new Error(`The ${definition.name} capability is off for ${udid} on this server.`),
+      );
+    }
+    const active = operations.get(udid) ?? new Set<Promise<unknown>>();
+    const work = Promise.resolve().then(operation);
+    // Register before the operation starts, so a simultaneous disable cannot miss it.
+    active.add(work);
+    operations.set(udid, active);
+    return work.finally(() => {
+      active.delete(work);
+      if (active.size === 0) operations.delete(udid);
+    });
+  }
 
   /** Whether the last setup still holds, so a call can share it instead of starting another. */
   function stillHolds(udid: string, previous: { done: boolean; checkedAt: number }): boolean {
@@ -172,6 +193,7 @@ export function createCapabilitySession(
       const failure = failures.get(udid);
       if (failure) throw failure.error;
     },
+    run: runOperation,
     /** Whether this server lets the capability work on the device: the startup setting or a choice. */
     allows: wanted,
     async setEnabled(udid: string, value: boolean): Promise<void> {
@@ -185,10 +207,15 @@ export function createCapabilitySession(
         throw new Error(`This server has not opened ${udid}.`);
       }
       choices.set(udid, value);
+      // Close admission first, then drain before completing the disable.
+      // Action failures remain with their callers and do not prevent disabling.
+      if (!value) await Promise.allSettled(operations.get(udid) ?? []);
+      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
       await initialize(udid, true);
     },
     async dispose(): Promise<void> {
       disposed = true;
+      await Promise.allSettled([...operations.values()].flatMap((active) => [...active]));
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
       const results = await Promise.allSettled(
         [...initializedHere].map(async (udid) => {
@@ -246,5 +273,9 @@ export function createCapabilityController(
       }
     },
     allows: (udid, name) => sessions[name]?.allows(udid) ?? true,
+    async run<T>(udid: string, name: SessionCapability, operation: () => Promise<T>): Promise<T> {
+      const session = sessions[name];
+      return session ? await session.run(udid, operation) : await operation();
+    },
   };
 }

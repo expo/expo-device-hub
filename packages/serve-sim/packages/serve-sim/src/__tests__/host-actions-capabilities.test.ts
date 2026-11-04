@@ -17,6 +17,7 @@ function fakeController(fail?: string) {
       enabled[name] = value;
     },
     allows: (_udid, name) => enabled[name],
+    run: (_udid, _name, operation) => operation(),
   };
   return { controller, calls };
 }

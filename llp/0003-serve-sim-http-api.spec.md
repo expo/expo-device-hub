@@ -765,6 +765,7 @@ on a device this middleware opened; the middleware's 30 s check keeps the choice
 setup that another running serve-sim process owns, and on again leaves it that process's; while
 off, this server's keychain actions refuse the device. Each choice resends the preview config to
 open `/api/events` streams, as it can leave the state files unchanged. With clipboard off, clipboard reads use only `simctl pbpaste`. `capabilities.list` takes `{udid}`.
+Disabling Keychain closes admission immediately and waits for admitted calls before acknowledging completion. A concurrent list or preview config reflects the admission choice while that wait is pending. Already-published mailbox requests are not revoked and retain their expiry (LLP 0017).
 Both return `{capabilities: [{name, enabled}]}` for the capabilities this middleware manages.
 `enabled` is true only when this server allows the capability on the device and the device's
 launch state has it, so a capability that another process keeps set up still reads as off here.
