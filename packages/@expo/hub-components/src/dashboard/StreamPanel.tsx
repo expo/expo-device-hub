@@ -27,6 +27,7 @@ import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
+import { useAppDrop } from "./AppDrop";
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
@@ -79,6 +80,7 @@ export function StreamPanel({
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
   const viewport = useMobileViewport();
+  const appDrop = useAppDrop(client.appInstall, client.status === "streaming");
   const [presentation, setPresentation] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const keyboardRef = useRef<HTMLInputElement | null>(null);
@@ -215,13 +217,14 @@ export function StreamPanel({
   return (
     <section
       ref={panelRef}
+      {...appDrop.props}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null))
           setKeyboardOpen(false);
       }}
       style={{
         flex: 1,
-        position: viewport.mobile ? "relative" : undefined,
+        position: "relative",
         minWidth: 0,
         gap: viewport.mobile ? 8 : undefined,
         display: "flex",
@@ -246,6 +249,7 @@ export function StreamPanel({
         overflow: "hidden",
       }}
     >
+      {appDrop.notice}
       {viewport.mobile && (
         <>
           {client.sendKeyEvents && (
