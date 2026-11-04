@@ -238,6 +238,34 @@ describe("bootHubDevice emulator identity", () => {
   });
 });
 
+describe("bootHubDevice emulator capture", () => {
+  const capture = {
+    library: "/opt/capture/libexpo_emulator_capture.dylib",
+    socketDirectory: "/tmp/expo-emulator-capture",
+  };
+
+  test("preloads the agent with a per-serial socket and host rendering", async () => {
+    await bootHubDevice(bootRequest(), cameraFeeds(), capture);
+
+    expect(scenario.spawned).toEqual({
+      name: "Pixel_9",
+      port: 5560,
+      extraArgs: [...feedArgs("emulator-5560"), "-gpu", "host"],
+      env: {
+        DYLD_INSERT_LIBRARIES: capture.library,
+        EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/expo-emulator-capture/emulator-5560.sock",
+      },
+    });
+  });
+
+  test("still preloads the agent when camera seeding fails", async () => {
+    await bootHubDevice(bootRequest(), cameraFeeds(new Error("disk full")), capture);
+
+    expect(scenario.spawned?.extraArgs).toEqual(["-gpu", "host"]);
+    expect(scenario.spawned?.env?.DYLD_INSERT_LIBRARIES).toBe(capture.library);
+  });
+});
+
 describe("shutdownHubDevice", () => {
   test("waits for the emulator to go offline after the shutdown", async () => {
     const result = await shutdownHubDevice({
