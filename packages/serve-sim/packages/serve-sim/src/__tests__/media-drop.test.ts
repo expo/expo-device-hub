@@ -4,6 +4,7 @@ import { createElement, type DragEvent } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { UNSUPPORTED_INSTALL_FORMAT } from "../app-install-format";
 import type { AppFolderEntry } from "../client/utils/app-drop-folder";
+import { packAppFolder } from "../client/utils/app-drop-folder";
 
 const actions: string[] = [];
 let failure: string | undefined;
@@ -14,6 +15,8 @@ beforeEach(() => {
   failureMessage = "host operation failed";
 });
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+// This suite owns drop routing; the real worker is exercised by preview-drop.e2e.
+void mock.module("../client/utils/pack-app-in-worker", () => ({ packAppInWorker: packAppFolder }));
 
 void mock.module("../socket/client-control", () => ({
   runHostAction: async (action: string) => {

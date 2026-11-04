@@ -21,6 +21,7 @@ void mock.module("../socket/client-control", () => ({
   },
 }));
 import { uploadDroppedAppFolder, DROP_CHUNK_BYTES } from "../client/utils/drop";
+void mock.module("../client/utils/pack-app-in-worker", () => ({ packAppInWorker: packAppFolder }));
 
 const droppedFile = (name: string, body: BlobPart[] = ["contents"]): AppFolderEntry => ({
   name,
