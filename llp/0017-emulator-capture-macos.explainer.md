@@ -11,7 +11,7 @@
 
 ## Summary
 
-`expo-emulator-capture` captures an Android Emulator's screen on macOS with Apple silicon. An agent library runs inside the emulator's QEMU process. It copies each posted frame into an IOSurface (on the GPU when the emulator renders with the host GPU) and encodes it with the VideoToolbox hardware H.264 encoder. serve-emu reads the stream from a Unix socket and replaces scrcpy video with it; scrcpy stays the input transport.
+`expo-emulator-capture` captures an Android Emulator's screen on macOS with Apple silicon. An agent library runs inside the emulator's QEMU process. It copies each posted frame into an IOSurface (on the GPU when the emulator renders with the host GPU) and encodes it to H.264 with VideoToolbox, on the hardware encoder when the Mac has one. serve-emu reads the stream from a Unix socket and replaces scrcpy video with it; scrcpy stays the input transport.
 
 The work follows the Linux and NVIDIA experiment in PR #107: the same package name, the same socket framing (GPC1), and the same serve-emu integration shape. Krystof Woldrich asked for a macOS Apple-silicon package that uses the machine's GPU when available and that works with single-screen and foldable emulators, such as the Pixel 9 Pro Fold [confirmed] (Krystof Woldrich, 2026-11-04).
 
@@ -56,7 +56,7 @@ With `glFinish` on the render thread instead, the guest's render thread spent 1.
 
 ## Encoding
 
-A `VTPixelTransferSession` scales the frame and converts it to NV12 with BT.709 terms. A `VTCompressionSession` with `RequireHardwareAcceleratedVideoEncoder` and `EnableLowLatencyRateControl` encodes Constrained Baseline H.264, with a keyframe at least every 10 seconds and on request [observed: `src/native/encoder.mm`]. Low-latency rate control selects the encoder `com.apple.videotoolbox.videoencoder.h264.rtvc`, which does not answer `UsingHardwareAcceleratedVideoEncoder` (`kVTPropertyNotSupportedErr`). Creation with the hardware requirement succeeded, so the agent reports hardware [observed: a VideoToolbox probe on the M2, 2026-11-04]. Output is converted from length-prefixed NAL units to Annex-B, with SPS and PPS before each IDR.
+A `VTPixelTransferSession` scales the frame and converts it to NV12 with BT.709 terms. A `VTCompressionSession` with `RequireHardwareAcceleratedVideoEncoder` and `EnableLowLatencyRateControl` encodes Constrained Baseline H.264, with a keyframe at least every 10 seconds and on request [observed: `src/native/encoder.mm`]. Low-latency rate control selects the encoder `com.apple.videotoolbox.videoencoder.h264.rtvc`, which does not answer `UsingHardwareAcceleratedVideoEncoder` (`kVTPropertyNotSupportedErr`). Creation with the hardware requirement succeeded, so the agent reports hardware [observed: a VideoToolbox probe on the M2, 2026-11-04]. When creation with the hardware requirement fails, as on a Mac without a usable hardware encoder, the agent tries low-latency rate control alone and then the default specification, and reports what `UsingHardwareAcceleratedVideoEncoder` answers [observed: `src/native/encoder.mm`]. Output is converted from length-prefixed NAL units to Annex-B, with SPS and PPS before each IDR.
 
 ## Socket protocol
 

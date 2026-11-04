@@ -212,7 +212,7 @@ You can confirm the mode in the emulator log (`vulkan_mode_selected:host` = good
 
 On macOS with Apple silicon, an emulator started with the
 [`expo-emulator-capture`](https://github.com/expo/expo-device-hub/tree/main/packages/expo-emulator-capture) agent serves its screen on a Unix
-socket, encoded by the VideoToolbox hardware encoder. The middleware option
+socket, encoded by VideoToolbox (the hardware encoder when the Mac has one). The middleware option
 `experimentalGpuCaptureSocketDirectory` (on `createApp` and `createRouter`) names the
 directory of those sockets, `<serial>.sock`. A scrcpy session for an emulator with a
 socket there then takes its video from the agent and keeps scrcpy for input. Without an
