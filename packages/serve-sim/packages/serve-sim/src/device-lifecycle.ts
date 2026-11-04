@@ -1,3 +1,5 @@
+import { assertNoResidentEgress } from "./egress-resources";
+import { checkResidentEgressBoot } from "./egress";
 import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capture";
@@ -22,15 +24,18 @@ export async function startDeviceInProcess(
 ): Promise<void> {
   const { signal } = options;
   signal?.throwIfAborted();
+  const resident = await checkResidentEgressBoot(udid);
   await bootDevice(udid, { allowBootedRecovery: !options.requireReady });
   signal?.throwIfAborted();
   await onBoot?.();
   signal?.throwIfAborted();
+  if (resident) await checkResidentEgressBoot(udid, resident);
   writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
 }
 
 /** Stop local consumers and the device; private adoption also checks and releases its ownership. */
 export async function stopDeviceInProcess(udid: string, ownerPid?: number): Promise<void> {
+  assertNoResidentEgress(udid, "Simulator shutdown");
   await retireDeviceSession(udid);
   // The grid keeps its existing capture-cleanup retry; private adoption must drain before shutdown.
   if (ownerPid === undefined) await shutdownDevice(udid);
@@ -70,6 +75,8 @@ export async function prepareDeviceOnce(
       preparedDevices.delete(key);
     }
   }
+  // Shared preparation never enrolls a device or inherits a server warmup policy.
+  assertNoResidentEgress(udid, "Device preparation");
   await prepare();
   preparedDevices.add(key);
 }
@@ -85,6 +92,7 @@ export function retireDevicesInBackground(
   // A boot already started by warmup must finish before its device shuts down.
   warmup: Promise<unknown> = Promise.resolve(),
 ): Promise<unknown[]> {
+  for (const udid of udids) assertNoResidentEgress(udid, "Simulator retirement");
   for (const udid of udids) {
     preparedDevices.delete(udid.toUpperCase());
     clearServeSimState(udid, ownerPid);
