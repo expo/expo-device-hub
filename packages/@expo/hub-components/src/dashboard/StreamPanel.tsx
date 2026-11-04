@@ -80,7 +80,7 @@ export function StreamPanel({
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
   const viewport = useMobileViewport();
-  const appDrop = useAppDrop(client.appInstall, client.status === "streaming");
+  const appDrop = useAppDrop(client.appInstall, client.status === "streaming", device.id);
   const [presentation, setPresentation] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const keyboardRef = useRef<HTMLInputElement | null>(null);
