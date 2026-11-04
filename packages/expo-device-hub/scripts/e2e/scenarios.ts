@@ -352,10 +352,22 @@ export async function runScenarios(mountDashboard: () => void, bootstrapKey = ""
       "Dashboard controls and reconnecting subscriptions share the control pool",
       async () => {
         const before = await state();
-        const themeBefore = button("Theme").getAttribute("aria-checked");
-        button("Theme").click();
+        const themeBefore = button("Appearance").textContent;
+        button("Appearance").dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+        );
+        const appearance = await until(
+          () =>
+            [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+              (option) =>
+                option.textContent?.trim() === (themeBefore?.includes("Dark") ? "Light" : "Dark"),
+            ),
+          (value) => !!value,
+          "Appearance options open",
+        );
+        appearance!.click();
         await until(
-          () => button("Theme").getAttribute("aria-checked"),
+          () => button("Appearance").textContent,
           (value) => value !== themeBefore,
           "pooled theme action succeeds",
         );
