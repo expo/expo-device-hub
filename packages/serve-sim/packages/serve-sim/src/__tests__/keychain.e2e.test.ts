@@ -196,6 +196,12 @@ describeOrSkip("keychain round trip", () => {
       { target: ITEM, replacement: { ...ITEM, attributesAsData: false } },
       // A malformed wire request must not broaden a replacement to the whole service.
       { target: ITEM, replacement: { service: ITEM.service } as typeof ITEM },
+      { target: ITEM, replacement: { ...ITEM, service: undefined } },
+      { target: { ...ITEM, service: undefined }, replacement: ITEM },
+      {
+        target: { ...ITEM, service: undefined },
+        replacement: { ...ITEM, service: undefined },
+      },
     ];
     for (const { target, replacement } of identities) {
       const value = `preserved-${Date.now()}`;
