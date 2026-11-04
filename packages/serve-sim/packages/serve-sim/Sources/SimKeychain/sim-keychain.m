@@ -88,10 +88,55 @@ static NSDictionary *deleteItem(NSDictionary *operation) {
   return @{@"status" : @(SecItemDelete((__bridge CFDictionaryRef)query))};
 }
 
-static void deleteEach(NSArray *items) {
-  for (id item in items) {
-    if ([item isKindOfClass:NSDictionary.class]) deleteItem(item);
+static NSArray<NSDictionary *> *itemQueries(NSDictionary *operation, NSString *field,
+                                           BOOL needsAccount, NSString **error) {
+  id items = operation[field];
+  if (items == nil) return @[];
+  if (![items isKindOfClass:NSArray.class]) {
+    *error = [field stringByAppendingString:@" must be a list"];
+    return nil;
   }
+  NSMutableArray<NSDictionary *> *queries = [NSMutableArray array];
+  for (id item in items) {
+    if (![item isKindOfClass:NSDictionary.class]) {
+      *error = @"query must be an item";
+      return nil;
+    }
+    NSDictionary *query = itemQuery(item, needsAccount, error);
+    if (query == nil) return nil;
+    [queries addObject:query];
+  }
+  return queries;
+}
+
+static NSData *attributeData(id value) {
+  if ([value isKindOfClass:NSData.class]) return value;
+  if ([value isKindOfClass:NSString.class]) return [value dataUsingEncoding:NSUTF8StringEncoding];
+  return nil;
+}
+
+// Missing filters match any value. Account strings and data can name the same item.
+static BOOL queriesOverlap(NSDictionary *target, NSDictionary *replacement) {
+  for (id field in @[(__bridge id)kSecAttrService, (__bridge id)kSecAttrAccount,
+                      (__bridge id)kSecAttrAccessGroup]) {
+    id left = target[field];
+    id right = replacement[field];
+    if (left == nil || right == nil) continue;
+    if ([field isEqual:(__bridge id)kSecAttrAccount]) {
+      left = attributeData(left);
+      right = attributeData(right);
+    }
+    if (![left isEqual:right]) return NO;
+  }
+  return YES;
+}
+
+static OSStatus deleteQueries(NSArray<NSDictionary *> *queries) {
+  for (NSDictionary *query in queries) {
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)query);
+    if (status != errSecSuccess && status != errSecItemNotFound) return status;
+  }
+  return errSecSuccess;
 }
 
 static NSDictionary *setItem(NSDictionary *operation) {
@@ -112,51 +157,32 @@ static NSDictionary *setItem(NSDictionary *operation) {
     if (accessible == NULL) return @{@"status" : @(errSecParam), @"error" : @"unknown accessible value"};
     attributes[(__bridge id)kSecAttrAccessible] = (__bridge id)accessible;
   }
-  id replaces = operation[@"replaces"];
-  if (replaces != nil && ![replaces isKindOfClass:NSArray.class])
-    return @{@"status" : @(errSecParam), @"error" : @"replaces must be a list"};
-  // Validate before writing: a replacement must never delete the value we are about to set.
-  // Generic is not identity, account bytes can arrive as string or data, and an omitted group
-  // searches all the app's allowed groups. Only two different explicit groups are disjoint.
-  NSMutableArray<NSDictionary *> *replacements = [NSMutableArray array];
-  for (id other in replaces) {
-    if (![other isKindOfClass:NSDictionary.class])
-      return @{@"status" : @(errSecParam), @"error" : @"replacement must be an item"};
-    NSMutableDictionary *replacement = itemQuery(other, NO, &error);
-    if (replacement == nil) return @{@"status" : @(errSecParam), @"error" : error};
-    id group = query[(__bridge id)kSecAttrAccessGroup];
-    id otherGroup = replacement[(__bridge id)kSecAttrAccessGroup];
-    if ([operation[@"service"] isEqual:other[@"service"]]
-        && [base64(operation[@"account"]) isEqual:base64(other[@"account"])]
-        && (group == nil || otherGroup == nil || [group isEqual:otherGroup])) {
+  // Validate every query before a clear can remove anything, then reuse the parsed queries.
+  NSArray<NSDictionary *> *clears = itemQueries(operation, @"clears", NO, &error);
+  if (clears == nil) return @{@"status" : @(errSecParam), @"error" : error};
+  NSArray<NSDictionary *> *replacements = itemQueries(operation, @"replaces", YES, &error);
+  if (replacements == nil) return @{@"status" : @(errSecParam), @"error" : error};
+  for (NSDictionary *replacement in replacements) {
+    if (queriesOverlap(query, replacement)) {
       return @{@"status" : @(errSecParam), @"error" : @"replacement can match the item being set"};
     }
-    [replacements addObject:replacement];
   }
-  if (operation[@"clears"] != nil && ![operation[@"clears"] isKindOfClass:NSArray.class])
-    return @{@"status" : @(errSecParam), @"error" : @"clears must be a list"};
-  deleteEach(operation[@"clears"]);
-  OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
+  OSStatus status = deleteQueries(clears);
+  if (status != errSecSuccess) return @{@"status" : @(status)};
+  status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
   if (status == errSecItemNotFound) {
     [query addEntriesFromDictionary:attributes];
     status = SecItemAdd((__bridge CFDictionaryRef)query, NULL);
   }
   // Other places a library reads the same key, removed only once the new value is in place. A copy
   // that stays fails the set, as the app could still read the old value there.
-  for (NSDictionary *replacement in replacements) {
-    if (status != errSecSuccess) break;
-    OSStatus removed = SecItemDelete((__bridge CFDictionaryRef)replacement);
-    if (removed != errSecItemNotFound) status = removed;
-  }
+  if (status == errSecSuccess) status = deleteQueries(replacements);
   return @{@"status" : @(status)};
 }
 
 
 static NSString *attributeBase64(id value) {
-  if ([value isKindOfClass:NSData.class]) return [value base64EncodedStringWithOptions:0];
-  if ([value isKindOfClass:NSString.class])
-    return [[value dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
-  return nil;
+  return [attributeData(value) base64EncodedStringWithOptions:0];
 }
 
 // Attributes only. Values never leave the app through this channel.
