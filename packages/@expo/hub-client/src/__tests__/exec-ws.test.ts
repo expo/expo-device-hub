@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import { hostUiRequest, runHostAction } from "../exec-ws";
+import { createControlSocket } from "../control-socket";
 
 /**
  * Minimal scripted WebSocket: records frames the client sends and lets the
@@ -58,6 +59,89 @@ async function handshake(token: string): Promise<{ ws: FakeWebSocket; request: a
 }
 
 describe("runHostAction", () => {
+  test.each([
+    ["app.install", false],
+    ["app.install", true],
+    ["upload.append", false],
+    ["upload.append", true],
+  ] as const)(
+    "uses the host install deadline and bounds uploads (%s, pooled=%s)",
+    async (action, pooled) => {
+      installFakeWebSocket();
+      const realSet = globalThis.setTimeout;
+      const realClear = globalThis.clearTimeout;
+      const timers = new Map<ReturnType<typeof setTimeout>, { run(): void; delay: number }>();
+      const set = spyOn(globalThis, "setTimeout").mockImplementation(((
+        run: (...args: unknown[]) => void,
+        delay: number | undefined,
+        ...args: unknown[]
+      ) => {
+        const timer = realSet(run, delay, ...args);
+        timers.set(timer, { run: () => run(...args), delay: delay ?? 0 });
+        return timer;
+      }) as typeof setTimeout);
+      const clear = spyOn(globalThis, "clearTimeout").mockImplementation((timer) => {
+        timers.delete(timer as ReturnType<typeof setTimeout>);
+        realClear(timer as ReturnType<typeof setTimeout>);
+      });
+      const channel = pooled
+        ? createControlSocket("ws://hub/exec-ws", "secret", { healthIntervalMs: 60_000 })
+        : undefined;
+      try {
+        const pending = runHostAction(
+          "ws://hub/exec-ws",
+          "secret",
+          action,
+          { udid: "U", uploadId: "app.tgz" },
+          undefined,
+          channel,
+        );
+        const outcome = pending.catch((error) => error);
+        const { ws, request } = await handshake("secret");
+        // Advance active client deadlines through a 25-second host install.
+        for (const [timer, task] of [...timers]) {
+          if (task.delay > 0 && task.delay <= 25_000) {
+            clearTimeout(timer);
+            task.run();
+          }
+        }
+        ws.reply({ id: request.id, stdout: "installed", stderr: "", exitCode: 0 });
+        if (action === "app.install")
+          expect(await outcome).toEqual({ stdout: "installed", stderr: "", exitCode: 0 });
+        else expect(await outcome).toEqual(new Error("exec-ws timeout"));
+      } finally {
+        channel?.dispose();
+        for (const timer of timers.keys()) realClear(timer);
+        clear.mockRestore();
+        set.mockRestore();
+      }
+    },
+  );
+
+  test.each([false, true])(
+    "rejects an install when its connection fails (pooled=%s)",
+    async (pooled) => {
+      installFakeWebSocket();
+      const channel = pooled ? createControlSocket("ws://hub/exec-ws", "secret") : undefined;
+      try {
+        const pending = runHostAction(
+          "ws://hub/exec-ws",
+          "secret",
+          "app.install",
+          { udid: "U" },
+          undefined,
+          channel,
+        );
+        const outcome = pending.catch((error) => error);
+        const { ws } = await handshake("secret");
+        ws.onclose?.();
+        expect(await outcome).toEqual(new Error("exec-ws closed"));
+      } finally {
+        channel?.dispose();
+      }
+    },
+  );
+
   test("authenticates, sends a typed action frame, and resolves the result", async () => {
     installFakeWebSocket();
     const pending = runHostAction("ws://hub/exec-ws", "secret", "app.container", {
@@ -74,6 +158,37 @@ describe("runHostAction", () => {
     ws.reply({ id: 1, stdout: "/path/Foo.app\n", stderr: "", exitCode: 0 });
     expect(await pending).toEqual({ stdout: "/path/Foo.app\n", stderr: "", exitCode: 0 });
     expect(ws.closed).toBe(true);
+  });
+
+  test("bounds a standalone install handshake before the host action starts", async () => {
+    installFakeWebSocket();
+    const realSet = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const set = spyOn(globalThis, "setTimeout").mockImplementation(((
+      run: () => void,
+      delay?: number,
+    ) => {
+      if (delay === 5_000) expire = run;
+      timer = realSet(run, delay);
+      return timer;
+    }) as typeof setTimeout);
+    const outcome = runHostAction("ws://hub/exec-ws", "secret", "app.install", { udid: "U" }).catch(
+      (error) => error,
+    );
+    try {
+      expect(expire).toBeDefined();
+      expire!();
+      expect(await outcome).toEqual(new Error("exec-ws timeout"));
+      const ws = FakeWebSocket.instances[0]!;
+      ws.reply({ ready: true });
+      expect(ws.sent.some((frame) => JSON.parse(frame).action === "app.install")).toBe(false);
+    } finally {
+      FakeWebSocket.instances[0]?.onclose?.();
+      clearTimeout(timer);
+      set.mockRestore();
+      await outcome;
+    }
   });
 
   test("maps a rejected action to a failed result instead of throwing", async () => {

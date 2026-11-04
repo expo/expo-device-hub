@@ -194,7 +194,7 @@ export function createControlSocket(
   };
 
   return {
-    request(body: Reply, timeoutMs: number, signal?: AbortSignal): Promise<Reply> {
+    request(body: Reply, timeoutMs: number | undefined, signal?: AbortSignal): Promise<Reply> {
       return new Promise((resolve, reject) => {
         if (disposed) {
           reject(new Error("exec-ws closed"));
@@ -217,7 +217,10 @@ export function createControlSocket(
           sendRequests();
         };
         const abort = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-        const timer = setTimeout(() => finish(new Error("exec-ws timeout")), timeoutMs);
+        const timer =
+          timeoutMs === undefined
+            ? undefined
+            : setTimeout(() => finish(new Error("exec-ws timeout")), timeoutMs);
         signal?.addEventListener("abort", abort, { once: true });
         pending.set(id, { body, sent: false, finish });
         if (ready) sendRequests();
