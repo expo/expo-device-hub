@@ -16,8 +16,9 @@ struct EncodedPacket {
   bool key = false;
 };
 
-// Hardware H.264 through VideoToolbox. Frames of any size are scaled and
-// converted to NV12 by a VTPixelTransferSession before the encoder.
+// H.264 through VideoToolbox, on the hardware encoder when the Mac has one.
+// Frames of any size are scaled and converted to NV12 by a
+// VTPixelTransferSession before the encoder.
 class H264Encoder {
  public:
   using Sink = std::function<void(EncodedPacket&&)>;

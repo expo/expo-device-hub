@@ -2,7 +2,8 @@
 
 Experimental Android Emulator screen capture for **macOS on Apple silicon** (M1, M2,
 M3, M4 and later). It copies each displayed frame on the GPU when the emulator renders
-with the host GPU, and encodes it with the VideoToolbox hardware H.264 encoder.
+with the host GPU, and encodes it to H.264 with VideoToolbox, on the hardware encoder
+when the Mac has one.
 [Expo Device Hub](../expo-device-hub) can stream an emulator through it instead of
 through scrcpy.
 
@@ -13,7 +14,7 @@ The design is in [LLP 0017](../../llp/0017-emulator-capture-macos.explainer.md).
 
 ```text
 Emulator display post → GL texture → GPU copy into an IOSurface
-  → VideoToolbox scale and NV12 conversion → hardware H.264 → Unix socket
+  → VideoToolbox scale and NV12 conversion → H.264 (hardware) → Unix socket
   → serve-emu → Device Hub (WebCodecs or WebRTC)
 ```
 
@@ -24,6 +25,8 @@ Emulator display post → GL texture → GPU copy into an IOSurface
   frame into an IOSurface on the GPU; the CPU never touches the pixels.
 - With a software renderer (`-gpu auto` on a headless Mac picks SwANGLE), the agent
   reads the pixels back instead. Encoding still uses the hardware encoder.
+- A Mac without a usable hardware encoder gets the VideoToolbox software encoder.
+  The `configured` record and the agent log say which encoder runs.
 - A consumer connects to the agent's socket, sets the stream size, frame rate and bit
   rate, and receives H.264. Consumers can disconnect and reconnect at any time.
 - When a foldable folds or unfolds, the display size changes. The agent reconfigures
