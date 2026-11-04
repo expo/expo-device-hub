@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import {
@@ -65,6 +65,7 @@ async function mount() {
   const writes: Array<{ url: string; angle: number; finish: () => void }> = [];
   let holdRead = false;
   const reads: Array<() => void> = [];
+  const readSignals: AbortSignal[] = [];
   let failWrite = false;
   const fetchImpl = (async (input: string, init?: RequestInit) => {
     if (init?.method === "POST") {
@@ -75,6 +76,7 @@ async function mount() {
         payload(angle === 0 ? "closed" : angle === 180 ? "opened" : "half_opened", angle),
       );
     }
+    if (init?.signal) readSignals.push(init.signal);
     const answer = status;
     if (holdRead) await new Promise<void>((resolve) => reads.push(resolve));
     return Response.json(answer);
@@ -101,6 +103,7 @@ async function mount() {
     result: () => result,
     writes,
     reads,
+    readSignals,
     status: (next: typeof status) => {
       status = next;
     },
@@ -268,3 +271,94 @@ test("rejects angles outside capabilities and poses Android cannot apply", async
   }
   expect(h.writes).toHaveLength(0);
 });
+
+test("returning to a device preserves its writer without showing the retired reply", async () => {
+  const h = await mount();
+  await h.choose("closed");
+  await h.update({ url: "https://hub.test/api/fold?device=two" });
+  await h.update({});
+  await act(async () => h.result().fold?.setControl({ control: "pose", value: "book" }));
+  expect(h.writes).toHaveLength(1);
+  expect(h.result().fold?.angle).toBe(90);
+  await h.finish(0);
+  expect(h.writes.map((write) => write.angle)).toEqual([0, 90]);
+  expect(h.result().fold?.angle).toBe(90);
+  expect(h.result().fold?.pending).toBe(true);
+  await h.finish(1);
+  expect(h.result().fold?.pending).toBe(false);
+  expect(h.result().fold?.pose).toBe("book");
+});
+
+test("unmount aborts a pending read and drops an unsent write", async () => {
+  const h = await mount();
+  h.holdRead(true);
+  await h.poll();
+  const signal = h.readSignals.at(-1)!;
+  expect(signal.aborted).toBe(false);
+  await h.choose("closed");
+  await h.choose("open");
+  await act(async () => renderer?.unmount());
+  renderer = undefined;
+  expect(signal.aborted).toBe(true);
+  await act(async () => h.reads[0]!());
+  await h.finish(0);
+  expect(h.writes).toHaveLength(1);
+});
+
+for (const stage of ["headers", "body"] as const) {
+  test(`a timeout during ${stage} clears pending without retry and permits a new choice`, async () => {
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const deadlines: AbortController[] = [];
+    const deadline = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+      expect(ms).toBe(30_000);
+      const controller = new AbortController();
+      deadlines.push(controller);
+      return controller.signal;
+    });
+    let posts = 0;
+    let result!: ReturnType<typeof useAndroidFold>;
+    const fetchImpl: FoldFetch = async (_url, init) => {
+      if (init?.method !== "POST") return Response.json(payload());
+      posts++;
+      if (posts > 1) return Response.json(payload("closed", 0));
+      const signal = init.signal!;
+      if (stage === "headers") {
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            signal.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      );
+    };
+    function Harness() {
+      result = useAndroidFold("https://hub.test/api/fold?device=one", fetchImpl, false);
+      return null;
+    }
+    try {
+      await act(async () => {
+        renderer = create(<Harness />);
+      });
+      await act(async () => result.fold?.setControl({ control: "angle", value: 90 }));
+      expect(result.fold?.pending).toBe(true);
+      await act(async () =>
+        deadlines[1]!.abort(new DOMException("Fold request timed out", "TimeoutError")),
+      );
+      expect(result.fold?.pending).toBe(false);
+      expect(result.fold?.error).toContain("timed out");
+      expect(posts).toBe(1);
+      await act(async () => result.fold?.setControl({ control: "pose", value: "closed" }));
+      expect(posts).toBe(2);
+      expect(result.fold?.error).toBeNull();
+      expect(result.fold?.pose).toBe("closed");
+      expect(result.fold?.pending).toBe(false);
+    } finally {
+      deadline.mockRestore();
+    }
+  });
+}
