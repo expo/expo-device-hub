@@ -11,8 +11,8 @@ import { DUO_FOLD_CONTROLS } from "./duo-fixtures";
 
 type FoldControls = Exclude<DeviceFoldCapabilities, false>;
 
-/** What #352's Android emulator offers: the hinge angle and three poses. */
-const ANDROID_FOLD_CONTROLS: FoldControls = {
+/** A consumer with angle control and a subset of poses. */
+const ANGLE_FOLD_CONTROLS: FoldControls = {
   angle: { min: 0, max: 180 },
   poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
   tableMode: false,
@@ -62,30 +62,30 @@ describe("FoldSettings", () => {
     const android = settings(
       { angle: 90, pose: "book", tableMode: undefined, physical: undefined },
       undefined,
-      ANDROID_FOLD_CONTROLS,
+      ANGLE_FOLD_CONTROLS,
     );
     expect(rowLabels(android)).toEqual(["Fold pose", "Hinge angle"]);
     expect(android).toContain('data-test-options="Fully folded\nPartially open\nFully open"');
     // serve-emu on main only folds and unfolds fully.
     const postureOnly = settings({ angle: 0, pose: "closed" }, undefined, {
-      ...ANDROID_FOLD_CONTROLS,
+      ...ANGLE_FOLD_CONTROLS,
       angle: false,
       poses: { closed: { angle: 0 }, open: { angle: 180 } },
     });
     expect(rowLabels(postureOnly)).toEqual(["Fold pose"]);
     // A hinge that takes angles but no poses gets the slider alone.
-    const angleOnly = settings({ angle: 120 }, undefined, { ...ANDROID_FOLD_CONTROLS, poses: {} });
+    const angleOnly = settings({ angle: 120 }, undefined, { ...ANGLE_FOLD_CONTROLS, poses: {} });
     expect(rowLabels(angleOnly)).toEqual(["Hinge angle"]);
   });
 
   test("a pose that the device reports but does not offer shows as Custom", () => {
-    const markup = settings({ angle: 80, pose: "tent" }, undefined, ANDROID_FOLD_CONTROLS);
+    const markup = settings({ angle: 80, pose: "tent" }, undefined, ANGLE_FOLD_CONTROLS);
     expect(markup).toContain(">Custom<");
   });
 
   test("the slider and the degree input follow the device's angle range", () => {
     const markup = settings({ angle: 270 }, undefined, {
-      ...ANDROID_FOLD_CONTROLS,
+      ...ANGLE_FOLD_CONTROLS,
       angle: { min: 180, max: 360 },
       poses: {},
     });
@@ -204,4 +204,19 @@ describe("FoldSettings", () => {
     expect(markup).toContain(MODEL_UNAVAILABLE_DESCRIPTION);
     expect(markup).toContain(">2D<");
   });
+});
+
+test("posture-only custom states cannot select an intermediate pose", () => {
+  const markup = settings(
+    { angle: 90, pose: null, tableMode: undefined, physical: undefined },
+    undefined,
+    {
+      angle: false,
+      poses: { closed: { angle: 0 }, open: { angle: 180 } },
+      tableMode: false,
+    },
+  );
+  expect(rowLabels(markup)).toEqual(["Fold pose"]);
+  expect(markup).toContain('data-test-options="Fully folded\nFully open\nCustom"');
+  expect(markup).toContain(">Custom<");
 });

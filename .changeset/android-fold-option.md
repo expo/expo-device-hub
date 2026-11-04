@@ -3,4 +3,4 @@
 "@expo/hub-client": minor
 ---
 
-Add a Folded switch to the Android device options for foldable emulators. It folds or unfolds the emulator fully through serve-emu's `/api/fold`, follows posture changes made elsewhere, and notes when the device is half open, flipped, or in tent posture. The `fold` device setting reports the posture, or `unsupported` on a device without a hinge.
+Add Android emulator fold and unfold controls through the shared `client.fold` contract and the dashboard's Fold pose selector. Report other postures as read-only custom states and hide controls on devices without a hinge.
