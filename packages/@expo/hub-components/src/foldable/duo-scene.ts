@@ -83,7 +83,6 @@ type Surface = {
   mapping?: DuoScreenMapping;
   mappingConfigKey?: string;
   lastFrameKey?: string;
-  lastImage?: string;
   lastVideoTime?: number;
   sawOtherActiveScreen: boolean;
   nativeDeparture?: number;
@@ -371,13 +370,17 @@ export function createDuoScene(
     // The body carries the image, including cached frames on an inactive panel.
     const rotation = frameRotation(config);
     const frameKey = `${config.width}:${config.height}:${rotation}:${binding}`;
-    if (frameKey === surface.lastFrameKey) {
-      if (source instanceof HTMLImageElement && source.src === surface.lastImage) return;
-      if (source instanceof HTMLVideoElement && source.currentTime === surface.lastVideoTime)
-        return;
+    // Only a video tells when it has a new frame. An MJPEG <img> keeps its src
+    // while its frames change, so an image is drawn again on every frame, as a
+    // canvas is.
+    if (
+      frameKey === surface.lastFrameKey &&
+      source instanceof HTMLVideoElement &&
+      source.currentTime === surface.lastVideoTime
+    ) {
+      return;
     }
     surface.lastFrameKey = frameKey;
-    if (source instanceof HTMLImageElement) surface.lastImage = source.src;
     if (source instanceof HTMLVideoElement) surface.lastVideoTime = source.currentTime;
     const { context, canvas } = surface;
     const mapping = duoScreenMapping(config, canvas.width, canvas.height, rotation);
@@ -426,7 +429,6 @@ export function createDuoScene(
     surface.mapping = undefined;
     surface.mappingConfigKey = undefined;
     surface.lastFrameKey = undefined;
-    surface.lastImage = undefined;
     surface.lastVideoTime = undefined;
   }
 
