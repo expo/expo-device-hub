@@ -179,7 +179,7 @@ const ACTION_SCHEMAS = {
     })
     .meta({
       description:
-        "Set values an app reads from its keychain, such as sign-in tokens. Uses the expo-secure-store layout unless format says otherwise; relaunch restarts the app so it reads them at launch.",
+        "Set values an app reads from its keychain, such as sign-in tokens. Uses the expo-secure-store layout unless format says otherwise; relaunch restarts the app and waits for the helper to acknowledge the change. Early native launch reads can precede the write.",
     }),
   "keychain.delete": z
     .object({
