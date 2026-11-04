@@ -850,8 +850,11 @@ async function runKeychainAction(
         `Keychain access is off for ${udid} on this server, by --disable keychain or capabilities.set.`,
       );
     }
-    await prepare?.(udid);
-    return await run();
+    const operation = async () => {
+      await prepare?.(udid);
+      return run();
+    };
+    return capabilities ? await capabilities.run(udid, "keychain", operation) : await operation();
   } catch (error) {
     return failedResult(error);
   }
