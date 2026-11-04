@@ -12,7 +12,6 @@ actor ScreenshotEncoder {
 
     func encode(_ pixels: CVPixelBuffer, orientation: String? = nil, maxWidth: Int = 0) throws -> Data {
         let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
-        var image: CGImage
         // Match the preview's display geometry: some runtimes rotate the surface itself,
         // others keep portrait pixels and publish orientation separately.
         let rotation: CGImagePropertyOrientation
@@ -22,11 +21,11 @@ actor ScreenshotEncoder {
         case "portrait_upside_down": rotation = .down
         default: rotation = .up
         }
-        if maxWidth > 0 {
-            image = try render(resize(CIImage(cvPixelBuffer: pixels).oriented(rotation), maxWidth: maxWidth))
-        } else {
-            image = try copyImage(pixels)
-            if rotation != .up { image = try render(CIImage(cgImage: image).oriented(rotation)) }
+        // Freeze the shared surface before Core Image can defer reading it. Keep
+        // this readback on the screenshot queue, away from the video capture actor.
+        var image = try copyImage(pixels)
+        if rotation != .up || maxWidth > 0 {
+            image = try render(resize(CIImage(cgImage: image).oriented(rotation), maxWidth: maxWidth))
         }
         return try encode(image, jpegQuality: nil)
     }

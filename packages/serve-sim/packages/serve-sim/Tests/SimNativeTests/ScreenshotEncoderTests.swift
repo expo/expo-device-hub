@@ -167,6 +167,39 @@ final class ScreenshotEncoderTests: XCTestCase {
         }
     }
 
+    func testResizedScreenshotsSurviveSharedSurfaceReuse() async throws {
+        let encoder = ScreenshotEncoder()
+        var buffer: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 260,
+            kCVPixelFormatType_32BGRA,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer), kCVReturnSuccess)
+        let input = try XCTUnwrap(buffer)
+        var captures: [(Data, UInt8)] = []
+        for value in [UInt8(0), 255, 64, 192, 0] {
+            CVPixelBufferLockBaseAddress(input, [])
+            let base = try XCTUnwrap(CVPixelBufferGetBaseAddress(input))
+            for y in 0..<260 {
+                let row = base.advanced(by: y * CVPixelBufferGetBytesPerRow(input)).assumingMemoryBound(to: UInt8.self)
+                for x in 0..<120 {
+                    row[x * 4] = value; row[x * 4 + 1] = value
+                    row[x * 4 + 2] = value; row[x * 4 + 3] = 255
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(input, [])
+            captures.append((try await encoder.encode(input, maxWidth: 40), value))
+        }
+        // Decode after the producer has reused the same IOSurface several times.
+        for (png, value) in captures {
+            let decoded = try Self.rgba(png)
+            XCTAssertEqual(decoded.image.width, 40)
+            XCTAssertEqual(decoded.image.height, 87)
+            for i in stride(from: 0, to: decoded.bytes.count, by: 4) {
+                for channel in 0..<3 { XCTAssertEqual(Int(decoded.bytes[i + channel]), Int(value), accuracy: 1) }
+                XCTAssertEqual(decoded.bytes[i + 3], 255)
+            }
+        }
+    }
+
     func testDisplayOrientationAndAlreadyRotatedSurfaces() async throws {
         let encoder = ScreenshotEncoder()
         for (width, height, orientation, expectedWidth, expectedHeight) in [
