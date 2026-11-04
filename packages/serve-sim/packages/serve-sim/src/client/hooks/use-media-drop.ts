@@ -7,6 +7,8 @@ import {
   uploadDroppedFile,
 } from "../utils/drop";
 
+import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
+
 type UploadCallbacks = {
   onUploadStart: (name: string, kind: DropKind) => string;
   onUploadProgress: (id: string, progress: number | null) => void;
@@ -82,6 +84,11 @@ export function useMediaDrop({
       if (files.length === 0) return;
 
       for (const file of files) {
+        if (isUnsupportedAppArchive(file.name)) {
+          const id = onUploadStart(file.name, "media");
+          onUploadEnd(id, false, UNSUPPORTED_INSTALL_FORMAT);
+          continue;
+        }
         const kind = dropKindFor(file);
         if (!kind) {
           onUnsupported(file);
