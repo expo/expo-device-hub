@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { createElement, type DragEvent } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { UNSUPPORTED_INSTALL_FORMAT } from "../app-install-format";
+import type { AppFolderEntry } from "../client/utils/app-drop-folder";
 
 const actions: string[] = [];
 let failure: string | undefined;
+let failureMessage = "host operation failed";
 beforeEach(() => {
   actions.length = 0;
   failure = undefined;
+  failureMessage = "host operation failed";
 });
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -18,7 +21,7 @@ void mock.module("../socket/client-control", () => ({
     if (failure === "disconnect" && action === "upload.append")
       throw new Error("channel disconnected");
     return action === failure
-      ? { stdout: "", stderr: "host operation failed", exitCode: 1 }
+      ? { stdout: "", stderr: failureMessage, exitCode: 1 }
       : { stdout: "/tmp/staged-media", stderr: "", exitCode: 0 };
   },
 }));
@@ -58,7 +61,12 @@ type DropEvent = { type: string; name?: string; id?: string; ok?: boolean; messa
 // Mount the real hook and wait for each file's completion callback, not a timer.
 async function dropFiles(
   files: File[],
-  options: { enabled?: boolean; udid?: string | null; hostPath?: string } = {},
+  options: {
+    enabled?: boolean;
+    udid?: string | null;
+    hostPath?: string;
+    entries?: Array<AppFolderEntry | null>;
+  } = {},
 ): Promise<DropEvent[]> {
   const events: DropEvent[] = [];
   const enabled = options.enabled ?? true;
@@ -109,7 +117,11 @@ async function dropFiles(
       await drop.dropZoneProps.onDrop({
         preventDefault() {},
         stopPropagation() {},
-        dataTransfer: { getData: () => options.hostPath ?? "", files },
+        dataTransfer: {
+          getData: () => options.hostPath ?? "",
+          files,
+          items: options.entries?.map((entry) => ({ kind: "file", webkitGetAsEntry: () => entry })),
+        },
       } as unknown as DragEvent);
       await done;
     });
@@ -122,6 +134,100 @@ async function dropFiles(
 }
 
 const photo = (name = "photo.png") => new File(["image"], name, { type: "image/png" });
+
+test("folder packing is serial while a mixed media drop can proceed", async () => {
+  let active = 0,
+    peak = 0;
+  const folder = (name: string): AppFolderEntry => ({
+    name,
+    isDirectory: true,
+    isFile: false,
+    createReader() {
+      let done = false;
+      return {
+        readEntries(ok) {
+          if (done) {
+            ok([]);
+            return;
+          }
+          done = true;
+          ok([
+            {
+              name: "Info.plist",
+              isDirectory: false,
+              isFile: true,
+              file(callback) {
+                peak = Math.max(peak, ++active);
+                setTimeout(() => {
+                  active--;
+                  callback(new File(["plist"], "Info.plist"));
+                }, 10);
+              },
+            },
+          ]);
+        },
+      };
+    },
+  });
+  const result = await dropFiles([new File([], "One.app"), photo(), new File([], "Two.app")], {
+    entries: [folder("One.app"), null, folder("Two.app")],
+  });
+  expect(result.filter((e) => e.type === "end").every((e) => e.ok)).toBe(true);
+  expect(actions.filter((action) => action === "app.install")).toHaveLength(2);
+  expect(actions.indexOf("media.add")).toBeLessThan(actions.indexOf("app.install"));
+  expect(peak).toBe(1);
+});
+
+test.each(["upload.append", "app.install"])(
+  "folder drops preserve the host %s error",
+  async (action) => {
+    failure = action;
+    failureMessage = "App installation timed out.";
+    const result = await dropFiles([new File([], "Build.app")], {
+      entries: [
+        {
+          name: "Build.app",
+          isDirectory: true,
+          isFile: false,
+          createReader: () => ({
+            readEntries(ok) {
+              ok([]);
+            },
+          }),
+        },
+      ],
+    });
+    expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message: failureMessage });
+    expect(actions.at(-1)).toBe("upload.remove");
+  },
+);
+
+test.each(["OtherFolder", "Build.app"])(
+  "unreadable or unsupported %s gives archive guidance",
+  async (name) => {
+    const result = await dropFiles([new File([], name)], {
+      entries: [{ name, isDirectory: true, isFile: false }],
+    });
+    expect(result.at(-1)).toMatchObject({
+      type: "end",
+      ok: false,
+      message: expect.stringContaining(".tar.gz/.tgz"),
+    });
+    expect(actions.some((action) => action === "upload.append" || action === "app.install")).toBe(
+      false,
+    );
+  },
+);
+
+test("a browser without folder entries gives an archive alternative", async () => {
+  const result = await dropFiles([new File([], "Build.app")]);
+  expect(result.at(-1)).toMatchObject({
+    type: "end",
+    ok: false,
+    message: expect.stringContaining(".tar.gz/.tgz"),
+  });
+  expect(actions).toEqual([]);
+});
 
 test.each([
   { name: "Build.zip", type: "application/zip" },

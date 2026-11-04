@@ -76,13 +76,17 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   }
 
   async function drop(files: Array<{ name: string; bytes: Buffer }>) {
-    sent.length = 0;
-    replies.clear();
     const paths = files.map(({ name, bytes }) => {
       const path = join(root, name);
       writeFileSync(path, bytes);
       return path;
     });
+    await dropPaths(paths);
+  }
+
+  async function dropPaths(paths: string[]) {
+    sent.length = 0;
+    replies.clear();
     const point = await browser.cdp.evaluate<{ x: number; y: number }>(`(() => {
       const layer = [...document.querySelectorAll('div')].find(el => el.style.touchAction === 'none' && el.getBoundingClientRect().width > 100);
       if (!layer) throw new Error('No simulator stream');
@@ -285,7 +289,7 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
   }, 60000);
 
   requireE2E("preview app archive drops (requires app fixture)", fixtureReady);
-  test.skipIf(!fixtureReady).each(["browser-app.tar.gz", "browser-app.tgz"])(
+  test.skipIf(!fixtureReady).each(["browser-app.tar.gz", "browser-app.tgz", "Browser.app"])(
     "%s installs and launches the app through the preview",
     async (name) => {
       try {
@@ -310,14 +314,18 @@ describe.skipIf(!ready)("preview file drops through the real action channel", ()
       execFileSync("codesign", ["--force", "--sign", "-", "--timestamp=none", bundle], {
         stdio: "pipe",
       });
-      const archive = join(root, name);
-      if (name.endsWith(".tgz")) {
-        // The CLI/EAS node-tar producer emits PAX headers for Unicode paths.
-        await createTar({ cwd: root, gzip: true, file: archive }, [folder]);
+      if (name.endsWith(".app")) {
+        await dropPaths([bundle]);
       } else {
-        execFileSync("tar", ["-czf", archive, "-C", root, folder]);
+        const archive = join(root, name);
+        if (name.endsWith(".tgz")) {
+          // The CLI/EAS node-tar producer emits PAX headers for Unicode paths.
+          await createTar({ cwd: root, gzip: true, file: archive }, [folder]);
+        } else {
+          execFileSync("tar", ["-czf", archive, "-C", root, folder]);
+        }
+        await drop([{ name, bytes: readFileSync(archive) }]);
       }
-      await drop([{ name, bytes: readFileSync(archive) }]);
       await until(
         () => sent.some(({ id, action }) => action === "app.install" && replies.has(id)),
         "Archive drop did not reach app.install",
