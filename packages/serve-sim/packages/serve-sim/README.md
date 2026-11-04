@@ -333,8 +333,9 @@ serve-sim keychain delete com.example.app refreshToken
 ```
 
 - A running app applies the change at once. A closed app applies it when it next starts, within
-  an hour. `--relaunch` restarts the app, so it reads the values from launch, and fails if the app
-  does not apply them.
+  an hour. `--relaunch` restarts the app and waits for the helper to acknowledge the change.
+  Early native launch callbacks can read before the write; an app that caches that read needs
+  another restart after acknowledgement.
 - `--service` matches SecureStore's `keychainService` option, and `--access-group` its `accessGroup`.
   `--format generic-password --service <name>` writes plain generic-password items for other
   libraries; the key becomes the account.

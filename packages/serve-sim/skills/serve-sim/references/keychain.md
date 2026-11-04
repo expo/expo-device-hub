@@ -29,8 +29,10 @@ Shared options: `--format <expo-secure-store|generic-password>` (default `expo-s
   app that cached its sign-in state does not notice; pass `--relaunch`.
 - **Closed app:** the request waits and applies when the app next starts. It expires after an hour;
   the app then drops it unread.
-- **`--relaunch`:** restarts the app and waits until it applied the change. Use this for "open the
-  app signed in". If the restarted app does not apply it, the command fails and nothing changes.
+- **`--relaunch`:** restarts the app and waits for the helper to acknowledge the change. Early
+  native launch callbacks can read before the write; restart again after acknowledgement if the
+  app caches that read. An unclaimed request is withdrawn on timeout; a lost answer after the app
+  claimed it leaves the result uncertain.
 - An app that was already open when the serve-sim session started does not answer until it restarts.
 
 ## Formats
