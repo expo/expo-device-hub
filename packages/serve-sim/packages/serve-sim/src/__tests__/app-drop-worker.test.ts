@@ -1,5 +1,13 @@
 import { expect, test } from "bun:test";
 import { untar } from "multitars";
+import { runChildSuite } from "./fixtures/run-child-suite";
+
+test("the worker client propagates failures and cleans up cancelled uploads", async () => {
+  const { exitCode, output } = await runChildSuite("app-drop-worker-client.child.ts", {
+    timeoutMs: 10000,
+  });
+  expect(exitCode, output).toBe(0);
+}, 15000);
 
 test("the real packing worker preserves files and only emits chunks when pulled", async () => {
   const worker = new Worker(new URL("../client/utils/app-drop-worker.ts", import.meta.url).href);
