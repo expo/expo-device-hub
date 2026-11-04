@@ -26,6 +26,7 @@ export const APP_FOLDER_GUIDANCE =
 
 const LIMITS = { entries: 100000, bytes: 2 * 1024 ** 3 };
 const encoder = new TextEncoder();
+export type AppFolderItem = { path: string; file?: File };
 
 function folderReadError(error: unknown): Error {
   const message = error instanceof Error ? error.message : "Could not read app folder";
@@ -69,9 +70,14 @@ export async function packAppFolder(
   onProgress: (fraction: number) => void,
   limits = LIMITS,
 ): Promise<ReadableStream<Uint8Array<ArrayBuffer>>> {
+  const { items, bytes } = await readAppFolder(entry, limits);
+  return packAppFolderItems(items, bytes, onProgress, limits);
+}
+
+export async function readAppFolder(entry: AppFolderEntry, limits = LIMITS) {
   if (!entry.isDirectory || !/\.app$/i.test(entry.name)) throw new Error(APP_FOLDER_GUIDANCE);
   const pending = [{ entry, path: component(entry.name).replace(/\.app$/i, ".app") }];
-  const items: Array<{ path: string; file?: File }> = [];
+  const items: AppFolderItem[] = [];
   const names = new Set<string>();
   let bytes = 0;
   while (pending.length) {
@@ -108,6 +114,15 @@ export async function packAppFolder(
     }
   }
 
+  return { items, bytes };
+}
+
+export function packAppFolderItems(
+  items: AppFolderItem[],
+  bytes: number,
+  onProgress: (fraction: number) => void,
+  limits = LIMITS,
+): ReadableStream<Uint8Array<ArrayBuffer>> {
   let read = 0;
   let reportedPercent = 0;
   async function* entries() {

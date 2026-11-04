@@ -83,6 +83,7 @@ async function bundleBrowserClient(entry: string): Promise<string> {
 
 const tailwindCss = await buildTailwindCss();
 const clientJs = await bundleBrowserClient("src/client/client.tsx");
+const appDropWorkerJs = await bundleBrowserClient("src/client/utils/app-drop-worker.ts");
 console.log(`client bundle     ${kb(clientJs.length)}`);
 
 // ─── 2. Inline client into preview HTML, base64-encode for the define ────
@@ -114,6 +115,7 @@ const pkgVersion = JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8
   .version as string;
 
 const PREVIEW_DEFINE = {
+  __APP_DROP_WORKER_B64__: JSON.stringify(Buffer.from(appDropWorkerJs).toString("base64")),
   __PREVIEW_HTML_B64__: JSON.stringify(htmlB64),
   __SERVE_SIM_VERSION__: JSON.stringify(pkgVersion),
 };
