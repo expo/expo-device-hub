@@ -135,7 +135,7 @@ export function registerKeychainCommands(
       .addOption(
         new Option("--accessible <when>", "When the item is readable").choices(KEYCHAIN_ACCESSIBLE),
       )
-      .option("--relaunch", "Restart the app so it reads the new values"),
+      .option("--relaunch", "Restart the app and wait for the helper's answer"),
     deviceOpt,
   ).action(
     (
@@ -165,7 +165,7 @@ export function registerKeychainCommands(
       .description("Delete values from the app's keychain")
       .argument("<bundle-id>")
       .argument("<keys...>")
-      .option("--relaunch", "Restart the app so it reads the change"),
+      .option("--relaunch", "Restart the app and wait for the helper's answer"),
     deviceOpt,
   ).action((bundleId: string, keys: string[], opts: KeychainCliOptions & { relaunch?: boolean }) =>
     run(async () => {
