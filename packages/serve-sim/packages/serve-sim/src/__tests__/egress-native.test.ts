@@ -9,6 +9,8 @@ const work = mkdtempSync("/tmp/serve-sim-egress-native-");
 const control = join(work, "serve-sim-egress-control");
 const probe = join(work, "serve-sim-egress-boot-identity");
 const visibilityProbe = join(work, "probe-visibility");
+const batchProbe = join(work, "sendmsg-x-probe");
+const hostGuard = join(work, "host-guard.dylib");
 const uid = randomUUID().toUpperCase();
 const run = (path: string, args: string[], env = process.env) =>
   execFileSync(path, args, {
@@ -20,6 +22,18 @@ const run = (path: string, args: string[], env = process.env) =>
 
 beforeAll(() => {
   run("bash", [join(source, "build.sh"), work]);
+  const flags = ["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror", "-Wconversion", "-Wshadow"];
+  run("clang", [
+    ...flags,
+    "-dynamiclib",
+    "-DSERVE_SIM_EGRESS_HOST_TEST",
+    "-DSERVE_SIM_EGRESS_TEST_REMOTE_LOOPBACK",
+    join(source, "egress-guard.c"),
+    join(source, "policy.c"),
+    "-o",
+    hostGuard,
+  ]);
+  run("clang", [...flags, join(source, "tests/sendmsg-x-test.c"), "-o", batchProbe]);
   run("xcrun", [
     "--sdk",
     "macosx",
@@ -75,4 +89,16 @@ test("probe skips disappeared own-user processes but rejects unknown visibility"
   expect(failure).toBeDefined();
   expect(String((failure as { stderr: string }).stderr)).toContain("424242");
   expect(String((failure as { stderr: string }).stderr)).toContain("Operation not permitted");
+});
+
+test("sendmsg_x checks every destination before submitting a batch", () => {
+  const page = join(work, "batch-policy");
+  run(control, ["create", page, "passthrough"]);
+  expect(
+    run(batchProbe, [page], {
+      ...process.env,
+      DYLD_INSERT_LIBRARIES: hostGuard,
+      SERVE_SIM_EGRESS_POLICY_FILE: page,
+    }),
+  ).toContain("pointer faults passed");
 });
