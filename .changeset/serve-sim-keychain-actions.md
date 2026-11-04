@@ -1,5 +1,6 @@
 ---
+"expo-device-hub": minor
 "@expo/serve-sim": minor
 ---
 
-Add `keychain.set`, `keychain.delete`, and `keychain.list` host actions.
+Add `keychain.set`, `keychain.delete`, and `keychain.list` controls for iOS Simulator apps.
