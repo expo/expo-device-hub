@@ -3693,11 +3693,17 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   };
   fetchMiddleware.dispose = async () => {
     // In turn: the last session to release a device also releases its capability loader.
-    try {
-      await clipboard?.dispose();
-    } finally {
-      await keychain?.dispose();
+    const failures: unknown[] = [];
+    for (const session of [clipboard, keychain]) {
+      try {
+        await session?.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
     }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Could not release preview capabilities");
   };
   return fetchMiddleware;
 }
