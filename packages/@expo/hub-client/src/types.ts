@@ -630,7 +630,7 @@ export interface KeychainOptions {
 }
 
 export interface KeychainWriteOptions extends KeychainOptions {
-  /** Restart the app after the write, so it reads the values at launch. */
+  /** Restart the app and wait for the helper to apply the change. */
   relaunch?: boolean;
 }
 
