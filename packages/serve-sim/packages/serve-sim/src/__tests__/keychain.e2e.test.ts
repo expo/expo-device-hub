@@ -194,6 +194,8 @@ describeOrSkip("keychain round trip", () => {
       { target: ITEM, replacement: { ...ITEM, accessGroup: group } },
       { target: { ...ITEM, accessGroup: group }, replacement: ITEM },
       { target: ITEM, replacement: { ...ITEM, attributesAsData: false } },
+      // A malformed wire request must not broaden a replacement to the whole service.
+      { target: ITEM, replacement: { service: ITEM.service } as typeof ITEM },
     ];
     for (const { target, replacement } of identities) {
       const value = `preserved-${Date.now()}`;
@@ -234,6 +236,30 @@ describeOrSkip("keychain round trip", () => {
     );
     expect(outcome).toEqual({ applied: true, results: [{ status: -34018 }] });
   }, 30_000);
+
+  test("failed or malformed clears leave the target unchanged", async () => {
+    const cases = [
+      { clears: [{ ...ITEM, accessGroup: "serve-sim.not-this-app" }], status: -34018 },
+      { clears: [ITEM, { ...ITEM, account: "not-base64!" }], status: -50 },
+    ];
+    for (const { clears, status } of cases) {
+      const value = `before-clear-${Date.now()}`;
+      expect(await runKeychainOperations(udid!, APP, [set(value)])).toEqual({
+        applied: true,
+        results: [{ status: 0 }],
+      });
+      expect(
+        await runKeychainOperations(udid!, APP, [{ ...set("must-not-write"), clears }]),
+      ).toMatchObject({
+        applied: true,
+        results: [{ status }],
+      });
+      terminate();
+      const after = seenValues().length;
+      launch();
+      await waitForLastSeen(`value=${value}`, { after });
+    }
+  }, 60_000);
 
   test("the app drops an expired request unread", async () => {
     const requests = join(dataContainer(), "tmp/serve-sim-keychain/requests");
