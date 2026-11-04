@@ -59,7 +59,7 @@ function execWsRequest(
   execWsUrl: string,
   execToken: string,
   body: Record<string, unknown>,
-  timeoutMs: number,
+  timeoutMs: number | undefined,
   protocols?: string[],
   channel?: ControlSocket,
 ): Promise<ExecReply> {
@@ -74,7 +74,7 @@ function execWsRequest(
     }
     let settled = false;
     let sent = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const finish = (run: () => void) => {
       if (settled) return;
       settled = true;
@@ -84,7 +84,10 @@ function execWsRequest(
       } catch {}
       run();
     };
-    timer = setTimeout(() => finish(() => reject(new Error("exec-ws timeout"))), timeoutMs);
+    timer = setTimeout(
+      () => finish(() => reject(new Error("exec-ws timeout"))),
+      timeoutMs ?? 5_000,
+    );
     ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
     ws.onmessage = (event) => {
       if (settled) return;
@@ -96,6 +99,10 @@ function execWsRequest(
       }
       if (msg.ready) {
         if (!sent) {
+          if (timeoutMs === undefined) {
+            clearTimeout(timer);
+            timer = undefined;
+          }
           sent = true;
           ws.send(JSON.stringify({ id: 1, ...body }));
         }
@@ -131,7 +138,9 @@ export async function runHostAction(
       execWsUrl,
       execToken,
       { action, params },
-      ACTION_TIMEOUT_MS,
+      // The host bounds installs and cleanup, including configured longer deadlines.
+      // A shorter client timer would report failure while installation still runs.
+      action === "app.install" ? undefined : ACTION_TIMEOUT_MS,
       protocols,
       channel,
     );
