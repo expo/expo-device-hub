@@ -51,6 +51,14 @@ terminal when the dev server starts:
 › Expo Device Hub: http://localhost:8081/_expo/plugins/expo-device-hub
 ```
 
+## Install a Simulator app
+
+Drop a Simulator `.app` folder or a `.tar.gz`/`.tgz` archive onto the live iOS
+device view. Uploads run in order and show progress in the dashboard. Use an
+archive for apps with symlinks or special permissions: Chrome omits symlinks
+from folder drops. Device `.ipa` builds, `.zip` archives and Android app drops
+are not supported.
+
 ## CLI
 
 The Hub also runs outside of `expo start` as a standalone server — useful when you want

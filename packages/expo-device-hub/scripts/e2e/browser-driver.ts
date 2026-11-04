@@ -109,6 +109,33 @@ export async function openBrowser(url: string, directory: string) {
     );
     await send("Page.navigate", { url }, sessionId);
     return {
+      async dropFiles(paths: string[]) {
+        const { root } = await send("DOM.getDocument", {}, sessionId);
+        const { nodeId } = await send(
+          "DOM.querySelector",
+          { nodeId: root.nodeId, selector: '[data-testid="device-frame-viewport"]' },
+          sessionId,
+        );
+        const { model } = await send("DOM.getBoxModel", { nodeId }, sessionId);
+        const x = (model.content[0] + model.content[4]) / 2;
+        const y = (model.content[1] + model.content[5]) / 2;
+        for (const type of ["dragEnter", "dragOver", "drop"])
+          await send(
+            "Input.dispatchDragEvent",
+            { type, x, y, data: { items: [], files: paths, dragOperationsMask: 1 } },
+            sessionId,
+          );
+      },
+      async waitForText(text: string) {
+        const deadline = Date.now() + 60000;
+        while (Date.now() < deadline) {
+          const { root } = await send("DOM.getDocument", {}, sessionId);
+          const { outerHTML } = await send("DOM.getOuterHTML", { nodeId: root.nodeId }, sessionId);
+          if (outerHTML.includes(text)) return;
+          await pause(100);
+        }
+        throw new Error(`Dashboard did not show ${text}`);
+      },
       async screenshot() {
         return (await send("Page.captureScreenshot", { format: "png" }, sessionId)).data as string;
       },

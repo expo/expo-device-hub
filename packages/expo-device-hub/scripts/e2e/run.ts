@@ -1,6 +1,6 @@
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -168,6 +168,37 @@ try {
       process.argv.includes("--interactive") ? 600_000 : 30_000,
     );
   const verification = (await result) as { ok: boolean; cases?: unknown; error?: string };
+  if (verification.ok && browser && process.argv.includes("--app-drop")) {
+    const dropApp = join(artifacts, "Hub Drop.app");
+    await cp(app, dropApp, { recursive: true });
+    execFileSync("plutil", [
+      "-replace",
+      "CFBundleIdentifier",
+      "-string",
+      "dev.expo.hub.drop-fixture",
+      join(dropApp, "Info.plist"),
+    ]);
+    const archive = join(artifacts, "Hub Drop.tgz");
+    execFileSync("tar", ["-czf", archive, "-C", artifacts, "Hub Drop.app"]);
+    for (const source of [archive, dropApp]) {
+      await browser.dropFiles([source]);
+      await browser.waitForText(
+        `Installed ${source.endsWith(".tgz") ? "Hub Drop.tgz" : "Hub Drop.app"}`,
+      );
+      execFileSync(
+        "xcrun",
+        ["simctl", "get_app_container", udid, "dev.expo.hub.drop-fixture", "app"],
+        { stdio: "pipe" },
+      );
+    }
+    await browser.dropFiles([join(artifacts, "dashboard")]);
+    await browser.waitForText("Drop a Simulator .app folder or .tar.gz/.tgz archive");
+    await writeFile(
+      join(artifacts, "dashboard-app-drop.png"),
+      Buffer.from(await browser.screenshot(), "base64"),
+    );
+    console.log("Dashboard archive and folder drops installed; invalid folder guidance visible.");
+  }
   await writeFile(join(artifacts, "verification.json"), JSON.stringify(verification, null, 2));
   await writeFile(join(artifacts, "wire.json"), JSON.stringify(proxy.snapshot(), null, 2));
   await writeFile(join(artifacts, "native-fixture.tsv"), await readFile(fixturePath, "utf8"));
