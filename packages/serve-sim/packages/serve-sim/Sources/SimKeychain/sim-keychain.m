@@ -105,6 +105,7 @@ static NSDictionary *setItem(NSDictionary *operation) {
   // Validate before writing: a replacement must never delete the value we are about to set.
   // Generic is not identity, account bytes can arrive as string or data, and an omitted group
   // searches all the app's allowed groups. Only two different explicit groups are disjoint.
+  NSMutableArray<NSDictionary *> *replacements = [NSMutableArray array];
   for (id other in replaces) {
     if (![other isKindOfClass:NSDictionary.class])
       return @{@"status" : @(errSecParam), @"error" : @"replacement must be an item"};
@@ -117,6 +118,7 @@ static NSDictionary *setItem(NSDictionary *operation) {
         && (group == nil || otherGroup == nil || [group isEqual:otherGroup])) {
       return @{@"status" : @(errSecParam), @"error" : @"replacement can match the item being set"};
     }
+    [replacements addObject:replacement];
   }
   OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)attributes);
   if (status == errSecItemNotFound) {
@@ -125,10 +127,9 @@ static NSDictionary *setItem(NSDictionary *operation) {
   }
   // Other places a library reads the same key, removed only once the new value is in place. A copy
   // that stays fails the set, as the app could still read the old value there.
-  for (id other in replaces) {
+  for (NSDictionary *replacement in replacements) {
     if (status != errSecSuccess) break;
-    if (![other isKindOfClass:NSDictionary.class]) continue;
-    OSStatus removed = [deleteItem(other)[@"status"] intValue];
+    OSStatus removed = SecItemDelete((__bridge CFDictionaryRef)replacement);
     if (removed != errSecItemNotFound) status = removed;
   }
   return @{@"status" : @(status)};

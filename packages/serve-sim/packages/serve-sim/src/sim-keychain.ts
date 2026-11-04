@@ -101,8 +101,6 @@ function mailboxOf(container: string): string {
   return join(container, "tmp", "serve-sim-keychain");
 }
 
-let requestSequence = 0;
-
 /**
  * Sends operations to the keychain dylib inside the app that owns `container`. Resolves the
  * results, or null when nothing answered in time. With `keepQueued`, an unanswered request stays
@@ -146,8 +144,12 @@ async function requestKeychainUnlocked(
   await removeOlderThan(join(mailbox, "requests"), QUEUED_REQUEST_TTL_MS);
   await removeOlderThan(join(mailbox, "responses"), STALE_ANSWER_MS);
   // @ref LLP 0017#the-mailbox — the app handles requests in name order
-  // The time keeps that order across server restarts.
-  const name = `${Date.now().toString().padStart(15, "0")}-${String(++requestSequence).padStart(6, "0")}-${nonce}.json`;
+  // The shared queue keeps that order across processes, even when their clocks tie or go back.
+  const order = (await fs.readdir(join(mailbox, "requests"))).reduce((next, name) => {
+    const match = /^(\d{15})-.*\.json$/.exec(name);
+    return match ? Math.max(next, Number(match[1]) + 1) : next;
+  }, Date.now());
+  const name = `${order.toString().padStart(15, "0")}-${nonce}.json`;
   const request = join(mailbox, "requests", name);
   const pending = join(mailbox, "requests", `.${name}.pending`);
   const answer = join(mailbox, "responses", `${nonce}.json`);

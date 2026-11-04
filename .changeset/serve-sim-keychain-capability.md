@@ -1,5 +1,6 @@
 ---
+"expo-device-hub": patch
 "@expo/serve-sim": patch
 ---
 
-Load a keychain helper into user apps, so serve-sim can write their keychain items.
+Ship a native helper for writing Keychain items in iOS Simulator apps.

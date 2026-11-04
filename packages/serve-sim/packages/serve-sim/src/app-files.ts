@@ -21,7 +21,7 @@ export const AppRelativePath = z
   // The keychain mailbox holds values in transit; only the keychain actions use it. The data
   // container's volume ignores case.
   .refine(
-    (value) => !/^tmp\/serve-sim-keychain(\/|$)/i.test(value),
+    (value) => !/^tmp\/serve-sim-keychain(\/|$)/iu.test(value.normalize("NFC")),
     "must be outside serve-sim's keychain mailbox",
   );
 
