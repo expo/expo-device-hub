@@ -1,10 +1,26 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
+import { parseResidentEgressRecord } from "./resident-egress-state";
 import type { CapabilityLoadPhase, CapabilityScope } from "./capabilities";
 import { stateDir, stateFileForDevice } from "./state";
 
+export function isSimulatorUdid(value: string): boolean {
+  return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** Keep legacy non-UUID state keys unchanged. */
+export function canonicalDeviceKey(value: string): string {
+  return isSimulatorUdid(value) ? value.toUpperCase() : value;
+}
+
 function isCapabilityScope(value: unknown): value is CapabilityScope {
-  return value === "userApps" || value === "allApps";
+  return value === "userApps" || value === "allApps" || value === "allProcesses";
+}
+
+/** The native launchd_sim process, including its microsecond start time. */
+export interface SimulatorBootIdentity {
+  pid: number;
+  startedAt: string;
 }
 
 export interface Capability {
@@ -21,6 +37,13 @@ export interface RecordedCapability extends Capability {
   bundleId: string | null;
   /** Null keeps the capability alive after a one-shot command exits. */
   ownerPid: number | null;
+  /** Boot enrollment survives session release; policy changes do not withdraw it. */
+  resident?: {
+    /** Null only between preboot preparation and binding the new Simulator boot. */
+    boot: SimulatorBootIdentity | null;
+    warmupPolicy: "passthrough" | "block";
+    assets?: { hashes: Record<string, string>; pageIdentity: string };
+  };
 }
 
 export interface LaunchState {
@@ -94,7 +117,7 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
     launchArgs: Array.isArray(launchArgs)
       ? launchArgs.filter((arg): arg is string => typeof arg === "string")
       : [],
-    capabilities: recordedCapabilities(capabilities, retainOwnerPid),
+    capabilities: recordedCapabilities(capabilities, stateFile(udid), retainOwnerPid),
     ...(Array.isArray(sessionPids)
       ? {
           sessionPids: sessionPids.filter(
@@ -105,16 +128,22 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
   };
 }
 
-// Discard malformed records and capabilities whose owner has exited.
+// Ordinary malformed/stale records are discarded; resident evidence must reject instead.
 function recordedCapabilities(
   value: unknown,
+  file: string,
   retainOwnerPid?: number,
 ): Record<string, RecordedCapability> {
   if (typeof value !== "object" || value === null) return {};
   const kept: Record<string, RecordedCapability> = {};
   for (const [key, record] of Object.entries(value)) {
     if (typeof record !== "object" || record === null) continue;
-    const { name, dylib, scope, bundleId, ownerPid } = record as Partial<RecordedCapability>;
+    const { name, dylib, scope, bundleId, ownerPid, resident } =
+      record as Partial<RecordedCapability>;
+    if (resident !== undefined || scope === "allProcesses") {
+      kept[key] = parseResidentEgressRecord(key, record, file);
+      continue;
+    }
     if (typeof name !== "string" || typeof dylib !== "string" || !isCapabilityScope(scope)) {
       continue;
     }
@@ -130,6 +159,14 @@ function recordedCapabilities(
 }
 
 export function clearLaunchState(udid: string): void {
+  const previous = readLaunchState(udid);
+  const resident = Object.fromEntries(
+    Object.entries(previous?.capabilities ?? {}).filter(([, capability]) => capability.resident),
+  );
+  if (Object.keys(resident).length) {
+    writeLaunchState(udid, { launchArgs: [], capabilities: resident });
+    return;
+  }
   try {
     unlinkSync(stateFile(udid));
   } catch {}

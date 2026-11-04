@@ -20,6 +20,8 @@ import {
   writeManagedStartupDylibs,
   commitCapabilityConfig,
   renderCapabilityConfig,
+  assertResidentConfigRetained,
+  assertResidentMetadataPresent,
 } from "./capability-config";
 import {
   type Capability,
@@ -334,6 +336,7 @@ async function publishLaunchState(
   snapshot?: CapabilityLaunchSnapshot,
 ): Promise<void> {
   const config = renderCapabilityConfig(state);
+  assertResidentConfigRetained(udid, config);
   const desiredStartupDylibs = startupDylibs(state.capabilities);
   validateStartupDylibs(desiredStartupDylibs);
   const previous = snapshot ?? (await snapshotCapabilityLaunch(udid));
@@ -352,7 +355,7 @@ async function publishLaunchState(
     commitCapabilityConfig(udid, withdrawnOnly);
     await armInsert(
       udid,
-      capabilityLoaderPath(),
+      capabilityLoaderPath(udid),
       state.capabilities,
       previous.startupDylibs,
       previous.configPath,
@@ -393,7 +396,7 @@ function removeReleasedStartupSync(udid: string, previousStartup: string[]): voi
 
 /** Arm the loader and republish the recorded capabilities; rejects if publication fails. */
 export async function rearmCapabilityLoader(udid: string): Promise<void> {
-  const dylib = capabilityLoaderPath();
+  const dylib = capabilityLoaderPath(udid);
   if (!existsSync(dylib)) {
     throw new Error(
       `Capability loader not found at ${dylib}, so capabilities on ${udid} cannot be restored. ` +
@@ -410,9 +413,13 @@ export async function rearmCapabilityLoader(udid: string): Promise<void> {
   });
 }
 
-/** Best-effort rearmCapabilityLoader for startup: a missing loader is skipped, a failure logged. */
+/** Ordinary startup is best-effort; a resident boot requires successful rearming. */
 export async function armCapabilityLoader(udid: string): Promise<void> {
-  if (!existsSync(capabilityLoaderPath())) return;
+  if (readLaunchState(udid)?.capabilities.egressGuard?.resident) {
+    await rearmCapabilityLoader(udid);
+    return;
+  }
+  if (!existsSync(capabilityLoaderPath(udid))) return;
   try {
     await rearmCapabilityLoader(udid);
   } catch (error) {
@@ -425,7 +432,19 @@ export async function armCapabilityLoader(udid: string): Promise<void> {
   }
 }
 
+// @ref LLP 0007.000#enrollment-and-policy — later helpers still need the resident startup record after session release
+function retainResidentEnrollment(udid: string): boolean {
+  const state = readLaunchState(udid);
+  if (Object.values(state?.capabilities ?? {}).some((capability) => capability.resident)) {
+    commitCapabilityConfig(udid, renderCapabilityConfig(state!));
+    return true;
+  }
+  assertResidentMetadataPresent(udid);
+  return false;
+}
+
 export function removeCapabilityLoaderSync(udid: string): void {
+  if (retainResidentEnrollment(udid)) return;
   try {
     simctlSync(["spawn", udid, "launchctl", "unsetenv", CONFIG_VAR], 15_000);
     const current = simctlSync(["spawn", udid, "launchctl", "getenv", INSERT], 15_000);
@@ -466,7 +485,21 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<boolean
   const caller = new Set(additionalDylibs());
   const ours = entries.find((path) => isCapabilityLoaderPath(path) && !caller.has(path));
   if (ours && !existsSync(ours)) {
-    await removeCapabilityLoader(udid);
+    await withLaunchStateLock(udid, async () => {
+      const missing = (await readInsert(udid))
+        .split(":")
+        .find((path) => isCapabilityLoaderPath(path) && !caller.has(path) && !existsSync(path));
+      if (!missing) return;
+      const state = readLaunchState(udid);
+      assertResidentMetadataPresent(udid);
+      // @ref LLP 0007#resident-startup-scope — a guard without its loader cannot enroll later processes
+      if (Object.values(state?.capabilities ?? {}).some((capability) => capability.resident))
+        throw new Error(
+          `Cannot clean up missing resident capability loader ${missing} on ${udid}; ` +
+            `preserve enrollment and its boot assets until that Simulator boot is confirmed dead.`,
+        );
+      await removeCapabilityLoader(udid);
+    });
     return true;
   }
   if (!ours && !managedStartupDylibs(udid).some((path) => entries.includes(path))) return true;
@@ -490,6 +523,7 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<boolean
 }
 
 export async function removeCapabilityLoader(udid: string): Promise<void> {
+  if (retainResidentEnrollment(udid)) return;
   await simctl(["spawn", udid, "launchctl", "unsetenv", CONFIG_VAR], 15_000).catch(() => undefined);
   const rest = withoutOurs(await readInsert(udid), managedStartupDylibs(udid)).join(":");
   const clear =
@@ -799,7 +833,14 @@ async function enableCapabilitiesUnlocked(
   armSession = false,
 ): Promise<void> {
   if (capabilities.length === 0 && !armSession) return;
-  const dylib = capabilityLoaderPath();
+  const previous = readLaunchState(udid);
+  assertResidentMetadataPresent(udid);
+  if (capabilities.some((capability) => capability.scope === "allProcesses")) {
+    throw new Error(
+      "Resident all-process capabilities require preboot preparation; they cannot be enabled through a running Simulator's launchctl.",
+    );
+  }
+  const dylib = capabilityLoaderPath(udid);
   if (!existsSync(dylib)) {
     throw new Error(
       `Capability loader not built: ${dylib} is missing. Run \`bun run packages/serve-sim/build.ts\` ` +
@@ -807,7 +848,11 @@ async function enableCapabilitiesUnlocked(
     );
   }
 
-  const previous = readLaunchState(udid);
+  for (const capability of capabilities) {
+    if (previous?.capabilities[capability.name]?.resident) {
+      throw new Error(`Resident ${capability.name} requires a policy update, not re-enrollment.`);
+    }
+  }
   const added = Object.fromEntries(
     capabilities.map((capability) => [capability.name, { ...capability, bundleId, ownerPid }]),
   );
@@ -892,6 +937,11 @@ async function disableCapabilityUnlocked(
   { relaunch = true }: EnableOptions = {},
 ): Promise<void> {
   const previous = readLaunchState(udid);
+  if (previous?.capabilities[name]?.resident) {
+    throw new Error(
+      `Resident ${name} requires a policy update; its startup record must remain enrolled.`,
+    );
+  }
   if (!previous || !(name in previous.capabilities)) {
     if (managedStartupDylibs(udid).length > 0) {
       await withdrawLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
@@ -984,7 +1034,7 @@ export async function isCapabilityArmed(
   const needsStartupInsert =
     capability.loadPhase === "startup" || capability.loadPhase === "startupAndDeferred";
   return (
-    inserts.includes(capabilityLoaderPath()) &&
+    inserts.includes(capabilityLoaderPath(udid)) &&
     (!needsStartupInsert || inserts.includes(capability.dylib))
   );
 }
