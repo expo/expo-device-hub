@@ -8,6 +8,35 @@ import {
 } from "../client/components/app-toasts";
 
 describe("UploadToastContent", () => {
+  test("labels a queued folder without showing upload progress", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{ id: "q", name: "Two.app", kind: "app", status: "queued", progress: 0 }}
+      />,
+    );
+    expect(html).toContain("Waiting to upload Two.app…");
+    expect(html).not.toContain("0%");
+    expect(html).not.toContain("serve-sim-toast-indeterminate");
+  });
+
+  test("shows full error guidance with an accessible dismissal", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{
+          id: "e",
+          name: "Photos",
+          kind: "app",
+          status: "error",
+          progress: null,
+          message: "Drop a Simulator .app folder or a .tar.gz/.tgz archive.",
+        }}
+        onDismiss={() => {}}
+      />,
+    );
+    expect(html).toContain("whitespace-normal");
+    expect(html).not.toContain("text-ellipsis");
+    expect(html).toContain('aria-label="Dismiss upload error"');
+  });
   test("renders determinate upload progress", () => {
     const html = renderToStaticMarkup(
       <UploadToastContent

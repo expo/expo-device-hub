@@ -548,7 +548,9 @@ preview; ordinary file drops can proceed independently. Paths, entry count and
 uncompressed bytes share the host limits; the compressed upload is capped at
 500 MiB. Browser files expose no POSIX modes, so packing grants owner execution
 to Mach-O binaries and shebang scripts, with other files owner-readable/writable
-and directories owner-only. Browser drops cannot preserve symlink metadata or
+and directories owner-only. [observed] Chrome 156 omits symlinks from folder drops;
+installation can succeed with missing files. Use a `.tar.gz`/`.tgz` archive for
+apps that contain links. Browser drops cannot preserve symlink metadata or
 arbitrary executable modes; use an archive when those matter or a folder cannot
 be read [observed: `app-drop-folder.ts`, `use-media-drop.ts`, `drop.ts`].
 
