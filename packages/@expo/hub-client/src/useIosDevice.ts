@@ -104,6 +104,7 @@ import {
   mergeIosEventLogPayload,
 } from "./ios-events";
 import { hostUiRequest, runHostAction } from "./exec-ws";
+import { createAppInstallBackend } from "./app-drop-client";
 import { fetchIosAppIcon, getIosAppDetails } from "./ios-app-details";
 import { clearIosLocation, setIosLocation } from "./ios-location";
 import { fetchScreenshot } from "./screenshot";
@@ -2520,6 +2521,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [execWsUrl, execToken, socketProtocols, controlSocket],
   );
 
+  const appInstall = useMemo(
+    () =>
+      runAction && execWsUrl && execToken && deviceUdid
+        ? createAppInstallBackend(execWsUrl, execToken, deviceUdid, runAction)
+        : null,
+    [runAction, execWsUrl, execToken, deviceUdid],
+  );
+
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
     if (!runAction || !deviceUdid) return null;
     return {
@@ -2984,6 +2993,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   return {
     platform: "ios",
+    appInstall,
     status: presentation.status,
     error: presentation.error,
     framePresented: presentation.framePresented,

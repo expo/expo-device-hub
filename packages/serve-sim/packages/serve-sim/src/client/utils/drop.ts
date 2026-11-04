@@ -2,6 +2,7 @@ import { runHostAction } from "../../socket/client-control";
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 import type { AppFolderEntry } from "./app-drop-folder";
 import { packAppInWorker } from "./pack-app-in-worker";
+export type AppDropTransport = typeof runHostAction;
 
 // ─── File drop (drag media onto the simulator) ───
 //
@@ -75,19 +76,30 @@ async function streamFileToHost(
   file: File,
   uploadId: string,
   onProgress?: (fraction: number) => void,
+  transport: AppDropTransport = runHostAction,
 ): Promise<string> {
   let lastReportedPct = 0;
-  return streamToHost(file.stream(), uploadId, (written) => {
-    const pct = Math.floor((written / file.size) * 100);
-    if (pct !== lastReportedPct) {
-      lastReportedPct = pct;
-      onProgress?.(written / file.size);
-    }
-  });
+  return streamToHost(
+    file.stream(),
+    uploadId,
+    (written) => {
+      const pct = Math.floor((written / file.size) * 100);
+      if (pct !== lastReportedPct) {
+        lastReportedPct = pct;
+        onProgress?.(written / file.size);
+      }
+    },
+    transport,
+  );
 }
 
-async function appendChunk(uploadId: string, bytes: ArrayBuffer, first: boolean): Promise<string> {
-  const result = await runHostAction("upload.append", {
+async function appendChunk(
+  uploadId: string,
+  bytes: ArrayBuffer,
+  first: boolean,
+  transport: AppDropTransport,
+): Promise<string> {
+  const result = await transport("upload.append", {
     uploadId,
     data: arrayBufferToBase64(bytes),
     first,
@@ -101,6 +113,7 @@ async function streamToHost(
   stream: ReadableStream<Uint8Array>,
   uploadId: string,
   onWritten?: (bytes: number) => void,
+  transport: AppDropTransport = runHostAction,
 ) {
   const reader = stream.getReader();
   const buffer = new Uint8Array(DROP_CHUNK_BYTES);
@@ -119,7 +132,7 @@ async function streamToHost(
         used += size;
         offset += size;
         if (used === buffer.length) {
-          hostPath = await appendChunk(uploadId, buffer.buffer, written === 0);
+          hostPath = await appendChunk(uploadId, buffer.buffer, written === 0, transport);
           written += used;
           used = 0;
           onWritten?.(written);
@@ -127,7 +140,12 @@ async function streamToHost(
       }
     }
     if (used) {
-      hostPath = await appendChunk(uploadId, buffer.buffer.slice(0, used), written === 0);
+      hostPath = await appendChunk(
+        uploadId,
+        buffer.buffer.slice(0, used),
+        written === 0,
+        transport,
+      );
       onWritten?.(written + used);
     }
     return hostPath;
@@ -152,6 +170,7 @@ export async function uploadDroppedFile(
   kind: DropKind,
   udid: string,
   onProgress: (progress: number | null) => void,
+  transport: AppDropTransport = runHostAction,
 ) {
   if (isUnsupportedAppArchive(file.name)) throw new Error(UNSUPPORTED_INSTALL_FORMAT);
   if (file.size > DROP_MAX_FILE_SIZE) {
@@ -163,7 +182,8 @@ export async function uploadDroppedFile(
     udid,
     kind === "app" ? "tgz" : fileExtension(file),
     onProgress,
-    (uploadId) => streamFileToHost(file, uploadId, onProgress),
+    (uploadId) => streamFileToHost(file, uploadId, onProgress, transport),
+    transport,
   );
 }
 
@@ -171,11 +191,20 @@ export async function uploadDroppedAppFolder(
   entry: AppFolderEntry,
   udid: string,
   onProgress: (progress: number | null) => void,
+  transport: AppDropTransport = runHostAction,
+  workerAsset?: { url: string; headers: Record<string, string> },
 ) {
-  await installDroppedSource("app", udid, "tgz", onProgress, async (uploadId) => {
-    const archive = await packAppInWorker(entry, onProgress);
-    await streamToHost(archive, uploadId);
-  });
+  await installDroppedSource(
+    "app",
+    udid,
+    "tgz",
+    onProgress,
+    async (uploadId) => {
+      const archive = await packAppInWorker(entry, onProgress, workerAsset);
+      await streamToHost(archive, uploadId, undefined, transport);
+    },
+    transport,
+  );
 }
 
 async function installDroppedSource(
@@ -184,6 +213,7 @@ async function installDroppedSource(
   ext: string,
   onProgress: (progress: number | null) => void,
   upload: (uploadId: string) => Promise<unknown>,
+  transport: AppDropTransport,
 ) {
   const prefix = kind === "app" ? "serve-sim-install" : "serve-sim-upload";
   const uploadId = `${prefix}-${crypto.randomUUID()}.${ext}`;
@@ -194,7 +224,7 @@ async function installDroppedSource(
 
     // install/addmedia gives no progress signal — flip to indeterminate.
     onProgress(null);
-    const result = await runHostAction(kind === "app" ? "app.install" : "media.add", {
+    const result = await transport(kind === "app" ? "app.install" : "media.add", {
       udid,
       uploadId,
     });
@@ -203,6 +233,6 @@ async function installDroppedSource(
       throw new Error(result.stderr || `${label} failed (exit ${result.exitCode})`);
     }
   } finally {
-    void runHostAction("upload.remove", { uploadId }).catch(() => {});
+    void transport("upload.remove", { uploadId }).catch(() => {});
   }
 }

@@ -142,6 +142,7 @@ export type SimMiddleware = WebMiddleware & {
 // Injected at build time as a base64-encoded string via `define`
 declare const __PREVIEW_HTML_B64__: string;
 declare const __APP_DROP_WORKER_B64__: string;
+declare const __APP_DROP_CLIENT_B64__: string;
 // Last logged result of a GET /api selection, used to suppress the
 // once-every-poll duplicate debugMw lines (the UI polls /api every ~2s).
 let lastApiLogKey: string | undefined;
@@ -2212,7 +2213,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    if (url === base + "/app-drop-worker.js") {
+    if (url === base + "/app-drop-worker.js" || url === base + "/app-drop-client.js") {
       if (req.method !== "GET") {
         res.writeHead(405);
         res.end();
@@ -2222,7 +2223,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         "Content-Type": "text/javascript; charset=utf-8",
         "Cache-Control": "no-store",
       });
-      res.end(Buffer.from(__APP_DROP_WORKER_B64__, "base64"));
+      res.end(
+        Buffer.from(
+          url.endsWith("app-drop-client.js") ? __APP_DROP_CLIENT_B64__ : __APP_DROP_WORKER_B64__,
+          "base64",
+        ),
+      );
       return;
     }
 
