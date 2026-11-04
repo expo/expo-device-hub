@@ -847,6 +847,14 @@ export type ScreenshotCapture = {
  * Hub UI (logs panel, Home control, device lists).
  */
 export interface DeviceClient {
+  /** iOS Simulator installs; absent for backends that do not support app drops. */
+  appInstall?: {
+    installFile: (file: File, progress: (value: number | null) => void) => Promise<void>;
+    installFolder: (
+      entry: FileSystemEntry,
+      progress: (value: number | null) => void,
+    ) => Promise<void>;
+  } | null;
   platform: DevicePlatform;
   status: ConnectionStatus;
   error: string | null;

@@ -529,6 +529,15 @@ Android parity remains outside this serve-sim rollout.
 
 ### Installing a simulator app
 
+The preview and Device Hub dashboard share serve-sim's browser drop module. The
+dashboard loads it from its authenticated middleware and supplies its own
+control connection. Folder handles are enumerated on the page; tar generation,
+executable detection and gzip run in a Worker, one compressed chunk per pull.
+Both file and folder uploads use the same bounded action-channel writer
+[observed: `client/utils/app-drop-client.ts`, `client/utils/pack-app-in-worker.ts`,
+`client/utils/app-drop-worker.ts`, `client/utils/drop.ts`; HubClient
+`src/app-drop-client.ts`].
+
 `app.install` accepts a simulator `.app` bundle on the host or a gzip tar archive
 containing exactly one outer `.app` bundle. EAS `.tar.gz`/`.tgz` artifacts and
 extensionless staged gzip uploads are supported. The catalog advertises
