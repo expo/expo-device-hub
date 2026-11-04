@@ -60,11 +60,11 @@ ordinary taps and commands, prefer the CLI over constructing protocol frames.
 mounts it at `/`. Prefix the paths below with that configured base.
 
 | Method | Path                           | Returns / accepts                                                                                                                                                                                                                                                         |
-| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `GET`  | `/`                            | Preview HTML.                                                                                                                                                                                                                                                             |
 | `GET`  | `/api`                         | Selected simulator state and browser endpoint configuration.                                                                                                                                                                                                              |
 | `GET`  | `/api/events`                  | SSE stream of selected-device configuration changes.                                                                                                                                                                                                                      |
-| `POST` | `/api/screenshot`              | Still PNG of the selected simulator (`simctl io <udid> screenshot`).                                                                                                                                                                                                      |
+| `POST` | `/api/screenshot`              | Screenshot of the selected simulator. Optional `maxWidth` (1–8192 pixels, no upscaling), `format=png                                                                                                                                                                      | jpeg`, and JPEG `quality` (1–100, default 80). Defaults to native-resolution PNG. |
 | `GET`  | `/api/event-log`               | Recent normalized simulator input events.                                                                                                                                                                                                                                 |
 | `GET`  | `/api/event-log/events`        | SSE event-log updates.                                                                                                                                                                                                                                                    |
 | `GET`  | `/logs`                        | Simulator console log (NDJSON). SSE by default, replaying the buffered backlog before live lines; JSON on `Accept: application/json` or `?snapshot`. The preview's Logs drawer polls the JSON form; the browser console dump is opt in with `?logs=1` on the preview URL. |
@@ -183,3 +183,9 @@ is open when it happens.
 
 Prefer `npx @expo/serve-sim --list -q` over reading state files directly. The state
 format is internal and may also contain short-lived TURN credentials.
+
+### Screenshot image options
+
+`POST /api/screenshot?device=<UDID>&maxWidth=402&format=jpeg&quality=80` returns a JPEG scaled to at most 402 pixels wide, preserving aspect ratio after display rotation. Scaling uses Core Image before native PNG encoding. Explicit display / simctl fallback captures are resized after capture. PNG remains the default, and collected session artifacts stay PNG at the requested size.
+
+The same options work on `screenshot.capture` with `params: { output: "binary", maxWidth: 402, format: "jpeg", quality: 80 }`. Binary replies keep the four-byte request ID prefix followed by image bytes. File-path output does not accept image options. JPEG output is lossy and does not preserve transparency.

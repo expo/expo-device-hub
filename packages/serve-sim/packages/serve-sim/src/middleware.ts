@@ -1,3 +1,5 @@
+import { ScreenshotImageOptions } from "./screenshot-options";
+import { convertScreenshot } from "./native";
 import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
 export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
@@ -2835,6 +2837,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end(JSON.stringify({ ok: false, error: "No booted simulator to screenshot" }));
         return;
       }
+      const imageQuery = new URL(rawUrl, "http://localhost").searchParams;
+      const imageOptions = ScreenshotImageOptions.safeParse({
+        maxWidth: imageQuery.has("maxWidth") ? Number(imageQuery.get("maxWidth")) : undefined,
+        format: imageQuery.get("format") ?? undefined,
+        quality: imageQuery.has("quality") ? Number(imageQuery.get("quality")) : undefined,
+      });
+      if (!imageOptions.success) {
+        res.writeHead(400, { "Cache-Control": "no-store", "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid screenshot image options" }));
+        return;
+      }
+      const { maxWidth, format, quality } = imageOptions.data;
       const displayValue = new URL(rawUrl, "http://localhost").searchParams.get("display");
       const display =
         displayValue === null ? undefined : ScreenshotDisplay.safeParse(Number(displayValue));
@@ -2860,7 +2874,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           });
           if (result.exitCode !== 0)
             throw new Error(result.stderr || "Simulator screenshot failed");
-          return await readFile(file);
+          const png = await readFile(file);
+          return maxWidth ? await convertScreenshot(png, maxWidth) : png;
         };
         const png =
           screenId !== undefined
@@ -2874,7 +2889,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                     async (id, timeoutMs) => {
                       const started = performance.now();
                       try {
-                        return await session.screenshot(id, timeoutMs);
+                        return await session.screenshot(id, timeoutMs, maxWidth);
                       } finally {
                         nativeDuration += performance.now() - started;
                       }
@@ -2897,19 +2912,22 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const artifact = await saveScreenshotArtifact(png);
         recordScreenshotEvent(udid, artifact);
         const artifactDuration = performance.now() - artifactStarted;
+        const encodeStarted = performance.now();
+        const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
+        const encodeDuration = performance.now() - encodeStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.
-        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}`;
+        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}, encode;dur=${encodeDuration.toFixed(3)}`;
         res.writeHead(200, {
           "Cache-Control": "no-store",
-          "Content-Type": "image/png",
-          "Content-Length": String(png.byteLength),
+          "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
+          "Content-Length": String(image.byteLength),
           // The route allows configured cross-origin callers, and they can only read custom headers listed here.
           "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
         });
-        res.end(png);
+        res.end(image);
       } catch (err) {
         const stderr = (err as { stderr?: unknown }).stderr;
         const message =
@@ -3502,6 +3520,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       }
       if (parsed.data.display !== undefined)
         url.searchParams.set("display", String(parsed.data.display));
+      for (const key of ["maxWidth", "format", "quality"] as const) {
+        const value = parsed.data[key];
+        if (value !== undefined) url.searchParams.set(key, String(value));
+      }
       return (await fetchMiddleware(
         new Request(url, {
           method: "POST",
