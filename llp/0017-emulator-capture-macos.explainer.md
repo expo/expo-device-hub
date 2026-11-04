@@ -5,6 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
+**Revised:** 2026-11-04 (added the EAS macOS VM results; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -90,6 +91,7 @@ Folding changes the size of the posted color buffers: 2076×2152 unfolded and 10
 ## Known limitations
 
 - Tested only with Android Emulator 37.2.7 (build 16195039) on a Mac mini M2 [observed].
+- The EAS macOS VMs (`macos-large`, image `macos-tahoe-26.5-xcode-26.6`, Apple M4 Pro (Virtual), macOS 26.5.2) cannot run the Android Emulator. Hypervisor.framework is not available there (`kern.hv_support: 0`), and emulator 37.2.13 stops with `HVF error: HV_UNSUPPORTED`, also with `-accel off` and with `-qemu -accel tcg`. On the same VMs, the Android SDK installs (command-line tools, platform-tools, the emulator and the API 37 arm64 image in 1 to 2.5 minutes), the agent builds and its tests pass, and the VideoToolbox hardware encoder works: `h264.rtvc` encoded synthetic 1080×2424 frames at 97 to 109 FPS [observed: EAS workflow runs, 2026-11-04].
 - Rotation is not handled: at 180° the stream showed the picture upside down, because the color buffer keeps the panel orientation [observed: Hub test, 2026-11-04]. Touch mapping uses the panel orientation too.
 - In the T3 Code preview browser, the Hub's canvas did not present new frames after a fold or unfold until its layer repainted, although `getImageData` showed the new picture. The same happened with the gRPC source, so it is not specific to this capture [observed: 2026-11-04]. Whether other browsers show it is not known.
 - Attach to a running emulator, multi-display capture and rotation are not implemented.

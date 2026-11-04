@@ -113,6 +113,8 @@ CPU use changes by tens of percent over minutes, so treat this as approximate.
 - Rotation is not handled. The stream shows the display in its panel orientation, and
   touches map to that orientation.
 - Only the main display is captured. One consumer at a time; a new one replaces the old.
+- The EAS macOS VMs cannot run the Android Emulator (Hypervisor.framework reports
+  `HV_UNSUPPORTED` there), so the macOS agent was tested only on a physical Mac.
 
 ## Licenses
 
