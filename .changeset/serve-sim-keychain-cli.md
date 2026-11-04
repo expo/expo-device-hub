@@ -1,5 +1,4 @@
 ---
-"expo-device-hub": patch
 "@expo/serve-sim": minor
 ---
 
