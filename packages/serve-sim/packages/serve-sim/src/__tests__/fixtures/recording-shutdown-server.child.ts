@@ -69,7 +69,12 @@ mock.module("../../simctl", () => ({
 }));
 mock.module("../../capability-session", () => ({
   SESSION_CAPABILITIES: ["clipboard", "keychain"],
-  createCapabilityController: () => ({ list: () => [], set: async () => {}, allows: () => true }),
+  createCapabilityController: () => ({
+    list: () => [],
+    set: async () => {},
+    allows: () => true,
+    run: (_udid: string, _name: string, operation: () => Promise<unknown>) => operation(),
+  }),
   createCapabilitySession: ({ name }: { name: string }) => ({
     initialize: async () => {},
     allows: () => true,
