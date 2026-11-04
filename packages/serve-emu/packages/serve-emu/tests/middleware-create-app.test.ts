@@ -10,7 +10,9 @@ import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/sc
 import {
   adaptScrcpySession,
   type EmuSession,
+  type ExperimentalGpuCaptureDiagnostics,
   type GrpcCaptureDiagnostics,
+  type StartEmuSessionOptions,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
@@ -529,6 +531,80 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
         frameStats,
       },
     });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("reports GPU capture health from one diagnostics snapshot", async () => {
+  const diagnostics: ExperimentalGpuCaptureDiagnostics = {
+    backend: "expo-emulator-capture",
+    framePath: "gpu",
+    hardwareEncoder: true,
+    encoderName: "com.apple.videotoolbox.videoencoder.h264.rtvc",
+    packets: 120,
+    bytes: 1_000_000,
+    requestedKeyFrames: 2,
+    queuedBytes: 0,
+    fps: 60,
+    nativeSize: { width: 1080, height: 2424 },
+    streamSize: { width: 570, height: 1280 },
+    maxSize: 1280,
+    resizes: 0,
+  };
+  let samples = 0;
+  const { session } = fakeScrcpySession(0);
+  const app = await createApp(
+    { serial: session.serial },
+    {
+      startSession: async () => ({
+        ...adaptScrcpySession(session),
+        diagnostics: () => {
+          samples++;
+          return { experimentalGpuCapture: diagnostics };
+        },
+      }),
+    },
+  );
+  try {
+    const before = samples;
+    expect(app.health()).toMatchObject({
+      streamMode: "scrcpy",
+      captureBackend: "expo-emulator-capture",
+      experimentalGpuCapture: diagnostics,
+      encoderName: "com.apple.videotoolbox.videoencoder.h264.rtvc",
+    });
+    expect(samples - before).toBe(1);
+  } finally {
+    await app.stop();
+  }
+});
+
+test("passes the GPU capture socket directory to every capture it starts", async () => {
+  const requests: StartEmuSessionOptions[] = [];
+  const app = await createApp(
+    { serial: "emulator-5554", experimentalGpuCaptureSocketDirectory: "/tmp/capture" },
+    {
+      startSession: async (options) => {
+        requests.push(options);
+        return adaptScrcpySession(fakeScrcpySession(0).session);
+      },
+    },
+  );
+  try {
+    expect(app.health()).toMatchObject({ captureBackend: "scrcpy", experimentalGpuCapture: null });
+    const response = await app.handleRequest(
+      new Request("http://localhost/api/stream-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ h264Fps: 60 }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(requests.map((request) => request.experimentalGpuCaptureSocketDirectory)).toEqual([
+      "/tmp/capture",
+      "/tmp/capture",
+    ]);
   } finally {
     await app.stop();
   }

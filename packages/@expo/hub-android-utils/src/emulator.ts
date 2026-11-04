@@ -67,6 +67,7 @@ export function spawnEmulator(
     const child = spawn(emulatorPath, buildEmulatorArgs(options), {
       detached: true,
       stdio: "ignore",
+      ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     });
 
     return new Promise((resolve) => {

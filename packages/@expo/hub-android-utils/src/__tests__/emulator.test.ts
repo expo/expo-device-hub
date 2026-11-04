@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -181,5 +181,19 @@ describe("spawnEmulator", () => {
     const spawned = await spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
     expect(spawned.value).toBeNull();
     expect(spawned.error?.message).toBe("[android-utils] Failed to spawn `emulator`:");
+  });
+
+  test("adds env to the parent environment", async () => {
+    const emulator = join(dir, "emulator");
+    const output = join(dir, "env.txt");
+    writeFileSync(emulator, `#!/bin/sh\nprintf '%s %s' "$HUB_TEST_EXTRA" "$HOME" > "${output}"\n`);
+    chmodSync(emulator, 0o755);
+    const spawned = await spawnEmulator(emulator, {
+      name: "x",
+      port: 5554,
+      env: { HUB_TEST_EXTRA: "capture" },
+    });
+    await new Promise<void>((resolve) => spawned.value!.once("exit", () => resolve()));
+    expect(readFileSync(output, "utf8")).toBe(`capture ${process.env.HOME}`);
   });
 });

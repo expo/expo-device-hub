@@ -1,0 +1,100 @@
+# LLP 0017: Emulator capture on macOS (Apple silicon)
+
+**Type:** Explainer
+**Status:** Draft
+**Systems:** EmulatorCapture, ServeEmu, Hub, AndroidUtils
+**Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
+**Date:** 2026-11-04
+**Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
+
+> File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
+
+## Summary
+
+`expo-emulator-capture` captures an Android Emulator's screen on macOS with Apple silicon. An agent library runs inside the emulator's QEMU process. It copies each posted frame into an IOSurface (on the GPU when the emulator renders with the host GPU) and encodes it with the VideoToolbox hardware H.264 encoder. serve-emu reads the stream from a Unix socket and replaces scrcpy video with it; scrcpy stays the input transport.
+
+The work follows the Linux and NVIDIA experiment in PR #107: the same package name, the same socket framing (GPC1), and the same serve-emu integration shape. Krystof Woldrich asked for a macOS Apple-silicon package that uses the machine's GPU when available and that works with single-screen and foldable emulators, such as the Pixel 9 Pro Fold [confirmed] (Krystof Woldrich, 2026-11-04).
+
+## Loading
+
+The agent is preloaded when the emulator starts, with `DYLD_INSERT_LIBRARIES`, not injected into a running emulator.
+
+- The emulator binaries in 37.2.7 use the hardened runtime, but their entitlements include `com.apple.security.cs.allow-dyld-environment-variables`, `disable-library-validation`, `disable-executable-page-protection` and `get-task-allow` [observed: `codesign -d --entitlements` on `emulator`, `qemu-system-aarch64` and `qemu-system-aarch64-headless`]. So an ad-hoc signed library loads, and Frida Gum can patch the renderer's code.
+- Attaching to a running emulator needs `task_for_pid`. On the development Mac, the `system.privilege.taskport` right requires a password from a `_developer` member, and Developer Mode was off [observed: `security authorizationdb read system.privilege.taskport`, `DevToolsSecurity -status`]. Preloading needs no extra permission. Attach is not implemented.
+- The `emulator` launcher passes `DYLD_INSERT_LIBRARIES` through to QEMU. A protected system binary in between, such as `/usr/bin/nohup` or `/bin/sh`, removes `DYLD_*` variables, and then the agent does not load [observed: an experiment through `nohup` on 2026-11-04]. The CLI and the Hub spawn the emulator directly.
+- The agent runs only in a process named `qemu-system-*`, and it removes itself from `DYLD_INSERT_LIBRARIES` so that QEMU's children (`crashpad_handler`, `netsimd`) do not load it [observed: `src/native/agent.mm`].
+- The socket path comes from `EXPO_EMULATOR_CAPTURE_SOCKET`. The CLI and the Hub name it `<tmpdir>/expo-emulator-capture/<serial>.sock` [observed: `src/paths.mjs`, Hub `src/server/emulator-capture.ts`].
+
+## Hook point
+
+The agent hooks gfxstream's `FrameBuffer::Impl::postImpl(handle, callback, needLockAndBind, repaint)` with Frida Gum 17.18.0, linked statically [observed: `src/native/agent.mm`]. All renderer entry points are resolved by name at runtime. The translator EGL functions are local symbols, which Gum resolves from the symbol table [observed: `nm` on `libgfxstream_backend.dylib`; `src/native/gfxstream.mm`]. A missing required symbol disables capture; missing GPU-path symbols leave only the CPU path.
+
+In the emulator builds tested, every post arrived on one render thread with `needLockAndBind` true [observed: a probe library on 37.2.7, 2026-11-04]. A post with `needLockAndBind` false means that the caller already holds the non-recursive FrameBuffer lock, so the agent skips that frame rather than deadlock [observed: `onPost` in `src/native/agent.mm`; the same rule as PR #107].
+
+## Frame paths
+
+| Renderer                                                     | How a frame is copied                                                                                                                          | Measured                                         |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `-gpu host` (GLES translator on Apple OpenGL 4.1 over Metal) | The color buffer's native GL texture is blitted into an IOSurface-backed `GL_TEXTURE_RECTANGLE` on a private context shared with the renderer. | 0.11 ms on the render thread per 1080×2424 frame |
+| Software (`-gpu auto` headless picks SwANGLE and lavapipe)   | `readColorBufferDeprecated` reads RGBA; vImage converts it to BGRA in an IOSurface pixel buffer.                                               | About 25 ms per 1080×2424 frame; 30–34 FPS       |
+
+[observed: emulator logs `gles_mode_selected:host` and `gles_mode_selected:swangle`; `src/native/frame-source.mm`; agent stats lines, 2026-11-04]
+
+The GPU path needs host rendering. On a headless Mac, `-gpu auto` selects the software renderer, so the Hub adds `-gpu host` when it boots an emulator with the agent [observed: Hub `src/server/emulator-capture.ts`]. The emulator honors the last `-gpu` flag: with `-gpu auto … -gpu host`, SurfaceFlinger reported the Apple M2 translator [observed: `dumpsys SurfaceFlinger`, 2026-11-04].
+
+The GPU path keeps the image upright with an unflipped blit, because both textures store row 0 first [observed: decoded frames, 2026-11-04].
+
+### Locking
+
+`FrameBuffer::Impl::lock()` and `readColorBufferDeprecated` lock the same mutex [observed: disassembly of both functions in 37.2.7, mutex at `Impl+0x1bc8`]. So the CPU path calls the read without holding the lock. The GPU path holds the lock around its own GL work, as gfxstream's display path does.
+
+## Synchronization
+
+The render thread only submits the GPU copy (`glFlush`). The encoder thread waits for it with a read-only `IOSurfaceLock` before VideoToolbox reads the surface [observed: `src/native/frame-source.mm`, `waitForGpuCopy` in `src/native/agent.mm`].
+
+With `glFinish` on the render thread instead, the guest's render thread spent 1.16 ms per frame in the capture; with the flush it spent 0.11 ms [observed: agent stats, 2026-11-04]. Process CPU comparisons between runs were inconclusive, because the emulator's own CPU use drifted between 60% and 105% over minutes without any consumer [observed: 2026-11-04]. In one time window, per-thread CPU was 8% higher while streaming 1080×2424 at 60 FPS than without a consumer [observed: `ps -M`, 2026-11-04].
+
+## Encoding
+
+A `VTPixelTransferSession` scales the frame and converts it to NV12 with BT.709 terms. A `VTCompressionSession` with `RequireHardwareAcceleratedVideoEncoder` and `EnableLowLatencyRateControl` encodes Constrained Baseline H.264, with a keyframe at least every 10 seconds and on request [observed: `src/native/encoder.mm`]. Low-latency rate control selects the encoder `com.apple.videotoolbox.videoencoder.h264.rtvc`, which does not answer `UsingHardwareAcceleratedVideoEncoder` (`kVTPropertyNotSupportedErr`). Creation with the hardware requirement succeeded, so the agent reports hardware [observed: a VideoToolbox probe on the M2, 2026-11-04]. Output is converted from length-prefixed NAL units to Annex-B, with SPS and PPS before each IDR.
+
+## Socket protocol
+
+Each record is a 32-byte big-endian header (`GPC1`, payload length u32, pts u64 in microseconds, flags u32, width u32, height u32, fps u32) and a payload [observed: `src/native/protocol.h`, serve-emu `src/gpu-packet.ts`]. The framing is PR #107's GPC1, with a resize record and JSON details added.
+
+| Flags | Record            | Width and height        | Payload                                                  |
+| ----- | ----------------- | ----------------------- | -------------------------------------------------------- |
+| 0     | H.264 access unit | Stream size             | Annex-B                                                  |
+| 1     | IDR access unit   | Stream size             | Annex-B, starting with SPS and PPS                       |
+| 2     | Hello             | Native display size     | JSON: `protocol`, `platform`, `gpuAvailable`, `renderer` |
+| 3     | Configured        | Stream size             | JSON: `framePath`, `hardwareEncoder`, `encoder`          |
+| 4     | Resized           | New native display size | Empty                                                    |
+
+The consumer sends `K` for a keyframe, or `S` and three big-endian u32 values (longest stream edge with 0 for native, FPS 1–120, bit rate 100 kbit/s–50 Mbit/s). The agent answers `S` with a configured record and then an IDR.
+
+- After hello, `S`, and configured, frames follow. A resized record is always followed by a configured record and an IDR.
+- One consumer at a time. A new connection replaces the old one; records from an old connection are dropped. Consumers can reconnect without restarting the emulator, which PR #107 could not do.
+- On a static screen the renderer posts nothing. When a consumer needs a frame (new settings, `K`), the agent captures the last posted color buffer itself.
+- Under backpressure (8 MB queued), the agent drops delta frames until the next keyframe and requests one.
+
+## Folding and resizes
+
+Folding changes the size of the posted color buffers: 2076×2152 unfolded and 1080×2424 folded on the Pixel 9 Pro Fold profile [observed: capture on 2026-11-04]. When a frame's size differs, the encoder thread re-creates the encoder and sends resized, configured and an IDR [observed: `encoderLoop` in `src/native/agent.mm`]. serve-emu uses the resized size to map touches, which go to the native display because scrcpy runs without video, as in `grpc-session.ts`. A configured record with a new size becomes a `session` packet, so the middleware resyncs every client from a keyframe [observed: serve-emu `src/gpu-session.ts`, `middleware.ts`].
+
+## Integration
+
+- **serve-emu.** The middleware option `experimentalGpuCaptureSocketDirectory` names the socket directory. A session uses the agent only for an emulator serial with a `<serial>.sock` there, in scrcpy mode with scrcpy input. When nothing answers on the socket, the session falls back to scrcpy video; a broken agent is an error [observed: `experimentalGpuCaptureSocket` in `src/stream-session.ts`, `GpuCaptureUnavailableError` in `src/gpu-session.ts`]. Only the middleware sets the option, because it closes a session before it opens the replacement. The standalone server stages the replacement while the old session is still open, and the agent serves one consumer [observed: `updateStreamEncoderSettings` in `middleware.ts`, `prepareContext` in `server.ts`]. `/health` adds `captureBackend` and `experimentalGpuCapture`.
+- **Hub.** `EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE` is the agent's absolute path. With it, the Hub boots emulators with the agent, the socket environment and `-gpu host`; it passes the socket directory to serve-emu; and its default Android stream source becomes `scrcpy` [observed: Hub `src/server/emulator-capture.ts`, `device-actions.ts`, `serve-emu.ts`, `serve-emu-options.ts`]. `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` comes after these flags and can override them.
+- **AndroidUtils.** `BootDeviceOptions.env` adds variables to the spawned emulator's environment [observed: `packages/@expo/hub-android-utils/src/emulator.ts`].
+
+## Known limitations
+
+- Tested only with Android Emulator 37.2.7 (build 16195039) on a Mac mini M2 [observed].
+- Rotation is not handled: at 180° the stream showed the picture upside down, because the color buffer keeps the panel orientation [observed: Hub test, 2026-11-04]. Touch mapping uses the panel orientation too.
+- In the T3 Code preview browser, the Hub's canvas did not present new frames after a fold or unfold until its layer repainted, although `getImageData` showed the new picture. The same happened with the gRPC source, so it is not specific to this capture [observed: 2026-11-04]. Whether other browsers show it is not known.
+- Attach to a running emulator, multi-display capture and rotation are not implemented.
+
+## Open questions for the maintainer
+
+- Should rotation be the next step? A consumer command could pass the orientation to the agent, and `VTPixelRotationSession` could rotate in hardware.
+- Should the Hub keep `-gpu auto` as the default without the agent, given that it selects the software renderer on a headless Mac?

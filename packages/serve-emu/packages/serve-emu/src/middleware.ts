@@ -209,6 +209,12 @@ export type AppOptions = {
   encoder?: GrpcEncoder;
   /** Input transport. gRPC streaming defaults to scrcpy input. */
   inputSource?: InputSource;
+  /**
+   * Experimental: a directory of expo-emulator-capture agent sockets named `<serial>.sock`.
+   * An emulator with a socket there streams the agent's video instead of scrcpy's;
+   * scrcpy stays the input transport. The Hub sets it for emulators it boots with the agent.
+   */
+  experimentalGpuCaptureSocketDirectory?: string;
   /** @internal Shared by router-managed source generations for one device. */
   deviceState?: DeviceSessionState;
   /**
@@ -416,6 +422,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource,
+      experimentalGpuCaptureSocketDirectory: opts.experimentalGpuCaptureSocketDirectory,
     });
     throwIfAborted(opts.signal, "serve-emu app startup aborted");
   } catch (error) {
@@ -487,58 +494,67 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const sessionRecorder = deviceState.recorder;
   const routePlayback = deviceState.route;
 
-  const health = () => ({
-    ok: status === "streaming",
-    status,
-    captureRestarting,
-    serial: opts.serial,
-    device: session.meta.deviceName,
-    streamMode: session.mode,
-    grpcImageMode,
-    encoder,
-    encoderName: session.diagnostics?.().grpcCapture?.encoderName ?? null,
-    inputSource: session.inputSource,
-    grpcCapture: session.diagnostics?.().grpcCapture ?? null,
-    codec: session.meta.codecId,
-    size: { width: screen.width, height: screen.height },
-    pose: deviceState.orientation.current(),
-    clients: clients.size,
-    videoClients: Array.from(clients).filter((client) => client.video).length,
-    frames: frameCount,
-    sourceFps,
-    frameStats: frameStats.summary(),
-    configPackets: configPacketCount,
-    droppedFrames: totalDroppedFrames,
-    backpressureEvents: totalBackpressureEvents,
-    videoResetRequests,
-    lastVideoResetAt,
-    lastVideoResetReason,
-    location: deviceState.lastLocation,
-    route: routePlayback.snapshot(),
-    session: sessionRecorder.snapshot(),
-    screenRecording: opts.screenRecording?.snapshot() ?? null,
-    logcat: deviceState.logcat.snapshot(),
-    uploads: uploader.snapshot(),
-    stream: redactedStreamSettings(streamSettings),
-    encoderSettings: { ...streamEncoderSettings },
-    webrtc: webRtcPublisher?.snapshot() ?? null,
-    clientsDetail: Array.from(clients, (client) => ({
-      id: client.id,
-      video: client.video,
-      frameMeta: client.frameMeta,
-      sentFrames: client.sentFrames,
-      droppedFrames: client.droppedFrames,
-      backpressureEvents: client.backpressureEvents,
-      bufferedBytes: client.socket.bufferedAmount,
-      awaitingKeyFrame: client.awaitingKeyFrame,
-    })),
-    startedAt,
-    stoppedAt,
-    lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
-    lastError,
-    lastErrorCode,
-    lastErrorMeta,
-  });
+  const health = () => {
+    // One snapshot per response, so every field describes the same moment.
+    const diagnostics = session.diagnostics?.();
+    return {
+      ok: status === "streaming",
+      status,
+      captureRestarting,
+      serial: opts.serial,
+      device: session.meta.deviceName,
+      streamMode: session.mode,
+      captureBackend: diagnostics?.experimentalGpuCapture?.backend ?? session.mode,
+      experimentalGpuCapture: diagnostics?.experimentalGpuCapture ?? null,
+      grpcImageMode,
+      encoder,
+      encoderName:
+        diagnostics?.grpcCapture?.encoderName ??
+        diagnostics?.experimentalGpuCapture?.encoderName ??
+        null,
+      inputSource: session.inputSource,
+      grpcCapture: diagnostics?.grpcCapture ?? null,
+      codec: session.meta.codecId,
+      size: { width: screen.width, height: screen.height },
+      pose: deviceState.orientation.current(),
+      clients: clients.size,
+      videoClients: Array.from(clients).filter((client) => client.video).length,
+      frames: frameCount,
+      sourceFps,
+      frameStats: frameStats.summary(),
+      configPackets: configPacketCount,
+      droppedFrames: totalDroppedFrames,
+      backpressureEvents: totalBackpressureEvents,
+      videoResetRequests,
+      lastVideoResetAt,
+      lastVideoResetReason,
+      location: deviceState.lastLocation,
+      route: routePlayback.snapshot(),
+      session: sessionRecorder.snapshot(),
+      screenRecording: opts.screenRecording?.snapshot() ?? null,
+      logcat: deviceState.logcat.snapshot(),
+      uploads: uploader.snapshot(),
+      stream: redactedStreamSettings(streamSettings),
+      encoderSettings: { ...streamEncoderSettings },
+      webrtc: webRtcPublisher?.snapshot() ?? null,
+      clientsDetail: Array.from(clients, (client) => ({
+        id: client.id,
+        video: client.video,
+        frameMeta: client.frameMeta,
+        sentFrames: client.sentFrames,
+        droppedFrames: client.droppedFrames,
+        backpressureEvents: client.backpressureEvents,
+        bufferedBytes: client.socket.bufferedAmount,
+        awaitingKeyFrame: client.awaitingKeyFrame,
+      })),
+      startedAt,
+      stoppedAt,
+      lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
+      lastError,
+      lastErrorCode,
+      lastErrorMeta,
+    };
+  };
 
   const webRtcStats = (sessionId: string) => {
     if (!webRtcPublisher) return null;
@@ -1105,6 +1121,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource: nextInputSource,
+      experimentalGpuCaptureSocketDirectory: opts.experimentalGpuCaptureSocketDirectory,
     });
 
   const replaceCapture = async (
