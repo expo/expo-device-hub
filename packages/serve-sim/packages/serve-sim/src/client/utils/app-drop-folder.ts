@@ -22,7 +22,7 @@ export interface AppFolderEntry {
 }
 
 export const APP_FOLDER_GUIDANCE =
-  "Drop a Simulator .app folder or a .tar.gz/.tgz archive. If the folder cannot be read, use an archive to preserve its links and permissions.";
+  "Drop a Simulator .app folder or a .tar.gz/.tgz archive. Use an archive for apps with symlinks: Chrome leaves links out of folder drops, even when installation succeeds.";
 
 const LIMITS = { entries: 100000, bytes: 2 * 1024 ** 3 };
 const encoder = new TextEncoder();

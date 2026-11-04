@@ -12,7 +12,7 @@ import { APP_FOLDER_GUIDANCE } from "../utils/app-drop-folder";
 import { isUnsupportedAppArchive, UNSUPPORTED_INSTALL_FORMAT } from "../../app-install-format";
 
 type UploadCallbacks = {
-  onUploadStart: (name: string, kind: DropKind) => string;
+  onUploadStart: (name: string, kind: DropKind, queued?: boolean) => string;
   onUploadProgress: (id: string, progress: number | null) => void;
   onUploadEnd: (id: string, ok: boolean, message?: string) => void;
 };
@@ -49,7 +49,7 @@ export function useMediaDrop({
 }: {
   udid: string | undefined;
   enabled: boolean;
-  onUploadStart: (name: string, kind: DropKind) => string;
+  onUploadStart: (name: string, kind: DropKind, queued?: boolean) => string;
   onUploadProgress: (id: string, progress: number | null) => void;
   onUploadEnd: (id: string, ok: boolean, message?: string) => void;
   onUnsupported: (file: File) => void;
@@ -93,10 +93,15 @@ export function useMediaDrop({
       for (const [index, file] of files.entries()) {
         const entry = entries[index];
         if (entry?.isDirectory || /\.app$/i.test(file.name)) {
-          const id = onUploadStart(file.name, "app");
+          if (!entry?.isDirectory || !/\.app$/i.test(entry.name)) {
+            const id = onUploadStart(file.name, "app");
+            onUploadEnd(id, false, APP_FOLDER_GUIDANCE);
+            continue;
+          }
+          const id = onUploadStart(file.name, "app", true);
           const upload = async () => {
             try {
-              if (!entry?.isDirectory) throw new Error(APP_FOLDER_GUIDANCE);
+              onUploadProgress(id, 0);
               await uploadDroppedAppFolder(entry, udid, (p) => onUploadProgress(id, p));
               onUploadEnd(id, true);
             } catch (error) {
