@@ -1,5 +1,4 @@
 ---
-"expo-device-hub": minor
 "@expo/serve-sim": minor
 ---
 
