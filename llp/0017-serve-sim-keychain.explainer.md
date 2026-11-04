@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-27
-**Revised:** 2026-11-04 (status set to Active at Gabe Debes's direction)
+**Revised:** 2026-11-04
 **Related:** LLP 0007, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
