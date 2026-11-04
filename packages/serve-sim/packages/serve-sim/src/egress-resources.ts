@@ -342,10 +342,16 @@ async function reclaimDeadResidentEgress(udid: string, guard: RecordedCapability
 /** Returns whether a new enrollment needs booting; a matching live enrollment is retained. */
 export async function prepareResidentEgress(udid: string, policy: EgressPolicy): Promise<boolean> {
   udid = canonicalDevice(udid);
-  return withLaunchStateLock(udid, () => prepareResidentEgressUnlocked(udid, policy));
+  return withLaunchStateLock(
+    udid,
+    async () => !!(await prepareResidentEgressUnlocked(udid, policy)),
+  );
 }
 
-async function prepareResidentEgressUnlocked(udid: string, policy: EgressPolicy): Promise<boolean> {
+async function prepareResidentEgressUnlocked(
+  udid: string,
+  policy: EgressPolicy,
+): Promise<false | (() => void)> {
   assertEgressSessionOwner(udid);
   const enrolled = residentEgress(udid);
   if (enrolled?.resident?.boot && !processIsAbsent(enrolled.resident.boot.pid)) {
@@ -362,6 +368,45 @@ async function prepareResidentEgressUnlocked(udid: string, policy: EgressPolicy)
   const page = join(directory, "policy");
   const owned: string[] = [];
   let recorded = false;
+  const configPath = capabilityConfigPath(udid);
+  let previousConfig: Buffer | undefined;
+  try {
+    previousConfig = readFileSync(configPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      rmdirSync(directory);
+      throw error;
+    }
+  }
+  // This closure owns only the fresh, unmapped assets. Never use it after a boot attempt.
+  const rollback = (restoreConfig: boolean) => {
+    if (restoreConfig) {
+      if (previousConfig === undefined) unlinkSync(configPath);
+      else {
+        const temporary = `${configPath}.${process.pid}.tmp`;
+        writeFileSync(temporary, previousConfig);
+        renameSync(temporary, configPath);
+      }
+    }
+    if (recorded) {
+      writeLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+      if (!previous) clearLaunchState(udid);
+    }
+    const failures: unknown[] = [];
+    for (const path of [...owned].reverse()) {
+      try {
+        unlinkSync(path);
+      } catch (cleanup) {
+        if ((cleanup as NodeJS.ErrnoException).code !== "ENOENT") failures.push(cleanup);
+      }
+    }
+    try {
+      rmdirSync(directory);
+    } catch (cleanup) {
+      failures.push(cleanup);
+    }
+    if (failures.length) throw new AggregateError(failures, "Preboot asset cleanup failed");
+  };
   try {
     const hashes: Record<string, string> = {};
     for (const name of artifacts) {
@@ -400,38 +445,17 @@ async function prepareResidentEgressUnlocked(udid: string, policy: EgressPolicy)
     // Config publication is last and atomic: failure leaves the previous config intact.
     commitCapabilityConfig(udid, renderCapabilityConfig(readLaunchState(udid)!));
   } catch (error) {
-    const failures: unknown[] = [error];
     try {
-      if (recorded) {
-        writeLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
-        if (!previous) clearLaunchState(udid);
-      }
+      rollback(false);
     } catch (cleanup) {
-      failures.push(cleanup);
-    }
-    // Only this fresh preboot child's named files are eligible for cleanup. Never recurse.
-    if (failures.length === 1) {
-      for (const path of owned.reverse()) {
-        try {
-          unlinkSync(path);
-        } catch (cleanup) {
-          if ((cleanup as NodeJS.ErrnoException).code !== "ENOENT") failures.push(cleanup);
-        }
-      }
-      try {
-        rmdirSync(directory);
-      } catch (cleanup) {
-        failures.push(cleanup);
-      }
-    }
-    if (failures.length > 1)
       throw new AggregateError(
-        failures,
+        [error, cleanup],
         "Egress preparation and cleanup failed; retain uncertain assets",
       );
+    }
     throw error;
   }
-  return true;
+  return () => rollback(true);
 }
 
 /** Called with the device lock after our strict boot, retaining assets on failure. */
@@ -464,6 +488,7 @@ export async function bootPreparedResidentEgress(
 async function bootPreparedResidentEgressUnlocked(
   udid: string,
   assertActive: () => void,
+  beforeBoot: () => void = () => {},
 ): Promise<void> {
   assertEgressSessionOwner(udid);
   const guard = residentEgress(udid);
@@ -473,6 +498,7 @@ async function bootPreparedResidentEgressUnlocked(
   if (await simulatorEgressBoot(udid, dirname(guard.dylib)))
     throw new Error("Cannot retrofit resident egress into an already-booted Simulator");
   assertActive();
+  beforeBoot();
   await simctl(["boot", udid], BOOT_TIMEOUT_MS);
   const started = await simulatorEgressBoot(udid, dirname(guard.dylib));
   if (!started) throw new Error("Cannot identify the newly started Simulator boot");
@@ -492,13 +518,31 @@ export async function startResidentEgress(
   udid = canonicalDevice(udid);
   return withLaunchStateLock(udid, async () => {
     assertActive();
-    const needsBoot = await prepareResidentEgressUnlocked(udid, policy);
-    const checked = needsBoot ? undefined : residentEgress(udid);
-    if (needsBoot) await bootPreparedResidentEgressUnlocked(udid, assertActive);
-    assertActive();
-    await publishResidentEgressPolicyUnlocked(udid, policy, checked);
-    assertActive();
-    return { ...residentEgress(udid)!.resident.boot! };
+    const rollback = await prepareResidentEgressUnlocked(udid, policy);
+    let bootAttempted = false;
+    try {
+      const checked = rollback ? undefined : residentEgress(udid);
+      if (rollback)
+        await bootPreparedResidentEgressUnlocked(udid, assertActive, () => {
+          bootAttempted = true;
+        });
+      assertActive();
+      await publishResidentEgressPolicyUnlocked(udid, policy, checked);
+      assertActive();
+      return { ...residentEgress(udid)!.resident.boot! };
+    } catch (error) {
+      if (rollback && !bootAttempted) {
+        try {
+          rollback();
+        } catch (cleanup) {
+          throw new AggregateError(
+            [error, cleanup],
+            "Resident startup and preboot rollback failed",
+          );
+        }
+      }
+      throw error;
+    }
   });
 }
 

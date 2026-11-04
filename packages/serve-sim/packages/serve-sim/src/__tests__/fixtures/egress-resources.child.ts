@@ -146,6 +146,32 @@ test("required startup prepares, boots and verifies policy as one transaction", 
   await verifyResidentEgressPolicy(udid, "block");
 });
 
+test.each([false, true])(
+  "preboot cancellation restores metadata (previous=%s) and permits retry",
+  async (existing) => {
+    if (existing) writeLaunchState(udid, { launchArgs: ["--keep"], capabilities: {} });
+    const previous = readLaunchState(udid);
+    const configPath = config.capabilityConfigPath(udid);
+    if (existing) writeFileSync(configPath, "previous config\n");
+    let calls = 0;
+    const log = join(state.dir, "preboot-cancellation");
+    await withShimsAsync({ xcrun: bootShim(log) }, async () => {
+      await expect(
+        startResidentEgress(udid, "block", () => {
+          if (++calls === 2) throw new Error("cancel before boot");
+        }),
+      ).rejects.toThrow("cancel before boot");
+      expect(readLaunchState(udid)).toEqual(previous);
+      if (existing) expect(readFileSync(configPath, "utf8")).toBe("previous config\n");
+      else expect(existsSync(configPath)).toBe(false);
+      expect(readdirSync(state.dir).filter((name) => name.startsWith("egress-"))).toEqual([]);
+      expect(existsSync(log)).toBe(false);
+      await startResidentEgress(udid, "block", () => {});
+    });
+    await verifyResidentEgressPolicy(udid, "block");
+  },
+);
+
 test("transaction cancellation after boot retains pending assets and releases the lock", async () => {
   let calls = 0;
   const log = join(state.dir, "cancelled-transaction");
