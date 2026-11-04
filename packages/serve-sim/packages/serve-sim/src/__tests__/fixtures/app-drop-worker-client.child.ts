@@ -1,10 +1,5 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import type { AppFolderEntry } from "../../client/utils/app-drop-folder";
-import {
-  DROP_CHUNK_BYTES,
-  uploadDroppedAppFolder,
-  type AppDropTransport,
-} from "../../client/utils/drop";
 import { packAppInWorker } from "../../client/utils/pack-app-in-worker";
 
 // Keep the shipped worker client and upload pipeline. Control only browser
@@ -22,12 +17,12 @@ const workers: ProtocolWorker[] = [];
 const revoked: string[] = [];
 const actions: Array<{ action: string; params: Record<string, unknown> }> = [];
 let refuseUpload = false;
-const asset = { url: "https://preview.test/app-drop-worker.js", headers: {} };
 const originals = {
   Worker: globalThis.Worker,
   fetch: globalThis.fetch,
   createObjectURL: URL.createObjectURL,
   revokeObjectURL: URL.revokeObjectURL,
+  window: Object.getOwnPropertyDescriptor(globalThis, "window"),
 };
 
 class ProtocolWorker {
@@ -73,6 +68,10 @@ class ProtocolWorker {
 }
 
 globalThis.Worker = ProtocolWorker as unknown as typeof Worker;
+Object.defineProperty(globalThis, "window", {
+  configurable: true,
+  value: { __SIM_PREVIEW__: { basePath: "/", execToken: "test-token" } },
+});
 globalThis.fetch = Object.assign(async () => new Response("worker asset"), {
   preconnect: originals.fetch.preconnect,
 });
@@ -83,6 +82,9 @@ afterAll(() => {
   globalThis.fetch = originals.fetch;
   URL.createObjectURL = originals.createObjectURL;
   URL.revokeObjectURL = originals.revokeObjectURL;
+  if (originals.window) Object.defineProperty(globalThis, "window", originals.window);
+  else Reflect.deleteProperty(globalThis, "window");
+  mock.restore();
 });
 beforeEach(() => {
   mode = "success";
@@ -98,7 +100,7 @@ function folder(): AppFolderEntry {
     createReader: () => ({ readEntries: (ok) => ok([]) }),
   };
 }
-const transport: AppDropTransport = async (action, params = {}) => {
+const transport = async (action: string, params: Record<string, unknown> = {}) => {
   actions.push({ action, params });
   return {
     exitCode: action === "upload.append" && refuseUpload ? 1 : 0,
@@ -106,12 +108,12 @@ const transport: AppDropTransport = async (action, params = {}) => {
     stderr: action === "upload.append" && refuseUpload ? "Upload refused" : "",
   };
 };
+mock.module("../../socket/client-control", () => ({ runHostAction: transport }));
+const { DROP_CHUNK_BYTES, uploadDroppedAppFolder } = await import("../../client/utils/drop");
 
 test("worker construction failure revokes the asset URL", async () => {
   mode = "constructor-error";
-  await expect(packAppInWorker(folder(), () => {}, asset)).rejects.toThrow(
-    "Worker creation blocked",
-  );
+  await expect(packAppInWorker(folder(), () => {})).rejects.toThrow("Worker creation blocked");
   expect(workers).toHaveLength(0);
   expect(revoked).toEqual(["blob:app-packer"]);
 });
@@ -120,7 +122,7 @@ test.each(["start-error", "post-error"] as const)(
   "startup %s terminates the worker and revokes its asset",
   async (failure) => {
     mode = failure;
-    await expect(packAppInWorker(folder(), () => {}, asset)).rejects.toThrow(
+    await expect(packAppInWorker(folder(), () => {})).rejects.toThrow(
       failure === "start-error" ? "Cannot start packer" : "Cannot clone files",
     );
     expect(workers[0]!.terminated).toBe(1);
@@ -132,9 +134,9 @@ test.each(["stream-error", "runtime-error"] as const)(
   "%s fails the upload, removes staging and never installs",
   async (failure) => {
     mode = failure;
-    await expect(
-      uploadDroppedAppFolder(folder(), "device", () => {}, transport, asset),
-    ).rejects.toThrow(failure === "stream-error" ? "Cannot read app file" : "App packing failed");
+    await expect(uploadDroppedAppFolder(folder(), "device", () => {})).rejects.toThrow(
+      failure === "stream-error" ? "Cannot read app file" : "App packing failed",
+    );
     expect(actions.map(({ action }) => action)).toEqual(
       failure === "stream-error" ? ["upload.append", "upload.remove"] : ["upload.remove"],
     );
@@ -147,7 +149,7 @@ test.each(["stream-error", "runtime-error"] as const)(
 
 test("cancelling an outstanding pull finishes the read and terminates the worker", async () => {
   mode = "hang";
-  const stream = await packAppInWorker(folder(), () => {}, asset);
+  const stream = await packAppInWorker(folder(), () => {});
   const worker = workers[0]!;
   const pulled = new Promise<void>((resolve) => {
     worker.onPull = resolve;
@@ -164,9 +166,9 @@ test("cancelling an outstanding pull finishes the read and terminates the worker
 test("a host upload failure cancels packing and removes the staged upload", async () => {
   mode = "stream-error";
   refuseUpload = true;
-  await expect(
-    uploadDroppedAppFolder(folder(), "device", () => {}, transport, asset),
-  ).rejects.toThrow("Upload refused");
+  await expect(uploadDroppedAppFolder(folder(), "device", () => {})).rejects.toThrow(
+    "Upload refused",
+  );
   expect(actions.map(({ action }) => action)).toEqual(["upload.append", "upload.remove"]);
   expect(actions[1]!.params.uploadId).toBe(actions[0]!.params.uploadId);
   expect(workers[0]!.pulls).toBe(1);
@@ -174,7 +176,7 @@ test("a host upload failure cancels packing and removes the staged upload", asyn
 });
 
 test("the client requests no chunk until read and does not prefetch the next", async () => {
-  const stream = await packAppInWorker(folder(), () => {}, asset);
+  const stream = await packAppInWorker(folder(), () => {});
   const worker = workers[0]!;
   expect(worker.pulls).toBe(0);
   const reader = stream.getReader();
