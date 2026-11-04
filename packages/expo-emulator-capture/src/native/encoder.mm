@@ -29,25 +29,41 @@ bool isKeyFrame(CMSampleBufferRef sample) {
 bool H264Encoder::configure(int width, int height, int fps, int bitRate, std::string& error) {
   invalidate();
   @autoreleasepool {
-    // Low-latency rate control emits each frame without holding one back.
-    NSDictionary* specification = @{
-      (id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder : @YES,
-      (id)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
-      (id)kVTVideoEncoderSpecification_EnableLowLatencyRateControl : @YES,
-    };
     NSDictionary* source = @{
       (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
       (id)kCVPixelBufferWidthKey : @(width),
       (id)kCVPixelBufferHeightKey : @(height),
       (id)kCVPixelBufferIOSurfacePropertiesKey : @{},
     };
-    OSStatus status = VTCompressionSessionCreate(
-        kCFAllocatorDefault, width, height, kCMVideoCodecType_H264,
-        (__bridge CFDictionaryRef)specification, (__bridge CFDictionaryRef)source, nullptr,
-        &H264Encoder::didEncode, this, &session_);
-    if (status != noErr) {
+    // Prefer the hardware encoder with low-latency rate control, which emits
+    // each frame without holding one back. A Mac without a usable hardware
+    // encoder gets the software encoder.
+    NSArray<NSDictionary*>* specifications = @[
+      @{
+        (id)kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder : @YES,
+        (id)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder : @YES,
+        (id)kVTVideoEncoderSpecification_EnableLowLatencyRateControl : @YES,
+      },
+      @{(id)kVTVideoEncoderSpecification_EnableLowLatencyRateControl : @YES},
+      @{},
+    ];
+    OSStatus status = noErr;
+    bool requiredHardware = false;
+    for (NSDictionary* specification in specifications) {
+      status = VTCompressionSessionCreate(
+          kCFAllocatorDefault, width, height, kCMVideoCodecType_H264,
+          (__bridge CFDictionaryRef)specification, (__bridge CFDictionaryRef)source, nullptr,
+          &H264Encoder::didEncode, this, &session_);
+      if (status == noErr) {
+        requiredHardware =
+            specification[(id)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder] !=
+            nil;
+        break;
+      }
       session_ = nullptr;
-      error = osStatus("creating the hardware H.264 encoder", status);
+    }
+    if (status != noErr) {
+      error = osStatus("creating an H.264 encoder", status);
       return false;
     }
     auto set = [&](CFStringRef key, CFTypeRef value) {
@@ -67,13 +83,14 @@ bool H264Encoder::configure(int width, int height, int fps, int bitRate, std::st
     set(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_709_2);
     set(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2);
     // The low-latency encoder (h264.rtvc) does not answer this query
-    // (kVTPropertyNotSupportedErr). The session requires hardware, so creation
-    // would have failed without it.
+    // (kVTPropertyNotSupportedErr). A session created with the hardware
+    // requirement is hardware, since creation would have failed otherwise.
     CFBooleanRef usingHardware = nullptr;
     OSStatus queried = VTSessionCopyProperty(
         session_, kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
         kCFAllocatorDefault, &usingHardware);
-    hardware_ = queried == noErr ? (usingHardware && CFBooleanGetValue(usingHardware)) : true;
+    hardware_ = queried == noErr ? (usingHardware && CFBooleanGetValue(usingHardware))
+                                 : requiredHardware;
     if (usingHardware) CFRelease(usingHardware);
     CFStringRef encoderId = nullptr;
     if (VTSessionCopyProperty(session_, kVTCompressionPropertyKey_EncoderID, kCFAllocatorDefault,
@@ -169,7 +186,7 @@ void H264Encoder::didEncode(void* refcon, void*, OSStatus status, VTEncodeInfoFl
                             CMSampleBufferRef sample) {
   auto* self = static_cast<H264Encoder*>(refcon);
   if (status != noErr) {
-    self->onError_(osStatus("hardware H.264 encoding", status));
+    self->onError_(osStatus("H.264 encoding", status));
     return;
   }
   if (!sample || (flags & kVTEncodeInfo_FrameDropped)) return;
