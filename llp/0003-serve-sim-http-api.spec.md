@@ -666,11 +666,16 @@ barrier reports failure instead of success for input still waiting in the queue.
 Each simulator setting in the sidebar has a read action and a write action on
 `/exec-ws`: `<setting>.get` with `{udid}` and `<setting>.set` with `{udid, value}`,
 for `hardwareKeyboard`, `reduceMotion`, `increaseContrast`, `reduceTransparency`,
-`voiceover`, `liquidGlass`, `colorFilter`, `textSize`, `showBorders` and `timeZone`. Values are
+`voiceover`, `liquidGlass`, `colorFilter`, `textSize`, `showBorders`, `timeZone` and `clock`. Values are
 the canonical values of `serve-sim ui` (`UI_OPTIONS` in `src/ui-settings.ts`),
 plus `increment` and `decrement` for `textSize`; aliases are refused. `timeZone` takes
 `host` or an IANA name such as `Europe/Berlin`; the name ICU resolves it to is set, because
-the canonical name depends on the ICU version. `settings.status` returns every setting as JSON.
+the canonical name depends on the ICU version. `clock` takes what `serve-sim ui clock` takes,
+its aliases included: `host`, or a date and time. Without a zone (`2030-01-01T09:00`) it is in
+the simulator's zone; with `Z` or an offset it is absolute, and fractions of a second are dropped.
+It needs a session that owns the device. `clock.get` reports the shifted time now as the
+simulator's wall time with its offset, such as `2030-01-01T09:00:12+09:00`.
+`settings.status` returns every setting as JSON.
 
 - `softwareKeyboard.toggle`: `{udid}`. Shows or hides the on-screen keyboard, like ⌘K.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.

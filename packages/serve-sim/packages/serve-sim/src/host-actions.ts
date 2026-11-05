@@ -29,6 +29,7 @@ import { isSimctlTimeout } from "./simctl";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
+import { normalizeClock } from "./clock";
 import { normalizeTimeZone } from "./time-zone";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
@@ -205,6 +206,23 @@ const ACTION_SCHEMAS = {
         .refine((zone) => normalizeTimeZone(zone) !== null, "must be host or an IANA zone name"),
     })
     .meta({ description: "Set the time zone: host, or an IANA name such as Europe/Berlin." }),
+  "clock.get": z.object({ udid: Device }).meta({
+    description:
+      "Read the clock: host for the Mac's time, or the shifted time now in the simulator's zone, with its offset.",
+  }),
+  "clock.set": z
+    .object({
+      udid: Device,
+      value: z
+        .string()
+        .max(40)
+        .refine((time) => normalizeClock(time) !== null, "must be host or a date and time"),
+    })
+    .meta({
+      description:
+        "Set the clock while a session owns the device: host, or a date and time such as " +
+        "2030-01-01T09:00 (the simulator's zone) or 2030-01-01T09:00Z. The time keeps ticking.",
+    }),
   "settings.status": z
     .object({ udid: Device })
     .meta({ description: "Read every simulator setting." }),
@@ -608,6 +626,10 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       return uiGet("time-zone", parseParams(action, raw));
     case "timeZone.set":
       return uiSet("time-zone", parseParams(action, raw));
+    case "clock.get":
+      return uiGet("clock", parseParams(action, raw));
+    case "clock.set":
+      return uiSet("clock", parseParams(action, raw));
     case "settings.status": {
       const p = parseParams(action, raw);
       return serveSim(["ui", "status", "--json", "-d", p.udid]);

@@ -4,7 +4,9 @@
 // delegate; the app delegate never sees them.
 
 #import <AVFoundation/AVFoundation.h>
+#import <JavaScriptCore/JavaScriptCore.h>
 #import <UIKit/UIKit.h>
+#include <math.h>
 #include <time.h>
 
 static void Record(NSString *kind, NSString *detail) {
@@ -65,6 +67,10 @@ static void RequestIfAsked(void) {
 
 + (void)load {
   Record(@"start", @"");
+  // Before the main queue runs, so only a clock image inserted at exec can have moved it.
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--clock-test"]) {
+    Record(@"clock-load", [NSString stringWithFormat:@"%ld", (long)time(NULL)]);
+  }
 }
 
 @end
@@ -345,6 +351,88 @@ static void StartTimeZoneRecording(void) {
   }];
 }
 
+// The clock E2E reads the wall clock the process sees, from Foundation, libc and JavaScriptCore.
+// Recorded at launch and whenever it jumps against the monotonic clock, with how many clock-change
+// and significant-time-change notifications arrived.
+static NSUInteger clockChangeNotifications = 0;
+static NSUInteger clockSignificantChanges = 0;
+static double lastClockSkew = NAN;
+static NSUInteger lastClockNotes = NSUIntegerMax;
+static JSContext *clockScript = nil;
+
+static double MonotonicMs(void) {
+  return (double)clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e6;
+}
+
+static void RecordWait(NSString *kind, double start) {
+  NSString *waited = [NSString stringWithFormat:@"%.0f", MonotonicMs() - start];
+  dispatch_async(dispatch_get_main_queue(), ^{ Record(kind, waited); });
+}
+
+// Deadlines that apps build from the wall clock: each one should take its real 300 ms. A wait
+// that never ends records nothing.
+static void ProbeWallDeadlines(void) {
+  dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+  dispatch_async(queue, ^{
+    NSCondition *condition = [[NSCondition alloc] init];
+    double start = MonotonicMs();
+    [condition lock];
+    [condition waitUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+    [condition unlock];
+    RecordWait(@"wait-condition", start);
+  });
+  double start = MonotonicMs();
+  dispatch_after(dispatch_walltime(NULL, 300 * (int64_t)NSEC_PER_MSEC), queue, ^{
+    RecordWait(@"wait-walltime", start);
+  });
+  dispatch_after(dispatch_time(DISPATCH_WALLTIME_NOW, 300 * (int64_t)NSEC_PER_MSEC), queue, ^{
+    RecordWait(@"wait-walltime-now", start);
+  });
+  struct timespec now;
+  clock_gettime(CLOCK_REALTIME, &now);
+  dispatch_after(dispatch_walltime(&now, 300 * (int64_t)NSEC_PER_MSEC), queue, ^{
+    RecordWait(@"wait-walltime-timespec", start);
+  });
+}
+
+static void RecordClockIfChanged(void) {
+  struct timespec monotonic;
+  clock_gettime(CLOCK_MONOTONIC, &monotonic);
+  double now = NSDate.date.timeIntervalSince1970;
+  double skew = now - ((double)monotonic.tv_sec + (double)monotonic.tv_nsec / 1e9);
+  NSUInteger notes = clockChangeNotifications + clockSignificantChanges;
+  if (fabs(skew - lastClockSkew) < 2 && notes == lastClockNotes) return;
+  lastClockSkew = skew;
+  lastClockNotes = notes;
+  double script = [[clockScript evaluateScript:@"Date.now() / 1000"] toDouble];
+  Record(@"clock", [NSString stringWithFormat:@"%.0f|%ld|%.0f|%lu|%lu", now, (long)time(NULL),
+                                              script, (unsigned long)clockChangeNotifications,
+                                              (unsigned long)clockSignificantChanges]);
+  ProbeWallDeadlines();
+}
+
+static void StartClockRecording(void) {
+  clockScript = [[JSContext alloc] init];
+  [NSNotificationCenter.defaultCenter addObserverForName:NSSystemClockDidChangeNotification
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(__unused NSNotification *note) {
+    clockChangeNotifications++;
+    RecordClockIfChanged();
+  }];
+  [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationSignificantTimeChangeNotification
+                                                  object:nil
+                                                   queue:NSOperationQueue.mainQueue
+                                              usingBlock:^(__unused NSNotification *note) {
+    clockSignificantChanges++;
+    RecordClockIfChanged();
+  }];
+  RecordClockIfChanged();
+  [NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(__unused NSTimer *timer) {
+    RecordClockIfChanged();
+  }];
+}
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -400,6 +488,7 @@ static void StartTimeZoneRecording(void) {
       : @[];
   Record(@"launch", [passed componentsJoinedByString:@"\x1f"]);
   if ([arguments containsObject:@"--time-zone-test"]) StartTimeZoneRecording();
+  if ([arguments containsObject:@"--clock-test"]) StartClockRecording();
   if ([arguments containsObject:@"--logs-test"]) {
     [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(__unused NSTimer *timer) {
       NSLog(@"SERVE_SIM_USER_APP_LOG_MARKER pid=%d", getpid());
