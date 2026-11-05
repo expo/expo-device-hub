@@ -527,6 +527,86 @@ proceed independently. The preview UI has no storage editor. These actions are
 currently iOS Simulator only; serve-emu does not expose equivalent file actions.
 Android parity remains outside this serve-sim rollout.
 
+### Installing a simulator app
+
+`app.install` accepts a simulator `.app` bundle on the host or a gzip tar archive
+containing exactly one outer `.app` bundle. EAS `.tar.gz`/`.tgz` artifacts and
+extensionless staged gzip uploads are supported. The catalog advertises
+`uploadArchive: "tar.gz"`; clients can use it to package a local `.app` directory
+before uploading. Device `.ipa` builds and `.zip` archives are refused with an
+actionable Simulator-build error before installation. Regular files without a
+gzip header are also refused, including extensionless staged ZIP uploads.
+
+The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them through
+`upload.append`, calls `app.install`, and removes the staged source on success or
+failure. Device `.ipa`/`.zip` drops are rejected before upload.
+
+The preview also accepts dropped `.app` directories when the browser exposes
+filesystem entries. It walks every directory batch before streaming a gzip tar
+through the same upload/install path. Only one folder is packed at a time per
+preview; ordinary file drops can proceed independently. Paths, entry count and
+uncompressed bytes share the host limits; the compressed upload is capped at
+500 MiB. Browser files expose no POSIX modes, so packing grants owner execution
+to Mach-O binaries and shebang scripts, with other files owner-readable/writable
+and directories owner-only. Browser drops cannot preserve symlink metadata or
+arbitrary executable modes; use an archive when those matter or a folder cannot
+be read [observed: `app-drop-folder.ts`, `use-media-drop.ts`, `drop.ts`].
+
+The preparation worker uses `multitars` after a bounded TAR-header gate. The gate
+rejects special entries that the parser would otherwise skip and caps individual
+PAX/GNU metadata records at 1 MiB before buffering them. Ambiguous numeric fields
+and malformed PAX records are refused so the gate and parser share record boundaries. Header accounting follows
+PAX size overrides, counts metadata headers toward the entry limit, and bounds the
+expanded stream including padding. Gzip is drained through its trailer before
+installation. Archive fixture generation uses a separate test-only `tar` dependency
+[observed: `app-archive-headers.ts`, `app-install-worker.ts`, `app-install.test.ts`].
+
+The pinned `multitars` patch reads only the payload size from PAX and GNU metadata
+headers. Their own modes and USTAR prefixes must not leak into the following file;
+explicit PAX values still apply. This preserves executable bits in node-tar archives
+and file paths in macOS tar archives. [observed: `patches/multitars@1.0.2.patch`,
+`app-archive-security.test.ts`]
+
+Archives extract into a private directory under the server's upload folder, preserving executable bits.
+Traversal, external links and special files are refused. Expanded contents are
+limited to 2 GiB and 100,000 entries. Install preparation runs in a killable CLI
+child, including source inspection, so a FIFO cannot block the serving process's
+filesystem pool. Installs are serialized and share one action deadline across
+queueing, preparation and installation. The parent waits for preparation to exit
+before removing temporary contents in a cleanup child, using the remaining action
+budget with at most ten additional seconds after the action deadline. Cleanup
+failures retain the original error and add a cleanup warning. A failed cleanup retains the same extraction path;
+preparation refuses to extract another tree into it. Upload pruning reclaims dead-server folders,
+including abandoned extraction trees, and exempts live extractions from age pruning until their deadline.
+
+Links are resolved against exact entry metadata as a complete graph before creation, independently of archive
+order. All parent directories are created before any links, so case or Unicode aliases cannot redirect
+later writes. Entries through link paths and conflicting entries are rejected.
+Directories remain owner-only, and executable owner bits are preserved. The
+uploaded source remains until the client removes it with `upload.remove`.
+
+App installation snapshots staged archive sources before waiting for extraction
+or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
+upload staging ceiling; source removal/reset is blocked only while copying.
+Private snapshots are removed after success or failure and live under the server-owned
+upload folder, where dead-server pruning reclaims abandoned copies. They use a reserved
+private prefix encoding the action deadline and do not expire by age before that
+deadline, so long installs outlive ordinary upload retention without losing their source.
+After the deadline, ordinary age pruning applies even if the owner's PID has been
+reused by another process.
+Cleanup makes copied directories owner-writable without following links. A cleanup
+failure preserves the consumer result or original error, retains the on-disk byte
+reservation, and must be retried successfully before another snapshot is accepted.
+`upload.remove` also removes staged directories, including read-only bundles
+[observed: `removeUploadTreeAsync`, `removeSnapshotAsync` in `upload-store.ts`].
+
+Copying regular files and app directories shares the original action deadline.
+Staged app directories accept relative links that remain inside the bundle; absolute
+links, escaping link chains and cycles are rejected before copying. Targets must
+use exact measured entry names, so filesystem case or Unicode aliases cannot hide
+a link. Link validation
+uses the measured directory metadata, so it never follows a link into the host filesystem.
+
 ### Uploading an app fixture
 
 `app.file.upload`: `{udid, bundleId, uploadId, relativePath, overwrite?}` copies a

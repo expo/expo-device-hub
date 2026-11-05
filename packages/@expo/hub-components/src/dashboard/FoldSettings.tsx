@@ -50,11 +50,14 @@ export function FoldSettings({
   fold,
   controls,
   preview,
+  disabledReason,
 }: {
   fold: DeviceFold;
   /** `client.capabilities.fold`: the rows to show. */
   controls: Exclude<DeviceFoldCapabilities, false>;
   preview?: FoldPreviewOption;
+  /** Why native fold commands are temporarily unavailable. Local preview choices remain available. */
+  disabledReason?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -91,12 +94,13 @@ export function FoldSettings({
       : offeredPoses;
   const canChangeTableMode = (tableMode?.available ?? false) || tableMode?.enabled === true;
   const changeAngle = (value: number) => {
+    if (disabledReason) return;
     setAngleDraft(value);
     fold.setControl({ control: "angle", value });
   };
   const selectPose = (value: string) => {
     const position = offeredPoses.find((option) => option.value === value);
-    if (!position) return;
+    if (!position || disabledReason) return;
     setAngleDraft(null);
     setAdjusting(false);
     setEditing(false);
@@ -109,6 +113,8 @@ export function FoldSettings({
         <SidebarRow label="Fold pose">
           <Select
             ariaLabel="Fold pose"
+            disabled={!!disabledReason}
+            disabledReason={disabledReason}
             options={poseOptions}
             value={poseValue}
             onChange={selectPose}
@@ -121,6 +127,7 @@ export function FoldSettings({
           <span style={{ display: "flex", minWidth: 0, alignItems: "center", gap: 8 }}>
             <SidebarSlider
               label="Hinge angle"
+              disabled={!!disabledReason}
               valueText={displayedAngle === undefined ? "Unknown" : `${displayedAngle} degrees`}
               min={angleRange.min}
               max={angleRange.max}
@@ -132,6 +139,7 @@ export function FoldSettings({
             />
             <input
               type="number"
+              disabled={!!disabledReason}
               aria-label="Hinge angle in degrees"
               min={angleRange.min}
               max={angleRange.max}
@@ -177,14 +185,15 @@ export function FoldSettings({
         <SidebarRow label="Table Mode">
           <DisabledControlHint
             reason={
-              !canChangeTableMode ? "Table Mode is not available in the current pose." : undefined
+              disabledReason ??
+              (!canChangeTableMode ? "Table Mode is not available in the current pose." : undefined)
             }
             label="Table Mode"
           >
             <SidebarSwitch
               label="Table Mode"
               checked={tableMode.enabled ?? false}
-              disabled={!canChangeTableMode}
+              disabled={!!disabledReason || !canChangeTableMode}
               onChange={(value) => fold.setControl({ control: "tableMode", value })}
             />
           </DisabledControlHint>

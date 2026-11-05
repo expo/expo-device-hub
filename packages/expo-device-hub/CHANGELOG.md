@@ -1,5 +1,17 @@
 # expo-device-hub
 
+## 0.21.0
+
+### Minor Changes
+
+- c27ada7: Show one spinner while a device screen loads, on the device's own surface instead of a black screen, for iOS and Android and for the iPhone Duo's 2D and 3D previews. The status pill says "Loading" until the screen, or the 3D model with its first display frame, appears. A stream that drops after it loaded keeps its last frame and shows "Reconnecting" without a spinner. Stream errors appear as one notice over the screen, also over the 3D preview. A 3D model that does not load in 30 seconds while the tab is visible falls back to the flat screen until you select 3D again or switch the device.
+- 480a9cb: In a large window, the iPhone Duo's 3D model is about as large as the 2D preview, which uses the same 480 px short-side cap as other devices. In a smaller window the 3D stage shrinks to the stream area between the device name and the toolbar, and the model keeps a 32 px margin on each side, so there it is 64 px smaller than the 2D preview. Folding, rotating, or switching displays never resizes it, and the 2D preview keeps its size.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+
 ## 0.20.0
 
 ### Minor Changes

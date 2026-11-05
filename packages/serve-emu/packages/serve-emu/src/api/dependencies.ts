@@ -19,6 +19,7 @@ import type {
   DeviceSelectionResponse,
   DisplayDensityStatus,
   FileImportResponse,
+  FoldRequest,
   FoldStatus,
   FontScaleStatus,
   ForegroundApp,
@@ -69,7 +70,7 @@ export type ApiDependencies = {
    */
   setOrientation: (orientation: OrientationMode) => Promise<OrientationStatus>;
   getFold: () => Promise<FoldStatus>;
-  setFold: (posture: "closed" | "opened") => Promise<FoldStatus>;
+  setFold: (request: FoldRequest) => Promise<FoldStatus>;
   getNightMode: () => Promise<NightModeStatus>;
   setNightMode: (mode: NightMode) => Promise<NightModeStatus>;
   getFontScale: () => Promise<FontScaleStatus>;
