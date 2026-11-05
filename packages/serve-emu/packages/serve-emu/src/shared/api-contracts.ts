@@ -79,7 +79,11 @@ export type DeviceSelectionResponse = ApiSuccess<{
   device: string;
 }>;
 
-export const STREAM_MODES = ["scrcpy", "grpc-screenshot"] as const;
+/**
+ * Screen capture sources. `emulator-capture` reads frames from an expo-emulator-capture agent
+ * inside the emulator; only the middleware offers it, for emulators started with the agent.
+ */
+export const STREAM_MODES = ["scrcpy", "grpc-screenshot", "emulator-capture"] as const;
 export type StreamMode = (typeof STREAM_MODES)[number];
 export function isStreamMode(value: unknown): value is StreamMode {
   return typeof value === "string" && STREAM_MODES.some((mode) => mode === value);
@@ -181,6 +185,7 @@ export type GrpcCaptureDiagnostics = {
 
 export type StreamModeRequest =
   | { mode: "scrcpy" }
+  | { mode: "emulator-capture" }
   | {
       mode: "grpc-screenshot";
       /** Optional for backwards compatibility; omitted means keep the configured mode. */
@@ -203,6 +208,8 @@ export type StreamModeResponse = ApiSuccess<{
   inputSource: InputSource;
   availableInputSources: InputSource[];
   availableModes: StreamMode[];
+  /** Why a mode is not available for this device, for display. Older hosts omit this field. */
+  unavailableModes?: Partial<Record<StreamMode, string>>;
   sessionGeneration: number;
 }>;
 
@@ -590,6 +597,13 @@ export type ExperimentalGpuCaptureDiagnostics = {
   maxSize: number;
   /** Native display size changes, such as folding, since the session started. */
   resizes: number;
+  /**
+   * Android's display rotation (0 to 3) that the agent turns the picture for; null when the
+   * agent cannot turn it. Older hosts omit this field.
+   */
+  rotation?: 0 | 1 | 2 | 3 | null;
+  /** Rotation changes passed to the agent since the session started. Older hosts omit it. */
+  rotations?: number;
 };
 
 export type HealthResponse = {
@@ -1090,7 +1104,7 @@ export function parseDeviceSelectionResponse(value: unknown): DeviceSelectionRes
 export function parseStreamModeRequest(value: unknown): StreamModeRequest {
   const root = record(value, "stream mode request");
   const mode = oneOf(root.mode, STREAM_MODES, "stream mode request.mode");
-  if (mode === "scrcpy") {
+  if (mode === "scrcpy" || mode === "emulator-capture") {
     if (root.grpcImageMode !== undefined) {
       fail("stream mode request.grpcImageMode is available only with mode grpc-screenshot");
     }
@@ -1216,8 +1230,21 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     inputSource,
     availableInputSources,
     availableModes,
+    ...(root.unavailableModes === undefined
+      ? {}
+      : { unavailableModes: parseUnavailableModes(root.unavailableModes) }),
     sessionGeneration,
   };
+}
+
+function parseUnavailableModes(value: unknown): Partial<Record<StreamMode, string>> {
+  const reasons = record(value, "stream mode response.unavailableModes");
+  const result: Partial<Record<StreamMode, string>> = {};
+  for (const [key, reason] of Object.entries(reasons)) {
+    const mode = oneOf(key, STREAM_MODES, "stream mode response.unavailableModes key");
+    result[mode] = string(reason, `stream mode response.unavailableModes.${mode}`);
+  }
+  return result;
 }
 
 export function parseStreamEncoderSettingsResponse(value: unknown): StreamEncoderSettingsResponse {
@@ -1885,6 +1912,12 @@ function parseRollingTimingSummary(value: unknown, name: string): RollingTimingS
   };
 }
 
+function nullableDisplayRotation(value: unknown, name: string): 0 | 1 | 2 | 3 | null {
+  if (value === null) return null;
+  if (value === 0 || value === 1 || value === 2 || value === 3) return value;
+  return fail(`${name} must be 0, 1, 2, 3 or null`);
+}
+
 function parseExperimentalGpuCaptureDiagnostics(value: unknown): ExperimentalGpuCaptureDiagnostics {
   const name = "health response.experimentalGpuCapture";
   const item = record(value, name);
@@ -1902,6 +1935,12 @@ function parseExperimentalGpuCaptureDiagnostics(value: unknown): ExperimentalGpu
     streamSize: parseDeviceSize(item.streamSize, `${name}.streamSize`),
     maxSize: number(item.maxSize, `${name}.maxSize`),
     resizes: number(item.resizes, `${name}.resizes`),
+    ...(item.rotation === undefined
+      ? {}
+      : { rotation: nullableDisplayRotation(item.rotation, `${name}.rotation`) }),
+    ...(item.rotations === undefined
+      ? {}
+      : { rotations: number(item.rotations, `${name}.rotations`) }),
   };
 }
 

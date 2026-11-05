@@ -10,6 +10,7 @@ import {
 } from "./recording-canvas.ts";
 import { createRecordingFileTarget } from "./recording-file-target.ts";
 import type { VideoPacket } from "./scrcpy.ts";
+import type { StreamMode } from "./shared/api-contracts.ts";
 
 type RecordingMetadata = {
   udid: string;
@@ -361,7 +362,7 @@ export class ScreenRecording {
   accept(
     packet: VideoPacket,
     size: { width: number; height: number },
-    source: "scrcpy" | "grpc-screenshot",
+    source: StreamMode,
     geometry?: RecordingGeometry,
   ): void {
     if (!this.active) return;

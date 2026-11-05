@@ -41,7 +41,7 @@ export const emulatorCapture = readEmulatorCapture(process.env);
 const router = createRouter({
   ...serveEmuOptions,
   ...(emulatorCapture
-    ? { experimentalGpuCaptureSocketDirectory: emulatorCapture.socketDirectory }
+    ? { emulatorCapture: { socketDirectory: emulatorCapture.socketDirectory } }
     : {}),
   ...(SERVER_SINGLE_DEVICE?.platform === "android" ? { serial: SERVER_SINGLE_DEVICE.id } : {}),
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
