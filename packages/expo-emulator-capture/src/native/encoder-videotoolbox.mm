@@ -37,8 +37,8 @@ void waitForGpuCopy(CVPixelBufferRef pixels) {
   IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
 }
 
-// Frames of any size are scaled and converted to NV12 by a VTPixelTransferSession
-// before the encoder.
+// Frames of any size are turned upright by a VTPixelRotationSession when the display
+// is rotated, then scaled and converted to NV12 by a VTPixelTransferSession.
 class VideoToolboxEncoder final : public H264Encoder {
  public:
   VideoToolboxEncoder(Sink sink, ErrorSink onError)
@@ -47,7 +47,8 @@ class VideoToolboxEncoder final : public H264Encoder {
   VideoToolboxEncoder(const VideoToolboxEncoder&) = delete;
   VideoToolboxEncoder& operator=(const VideoToolboxEncoder&) = delete;
 
-  bool configure(int width, int height, int fps, int bitRate, std::string& error) override;
+  bool configure(int width, int height, int fps, int bitRate, int rotation,
+                 std::string& error) override;
   bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
               std::string& error) override;
   void invalidate() override;
@@ -58,11 +59,16 @@ class VideoToolboxEncoder final : public H264Encoder {
   static void didEncode(void* refcon, void* frameRefcon, OSStatus status, VTEncodeInfoFlags flags,
                         CMSampleBufferRef sample);
   void emit(CMSampleBufferRef sample);
+  CVPixelBufferRef rotate(CVPixelBufferRef pixels, std::string& error);
 
   Sink sink_;
   ErrorSink onError_;
   VTCompressionSessionRef session_ = nullptr;
   VTPixelTransferSessionRef transfer_ = nullptr;
+  VTPixelRotationSessionRef rotation_ = nullptr;  // Only when the display is rotated.
+  CVPixelBufferPoolRef rotatedPool_ = nullptr;
+  int rotatedWidth_ = 0, rotatedHeight_ = 0;
+  int quarterTurns_ = 0;
   bool hardware_ = false;
   std::string encoderId_;
 };
@@ -74,8 +80,13 @@ std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
   return std::make_unique<VideoToolboxEncoder>(std::move(sink), std::move(onError));
 }
 
-bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate, std::string& error) {
+bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate, int rotation,
+                                    std::string& error) {
   invalidate();
+  if (rotation < 0 || rotation > 3) {
+    error = "invalid display rotation";
+    return false;
+  }
   @autoreleasepool {
     NSDictionary* source = @{
       (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
@@ -168,8 +179,67 @@ bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate,
                          kCVImageBufferTransferFunction_ITU_R_709_2);
     VTSessionSetProperty(transfer_, kVTPixelTransferPropertyKey_DestinationYCbCrMatrix,
                          kCVImageBufferYCbCrMatrix_ITU_R_709_2);
+    if (rotation != 0) {
+      status = VTPixelRotationSessionCreate(kCFAllocatorDefault, &rotation_);
+      if (status != noErr) {
+        rotation_ = nullptr;
+        invalidate();
+        error = osStatus("creating the pixel rotation session", status);
+        return false;
+      }
+      // @ref LLP 0017#rotation — rotation N drew the picture N quarter turns clockwise
+      CFStringRef turn = rotation == 1   ? kVTRotation_CCW90
+                         : rotation == 2 ? kVTRotation_180
+                                         : kVTRotation_CW90;
+      status = VTSessionSetProperty(rotation_, kVTPixelRotationPropertyKey_Rotation, turn);
+      if (status != noErr) {
+        invalidate();
+        error = osStatus("setting the pixel rotation", status);
+        return false;
+      }
+      quarterTurns_ = rotation;
+    }
   }
   return true;
+}
+
+// Turns a captured frame upright into a pool buffer; the caller releases it.
+CVPixelBufferRef VideoToolboxEncoder::rotate(CVPixelBufferRef pixels, std::string& error) {
+  int width = int(CVPixelBufferGetWidth(pixels)), height = int(CVPixelBufferGetHeight(pixels));
+  if (quarterTurns_ % 2) std::swap(width, height);
+  if (!rotatedPool_ || width != rotatedWidth_ || height != rotatedHeight_) {
+    if (rotatedPool_) CVPixelBufferPoolRelease(rotatedPool_);
+    rotatedPool_ = nullptr;
+    @autoreleasepool {
+      NSDictionary* attributes = @{
+        (id)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
+        (id)kCVPixelBufferWidthKey : @(width),
+        (id)kCVPixelBufferHeightKey : @(height),
+        (id)kCVPixelBufferIOSurfacePropertiesKey : @{},
+      };
+      if (CVPixelBufferPoolCreate(kCFAllocatorDefault, nullptr, (__bridge CFDictionaryRef)attributes,
+                                  &rotatedPool_) != kCVReturnSuccess) {
+        rotatedPool_ = nullptr;
+        error = "cannot create the rotation buffer pool";
+        return nullptr;
+      }
+    }
+    rotatedWidth_ = width;
+    rotatedHeight_ = height;
+  }
+  CVPixelBufferRef rotated = nullptr;
+  if (CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, rotatedPool_, &rotated) !=
+      kCVReturnSuccess) {
+    error = "rotation buffer pool is exhausted";
+    return nullptr;
+  }
+  OSStatus status = VTPixelRotationSessionRotateImage(rotation_, pixels, rotated);
+  if (status != noErr) {
+    CVPixelBufferRelease(rotated);
+    error = osStatus("turning the frame upright", status);
+    return nullptr;
+  }
+  return rotated;
 }
 
 bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
@@ -192,7 +262,17 @@ bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, boo
                         kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
   CVBufferSetAttachment(pixels, kCVImageBufferTransferFunctionKey,
                         kCVImageBufferTransferFunction_sRGB, kCVAttachmentMode_ShouldPropagate);
-  OSStatus status = VTPixelTransferSessionTransferImage(transfer_, pixels, input);
+  CVPixelBufferRef upright = pixels;
+  if (rotation_) {
+    upright = rotate(pixels, error);
+    if (!upright) {
+      CVPixelBufferRelease(input);
+      return false;
+    }
+    CVBufferPropagateAttachments(pixels, upright);
+  }
+  OSStatus status = VTPixelTransferSessionTransferImage(transfer_, upright, input);
+  if (upright != pixels) CVPixelBufferRelease(upright);
   if (status != noErr) {
     CVPixelBufferRelease(input);
     error = osStatus("scaling the frame", status);
@@ -224,6 +304,17 @@ void VideoToolboxEncoder::invalidate() {
     CFRelease(transfer_);
     transfer_ = nullptr;
   }
+  if (rotation_) {
+    VTPixelRotationSessionInvalidate(rotation_);
+    CFRelease(rotation_);
+    rotation_ = nullptr;
+  }
+  if (rotatedPool_) {
+    CVPixelBufferPoolRelease(rotatedPool_);
+    rotatedPool_ = nullptr;
+  }
+  rotatedWidth_ = rotatedHeight_ = 0;
+  quarterTurns_ = 0;
   hardware_ = false;
   encoderId_.clear();
 }

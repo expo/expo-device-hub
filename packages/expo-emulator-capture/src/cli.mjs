@@ -7,13 +7,21 @@ import { createConnection } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { FLAGS, KEY_FRAME_COMMAND, RecordReader, settingsCommand } from "./protocol.mjs";
+import {
+  FLAGS,
+  KEY_FRAME_COMMAND,
+  RecordReader,
+  ROTATION_PROTOCOL,
+  rotationCommand,
+  settingsCommand,
+} from "./protocol.mjs";
 import { agentLibraryPath, defaultSocketPath, preloadVariable } from "./paths.mjs";
 
 const USAGE = `Usage:
   expo-emulator-capture launch [--socket <path>] [--log <path>] [--emulator <path>] -- <emulator args>
   expo-emulator-capture record --socket <path> --output <file.h264> [--seconds 10]
                                [--fps 60] [--max-size 0] [--bit-rate 12000000]
+                               [--rotation 0]
   expo-emulator-capture socket-path --port <console port>
 
 launch starts the emulator with the capture agent preloaded. Pass -port to the
@@ -101,9 +109,13 @@ function record(argv) {
       fps: { type: "string" },
       "max-size": { type: "string" },
       "bit-rate": { type: "string" },
+      rotation: { type: "string" },
     },
   });
   if (!values.socket || !values.output) fail("record needs --socket and --output");
+  // Android's display rotation (0 to 3); the agent turns the picture upright.
+  const rotation = integer("rotation", values.rotation, 0);
+  if (rotation < 0 || rotation > 3) fail("--rotation must be 0, 1, 2 or 3");
   const seconds = Number(values.seconds ?? 10);
   const settings = {
     fps: integer("fps", values.fps, 60),
@@ -116,6 +128,13 @@ function record(argv) {
   const reader = new RecordReader((entry) => {
     if (entry.flags === FLAGS.hello) {
       console.log(`hello: native ${entry.width}x${entry.height}@${entry.fps} ${entry.payload}`);
+      // 'R' before 'S': the agent starts streaming on 'S', so the first session is
+      // already upright.
+      if (rotation !== 0) {
+        if ((JSON.parse(entry.payload.toString()).protocol ?? 1) < ROTATION_PROTOCOL)
+          fail("this capture agent cannot turn the picture; rebuild it");
+        socket.write(rotationCommand(rotation));
+      }
       socket.write(settingsCommand(settings));
     } else if (entry.flags === FLAGS.resized) {
       stats.resizes++;

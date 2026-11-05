@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout); both by Claude Code, directed by Krystof Woldrich
+**Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout; rotation); all by Claude Code, directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -68,12 +68,13 @@ Each record is a 32-byte big-endian header (`GPC1`, payload length u32, pts u64 
 | 0     | H.264 access unit | Stream size             | Annex-B                                                           |
 | 1     | IDR access unit   | Stream size             | Annex-B, starting with SPS and PPS                                |
 | 2     | Hello             | Native display size     | JSON: `protocol`, `platform`, `gpuAvailable`, `renderer`, `posts` |
-| 3     | Configured        | Stream size             | JSON: `framePath`, `hardwareEncoder`, `encoder`                   |
+| 3     | Configured        | Stream size             | JSON: `framePath`, `hardwareEncoder`, `encoder`, `rotation`       |
 | 4     | Resized           | New native display size | Empty                                                             |
 
-The consumer sends `K` for a keyframe, or `S` and three big-endian u32 values (longest stream edge with 0 for native, FPS 1–120, bit rate 100 kbit/s–50 Mbit/s). The agent answers `S` with a configured record and then an IDR.
+The consumer sends `K` for a keyframe, `S` and three big-endian u32 values (longest stream edge with 0 for native, FPS 1–120, bit rate 100 kbit/s–50 Mbit/s), or `R` and one big-endian u32 value (Android's display rotation, 0–3). The agent answers `S`, and an `R` that changes the rotation, with a configured record and then an IDR. Hello's `protocol` is 2 when the agent accepts `R` [observed: `src/native/protocol.h`, `readCommands` in `src/native/agent.cpp`].
 
 - After hello, `S`, and configured, frames follow. A resized record is always followed by a configured record and an IDR.
+- A consumer that knows the rotation sends `R` before `S`. The agent starts streaming on `S`, so the first session is already upright. A new connection starts at rotation 0.
 - One consumer at a time. A new connection replaces the old one; records from an old connection are dropped. Consumers can reconnect without restarting the emulator, which PR #107 could not do.
 - On a static screen the renderer posts nothing. When a consumer needs a frame (new settings, `K`), the agent captures the last posted color buffer itself.
 - Under backpressure (8 MB queued), the agent drops delta frames until the next keyframe and requests one.
@@ -81,6 +82,14 @@ The consumer sends `K` for a keyframe, or `S` and three big-endian u32 values (l
 ## Folding and resizes
 
 Folding changes the size of the posted color buffers: 2076×2152 unfolded and 1080×2424 folded on the Pixel 9 Pro Fold profile [observed: capture on 2026-11-04]. When a frame's size differs, the encoder thread re-creates the encoder and sends resized, configured and an IDR [observed: `encoderLoop` in `src/native/agent.cpp`]. serve-emu uses the resized size to map touches, which go to the native display because scrcpy runs without video, as in `grpc-session.ts`. A configured record with a new size becomes a `session` packet, so the middleware resyncs every client from a keyframe [observed: serve-emu `src/gpu-session.ts`, `middleware.ts`].
+
+## Rotation
+
+The color buffer keeps the panel's orientation. When Android turns the screen, it draws the turned picture into the same panel-sized buffer: at display rotation N (`Surface.ROTATION_0` to `ROTATION_270`), the picture is turned N quarter turns clockwise. On 2026-11-04, before this section's change, the Hub showed the stream upside down at 180°, and touches used the panel orientation too [observed: Hub test, 2026-11-04].
+
+The consumer sends the display rotation with `R`. The agent then streams at the upright size (the native edges swap for rotations 1 and 3, before the longest-edge cap), and the VideoToolbox encoder turns each frame N quarter turns counter-clockwise with a `VTPixelRotationSession`, before the `VTPixelTransferSession` scales it [observed: `uprightSize` in `src/native/protocol.h`, `rotate` in `src/native/encoder-videotoolbox.mm`]. The turn runs on the encoder thread, after the wait for the GPU copy, so the guest's render thread does not wait for it. A rotation change re-creates the encoder and sends configured and an IDR, as a fold does. The resized record still reports the native (panel) size.
+
+On the Pixel 10 profile with `-gpu host`, the four display rotations set with `adb shell settings put system user_rotation` gave upright 570×1280, 1280×570, 570×1280 and 1280×570 streams with `--max-size 1280`; the camera cutout appeared at the top, left, bottom and right [observed: `cli.mjs record --rotation`, emulator 37.2.7, 2026-11-05].
 
 ## Integration
 
@@ -92,11 +101,9 @@ Folding changes the size of the posted color buffers: 2076×2152 unfolded and 10
 
 - Tested only with Android Emulator 37.2.7 (build 16195039) on a Mac mini M2 [observed].
 - The EAS macOS VMs (`macos-large`, image `macos-tahoe-26.5-xcode-26.6`, Apple M4 Pro (Virtual), macOS 26.5.2) cannot run the Android Emulator. Hypervisor.framework is not available there (`kern.hv_support: 0`), and emulator 37.2.13 stops with `HVF error: HV_UNSUPPORTED`, also with `-accel off` and with `-qemu -accel tcg`. On the same VMs, the Android SDK installs (command-line tools, platform-tools, the emulator and the API 37 arm64 image in 1 to 2.5 minutes), the agent builds and its tests pass, and the VideoToolbox hardware encoder works: `h264.rtvc` encoded synthetic 1080×2424 frames at 97 to 109 FPS [observed: EAS workflow runs, 2026-11-04].
-- Rotation is not handled: at 180° the stream showed the picture upside down, because the color buffer keeps the panel orientation [observed: Hub test, 2026-11-04]. Touch mapping uses the panel orientation too.
 - In the T3 Code preview browser, the Hub's canvas did not present new frames after a fold or unfold until its layer repainted, although `getImageData` showed the new picture. The same happened with the gRPC source, so it is not specific to this capture [observed: 2026-11-04]. Whether other browsers show it is not known.
-- Attach to a running emulator, multi-display capture and rotation are not implemented.
+- Attach to a running emulator and multi-display capture are not implemented.
 
 ## Open questions for the maintainer
 
-- Should rotation be the next step? A consumer command could pass the orientation to the agent, and `VTPixelRotationSession` could rotate in hardware.
-- Should the Hub keep `-gpu auto` as the default without the agent, given that it selects the software renderer on a headless Mac?
+- Should the Hub keep `-gpu auto` as the default without the agent, given that it selects the software renderer on a headless Mac? During the app-action script, the emulator used 4.4 cores with `-gpu auto` and 0.6 cores with `-gpu host` [observed: CPU test on the Mac mini M2, 2026-11-05].

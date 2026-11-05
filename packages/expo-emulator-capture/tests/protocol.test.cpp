@@ -64,10 +64,36 @@ static void settings() {
   assert(!parseSettings(command, parsed));
 }
 
+static void rotation() {
+  uint8_t command[kRotationCommandBytes] = {'R'};
+  int parsed = -1;
+  for (uint32_t value = 0; value <= 3; value++) {
+    writeU32(command + 1, value);
+    assert(parseRotation(command, parsed) && parsed == int(value));
+  }
+  writeU32(command + 1, 4);
+  assert(!parseRotation(command, parsed));
+  writeU32(command + 1, 0xffffffffu);
+  assert(!parseRotation(command, parsed));
+  command[0] = 'S';
+  writeU32(command + 1, 1);
+  assert(!parseRotation(command, parsed));
+
+  // The panel-sized buffer turns upright: rotations 1 and 3 swap the edges.
+  assert(uprightSize(1080, 2424, 0) == std::make_pair(1080, 2424));
+  assert(uprightSize(1080, 2424, 1) == std::make_pair(2424, 1080));
+  assert(uprightSize(1080, 2424, 2) == std::make_pair(1080, 2424));
+  assert(uprightSize(1080, 2424, 3) == std::make_pair(2424, 1080));
+  // The longest-edge cap applies to the upright size.
+  auto [w, h] = uprightSize(1080, 2424, 1);
+  assert(streamSize(w, h, 1280) == std::make_pair(1280, 570));
+}
+
 int main() {
   streamSizes();
   pacing();
   header();
   settings();
-  std::cout << "native protocol, stream size, and pacing checks passed\n";
+  rotation();
+  std::cout << "native protocol, stream size, rotation, and pacing checks passed\n";
 }
