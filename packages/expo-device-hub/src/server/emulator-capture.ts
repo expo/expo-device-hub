@@ -83,7 +83,11 @@ export function readEmulatorCapture(
         return path;
       },
       (error: unknown) => {
-        problem = `Installing ${EMULATOR_CAPTURE_PACKAGE} failed: ${error instanceof Error ? error.message : String(error)}`;
+        // The install error names the package and npm's reason.
+        problem =
+          error instanceof Error
+            ? error.message
+            : `Installing ${EMULATOR_CAPTURE_PACKAGE} failed: ${String(error)}`;
         pending = null; // The next boot tries again.
         throw error;
       },
