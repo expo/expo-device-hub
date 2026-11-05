@@ -74,6 +74,8 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
   // @ref LLP 0015#errors — a model that does not load in time takes the 2D fallback instead of spinning
   useVisibleTimeout(status === "loading", SCREEN_LOAD_TIMEOUT_MS, unavailable);
 
+  // Stops the running scene once; the flat fallback needs no 3D rendering.
+  const stopScene = useRef<() => void>(() => {});
   useEffect(() => {
     if (!host.current || !source.current) return;
     let disposed = false;
@@ -91,11 +93,19 @@ export function DuoModelView({ children, ...props }: DuoModelViewProps) {
       },
       { left: hingeHandle.current ?? undefined, right: oppositeHingeHandle.current ?? undefined },
     );
-    return () => {
+    const stop = () => {
+      if (disposed) return;
       disposed = true;
       scene.dispose();
     };
+    stopScene.current = stop;
+    return stop;
   }, [ready, unavailable]);
+  // A timeout or an error falls back for good, so the hidden scene stops
+  // drawing the stream and rendering at the display's frame rate.
+  useEffect(() => {
+    if (status === "unavailable") stopScene.current();
+  }, [status]);
 
   const angle = props.angle ?? (props.streamConfig?.screenId === 1 ? 0 : 180);
   const onHingeAngleChange = status === "ready" ? props.onHingeAngleChange : undefined;

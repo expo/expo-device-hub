@@ -7,9 +7,10 @@ import {
   deviceModelFor,
   deviceModelPreview,
   type DeviceModelDisplay,
+  modelDisplay,
 } from "../foldable/device-models";
 import { duoStreamConfig, streamedPanel } from "../foldable/duo-displays";
-import { duoScreenMapping, orientationDegrees } from "../foldable/duo-pose";
+import { duoScreenMapping, modelFrameRotation, orientationDegrees } from "../foldable/duo-pose";
 import { duoStageMaxSide, modelStageMaxSide } from "../foldable/duo-stage";
 import { deviceModelView } from "../foldable/duo-view";
 
@@ -147,13 +148,42 @@ describe("a turned device", () => {
       framesUpright: true,
       screenId: 3,
     };
-    const turn = orientationDegrees(config.orientation) - streamGeometry(config).rotationDegrees;
-    const mapping = duoScreenMapping(config, 717, 1600, (-turn * Math.PI) / 180);
+    const phone = DEVICE_MODELS["android:pixel-9-pro"];
+    const rotation = modelFrameRotation(phone, config);
+    const mapping = duoScreenMapping(config, 717, 1600, rotation);
     // Turned back by a quarter, the frame fills the portrait glass.
     expect(mapping.drawnWidth).toBeCloseTo(1600, 0);
     expect(mapping.drawnHeight).toBeCloseTo((1600 * 1280) / 2856, 0);
     // A raw portrait frame of the same device is already in the hardware's orientation.
     const raw = { ...config, width: 1280, height: 2856, framesUpright: false };
-    expect(orientationDegrees(raw.orientation) - streamGeometry(raw).rotationDegrees).toBe(0);
+    expect(modelFrameRotation(phone, raw)).toBe(0);
+  });
+
+  test("an upright frame turns back against the device's turn, as the model rolls with it", () => {
+    // These directions were checked in the Hub: Chrome in landscape on a Pixel 9
+    // Pro lay on its side with its camera beside Android's cutout. A flipped
+    // sign paints the frame upside down and sends taps to the wrong points.
+    const phone = DEVICE_MODELS["android:pixel-9-pro"];
+    const upright = (orientation: "portrait" | "landscape_left" | "landscape_right") => {
+      const landscape = orientation !== "portrait";
+      const size = landscape ? { width: 2856, height: 1280 } : { width: 1280, height: 2856 };
+      const config = { ...size, orientation, framesUpright: true, screenId: 3 };
+      return Math.round((modelFrameRotation(phone, config) * 180) / Math.PI);
+    };
+    expect(upright("portrait")).toBe(0);
+    expect(upright("landscape_left")).toBe(-orientationDegrees("landscape_left"));
+    expect(upright("landscape_right")).toBe(-orientationDegrees("landscape_right"));
+    expect(upright("landscape_left")).toBe(-upright("landscape_right"));
+    // The Duo streams each display on its own; only the inner display's mount turns it.
+    const duo = DEVICE_MODELS["ios:iphone-duo"];
+    const inner = {
+      width: 2034,
+      height: 1398,
+      orientation: "landscape_left" as const,
+      screenId: 3,
+    };
+    expect(Math.round((modelFrameRotation(duo, inner) * 180) / Math.PI)).toBe(
+      (modelDisplay(duo, 3)?.mount ?? 0) * 90,
+    );
   });
 });

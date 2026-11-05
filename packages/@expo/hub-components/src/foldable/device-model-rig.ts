@@ -210,7 +210,6 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
     };
     bend = (angle) => {
       if (angle === bent) return;
-      bent = angle;
       for (const job of jobs) {
         job.deformer.apply(
           angle,
@@ -224,6 +223,8 @@ export function rigDeviceModel(description: DeviceModelDescription, gltf: GLTF):
           mesh.geometry.boundingSphere = null;
         }
       }
+      // Only a finished bend is kept, so a failed one is not mistaken for done.
+      bent = angle;
     };
     halves = { left: find(hinge.left), right: find(hinge.right) };
   }

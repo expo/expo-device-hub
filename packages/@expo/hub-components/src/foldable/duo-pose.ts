@@ -13,6 +13,7 @@ import {
 } from "@expo/hub-client";
 import { Euler, Quaternion } from "three";
 
+import { type DeviceModelDescription, modelDisplay } from "./device-models";
 import { type DuoStreamConfig } from "./duo-displays";
 
 export interface DuoViewAngles {
@@ -110,6 +111,37 @@ export function stepDuoSpring(value: number, velocity: number, target: number, s
     value: target + (offset + impulse * dt) * decay,
     velocity: (velocity - omega * impulse * dt) * decay,
   };
+}
+
+/**
+ * One spring step of the rendered hinge fold, in radians. The spring only nears
+ * its target, and a foldable's bend runs on every change of the fold, so the
+ * fold settles on its target once the rest is invisible (about 1e-4°).
+ */
+export function stepDuoFold(value: number, velocity: number, target: number, seconds: number) {
+  const step = stepDuoSpring(value, velocity, target, seconds);
+  return Math.abs(step.value - target) < 1e-6 && Math.abs(step.velocity) < 1e-4
+    ? { value: target, velocity: 0 }
+    : step;
+}
+
+/**
+ * How a frame turns onto its glass, clockwise in radians: the display's mount,
+ * and for one flat stream the turn back from an upright frame of a turned
+ * device to the hardware's own orientation. A raw frame of a turned device,
+ * which the flat view would rotate, already has that orientation.
+ */
+// @ref LLP 0004#3d-preview-in-the-hub — the glass keeps the hardware's orientation; the model turns instead
+export function modelFrameRotation(
+  description: DeviceModelDescription,
+  config: DuoStreamConfig,
+): number {
+  const mount = modelDisplay(description, config.screenId === 1 ? 1 : 3)?.mount ?? 0;
+  const turn =
+    description.streams === "screen"
+      ? orientationDegrees(config.orientation) - streamGeometry(config).rotationDegrees
+      : 0;
+  return ((mount * 90 - turn) * Math.PI) / 180;
 }
 
 export interface DuoScreenMapping {

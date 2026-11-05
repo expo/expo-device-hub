@@ -11,12 +11,17 @@ type SceneCallbacks = Parameters<typeof scene.createDuoScene>[3];
 // every other caller still gets the real scene.
 const realCreateDuoScene = scene.createDuoScene;
 let fakeScene: ((callbacks: SceneCallbacks) => void) | null = null;
+let disposals = 0;
 mock.module("../foldable/duo-scene", () => ({
   ...scene,
   createDuoScene: (...args: Parameters<typeof scene.createDuoScene>) => {
     if (!fakeScene) return realCreateDuoScene(...args);
     fakeScene(args[3]);
-    return { dispose() {} };
+    return {
+      dispose() {
+        disposals++;
+      },
+    };
   },
 }));
 const { DuoModelView } = await import("../foldable/DuoModelView");
@@ -27,6 +32,7 @@ afterEach(async () => {
   await act(async () => renderer?.unmount());
   renderer = undefined;
   fakeScene = null;
+  disposals = 0;
   restoreGlobals();
 });
 
@@ -64,4 +70,9 @@ test("a scene error after the model is ready falls back to the flat displays", a
   // A late ready does not bring the failed model back.
   await act(async () => callbacks!.ready());
   expect(renderer!.root.findByProps({ "data-duo-model": "unavailable" })).toBeDefined();
+  // The fallback stops the hidden scene at once, and unmounting does not stop it twice.
+  expect(disposals).toBe(1);
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  expect(disposals).toBe(1);
 });
