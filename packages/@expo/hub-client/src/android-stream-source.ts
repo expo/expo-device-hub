@@ -9,6 +9,7 @@ import {
 const ANDROID_STREAM_SOURCES = [
   "scrcpy",
   "grpc-screenshot",
+  "emulator-capture",
 ] as const satisfies readonly DeviceStreamSource[];
 
 function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
@@ -99,6 +100,7 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   ) {
     return null;
   }
+  const unavailableModes = parseUnavailableModes(candidate.unavailableModes);
   if (
     typeof candidate.sessionGeneration !== "number" ||
     !Number.isInteger(candidate.sessionGeneration) ||
@@ -123,6 +125,21 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
     inputSource: candidate.inputSource,
     availableInputSources: candidate.availableInputSources,
     availableModes: candidate.availableModes,
+    ...(unavailableModes ? { unavailableModes } : {}),
     sessionGeneration: candidate.sessionGeneration,
   };
+}
+
+/** Reasons per source; a malformed or unknown entry is dropped, not the whole status. */
+function parseUnavailableModes(
+  value: unknown,
+): Partial<Record<DeviceStreamSource, string>> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const reasons: Partial<Record<DeviceStreamSource, string>> = {};
+  for (const [mode, reason] of Object.entries(value)) {
+    if (isAndroidStreamSource(mode) && typeof reason === "string" && reason.trim()) {
+      reasons[mode] = reason.trim();
+    }
+  }
+  return Object.keys(reasons).length ? reasons : undefined;
 }
