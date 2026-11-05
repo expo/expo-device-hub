@@ -83,7 +83,7 @@ describe("readEmulatorCapture", () => {
       },
     )!;
     await expect(capture.library()).rejects.toThrow("npm ERR! 404");
-    expect(capture.problem()).toBe("Installing expo-emulator-capture failed: npm ERR! 404");
+    expect(capture.problem()).toBe("npm ERR! 404");
     expect(await capture.library()).toBe("/cache/agent.dylib");
     expect(installs).toBe(2);
     expect(capture.problem()).toBeNull();

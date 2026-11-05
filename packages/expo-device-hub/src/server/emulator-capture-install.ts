@@ -86,7 +86,7 @@ export async function installEmulatorCapture({
       { timeoutMs: INSTALL_TIMEOUT_MS },
     );
     if (result.status !== 0) {
-      const detail = result.error?.message ?? result.output.trim().slice(-MAX_ERROR_OUTPUT);
+      const detail = result.error?.message ?? npmErrorSummary(result.output);
       throw new Error(`npm install ${EMULATOR_CAPTURE_PACKAGE}@${version} failed: ${detail}`);
     }
     if (!existsSync(join(staging, "node_modules", EMULATOR_CAPTURE_PACKAGE, relativeLibrary))) {
@@ -132,6 +132,23 @@ async function acquireLock(
     }
     await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
   }
+}
+
+/**
+ * npm's reason in one short line, for the note in the Hub: the first `npm error` message, without
+ * the code lines, the generic advice and the log path.
+ */
+export function npmErrorSummary(output: string): string {
+  const noise = /^(code|syscall|errno|path)\b|^A complete log|^In most cases/;
+  for (const line of output.split("\n")) {
+    const match = line.trim().match(/^npm (?:error|ERR!)\s*(.*)$/);
+    if (!match?.[1] || noise.test(match[1])) continue;
+    // npm puts a lowercase category before the message: "notarget No matching version…".
+    const message = match[1].replace(/^[a-z]+ (?=[A-Za-z0-9])/, "");
+    if (!message || noise.test(message)) continue;
+    return message.length > 240 ? `${message.slice(0, 239)}…` : message;
+  }
+  return output.trim().slice(-MAX_ERROR_OUTPUT);
 }
 
 const runInstallCommand: InstallCommand = (command, args, { timeoutMs }) =>

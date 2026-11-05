@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   EMULATOR_CAPTURE_PACKAGE,
   installEmulatorCapture,
+  npmErrorSummary,
   type InstallCommand,
 } from "../emulator-capture-install";
 
@@ -69,7 +70,9 @@ describe("installEmulatorCapture", () => {
           baseDirectory,
           run: failing,
         }),
-      ).rejects.toThrow("npm install expo-emulator-capture@9.9.9 failed: npm ERR! 404 Not Found");
+      ).rejects.toThrow(
+        "npm install expo-emulator-capture@9.9.9 failed: 404 Not Found - GET https://registry.npmjs.org/expo-emulator-capture",
+      );
       expect(await readdir(join(baseDirectory, "tools", EMULATOR_CAPTURE_PACKAGE))).toEqual([]);
     }));
 
@@ -115,4 +118,31 @@ describe("installEmulatorCapture", () => {
       "has no agent for win32",
     );
   });
+});
+
+test("npmErrorSummary keeps npm's first real message", () => {
+  expect(
+    npmErrorSummary(
+      [
+        "npm error code ETARGET",
+        "npm error notarget No matching version found for expo-emulator-capture@0.0.0.",
+        "npm error notarget In most cases you or one of your dependencies are requesting a package version that doesn't exist.",
+        "npm error A complete log of this run can be found in: /Users/me/.npm/_logs/debug-0.log",
+      ].join("\n"),
+    ),
+  ).toBe("No matching version found for expo-emulator-capture@0.0.0.");
+  expect(
+    npmErrorSummary(
+      [
+        "npm error code ENOTFOUND",
+        "npm error syscall getaddrinfo",
+        "npm error errno ENOTFOUND",
+        "npm error network request to https://registry.npmjs.org/expo-emulator-capture failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org",
+        "npm error network This is a problem related to network connectivity.",
+      ].join("\n"),
+    ),
+  ).toBe(
+    "request to https://registry.npmjs.org/expo-emulator-capture failed, reason: getaddrinfo ENOTFOUND registry.npmjs.org",
+  );
+  expect(npmErrorSummary("command not found: npm")).toBe("command not found: npm");
 });
