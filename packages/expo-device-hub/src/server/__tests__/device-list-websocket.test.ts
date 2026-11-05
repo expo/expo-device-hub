@@ -214,6 +214,12 @@ test("deviceListFingerprint includes device-frame capability changes", () => {
   expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
 });
 
+test("deviceListFingerprint includes a model that the server learns later", () => {
+  // The simulator device type names can load after the first poll, so a known model must broadcast.
+  const unknown: HubDeviceList = { ...LIST, simulators: [{ ...IOS, model: null }] };
+  expect(deviceListFingerprint(unknown)).not.toBe(deviceListFingerprint(LIST));
+});
+
 test("deviceListFingerprint compares stable error ids instead of volatile details", () => {
   const error = {
     id: "Error:spawn devicectl ENOENT",
