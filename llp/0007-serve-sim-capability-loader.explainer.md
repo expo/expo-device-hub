@@ -161,26 +161,22 @@ something that reliably removes it:
   longer exists is cleaned up.
 - Live session PIDs are recorded independently of capabilities, so an idle
   session still owns the insert. State updates and teardown share a device lock.
-- Capability records carry the pid that enabled them. A record with no owner
-  (`null`) outlives the command that created it; a record owned by a session is
-  released when that session exits, including its host helper. The insert is
-  removed only when no live session or capability needs it.
+- Capability records list the session pids that own them (`ownerPids`). An empty
+  list, from a one-shot enable, outlives the command that created it. A record
+  owned by sessions is released, with its host helper, when its last owner exits.
+  The insert is removed only when no live session or capability needs it.
 
 For the CLI's boot/install/launch ordering and readiness boundary, see
 [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft).
 
-## Not there yet
+## Camera lifecycle
 
-Recorded so the gap between this document and the code is visible rather than
-forgotten:
+The capability loader loads capability code; it does not unload swizzles or control
+camera device availability. The camera owns runtime enable/disable, frame
+liveness, and connection notifications. See [the camera design](../packages/serve-sim/packages/serve-sim/Sources/SimCameraInjector/DESIGN.md).
 
-- **The per-launch path inserts the capability dylib alongside the capability loader.**
-  `childLaunchEnv` puts both in `SIMCTL_CHILD_DYLD_INSERT_LIBRARIES`. It should
-  insert the capability loader alone and let it load the capability, so there is one
-  loading path rather than two.
-- `+[AVCaptureDevice defaultDeviceWithMediaType:]` is not swizzled, only the
-  `deviceType:mediaType:position:` form, so an app using the older API sees no
-  camera.
+Camera commands use only the capability loader loading path. They do not insert a
+camera dylib alongside it, change permissions, or restart a process.
 
 ## Startup capabilities
 

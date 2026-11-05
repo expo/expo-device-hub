@@ -41,6 +41,7 @@
     "src/ax-shared.ts",
     "src/ax.ts",
     "src/camera-helper.ts",
+    "src/process-utils.ts",
     "src/connect-to-fetch.ts",
     "src/middleware.ts",
     "src/single-device.ts",

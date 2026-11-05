@@ -647,7 +647,7 @@ describe("serve-sim-backed actions", () => {
     ).toEqual([
       "serve-sim",
       "camera",
-      BUNDLE,
+      "enable",
       "-d",
       UDID,
       "--quiet",
@@ -664,7 +664,17 @@ describe("serve-sim-backed actions", () => {
         mirror: "on",
         source: "webcam",
       }),
-    ).toEqual(["serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--webcam", "--mirror", "on"]);
+    ).toEqual([
+      "serve-sim",
+      "camera",
+      "enable",
+      "-d",
+      UDID,
+      "--quiet",
+      "--webcam",
+      "--mirror",
+      "on",
+    ]);
     expect(
       await argv("camera.inject", {
         udid: UDID,
@@ -672,7 +682,7 @@ describe("serve-sim-backed actions", () => {
         mirror: "on",
         source: "placeholder",
       }),
-    ).toEqual(["serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--mirror", "on"]);
+    ).toEqual(["serve-sim", "camera", "enable", "-d", UDID, "--quiet", "--mirror", "on"]);
   });
 
   it("builds the permission actions", async () => {

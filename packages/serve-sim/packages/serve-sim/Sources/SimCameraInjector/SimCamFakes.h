@@ -25,8 +25,10 @@ void SimCamSetPosition(id obj, AVCaptureDevicePosition p);
 #pragma mark - Camera-in-use sticky flag
 
 BOOL SimCamCameraIsInUse(void);
+void SimCamInstallMotionSwizzlesOnce(void);
 void SimCamMarkCameraInUse(void);
 void SimCamMarkSessionUsingFakeCamera(id session, BOOL usingFakeCamera);
+BOOL SimCamSessionHasFakeCamera(id session);
 
 #pragma mark - AVF runtime-error notification suppression
 

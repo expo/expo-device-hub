@@ -266,7 +266,7 @@ const ACTION_SCHEMAS = {
       z.object({ udid: Device, source: z.literal("placeholder") }),
     ])
     .meta({
-      description: "Change the camera feed of an app with a simulated camera.",
+      description: "Change the simulated camera feed for the device.",
       args: ["source", "target"],
       upload: "target",
       uploadWhen: { source: "file" },
@@ -276,34 +276,31 @@ const ACTION_SCHEMAS = {
     .discriminatedUnion("source", [
       z.object({
         udid: Device,
-        bundleId: BundleId,
-        mirror: z.enum(TOGGLE_VALUES),
+        mirror: z.enum(["auto", "on", "off"]),
         source: z.literal("file"),
         target: ConfinedPath,
       }),
       z.object({
         udid: Device,
-        bundleId: BundleId,
-        mirror: z.enum(TOGGLE_VALUES),
+        mirror: z.enum(["auto", "on", "off"]),
         source: z.literal("webcam"),
         target: Argument.optional(),
       }),
       z.object({
         udid: Device,
-        bundleId: BundleId,
-        mirror: z.enum(TOGGLE_VALUES),
+        mirror: z.enum(["auto", "on", "off"]),
         source: z.literal("placeholder"),
       }),
     ])
     .meta({
-      description: "Relaunch an app with a simulated camera feed.",
-      args: ["bundleId", "mirror", "source", "target"],
+      description: "Enable a simulated camera feed for the device.",
+      args: ["mirror", "source", "target"],
       upload: "target",
       uploadWhen: { source: "file" },
       keepUpload: true,
     }),
   "camera.mirror": z
-    .object({ udid: Device, value: z.enum(TOGGLE_VALUES) })
+    .object({ udid: Device, value: z.enum(["auto", "on", "off"]) })
     .meta({ description: "Mirror the simulated camera feed." }),
   "camera.stopWebcam": z.object({ udid: Device }).meta({ hidden: true }),
   "permissions.set": z
@@ -703,7 +700,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "camera.inject": {
       const p = parseParams(action, raw);
-      const args = ["camera", p.bundleId, "-d", p.udid, "--quiet"];
+      const args = ["camera", "enable", "-d", p.udid, "--quiet"];
       if (p.source === "file") args.push("--file", p.target);
       else if (p.source === "webcam") args.push("--webcam", ...(p.target ? [p.target] : []));
       args.push("--mirror", p.mirror);
