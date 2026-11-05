@@ -24,8 +24,12 @@ class H264Encoder {
   virtual ~H264Encoder() = default;
 
   // Creates a session; callbacks from an earlier session have finished on return.
-  virtual bool configure(int width, int height, int fps, int bitRate, std::string& error) = 0;
-  // Scales a frame of any size to the configured size and encodes it.
+  // width and height are the stream size. rotation is Android's display rotation
+  // (0 to 3): frames hold the picture turned that many quarter turns clockwise in
+  // the panel's orientation, and the encoder turns them back to upright.
+  virtual bool configure(int width, int height, int fps, int bitRate, int rotation,
+                         std::string& error) = 0;
+  // Turns and scales a frame of any size to the configured size and encodes it.
   virtual bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
                       std::string& error) = 0;
   // Waits for queued frames, then releases the session.
