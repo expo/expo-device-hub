@@ -8,11 +8,21 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Box, FoldHorizontal, Image, Laptop, Maximize, SlidersHorizontal } from "lucide-react";
+import {
+  Box,
+  FoldHorizontal,
+  Image,
+  Laptop,
+  Maximize,
+  RotateCw,
+  SlidersHorizontal,
+  TriangleAlert,
+} from "lucide-react";
 import { HOST_TIME_ZONE, supportedTimeZones, timeZoneOffsetLabel } from "../../time-zone";
-import { hostUiRequest } from "../../socket/client-control";
+import { hostUiRequest, runHostAction } from "../../socket/client-control";
 import { parseRuntime } from "../utils/grid";
 import { CollapsibleSection } from "./collapsible-section";
+import { Tooltip } from "./tooltip";
 import { Select, type SelectOption } from "./select";
 import { SettingSwitch } from "./setting-switch";
 import { FOLD_POSE_OPTIONS, type HingeControlsProps } from "./hinge-controls";
@@ -38,6 +48,8 @@ export const TEXT_SIZE_CATEGORIES = [
 const TEXT_SIZE_DEBOUNCE_MS = 250;
 /** `getUiStatus` reports an option it could not read as this. */
 const UNREADABLE = "unsupported";
+/** `pending` while SpringBoard restarts; not an option name. */
+const SPRINGBOARD = "springboard";
 
 type SettingsState = Record<string, string>;
 
@@ -122,6 +134,45 @@ const TOGGLE_OPTIONS = [
   { key: "reduce-transparency", label: "Reduce Transparency" },
   { key: "voiceover", label: "VoiceOver" },
 ] as const;
+
+const STALE_CLOCK_WARNING =
+  "The status bar clock shows the old zone until SpringBoard restarts. Relaunch an app that did not switch.";
+
+/** After a zone change: a warning, and the restart that updates the status bar clock. */
+export function StaleClockControls({
+  disabled,
+  onRestart,
+}: {
+  disabled: boolean;
+  onRestart: () => void;
+}) {
+  return (
+    <>
+      <Tooltip label={STALE_CLOCK_WARNING} align="right">
+        {/* Focusable, so a keyboard user can open the tooltip too. */}
+        <span
+          tabIndex={0}
+          role="img"
+          aria-label={STALE_CLOCK_WARNING}
+          className="flex h-6 w-6 items-center justify-center rounded text-amber-400 outline-none focus-visible:ring-1 focus-visible:ring-white/40"
+        >
+          <TriangleAlert aria-hidden="true" size={14} strokeWidth={1.75} />
+        </span>
+      </Tooltip>
+      <Tooltip label="Restart SpringBoard" align="right">
+        <button
+          type="button"
+          aria-label="Restart SpringBoard"
+          onClick={onRestart}
+          disabled={disabled}
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded text-white/60 outline-none hover:bg-white/10 focus-visible:ring-1 focus-visible:ring-white/40 disabled:cursor-default disabled:opacity-50"
+        >
+          <RotateCw aria-hidden="true" size={14} strokeWidth={1.75} />
+        </button>
+      </Tooltip>
+    </>
+  );
+}
 
 export function SettingRow({
   icon,
@@ -671,6 +722,10 @@ export function SimulatorSettingsTool({
   const [state, setState] = useState<SettingsState | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A zone change switches apps but not SpringBoard's clock, on the device it was made for.
+  const [staleClockUdid, setStaleClockUdid] = useState<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const supported = isIosRuntime(runtime);
 
   useEffect(() => {
@@ -709,12 +764,14 @@ export function SimulatorSettingsTool({
     async (option: string, value: string) => {
       setPending(option);
       setError(null);
+      const previous = stateRef.current?.[option];
       setState((s) => (s ? { ...s, [option]: value } : s));
       try {
         await hostUiRequest(
           { device: udid, option, value },
           { signal: AbortSignal.timeout(15_000) },
         );
+        if (option === "time-zone" && value !== previous) setStaleClockUdid(udid);
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to set ${option}`);
         // Re-sync from the simulator rather than restoring a snapshot — with
@@ -727,6 +784,25 @@ export function SimulatorSettingsTool({
     },
     [udid, refresh],
   );
+
+  const restartSpringBoard = useCallback(async () => {
+    setPending(SPRINGBOARD);
+    setError(null);
+    try {
+      const result = await runHostAction(
+        "springboard.restart",
+        { udid },
+        { signal: AbortSignal.timeout(15_000) },
+      );
+      if (result.exitCode !== 0) throw new Error(result.stderr || "Failed to restart SpringBoard");
+      // The user may have switched devices while it restarted.
+      setStaleClockUdid((stale) => (stale === udid ? null : stale));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restart SpringBoard");
+    } finally {
+      setPending(null);
+    }
+  }, [udid]);
 
   // Rapid slider movements queue latest-wins: one exec in flight at a time,
   // intermediate values dropped, so out-of-order completions can't leave the
@@ -841,15 +917,23 @@ export function SimulatorSettingsTool({
             </SettingRow>
 
             <SettingRow icon={I.timeZone} label="Time Zone">
-              <SettingSelect
-                label="Time Zone"
-                value={timeZone}
-                options={zoneChoices}
-                disabled={!ready || pending === "time-zone" || timeZone === UNREADABLE}
-                onChange={(v) => apply("time-zone", v)}
-                searchable
-                searchPlaceholder="Search zones…"
-              />
+              <span className="flex min-w-0 items-center gap-0.5">
+                <SettingSelect
+                  label="Time Zone"
+                  value={timeZone}
+                  options={zoneChoices}
+                  disabled={!ready || pending === "time-zone" || timeZone === UNREADABLE}
+                  onChange={(v) => apply("time-zone", v)}
+                  searchable
+                  searchPlaceholder="Search zones…"
+                />
+                {staleClockUdid === udid && (
+                  <StaleClockControls
+                    disabled={!ready || pending !== null}
+                    onRestart={() => void restartSpringBoard()}
+                  />
+                )}
+              </span>
             </SettingRow>
 
             {TOGGLE_OPTIONS.map(({ key, label }) => (

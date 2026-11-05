@@ -31,6 +31,7 @@
     "Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c",
     "Sources/ServeSimCapabilityLoader/build.sh",
     "Sources/ServeSimCapabilityLoader/startup-capability.h",
+    "dist/capability-loader/libServeSimTimeZone.dylib",
     "dist/simcam/libSimCameraInjector.dylib",
     "dist/simcam/serve-sim-camera-helper",
     "dist/simax/serve-sim-ax-settings",
