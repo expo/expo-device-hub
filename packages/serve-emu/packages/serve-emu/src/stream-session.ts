@@ -1,11 +1,10 @@
+import type { DisplayRotation } from "./adb.ts";
 import { ControlInputQueue } from "./control-input-queue.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
-import { GpuCaptureUnavailableError, startGpuCaptureSession } from "./gpu-session.ts";
+import { startGpuCaptureSession } from "./gpu-session.ts";
 import { startGrpcSession } from "./grpc-session.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
 import { startScrcpy, type ScrcpySession, type StartOpts, type VideoPacket } from "./scrcpy.ts";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type {
   ExperimentalGpuCaptureDiagnostics,
   GrpcCaptureDiagnostics,
@@ -55,6 +54,11 @@ export type EmuSession = {
   readonly controls: ControlInputQueue;
   /** Optional source-specific live diagnostics, sampled without mutating capture. */
   readonly diagnostics?: () => EmuSessionDiagnostics;
+  /**
+   * The device's display may have changed (for example, the router rotated it). A source that
+   * follows the display reads it again now instead of at its next poll.
+   */
+  displayChanged?(): void;
   /** Present only on the scrcpy adapter during the server migration. */
   readonly rawScrcpy?: ScrcpySession;
   readFrame(): Promise<VideoPacket | null>;
@@ -70,41 +74,24 @@ export type StartEmuSessionOptions = StartOpts & {
   grpcImageMode: GrpcImageMode;
   /** Host H.264 encoder used only for gRPC capture; defaults to software. */
   encoder?: GrpcEncoder;
-  /** Exact input source. scrcpy capture always requires scrcpy input. */
+  /** Exact input source. scrcpy and emulator capture always require scrcpy input. */
   inputSource: InputSource;
   /**
-   * Experimental: a directory of expo-emulator-capture agent sockets named
-   * `<serial>.sock`. Only the middleware sets it; see `experimentalGpuCaptureSocket`.
+   * For `emulator-capture`: the expo-emulator-capture agent socket of this emulator.
+   * Only the middleware sets it; see `emulatorCaptureSocketFor` there.
    */
-  experimentalGpuCaptureSocketDirectory?: string;
+  emulatorCaptureSocket?: string;
+  /** For `emulator-capture`: reads Android's display rotation, so the agent can turn frames. */
+  readDisplayRotation?: (signal: AbortSignal) => Promise<DisplayRotation>;
 };
 
-// @ref LLP 0017#integration — only the middleware passes the directory; the agent serves one consumer
-/**
- * The capture socket that replaces scrcpy video for this session, or null.
- * The agent serves one consumer, and only the middleware closes a session
- * before it opens the replacement; the standalone server stages them overlapped.
- */
-export function experimentalGpuCaptureSocket(options: StartEmuSessionOptions): string | null {
-  const directory = options.experimentalGpuCaptureSocketDirectory;
-  if (!directory || options.mode !== "scrcpy" || options.inputSource !== "scrcpy") return null;
-  if (!isEmulatorSerial(options.serial)) return null;
-  const socket = join(directory, `${options.serial}.sock`);
-  return existsSync(socket) ? socket : null;
-}
-
 export async function startEmuSession(options: StartEmuSessionOptions): Promise<EmuSession> {
-  const gpuSocket = experimentalGpuCaptureSocket(options);
-  if (gpuSocket) {
-    try {
-      return await startGpuCaptureSession(options, gpuSocket);
-    } catch (error) {
-      // A socket left by an emulator that exited, or one started without the agent.
-      if (!(error instanceof GpuCaptureUnavailableError)) throw error;
-      console.warn(
-        `[GPU capture] ${options.serial}: no capture agent at ${gpuSocket} (${error.message}); using scrcpy video`,
-      );
+  // @ref LLP 0017#integration — only the middleware passes the socket; the agent serves one consumer
+  if (options.mode === "emulator-capture") {
+    if (!options.emulatorCaptureSocket) {
+      throw new Error(`emulator capture has no agent socket for ${options.serial}`);
     }
+    return startGpuCaptureSession(options, options.emulatorCaptureSocket);
   }
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {

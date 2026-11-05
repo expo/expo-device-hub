@@ -580,19 +580,26 @@ test("reports GPU capture health from one diagnostics snapshot", async () => {
   }
 });
 
-test("passes the GPU capture socket directory to every capture it starts", async () => {
+test("gives every emulator capture it starts the agent socket and a rotation reader", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "create-app-capture-"));
+  await writeFile(join(directory, "emulator-5554.sock"), "");
   const requests: StartEmuSessionOptions[] = [];
   const app = await createApp(
-    { serial: "emulator-5554", experimentalGpuCaptureSocketDirectory: "/tmp/capture" },
+    {
+      serial: "emulator-5554",
+      streamMode: "emulator-capture",
+      emulatorCapture: { socketDirectory: directory },
+    },
     {
       startSession: async (options) => {
         requests.push(options);
-        return adaptScrcpySession(fakeScrcpySession(0).session);
+        // A capture session reports its own mode, as startGpuCaptureSession does.
+        return { ...adaptScrcpySession(fakeScrcpySession(0).session), mode: options.mode };
       },
+      readDisplayRotation: async () => 1,
     },
   );
   try {
-    expect(app.health()).toMatchObject({ captureBackend: "scrcpy", experimentalGpuCapture: null });
     const response = await app.handleRequest(
       new Request("http://localhost/api/stream-settings", {
         method: "PATCH",
@@ -601,10 +608,52 @@ test("passes the GPU capture socket directory to every capture it starts", async
       }),
     );
     expect(response.status).toBe(200);
-    expect(requests.map((request) => request.experimentalGpuCaptureSocketDirectory)).toEqual([
-      "/tmp/capture",
-      "/tmp/capture",
+    expect(requests.map((request) => [request.mode, request.inputSource])).toEqual([
+      ["emulator-capture", "scrcpy"],
+      ["emulator-capture", "scrcpy"],
     ]);
+    expect(requests.map((request) => request.emulatorCaptureSocket)).toEqual([
+      join(directory, "emulator-5554.sock"),
+      join(directory, "emulator-5554.sock"),
+    ]);
+    expect(await requests[0]!.readDisplayRotation?.(new AbortController().signal)).toBe(1);
+  } finally {
+    await app.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("asks a source that follows the display to read it again after a rotation", async () => {
+  let displayChanges = 0;
+  const app = await createApp(
+    { serial: "emulator-5554" },
+    {
+      startSession: async () => ({
+        ...adaptScrcpySession(fakeScrcpySession(0).session),
+        displayChanged: () => {
+          displayChanges++;
+        },
+      }),
+      readOrientation: readNoOrientation,
+      applyRotation: async () => ({
+        mode: "lock",
+        rotation: 1,
+        orientation: "landscape",
+        pose: null,
+        raw: "accelerometer_rotation=0 user_rotation=1",
+      }),
+    },
+  );
+  try {
+    const response = await app.handleRequest(
+      new Request("http://localhost/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(displayChanges).toBe(1);
   } finally {
     await app.stop();
   }

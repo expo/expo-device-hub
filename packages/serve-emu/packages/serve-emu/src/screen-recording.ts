@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from "mediabunny";
 import { createRecordingFileTarget } from "./recording-file-target.ts";
 import type { VideoPacket } from "./scrcpy.ts";
+import type { StreamMode } from "./shared/api-contracts.ts";
 
 type RecordingMetadata = {
   udid: string;
@@ -224,11 +225,7 @@ export class ScreenRecording {
     return { ...this.#status };
   }
 
-  accept(
-    packet: VideoPacket,
-    size: { width: number; height: number },
-    source: "scrcpy" | "grpc-screenshot",
-  ): void {
+  accept(packet: VideoPacket, size: { width: number; height: number }, source: StreamMode): void {
     if (!this.active) return;
     try {
       if (packet.type === "session") {
