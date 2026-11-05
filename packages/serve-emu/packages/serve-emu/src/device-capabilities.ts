@@ -38,8 +38,11 @@ export type EmulatorCaptureOptions = {
   socketDirectory?: string;
   /** Why the mode is unavailable when there is no socket directory, shown to the user. */
   unavailableReason?: string;
-  /** Why an emulator without an agent socket cannot use the mode, shown to the user. */
-  missingAgentReason?: string;
+  /**
+   * Why an emulator without an agent socket cannot use the mode, shown to the user. A function
+   * is read at every request, for a state that changes, such as an install in progress.
+   */
+  missingAgentReason?: string | (() => string);
 };
 
 export const DEFAULT_MISSING_AGENT_REASON =
@@ -73,5 +76,11 @@ export function emulatorCaptureAvailability(
   const socket = emulatorCaptureSocketFor(serial, options.socketDirectory);
   return socket
     ? { socket }
-    : { socket: null, reason: options.missingAgentReason ?? DEFAULT_MISSING_AGENT_REASON };
+    : {
+        socket: null,
+        reason:
+          (typeof options.missingAgentReason === "function"
+            ? options.missingAgentReason()
+            : options.missingAgentReason) ?? DEFAULT_MISSING_AGENT_REASON,
+      };
 }
