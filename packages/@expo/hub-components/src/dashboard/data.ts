@@ -105,6 +105,11 @@ export type NewDeviceRequest = {
   supported: boolean;
   /** Frame artwork available for the selected model, or null when none is available. */
   deviceFrame: DeviceFrameProfileId | null;
+  /**
+   * The selected model as `Device.model` names it: the simulator device type
+   * name (iOS) or the AVD hardware profile id (Android).
+   */
+  model?: string | null;
 };
 
 /** The mutually exclusive target selected in the add-device picker. */

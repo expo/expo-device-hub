@@ -261,6 +261,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
             booted: true,
             supported: target.device.supported,
             deviceFrame: target.device.deviceFrame,
+            model: target.device.model ?? null,
             lastUsedAt: Date.now(),
           }
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };

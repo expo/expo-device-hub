@@ -207,6 +207,8 @@ export function RecentDevicesModal({
                 version: selectedRuntime.label,
                 supported: selectedModel.supported,
                 deviceFrame: selectedModel.deviceFrame,
+                // The picker shows the iOS device type name and keeps the AVD profile id as the value.
+                model: platform === "ios" ? selectedModel.label : selectedModel.value,
               },
             }
           : { kind: "recent", device: selectedRecent! };

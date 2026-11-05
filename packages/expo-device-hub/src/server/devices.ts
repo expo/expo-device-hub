@@ -83,13 +83,17 @@ const appleDeviceTypeNames = createAppleDeviceTypeNames();
 /** Available iOS simulators with plist usage history, via `@expo/hub-apple-utils` → `simctl`. */
 export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
+  const available = listed.value.filter(
+    (device) => device.platform === "iOS" && device.isAvailable,
+  );
+  // Only listed simulators ask for a name: an unavailable one, whose runtime is gone, would
+  // never find its device type and would read the runtimes again every refresh interval.
   const deviceTypeNames = await appleDeviceTypeNames(
-    listed.value.map((device) => device.deviceTypeIdentifier),
+    available.map((device) => device.deviceTypeIdentifier),
   );
 
   return {
-    devices: listed.value
-      .filter((device) => device.platform === "iOS" && device.isAvailable)
+    devices: available
       .map((device) => {
         const platform = device.platform ?? "iOS";
 
