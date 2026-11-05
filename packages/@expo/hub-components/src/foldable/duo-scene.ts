@@ -12,7 +12,6 @@ import {
   type FoldPose,
   type MultiTouchSample,
   type ScrollSample,
-  streamGeometry,
   type TouchSample,
 } from "@expo/hub-client";
 import * as THREE from "three";
@@ -30,7 +29,7 @@ import {
   type DuoScreenPoint as ProjectedPoint,
   type DuoZoomState,
 } from "./duo-layout";
-import { type DeviceModelDescription, modelDisplay } from "./device-models";
+import { type DeviceModelDescription } from "./device-models";
 import { type DeviceModelFolds, type DeviceModelRig, loadDeviceModel } from "./device-model-rig";
 import { duoDisplayId, type DuoStreamConfig } from "./duo-displays";
 import { DUO_FILL_INSET, DUO_HANDLE_OFFSET } from "./duo-stage";
@@ -40,8 +39,8 @@ import {
   duoFrameMatchesDisplay,
   duoScreenMapping,
   duoScreenPoint,
-  orientationDegrees,
-  stepDuoSpring,
+  modelFrameRotation,
+  stepDuoFold,
   type DuoScreenMapping,
 } from "./duo-pose";
 import { duoInitialView, duoViewFolds, duoViewRotation, type DuoView } from "./duo-view";
@@ -368,7 +367,7 @@ export function createDuoScene(
         : undefined;
     // UVs remain fixed to the hardware through the entire pose animation.
     // The body carries the image, including cached frames on an inactive panel.
-    const rotation = frameRotation(config);
+    const rotation = modelFrameRotation(description, config);
     const frameKey = `${config.width}:${config.height}:${rotation}:${binding}`;
     // Only a video tells when it has a new frame. An MJPEG <img> keeps its src
     // while its frames change, so an image is drawn again on every frame, as a
@@ -401,22 +400,6 @@ export function createDuoScene(
     surface.mappingConfigKey = binding;
     surface.texture.needsUpdate = true;
     surface.ready = true;
-  }
-
-  /**
-   * How a frame turns onto its glass, clockwise in radians: the display's
-   * mount, and for one flat stream the turn back from an upright frame of a
-   * turned device to the hardware's own orientation. A raw frame of a turned
-   * device, which the flat view would rotate, already has that orientation.
-   */
-  // @ref LLP 0004#3d-preview-in-the-hub — the glass keeps the hardware's orientation; the model turns instead
-  function frameRotation(config: DuoStreamConfig): number {
-    const mount = modelDisplay(description, config.screenId === 1 ? 1 : 3)?.mount ?? 0;
-    const turn =
-      description.streams === "screen"
-        ? orientationDegrees(config.orientation) - streamGeometry(config).rotationDegrees
-        : 0;
-    return ((mount * 90 - turn) * Math.PI) / 180;
   }
 
   let previousIntendedScreen: 1 | 3 | undefined;
@@ -545,11 +528,38 @@ export function createDuoScene(
     raycaster.setFromCamera(pointer, camera);
     return true;
   }
+  // Intersecting the whole device takes a few milliseconds for these models,
+  // and the loop repeats it on every frame under a resting pointer. Reuse the
+  // last intersection while the ray, the device's pose, and its folds are the same.
+  let lastIntersection: { key: string; hit: THREE.Intersection | undefined } | undefined;
+  function intersectDevice() {
+    const q = root.quaternion;
+    const p = root.position;
+    const key = [
+      pointer.x,
+      pointer.y,
+      camera.zoom,
+      camera.aspect,
+      q.x,
+      q.y,
+      q.z,
+      q.w,
+      p.x,
+      p.y,
+      p.z,
+      rig?.folds.left,
+      rig?.folds.right,
+    ].join();
+    if (lastIntersection?.key !== key) {
+      lastIntersection = { key, hit: raycaster.intersectObject(root, true)[0] };
+    }
+    return lastIntersection.hit;
+  }
   function screenHit(clientX: number, clientY: number): ScreenHit | "waiting" | null {
     if (!model || failed || disposed || !castRay(clientX, clientY)) return null;
     // Intersect the entire device so a rear panel cannot receive taps through
     // the front chassis, and ignore inactive display surfaces.
-    const hit = raycaster.intersectObject(root, true)[0];
+    const hit = intersectDevice();
     if (!hit?.uv || !hit.face || !(hit.object instanceof THREE.Mesh)) return null;
     const isCover = cover.meshes.includes(hit.object);
     const isInner = inner.meshes.includes(hit.object);
@@ -972,9 +982,11 @@ export function createDuoScene(
     }
     if (hoverPoint && !gesture && !hingeDrag) updateCursor();
     const view = viewFor(current);
+    // A non-finite angle would leave the spring at NaN for good.
+    const requested = Number.isFinite(current.angle) ? current.angle : undefined;
     const angle = Math.max(
       0,
-      Math.min(180, current.angle ?? (current.streamConfig?.screenId === 1 ? 0 : 180)),
+      Math.min(180, requested ?? (current.streamConfig?.screenId === 1 ? 0 : 180)),
     );
     const targetFold = ((180 - angle) * Math.PI) / 360;
     if (view.fixedLeftFold !== undefined) anchoredView = view;
@@ -986,7 +998,7 @@ export function createDuoScene(
       anchorWeight = targetAnchor;
       firstPose = false;
     } else {
-      const step = stepDuoSpring(fold, velocity, targetFold, dt);
+      const step = stepDuoFold(fold, velocity, targetFold, dt);
       fold = step.value;
       velocity = step.velocity;
       anchorWeight += (targetAnchor - anchorWeight) * (1 - Math.exp(-10 * dt));
@@ -997,9 +1009,10 @@ export function createDuoScene(
     targetQuaternion.copy(duoViewRotation(fold, view));
     if (snap) root.quaternion.copy(targetQuaternion);
     else root.quaternion.slerp(targetQuaternion, 1 - Math.exp(-10 * dt));
-    applyPanelFolds(duoViewFolds(fold, anchoredView ?? view, anchorWeight));
     const renderedAngle = 180 - (fold * 360) / Math.PI;
     try {
+      // The bend can throw, so it falls back to the flat view as rendering does.
+      applyPanelFolds(duoViewFolds(fold, anchoredView ?? view, anchorWeight));
       // Only a window resize reallocates the buffer. Apply it with rendering
       // because changing canvas dimensions clears the previously drawn frame.
       if (resizePending) {
