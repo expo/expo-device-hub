@@ -205,6 +205,7 @@ export function DeviceOptionsSection({
           controls={client.capabilities.fold}
           disabledReason={recordingDisabledReason}
           preview={foldPreview}
+          separateDisplays={!!client.displays}
         />
       ) : (
         foldPreview && (
