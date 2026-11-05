@@ -17,13 +17,16 @@ const DEFAULT_ANDROID_STREAM = {
 } as const;
 
 describe("defaultAndroidStreamSource", () => {
-  test("keeps gRPC capture by default and picks scrcpy for the experimental capture agent", () => {
+  test("keeps gRPC capture by default and picks the emulator capture when it is on", () => {
     expect(defaultAndroidStreamSource({})).toBe("grpc-screenshot");
+    expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "1" })).toBe(
+      "emulator-capture",
+    );
     expect(
       defaultAndroidStreamSource({
         EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "/opt/libexpo_emulator_capture.dylib",
       }),
-    ).toBe("scrcpy");
+    ).toBe("emulator-capture");
   });
 });
 

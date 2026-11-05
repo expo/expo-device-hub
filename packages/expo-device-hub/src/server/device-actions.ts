@@ -310,9 +310,23 @@ async function bootAndroidHubDevice(
       error,
     });
   }
-  const seedErrors = errorList(seedError);
 
-  const captureLaunch = capture ? emulatorCaptureLaunch(capture, serial) : null;
+  // The first boot after the Hub starts may wait for the agent package to finish installing.
+  let captureError: SerializableError | null = null;
+  const captureLibrary = capture
+    ? await capture.library().catch((error: unknown) => {
+        captureError = toSerializableError({
+          message: `${avdName} starts without the emulator capture agent`,
+          error,
+        });
+        return null;
+      })
+    : null;
+  const captureLaunch =
+    capture && captureLibrary
+      ? emulatorCaptureLaunch({ ...capture, library: captureLibrary }, serial)
+      : null;
+  const preBootErrors = [...errorList(seedError), ...errorList(captureError)];
   const extraArgs = [
     ...(seedError === null ? cameraFeeds.launchArgs(serial) : []),
     ...(captureLaunch?.args ?? []),
@@ -328,7 +342,7 @@ async function bootAndroidHubDevice(
     return {
       ok: false,
       error: `Failed to spawn emulator for ${avdName}`,
-      errors: [...seedErrors, ...errorList(toSerializableError(bootedResult.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(bootedResult.error))],
     };
   }
 
@@ -355,7 +369,7 @@ async function bootAndroidHubDevice(
       error:
         `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
         `For details, try running it manually:\n${booted.command}`,
-      errors: [...seedErrors, ...errorList(toSerializableError(outcome.exit.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(outcome.exit.error))],
     };
   }
 
@@ -365,7 +379,7 @@ async function bootAndroidHubDevice(
       id: booted.serial,
       serial: booted.serial,
       error: `Failed while waiting for ${avdName} to come online`,
-      errors: [...seedErrors, ...errorList(toSerializableError(outcome.online.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(outcome.online.error))],
     };
   }
 
@@ -384,18 +398,18 @@ async function bootAndroidHubDevice(
         (stopError === null
           ? "The new emulator was told to stop; boot it again once it has exited."
           : "The new emulator could not be stopped; stop it before booting again."),
-      errors: [...seedErrors, ...errorList(stopError)],
+      errors: [...preBootErrors, ...errorList(stopError)],
     };
   }
 
   return runningAvd !== null
-    ? { ok: true, id: booted.serial, serial: booted.serial, errors: seedErrors }
+    ? { ok: true, id: booted.serial, serial: booted.serial, errors: preBootErrors }
     : {
         ok: false,
         id: booted.serial,
         serial: booted.serial,
         error: "Timed out waiting for the emulator to come online",
-        errors: seedErrors,
+        errors: preBootErrors,
       };
 }
 

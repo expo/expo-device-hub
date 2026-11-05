@@ -531,6 +531,13 @@ describe("emulator capture availability", () => {
         reason: "Restart it.",
       });
       expect(emulatorCaptureAvailability("R58M123456", options)).toMatchObject({ socket: null });
+      // A function gives a reason that changes, such as an install in progress.
+      expect(
+        emulatorCaptureAvailability("emulator-5556", {
+          socketDirectory: directory,
+          missingAgentReason: () => "Installing the agent…",
+        }),
+      ).toEqual({ socket: null, reason: "Installing the agent…" });
       expect(
         emulatorCaptureAvailability("emulator-5554", { unavailableReason: "Turn it on." }),
       ).toEqual({ socket: null, reason: "Turn it on." });
