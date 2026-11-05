@@ -384,8 +384,11 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
-/** Android capture implementations exposed by serve-emu. */
-export type DeviceStreamSource = "scrcpy" | "grpc-screenshot";
+/**
+ * Android capture implementations exposed by serve-emu. `emulator-capture` is the experimental
+ * expo-emulator-capture agent inside an emulator.
+ */
+export type DeviceStreamSource = "scrcpy" | "grpc-screenshot" | "emulator-capture";
 
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
 export type DeviceGrpcImageMode = "png" | "mmap" | "rgb888";
@@ -410,6 +413,8 @@ export interface DeviceStreamSourceStatus {
   inputSource: DeviceInputSource;
   availableInputSources: readonly DeviceInputSource[];
   availableModes: readonly DeviceStreamSource[];
+  /** Why a source is not available for this device, for display; omitted by older servers. */
+  unavailableModes?: Readonly<Partial<Record<DeviceStreamSource, string>>>;
   sessionGeneration: number;
 }
 

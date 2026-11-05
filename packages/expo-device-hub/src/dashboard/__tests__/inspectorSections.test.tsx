@@ -572,6 +572,58 @@ test("shows the Android emulator capture source select", () => {
   expect(selectMarkup(html, "Stream source")).not.toContain('disabled=""');
 });
 
+test("shows emulator capture as a source, disabled with its reason when unavailable", () => {
+  const status = {
+    mode: "scrcpy",
+    grpcImageMode: "rgb888",
+    encoder: "software",
+    encoderName: null,
+    availableEncoders: ["software"],
+    inputSource: "scrcpy",
+    availableInputSources: ["scrcpy"],
+    availableModes: ["scrcpy", "grpc-screenshot"],
+    unavailableModes: {
+      "emulator-capture": "Restart the Hub with --experimental-emulator-capture.",
+    },
+    sessionGeneration: 1,
+  } as const;
+  const offHtml = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={{ ...inspectorClient("android"), streamSource: status } satisfies DeviceClient}
+      defaultOpen
+    />,
+  );
+  expect(selectOptionLabels(offHtml, "Stream source")).toEqual([
+    "scrcpy",
+    "gRPC",
+    "Emulator capture",
+  ]);
+  expect(offHtml).toContain(
+    "Emulator capture: Restart the Hub with --experimental-emulator-capture.",
+  );
+
+  const onHtml = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={
+        {
+          ...inspectorClient("android"),
+          streamSource: {
+            ...status,
+            mode: "emulator-capture",
+            availableModes: ["scrcpy", "grpc-screenshot", "emulator-capture"],
+            unavailableModes: undefined,
+          },
+        } satisfies DeviceClient
+      }
+      defaultOpen
+    />,
+  );
+  expect(selectValue(onHtml, "Stream source")).toBe("Emulator capture");
+  expect(onHtml).not.toContain("Emulator capture: ");
+  // The capture has no gRPC-only rows.
+  expect(onHtml).not.toContain('aria-label="gRPC image mode"');
+});
+
 test("shows PNG, MMAP and RGB888 only while the gRPC source is active", () => {
   const scrcpyHtml = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient("android")} defaultOpen />,
