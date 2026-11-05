@@ -124,6 +124,36 @@ describe("PhoneFrame screen shape", () => {
     );
   });
 
+  test("follows the iPhone Duo display, over the DeviceKit corners of the client", () => {
+    const duo: Device = {
+      ...IPHONE,
+      id: "duo",
+      name: "iPhone Duo",
+      deviceFrame: null,
+      model: "iPhone Duo",
+    };
+    const corners = { topLeft: 0.02, topRight: 0.15, bottomRight: 0.15, bottomLeft: 0.02 };
+    const render = (screen: DeviceClient["screen"]) =>
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={duo}
+          client={{ ...client(screen, "ios"), displayCorners: corners } as DeviceClient}
+          DeviceScreen={Screen}
+          DeviceShape={DeviceShape}
+          displayScreen={(value) => value ?? null}
+          deviceFrameAssets={FRAME_ASSETS}
+        />,
+      );
+    const cover = { width: 1398, height: 2034, display: "cover" } as const;
+    const inner = { width: 2007, height: 2853, display: "inner" } as const;
+    expect(clipStyle(render(cover))).toContain(
+      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoCover, { aspectRatio: 1398 / 2034 })}`,
+    );
+    expect(clipStyle(render(inner))).toContain(
+      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoInner, { aspectRatio: 2007 / 2853 })}`,
+    );
+  });
+
   test("keeps the generic corners for an unknown model", () => {
     const markup = render({ ...IPHONE, model: "iPhone SE (3rd generation)" }, null);
     expect(markup).not.toContain("data-screen-shape");
