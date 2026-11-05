@@ -30,6 +30,7 @@
 | `hasDisplayScreenShapes({ platform, model })`                                          | Whether a model has a shape per display.                                                                                                                                          |
 | `SCREEN_SHAPES`                                                                        | Every shape by name, for picking one by hand.                                                                                                                                     |
 | `rotateScreenShape`, `screenShapeOrientation`                                          | Turning a portrait shape with the device.                                                                                                                                         |
+| `uniformScreenShape`                                                                   | Building a custom shape with four equal corners, for the `shape` prop.                                                                                                            |
 | `screenShapeClipPath`, `screenShapeMaskImage`                                          | The CSS for an element that cannot be wrapped.                                                                                                                                    |
 | `screenShapeGeometry`, `interpolateScreenShapeGeometry`, `screenShapeGeometryClipPath` | Placing a shape in part of an element and blending two shapes, such as the iPhone Duo switch in a recording.                                                                      |
 
@@ -54,6 +55,7 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 
 ## Displays and orientation
 
+- A table entry is one shape, or one shape per display with the display a new session starts on. The iPhone Duo is the only per-display entry today. iOS and Android share one lookup, so a foldable on either platform needs only a new entry [observed: `catalog.ts`].
 - A multi-display device picks its shape from `display`, the client's `screen.display` by default (LLP 0016 [Display identity](0016-hub-client-foldable-devices.spec.md#display-identity)). When a screen size is known without a display, the display with the closest aspect ratio wins, as the website did [observed: `iphoneDuoStreamScreenShape` in expo/universe#32807]. Without either, the iPhone Duo shows its cover display, which a new session streams first [observed: expo/universe#32807].
 - The shape turns with the device: `landscape_left` moves each corner one step clockwise [observed: expo/universe#32682; the same order as `displayCornerRadii` in `display-corners.ts`].
 - A landscape frame can only come from a sideways device. When the stream reports no orientation or an upright one for it, the shape counts it as `landscape_left` [observed: `simulatorDeviceRotation` in expo/universe#32682].

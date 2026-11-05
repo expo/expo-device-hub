@@ -163,12 +163,15 @@ model without a known shape gets no clip. Apps that do not import
 
 ```tsx
 import { DeviceScreen, useDeviceClient } from "@expo/hub-client";
-import { DeviceShape } from "@expo/hub-client/shapes";
+import { DeviceShape, useScreenShape } from "@expo/hub-client/shapes";
 
 function ShapedScreen({ model }: { model: string }) {
   const client = useDeviceClient();
+  // The shape as the viewer sees it, turned with the device, for the box's proportions.
+  const shape = useScreenShape({ client, model });
+  const aspectRatio = shape ? `${shape.width} / ${shape.height}` : "9 / 19.5";
   return (
-    <div style={{ position: "relative", width: 360, aspectRatio: "402 / 874" }}>
+    <div style={{ position: "relative", width: 360, aspectRatio }}>
       <DeviceShape client={client} model={model} style={{ position: "absolute", inset: 0 }}>
         <DeviceScreen client={client} />
       </DeviceShape>
@@ -194,7 +197,9 @@ without a client they are the only source, for example for a recording:
 </DeviceShape>
 ```
 
-`useScreenShape` returns the same shape for layout, such as the frame's aspect ratio.
+`useScreenShape` returns the same shape for layout, such as the box's aspect ratio above.
+The clip keeps the corners right for the shape's own proportions, so give the box those
+proportions, or pass the box's `aspectRatio` to `DeviceShape`.
 `screenShapeClipPath` returns the CSS `clip-path` for an element that you cannot wrap.
 
 ### Fold a foldable device
