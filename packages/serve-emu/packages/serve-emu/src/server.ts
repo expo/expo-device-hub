@@ -360,6 +360,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
   if (requestedDefaultStreamMode === "grpc-screenshot" && !isEmulatorSerial(opts.serial)) {
     throw new Error("grpc-screenshot is available only for Android Emulator devices");
   }
+  if (requestedDefaultStreamMode === "emulator-capture") {
+    throw new Error("emulator-capture is available only through the Device Hub middleware");
+  }
   const defaultStreamMode = requestedDefaultStreamMode;
   const requestedDefaultGrpcImageMode: unknown = opts.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE;
   if (!isGrpcImageMode(requestedDefaultGrpcImageMode)) {
@@ -1878,6 +1881,9 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           const { mode: requestedMode } = streamModeRequest;
           if (requestedMode === "grpc-screenshot" && !isEmulatorSerial(requestContext.serial)) {
             throw new Error("grpc-screenshot is available only for Android Emulator devices");
+          }
+          if (requestedMode === "emulator-capture") {
+            throw new Error("emulator-capture is available only through the Device Hub middleware");
           }
           mode = requestedMode;
           encoder =

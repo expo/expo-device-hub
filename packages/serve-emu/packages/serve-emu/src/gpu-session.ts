@@ -1,10 +1,13 @@
 import { createConnection, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import type { DisplayRotation } from "./adb.ts";
 import { ControlInputQueue, SocketControlWriter } from "./control-input-queue.ts";
 import { GrpcVideoPacketQueue } from "./grpc-session.ts";
 import {
   GPU_RECORD,
+  GPU_ROTATION_PROTOCOL,
   GpuPacketReader,
+  gpuRotationCommand,
   gpuSettingsCommand,
   parseGpuDetails,
   splitGpuAccessUnit,
@@ -17,32 +20,51 @@ import type { EmuSession, StartEmuSessionOptions, StreamFailure } from "./stream
 
 const STARTUP_TIMEOUT_MS = 15_000;
 const DEFAULT_BIT_RATE = 12_000_000;
+// @ref LLP 0017#rotation — serve-emu reads the display rotation and passes it to the agent
+/** How often a session reads Android's display rotation, for turns that apps start. */
+const ROTATION_POLL_MS = 1_000;
+const ROTATION_READ_TIMEOUT_MS = 3_000;
 const activeSerials = new Set<string>();
 
 type GpuSessionDependencies = {
   startScrcpyControl?: typeof startScrcpyControl;
   connect?: (path: string) => Socket;
+  /** For tests: replaces the rotation poll timer. */
+  setInterval?: (callback: () => void, intervalMs: number) => { unref?(): void };
+  clearInterval?: (timer: unknown) => void;
 };
+
+/**
+ * The touch target for scrcpy without video: the native display, upright for Android's display
+ * rotation. The agent's native size is the panel's, so rotations 1 and 3 swap its edges.
+ */
+export function uprightTouchSize(
+  native: { width: number; height: number },
+  rotation: DisplayRotation,
+): { width: number; height: number } {
+  return rotation % 2 === 1
+    ? { width: native.height, height: native.width }
+    : { width: native.width, height: native.height };
+}
 
 /** The capture socket refused or vanished before it said hello: the emulator has no agent. */
 export class GpuCaptureUnavailableError extends Error {}
 
 /**
  * Video from an expo-emulator-capture agent socket; scrcpy stays the control transport.
- * The agent changes the stream size when the native display does (folding).
+ * The agent changes the stream size when the native display does (folding), and turns the
+ * picture upright for the display rotation that this session reads and passes to it.
  */
 export async function startGpuCaptureSession(
   options: StartEmuSessionOptions,
   socketPath: string,
   dependencies: GpuSessionDependencies = {},
 ): Promise<EmuSession> {
-  if (options.mode !== "scrcpy" || options.inputSource !== "scrcpy")
-    throw new Error(
-      "GPU capture requires scrcpy control mode; video comes from the capture socket",
-    );
-  if (!socketPath.startsWith("/")) throw new Error("GPU capture socket path must be absolute");
+  if (options.mode !== "emulator-capture" || options.inputSource !== "scrcpy")
+    throw new Error("Emulator capture requires scrcpy input; video comes from the capture socket");
+  if (!socketPath.startsWith("/")) throw new Error("Emulator capture socket path must be absolute");
   if (activeSerials.has(options.serial))
-    throw new Error("GPU capture already has a session for this device");
+    throw new Error("Emulator capture already has a session for this device");
   const socket = (dependencies.connect ?? createConnection)(socketPath);
   activeSerials.add(options.serial);
   const queue = new GrpcVideoPacketQueue(16 * 1024 * 1024);
@@ -51,6 +73,8 @@ export async function startGpuCaptureSession(
   const waiters: ((packet: VideoPacket | null) => void)[] = [];
   const abort = new AbortController();
   const signal = options.signal ?? abort.signal;
+  // Ends rotation reads when the session closes.
+  const lifetime = new AbortController();
   let control: ScrcpyControlSession | null = null;
   let controls: ControlInputQueue | null = null;
   let closed = false,
@@ -62,7 +86,8 @@ export async function startGpuCaptureSession(
     bytes = 0,
     keyRequests = 0,
     lastKeyRequest = 0,
-    resizes = 0;
+    resizes = 0,
+    rotations = 0;
   let lastPts = -1n;
   let sps: Buffer | null = null,
     pps: Buffer | null = null,
@@ -70,10 +95,19 @@ export async function startGpuCaptureSession(
   let framePath: ExperimentalGpuCaptureDiagnostics["framePath"] = null;
   let hardwareEncoder: boolean | null = null;
   let encoderName: string | null = null;
-  const meta = { deviceName: "GPU capture", codecId: "h264", width: 0, height: 0 };
+  const meta = { deviceName: "Emulator capture", codecId: "h264", width: 0, height: 0 };
   const nativeSize = { width: 0, height: 0 };
   let streamFps = options.maxFps || 60;
   const maxSize = options.maxSize ?? 0;
+  // Android's display rotation as last read; the agent's picture follows it.
+  let displayRotation: DisplayRotation = 0;
+  let rotationSupported = false;
+  let rotationRead: Promise<void> | null = null;
+  let rotationTimer: unknown = null;
+  const setTimer = dependencies.setInterval ?? ((callback, ms) => setInterval(callback, ms));
+  const clearTimer =
+    dependencies.clearInterval ??
+    ((timer: unknown) => clearInterval(timer as ReturnType<typeof setInterval>));
 
   let receivedBytes = 0;
   const fail = (error: unknown) => {
@@ -85,8 +119,15 @@ export async function startGpuCaptureSession(
       receivedBytes === 0 ? new GpuCaptureUnavailableError(cause.message, { cause }) : cause,
     );
     socket.destroy();
+    lifetime.abort();
     for (const listener of listeners) listener(failed);
     while (waiters.length) waiters.shift()!(null);
+  };
+  const write = (command: Buffer) => {
+    if (closed || failed || socket.destroyed) return;
+    socket.write(command, (error) => {
+      if (error) fail(error);
+    });
   };
   const requestKey = () => {
     if (closed || failed || socket.destroyed) return;
@@ -94,10 +135,45 @@ export async function startGpuCaptureSession(
     if (now - lastKeyRequest < 200) return;
     lastKeyRequest = now;
     keyRequests++;
-    socket.write("K", (error) => {
-      if (error) fail(error);
-    });
+    write(Buffer.from("K"));
   };
+  const readRotation = async (): Promise<DisplayRotation | null> => {
+    if (!options.readDisplayRotation) return null;
+    try {
+      return await options.readDisplayRotation(
+        AbortSignal.any([lifetime.signal, AbortSignal.timeout(ROTATION_READ_TIMEOUT_MS)]),
+      );
+    } catch {
+      return null; // Keep the last rotation; the next poll tries again.
+    }
+  };
+  /** Reads the display rotation and passes a change to the agent; one read at a time. */
+  const refreshRotation = () => {
+    if (!rotationSupported || closed || failed || rotationRead) return;
+    rotationRead = (async () => {
+      try {
+        const next = await readRotation();
+        if (next === null || next === displayRotation || closed || failed) return;
+        displayRotation = next;
+        rotations++;
+        write(gpuRotationCommand(next));
+      } finally {
+        rotationRead = null;
+      }
+    })();
+  };
+  /** After hello: the rotation first, so the agent's first session is already upright. */
+  const negotiate = async () => {
+    if (rotationSupported) {
+      const rotation = await readRotation();
+      if (rotation !== null) {
+        displayRotation = rotation;
+        if (rotation !== 0) write(gpuRotationCommand(rotation));
+      }
+    }
+    write(gpuSettingsCommand(maxSize, streamFps, options.bitRate ?? DEFAULT_BIT_RATE));
+  };
+  const touchSize = () => uprightTouchSize(nativeSize, displayRotation);
   const push = (packet: VideoPacket) => {
     const result = queue.push(packet);
     if (result.needsKeyFrame) requestKey();
@@ -112,15 +188,14 @@ export async function startGpuCaptureSession(
     if (record.flags === GPU_RECORD.hello) {
       if (hello) throw new Error("Unexpected second GPU stream handshake");
       hello = true;
-      parseGpuDetails(record.data);
+      const details = parseGpuDetails(record.data);
+      rotationSupported =
+        !!options.readDisplayRotation &&
+        typeof details.protocol === "number" &&
+        details.protocol >= GPU_ROTATION_PROTOCOL;
       nativeSize.width = record.width;
       nativeSize.height = record.height;
-      socket.write(
-        gpuSettingsCommand(maxSize, streamFps, options.bitRate ?? DEFAULT_BIT_RATE),
-        (error) => {
-          if (error) fail(error);
-        },
-      );
+      void negotiate().catch(fail);
       return;
     }
     if (!hello) throw new Error("GPU stream did not start with a handshake");
@@ -185,13 +260,16 @@ export async function startGpuCaptureSession(
       fail(error);
     }
   });
-  socket.on("close", () => fail(new Error("GPU capture connection closed")));
+  socket.on("close", () => fail(new Error("Emulator capture connection closed")));
   const close = (): Promise<void> => {
     if (closeTask) return closeTask;
     closed = true;
     activeSerials.delete(options.serial);
+    if (rotationTimer !== null) clearTimer(rotationTimer);
+    rotationTimer = null;
+    lifetime.abort();
     socket.destroy();
-    controls?.close(new Error("GPU capture session closed"));
+    controls?.close(new Error("Emulator capture session closed"));
     queue.clear();
     while (waiters.length) waiters.shift()!(null);
     listeners.clear();
@@ -201,16 +279,16 @@ export async function startGpuCaptureSession(
   try {
     await startup.wait(signal, STARTUP_TIMEOUT_MS);
     control = await (dependencies.startScrcpyControl ?? startScrcpyControl)(options);
-    if (signal.aborted || failed) throw new Error("GPU capture startup interrupted");
+    if (signal.aborted || failed) throw new Error("Emulator capture startup interrupted");
     const writer = new SocketControlWriter(control.controlSocket);
     control.controlSocket.on("error", fail);
-    control.proc.on("exit", () => fail(new Error("GPU capture control process exited")));
+    control.proc.on("exit", () => fail(new Error("Emulator capture control process exited")));
     controls = new ControlInputQueue({
       dispatcher: {
         async dispatchGesture(gesture, _screen, inputSignal) {
-          // With scrcpy video disabled, touches target the native display, not
-          // the scaled stream (as in grpc-session.ts).
-          for (const step of compileGesture(gesture, nativeSize).steps) {
+          // With scrcpy video disabled, touches target the native display, not the scaled
+          // stream (as in grpc-session.ts), in the display's current rotation.
+          for (const step of compileGesture(gesture, touchSize()).steps) {
             if (step.delayMs > 0) await delay(step.delayMs, undefined, { signal: inputSignal });
             await writer.write(step.packet, inputSignal);
           }
@@ -224,12 +302,16 @@ export async function startGpuCaptureSession(
         },
       },
     });
+    if (rotationSupported) {
+      const timer = setTimer(refreshRotation, ROTATION_POLL_MS);
+      timer.unref?.();
+      rotationTimer = timer;
+    }
     console.warn(
-      `[GPU capture] ${options.serial}: ${framePath ?? "unknown"} frames → VideoToolbox, ${meta.width}x${meta.height}@${streamFps} (native ${nativeSize.width}x${nativeSize.height}); scrcpy controls only`,
+      `[emulator capture] ${options.serial}: ${framePath ?? "unknown"} frames, ${meta.width}x${meta.height}@${streamFps} (native ${nativeSize.width}x${nativeSize.height}, rotation ${displayRotation}); scrcpy controls only`,
     );
     return {
-      // Keep the public stream mode; /health.captureBackend names the capture source.
-      mode: options.mode,
+      mode: "emulator-capture",
       inputSource: "scrcpy",
       serial: options.serial,
       meta,
@@ -249,8 +331,11 @@ export async function startGpuCaptureSession(
           streamSize: { width: meta.width, height: meta.height },
           maxSize,
           resizes,
+          rotation: rotationSupported ? displayRotation : null,
+          rotations,
         },
       }),
+      displayChanged: refreshRotation,
       readFrame() {
         if (closed || failed) return Promise.resolve(null);
         const packet = queue.shift();

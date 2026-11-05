@@ -344,9 +344,14 @@ async function main() {
   }
 
   const requestedStreamMode = stringOption("stream-mode");
-  if (requestedStreamMode !== undefined && !isStreamMode(requestedStreamMode)) {
+  // emulator-capture needs the Device Hub, which starts emulators with the capture agent.
+  const cliStreamModes = STREAM_MODES.filter((mode) => mode !== "emulator-capture");
+  if (
+    requestedStreamMode !== undefined &&
+    (!isStreamMode(requestedStreamMode) || requestedStreamMode === "emulator-capture")
+  ) {
     throw new Error(
-      `--stream-mode must be one of: ${STREAM_MODES.join(", ")}. Received "${requestedStreamMode}".`,
+      `--stream-mode must be one of: ${cliStreamModes.join(", ")}. Received "${requestedStreamMode}".`,
     );
   }
   const streamMode = requestedStreamMode ?? "scrcpy";
