@@ -1,3 +1,11 @@
+expo-emulator-capture has mixed licenses.
+
+Expo's own code in this package is licensed under the MIT License below. The prebuilt
+agent library in dist/ also contains third-party components under their own licenses;
+THIRD_PARTY_LICENSES.md lists them, with the license texts in LICENSES/.
+
+--------------------------------------------------------------------------------
+
 The MIT License (MIT)
 
 Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
