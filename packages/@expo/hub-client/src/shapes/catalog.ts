@@ -4,7 +4,7 @@
  * https://github.com/krystofwoldrich-agent/device-screen-shape-editor.
  */
 
-import { type DeviceDisplayId, type DevicePlatform } from "../types";
+import { type DeviceDisplayId, type DevicePlatform, type ScreenSize } from "../types";
 import { type ScreenShape, uniformScreenShape as uniform } from "./screen-shape";
 
 // The hinge is on the left, so the iPhone Duo cover display has small left corners.
@@ -200,10 +200,27 @@ export interface ScreenShapeQuery {
   model: string | null | undefined;
   /**
    * The display of a device with a shape per display, such as the iPhone Duo.
-   * Defaults to `cover`, which a closed iPhone Duo shows when it starts. Other
-   * devices ignore it.
+   * Other devices ignore it.
    */
   display?: DeviceDisplayId;
+  /**
+   * The streamed screen size, which picks the display when `display` is not
+   * known: the display whose aspect ratio is closest, in either orientation.
+   * Without both, the iPhone Duo shows its cover display, which a closed
+   * iPhone Duo shows when it starts.
+   */
+  screen?: Pick<ScreenSize, "width" | "height"> | null;
+}
+
+/** The iPhone Duo display whose proportions are closest to the screen's, in either orientation. */
+function nearestDuoDisplay({
+  width,
+  height,
+}: Pick<ScreenSize, "width" | "height">): DeviceDisplayId {
+  const { iPhoneDuoCover: cover, iPhoneDuoInner: inner } = IosScreenShapes;
+  const aspect = Math.min(width, height) / Math.max(width, height);
+  const distance = (shape: ScreenShape) => Math.abs(shape.width / shape.height - aspect);
+  return distance(cover) < distance(inner) ? "cover" : "inner";
 }
 
 // @ref LLP 0017#model-names — the exact simctl and AVD profile names, not the reported device name
@@ -212,12 +229,16 @@ export function resolveScreenShape({
   platform,
   model,
   display,
+  screen,
 }: ScreenShapeQuery): ScreenShape | null {
   if (!model) return null;
   if (platform === "android") return AndroidShapesByModel.get(model) ?? null;
   const name = model.trim().toLowerCase();
   if (name === IphoneDuoModel) {
-    return display === "inner" ? IosScreenShapes.iPhoneDuoInner : IosScreenShapes.iPhoneDuoCover;
+    const shown =
+      display ??
+      (screen && screen.width > 0 && screen.height > 0 ? nearestDuoDisplay(screen) : "cover");
+    return shown === "inner" ? IosScreenShapes.iPhoneDuoInner : IosScreenShapes.iPhoneDuoCover;
   }
   return IosShapesByModel.get(name) ?? null;
 }
