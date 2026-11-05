@@ -24,10 +24,13 @@ export interface DeviceShapeProps
  * input inside it keeps its mapping. A model without a known shape gets no clip.
  *
  * ```tsx
- * <DeviceShape client={client} style={{ position: "absolute", inset: 0 }}>
+ * <DeviceShape client={client} model="iPhone 17 Pro" style={{ position: "absolute", inset: 0 }}>
  *   <DeviceScreen client={client} />
  * </DeviceShape>
  * ```
+ *
+ * Pass `model` when you know it: the client's device name is only a fallback,
+ * and an Android emulator's name does not say which Pixel it is.
  */
 export const DeviceShape = forwardRef<HTMLDivElement, DeviceShapeProps>(function DeviceShape(
   { client, platform, model, display, orientation, shape, aspectRatio, insetPx, style, ...props },

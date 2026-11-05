@@ -312,6 +312,22 @@ describe("DeviceShape", () => {
     expect(clipPathOf(root)).toBe(screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoInner));
   });
 
+  test("turns a custom portrait shape with the client's orientation", async () => {
+    const custom = {
+      ...uniformScreenShape(300, 600, { n: 2, size: 30 }),
+      topLeft: { n: 2, size: 5 },
+    };
+    const root = await render(
+      <DeviceShape
+        client={client({ width: 600, height: 300, orientation: "landscape_right" })}
+        shape={custom}
+      />,
+    );
+    expect(clipPathOf(root)).toBe(
+      screenShapeClipPath(rotateScreenShape(custom, "landscape_right")),
+    );
+  });
+
   test("leaves an unknown model unclipped", async () => {
     const root = await render(
       <DeviceShape client={client(null, "iPhone Simulator")} style={{ inset: 0 }} />,

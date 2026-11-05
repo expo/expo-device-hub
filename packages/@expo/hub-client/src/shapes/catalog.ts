@@ -159,16 +159,49 @@ const IosScreenShapeModels: Record<
   ],
 };
 
-/** The device type name of the iPhone Duo, which has a shape per display. */
-const IphoneDuoModel = "iphone duo";
+/**
+ * The screen shapes of one device model: one shape, or one shape per display
+ * for a device with several displays, such as the iPhone Duo. `initialDisplay`
+ * is the display a new session shows first.
+ */
+type DeviceScreenShapes =
+  | ScreenShape
+  | {
+      readonly displays: Readonly<Partial<Record<DeviceDisplayId, ScreenShape>>>;
+      readonly initialDisplay: DeviceDisplayId;
+    };
 
-const IosShapesByModel = new Map<string, ScreenShape>(
-  (Object.keys(IosScreenShapeModels) as (keyof typeof IosScreenShapeModels)[]).flatMap((name) =>
+function hasDisplays(
+  shapes: DeviceScreenShapes,
+): shapes is Exclude<DeviceScreenShapes, ScreenShape> {
+  return "displays" in shapes;
+}
+
+/** iOS models with a shape per display, by their simctl device type names. */
+const IosDisplayScreenShapeModels: readonly {
+  models: readonly string[];
+  shapes: DeviceScreenShapes;
+}[] = [
+  {
+    models: ["iPhone Duo"],
+    shapes: {
+      displays: { cover: IosScreenShapes.iPhoneDuoCover, inner: IosScreenShapes.iPhoneDuoInner },
+      // A new iPhone Duo session starts closed, on the cover display.
+      initialDisplay: "cover",
+    },
+  },
+];
+
+const IosShapesByModel = new Map<string, DeviceScreenShapes>([
+  ...(Object.keys(IosScreenShapeModels) as (keyof typeof IosScreenShapeModels)[]).flatMap((name) =>
     IosScreenShapeModels[name].map(
       (model) => [model.toLowerCase(), IosScreenShapes[name]] as const,
     ),
   ),
-);
+  ...IosDisplayScreenShapeModels.flatMap(({ models, shapes }) =>
+    models.map((model) => [model.toLowerCase(), shapes] as const),
+  ),
+]);
 
 /**
  * The emulators of each Android screen shape, by their AVD hardware profile ids
@@ -181,12 +214,25 @@ const AndroidScreenShapeModels: Record<keyof typeof AndroidScreenShapes, readonl
   pixel9a: ["pixel_9a"],
 };
 
-const AndroidShapesByModel = new Map<string, ScreenShape>(
+const AndroidShapesByModel = new Map<string, DeviceScreenShapes>(
   (Object.keys(AndroidScreenShapeModels) as (keyof typeof AndroidScreenShapeModels)[]).flatMap(
     (name) =>
       AndroidScreenShapeModels[name].map((model) => [model, AndroidScreenShapes[name]] as const),
   ),
 );
+
+/** The shapes of a model: an iOS name matches without case and surrounding spaces, an Android id exactly. */
+function deviceScreenShapes(
+  platform: DevicePlatform,
+  model: string | null | undefined,
+): DeviceScreenShapes | null {
+  if (!model) return null;
+  return (
+    (platform === "android"
+      ? AndroidShapesByModel.get(model)
+      : IosShapesByModel.get(model.trim().toLowerCase())) ?? null
+  );
+}
 
 /** A device model to look up a screen shape for. */
 export interface ScreenShapeQuery {
@@ -206,21 +252,30 @@ export interface ScreenShapeQuery {
   /**
    * The streamed screen size, which picks the display when `display` is not
    * known: the display whose aspect ratio is closest, in either orientation.
-   * Without both, the iPhone Duo shows its cover display, which a closed
-   * iPhone Duo shows when it starts.
+   * Without both, a device shows the display that a new session starts on,
+   * the cover display for the iPhone Duo.
    */
   screen?: Pick<ScreenSize, "width" | "height"> | null;
 }
 
-/** The iPhone Duo display whose proportions are closest to the screen's, in either orientation. */
-function nearestDuoDisplay({
-  width,
-  height,
-}: Pick<ScreenSize, "width" | "height">): DeviceDisplayId {
-  const { iPhoneDuoCover: cover, iPhoneDuoInner: inner } = IosScreenShapes;
+/** The display whose proportions are closest to the screen's, in either orientation. */
+function nearestDisplay(
+  displays: Readonly<Partial<Record<DeviceDisplayId, ScreenShape>>>,
+  { width, height }: Pick<ScreenSize, "width" | "height">,
+): DeviceDisplayId | undefined {
   const aspect = Math.min(width, height) / Math.max(width, height);
-  const distance = (shape: ScreenShape) => Math.abs(shape.width / shape.height - aspect);
-  return distance(cover) < distance(inner) ? "cover" : "inner";
+  let nearest: DeviceDisplayId | undefined;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const [display, shape] of Object.entries(displays) as [DeviceDisplayId, ScreenShape][]) {
+    const distance = Math.abs(
+      Math.min(shape.width, shape.height) / Math.max(shape.width, shape.height) - aspect,
+    );
+    if (distance < nearestDistance) {
+      nearest = display;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 // @ref LLP 0017#model-names — the exact simctl and AVD profile names, not the reported device name
@@ -231,16 +286,16 @@ export function resolveScreenShape({
   display,
   screen,
 }: ScreenShapeQuery): ScreenShape | null {
-  if (!model) return null;
-  if (platform === "android") return AndroidShapesByModel.get(model) ?? null;
-  const name = model.trim().toLowerCase();
-  if (name === IphoneDuoModel) {
-    const shown =
-      display ??
-      (screen && screen.width > 0 && screen.height > 0 ? nearestDuoDisplay(screen) : "cover");
-    return shown === "inner" ? IosScreenShapes.iPhoneDuoInner : IosScreenShapes.iPhoneDuoCover;
-  }
-  return IosShapesByModel.get(name) ?? null;
+  const shapes = deviceScreenShapes(platform, model);
+  if (!shapes || !hasDisplays(shapes)) return shapes;
+  const { displays, initialDisplay } = shapes;
+  const shown =
+    (display && displays[display] ? display : undefined) ??
+    (screen && screen.width > 0 && screen.height > 0
+      ? nearestDisplay(displays, screen)
+      : undefined) ??
+    initialDisplay;
+  return displays[shown] ?? displays[initialDisplay] ?? null;
 }
 
 /**
@@ -250,6 +305,7 @@ export function resolveScreenShape({
 export function hasDisplayScreenShapes({
   platform,
   model,
-}: Omit<ScreenShapeQuery, "display">): boolean {
-  return platform === "ios" && model?.trim().toLowerCase() === IphoneDuoModel;
+}: Pick<ScreenShapeQuery, "platform" | "model">): boolean {
+  const shapes = deviceScreenShapes(platform, model);
+  return !!shapes && hasDisplays(shapes);
 }
