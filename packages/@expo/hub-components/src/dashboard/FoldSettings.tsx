@@ -27,7 +27,7 @@ export type FoldPreviewOption = {
   onModeChange: (mode: FoldPreviewMode) => void;
   /** The model failed to load in this session; the flat screen shows until 3D is selected again. */
   unavailable?: boolean;
-  /** Freeze the departing panel's last frame while the device folds. Shown only with fold controls. */
+  /** Freeze the departing panel's last frame while the device folds. Shown only for a foldable that streams each display on its own. */
   cacheScreenOnFold: boolean;
   onCacheScreenOnFoldChange: (enabled: boolean) => void;
   /** Keep the model at its physical size, or fill the stage as the hinge moves. */
@@ -61,12 +61,19 @@ export function FoldSettings({
   fold,
   controls,
   preview,
+  separateDisplays = true,
   disabledReason,
 }: {
   fold: DeviceFold;
   /** `client.capabilities.fold`: the rows to show. */
   controls: Exclude<DeviceFoldCapabilities, false>;
   preview?: FoldPreviewOption;
+  /**
+   * Whether the client streams each display on its own (`client.displays`), as
+   * the iPhone Duo does. Only then can the model keep the departing display's
+   * last frame, so only then is "Cache screen on fold" offered.
+   */
+  separateDisplays?: boolean;
   /** Why native fold commands are temporarily unavailable. Local preview choices remain available. */
   disabledReason?: string;
 }) {
@@ -210,7 +217,7 @@ export function FoldSettings({
           </DisabledControlHint>
         </SidebarRow>
       )}
-      {preview && <ModelPreviewSettings preview={preview} folds />}
+      {preview && <ModelPreviewSettings preview={preview} cacheScreenOnFold={separateDisplays} />}
       {error && <SectionNote role="alert">{error}</SectionNote>}
     </div>
   );
@@ -219,14 +226,16 @@ export function FoldSettings({
 /**
  * The viewer's 2D/3D preview choices. Fold settings show them for a foldable
  * with fold controls; Device options show them for any other device with a 3D
- * model. Caching the departing display needs the fold controls.
+ * model. Caching the departing display needs fold controls and a client that
+ * streams each display on its own.
  */
 export function ModelPreviewSettings({
   preview,
-  folds = false,
+  cacheScreenOnFold = false,
 }: {
   preview: FoldPreviewOption;
-  folds?: boolean;
+  /** Offer "Cache screen on fold". */
+  cacheScreenOnFold?: boolean;
 }) {
   const previewDescriptionId = useId();
   // An unavailable model shows the flat screen until 3D is selected again.
@@ -248,7 +257,7 @@ export function ModelPreviewSettings({
       </SidebarRow>
       {viewMode === "3d" && (
         <>
-          {folds && (
+          {cacheScreenOnFold && (
             <SidebarRow label="Cache screen on fold">
               <SidebarSwitch
                 label="Cache screen on fold"

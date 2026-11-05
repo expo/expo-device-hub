@@ -201,6 +201,16 @@ describe("the 2D/3D choice", () => {
     expect(markup).not.toContain('aria-label="3D preview"');
     expect(markup).toContain("Cache screen on fold");
   });
+
+  test("a foldable that streams one display, as on Android, has no cache option", () => {
+    const fold = duo(DUO_FOLD_CONTROLS);
+    const markup = renderToStaticMarkup(
+      <DeviceOptionsSection client={{ ...fold, displays: null }} foldPreview={preview} />,
+    );
+    expect(markup).toContain('aria-label="Fold settings"');
+    expect(markup).toContain('aria-label="Preview mode"');
+    expect(markup).not.toContain("Cache screen on fold");
+  });
 });
 
 describe("the 3D model's hinge handles", () => {
