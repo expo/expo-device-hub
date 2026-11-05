@@ -60,7 +60,9 @@ export * from "./theme/tokens";
 // injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen` component +
 // `displayScreen` helper as props. The iPhone Duo's 3D preview is the
 // `@expo/hub-components/foldable` entry, injected the same way, so only a
-// consumer that renders it loads three.js.
+// consumer that renders it loads three.js. Screen shapes are `DeviceShape`
+// from `@expo/hub-client/shapes`, also injected, so only a consumer that
+// passes it bundles the shape table.
 export { Sidebar } from "./dashboard/Sidebar";
 export {
   InspectorSections,

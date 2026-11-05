@@ -6,6 +6,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { DeviceShapeProps } from "@expo/hub-client/shapes";
 import { duoStageMaxSide } from "../foldable/duo-stage";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import { bg } from "../primitives";
@@ -99,6 +100,7 @@ export function PhoneFrame({
   preserveKeyboardFocus = false,
   DeviceScreen,
   FoldableDeviceScreen,
+  DeviceShape,
   foldPreview,
   displayScreen,
   showDeviceFrame = true,
@@ -117,6 +119,14 @@ export function PhoneFrame({
    * that this entry never loads three.js; without it the Duo stays flat.
    */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /**
+   * Screen shape clip from `@expo/hub-client/shapes`, injected so that this
+   * entry bundles the shape table only for a consumer that passes it. It gives
+   * a device with a known `model` its own screen corners when no frame artwork
+   * shows; without it, or for an unknown model, the screen keeps the
+   * platform's generic corners.
+   */
+  DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
@@ -280,6 +290,19 @@ export function PhoneFrame({
           : deviceScreenClipPath(radiusCqw, squircle),
       };
 
+  const screenContent = (
+    <>
+      <div
+        data-testid="device-frame-stream-cover"
+        style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
+      >
+        {deviceSurface}
+      </div>
+      {screenStatus}
+      {takeoverOverlay}
+    </>
+  );
+
   return (
     <div
       data-testid="device-screen-frame"
@@ -292,20 +315,28 @@ export function PhoneFrame({
       }}
       onPointerLeave={() => setHovered(false)}
     >
-      <div
-        data-testid="device-screen-clip"
-        data-device-frame-screen={framed ? "true" : undefined}
-        style={screenStyle}
-      >
-        <div
-          data-testid="device-frame-stream-cover"
-          style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
+      {!framed && DeviceShape ? (
+        // A known model's screen shape replaces the generic clip in `screenStyle`;
+        // an unknown model keeps it.
+        <DeviceShape
+          data-testid="device-screen-clip"
+          client={client}
+          platform={device.platform}
+          model={device.model}
+          aspectRatio={ratio}
+          style={screenStyle}
         >
-          {deviceSurface}
+          {screenContent}
+        </DeviceShape>
+      ) : (
+        <div
+          data-testid="device-screen-clip"
+          data-device-frame-screen={framed ? "true" : undefined}
+          style={screenStyle}
+        >
+          {screenContent}
         </div>
-        {screenStatus}
-        {takeoverOverlay}
-      </div>
+      )}
       {deviceFrameAssets
         ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
             const asset = deviceFrameAssets[kind];

@@ -15,6 +15,7 @@ const device: HubDevice = {
   physical: false,
   supported: true,
   deviceFrame: null,
+  model: "pixel_9",
 };
 const directories: string[] = [];
 
