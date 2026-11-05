@@ -51,13 +51,17 @@ export function appleDeviceModel(
   }
 }
 
-/** The 3D model of an emulator's hardware profile, or of a physical device's model name. */
+/**
+ * The 3D model of an emulator's hardware profile, or of a physical device's
+ * model name. An emulator without profile metadata gets no model: its AVD name
+ * is the user's and can name another device.
+ */
 export function androidDeviceModel(device: AndroidDevice): DeviceModelId | null {
   const profile =
     device.type === "device"
       ? (device.properties["ro.product.model"] ?? device.name)
       : (device.config["hw.device.name"] ?? device.properties.Device);
-  switch (normalizeDeviceName(profile ?? device.name)) {
+  switch (normalizeDeviceName(profile)) {
     case "pixel 9 pro":
       return "android:pixel-9-pro";
     case "pixel 9 pro fold":

@@ -183,6 +183,9 @@ describe("3D device models", () => {
     expect(model({ "hw.device.name": "pixel_9_pro_xl" })).toBeNull();
     expect(model({ "hw.device.name": "pixel_9" })).toBeNull();
     expect(model({ "hw.device.name": "medium_phone" }, "Pixel_9_Pro_API_36_1")).toBeNull();
+    // Without profile metadata, an AVD named like a model still gets none.
+    expect(model({}, "Pixel_9_Pro")).toBeNull();
+    expect(model({}, "Pixel_9_Pro_Fold")).toBeNull();
   });
 
   test("picks a physical Android device's model from its product model", () => {
