@@ -3,6 +3,11 @@ import { parseArgs } from "node:util";
 
 import { type WebRtcStreamCodec } from "@expo/serve-sim/state";
 
+import {
+  EMULATOR_CAPTURE_ENV,
+  EMULATOR_CAPTURE_FLAG,
+  emulatorCaptureRequested,
+} from "../emulator-capture";
 import { isWildcardOrigin } from "../origin-match";
 import { parsePlatformFilter, type PlatformFilter } from "../../platform-filter";
 import { DEFAULT_TRANSPORT, parseTransport, TRANSPORTS, type Transport } from "../../transport";
@@ -14,7 +19,8 @@ export const WEBRTC_CODECS = ["vp8", "vp9", "h264"] as const satisfies readonly 
 export const DEFAULT_WEBRTC_ICE_POLICY = "all";
 export const WEBRTC_ICE_POLICIES = ["all", "relay"] as const;
 export type WebRtcIcePolicy = (typeof WEBRTC_ICE_POLICIES)[number];
-export const ANDROID_STREAM_SOURCES = ["scrcpy", "grpc-screenshot"] as const;
+/** `emulator-capture` needs the experimental emulator capture (flag or variable). */
+export const ANDROID_STREAM_SOURCES = ["scrcpy", "grpc-screenshot", "emulator-capture"] as const;
 export type AndroidStreamSource = (typeof ANDROID_STREAM_SOURCES)[number];
 export const DEFAULT_ANDROID_STREAM_SOURCE: AndroidStreamSource = "grpc-screenshot";
 export const GRPC_IMAGE_MODES = ["png", "mmap", "rgb888"] as const;
@@ -45,7 +51,8 @@ Options:
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
       --video-fps <fps>      H.264/WebRTC frame rate (1-120; default: ${DEFAULT_VIDEO_FPS})
-      --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(", ")} (default: ${DEFAULT_ANDROID_STREAM_SOURCE})
+      --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(", ")} (default: ${DEFAULT_ANDROID_STREAM_SOURCE}); emulator-capture needs ${EMULATOR_CAPTURE_FLAG}
+      --experimental-emulator-capture Experimental: stream Android emulators through the expo-emulator-capture agent (macOS on Apple silicon); the default source becomes emulator-capture
       --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(", ")} (default: ${DEFAULT_GRPC_IMAGE_MODE}; used when the gRPC source is active)
       --encoder <encoder>   Android gRPC H.264 encoder: ${GRPC_ENCODERS.join(", ")} (default: ${DEFAULT_GRPC_ENCODER})
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
@@ -83,6 +90,8 @@ export type CliOptions = {
   metricsCorsOrigins?: string[];
   singleDevice?: string;
   hideSidebar?: boolean;
+  /** `--experimental-emulator-capture`: boot emulators with the capture agent. */
+  experimentalEmulatorCapture?: boolean;
   hideBootDevice?: boolean;
   /** serve-sim's flag: the CLI mints a session token and the server gates every route with it. */
   requireToken?: boolean;
@@ -164,7 +173,7 @@ function parseCorsOrigin(value: string): string {
   return url.origin;
 }
 
-export function parseCliOptions(args: string[]): CliOptions {
+export function parseCliOptions(args: string[], env: NodeJS.ProcessEnv = process.env): CliOptions {
   let values: {
     port?: string;
     host: string;
@@ -186,6 +195,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     "metrics-cors-origin": string[];
     "single-device"?: string;
     "hide-sidebar": boolean;
+    "experimental-emulator-capture": boolean;
     "hide-boot-device": boolean;
     "share-url"?: string;
     "disable-share": boolean;
@@ -222,6 +232,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         "metrics-cors-origin": { type: "string", multiple: true, default: [] },
         "single-device": { type: "string" },
         "hide-sidebar": { type: "boolean", default: false },
+        "experimental-emulator-capture": { type: "boolean", default: false },
         "hide-boot-device": { type: "boolean", default: false },
         // Undocumented no-ops: the Hub has no Share button, but the EAS worker may pass
         // serve-sim's share flags to either CLI.
@@ -292,6 +303,15 @@ export function parseCliOptions(args: string[]): CliOptions {
     : undefined;
   if (values["stream-source"] !== undefined && streamSource === undefined) {
     throw new Error(`Invalid --stream-source: ${values["stream-source"]}\n\n${HELP}`);
+  }
+  if (
+    streamSource === "emulator-capture" &&
+    !values["experimental-emulator-capture"] &&
+    !emulatorCaptureRequested(env)
+  ) {
+    throw new Error(
+      `--stream-source emulator-capture needs ${EMULATOR_CAPTURE_FLAG} (or ${EMULATOR_CAPTURE_ENV}=1).\n\n${HELP}`,
+    );
   }
   const normalizedGrpcImageMode = values["grpc-image-mode"]?.toLowerCase();
   const grpcImageMode = GRPC_IMAGE_MODES.includes(normalizedGrpcImageMode as GrpcImageMode)
@@ -372,6 +392,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     metricsCorsOrigins: values["metrics-cors-origin"],
     ...(singleDevice ? { singleDevice } : {}),
     hideSidebar: values["hide-sidebar"],
+    ...(values["experimental-emulator-capture"] ? { experimentalEmulatorCapture: true } : {}),
     hideBootDevice: values["hide-boot-device"],
     requireToken: values["require-token"],
     frameAncestors: values["frame-ancestor"],

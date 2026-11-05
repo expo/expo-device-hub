@@ -239,9 +239,12 @@ describe("bootHubDevice emulator identity", () => {
 });
 
 describe("bootHubDevice emulator capture", () => {
+  const library = "/opt/capture/libexpo_emulator_capture.dylib";
   const capture = {
-    library: "/opt/capture/libexpo_emulator_capture.dylib",
+    library: async () => library,
+    problem: () => null,
     socketDirectory: "/tmp/expo-emulator-capture",
+    platform: "darwin" as const,
   };
 
   test("preloads the agent with a per-serial socket and host rendering", async () => {
@@ -252,7 +255,7 @@ describe("bootHubDevice emulator capture", () => {
       port: 5560,
       extraArgs: [...feedArgs("emulator-5560"), "-gpu", "host"],
       env: {
-        DYLD_INSERT_LIBRARIES: capture.library,
+        DYLD_INSERT_LIBRARIES: library,
         EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/expo-emulator-capture/emulator-5560.sock",
       },
     });
@@ -262,7 +265,21 @@ describe("bootHubDevice emulator capture", () => {
     await bootHubDevice(bootRequest(), cameraFeeds(new Error("disk full")), capture);
 
     expect(scenario.spawned?.extraArgs).toEqual(["-gpu", "host"]);
-    expect(scenario.spawned?.env?.DYLD_INSERT_LIBRARIES).toBe(capture.library);
+    expect(scenario.spawned?.env?.DYLD_INSERT_LIBRARIES).toBe(library);
+  });
+
+  test("boots without the agent, and says so, when the agent package is not installed", async () => {
+    const result = await bootHubDevice(bootRequest(), cameraFeeds(), {
+      ...capture,
+      library: async () => {
+        throw new Error("npm install expo-emulator-capture@0.1.0 failed: E404");
+      },
+    });
+
+    expect(scenario.spawned?.env).toBeUndefined();
+    expect(scenario.spawned?.extraArgs).toEqual(feedArgs("emulator-5560"));
+    expect(result.ok).toBe(true);
+    expect(result.errors[0]?.message).toBe("Pixel_9 starts without the emulator capture agent");
   });
 });
 

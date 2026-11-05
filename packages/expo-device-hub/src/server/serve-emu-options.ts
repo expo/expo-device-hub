@@ -11,7 +11,7 @@ import {
   type GrpcEncoder,
   type WebRtcIcePolicy,
 } from "./cli/options";
-import { EMULATOR_CAPTURE_ENV } from "./emulator-capture";
+import { emulatorCaptureRequested } from "./emulator-capture";
 import { originMatches } from "./origin-match";
 
 export const SERVE_EMU_OPTIONS_ENV = "EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS";
@@ -50,13 +50,13 @@ export type StandaloneServeEmuOptions = {
 };
 
 /**
- * The Android capture source without `--stream-source`. The experimental capture
- * agent replaces scrcpy video only, so turning it on makes scrcpy the default.
+ * The Android capture source without `--stream-source`. Turning the experimental emulator
+ * capture on makes it the default; serve-emu uses gRPC for an emulator without the agent.
  */
 export function defaultAndroidStreamSource(
   env: NodeJS.ProcessEnv = process.env,
 ): AndroidStreamSource {
-  return env[EMULATOR_CAPTURE_ENV] ? "scrcpy" : DEFAULT_ANDROID_STREAM_SOURCE;
+  return emulatorCaptureRequested(env) ? "emulator-capture" : DEFAULT_ANDROID_STREAM_SOURCE;
 }
 
 function defaultServeEmuOptions(): StandaloneServeEmuOptions {

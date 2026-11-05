@@ -143,6 +143,24 @@ describe("parseCliOptions", () => {
     );
   });
 
+  test("accepts the emulator capture source only with the emulator capture on", () => {
+    expect(() => parseCliOptions(["--stream-source", "emulator-capture"], {})).toThrow(
+      "--stream-source emulator-capture needs --experimental-emulator-capture",
+    );
+    expect(
+      parseCliOptions(
+        ["--experimental-emulator-capture", "--stream-source", "emulator-capture"],
+        {},
+      ),
+    ).toMatchObject({ experimentalEmulatorCapture: true, streamSource: "emulator-capture" });
+    expect(
+      parseCliOptions(["--stream-source", "emulator-capture"], {
+        EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "1",
+      }).streamSource,
+    ).toBe("emulator-capture");
+    expect(parseCliOptions([], {}).experimentalEmulatorCapture).toBeUndefined();
+  });
+
   test("validates Android stream-source options", () => {
     expect(() => parseCliOptions(["--stream-source", "camera"])).toThrow(
       "Invalid --stream-source: camera",
