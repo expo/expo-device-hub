@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -70,7 +70,6 @@ describe("Android emulator fold controls", () => {
       const command = args.slice(2).join(" ");
       commands.push(command);
       if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
-      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command === "shell cmd device_state base-state") {
         return result(`Committed state: DeviceState{identifier=2, name='${posture}'}`);
@@ -275,7 +274,6 @@ describe("Android emulator fold controls", () => {
       commands.push(command);
       if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
       if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
-      if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
       if (command.startsWith("emu sensor set hinge-angle0 ")) {
         angle = command.slice("emu sensor set hinge-angle0 ".length);
         return result("OK");
@@ -381,11 +379,11 @@ describe("Android emulator fold controls", () => {
       throw new Error(`unexpected command: ${command}`);
     };
 
-    for (const angle of [90.123, 33.3, 33.33]) {
+    for (const angle of [90.123, 33.3]) {
       expect((await setHingeAngle("emulator-5554", angle, runExec)).hingeAngle).toBe(angle);
     }
-    // Each change ends at the first read instead of waiting out the deadline.
-    expect(dumps).toBe(3);
+    // Each change takes one baseline read and one changed guest sample.
+    expect(dumps).toBe(4);
   });
 
   test("sends whole thousandths of a degree so the console reads the angle back exactly", async () => {
@@ -490,4 +488,69 @@ test("reads an externally set angle in exponent notation", async () => {
     return result("Committed state: DeviceState{identifier=1, name='CLOSED'}");
   };
   expect((await getFoldStatus("emulator-5554", runExec)).hingeAngle).toBe(1e-7);
+});
+
+test("waits for a changed guest sample when a small angle crosses a posture boundary", async () => {
+  let consoleAngle = 149.9;
+  let guestAngle = 149.875;
+  let written = false;
+  let postWriteReads = 0;
+  const runExec = async (_cmd: string, args: string[]) => {
+    const command = args.slice(2).join(" ");
+    if (command === "emu sensor get hinge-angle0")
+      return result(`hinge-angle0 = ${consoleAngle}\r\nOK`);
+    if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
+    if (command.startsWith("emu sensor set hinge-angle0 ")) {
+      consoleAngle = Number(command.slice("emu sensor set hinge-angle0 ".length));
+      written = true;
+      return result("OK");
+    }
+    if (command === "shell dumpsys device_state") {
+      if (written && ++postWriteReads === 2) guestAngle = 150;
+      return result(deviceStateDump(guestAngle));
+    }
+    return result(
+      `Committed state: DeviceState{identifier=2, name='${pixelFoldPosture(guestAngle)}'}`,
+    );
+  };
+  const answer = await setHingeAngle("emulator-5554", 149.999, runExec);
+  expect(answer.hingeAngle).toBe(149.999);
+  expect(answer.posture).toBe("opened");
+  expect(postWriteReads).toBe(2);
+});
+
+test("accepts an unchanged rounded guest value after the bounded settling window", async () => {
+  let consoleAngle = 33.3;
+  let written = false;
+  let postWriteReads = 0;
+  let now = 0;
+  const clock = spyOn(Date, "now").mockImplementation(() => now);
+  const runExec = async (_cmd: string, args: string[]) => {
+    const command = args.slice(2).join(" ");
+    if (command === "emu sensor get hinge-angle0")
+      return result(`hinge-angle0 = ${consoleAngle}\r\nOK`);
+    if (command === "emu avd path") return avdPath(avdDirs.pixelFold);
+    if (command.startsWith("emu sensor set hinge-angle0 ")) {
+      consoleAngle = Number(command.slice("emu sensor set hinge-angle0 ".length));
+      written = true;
+      return result("OK");
+    }
+    if (command === "shell dumpsys device_state") {
+      if (written) {
+        postWriteReads++;
+        now += 1000;
+      }
+      return result(deviceStateDump(33.25));
+    }
+    return result("Committed state: DeviceState{identifier=2, name='HALF_OPENED'}");
+  };
+  try {
+    const answer = await setHingeAngle("emulator-5554", 33.33, runExec);
+    expect(answer.hingeAngle).toBe(33.33);
+    expect(answer.posture).toBe("half_opened");
+    expect(postWriteReads).toBe(2);
+    expect(now).toBe(2000);
+  } finally {
+    clock.mockRestore();
+  }
 });

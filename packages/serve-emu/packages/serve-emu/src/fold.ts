@@ -24,6 +24,7 @@ const UNSUPPORTED: FoldState = { supported: false, posture: null, hingeAngle: nu
  * previous eighth after a change of a few hundredths.
  */
 const ANDROID_HINGE_STEP = 0.125;
+const HINGE_READBACK_TIMEOUT_MS = 2_000;
 
 export async function getFoldStatus(
   serial: string,
@@ -158,6 +159,9 @@ export async function setHingeAngle(
   if (angle < range.min || angle > range.max) {
     throw new Error(`This emulator's hinge moves only from ${range.min}° to ${range.max}°`);
   }
+  // A tolerated guest sample can still be the sample from before this write.
+  const previousGuestAngle =
+    angle !== current.hingeAngle ? (await readAndroidHingeSample(serial, runExec)).angle : null;
   const result = await runExec(
     "adb",
     ["-s", serial, "emu", "sensor", "set", "hinge-angle0", String(angle)],
@@ -169,7 +173,7 @@ export async function setHingeAngle(
     throw new Error(`Emulator hinge angle change failed: ${detail}`);
   }
 
-  await waitForAndroidHingeAngle(serial, angle, runExec);
+  await waitForAndroidHingeAngle(serial, angle, previousGuestAngle, runExec);
   const status = await readFoldState(serial, runExec);
   if (status.hingeAngle !== angle)
     throw new Error(`Emulator did not confirm a ${angle}° hinge angle`);
@@ -184,30 +188,44 @@ export async function setHingeAngle(
 async function waitForAndroidHingeAngle(
   serial: string,
   angle: number,
+  previousGuestAngle: number | null,
   runExec: typeof execText,
 ): Promise<void> {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + HINGE_READBACK_TIMEOUT_MS;
   for (;;) {
-    const dump = await runExec("adb", ["-s", serial, "shell", "dumpsys", "device_state"], {
-      timeout: 5_000,
-      lane: "interactive",
-    });
-    if (dump.status !== 0 || dump.timedOut || dump.error) {
-      const detail =
-        dump.stderr.trim() || dump.error?.message || dump.stdout.trim() || "unknown error";
-      throw new Error(`Android device state read failed: ${detail}`);
-    }
-    const reported = dump.stdout.match(
-      /hinge sensor0 \(in degrees\) : \[(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/,
-    )?.[1];
-    // A dump without sensor values gives nothing to wait for.
-    if (reported === undefined) return;
-    const pending = /mPendingState=Optional\[/.test(dump.stdout);
-    // @ref LLP 0004#android-emulators — measured on pixel_fold: 90.123° arrives as 90.125°
-    if (Math.abs(Number(reported) - angle) < ANDROID_HINGE_STEP && !pending) return;
-    if (Date.now() >= deadline) throw new Error(`Android did not report a ${angle}° hinge angle`);
+    const sample = await readAndroidHingeSample(serial, runExec);
+    // An older guest without sensor values gives nothing to wait for.
+    if (sample.angle === null) return;
+    const expired = Date.now() >= deadline;
+    // @ref LLP 0004#android-emulators — tolerate quantization, but let an unchanged prior sample settle
+    const matches = Math.abs(sample.angle - angle) < ANDROID_HINGE_STEP && !sample.pending;
+    const ambiguous = sample.angle === previousGuestAngle && sample.angle !== angle;
+    if (matches && (!ambiguous || expired)) return;
+    if (expired) throw new Error(`Android did not report a ${angle}° hinge angle`);
     await sleep(50);
   }
+}
+
+async function readAndroidHingeSample(
+  serial: string,
+  runExec: typeof execText,
+): Promise<{ angle: number | null; pending: boolean }> {
+  const dump = await runExec("adb", ["-s", serial, "shell", "dumpsys", "device_state"], {
+    timeout: 5_000,
+    lane: "interactive",
+  });
+  if (dump.status !== 0 || dump.timedOut || dump.error) {
+    const detail =
+      dump.stderr.trim() || dump.error?.message || dump.stdout.trim() || "unknown error";
+    throw new Error(`Android device state read failed: ${detail}`);
+  }
+  const reported = dump.stdout.match(
+    /hinge sensor0 \(in degrees\) : \[(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/,
+  )?.[1];
+  return {
+    angle: reported === undefined ? null : Number(reported),
+    pending: /mPendingState=Optional\[/.test(dump.stdout),
+  };
 }
 
 export function applyFoldRequest(
