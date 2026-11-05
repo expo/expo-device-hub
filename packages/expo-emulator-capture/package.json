@@ -1,7 +1,6 @@
 {
   "name": "expo-emulator-capture",
   "version": "0.0.0",
-  "private": true,
   "description": "GPU-accelerated Android Emulator capture for macOS on Apple silicon",
   "keywords": [
     "android",
@@ -31,7 +30,7 @@
   },
   "files": [
     "src",
-    "dist",
+    "dist/darwin-arm64/libexpo_emulator_capture.dylib",
     "README.md",
     "LICENSE",
     "LICENSES",
@@ -48,7 +47,8 @@
     "build:native": "bun scripts/build.mjs",
     "capture": "node src/cli.mjs",
     "test": "bun run test:native && bun test tests",
-    "test:native": "bun scripts/test-native.mjs"
+    "test:native": "bun scripts/test-native.mjs",
+    "prepublishOnly": "node scripts/check-dist.mjs"
   },
   "engines": {
     "node": ">=18"
