@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { HOST_CLOCK } from "../clock";
 import { HOST_TIME_ZONE } from "../time-zone";
 import {
+  ClockControl,
   isIosRuntime,
+  latestWins,
   SimulatorSettingsTool,
   StaleClockControls,
   timeZoneChoices,
@@ -120,5 +123,66 @@ describe("time zone picker", () => {
     expect(html).toContain('data-setting-row="Time Zone"');
     expect(html).toContain("Host default");
     expect(html).toMatch(/<button[^>]*aria-label="Time Zone"[^>]* disabled=""/);
+  });
+});
+
+describe("date and time", () => {
+  const render = (value: string, zone = "Asia/Tokyo") =>
+    renderToStaticMarkup(
+      <ClockControl value={value} zone={zone} disabled={false} onChange={() => {}} />,
+    );
+
+  test("shows the host time with no warning or reset", () => {
+    const html = render(HOST_CLOCK);
+    expect(html).toContain("Host default");
+    expect(html).not.toContain('role="img"');
+    expect(html).not.toContain("Back to the host time");
+  });
+
+  test("shows a set time in the simulator's zone, with a warning and a reset button", () => {
+    const html = render("2030-01-01T09:00:12+09:00");
+    expect(html).toContain("2030-01-01 09:00");
+    expect(html).toContain('value="2030-01-01T09:00"');
+    expect(html).toMatch(/role="img"[^>]*aria-label="[^"]*status bar[^"]*"/);
+    expect(html).toMatch(/<button[^>]*aria-label="Back to the host time"[^>]*><svg/);
+  });
+
+  test("opens at the simulator's time, or empty when only the host knows its zone", () => {
+    expect(render(HOST_CLOCK, "Asia/Tokyo")).toMatch(/value="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"/);
+    expect(render(HOST_CLOCK, HOST_TIME_ZONE)).toContain('value=""');
+    // A zone this browser cannot read must not take the section down.
+    expect(render(HOST_CLOCK, "unsupported")).toContain('value=""');
+  });
+
+  test("shows a clock it could not read as unavailable, and can still reset it", () => {
+    const html = render("unsupported");
+    expect(html).toContain("Unavailable");
+    expect(html).toMatch(/<button[^>]*aria-label="Date &amp; Time"[^>]* disabled=""/);
+    expect(html).toContain("Back to the host time");
+  });
+
+  test("labels a time reported in UTC as UTC", () => {
+    expect(render("1971-01-01T00:00:01Z")).toContain("1971-01-01 00:00 UTC");
+  });
+
+  test("renders a Date & Time row after Time Zone", () => {
+    const html = renderToStaticMarkup(<SimulatorSettingsTool udid="ABC" runtime="iOS-26-4" />);
+    const rows = Array.from(html.matchAll(/data-setting-row="([^"]+)"/g), ([, label]) => label);
+    expect(rows.indexOf("Date &amp; Time")).toBe(rows.indexOf("Time Zone") + 1);
+  });
+});
+
+describe("latestWins", () => {
+  test("runs one task at a time, then only the latest, each bound when it was queued", async () => {
+    const ran: string[] = [];
+    let release = () => {};
+    const enqueue = latestWins();
+    enqueue(() => new Promise<void>((resolve) => (release = () => (ran.push("a"), resolve()))));
+    enqueue(async () => void ran.push("b"));
+    enqueue(async () => void ran.push("c"));
+    release();
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(ran).toEqual(["a", "c"]);
   });
 });
