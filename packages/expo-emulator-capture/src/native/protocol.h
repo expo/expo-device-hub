@@ -28,9 +28,15 @@ enum RecordFlags : uint32_t {
 
 // Commands from the consumer: 'K' requests a keyframe. 'S' is followed by three
 // big-endian u32 values: longest stream edge (0 = native), FPS, and bit rate.
+// 'R' is followed by one big-endian u32: Android's display rotation, 0 to 3
+// (Surface.ROTATION_0 to ROTATION_270). Hello's "protocol" is 2 or more when the
+// agent accepts 'R'.
 constexpr uint8_t kCommandKeyFrame = 'K';
 constexpr uint8_t kCommandSettings = 'S';
+constexpr uint8_t kCommandRotation = 'R';
 constexpr size_t kSettingsCommandBytes = 13;
+constexpr size_t kRotationCommandBytes = 5;
+constexpr int kProtocolVersion = 2;
 constexpr uint32_t kMinBitRate = 100'000;
 constexpr uint32_t kMaxBitRate = 50'000'000;
 
@@ -78,6 +84,22 @@ inline bool parseSettings(const uint8_t* command, StreamSettings& out) {
   out.fps = int(fps);
   out.bitRate = int(bitRate);
   return true;
+}
+
+// Returns false unless the command is 'R' with a rotation from 0 to 3.
+inline bool parseRotation(const uint8_t* command, int& out) {
+  if (command[0] != kCommandRotation) return false;
+  uint32_t rotation = readU32(command + 1);
+  if (rotation > 3) return false;
+  out = int(rotation);
+  return true;
+}
+
+// @ref LLP 0017#rotation — the panel-sized color buffer holds the turned picture
+// The upright size of a native color buffer at an Android display rotation: the
+// color buffer keeps the panel's orientation, so rotations 1 and 3 swap the edges.
+inline std::pair<int, int> uprightSize(int width, int height, int rotation) {
+  return rotation % 2 ? std::make_pair(height, width) : std::make_pair(width, height);
 }
 
 // Even-sized, aspect-preserving cap on the longest edge, as in the Linux experiment.

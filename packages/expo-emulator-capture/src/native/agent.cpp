@@ -152,6 +152,7 @@ class Agent {
   std::condition_variable encodeWake_;
   std::deque<PendingFrame> pending_;
   StreamSettings settings_;
+  int rotation_ = 0;  // Android display rotation from the consumer's 'R'; 0 to 3.
   bool settingsChanged_ = false;
   bool keyRequested_ = false;
   uint64_t generation_ = 0;  // Changes with every consumer connection.
@@ -278,6 +279,7 @@ void Agent::encoderLoop() {
     PendingFrame pending;
     bool havePending = false, configure = false, forceKey = false, active = false;
     StreamSettings settings;
+    int rotation = 0;
     uint64_t generation;
     int announcedWidth, announcedHeight;
     {
@@ -289,6 +291,7 @@ void Agent::encoderLoop() {
       configure = settingsChanged_;
       settingsChanged_ = false;
       settings = settings_;
+      rotation = rotation_;
       while (!pending_.empty()) {  // Keep only the newest frame.
         pending = std::move(pending_.front());
         pending_.pop_front();
@@ -320,7 +323,9 @@ void Agent::encoderLoop() {
     if (!encoder || pending.frame.width != encoderNativeWidth ||
         pending.frame.height != encoderNativeHeight) {
       encoder.reset();
-      auto [width, height] = streamSize(pending.frame.width, pending.frame.height, settings.maxSize);
+      auto [uprightWidth, uprightHeight] =
+          uprightSize(pending.frame.width, pending.frame.height, rotation);
+      auto [width, height] = streamSize(uprightWidth, uprightHeight, settings.maxSize);
       uint32_t fps = uint32_t(settings.fps);
       auto next = createH264Encoder(
           [this, generation, width = uint32_t(width), height = uint32_t(height),
@@ -330,7 +335,7 @@ void Agent::encoderLoop() {
           },
           [](const std::string& message) { logLine("%s", message.c_str()); });
       std::string error;
-      if (!next->configure(width, height, settings.fps, settings.bitRate, error)) {
+      if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
         logLine("%s", error.c_str());
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         continue;
@@ -348,11 +353,12 @@ void Agent::encoderLoop() {
       }
       std::string details = std::string("{\"framePath\":\"") + framePathName(pending.frame.path) +
                             "\",\"hardwareEncoder\":" + (next->hardware() ? "true" : "false") +
-                            ",\"encoder\":\"" + jsonEscape(next->encoderId()) + "\"}";
+                            ",\"encoder\":\"" + jsonEscape(next->encoderId()) +
+                            "\",\"rotation\":" + std::to_string(rotation) + "}";
       sendRecord(generation, kConfigured, uint32_t(width), uint32_t(height), fps,
                  reinterpret_cast<const uint8_t*>(details.data()), details.size());
-      logLine("streaming %dx%d@%d from %dx%d native, %s frames, %s encoder %s", width, height,
-              settings.fps, pending.frame.width, pending.frame.height,
+      logLine("streaming %dx%d@%d from %dx%d native at rotation %d, %s frames, %s encoder %s",
+              width, height, settings.fps, pending.frame.width, pending.frame.height, rotation,
               framePathName(pending.frame.path), next->hardware() ? "hardware" : "software",
               next->encoderId().c_str());
       encoder = std::move(next);
@@ -417,7 +423,8 @@ void Agent::wake() {
 std::string Agent::helloJson() {
   // posts counts every display post since the agent started, with or without a
   // consumer, so two hellos give the renderer's frame rate without capture.
-  return std::string("{\"protocol\":1,\"platform\":\"") + kPlatform + "\",\"gpuAvailable\":" +
+  return std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"platform\":\"" +
+         kPlatform + "\",\"gpuAvailable\":" +
          (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
          ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" +
          std::to_string(posts_.load()) + "}";
@@ -510,6 +517,7 @@ void Agent::accept() {
   {
     std::lock_guard<std::mutex> guard(encodeMutex_);
     generation = ++generation_;
+    rotation_ = 0;  // A new consumer starts upright until it sends 'R'.
   }
   {
     std::lock_guard<std::mutex> guard(outputMutex_);
@@ -554,6 +562,25 @@ void Agent::readCommands() {
       {
         std::lock_guard<std::mutex> guard(encodeMutex_);
         keyRequested_ = true;
+      }
+      encodeWake_.notify_one();
+      continue;
+    }
+    if (commands_[0] == kCommandRotation) {
+      if (commands_.size() < kRotationCommandBytes) return;
+      int rotation = 0;
+      if (!parseRotation(commands_.data(), rotation)) {
+        disconnect("invalid rotation");
+        return;
+      }
+      commands_.erase(commands_.begin(), commands_.begin() + kRotationCommandBytes);
+      {
+        std::lock_guard<std::mutex> guard(encodeMutex_);
+        if (rotation != rotation_) {
+          rotation_ = rotation;
+          settingsChanged_ = true;  // A new session at the upright size, from an IDR.
+          keyRequested_ = true;
+        }
       }
       encodeWake_.notify_one();
       continue;
