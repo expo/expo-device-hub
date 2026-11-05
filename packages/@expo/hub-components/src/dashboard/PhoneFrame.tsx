@@ -315,14 +315,18 @@ export function PhoneFrame({
       }}
       onPointerLeave={() => setHovered(false)}
     >
-      {!framed && DeviceShape ? (
+      {DeviceShape ? (
         // A known model's screen shape replaces the generic clip in `screenStyle`;
-        // an unknown model keeps it.
+        // an unknown model keeps it, and frame artwork keeps its own opening. The
+        // element stays a DeviceShape either way, so toggling the artwork does not
+        // remount the live screen inside it.
         <DeviceShape
           data-testid="device-screen-clip"
+          data-device-frame-screen={framed ? "true" : undefined}
           client={client}
           platform={device.platform}
           model={device.model}
+          shape={framed ? null : undefined}
           aspectRatio={ratio}
           style={screenStyle}
         >

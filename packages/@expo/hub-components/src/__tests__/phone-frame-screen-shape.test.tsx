@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { type DeviceClient, type DeviceScreenProps } from "@expo/hub-client";
 import {
   DeviceShape,
@@ -6,11 +6,22 @@ import {
   SCREEN_SHAPES,
   screenShapeClipPath,
 } from "@expo/hub-client/shapes";
+import { useEffect } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type Device } from "../dashboard/data";
 import { type DeviceFrameAssets } from "../dashboard/deviceFrame";
 import { PhoneFrame } from "../dashboard/PhoneFrame";
+import { createGlobalStubs } from "./test-globals";
+
+const { stubGlobal, restoreGlobals } = createGlobalStubs();
+let renderer: ReactTestRenderer | undefined;
+afterEach(async () => {
+  await act(async () => renderer?.unmount());
+  renderer = undefined;
+  restoreGlobals();
+});
 
 const FRAME_ASSETS: DeviceFrameAssets = {
   "android:pixel-9": {
@@ -123,6 +134,34 @@ describe("PhoneFrame screen shape", () => {
     const markup = render(IPHONE, { width: 1206, height: 2622 }, { shapes: false });
     expect(markup).not.toContain("data-screen-shape");
     expect(clipStyle(markup)).toContain("clip-path:shape(from");
+  });
+
+  test("keeps the live screen mounted when the frame artwork is turned on and off", async () => {
+    stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let mounts = 0;
+    function CountingScreen(_: DeviceScreenProps) {
+      useEffect(() => {
+        mounts++;
+      }, []);
+      return null;
+    }
+    const frame = (showDeviceFrame: boolean) => (
+      <PhoneFrame
+        device={IPHONE}
+        client={client({ width: 1206, height: 2622 }, "ios")}
+        DeviceScreen={CountingScreen}
+        DeviceShape={DeviceShape}
+        displayScreen={(value) => value ?? null}
+        showDeviceFrame={showDeviceFrame}
+        deviceFrameAssets={FRAME_ASSETS}
+      />
+    );
+    await act(async () => {
+      renderer = create(frame(false));
+    });
+    await act(async () => renderer!.update(frame(true)));
+    await act(async () => renderer!.update(frame(false)));
+    expect(mounts).toBe(1);
   });
 
   test("leaves the screen under frame artwork to the artwork's opening", () => {
