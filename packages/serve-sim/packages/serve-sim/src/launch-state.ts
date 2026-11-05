@@ -19,8 +19,8 @@ export interface Capability {
 export interface RecordedCapability extends Capability {
   /** The app to relaunch, when one was named. Never narrows what loads. */
   bundleId: string | null;
-  /** Null keeps the capability alive after a one-shot command exits. */
-  ownerPid: number | null;
+  /** Empty keeps the capability alive after a one-shot command exits. */
+  ownerPids: number[];
 }
 
 export interface LaunchState {
@@ -68,7 +68,18 @@ export function assertDeviceOwnership(udid: string, ownerPid: number): void {
     : undefined;
   const owners = [
     ...(raw.sessionPids ?? []),
-    ...Object.values(raw.capabilities ?? {}).map((record: any) => record?.ownerPid),
+    ...Object.values(raw.capabilities ?? {}).flatMap((record: any) => {
+      if (!record || typeof record !== "object" || Array.isArray(record))
+        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+      if (!("ownerPids" in record)) return [record.ownerPid];
+      if (
+        !Array.isArray(record.ownerPids) ||
+        record.ownerPids.some((pid: unknown) => !Number.isInteger(pid) || (pid as number) <= 1)
+      )
+        throw new Error(`Cannot read ownership for Simulator ${udid}.`);
+      // A one-shot capability is persistent, just as legacy ownerPid: null was.
+      return record.ownerPids.length > 0 ? record.ownerPids : [null];
+    }),
     ...(raw.exclusivePid === undefined ? [] : [raw.exclusivePid]),
   ];
   if (preview !== undefined) owners.push(preview?.pid);
@@ -114,16 +125,26 @@ function recordedCapabilities(
   const kept: Record<string, RecordedCapability> = {};
   for (const [key, record] of Object.entries(value)) {
     if (typeof record !== "object" || record === null) continue;
-    const { name, dylib, scope, bundleId, ownerPid } = record as Partial<RecordedCapability>;
+    const { ownerPid: legacyOwnerPid, ...rest } = record as RecordedCapability & {
+      ownerPid?: number | null;
+    };
+    const { name, dylib, scope, bundleId, ownerPids } = rest;
     if (typeof name !== "string" || typeof dylib !== "string" || !isCapabilityScope(scope)) {
       continue;
     }
-    const owner = typeof ownerPid === "number" ? ownerPid : null;
-    if (owner !== retainOwnerPid && ownerIsGone(owner)) continue;
+    const declared = Array.isArray(ownerPids)
+      ? ownerPids
+      : typeof legacyOwnerPid === "number"
+        ? [legacyOwnerPid]
+        : [];
+    const owners = declared.filter(
+      (pid) => Number.isInteger(pid) && pid > 0 && (pid === retainOwnerPid || !ownerIsGone(pid)),
+    );
+    if (declared.length > 0 && owners.length === 0) continue;
     kept[key] = {
-      ...(record as RecordedCapability),
+      ...rest,
       bundleId: typeof bundleId === "string" ? bundleId : null,
-      ownerPid: owner,
+      ownerPids: owners,
     };
   }
   return kept;
