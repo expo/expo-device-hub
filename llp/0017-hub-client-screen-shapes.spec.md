@@ -54,10 +54,10 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 
 ## Displays and orientation
 
-- A multi-display device picks its shape from `display`, the client's `screen.display` by default (LLP 0016 [Display identity](0016-hub-client-foldable-devices.spec.md#display-identity)). Without one, the iPhone Duo shows its cover display, which a new session streams first [observed: expo/universe#32807].
+- A multi-display device picks its shape from `display`, the client's `screen.display` by default (LLP 0016 [Display identity](0016-hub-client-foldable-devices.spec.md#display-identity)). When a screen size is known without a display, the display with the closest aspect ratio wins, as the website did [observed: `iphoneDuoStreamScreenShape` in expo/universe#32807]. Without either, the iPhone Duo shows its cover display, which a new session streams first [observed: expo/universe#32807].
 - The shape turns with the device: `landscape_left` moves each corner one step clockwise [observed: expo/universe#32682; the same order as `displayCornerRadii` in `display-corners.ts`].
 - A landscape frame can only come from a sideways device. When the stream reports no orientation or an upright one for it, the shape counts it as `landscape_left` [observed: `simulatorDeviceRotation` in expo/universe#32682].
-- While the client reports no screen, such as while it reconnects or after the session ends, the shape keeps the last display and orientation [observed: `lastStreamScreen` in expo/universe#32890].
+- While the client reports no screen, such as while it reconnects or after the session ends, the shape keeps the last display and orientation [observed: `lastStreamScreen` in expo/universe#32890]. The kept screen belongs to the client's current device and model: another device, another model, or no client starts from the defaults.
 
 ## Decisions
 

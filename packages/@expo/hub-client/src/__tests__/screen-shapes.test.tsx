@@ -57,6 +57,27 @@ describe("resolveScreenShape", () => {
     expect(resolveScreenShape({ platform: "android", model: "iPhone 17 Pro" })).toBeNull();
   });
 
+  test("picks the iPhone Duo display from the stream size when no display is reported", () => {
+    const duo = { platform: "ios", model: "iPhone Duo" } as const;
+    // The serve-sim streams of the cover and the inner display, in either orientation.
+    expect(resolveScreenShape({ ...duo, screen: { width: 1398, height: 2034 } })).toBe(
+      SCREEN_SHAPES.iPhoneDuoCover,
+    );
+    expect(resolveScreenShape({ ...duo, screen: { width: 2007, height: 2853 } })).toBe(
+      SCREEN_SHAPES.iPhoneDuoInner,
+    );
+    expect(resolveScreenShape({ ...duo, screen: { width: 2853, height: 2007 } })).toBe(
+      SCREEN_SHAPES.iPhoneDuoInner,
+    );
+    // A reported display wins over the size, and an empty size does not count.
+    expect(
+      resolveScreenShape({ ...duo, display: "cover", screen: { width: 2007, height: 2853 } }),
+    ).toBe(SCREEN_SHAPES.iPhoneDuoCover);
+    expect(resolveScreenShape({ ...duo, screen: { width: 0, height: 0 } })).toBe(
+      SCREEN_SHAPES.iPhoneDuoCover,
+    );
+  });
+
   test("picks the iPhone Duo display, and the cover display until one is known", () => {
     const duo = { platform: "ios", model: "iPhone Duo" } as const;
     expect(resolveScreenShape(duo)).toBe(SCREEN_SHAPES.iPhoneDuoCover);
@@ -226,6 +247,36 @@ describe("DeviceShape", () => {
 
     await act(async () => root.update(<DeviceShape client={duo(null)} />));
     expect(clipPathOf(root)).toBe(screenShapeClipPath(inner));
+  });
+
+  test("keeps the last screen only for the same device, and starts over without a client", async () => {
+    const duo = (screen: ScreenSize | null, id = "duo-1"): ScreenShapeClient => ({
+      platform: "ios",
+      screen,
+      devices: [{ id, name: "iPhone Duo", platform: "ios", current: true }],
+    });
+    const open = {
+      width: 951,
+      height: 669,
+      orientation: "landscape_left",
+      display: "inner",
+    } as const;
+    const inner = screenShapeClipPath(
+      rotateScreenShape(SCREEN_SHAPES.iPhoneDuoInner, "landscape_left"),
+    );
+    const cover = screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoCover);
+    const root = await render(<DeviceShape client={duo(open)} />);
+    expect(clipPathOf(root)).toBe(inner);
+
+    // Another device starts from its own screen, or from the defaults while it has none.
+    await act(async () => root.update(<DeviceShape client={duo(null, "duo-2")} />));
+    expect(clipPathOf(root)).toBe(cover);
+
+    await act(async () => root.update(<DeviceShape client={duo(open, "duo-2")} />));
+    expect(clipPathOf(root)).toBe(inner);
+    // Without a client, the props alone pick the shape.
+    await act(async () => root.update(<DeviceShape platform="ios" model="iPhone Duo" />));
+    expect(clipPathOf(root)).toBe(cover);
   });
 
   test("lets props override the client, and works without a client", async () => {

@@ -45,8 +45,22 @@ export interface ScreenShapeSource {
   shape?: ScreenShape | null;
 }
 
-function currentDeviceName(client: ScreenShapeClient | null | undefined) {
-  return client?.devices?.find((device) => device.current)?.name ?? null;
+function currentDevice(client: ScreenShapeClient | null | undefined) {
+  return client?.devices?.find((device) => device.current) ?? null;
+}
+
+/**
+ * The device whose last screen a shape may keep: the client's current device,
+ * or the model passed for it. Without a client, nothing is kept.
+ */
+function screenSourceKey(source: ScreenShapeSource): string | null {
+  if (!source.client) return null;
+  const device = currentDevice(source.client);
+  return [
+    source.platform ?? source.client.platform ?? "",
+    source.model ?? device?.name ?? "",
+    device?.id ?? "",
+  ].join("\u0000");
 }
 
 /** The shape as the viewer sees it, for a source and the screen it last reported. */
@@ -61,8 +75,9 @@ function shownScreenShape(
       : platform
         ? resolveScreenShape({
             platform,
-            model: source.model ?? currentDeviceName(source.client),
+            model: source.model ?? currentDevice(source.client)?.name,
             display: source.display ?? screen?.display,
+            screen,
           })
         : null;
   if (!portrait) return null;
@@ -72,15 +87,19 @@ function shownScreenShape(
   );
 }
 
+// @ref LLP 0017#displays-and-orientation — the kept screen belongs to one device, never to the next
 /**
  * The screen shape of a device as the viewer sees it: looked up from its model,
  * on the display it shows, turned with the device. Null for an unknown model.
- * While the client reports no screen, such as while it reconnects or after the
- * session ends, the shape keeps the last display and orientation it had.
+ * While the client reports no screen for the same device, such as while it
+ * reconnects or after the session ends, the shape keeps the last display and
+ * orientation it had. Another device or model, or no client, starts over.
  */
 export function useScreenShape(source: ScreenShapeSource): ScreenShape | null {
   const screen = source.client?.screen ?? null;
-  const [lastScreen, setLastScreen] = useState(screen);
-  if (screen && screen !== lastScreen) setLastScreen(screen);
+  const key = screenSourceKey(source);
+  const [kept, setKept] = useState({ key, screen });
+  if (kept.key !== key || (screen && screen !== kept.screen)) setKept({ key, screen });
+  const lastScreen = kept.key === key ? kept.screen : null;
   return shownScreenShape(source, screen ?? lastScreen);
 }
