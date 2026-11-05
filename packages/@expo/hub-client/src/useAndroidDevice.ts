@@ -2234,6 +2234,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     active && baseUrl ? deviceApiUrl(baseUrl, "/api/fold", targetDevice) : null,
     sessionFetch,
     recordingControlsLocked,
+    screen ? `${screen.width}x${screen.height}` : null,
   );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;

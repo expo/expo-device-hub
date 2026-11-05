@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-05 (the 3D preview follows the Android fold adapter, offers Cache screen on fold only with separate display streams, and stops its hinge handles during a recording lock; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (Expo's device models replace Xcode's); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
+**Revised:** 2026-11-06 (the Android fold reads the hinge when the stream changes shape; Claude Code, directed by Krystof Woldrich); 2026-11-05 (the 3D preview follows the Android fold adapter, offers Cache screen on fold only with separate display streams, and stops its hinge handles during a recording lock; Claude Code, directed by Krystof Woldrich); 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (Expo's device models replace Xcode's); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
@@ -128,7 +128,7 @@ The Android adapter maps serve-emu's `/api/fold` onto the same `client.fold` and
 
 The adapter sends `POST { hingeAngle }` for both angle commands and presets. Only commands listed in capabilities are accepted. Laptop, Tent and Table Mode are not offered. The device's physical orientation is not inferred from a hinge angle [observed: `android-fold.ts`].
 
-One latest-choice writer per device URL serializes HTTP writes, including across token changes, and replaces a waiting choice with the latest one. Polls that overlap a command and results from a retired device or token cannot replace current state. Commands have optimistic previews and expose pending and error state; the response supplies the authoritative angle. Reads poll every five seconds, continue after unsupported answers, and preserve object identity when unchanged. Requests and body reads time out after 30 seconds; writes are not retried [observed: `useAndroidFold.ts`, `android-fold.ts`, `latest-writer.ts`].
+One latest-choice writer per device URL serializes HTTP writes, including across token changes, and replaces a waiting choice with the latest one. Polls that overlap a command and results from a retired device or token cannot replace current state. Commands have optimistic previews and expose pending and error state; the response supplies the authoritative angle. Reads poll every five seconds, and run at once when the stream changes shape, as when Android switches displays after a fold made elsewhere; a change during a read is followed by one more read. Reads continue after unsupported answers and preserve object identity when unchanged. Requests and body reads time out after 30 seconds; writes are not retried [observed: `useAndroidFold.ts`, `android-fold.ts`, `latest-writer.ts`].
 
 An unknown hinge range offers no controls, because it cannot distinguish an inward-folding device from a fold-out profile. Fold-out ranges are also not offered in this iteration: serve-emu's angle request contract is limited to 0–180°. Existing posture-only REST commands still work with an unknown range [observed: `androidFoldCapabilities` in `android-fold.ts`; `setHingeAngle`, `setFoldPosture` in ServeEmu `src/fold.ts`].
 
