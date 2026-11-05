@@ -38,6 +38,13 @@ export type Device = {
   /** Frame artwork available for this exact device model, or null when none is available. */
   deviceFrame: DeviceFrameProfileId | null;
   /**
+   * The exact hardware model, which picks the screen shape: the simulator
+   * device type name on iOS, such as `"iPhone 17 Pro"`, or the AVD hardware
+   * profile id on Android, such as `"pixel_9"`. Null or absent when unknown,
+   * such as for a physical device.
+   */
+  model?: string | null;
+  /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.
    */

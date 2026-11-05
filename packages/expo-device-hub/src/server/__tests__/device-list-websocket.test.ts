@@ -17,6 +17,7 @@ const IOS = {
   physical: false,
   supported: true,
   deviceFrame: "ios:iphone-17-pro" as const,
+  model: "iPhone 17 Pro",
   lastUsedAt: 123,
 };
 
@@ -29,6 +30,7 @@ const ANDROID = {
   physical: false,
   supported: true,
   deviceFrame: "android:pixel-10-pro" as const,
+  model: "pixel_10_pro",
   lastUsedAt: 456,
 };
 
