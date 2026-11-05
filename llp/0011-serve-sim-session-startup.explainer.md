@@ -297,3 +297,10 @@ with a bounded cache. A failed capture start remains cached until the session is
 replaced; a later ready response from the replacement logs recovery. The
 startup logs leave `--quiet` stdout JSON unchanged
 [observed: `src/middleware.ts`, `src/startup-timing.ts`].
+
+## Device retirement errors
+
+Per-device retirement awaits that session's close result. An earlier failure in
+another session does not prevent an unrelated device from retiring. Server-wide
+shutdown still drains and reports retained finalization failures from all sessions
+[observed: `src/device-session.ts` retirement and recording-shutdown paths].
