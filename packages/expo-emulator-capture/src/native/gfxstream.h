@@ -11,6 +11,9 @@ typedef struct _GumModule GumModule;
 
 namespace expo_capture {
 
+// The agent and the renderer both use libc++, so the types match.
+using ColorBufferRef = std::shared_ptr<void>;
+
 // Leading fields of gfxstream's BorrowedImageInfo and BorrowedImageInfoGl.
 // Adapted interface layout (Apache-2.0); see ../../THIRD_PARTY_LICENSES.md.
 struct BorrowedImageInfo {
@@ -24,8 +27,9 @@ struct BorrowedImageInfoGl : BorrowedImageInfo {
 };
 
 // The public FrameBuffer methods take the FrameBuffer singleton from getFB().
-// C++ methods are called through plain function pointers with `this` first;
-// arm64 passes the indirect result (shared_ptr, unique_ptr) in x8 either way.
+// C++ methods are called through plain function pointers with `this` first. A
+// class result (shared_ptr, unique_ptr) comes back through a hidden pointer either
+// way: in x8 on arm64, and as a first argument before `this` on x86-64.
 struct Gfxstream {
   std::string path;
   void* postImpl = nullptr;  // Hook target: FrameBuffer::Impl::postImpl.
@@ -33,7 +37,7 @@ struct Gfxstream {
   void* (*getFB)() = nullptr;
   void (*lock)(void* fb) = nullptr;
   void (*unlock)(void* fb) = nullptr;
-  std::shared_ptr<void> (*findColorBuffer)(void* fb, uint32_t handle) = nullptr;
+  ColorBufferRef (*findColorBuffer)(void* fb, uint32_t handle) = nullptr;
   uint32_t (*lastPostedColorBuffer)(void* fb) = nullptr;
   int (*frameBufferWidth)(const void* fb) = nullptr;
   int (*frameBufferHeight)(const void* fb) = nullptr;
@@ -49,8 +53,9 @@ struct Gfxstream {
   std::unique_ptr<BorrowedImageInfo> (*borrowedImageInfo)(void* colorBufferGl) = nullptr;
   void (*waitSync)(void* colorBufferGl, bool debug) = nullptr;
 
-  // GLES translator EGL entry points. They are local (non-exported) symbols, so a
-  // stripped renderer leaves them null and only the CPU frame path is available.
+  // GLES translator EGL entry points, for the macOS GPU path. They are local
+  // (non-exported) symbols, so a stripped renderer leaves them null and only the CPU
+  // frame path is available.
   unsigned (*eglMakeCurrent)(void* display, void* draw, void* read, void* context) = nullptr;
   void* (*eglGetCurrentContext)() = nullptr;
   void* (*eglGetCurrentDisplay)() = nullptr;
@@ -67,5 +72,8 @@ struct Gfxstream {
 // Resolves the renderer entry points. Returns an empty string on success, or the
 // reason capture cannot run with this emulator build.
 std::string resolveGfxstream(GumModule* module, Gfxstream& out);
+
+// Reads a color buffer's native size without copying pixels.
+bool colorBufferSize(const Gfxstream& g, uint32_t handle, int& width, int& height);
 
 }  // namespace expo_capture

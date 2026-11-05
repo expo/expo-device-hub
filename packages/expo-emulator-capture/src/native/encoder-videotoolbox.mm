@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
+// H.264 through VideoToolbox, on the hardware encoder when the Mac has one.
 #include "encoder.h"
 #import <Foundation/Foundation.h>
+#include <CoreVideo/CoreVideo.h>
+#include <IOSurface/IOSurface.h>
+#include <VideoToolbox/VideoToolbox.h>
 
 namespace expo_capture {
 namespace {
@@ -24,9 +28,53 @@ bool isKeyFrame(CMSampleBufferRef sample) {
            notSync && CFBooleanGetValue(notSync));
 }
 
+// Waits, sleeping, until the render thread's GPU copy into the frame's IOSurface
+// has completed. A read-only lock waits for pending GPU writes to the surface.
+void waitForGpuCopy(CVPixelBufferRef pixels) {
+  IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixels);
+  if (!surface) return;
+  IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
+  IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
+}
+
+// Frames of any size are scaled and converted to NV12 by a VTPixelTransferSession
+// before the encoder.
+class VideoToolboxEncoder final : public H264Encoder {
+ public:
+  VideoToolboxEncoder(Sink sink, ErrorSink onError)
+      : sink_(std::move(sink)), onError_(std::move(onError)) {}
+  ~VideoToolboxEncoder() override { invalidate(); }
+  VideoToolboxEncoder(const VideoToolboxEncoder&) = delete;
+  VideoToolboxEncoder& operator=(const VideoToolboxEncoder&) = delete;
+
+  bool configure(int width, int height, int fps, int bitRate, std::string& error) override;
+  bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
+              std::string& error) override;
+  void invalidate() override;
+  bool hardware() const override { return hardware_; }
+  const std::string& encoderId() const override { return encoderId_; }
+
+ private:
+  static void didEncode(void* refcon, void* frameRefcon, OSStatus status, VTEncodeInfoFlags flags,
+                        CMSampleBufferRef sample);
+  void emit(CMSampleBufferRef sample);
+
+  Sink sink_;
+  ErrorSink onError_;
+  VTCompressionSessionRef session_ = nullptr;
+  VTPixelTransferSessionRef transfer_ = nullptr;
+  bool hardware_ = false;
+  std::string encoderId_;
+};
+
 }  // namespace
 
-bool H264Encoder::configure(int width, int height, int fps, int bitRate, std::string& error) {
+std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
+                                               H264Encoder::ErrorSink onError) {
+  return std::make_unique<VideoToolboxEncoder>(std::move(sink), std::move(onError));
+}
+
+bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate, std::string& error) {
   invalidate();
   @autoreleasepool {
     NSDictionary* source = @{
@@ -53,7 +101,7 @@ bool H264Encoder::configure(int width, int height, int fps, int bitRate, std::st
       status = VTCompressionSessionCreate(
           kCFAllocatorDefault, width, height, kCMVideoCodecType_H264,
           (__bridge CFDictionaryRef)specification, (__bridge CFDictionaryRef)source, nullptr,
-          &H264Encoder::didEncode, this, &session_);
+          &VideoToolboxEncoder::didEncode, this, &session_);
       if (status == noErr) {
         requiredHardware =
             specification[(id)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder] !=
@@ -121,19 +169,18 @@ bool H264Encoder::configure(int width, int height, int fps, int bitRate, std::st
     VTSessionSetProperty(transfer_, kVTPixelTransferPropertyKey_DestinationYCbCrMatrix,
                          kCVImageBufferYCbCrMatrix_ITU_R_709_2);
   }
-  width_ = width;
-  height_ = height;
-  fps_ = fps;
-  bitRate_ = bitRate;
   return true;
 }
 
-bool H264Encoder::encode(CVPixelBufferRef pixels, uint64_t ptsUs, bool forceKey,
-                         std::string& error) {
+bool VideoToolboxEncoder::encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
+                                 std::string& error) {
   if (!session_) {
     error = "encoder is not configured";
     return false;
   }
+  CVPixelBufferRef pixels = frame.pixels.get();
+  // @ref LLP 0017#synchronization — the render thread flushed the copy; wait for it here
+  if (frame.path == FramePath::Gpu) waitForGpuCopy(pixels);
   CVPixelBufferPoolRef pool = VTCompressionSessionGetPixelBufferPool(session_);
   CVPixelBufferRef input = nullptr;
   if (!pool || CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &input) != kCVReturnSuccess) {
@@ -165,7 +212,7 @@ bool H264Encoder::encode(CVPixelBufferRef pixels, uint64_t ptsUs, bool forceKey,
   return true;
 }
 
-void H264Encoder::invalidate() {
+void VideoToolboxEncoder::invalidate() {
   if (session_) {
     VTCompressionSessionCompleteFrames(session_, kCMTimeInvalid);
     VTCompressionSessionInvalidate(session_);
@@ -177,14 +224,13 @@ void H264Encoder::invalidate() {
     CFRelease(transfer_);
     transfer_ = nullptr;
   }
-  width_ = height_ = fps_ = bitRate_ = 0;
   hardware_ = false;
   encoderId_.clear();
 }
 
-void H264Encoder::didEncode(void* refcon, void*, OSStatus status, VTEncodeInfoFlags flags,
+void VideoToolboxEncoder::didEncode(void* refcon, void*, OSStatus status, VTEncodeInfoFlags flags,
                             CMSampleBufferRef sample) {
-  auto* self = static_cast<H264Encoder*>(refcon);
+  auto* self = static_cast<VideoToolboxEncoder*>(refcon);
   if (status != noErr) {
     self->onError_(osStatus("H.264 encoding", status));
     return;
@@ -193,7 +239,7 @@ void H264Encoder::didEncode(void* refcon, void*, OSStatus status, VTEncodeInfoFl
   self->emit(sample);
 }
 
-void H264Encoder::emit(CMSampleBufferRef sample) {
+void VideoToolboxEncoder::emit(CMSampleBufferRef sample) {
   EncodedPacket packet;
   packet.key = isKeyFrame(sample);
   CMTime pts = CMSampleBufferGetPresentationTimeStamp(sample);

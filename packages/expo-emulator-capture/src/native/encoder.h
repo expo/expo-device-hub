@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include <CoreVideo/CoreVideo.h>
-#include <VideoToolbox/VideoToolbox.h>
-#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
+#include "frame.h"
 
 namespace expo_capture {
 
@@ -16,44 +15,28 @@ struct EncodedPacket {
   bool key = false;
 };
 
-// H.264 through VideoToolbox, on the hardware encoder when the Mac has one.
-// Frames of any size are scaled and converted to NV12 by a
-// VTPixelTransferSession before the encoder.
+// Encodes captured frames to Constrained Baseline H.264 at the configured size.
+// Only one thread uses an encoder; packets reach the sink in encode order.
 class H264Encoder {
  public:
   using Sink = std::function<void(EncodedPacket&&)>;
   using ErrorSink = std::function<void(const std::string&)>;
-  H264Encoder(Sink sink, ErrorSink onError) : sink_(std::move(sink)), onError_(std::move(onError)) {}
-  ~H264Encoder() { invalidate(); }
-  H264Encoder(const H264Encoder&) = delete;
-  H264Encoder& operator=(const H264Encoder&) = delete;
+  virtual ~H264Encoder() = default;
 
   // Creates a session; callbacks from an earlier session have finished on return.
-  bool configure(int width, int height, int fps, int bitRate, std::string& error);
-  bool encode(CVPixelBufferRef pixels, uint64_t ptsUs, bool forceKey, std::string& error);
+  virtual bool configure(int width, int height, int fps, int bitRate, std::string& error) = 0;
+  // Scales a frame of any size to the configured size and encodes it.
+  virtual bool encode(const CapturedFrame& frame, uint64_t ptsUs, bool forceKey,
+                      std::string& error) = 0;
   // Waits for queued frames, then releases the session.
-  void invalidate();
+  virtual void invalidate() = 0;
 
-  bool configured() const { return session_ != nullptr; }
-  int width() const { return width_; }
-  int height() const { return height_; }
-  int fps() const { return fps_; }
-  int bitRate() const { return bitRate_; }
-  bool hardware() const { return hardware_; }
-  const std::string& encoderId() const { return encoderId_; }
-
- private:
-  static void didEncode(void* refcon, void* frameRefcon, OSStatus status, VTEncodeInfoFlags flags,
-                        CMSampleBufferRef sample);
-  void emit(CMSampleBufferRef sample);
-
-  Sink sink_;
-  ErrorSink onError_;
-  VTCompressionSessionRef session_ = nullptr;
-  VTPixelTransferSessionRef transfer_ = nullptr;
-  int width_ = 0, height_ = 0, fps_ = 0, bitRate_ = 0;
-  bool hardware_ = false;
-  std::string encoderId_;
+  virtual bool hardware() const = 0;
+  virtual const std::string& encoderId() const = 0;
 };
+
+// macOS: VideoToolbox, on the hardware encoder when the Mac has one.
+std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
+                                               H264Encoder::ErrorSink onError);
 
 }  // namespace expo_capture
