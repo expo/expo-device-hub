@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { defaultSocketPath } from "../src/paths.mjs";
-import { FLAGS, HEADER_BYTES, RecordReader, settingsCommand } from "../src/protocol.mjs";
+import {
+  FLAGS,
+  HEADER_BYTES,
+  RecordReader,
+  rotationCommand,
+  settingsCommand,
+} from "../src/protocol.mjs";
 
 function record(
   flags,
@@ -51,6 +57,19 @@ describe("settingsCommand", () => {
     expect(() => settingsCommand({ fps: 121 })).toThrow(RangeError);
     expect(() => settingsCommand({ maxSize: 4097 })).toThrow(RangeError);
     expect(() => settingsCommand({ bitRate: 99_999 })).toThrow(RangeError);
+  });
+});
+
+describe("rotationCommand", () => {
+  test("encodes the R command with Android's display rotation", () => {
+    expect([...rotationCommand(0)]).toEqual([0x52, 0, 0, 0, 0]);
+    expect([...rotationCommand(3)]).toEqual([0x52, 0, 0, 0, 3]);
+  });
+
+  test("rejects rotations other than 0 to 3", () => {
+    expect(() => rotationCommand(4)).toThrow(RangeError);
+    expect(() => rotationCommand(-1)).toThrow(RangeError);
+    expect(() => rotationCommand(1.5)).toThrow(RangeError);
   });
 });
 

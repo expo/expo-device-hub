@@ -63,3 +63,16 @@ export function settingsCommand({ maxSize = 0, fps = 60, bitRate = 12_000_000 } 
 }
 
 export const KEY_FRAME_COMMAND = Buffer.from("K");
+
+/** The first hello "protocol" value whose agent accepts the 'R' command. */
+export const ROTATION_PROTOCOL = 2;
+
+/** The 'R' command: Android's display rotation, 0 to 3 (Surface.ROTATION_0 to ROTATION_270). */
+export function rotationCommand(rotation) {
+  if (!Number.isInteger(rotation) || rotation < 0 || rotation > 3)
+    throw new RangeError("rotation must be an integer from 0 to 3");
+  const command = Buffer.alloc(5);
+  command[0] = 0x52; // R
+  command.writeUInt32BE(rotation, 1);
+  return command;
+}
