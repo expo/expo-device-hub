@@ -78,6 +78,7 @@ const DEFAULT_STREAM_CAPABILITIES = {
 const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
   { value: "scrcpy", label: "scrcpy" },
   { value: "grpc-screenshot", label: "gRPC" },
+  { value: "emulator-capture", label: "Emulator capture" },
 ];
 const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> = [
   { value: "png", label: "PNG" },
@@ -244,8 +245,19 @@ export function StreamOptionsSection({
   const streamSourceError =
     client.streamSourceError ??
     (streamSource?.mode === "grpc-screenshot" ? streamSource.hardwareEncoderError : undefined);
-  const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
-    streamSource?.availableModes.includes(option.value),
+  // A source the server explains but cannot use now stays visible, disabled, with its reason.
+  const unavailableSources = STREAM_SOURCE_OPTIONS.flatMap((option) => {
+    const reason = streamSource?.unavailableModes?.[option.value];
+    return reason && !streamSource?.availableModes.includes(option.value)
+      ? [{ option, reason }]
+      : [];
+  });
+  const sourceOptions = STREAM_SOURCE_OPTIONS.flatMap((option) =>
+    streamSource?.availableModes.includes(option.value)
+      ? [option]
+      : unavailableSources.some((entry) => entry.option.value === option.value)
+        ? [{ ...option, disabled: true }]
+        : [],
   );
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
@@ -334,23 +346,28 @@ export function StreamOptionsSection({
       {client.platform === "android" && (
         // Only Android has capture sources. The row stays for a device with one source, and
         // while the client has not reported its sources: it is then locked.
-        <SidebarRow label="Source">
-          <Select
-            ariaLabel="Stream source"
-            options={sourceOptions}
-            value={(streamSource?.mode ?? "") as DeviceStreamSource}
-            disabled={sourceDisabled || sourceOptions.length < 2}
-            disabledReason={
-              sourceDisabledReason ??
-              (sourceOptions.length >= 2
-                ? undefined
-                : streamSource
-                  ? SINGLE_SOURCE_REASON
-                  : STREAM_SETTING_UNKNOWN_REASON)
-            }
-            onChange={client.setStreamSource}
-          />
-        </SidebarRow>
+        <>
+          <SidebarRow label="Source">
+            <Select
+              ariaLabel="Stream source"
+              options={sourceOptions}
+              value={(streamSource?.mode ?? "") as DeviceStreamSource}
+              disabled={sourceDisabled || sourceOptions.length < 2}
+              disabledReason={
+                sourceDisabledReason ??
+                (sourceOptions.length >= 2
+                  ? undefined
+                  : streamSource
+                    ? SINGLE_SOURCE_REASON
+                    : STREAM_SETTING_UNKNOWN_REASON)
+              }
+              onChange={client.setStreamSource}
+            />
+          </SidebarRow>
+          {unavailableSources.map(({ option, reason }) => (
+            <SectionNote key={option.value}>{`${option.label}: ${reason}`}</SectionNote>
+          ))}
+        </>
       )}
       {streamSource?.mode === "grpc-screenshot" && (
         <>

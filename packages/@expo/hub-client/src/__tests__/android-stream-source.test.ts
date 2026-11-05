@@ -33,6 +33,39 @@ describe("parseAndroidStreamSource", () => {
     },
   );
 
+  test("parses the emulator capture source and the reasons for unavailable sources", () => {
+    const response = {
+      ok: true,
+      mode: "emulator-capture",
+      grpcImageMode: "rgb888",
+      encoder: "software",
+      encoderName: null,
+      availableEncoders: ["software"],
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy"],
+      availableModes: ["scrcpy", "grpc-screenshot", "emulator-capture"],
+      sessionGeneration: 2,
+    };
+    expect(parseAndroidStreamSource(response)).toMatchObject({
+      mode: "emulator-capture",
+      availableModes: ["scrcpy", "grpc-screenshot", "emulator-capture"],
+    });
+    expect(parseAndroidStreamSource(response)).not.toHaveProperty("unavailableModes");
+
+    const withReasons = parseAndroidStreamSource({
+      ...response,
+      mode: "scrcpy",
+      availableModes: ["scrcpy", "grpc-screenshot"],
+      // Unknown sources and empty reasons are dropped; the rest of the status stays.
+      unavailableModes: {
+        "emulator-capture": " Restart the Hub. ",
+        "screen-copy": "x",
+        scrcpy: "",
+      },
+    });
+    expect(withReasons?.unavailableModes).toEqual({ "emulator-capture": "Restart the Hub." });
+  });
+
   test("rejects missing or unsupported image modes", () => {
     const response = {
       ok: true,
