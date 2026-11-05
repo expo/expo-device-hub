@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { isIosRuntime, SimulatorSettingsTool } from "../client/components/simulator-settings-tool";
+import { HOST_TIME_ZONE } from "../time-zone";
+import {
+  isIosRuntime,
+  SimulatorSettingsTool,
+  timeZoneChoices,
+  timeZoneOptions,
+} from "../client/components/simulator-settings-tool";
 
 // The in-sim settings helper is an iOS-simulator Mach-O; spawning it inside a
 // watchOS / tvOS / visionOS runtime aborts in dyld. The panel gates on the
@@ -65,5 +71,43 @@ describe("SimulatorSettingsTool fold controls", () => {
     expect(rows).not.toContain("Preview mode");
     expect(rows).not.toContain("Cache screen on fold");
     expect(rows).not.toContain("Preview size");
+  });
+});
+
+describe("time zone picker", () => {
+  test("lists the host default first, then every zone with its offset", () => {
+    const options = timeZoneOptions();
+    expect(options[0]).toEqual({ value: HOST_TIME_ZONE, label: "Host default" });
+    expect(options.find((o) => o.value === "Asia/Tokyo")?.label).toBe("Asia/Tokyo (GMT+9)");
+    expect(options.find((o) => o.value === "America/Los_Angeles")?.label).toMatch(
+      /^America\/Los Angeles \(GMT-[78]\)$/,
+    );
+  });
+
+  test("follows a daylight saving change on an open page", () => {
+    const label = (at: string) =>
+      timeZoneOptions(new Date(at)).find((o) => o.value === "America/New_York")?.label;
+    expect(label("2026-10-30T12:00:00Z")).toBe("America/New York (GMT-4)");
+    expect(label("2026-11-02T12:00:00Z")).toBe("America/New York (GMT-5)");
+  });
+
+  test("keeps a zone this browser does not list selectable", () => {
+    const options = timeZoneOptions();
+    expect(timeZoneChoices(options, "Asia/Tokyo")).toBe(options);
+    const choices = timeZoneChoices(options, "Legacy/Alias");
+    expect(choices.at(-1)).toEqual({ value: "Legacy/Alias", label: "Legacy/Alias" });
+  });
+
+  test("renders an unreadable status as a plain label, not a pickable zone", () => {
+    expect(timeZoneChoices(timeZoneOptions(), "unsupported")).toEqual([
+      { value: "unsupported", label: "Unavailable" },
+    ]);
+  });
+
+  test("renders a Time Zone row naming the current zone, disabled until state arrives", () => {
+    const html = renderToStaticMarkup(<SimulatorSettingsTool udid="ABC" runtime="iOS-26-4" />);
+    expect(html).toContain('data-setting-row="Time Zone"');
+    expect(html).toContain("Host default");
+    expect(html).toMatch(/<button[^>]*aria-label="Time Zone"[^>]* disabled=""/);
   });
 });
