@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, AndroidUtils
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-04 (added the EAS macOS VM results; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout); both by Claude Code, directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -23,14 +23,14 @@ The agent is preloaded when the emulator starts, with `DYLD_INSERT_LIBRARIES`, n
 - The emulator binaries in 37.2.7 use the hardened runtime, but their entitlements include `com.apple.security.cs.allow-dyld-environment-variables`, `disable-library-validation`, `disable-executable-page-protection` and `get-task-allow` [observed: `codesign -d --entitlements` on `emulator`, `qemu-system-aarch64` and `qemu-system-aarch64-headless`]. So an ad-hoc signed library loads, and Frida Gum can patch the renderer's code.
 - Attaching to a running emulator needs `task_for_pid`. On the development Mac, the `system.privilege.taskport` right requires a password from a `_developer` member, and Developer Mode was off [observed: `security authorizationdb read system.privilege.taskport`, `DevToolsSecurity -status`]. Preloading needs no extra permission. Attach is not implemented.
 - The `emulator` launcher passes `DYLD_INSERT_LIBRARIES` through to QEMU. A protected system binary in between, such as `/usr/bin/nohup` or `/bin/sh`, removes `DYLD_*` variables, and then the agent does not load [observed: an experiment through `nohup` on 2026-11-04]. The CLI and the Hub spawn the emulator directly.
-- The agent runs only in a process named `qemu-system-*`, and it removes itself from `DYLD_INSERT_LIBRARIES` so that QEMU's children (`crashpad_handler`, `netsimd`) do not load it [observed: `src/native/agent.mm`].
+- The agent runs only in a process named `qemu-system-*`, and it removes itself from `DYLD_INSERT_LIBRARIES` so that QEMU's children (`crashpad_handler`, `netsimd`) do not load it [observed: `src/native/agent.cpp`].
 - The socket path comes from `EXPO_EMULATOR_CAPTURE_SOCKET`. The CLI and the Hub name it `<tmpdir>/expo-emulator-capture/<serial>.sock` [observed: `src/paths.mjs`, Hub `src/server/emulator-capture.ts`].
 
 ## Hook point
 
-The agent hooks gfxstream's `FrameBuffer::Impl::postImpl(handle, callback, needLockAndBind, repaint)` with Frida Gum 17.18.0, linked statically [observed: `src/native/agent.mm`]. All renderer entry points are resolved by name at runtime. The translator EGL functions are local symbols, which Gum resolves from the symbol table [observed: `nm` on `libgfxstream_backend.dylib`; `src/native/gfxstream.mm`]. A missing required symbol disables capture; missing GPU-path symbols leave only the CPU path.
+The agent hooks gfxstream's `FrameBuffer::Impl::postImpl(handle, callback, needLockAndBind, repaint)` with Frida Gum 17.18.0, linked statically [observed: `src/native/agent.cpp`]. All renderer entry points are resolved by name at runtime. The translator EGL functions are local symbols, which Gum resolves from the symbol table [observed: `nm` on `libgfxstream_backend.dylib`; `src/native/gfxstream.cpp`]. A missing required symbol disables capture; missing GPU-path symbols leave only the CPU path.
 
-In the emulator builds tested, every post arrived on one render thread with `needLockAndBind` true [observed: a probe library on 37.2.7, 2026-11-04]. A post with `needLockAndBind` false means that the caller already holds the non-recursive FrameBuffer lock, so the agent skips that frame rather than deadlock [observed: `onPost` in `src/native/agent.mm`; the same rule as PR #107].
+In the emulator builds tested, every post arrived on one render thread with `needLockAndBind` true [observed: a probe library on 37.2.7, 2026-11-04]. A post with `needLockAndBind` false means that the caller already holds the non-recursive FrameBuffer lock, so the agent skips that frame rather than deadlock [observed: `onPost` in `src/native/agent.cpp`; the same rule as PR #107].
 
 ## Frame paths
 
@@ -39,7 +39,7 @@ In the emulator builds tested, every post arrived on one render thread with `nee
 | `-gpu host` (GLES translator on Apple OpenGL 4.1 over Metal) | The color buffer's native GL texture is blitted into an IOSurface-backed `GL_TEXTURE_RECTANGLE` on a private context shared with the renderer. | 0.11 ms on the render thread per 1080×2424 frame |
 | Software (`-gpu auto` headless picks SwANGLE and lavapipe)   | `readColorBufferDeprecated` reads RGBA; vImage converts it to BGRA in an IOSurface pixel buffer.                                               | About 25 ms per 1080×2424 frame; 30–34 FPS       |
 
-[observed: emulator logs `gles_mode_selected:host` and `gles_mode_selected:swangle`; `src/native/frame-source.mm`; agent stats lines, 2026-11-04]
+[observed: emulator logs `gles_mode_selected:host` and `gles_mode_selected:swangle`; `src/native/frame-source-darwin.mm`; agent stats lines, 2026-11-04]
 
 The GPU path needs host rendering. On a headless Mac, `-gpu auto` selects the software renderer, so the Hub adds `-gpu host` when it boots an emulator with the agent [observed: Hub `src/server/emulator-capture.ts`]. The emulator honors the last `-gpu` flag: with `-gpu auto … -gpu host`, SurfaceFlinger reported the Apple M2 translator [observed: `dumpsys SurfaceFlinger`, 2026-11-04].
 
@@ -51,25 +51,25 @@ The GPU path keeps the image upright with an unflipped blit, because both textur
 
 ## Synchronization
 
-The render thread only submits the GPU copy (`glFlush`). The encoder thread waits for it with a read-only `IOSurfaceLock` before VideoToolbox reads the surface [observed: `src/native/frame-source.mm`, `waitForGpuCopy` in `src/native/agent.mm`].
+The render thread only submits the GPU copy (`glFlush`). The encoder thread waits for it with a read-only `IOSurfaceLock` before VideoToolbox reads the surface [observed: `src/native/frame-source-darwin.mm`, `waitForGpuCopy` in `src/native/encoder-videotoolbox.mm`].
 
 With `glFinish` on the render thread instead, the guest's render thread spent 1.16 ms per frame in the capture; with the flush it spent 0.11 ms [observed: agent stats, 2026-11-04]. Process CPU comparisons between runs were inconclusive, because the emulator's own CPU use drifted between 60% and 105% over minutes without any consumer [observed: 2026-11-04]. In one time window, per-thread CPU was 8% higher while streaming 1080×2424 at 60 FPS than without a consumer [observed: `ps -M`, 2026-11-04].
 
 ## Encoding
 
-A `VTPixelTransferSession` scales the frame and converts it to NV12 with BT.709 terms. A `VTCompressionSession` with `RequireHardwareAcceleratedVideoEncoder` and `EnableLowLatencyRateControl` encodes Constrained Baseline H.264, with a keyframe at least every 10 seconds and on request [observed: `src/native/encoder.mm`]. Low-latency rate control selects the encoder `com.apple.videotoolbox.videoencoder.h264.rtvc`, which does not answer `UsingHardwareAcceleratedVideoEncoder` (`kVTPropertyNotSupportedErr`). Creation with the hardware requirement succeeded, so the agent reports hardware [observed: a VideoToolbox probe on the M2, 2026-11-04]. When creation with the hardware requirement fails, as on a Mac without a usable hardware encoder, the agent tries low-latency rate control alone and then the default specification, and reports what `UsingHardwareAcceleratedVideoEncoder` answers [observed: `src/native/encoder.mm`]. Output is converted from length-prefixed NAL units to Annex-B, with SPS and PPS before each IDR.
+A `VTPixelTransferSession` scales the frame and converts it to NV12 with BT.709 terms. A `VTCompressionSession` with `RequireHardwareAcceleratedVideoEncoder` and `EnableLowLatencyRateControl` encodes Constrained Baseline H.264, with a keyframe at least every 10 seconds and on request [observed: `src/native/encoder-videotoolbox.mm`]. Low-latency rate control selects the encoder `com.apple.videotoolbox.videoencoder.h264.rtvc`, which does not answer `UsingHardwareAcceleratedVideoEncoder` (`kVTPropertyNotSupportedErr`). Creation with the hardware requirement succeeded, so the agent reports hardware [observed: a VideoToolbox probe on the M2, 2026-11-04]. When creation with the hardware requirement fails, as on a Mac without a usable hardware encoder, the agent tries low-latency rate control alone and then the default specification, and reports what `UsingHardwareAcceleratedVideoEncoder` answers [observed: `src/native/encoder-videotoolbox.mm`]. Output is converted from length-prefixed NAL units to Annex-B, with SPS and PPS before each IDR.
 
 ## Socket protocol
 
 Each record is a 32-byte big-endian header (`GPC1`, payload length u32, pts u64 in microseconds, flags u32, width u32, height u32, fps u32) and a payload [observed: `src/native/protocol.h`, serve-emu `src/gpu-packet.ts`]. The framing is PR #107's GPC1, with a resize record and JSON details added.
 
-| Flags | Record            | Width and height        | Payload                                                  |
-| ----- | ----------------- | ----------------------- | -------------------------------------------------------- |
-| 0     | H.264 access unit | Stream size             | Annex-B                                                  |
-| 1     | IDR access unit   | Stream size             | Annex-B, starting with SPS and PPS                       |
-| 2     | Hello             | Native display size     | JSON: `protocol`, `platform`, `gpuAvailable`, `renderer` |
-| 3     | Configured        | Stream size             | JSON: `framePath`, `hardwareEncoder`, `encoder`          |
-| 4     | Resized           | New native display size | Empty                                                    |
+| Flags | Record            | Width and height        | Payload                                                           |
+| ----- | ----------------- | ----------------------- | ----------------------------------------------------------------- |
+| 0     | H.264 access unit | Stream size             | Annex-B                                                           |
+| 1     | IDR access unit   | Stream size             | Annex-B, starting with SPS and PPS                                |
+| 2     | Hello             | Native display size     | JSON: `protocol`, `platform`, `gpuAvailable`, `renderer`, `posts` |
+| 3     | Configured        | Stream size             | JSON: `framePath`, `hardwareEncoder`, `encoder`                   |
+| 4     | Resized           | New native display size | Empty                                                             |
 
 The consumer sends `K` for a keyframe, or `S` and three big-endian u32 values (longest stream edge with 0 for native, FPS 1–120, bit rate 100 kbit/s–50 Mbit/s). The agent answers `S` with a configured record and then an IDR.
 
@@ -80,7 +80,7 @@ The consumer sends `K` for a keyframe, or `S` and three big-endian u32 values (l
 
 ## Folding and resizes
 
-Folding changes the size of the posted color buffers: 2076×2152 unfolded and 1080×2424 folded on the Pixel 9 Pro Fold profile [observed: capture on 2026-11-04]. When a frame's size differs, the encoder thread re-creates the encoder and sends resized, configured and an IDR [observed: `encoderLoop` in `src/native/agent.mm`]. serve-emu uses the resized size to map touches, which go to the native display because scrcpy runs without video, as in `grpc-session.ts`. A configured record with a new size becomes a `session` packet, so the middleware resyncs every client from a keyframe [observed: serve-emu `src/gpu-session.ts`, `middleware.ts`].
+Folding changes the size of the posted color buffers: 2076×2152 unfolded and 1080×2424 folded on the Pixel 9 Pro Fold profile [observed: capture on 2026-11-04]. When a frame's size differs, the encoder thread re-creates the encoder and sends resized, configured and an IDR [observed: `encoderLoop` in `src/native/agent.cpp`]. serve-emu uses the resized size to map touches, which go to the native display because scrcpy runs without video, as in `grpc-session.ts`. A configured record with a new size becomes a `session` packet, so the middleware resyncs every client from a keyframe [observed: serve-emu `src/gpu-session.ts`, `middleware.ts`].
 
 ## Integration
 

@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { FLAGS, KEY_FRAME_COMMAND, RecordReader, settingsCommand } from "./protocol.mjs";
-import { agentLibraryPath, defaultSocketPath } from "./paths.mjs";
+import { agentLibraryPath, defaultSocketPath, preloadVariable } from "./paths.mjs";
 
 const USAGE = `Usage:
   expo-emulator-capture launch [--socket <path>] [--log <path>] [--emulator <path>] -- <emulator args>
@@ -17,8 +17,8 @@ const USAGE = `Usage:
   expo-emulator-capture socket-path --port <console port>
 
 launch starts the emulator with the capture agent preloaded. Pass -port to the
-emulator, or --socket, so the socket path is known. Use -gpu host for the GPU
-frame path; software renderers use CPU readback.`;
+emulator, or --socket, so the socket path is known. On macOS, use -gpu host for
+the GPU frame path; software renderers use CPU readback.`;
 
 function fail(message) {
   console.error(`[expo-emulator-capture] ${message}`);
@@ -36,6 +36,7 @@ function emulatorBinary(explicit) {
     process.env.ANDROID_HOME,
     process.env.ANDROID_SDK_ROOT,
     join(homedir(), "Library/Android/sdk"),
+    join(homedir(), "Android/Sdk"),
   ];
   for (const root of roots) {
     const candidate = root && join(root, "emulator", "emulator");
@@ -60,13 +61,14 @@ function launch(argv) {
   const library = agentLibraryPath();
   if (!existsSync(library))
     fail(`agent library missing at ${library}; run the package build first.`);
-  // Spawn the emulator directly: a shell or another SIP-protected binary in
-  // between strips DYLD_* variables, and the agent would not load.
+  // Spawn the emulator directly: on macOS, a shell or another SIP-protected
+  // binary in between strips DYLD_* variables, and the agent would not load.
   const child = spawn(emulatorBinary(values.emulator), emulatorArgs, {
     stdio: "inherit",
     env: {
       ...process.env,
-      DYLD_INSERT_LIBRARIES: library,
+      // A library the caller already preloads stays preloaded, after the agent.
+      [preloadVariable()]: [library, process.env[preloadVariable()]].filter(Boolean).join(":"),
       EXPO_EMULATOR_CAPTURE_SOCKET: socket,
       ...(values.log ? { EXPO_EMULATOR_CAPTURE_LOG: values.log } : {}),
     },

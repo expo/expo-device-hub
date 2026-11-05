@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: MIT
 #define GL_SILENCE_DEPRECATION
 #include "frame-source.h"
+#import <Foundation/Foundation.h>
 #include <Accelerate/Accelerate.h>
 #include <IOSurface/IOSurface.h>
 #include <OpenGL/CGLIOSurface.h>
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
+#include <atomic>
 #include <chrono>
 #include <cstring>
+#include <mutex>
 #include <typeinfo>
+#include <unordered_map>
+#include <vector>
 
 namespace expo_capture {
 namespace {
@@ -69,19 +74,52 @@ std::string glError(const char* operation) {
   return text;
 }
 
+// Copies posted color buffers into IOSurface-backed pixel buffers. GPU path: the
+// renderer's native GL texture is blitted into an IOSurface on the GPU. CPU path:
+// the renderer reads the pixels back, for software renderers.
+class IOSurfaceFrameSource final : public FrameSource {
+ public:
+  explicit IOSurfaceFrameSource(const Gfxstream& gfxstream) : g_(gfxstream) {}
+  bool capture(uint32_t handle, CapturedFrame& out, std::string& error) override;
+  bool gpuUnavailable() const override { return gpuUnavailable_; }
+
+ private:
+  // An IOSurface bound to a GL texture and framebuffer in our renderer context.
+  struct Target {
+    IOSurfaceRef surface = nullptr;  // Retained.
+    unsigned texture = 0;
+    unsigned framebuffer = 0;
+  };
+  bool captureGpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error);
+  bool captureCpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error);
+  bool blit(void* colorBufferGl, const BorrowedImageInfoGl& info, CVPixelBufferRef target,
+            std::string& error);
+  CVPixelBufferRef takeBuffer(int width, int height, std::string& error);
+  void deleteTarget(Target& target);
+  void disableGpu(const std::string& reason);
+
+  const Gfxstream& g_;
+  std::mutex mutex_;
+  CVPixelBufferPoolRef pool_ = nullptr;
+  int poolWidth_ = 0, poolHeight_ = 0;
+  // GPU state; touched only while our renderer context is current.
+  void* display_ = nullptr;
+  void* context_ = nullptr;
+  void* surface_ = nullptr;
+  unsigned readFramebuffer_ = 0;
+  std::unordered_map<uint32_t, Target> targets_;  // By IOSurface ID.
+  bool flushTargets_ = false;
+  std::vector<uint8_t> scratch_;
+  std::atomic<bool> gpuUnavailable_{false};
+};
+
 }  // namespace
 
-bool FrameSource::colorBufferSize(uint32_t handle, int& width, int& height) {
-  void* fb = g_.getFB();
-  if (!fb || !handle) return false;
-  auto colorBuffer = g_.findColorBuffer(fb, handle);
-  if (!colorBuffer) return false;
-  width = int(g_.colorBufferWidth(colorBuffer.get()));
-  height = int(g_.colorBufferHeight(colorBuffer.get()));
-  return width >= 2 && height >= 2;
+std::unique_ptr<FrameSource> createFrameSource(const Gfxstream& gfxstream) {
+  return std::make_unique<IOSurfaceFrameSource>(gfxstream);
 }
 
-bool FrameSource::capture(uint32_t handle, CapturedFrame& out, std::string& error) {
+bool IOSurfaceFrameSource::capture(uint32_t handle, CapturedFrame& out, std::string& error) {
   std::lock_guard<std::mutex> guard(mutex_);
   void* fb = g_.getFB();
   if (!fb) {
@@ -99,7 +137,7 @@ bool FrameSource::capture(uint32_t handle, CapturedFrame& out, std::string& erro
   return ok;
 }
 
-bool FrameSource::captureGpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error) {
+bool IOSurfaceFrameSource::captureGpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error) {
   if (!g_.gpuEntryPointsAvailable()) {
     disableGpu("renderer symbols for the GPU path are missing");
     return false;
@@ -145,14 +183,14 @@ bool FrameSource::captureGpu(void* fb, uint32_t handle, CapturedFrame& out, std:
     CVPixelBufferRelease(target);
     return false;
   }
-  out.pixels = target;
+  out.pixels = FramePixels(target);
   out.width = int(width);
   out.height = int(height);
   out.path = FramePath::Gpu;
   return true;
 }
 
-bool FrameSource::blit(void* colorBufferGl, const BorrowedImageInfoGl& info,
+bool IOSurfaceFrameSource::blit(void* colorBufferGl, const BorrowedImageInfoGl& info,
                        CVPixelBufferRef target, std::string& error) {
   SavedEglState saved(g_, display_);
   if (!g_.eglMakeCurrent(display_, surface_, surface_, context_)) {
@@ -233,9 +271,9 @@ bool FrameSource::blit(void* colorBufferGl, const BorrowedImageInfoGl& info,
   return error.empty();
 }
 
-bool FrameSource::captureCpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error) {
+bool IOSurfaceFrameSource::captureCpu(void* fb, uint32_t handle, CapturedFrame& out, std::string& error) {
   int width = 0, height = 0;
-  if (!colorBufferSize(handle, width, height)) {
+  if (!colorBufferSize(g_, handle, width, height)) {
     error = "posted color buffer disappeared";
     return false;
   }
@@ -259,14 +297,14 @@ bool FrameSource::captureCpu(void* fb, uint32_t handle, CapturedFrame& out, std:
     error = "could not convert renderer pixels";
     return false;
   }
-  out.pixels = target;
+  out.pixels = FramePixels(target);
   out.width = width;
   out.height = height;
   out.path = FramePath::Cpu;
   return true;
 }
 
-CVPixelBufferRef FrameSource::takeBuffer(int width, int height, std::string& error) {
+CVPixelBufferRef IOSurfaceFrameSource::takeBuffer(int width, int height, std::string& error) {
   if (!pool_ || poolWidth_ != width || poolHeight_ != height) {
     if (pool_) CVPixelBufferPoolRelease(pool_);
     pool_ = nullptr;
@@ -303,16 +341,15 @@ CVPixelBufferRef FrameSource::takeBuffer(int width, int height, std::string& err
   return buffer;
 }
 
-void FrameSource::deleteTarget(Target& target) {
+void IOSurfaceFrameSource::deleteTarget(Target& target) {
   if (target.framebuffer) glDeleteFramebuffers(1, &target.framebuffer);
   if (target.texture) glDeleteTextures(1, &target.texture);
   if (target.surface) CFRelease(target.surface);
   target = Target{};
 }
 
-void FrameSource::disableGpu(const std::string& reason) {
+void IOSurfaceFrameSource::disableGpu(const std::string& reason) {
   if (gpuUnavailable_) return;
-  gpuUnavailableReason_ = reason;
   gpuUnavailable_ = true;
   fprintf(stderr, "[expo-emulator-capture] GPU frame path unavailable: %s; using CPU readback\n",
           reason.c_str());

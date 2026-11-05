@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT
-// Capture agent preloaded into the Android Emulator's QEMU process with
-// DYLD_INSERT_LIBRARIES. It hooks gfxstream's display post, copies posted color
-// buffers into IOSurfaces (on the GPU when the renderer uses host OpenGL),
-// encodes them with VideoToolbox, and serves one consumer on a Unix socket.
-#import <Foundation/Foundation.h>
-#include <IOSurface/IOSurface.h>
+// Capture agent preloaded into the Android Emulator's QEMU process
+// (DYLD_INSERT_LIBRARIES on macOS). It hooks gfxstream's
+// display post, copies posted color buffers out of the renderer, encodes them to
+// H.264, and serves one consumer on a Unix socket.
 #include <dlfcn.h>
-#include <mach/mach.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
@@ -33,6 +34,12 @@
 namespace expo_capture {
 namespace {
 
+constexpr const char* kPlatform = "darwin-arm64";
+constexpr const char* kPreloadVariable = "DYLD_INSERT_LIBRARIES";
+constexpr const char* kRendererModule = "libgfxstream_backend.dylib";
+constexpr int kSendFlags = 0;  // SO_NOSIGPIPE is set on the socket instead.
+const char* programName() { return getprogname(); }
+
 using Clock = std::chrono::steady_clock;
 constexpr int kNativeFps = 60;
 constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
@@ -45,7 +52,7 @@ constexpr auto kIdleKeyFrameDelay = std::chrono::milliseconds(40);
 FILE* logFile = nullptr;
 std::mutex logMutex;
 
-void logLine(const char* format, ...) __printflike(1, 2);
+void logLine(const char* format, ...) __attribute__((format(printf, 1, 2)));
 void logLine(const char* format, ...) {
   char line[1024];
   va_list args;
@@ -79,24 +86,10 @@ struct PendingFrame {
   uint64_t ptsUs = 0;
 };
 
-// Waits, sleeping, until the render thread's GPU copy into the frame's IOSurface
-// has completed. A read-only lock waits for pending GPU writes to the surface.
-void waitForGpuCopy(const CapturedFrame& frame) {
-  IOSurfaceRef surface = CVPixelBufferGetIOSurface(frame.pixels);
-  if (!surface) return;
-  IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
-  IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
-}
-
 double threadCpuSeconds() {
-  thread_basic_info_data_t info;
-  mach_msg_type_number_t count = THREAD_BASIC_INFO_COUNT;
-  mach_port_t self = mach_thread_self();
-  kern_return_t result = thread_info(self, THREAD_BASIC_INFO, (thread_info_t)&info, &count);
-  mach_port_deallocate(mach_task_self(), self);
-  if (result != KERN_SUCCESS) return 0;
-  return info.user_time.seconds + info.user_time.microseconds / 1e6 + info.system_time.seconds +
-         info.system_time.microseconds / 1e6;
+  timespec time{};
+  if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) != 0) return 0;
+  return double(time.tv_sec) + double(time.tv_nsec) / 1e9;
 }
 
 // Encoder thread timings, logged every 10 seconds while a consumer streams.
@@ -200,7 +193,7 @@ void onPostEnter(GumInvocationContext* context, gpointer) {
 bool Agent::initialize(GumModule* backend, std::string& error) {
   error = resolveGfxstream(backend, g_);
   if (!error.empty()) return false;
-  frames_ = std::make_unique<FrameSource>(g_);
+  frames_ = createFrameSource(g_);
   if (!g_.gpuEntryPointsAvailable())
     logLine("GPU frame path disabled: renderer symbols are missing; using CPU readback");
   if (pipe(wakePipe_) != 0) {
@@ -297,7 +290,6 @@ void Agent::encoderLoop() {
       settingsChanged_ = false;
       settings = settings_;
       while (!pending_.empty()) {  // Keep only the newest frame.
-        if (havePending) CVPixelBufferRelease(pending.frame.pixels);
         pending = std::move(pending_.front());
         pending_.pop_front();
         havePending = true;
@@ -311,10 +303,7 @@ void Agent::encoderLoop() {
       encoder.reset();  // Waits for packets of the old session.
       encoderGeneration = generation;
     }
-    if (!active) {
-      if (havePending) CVPixelBufferRelease(pending.frame.pixels);
-      continue;
-    }
+    if (!active) continue;
     if (!havePending && (forceKey || !encoder) &&
         Clock::now() - lastFrameAt >= kIdleKeyFrameDelay) {
       // A static screen posts nothing; capture the last posted frame instead.
@@ -333,7 +322,7 @@ void Agent::encoderLoop() {
       encoder.reset();
       auto [width, height] = streamSize(pending.frame.width, pending.frame.height, settings.maxSize);
       uint32_t fps = uint32_t(settings.fps);
-      auto next = std::make_unique<H264Encoder>(
+      auto next = createH264Encoder(
           [this, generation, width = uint32_t(width), height = uint32_t(height),
            fps](EncodedPacket&& packet) {
             sendRecord(generation, packet.key ? kKeyFrame : kFrame, width, height, fps,
@@ -343,7 +332,6 @@ void Agent::encoderLoop() {
       std::string error;
       if (!next->configure(width, height, settings.fps, settings.bitRate, error)) {
         logLine("%s", error.c_str());
-        CVPixelBufferRelease(pending.frame.pixels);
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         continue;
       }
@@ -375,11 +363,10 @@ void Agent::encoderLoop() {
     }
     std::string error;
     auto encodeStart = Clock::now();
-    if (pending.frame.path == FramePath::Gpu) waitForGpuCopy(pending.frame);
-    bool encoded = encoder->encode(pending.frame.pixels, pending.ptsUs, forceKey, error);
+    bool encoded = encoder->encode(pending.frame, pending.ptsUs, forceKey, error);
     stats.record(pending.frame.captureMs,
                  std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count());
-    CVPixelBufferRelease(pending.frame.pixels);
+    pending.frame.pixels = FramePixels();  // Back to the frame source's pool.
     if (!encoded) {
       logLine("%s", error.c_str());
       if (forceKey) {
@@ -423,13 +410,17 @@ void Agent::sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint
 
 void Agent::wake() {
   uint8_t byte = 1;
-  (void)write(wakePipe_[1], &byte, 1);
+  // A full pipe already holds a wake-up, so a failed write needs no handling.
+  if (write(wakePipe_[1], &byte, 1) < 0) return;
 }
 
 std::string Agent::helloJson() {
-  return std::string("{\"protocol\":1,\"platform\":\"darwin-arm64\",\"gpuAvailable\":") +
+  // posts counts every display post since the agent started, with or without a
+  // consumer, so two hellos give the renderer's frame rate without capture.
+  return std::string("{\"protocol\":1,\"platform\":\"") + kPlatform + "\",\"gpuAvailable\":" +
          (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
-         ",\"renderer\":\"" + jsonEscape(g_.path) + "\"}";
+         ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" +
+         std::to_string(posts_.load()) + "}";
 }
 
 bool Agent::listen(const std::string& path, std::string& error) {
@@ -440,7 +431,7 @@ bool Agent::listen(const std::string& path, std::string& error) {
             std::to_string(sizeof(address.sun_path)) + " bytes";
     return false;
   }
-  strlcpy(address.sun_path, path.c_str(), sizeof(address.sun_path));
+  snprintf(address.sun_path, sizeof(address.sun_path), "%s", path.c_str());
   std::string directory = path.substr(0, path.rfind('/'));
   if (!directory.empty()) mkdir(directory.c_str(), 0700);
   // Refuse to take over a socket that another live agent still serves.
@@ -465,7 +456,7 @@ bool Agent::listen(const std::string& path, std::string& error) {
   fcntl(listener_, F_SETFD, FD_CLOEXEC);
   fcntl(listener_, F_SETFL, O_NONBLOCK);
   path_ = path;
-  strlcpy(boundSocketPath, path.c_str(), sizeof(boundSocketPath));
+  snprintf(boundSocketPath, sizeof(boundSocketPath), "%s", path.c_str());
   atexit(unlinkBoundSocket);
   return true;
 }
@@ -507,8 +498,11 @@ void Agent::accept() {
   if (client_ >= 0) disconnect("replaced by a new consumer");
   fcntl(next, F_SETFD, FD_CLOEXEC);
   fcntl(next, F_SETFL, O_NONBLOCK);
-  int one = 1, size = kSocketBufferBytes;
+  int size = kSocketBufferBytes;
+#if defined(SO_NOSIGPIPE)
+  int one = 1;
   setsockopt(next, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
   setsockopt(next, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
   client_ = next;
   commands_.clear();
@@ -524,7 +518,7 @@ void Agent::accept() {
   }
   int width = 0, height = 0;
   void* fb = g_.getFB();
-  if (!fb || !frames_->colorBufferSize(g_.lastPostedColorBuffer(fb), width, height)) {
+  if (!fb || !colorBufferSize(g_, g_.lastPostedColorBuffer(fb), width, height)) {
     width = fb ? g_.frameBufferWidth(fb) : 0;
     height = fb ? g_.frameBufferHeight(fb) : 0;
   }
@@ -602,7 +596,7 @@ void Agent::flushOutput() {
       data = output_.front().bytes.data() + outputOffset_;
       remaining = output_.front().bytes.size() - outputOffset_;
     }
-    ssize_t n = send(client_, data, remaining, 0);
+    ssize_t n = send(client_, data, remaining, kSendFlags);
     if (n < 0) {
       if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) return;
       disconnect("write failed");
@@ -637,38 +631,41 @@ void Agent::disconnect(const char* reason) {
   }
   encodeWake_.notify_one();
   logLine("consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu)",
-          reason, posts_.load(), captured_.load(), droppedBusy_.load(), skippedLocked_.load(),
-          captureErrors_.load());
+          reason, (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
+          (unsigned long long)droppedBusy_.load(), (unsigned long long)skippedLocked_.load(),
+          (unsigned long long)captureErrors_.load());
 }
 
-void removeFromInsertLibraries() {
+void removeFromPreload() {
   // Children such as crashpad_handler and netsimd must not inherit the agent.
   Dl_info info{};
-  const char* inserted = getenv("DYLD_INSERT_LIBRARIES");
-  if (!inserted || !dladdr(reinterpret_cast<void*>(&removeFromInsertLibraries), &info) ||
+  const char* inserted = getenv(kPreloadVariable);
+  if (!inserted || !dladdr(reinterpret_cast<void*>(&removeFromPreload), &info) ||
       !info.dli_fname)
     return;
   std::string self = info.dli_fname, remaining, entry;
   std::string list = inserted;
+  // LD_PRELOAD also separates entries with spaces.
+  const char* separators = kPreloadVariable[0] == 'L' ? ": " : ":";
   size_t start = 0;
   while (start <= list.size()) {
-    size_t end = list.find(':', start);
+    size_t end = list.find_first_of(separators, start);
     if (end == std::string::npos) end = list.size();
     entry = list.substr(start, end - start);
     if (!entry.empty() && entry != self) remaining += (remaining.empty() ? "" : ":") + entry;
     start = end + 1;
   }
   if (remaining.empty())
-    unsetenv("DYLD_INSERT_LIBRARIES");
+    unsetenv(kPreloadVariable);
   else
-    setenv("DYLD_INSERT_LIBRARIES", remaining.c_str(), 1);
+    setenv(kPreloadVariable, remaining.c_str(), 1);
 }
 
 void runAgent(std::string socketPath) {
   gum_init_embedded();
   GumModule* backend = nullptr;
   for (int attempt = 0; attempt < 1200 && !backend; attempt++) {
-    backend = gum_process_find_module_by_name("libgfxstream_backend.dylib");
+    backend = gum_process_find_module_by_name(kRendererModule);
     if (!backend) std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   if (!backend) {
@@ -710,9 +707,9 @@ void runAgent(std::string socketPath) {
 
 // @ref LLP 0017#loading — preloaded at launch; only QEMU runs the agent, and its children do not inherit it
 __attribute__((constructor)) static void expoEmulatorCaptureInit() {
-  const char* name = getprogname();
+  const char* name = expo_capture::programName();
   if (!name || strncmp(name, "qemu-system", 11) != 0) return;
-  expo_capture::removeFromInsertLibraries();
+  expo_capture::removeFromPreload();
   const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
   if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
     if (FILE* file = fopen(logPath, "a")) expo_capture::logFile = file;
