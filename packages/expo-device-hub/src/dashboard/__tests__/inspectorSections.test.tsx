@@ -2020,3 +2020,33 @@ test.each([
     }
   },
 );
+
+test("Android fold capabilities show the shared pose controls without Duo-only controls", () => {
+  const base = inspectorClient("android");
+  const client = {
+    ...base,
+    fold: { angle: 0, pose: "closed", pending: false, error: null, setControl: () => {} },
+    capabilities: {
+      ...base.capabilities,
+      fold: {
+        angle: { min: 0, max: 180 },
+        poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
+        tableMode: false,
+      },
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  expect(html).toContain('aria-label="Fold pose"');
+  expect(html).toContain("Fully folded");
+  expect(html).toContain('aria-label="Hinge angle"');
+  expect(html).not.toContain(">Table Mode<");
+  expect(html).not.toContain(">Preview mode<");
+  expect(html).not.toContain(">Folded<");
+  const locked = renderToStaticMarkup(
+    <LogSidebar client={{ ...client, recordingLock: "recording" }} />,
+  );
+  expect(locked.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).toContain("disabled");
+  expect(locked).toContain("interrupt the recording");
+  const unsupported = renderToStaticMarkup(<LogSidebar client={base} />);
+  expect(unsupported).not.toContain('aria-label="Fold pose"');
+});

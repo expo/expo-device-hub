@@ -5,12 +5,12 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-21
-**Revised:** 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
+**Revised:** 2026-11-04 (Android fold adapter, Codex gpt-6.1-sol); 2026-11-03 (the native hinge observation wins over the last command; `confirmed` says whether it reached the request; no face-down command)
 **Related:** LLP 0000, LLP 0004, LLP 0013
 
 ## Summary
 
-`@expo/hub-client` describes every foldable device with one contract: `DeviceClient.fold` for fold state and commands, `DeviceClient.capabilities.fold` for the commands that a device accepts, and display roles (`cover`, `inner`) for the displays of a foldable. Each backend adapter maps its own protocol onto the contract. The iOS adapter maps serve-sim's iPhone Duo hinge protocol. An Android adapter can map serve-emu's `/api/fold` without placeholder values.
+`@expo/hub-client` describes every foldable device with one contract: `DeviceClient.fold` for fold state and commands, `DeviceClient.capabilities.fold` for the commands that a device accepts, and display roles (`cover`, `inner`) for the displays of a foldable. Each backend adapter maps its own protocol onto the contract. The iOS adapter maps serve-sim's iPhone Duo hinge protocol. The Android adapter maps serve-emu's `/api/fold` without placeholder values.
 
 > **Provenance.** Claude Code wrote this draft while it implemented the contract. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. The design choices under [Decisions](#decisions) are Claude Code's proposals, and human review is pending. File paths are relative to `packages/@expo/hub-client/src`, unless the text gives a path from the repository root.
 
@@ -110,24 +110,31 @@ The helper sends the command's config before its native readback moves. A Table 
 
 ### Android emulators
 
-hub-client does not map serve-emu's fold yet; `fold` is `null` and `capabilities.fold` is `false` on Android [observed: `useAndroidDevice.ts`]. #352 (draft, by jiunshinn) implements the adapter. This is the mapping that the contract allows without placeholders:
+The Android adapter maps serve-emu's `/api/fold` onto the same `client.fold` and `capabilities.fold` used by iOS. It adds no renderer state or placeholder optional groups [observed: `useAndroidFold.ts`, `android-fold.ts`].
 
-| Contract                     | serve-emu `/api/fold`                                                                                            |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `capabilities.fold`          | `false` unless `supported` is true                                                                               |
-| `.angle`                     | `hingeRange` with #352's `POST { hingeAngle }`; `false` on main, which accepts only `POST { posture }`           |
-| `.poses`                     | #352: `closed` 0°, `book` 90°, `open` 180°. Main: `closed` and `open`                                            |
-| `.tableMode`                 | `false`                                                                                                          |
-| `fold.angle`                 | `hingeAngle`                                                                                                     |
-| `fold.pose`                  | The offered pose whose angle equals `hingeAngle`, else `null` (#352's rule); or `closed` / `open` from `posture` |
-| `fold.tableMode`, `physical` | Absent                                                                                                           |
-| `displays`, `screen.display` | `null` and absent: the emulator shows one display at a time                                                      |
+| Contract                     | Android mapping                                                   |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `fold`                       | Non-null after a supported hinge is reported; null without one    |
+| `capabilities.fold`          | False until a verified 0–180° range is reported                   |
+| `.angle`                     | `{ min: 0, max: 180 }`                                            |
+| `.poses`                     | `closed` 0°, `book` 90°, `open` 180°                              |
+| `.tableMode`                 | False                                                             |
+| `fold.angle`                 | `hingeAngle`, with the pending choice until the write answers     |
+| `fold.pose`                  | The exact preset angle, or null for custom; undefined until known |
+| `fold.tableMode`, `physical` | Absent                                                            |
+| `displays`, `screen.display` | Null and absent; Android streams one display at a time            |
 
-[observed: `packages/serve-emu/packages/serve-emu/src/fold.ts` and `src/shared/api-contracts.ts` on main at 2dbd9287; #352 at 8279f0b2]
+[observed: `android-fold.ts`, `useAndroidFold.ts`, `useAndroidDevice.ts`]
 
-serve-emu's `half_opened` posture is not a pose by itself. At 90° it is `book`; at another angle it is `null` (custom). `flipped` and `tent` occur on fold-out profiles, whose hinge moves from 180° to 360° [observed: #352's LLP 0004 section]. #352 shows no fold for them. The contract can describe them later with `angle: { min: 180, max: 360 }` and the poses they offer.
+The adapter sends `POST { hingeAngle }` for both angle commands and presets. Only commands listed in capabilities are accepted. Laptop, Tent and Table Mode are not offered. The device's physical orientation is not inferred from a hinge angle [observed: `android-fold.ts`].
 
-#256 (draft, by jiunshinn) reads the posture as a string device setting, `fold`. With this contract, main's posture-only serve-emu maps to `capabilities.fold = { angle: false, poses: { closed, open }, tableMode: false }`, and Fold settings shows a pose select without a slider [observed: `FoldSettings.tsx`]. The `fold` device setting is then not needed.
+One latest-choice writer per device URL serializes HTTP writes, including across token changes, and replaces a waiting choice with the latest one. Polls that overlap a command and results from a retired device or token cannot replace current state. Commands have optimistic previews and expose pending and error state; the response supplies the authoritative angle. Reads poll every five seconds, continue after unsupported answers, and preserve object identity when unchanged. Requests and body reads time out after 30 seconds; writes are not retried [observed: `useAndroidFold.ts`, `android-fold.ts`, `latest-writer.ts`].
+
+An unknown hinge range offers no controls, because it cannot distinguish an inward-folding device from a fold-out profile. Fold-out ranges are also not offered in this iteration: serve-emu's angle request contract is limited to 0–180°. Existing posture-only REST commands still work with an unknown range [observed: `androidFoldCapabilities` in `android-fold.ts`; `setHingeAngle`, `setFoldPosture` in ServeEmu `src/fold.ts`].
+
+The shared dashboard and keyboard hook use capabilities to show the slider and only the offered pose choices and shortcuts. There are no Android 3D preview controls, and Android's flat preview sizing stays unchanged. Native fold controls are disabled while the recording lock is set; the adapter also rejects commands then and rechecks a queued choice before sending it [observed: `FoldSettings.tsx`, `DeviceOptionsSection.tsx`, `useDeviceKeyboard.ts`, `PhoneFrame.tsx` in HubComponents; `useAndroidFold.ts`].
+
+Krystof Woldrich chose to close #256 and resume #352 with the shared APIs on main [confirmed: Krystof Woldrich, 2026-11-04]. The old `DeviceHinge` and optional `controls` API from #352 are replaced by this mapping.
 
 ## Decisions
 

@@ -203,6 +203,7 @@ export function DeviceOptionsSection({
         <FoldSettings
           fold={client.fold}
           controls={client.capabilities.fold}
+          disabledReason={recordingDisabledReason}
           preview={foldPreview}
         />
       )}

@@ -30,7 +30,7 @@ import {
 import { screenshotResponse } from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
-import { getFoldStatus, setFoldPosture } from "./fold.ts";
+import { applyFoldRequest, getFoldStatus } from "./fold.ts";
 import {
   cameraLaunchIsWired,
   handleCameraRequest,
@@ -124,6 +124,7 @@ import {
   isOrientationMode,
   ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
   type GrpcImageMode,
@@ -1780,11 +1781,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
             throw new Error("fold payload must be an object");
           }
-          const posture = (payload as Record<string, unknown>).posture;
-          if (posture !== "closed" && posture !== "opened") {
-            throw new Error("posture must be closed or opened");
-          }
-          return Response.json({ ok: true, fold: await setFoldPosture(opts.serial, posture) });
+          const fold = parseFoldRequest(payload as Record<string, unknown>);
+          return Response.json({ ok: true, fold: await applyFoldRequest(opts.serial, fold) });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },

@@ -2,10 +2,10 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** ServeSim, Hub, HubClient, HubComponents
+**Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -259,6 +259,49 @@ flight and one latest full snapshot pending, independently of video backpressure
 `Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
 `Sources/SimNative/CaptureEngine.swift`, `Sources/SimNative/DeviceStateDelivery.swift`,
 `Sources/SimNative/sim-module.swift`; `Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`]
+
+## Android emulators
+
+serve-emu moves a foldable emulator's hinge with `POST /api/fold` and
+`{ "hingeAngle": number }`. It accepts angles from 0 to 180, the range
+serve-sim accepts for the iPhone Duo, and sets the emulator's `hinge-angle0`
+sensor. Android derives the posture from the angle, using the AVD's
+`hw.sensor.hinge_angles_posture_definitions`. On `pixel_fold`, 0–30° is closed,
+30–150° half-opened, and 150–180° opened [observed: `pixel_fold` `config.ini`,
+Android Emulator 37.2.12, API 37].
+
+Not every hinge moves from 0° to 180°: the SDK's 8" Fold-out moves from 180°
+to 360° [observed: `8in Foldable` in `devices.xml` from the SDK's `sdklib`].
+Every fold status therefore reports `hingeRange`, read from
+`hw.sensor.hinge.ranges` in the `hardware-qemu.ini` that the emulator writes at
+launch, and serve-emu refuses an angle outside it. `hingeRange` is null when
+serve-emu cannot read that file, for example when adb reaches an emulator on
+another host. Angle writes fail when the range is unknown; posture writes remain available [observed: `readHingeRange` and `setHingeAngle` in
+`packages/serve-emu/packages/serve-emu/src/fold.ts`].
+
+The emulator console stores a new angle at once, but the guest receives it
+about 100–200 ms later. Until then `device_state` still reports the previous
+posture: 5 of 24 reads taken right after a change did so [observed: `pixel_fold`,
+Android Emulator 37.2.12, API 37]. serve-emu therefore waits until
+`dumpsys device_state` reports the new angle before it answers. Android
+receives the angle in eighths of a degree, and can keep the previous eighth
+after a change of a few hundredths: 90.123° arrives as 90.125°, and 33.33° set
+after 33.3° stays at 33.25° [observed: `pixel_fold`, Android Emulator 37.2.12,
+API 37, 2026-10-15]. The wait therefore accepts an angle within an eighth of a
+degree, and serve-emu then confirms the exact angle with the console.
+
+Before changing the console angle, serve-emu reads the guest sample. A matching
+sample that is unchanged and differs from the requested angle is ambiguous:
+it can be the old sample before delivery, or a legitimate rounded value. It
+gets the existing two-second readback window to settle. A changed matching
+sample or an exact match can finish early; an unchanged rounded match can finish
+at the deadline, so sticky eighths still work. This adds a baseline guest read
+when the console angle changes and can take two seconds for tiny changes that
+stay within the same rounded sample. The returned posture is the latest guest
+observation, not proof of a fresh sensor event; an older guest with no sensor
+values cannot supply that confirmation [observed: `readAndroidHingeSample`,
+`waitForAndroidHingeAngle`, `setHingeAngle` in
+`packages/serve-emu/packages/serve-emu/src/fold.ts`].
 
 ## APIs inside an iOS app
 
