@@ -88,6 +88,7 @@ describe("single-device sessions", () => {
       physical: false,
       supported: true,
       deviceFrame: null,
+      model: null,
     };
     const filtered = filterSessionDevices(
       {

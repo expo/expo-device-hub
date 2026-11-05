@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Draft
-**Systems:** HubClient, HubComponents
+**Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-05
 **Related:** LLP 0000, LLP 0016
@@ -61,11 +61,17 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 - A landscape frame can only come from a sideways device. When the stream reports no orientation or an upright one for it, the shape counts it as `landscape_left` [observed: `simulatorDeviceRotation` in expo/universe#32682].
 - While the client reports no screen, such as while it reconnects or after the session ends, the shape keeps the last display and orientation [observed: `lastStreamScreen` in expo/universe#32890]. The kept screen belongs to the client's current device and model: another device, another model, or no client starts from the defaults.
 
+## Hub dashboard
+
+- The Hub server sends each device's `model`: the device type name from `simctl list runtimes` for a simulator, and `hw.device.name` for an emulator. A physical device has none [observed: `expo-device-hub/src/server/device-models.ts`].
+- The device list is polled every 500 ms, so the server reads the device type names once and again only for an unknown device type, at most once a minute [observed: `POLL_INTERVAL_MS` in `device-list-websocket.ts`].
+- `PhoneFrame` takes `DeviceShape` as an injected prop, like `DeviceScreen` and the three.js `FoldableDeviceScreen`, so a hub-components consumer that does not pass it does not bundle the shape table. The known shape replaces the generic squircle only where no frame artwork shows; the artwork keeps its calibrated opening [observed: `hub-components/src/dashboard/PhoneFrame.tsx`].
+
 ## Decisions
 
 - **The iPhone Duo cover shape is named `iPhoneDuoCover`**, after hub-client's display role, where the website named it `iPhoneDuoOuter`. Claude Code's choice; human review pending.
 - **The clip helpers stay public.** The website clips Framer Motion layers and a `<video>`, and blends the iPhone Duo shapes on the recording's video frames, which a wrapping component cannot do. Claude Code's choice; human review pending.
-- **`DeviceClient.displayCorners` stays.** It is the DeviceKit chrome corners for the iPhone Duo and is not part of this entry. Claude Code's choice; human review pending.
+- **`DeviceClient.displayCorners` stays.** It is the DeviceKit chrome corners for the iPhone Duo and is not part of this entry. In the dashboard, a known shape wins over it, so the flat iPhone Duo shows the same measured shape as the website. Claude Code's choice; human review pending.
 
 ## Open questions
 

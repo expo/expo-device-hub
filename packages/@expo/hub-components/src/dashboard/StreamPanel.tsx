@@ -8,6 +8,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
+import type { DeviceShapeProps } from "@expo/hub-client/shapes";
 import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
 import {
   bg,
@@ -49,6 +50,7 @@ export function StreamPanel({
   agentInteraction,
   DeviceScreen,
   FoldableDeviceScreen,
+  DeviceShape,
   foldPreview,
   displayScreen,
   framed = true,
@@ -63,6 +65,8 @@ export function StreamPanel({
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
   FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /** Screen shape clip from `@expo/hub-client/shapes`; without it the screen keeps generic corners. */
+  DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
@@ -319,6 +323,7 @@ export function StreamPanel({
             }}
             DeviceScreen={DeviceScreen}
             FoldableDeviceScreen={FoldableDeviceScreen}
+            DeviceShape={DeviceShape}
             foldPreview={foldPreview}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}

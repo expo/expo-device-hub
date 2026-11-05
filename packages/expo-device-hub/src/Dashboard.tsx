@@ -10,6 +10,7 @@ import {
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from "@expo/hub-client";
+import { DeviceShape } from "@expo/hub-client/shapes";
 import {
   EmptyState,
   InspectorSections,
@@ -260,6 +261,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
             booted: true,
             supported: target.device.supported,
             deviceFrame: target.device.deviceFrame,
+            model: target.device.model ?? null,
             lastUsedAt: Date.now(),
           }
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
@@ -470,6 +472,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceShape={DeviceShape}
           foldPreview={{
             mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
             cacheScreenOnFold: duoPreview.cacheScreenOnFold,
