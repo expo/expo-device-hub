@@ -2,14 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { ChildProcess } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, Socket } from "node:net";
-import { GpuCaptureUnavailableError, startGpuCaptureSession } from "../src/gpu-session.ts";
-import { GPU_RECORD, gpuSettingsCommand } from "../src/gpu-packet.ts";
-import type { ScrcpyControlSession } from "../src/scrcpy.ts";
 import {
-  experimentalGpuCaptureSocket,
-  type EmuSession,
-  type StartEmuSessionOptions,
-} from "../src/stream-session.ts";
+  availableStreamModesForSerial,
+  emulatorCaptureAvailability,
+  emulatorCaptureSocketFor,
+} from "../src/device-capabilities.ts";
+import {
+  GpuCaptureUnavailableError,
+  startGpuCaptureSession,
+  uprightTouchSize,
+} from "../src/gpu-session.ts";
+import { GPU_RECORD, gpuRotationCommand, gpuSettingsCommand } from "../src/gpu-packet.ts";
+import type { ScrcpyControlSession } from "../src/scrcpy.ts";
+import type { EmuSession, StartEmuSessionOptions } from "../src/stream-session.ts";
 
 const sps = Buffer.from([0, 0, 0, 1, 0x67, 0x42, 0, 0x20]);
 const pps = Buffer.from([0, 0, 0, 1, 0x68, 0xce, 0x3c]);
@@ -44,6 +49,20 @@ const acknowledgement = record(
 );
 const firstFrame = record(GPU_RECORD.keyFrame, picture, 1n);
 const readyStream = Buffer.concat([hello, acknowledgement, firstFrame]);
+// An agent that accepts the R command, ready at a stream size.
+const rotatingStream = (width: number, height: number) =>
+  Buffer.concat([
+    record(GPU_RECORD.hello, json({ protocol: 2 }), 0n, 1440, 2560),
+    record(GPU_RECORD.configured, json({ framePath: "gpu" }), 0n, width, height),
+    record(GPU_RECORD.keyFrame, picture, 1n, width, height),
+  ]);
+
+async function until(check: () => boolean) {
+  for (let attempt = 0; attempt < 100 && !check(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(check()).toBe(true);
+}
 
 async function gpuFixture() {
   // Keep the path within the macOS Unix socket length limit.
@@ -55,10 +74,22 @@ async function gpuFixture() {
   let controlCloses = 0;
   let controlError: Error | null = null;
   let commands = Buffer.alloc(0);
+  const parsedCommands: Buffer[] = [];
   let receivedSettings!: (command: Buffer) => void;
   const settings = new Promise<Buffer>((resolve) => {
     receivedSettings = resolve;
   });
+  // K is one byte, R five and S thirteen.
+  const parseCommands = () => {
+    for (;;) {
+      const size = commands[0] === 0x4b ? 1 : commands[0] === 0x52 ? 5 : 13;
+      if (commands.length === 0 || commands.length < size) return;
+      const command = commands.subarray(0, size);
+      commands = commands.subarray(size);
+      parsedCommands.push(Buffer.from(command));
+      if (command[0] === 0x53) receivedSettings(Buffer.from(command));
+    }
+  };
   let connect = (socket: Socket) => {
     socket.write(readyStream);
   };
@@ -70,7 +101,7 @@ async function gpuFixture() {
     socket.on("close", () => sockets.delete(socket));
     socket.on("data", (chunk) => {
       commands = Buffer.concat([commands, typeof chunk === "string" ? Buffer.from(chunk) : chunk]);
-      if (commands.length >= 13) receivedSettings(commands.subarray(0, 13));
+      parseCommands();
     });
     connect(socket);
   });
@@ -80,7 +111,7 @@ async function gpuFixture() {
   });
   const options: StartEmuSessionOptions = {
     serial: "emulator-5554",
-    mode: "scrcpy",
+    mode: "emulator-capture",
     inputSource: "scrcpy",
     grpcImageMode: "mmap",
     maxSize: 1280,
@@ -92,6 +123,7 @@ async function gpuFixture() {
     options,
     socketPath,
     settings,
+    commands: () => parsedCommands,
     controls,
     controlCloses: () => controlCloses,
     onConnect(handler: typeof connect) {
@@ -104,11 +136,19 @@ async function gpuFixture() {
       if (!peer) throw new Error("GPU fixture has no consumer");
       peer.write(bytes);
     },
-    async start(overrides: Partial<StartEmuSessionOptions> = {}, path = socketPath) {
+    async start(
+      overrides: Partial<StartEmuSessionOptions> = {},
+      path = socketPath,
+      timers: Pick<
+        Parameters<typeof startGpuCaptureSession>[2] & {},
+        "setInterval" | "clearInterval"
+      > = {},
+    ) {
       const session = await startGpuCaptureSession(
         { ...options, signal: AbortSignal.timeout(1_000), ...overrides },
         path,
         {
+          ...timers,
           async startScrcpyControl() {
             if (controlError) throw controlError;
             const control: ScrcpyControlSession = {
@@ -166,6 +206,8 @@ describe("GPU capture session", () => {
         streamSize: { width: 720, height: 1280 },
         maxSize: 1280,
         resizes: 0,
+        rotation: null,
+        rotations: 0,
       });
       expect(fixture.controls).toHaveLength(1);
       const waiting = session.readFrame();
@@ -303,6 +345,88 @@ describe("GPU capture session", () => {
     },
   );
 
+  test("sends the display rotation before the settings, so the first session is upright", async () => {
+    const fixture = await gpuFixture();
+    try {
+      fixture.onConnect((socket) => {
+        socket.write(rotatingStream(1280, 720));
+      });
+      const session = await fixture.start({ readDisplayRotation: async () => 1 });
+      await fixture.settings;
+      expect(fixture.commands()).toEqual([
+        gpuRotationCommand(1),
+        gpuSettingsCommand(1280, 60, 8_000_000),
+      ]);
+      expect(session.meta).toMatchObject({ width: 1280, height: 720 });
+      expect(session.diagnostics?.().experimentalGpuCapture).toMatchObject({
+        rotation: 1,
+        rotations: 0,
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("passes a later rotation to the agent at the next poll or display change", async () => {
+    const fixture = await gpuFixture();
+    let rotation: 0 | 1 | 2 | 3 = 0;
+    let poll: (() => void) | undefined;
+    let cleared = 0;
+    try {
+      fixture.onConnect((socket) => {
+        socket.write(rotatingStream(720, 1280));
+      });
+      const session = await fixture.start(
+        { readDisplayRotation: async () => rotation },
+        undefined,
+        {
+          setInterval: (callback) => {
+            poll = callback;
+            return {};
+          },
+          clearInterval: () => {
+            cleared++;
+          },
+        },
+      );
+      await fixture.settings;
+      // Rotation 0 needs no R command.
+      expect(fixture.commands()).toEqual([gpuSettingsCommand(1280, 60, 8_000_000)]);
+      rotation = 3;
+      poll!();
+      await until(() => fixture.commands().length === 2);
+      expect(fixture.commands()[1]).toEqual(gpuRotationCommand(3));
+      rotation = 2;
+      session.displayChanged?.();
+      await until(() => fixture.commands().length === 3);
+      expect(fixture.commands()[2]).toEqual(gpuRotationCommand(2));
+      // An unchanged rotation sends nothing.
+      poll!();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(fixture.commands()).toHaveLength(3);
+      expect(session.diagnostics?.().experimentalGpuCapture).toMatchObject({
+        rotation: 2,
+        rotations: 2,
+      });
+      await session.close();
+      expect(cleared).toBe(1);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("leaves an agent without the R command unrotated", async () => {
+    const fixture = await gpuFixture();
+    try {
+      const session = await fixture.start({ readDisplayRotation: async () => 1 });
+      await fixture.settings;
+      expect(fixture.commands()).toEqual([gpuSettingsCommand(1280, 60, 8_000_000)]);
+      expect(session.diagnostics?.().experimentalGpuCapture).toMatchObject({ rotation: null });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   test("rejects overlapping consumers and permits a replacement after close", async () => {
     const fixture = await gpuFixture();
     try {
@@ -378,31 +502,54 @@ describe("GPU capture session", () => {
   });
 });
 
-describe("experimentalGpuCaptureSocket", () => {
-  test("selects an emulator's socket only for scrcpy video and input", async () => {
+test("maps touches to the native display, upright for the rotation", () => {
+  const native = { width: 1080, height: 2424 };
+  expect(uprightTouchSize(native, 0)).toEqual({ width: 1080, height: 2424 });
+  expect(uprightTouchSize(native, 1)).toEqual({ width: 2424, height: 1080 });
+  expect(uprightTouchSize(native, 2)).toEqual({ width: 1080, height: 2424 });
+  expect(uprightTouchSize(native, 3)).toEqual({ width: 2424, height: 1080 });
+});
+
+describe("emulator capture availability", () => {
+  test("offers the mode only for an emulator whose agent serves a socket", async () => {
     const directory = await mkdtemp("/tmp/semu-gpu-");
     try {
       await writeFile(`${directory}/emulator-5554.sock`, "");
-      const options: StartEmuSessionOptions = {
-        serial: "emulator-5554",
-        mode: "scrcpy",
-        inputSource: "scrcpy",
-        grpcImageMode: "mmap",
-        experimentalGpuCaptureSocketDirectory: directory,
-      };
-      expect(experimentalGpuCaptureSocket(options)).toBe(`${directory}/emulator-5554.sock`);
+      expect(emulatorCaptureSocketFor("emulator-5554", directory)).toBe(
+        `${directory}/emulator-5554.sock`,
+      );
+      expect(emulatorCaptureSocketFor("emulator-5554", undefined)).toBeNull();
+      expect(emulatorCaptureSocketFor("emulator-5556", directory)).toBeNull();
+      expect(emulatorCaptureSocketFor("R58M123456", directory)).toBeNull();
+
+      const options = { socketDirectory: directory, missingAgentReason: "Restart it." };
+      expect(emulatorCaptureAvailability("emulator-5554", options)).toEqual({
+        socket: `${directory}/emulator-5554.sock`,
+      });
+      expect(emulatorCaptureAvailability("emulator-5556", options)).toEqual({
+        socket: null,
+        reason: "Restart it.",
+      });
+      expect(emulatorCaptureAvailability("R58M123456", options)).toMatchObject({ socket: null });
       expect(
-        experimentalGpuCaptureSocket({
-          ...options,
-          experimentalGpuCaptureSocketDirectory: undefined,
-        }),
-      ).toBeNull();
-      expect(experimentalGpuCaptureSocket({ ...options, mode: "grpc-screenshot" })).toBeNull();
-      expect(experimentalGpuCaptureSocket({ ...options, inputSource: "grpc" })).toBeNull();
-      expect(experimentalGpuCaptureSocket({ ...options, serial: "emulator-5556" })).toBeNull();
-      expect(experimentalGpuCaptureSocket({ ...options, serial: "R58M123456" })).toBeNull();
+        emulatorCaptureAvailability("emulator-5554", { unavailableReason: "Turn it on." }),
+      ).toEqual({ socket: null, reason: "Turn it on." });
+      // An app that does not offer the mode gives no reason, so clients do not show it.
+      expect(emulatorCaptureAvailability("emulator-5554", undefined)).toEqual({ socket: null });
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  test("lists emulator-capture only when the caller says it is available", () => {
+    expect(availableStreamModesForSerial("emulator-5554")).toEqual(["scrcpy", "grpc-screenshot"]);
+    expect(availableStreamModesForSerial("emulator-5554", { emulatorCapture: true })).toEqual([
+      "scrcpy",
+      "grpc-screenshot",
+      "emulator-capture",
+    ]);
+    expect(availableStreamModesForSerial("R58M123456", { emulatorCapture: true })).toEqual([
+      "scrcpy",
+    ]);
   });
 });

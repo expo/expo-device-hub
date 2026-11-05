@@ -24,7 +24,9 @@ import {
   setReduceMotion,
   setSoftwareKeyboard,
   getDisplayOrientation,
+  getDisplayRotation,
   setUserRotation,
+  type DisplayRotation,
   type NightModeStatus,
 } from "./adb.ts";
 import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
@@ -48,7 +50,14 @@ import {
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
 import { readAppDetails } from "./apk-icon.ts";
-import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
+import {
+  availableStreamModesForSerial,
+  emulatorCaptureAvailability,
+  emulatorCaptureSocketFor,
+  isEmulatorSerial,
+  type EmulatorCaptureOptions,
+} from "./device-capabilities.ts";
+import { GpuCaptureUnavailableError } from "./gpu-session.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
@@ -210,11 +219,12 @@ export type AppOptions = {
   /** Input transport. gRPC streaming defaults to scrcpy input. */
   inputSource?: InputSource;
   /**
-   * Experimental: a directory of expo-emulator-capture agent sockets named `<serial>.sock`.
-   * An emulator with a socket there streams the agent's video instead of scrcpy's;
-   * scrcpy stays the input transport. The Hub sets it for emulators it boots with the agent.
+   * Experimental: the `emulator-capture` stream mode, video from an expo-emulator-capture agent
+   * inside the emulator, with scrcpy as the input transport. The Hub sets the socket directory
+   * when its feature is on, and otherwise a reason that tells the user how to turn it on.
+   * Without this option, the mode is not offered.
    */
-  experimentalGpuCaptureSocketDirectory?: string;
+  emulatorCapture?: EmulatorCaptureOptions;
   /** @internal Shared by router-managed source generations for one device. */
   deviceState?: DeviceSessionState;
   /**
@@ -366,6 +376,8 @@ export type CreateAppDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for a new device state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
+  /** Read Android's display rotation for emulator capture; adb by default. */
+  readDisplayRotation?: (serial: string, signal: AbortSignal) => Promise<DisplayRotation>;
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -386,9 +398,23 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     throw new Error(`inputSource must be one of: ${INPUT_SOURCES.join(", ")}`);
   }
   const inputSource = requestedInputSource;
-  if (streamMode === "scrcpy" && inputSource !== "scrcpy") {
-    throw new Error("scrcpy streaming requires scrcpy input");
+  if (streamMode !== "grpc-screenshot" && inputSource !== "scrcpy") {
+    throw new Error(`${streamMode} streaming requires scrcpy input`);
   }
+  const readDisplayRotation =
+    dependencies.readDisplayRotation ??
+    ((serial: string, signal: AbortSignal) =>
+      getDisplayRotation(serial, undefined, { signal, lane: "background" }));
+  /** The agent socket and the rotation reader that an emulator capture session needs. */
+  const emulatorCaptureSessionOptions = (mode: StreamMode) =>
+    mode === "emulator-capture"
+      ? {
+          emulatorCaptureSocket:
+            emulatorCaptureSocketFor(opts.serial, opts.emulatorCapture?.socketDirectory) ??
+            undefined,
+          readDisplayRotation: (signal: AbortSignal) => readDisplayRotation(opts.serial, signal),
+        }
+      : {};
   const openWebRtcPublisher = dependencies.createWebRtcPublisher ?? createWebRtcPublisher;
   const clock = dependencies.clock ?? SYSTEM_APP_CLOCK;
   const uploader = createMiddlewareUploader({
@@ -422,7 +448,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource,
-      experimentalGpuCaptureSocketDirectory: opts.experimentalGpuCaptureSocketDirectory,
+      ...emulatorCaptureSessionOptions(streamMode),
     });
     throwIfAborted(opts.signal, "serve-emu app startup aborted");
   } catch (error) {
@@ -1121,7 +1147,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       grpcImageMode,
       encoder,
       inputSource: nextInputSource,
-      experimentalGpuCaptureSocketDirectory: opts.experimentalGpuCaptureSocketDirectory,
+      ...emulatorCaptureSessionOptions(mode),
     });
 
   const replaceCapture = async (
@@ -1771,10 +1797,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           }
           const orientation = (payload as Record<string, unknown>).orientation;
           if (!isOrientationMode(orientation)) throw new Error(ORIENTATION_MODE_ERROR);
-          return Response.json({
-            ok: true,
-            orientation: await deviceState.setOrientation(orientation),
-          });
+          const result = await deviceState.setOrientation(orientation);
+          // A source that follows the display (emulator capture) re-reads it now.
+          session.displayChanged?.();
+          return Response.json({ ok: true, orientation: result });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -2417,8 +2443,17 @@ export function createRouter(
     return first.serial;
   };
 
-  const defaultStreamModeFor = (serial: string): StreamMode =>
-    (isEmulatorSerial(serial) ? defaults.streamMode : undefined) ?? "scrcpy";
+  const defaultStreamModeFor = (serial: string): StreamMode => {
+    const configured = isEmulatorSerial(serial) ? defaults.streamMode : undefined;
+    // @ref LLP 0017#integration — the capture default needs an agent; other emulators use gRPC
+    if (
+      configured === "emulator-capture" &&
+      !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)
+    ) {
+      return "grpc-screenshot";
+    }
+    return configured ?? "scrcpy";
+  };
 
   const createConfiguredApp = async (
     serial: string,
@@ -2490,7 +2525,20 @@ export function createRouter(
         } catch {}
         if (apps.get(serial) === existing) apps.delete(serial);
       }
-      const created = await createConfiguredApp(serial, undefined, parentSignal);
+      let created: EmuApp;
+      try {
+        created = await createConfiguredApp(serial, undefined, parentSignal);
+      } catch (error) {
+        // A default capture whose socket nothing answers (an emulator that exited and one
+        // started without the agent): use gRPC, as for an emulator without a socket.
+        if (!(error instanceof GpuCaptureUnavailableError) || streamModeOverrides.has(serial)) {
+          throw error;
+        }
+        console.warn(
+          `[emulator capture] ${serial}: no capture agent answered (${error.message}); using grpc-screenshot`,
+        );
+        created = await createConfiguredApp(serial, "grpc-screenshot", parentSignal);
+      }
       if (stopped || stoppingSerials.has(serial)) {
         try {
           await created.stop();
@@ -2609,7 +2657,7 @@ export function createRouter(
         ? configuredInputSource
         : "scrcpy";
     const inputSource =
-      streamMode === "scrcpy"
+      streamMode !== "grpc-screenshot"
         ? "scrcpy"
         : (requestedInputSource ??
           (currentMode === "grpc-screenshot" ? currentInputSource : configuredInputSource));
@@ -2768,6 +2816,19 @@ export function createRouter(
     });
   };
 
+  /** The modes this device can use now, and why `emulator-capture` cannot. */
+  const streamModeAvailability = (serial: string, current: StreamMode) => {
+    const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
+    // The running mode is available by definition, even if its socket went away meanwhile.
+    const emulatorCapture = !!capture.socket || current === "emulator-capture";
+    return {
+      availableModes: availableStreamModesForSerial(serial, { emulatorCapture }),
+      ...(!emulatorCapture && capture.reason
+        ? { unavailableModes: { "emulator-capture": capture.reason } }
+        : {}),
+    };
+  };
+
   const streamModeResponse = (serial: string, app: EmuApp): StreamModeResponse => ({
     ok: true,
     serial,
@@ -2790,7 +2851,7 @@ export function createRouter(
     inputSource: inputSourceForApp(app),
     availableInputSources:
       streamSessionForApp(app).mode === "grpc-screenshot" ? [...INPUT_SOURCES] : ["scrcpy"],
-    availableModes: availableStreamModesForSerial(serial),
+    ...streamModeAvailability(serial, streamSessionForApp(app).mode),
     sessionGeneration: sessionGenerations.get(serial) ?? 0,
   });
 
@@ -2945,6 +3006,10 @@ export function createRouter(
         const { mode } = streamModeRequest;
         if (mode === "grpc-screenshot" && !isEmulatorSerial(serial)) {
           throw new Error("grpc-screenshot is only available for Android Emulator devices");
+        }
+        if (mode === "emulator-capture") {
+          const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
+          if (!capture.socket) throw new Error(capture.reason ?? "Emulator capture is not offered");
         }
         streamMode = mode;
         encoder =

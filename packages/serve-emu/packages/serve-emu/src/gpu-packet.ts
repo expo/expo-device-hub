@@ -142,3 +142,16 @@ export function gpuSettingsCommand(maxSize: number, fps: number, bitRate: number
   command.writeUInt32BE(bitRate, 9);
   return command;
 }
+
+/** The first hello `protocol` value whose agent accepts the `R` (rotation) command. */
+export const GPU_ROTATION_PROTOCOL = 2;
+
+/** The `R` command: Android's display rotation, 0 to 3 (`Surface.ROTATION_0` to `ROTATION_270`). */
+export function gpuRotationCommand(rotation: number): Buffer {
+  if (!Number.isInteger(rotation) || rotation < 0 || rotation > 3)
+    throw new Error("Invalid display rotation");
+  const command = Buffer.alloc(5);
+  command[0] = 82; // R
+  command.writeUInt32BE(rotation, 1);
+  return command;
+}

@@ -212,18 +212,26 @@ emulator @Pixel_8 -gpu host
 
 You can confirm the mode in the emulator log (`vulkan_mode_selected:host` = good; `lavapipe`/`llvmpipe` = software fallback) or via `adb shell dumpsys gfxinfo <pkg>` (look for a low "Janky frames" percentage while scrolling). For an extra fps margin, lower `--max-size` to stream at a smaller resolution.
 
-### Experimental GPU capture on macOS
+### Experimental emulator capture on macOS
 
 On macOS with Apple silicon, an emulator started with the
 [`expo-emulator-capture`](https://github.com/expo/expo-device-hub/tree/main/packages/expo-emulator-capture) agent serves its screen on a Unix
-socket, encoded by VideoToolbox (the hardware encoder when the Mac has one). The middleware option
-`experimentalGpuCaptureSocketDirectory` (on `createApp` and `createRouter`) names the
-directory of those sockets, `<serial>.sock`. A scrcpy session for an emulator with a
-socket there then takes its video from the agent and keeps scrcpy for input. Without an
-answering socket, the session uses scrcpy video. `/health` reports
-`captureBackend: "expo-emulator-capture"` and `experimentalGpuCapture` diagnostics.
-Folding changes the stream size, and clients resync as after a rotation. The standalone
-CLI does not use the option. See
+socket, encoded by VideoToolbox (the hardware encoder when the Mac has one). The middleware
+offers it as a third stream mode, `emulator-capture`, with scrcpy kept for input:
+
+- `emulatorCapture.socketDirectory` (on `createApp` and `createRouter`) names the directory of
+  the agent sockets, `<serial>.sock`. An emulator with a socket there can use the mode.
+- `emulatorCapture.unavailableReason` and `emulatorCapture.missingAgentReason` explain to the
+  user why the mode is off, or why an emulator without a socket cannot use it.
+  `/api/stream-mode` returns them in `unavailableModes`.
+- With `streamMode: "emulator-capture"` as the default, an emulator without an answering agent
+  uses `grpc-screenshot` instead. An explicit request never falls back.
+- The session reads Android's display rotation through adb, at start, every second, and after
+  `POST /api/orientation`, and the agent turns the picture upright. Touches follow the rotation.
+- `/health` reports `captureBackend: "expo-emulator-capture"` and `experimentalGpuCapture`
+  diagnostics. Folding and rotation change the stream size, and clients resync from a keyframe.
+
+The standalone server and CLI do not offer the mode. See
 [LLP 0017](https://github.com/expo/expo-device-hub/blob/main/llp/0017-emulator-capture-macos.explainer.md).
 
 ## Browser UI
