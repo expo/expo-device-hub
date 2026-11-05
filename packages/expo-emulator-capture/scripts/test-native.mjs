@@ -6,5 +6,7 @@ import { $, root } from "./common.mjs";
 // including the Linux CI image.
 const compiler = process.env.CXX || "c++";
 await mkdir(join(root, "build"), { recursive: true });
-await $`${compiler} -std=c++17 -Wall -Wextra tests/protocol.test.cpp -o build/protocol-test`;
-await $`./build/protocol-test`;
+for (const test of ["protocol"]) {
+  await $`${compiler} -std=c++17 -O2 -Wall -Wextra tests/${test}.test.cpp -o build/${test}-test`;
+  await $`./build/${test}-test`;
+}

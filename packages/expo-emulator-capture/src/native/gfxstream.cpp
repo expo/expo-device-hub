@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: MIT
 #include "gfxstream.h"
+#include <type_traits>
 #include "frida-gum.h"
 
 namespace expo_capture {
+
 namespace {
+
+// The mangled parameter type of uint64_t: unsigned long long on macOS, unsigned
+// long on Linux x86-64.
+constexpr const char* kReadColorBufferDeprecated =
+    std::is_same<uint64_t, unsigned long long>::value
+        ? "_ZN9gfxstream4host11FrameBuffer25readColorBufferDeprecatedEjiiiijjPvy"
+        : "_ZN9gfxstream4host11FrameBuffer25readColorBufferDeprecatedEjiiiijjPvm";
 
 template <class T> bool resolve(GumModule* module, const char* name, T& out, bool local = false) {
   GumAddress address = local ? gum_module_find_symbol_by_name(module, name)
@@ -12,7 +21,18 @@ template <class T> bool resolve(GumModule* module, const char* name, T& out, boo
   return address != 0;
 }
 
+
 }  // namespace
+
+bool colorBufferSize(const Gfxstream& g, uint32_t handle, int& width, int& height) {
+  void* fb = g.getFB();
+  if (!fb || !handle) return false;
+  auto colorBuffer = g.findColorBuffer(fb, handle);
+  if (!colorBuffer) return false;
+  width = int(g.colorBufferWidth(colorBuffer.get()));
+  height = int(g.colorBufferHeight(colorBuffer.get()));
+  return width >= 2 && height >= 2;
+}
 
 std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
   g.path = gum_module_get_path(module);
@@ -39,8 +59,7 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
       {"getHeight",
        resolve(module, "_ZNK9gfxstream4host11FrameBuffer9getHeightEv", g.frameBufferHeight)},
       {"readColorBufferDeprecated",
-       resolve(module, "_ZN9gfxstream4host11FrameBuffer25readColorBufferDeprecatedEjiiiijjPvy",
-               g.readColorBuffer)},
+       resolve(module, kReadColorBufferDeprecated, g.readColorBuffer)},
       {"ColorBuffer::getWidth",
        resolve(module, "_ZNK9gfxstream4host11ColorBuffer8getWidthEv", g.colorBufferWidth)},
       {"ColorBuffer::getHeight",
