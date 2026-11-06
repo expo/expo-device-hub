@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
@@ -114,20 +115,47 @@ describe("installEmulatorCapture", () => {
       expect(calls).toHaveLength(1);
     }));
 
+  test("one of two Hubs takes over a dead owner's lock, and both get one install", () =>
+    withCache(async (baseDirectory) => {
+      const lock = join(baseDirectory, "tools", EMULATOR_CAPTURE_PACKAGE, "1.2.3.lock");
+      await mkdir(lock, { recursive: true });
+      // A pid that just exited.
+      const dead = spawnSync("true").pid;
+      await writeFile(join(lock, "owner"), `${dead} ${hostname()} token-d\n`);
+      const calls: string[][] = [];
+      const npm = fakeNpm(calls);
+      const slowNpm: InstallCommand = async (...args) => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return npm(...args);
+      };
+      const options = {
+        version: "1.2.3",
+        platform: "darwin" as const,
+        baseDirectory,
+        run: slowNpm,
+      };
+      const [first, second] = await Promise.all([
+        installEmulatorCapture(options),
+        installEmulatorCapture(options),
+      ]);
+      expect(first).toBe(second);
+      expect(calls).toHaveLength(1);
+    }));
+
   test("takes over the lock of a Hub that stopped during its install", () =>
     withCache(async (baseDirectory) => {
       const lock = join(baseDirectory, "tools", EMULATOR_CAPTURE_PACKAGE, "1.2.3.lock");
       await mkdir(lock, { recursive: true });
       // Without an owner, a fresh lock is still held.
       expect(await lockIsAbandoned(lock, () => true)).toBe(false);
-      await writeFile(join(lock, "owner"), `4242 ${hostname()}\n`);
+      await writeFile(join(lock, "owner"), `4242 ${hostname()} token-a\n`);
       expect(await lockIsAbandoned(lock, () => true)).toBe(false);
       expect(await lockIsAbandoned(lock, () => false)).toBe(true);
       // Another host's process cannot be checked from here.
-      await writeFile(join(lock, "owner"), "4242 another-host\n");
+      await writeFile(join(lock, "owner"), "4242 another-host token-b\n");
       expect(await lockIsAbandoned(lock, () => false)).toBe(false);
       // The pid of this test process is alive; a lock that names it is held.
-      await writeFile(join(lock, "owner"), `${process.pid} ${hostname()}\n`);
+      await writeFile(join(lock, "owner"), `${process.pid} ${hostname()} token-c\n`);
       expect(await lockIsAbandoned(lock)).toBe(false);
     }));
 

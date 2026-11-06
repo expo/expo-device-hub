@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { STREAM_MODES, type StreamMode } from "./shared/api-contracts.ts";
 
@@ -56,7 +56,15 @@ export function emulatorCaptureSocketFor(
 ): string | null {
   if (!socketDirectory || !isEmulatorSerial(serial)) return null;
   const socket = join(socketDirectory, `${serial}.sock`);
-  return existsSync(socket) ? socket : null;
+  try {
+    const info = lstatSync(socket);
+    // A socket that another user created, or a link, is not this user's agent.
+    const uid = process.getuid?.();
+    if (info.isSymbolicLink() || (uid !== undefined && info.uid !== uid)) return null;
+    return socket;
+  } catch {
+    return null;
+  }
 }
 
 /**
