@@ -157,7 +157,7 @@ export function DeviceModelScreen({
   onCopy,
 }: DeviceModelScreenProps) {
   const {
-    fold,
+    fold: reportedFold,
     capabilities,
     displays,
     screen,
@@ -168,6 +168,15 @@ export function DeviceModelScreen({
     sendScroll,
   } = client;
   const hostRef = useRef<HTMLDivElement | null>(null);
+  // A non-finite angle, from a custom client, is an unknown angle. Views and
+  // the scene's spring built from it would stay non-finite for good.
+  const fold = useMemo(
+    () =>
+      reportedFold && reportedFold.angle !== undefined && !Number.isFinite(reportedFold.angle)
+        ? { ...reportedFold, angle: undefined }
+        : reportedFold,
+    [reportedFold],
+  );
   const streamConfig = useMemo(() => duoStreamConfig(screen, model), [screen, model]);
   // A client that streams each display on its own reports fold events, which frame the model.
   const separateDisplays = model.streams === "displays";
