@@ -7,6 +7,7 @@ import {
   EMULATOR_CAPTURE_ENV,
   EMULATOR_CAPTURE_LIBRARY_ENV,
   emulatorCaptureArgs,
+  emulatorCaptureEncoderProblem,
   emulatorCaptureEnv,
   emulatorCaptureMissingAgentReason,
   emulatorCaptureOffReason,
@@ -131,10 +132,43 @@ describe("readEmulatorCapture", () => {
       expect(capture.problem()).toBeNull();
     }));
 
-  test("stays off on hosts other than macOS on Apple silicon, and the Hub still starts", () => {
+  test("stays off on hosts other than macOS on Apple silicon and Linux x86-64", () => {
     const env = { [EMULATOR_CAPTURE_ENV]: "1" };
-    expect(readEmulatorCapture(env, "linux", "x64", never)).toBeNull();
-    expect(readEmulatorCapture(env, "darwin", "x64", never)).toBeNull();
+    for (const [platform, arch] of [
+      ["linux", "arm64"],
+      ["darwin", "x64"],
+      ["win32", "x64"],
+    ] as const) {
+      expect(readEmulatorCapture(env, platform, arch, never)).toBeNull();
+    }
+  });
+
+  test("on Linux, refuses to boot with the agent while x264 build 165 is missing", async () => {
+    let encoder: string | null = "x264 build 165 (libx264.so.165) is missing.";
+    let installs = 0;
+    const capture = readEmulatorCapture(
+      { [EMULATOR_CAPTURE_ENV]: "1" },
+      "linux",
+      "x64",
+      async () => {
+        installs++;
+        return "/cache/agent.so";
+      },
+      () => encoder,
+    )!;
+    expect(capture.platform).toBe("linux");
+    // The package still installs in the background.
+    expect(installs).toBe(1);
+    await expect(capture.library()).rejects.toThrow("libx264.so.165");
+    expect(capture.problem()).toBe("x264 build 165 (libx264.so.165) is missing.");
+    expect(emulatorCaptureMissingAgentReason(capture, "emulator-5554", () => "")).toBe(
+      "x264 build 165 (libx264.so.165) is missing.",
+    );
+    // The user installs x264: the next boot loads the agent.
+    encoder = null;
+    expect(await capture.library()).toBe("/cache/agent.so");
+    expect(capture.problem()).toBeNull();
+    expect(installs).toBe(1);
   });
 
   test("refuses a relative or missing library path", () => {
@@ -158,9 +192,36 @@ test("the off reason says how to turn the capture on, or why the host cannot", (
   expect(emulatorCaptureOffReason("darwin", "arm64")).toBe(
     `Turned off. Restart the Hub with --experimental-emulator-capture, or set ${EMULATOR_CAPTURE_ENV}=1 for expo start.`,
   );
-  expect(emulatorCaptureOffReason("linux", "x64")).toBe(
-    "Emulator capture needs macOS on Apple silicon.",
+  expect(emulatorCaptureOffReason("linux", "x64")).toContain("Turned off.");
+  expect(emulatorCaptureOffReason("win32", "x64")).toBe(
+    "Emulator capture needs macOS on Apple silicon or Linux x86-64.",
   );
+});
+
+test("emulatorCaptureEncoderProblem looks for x264 build 165 where the loader does", () => {
+  const found = (paths: string[]) => (path: string) => paths.includes(path);
+  expect(emulatorCaptureEncoderProblem("darwin", {}, found([]))).toBeNull();
+  expect(emulatorCaptureEncoderProblem("linux", {}, found([]))).toBe(
+    "x264 build 165 (libx264.so.165) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later), then start the emulator again from the Hub.",
+  );
+  expect(
+    emulatorCaptureEncoderProblem("linux", {}, found(["/usr/lib/x86_64-linux-gnu/libx264.so.165"])),
+  ).toBeNull();
+  expect(
+    emulatorCaptureEncoderProblem(
+      "linux",
+      { LD_LIBRARY_PATH: "relative:/opt/x264/lib" },
+      found(["/opt/x264/lib/libx264.so.165"]),
+    ),
+  ).toBeNull();
+  // A relative LD_LIBRARY_PATH entry depends on the emulator's directory; it does not count.
+  expect(
+    emulatorCaptureEncoderProblem(
+      "linux",
+      { LD_LIBRARY_PATH: "relative" },
+      found(["relative/libx264.so.165"]),
+    ),
+  ).not.toBeNull();
 });
 
 test("emulatorCaptureEnv names the socket and log by serial and keeps an inherited preload", () => {
@@ -197,4 +258,18 @@ test("ensurePrivateDirectory creates a private directory and refuses one that ot
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("on Linux, the agent loads with LD_PRELOAD and the emulator renders with lavapipe", () => {
+  const capture = {
+    library: "/lib.so",
+    socketDirectory: "/tmp/capture",
+    platform: "linux" as const,
+  };
+  expect(emulatorCaptureArgs("linux")).toEqual(["-gpu", "lavapipe"]);
+  expect(emulatorCaptureEnv(capture, "emulator-5554", { LD_PRELOAD: "/other.so" })).toEqual({
+    LD_PRELOAD: "/lib.so:/other.so",
+    EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/capture/emulator-5554.sock",
+    EXPO_EMULATOR_CAPTURE_LOG: "/tmp/capture/emulator-5554.log",
+  });
 });
