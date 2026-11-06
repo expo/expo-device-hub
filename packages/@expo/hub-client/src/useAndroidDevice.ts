@@ -59,6 +59,12 @@ import { androidOrientationBackend, parseAndroidOrientation } from "./android-or
 import { isLandscapeOrientation } from "./orientation";
 import { useDeviceOrientation } from "./useDeviceOrientation";
 import { androidMessageForKeyboardInput } from "./keyboard";
+import {
+  carryCanvasFrame,
+  forgetCanvasFrames,
+  markCanvasFrame,
+  STREAM_CANVAS_CONTEXT,
+} from "./canvas-frames";
 import { MsePlayer } from "./mse-player";
 import {
   isDeliberateServerClose,
@@ -351,6 +357,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The last canvas that received frames, kept after it detaches so that its
+  // replacement can start from its last frame.
+  const lastCanvasRef = useRef<HTMLCanvasElement | null>(null);
   // Monotonic log id source, persisted across logcat reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -450,7 +459,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
-      canvasRef.current = el?.tagName === "CANVAS" ? (el as HTMLCanvasElement) : null;
+      const canvas = el?.tagName === "CANVAS" ? (el as HTMLCanvasElement) : null;
+      // A view that swaps its canvas, as a switch between 2D and 3D does, shows
+      // the last frame at once: a still Android screen sends no new frame.
+      if (canvas && lastCanvasRef.current && canvas !== lastCanvasRef.current) {
+        carryCanvasFrame(lastCanvasRef.current, canvas);
+      }
+      if (canvas) lastCanvasRef.current = canvas;
+      canvasRef.current = canvas;
       const video = el?.tagName === "VIDEO" ? (el as HTMLVideoElement) : null;
       attachedVideoRef.current = video;
       setWebRtcVideoElement((current) => (current === video ? current : video));
@@ -1384,6 +1400,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     setStatus("connecting");
     setError(null);
+    // Frames from an earlier session, of another device or token, are not carried
+    // into a replacement canvas.
+    if (lastCanvasRef.current) forgetCanvasFrames(lastCanvasRef.current);
+    if (canvasRef.current) forgetCanvasFrames(canvasRef.current);
 
     let cancelled = false;
     let msePlayer: MsePlayer | null = null;
@@ -1439,7 +1459,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     const paint = (frame: VideoFrame) => {
       const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d", { alpha: false, desynchronized: true });
+      const ctx = canvas?.getContext("2d", STREAM_CANVAS_CONTEXT);
       if (!canvas || !ctx) {
         frame.close();
         return;
@@ -1451,6 +1471,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
       ctx.drawImage(frame, 0, 0);
       frame.close();
+      markCanvasFrame(canvas);
+      lastCanvasRef.current = canvas;
 
       markPainted();
       fpsCount++;
@@ -1502,12 +1524,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (useMse) {
         const isKey = packet.isKey ?? scanAU(packet.data).isKey;
         if (!msePlayer) {
-          const canvas = canvasRef.current;
-          if (!canvas) {
+          if (!canvasRef.current) {
             requestKeyframe();
             return;
           }
-          msePlayer = new MsePlayer(canvas, {
+          // The player reads the canvas on every frame, so a replaced canvas keeps receiving frames.
+          msePlayer = new MsePlayer(() => canvasRef.current, {
             onFirstFrame: markPainted,
             onResize: (width, height) => {
               if (!cancelled) setScreen({ width, height });
