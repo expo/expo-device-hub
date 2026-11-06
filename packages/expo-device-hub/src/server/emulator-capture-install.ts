@@ -82,6 +82,9 @@ export async function installEmulatorCapture({
         "--no-fund",
         "--no-audit",
         "--no-save",
+        // Asks the registry, not a cached package list: a release minutes old has the pinned
+        // version, and a list cached before it would answer "No matching version found".
+        "--prefer-online",
         `${EMULATOR_CAPTURE_PACKAGE}@${version}`,
       ],
       { timeoutMs: INSTALL_TIMEOUT_MS },
