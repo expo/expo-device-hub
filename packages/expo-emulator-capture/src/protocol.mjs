@@ -8,7 +8,12 @@ export const FLAGS = Object.freeze({
   hello: 2,
   configured: 3,
   resized: 4,
+  /** A new consumer replaced this one; the agent closes the socket next. */
+  replaced: 5,
 });
+
+/** The smallest longest-edge cap that the agent accepts; 0 means the native size. */
+export const MIN_MAX_SIZE = 16;
 
 /** Splits a byte stream into GPC1 records. Throws on malformed input. */
 export class RecordReader {
@@ -54,6 +59,8 @@ export function settingsCommand({ maxSize = 0, fps = 60, bitRate = 12_000_000 } 
     if (!Number.isInteger(value) || value < min || value > max)
       throw new RangeError(`${name} must be an integer from ${min} to ${max}`);
   }
+  if (maxSize > 0 && maxSize < MIN_MAX_SIZE)
+    throw new RangeError(`maxSize must be 0 or at least ${MIN_MAX_SIZE}`);
   const command = Buffer.alloc(13);
   command[0] = 0x53; // S
   command.writeUInt32BE(maxSize, 1);

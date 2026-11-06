@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { $, root } from "./common.mjs";
 import { requireNativeTarget } from "./platform.mjs";
@@ -12,6 +12,10 @@ await mkdir(join(root, "build"), { recursive: true });
 await mkdir(join(root, `dist/${target}`), { recursive: true });
 
 const warnings = ["-Wall", "-Wextra", "-Wno-unused-parameter"];
+// Hello and expo_emulator_capture_version() report the package version.
+const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+if (!/^[0-9A-Za-z.+-]+$/.test(version)) throw new Error(`unexpected package version ${version}`);
+const defines = [`-DEXPO_EMULATOR_CAPTURE_VERSION="${version}"`];
 
 if (target === "darwin-arm64") {
   // Export one version symbol; everything else, including the bundled Gum and
@@ -32,6 +36,7 @@ if (target === "darwin-arm64") {
     "-arch",
     "arm64",
     "-mmacosx-version-min=13.0",
+    ...defines,
     "-I",
     "deps/frida-gum",
     "src/native/agent.cpp",

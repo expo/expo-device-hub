@@ -53,11 +53,16 @@ import { readAppIcon } from "./apk-icon.ts";
 import {
   availableStreamModesForSerial,
   emulatorCaptureAvailability,
+  emulatorCaptureMissingAgent,
   emulatorCaptureSocketFor,
   isEmulatorSerial,
   type EmulatorCaptureOptions,
 } from "./device-capabilities.ts";
-import { GpuCaptureUnavailableError } from "./gpu-session.ts";
+import {
+  GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureReplacedError,
+  GpuCaptureUnavailableError,
+} from "./gpu-session.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
@@ -2143,6 +2148,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
     deviceState,
     activateDeviceState,
     isStreaming: () => status === "streaming",
+    /** The failure code that ended this app's capture, or null. */
+    getTerminalErrorCode: (): string | null => lastErrorCode,
     /** Authoritative settings for the currently active capture generation. */
     getStreamEncoderSettings: (): StreamEncoderSettings => ({
       ...streamEncoderSettings,
@@ -2336,6 +2343,9 @@ export function createRouter(
   const pending = new Map<string, Promise<EmuApp>>();
   const failureAt = new Map<string, number>();
   const streamModeOverrides = new Map<string, StreamMode>();
+  // Emulators whose capture agent another consumer took: their default is gRPC until the user
+  // selects emulator capture again.
+  const captureTakenOver = new Set<string>();
   const grpcImageModeOverrides = new Map<string, GrpcImageMode>();
   const encoderOverrides = new Map<string, GrpcEncoder>();
   const inputSourceOverrides = new Map<string, InputSource>();
@@ -2442,13 +2452,23 @@ export function createRouter(
   const defaultStreamModeFor = (serial: string): StreamMode => {
     const configured = isEmulatorSerial(serial) ? defaults.streamMode : undefined;
     // @ref LLP 0017#integration — the capture default needs an agent; other emulators use gRPC
-    if (
-      configured === "emulator-capture" &&
-      !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)
-    ) {
-      return "grpc-screenshot";
+    if (configured === "emulator-capture") {
+      if (!emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)) {
+        captureTakenOver.delete(serial); // A new emulator on this serial starts fresh.
+        return "grpc-screenshot";
+      }
+      if (captureTakenOver.has(serial)) return "grpc-screenshot";
     }
     return configured ?? "scrcpy";
+  };
+
+  /** A replaced capture keeps its emulator on gRPC; an explicit capture choice ends with it. */
+  const noteCaptureTakenOver = (serial: string) => {
+    captureTakenOver.add(serial);
+    if (streamModeOverrides.get(serial) === "emulator-capture") streamModeOverrides.delete(serial);
+    console.warn(
+      `[emulator capture] ${serial}: another program took over the capture; using grpc-screenshot until emulator capture is selected again`,
+    );
   };
 
   const createConfiguredApp = async (
@@ -2516,22 +2536,35 @@ export function createRouter(
 
     const promise = (async () => {
       if (existing) {
+        // Integrations may pass apps without this method.
+        if (existing.getTerminalErrorCode?.() === GPU_CAPTURE_REPLACED_CODE) {
+          noteCaptureTakenOver(serial);
+        }
         try {
           await existing.stop();
         } catch {}
         if (apps.get(serial) === existing) apps.delete(serial);
       }
+      // A capture choice from before the emulator restarted without its agent.
+      if (
+        streamModeOverrides.get(serial) === "emulator-capture" &&
+        !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)
+      ) {
+        streamModeOverrides.delete(serial);
+      }
       let created: EmuApp;
       try {
         created = await createConfiguredApp(serial, undefined, parentSignal);
       } catch (error) {
-        // A default capture whose socket nothing answers (an emulator that exited and one
-        // started without the agent): use gRPC, as for an emulator without a socket.
+        if (error instanceof GpuCaptureReplacedError) noteCaptureTakenOver(serial);
+        // A default capture that cannot start (nothing answers the socket of an emulator that
+        // exited, or another program has the agent): use gRPC, as for an emulator without a
+        // socket.
         if (!(error instanceof GpuCaptureUnavailableError) || streamModeOverrides.has(serial)) {
           throw error;
         }
         console.warn(
-          `[emulator capture] ${serial}: no capture agent answered (${error.message}); using grpc-screenshot`,
+          `[emulator capture] ${serial}: capture unavailable (${error.message}); using grpc-screenshot`,
         );
         created = await createConfiguredApp(serial, "grpc-screenshot", parentSignal);
       }
@@ -3021,11 +3054,23 @@ export function createRouter(
       }
 
       try {
+        // An explicit choice takes the agent back from another consumer.
+        if (streamMode === "emulator-capture") captureTakenOver.delete(serial);
         const app = await switchStreamMode(serial, streamMode, grpcImageMode, inputSource, encoder);
         return Response.json(streamModeResponse(serial, app));
       } catch (err) {
         if (err instanceof ScreenRecordingConflictError) {
           return streamModeConflictResponse(err);
+        }
+        // A socket that a killed emulator left behind answers nothing: say why, not ECONNREFUSED.
+        if (
+          streamMode === "emulator-capture" &&
+          err instanceof GpuCaptureUnavailableError &&
+          !(err instanceof GpuCaptureReplacedError)
+        ) {
+          return streamModeUnavailableResponse(
+            new Error(emulatorCaptureMissingAgent(serial, defaults.emulatorCapture)),
+          );
         }
         return streamModeUnavailableResponse(err);
       }

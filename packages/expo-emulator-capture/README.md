@@ -48,14 +48,16 @@ With the capture on, the Hub:
 
 - installs the matching version of this package with npm, into
   `~/.cache/expo-device-hub/tools/expo-emulator-capture/<version>`, the first time;
-- boots emulators with the agent and with `-gpu host`;
+- boots emulators with `-gpu host`, and with the agent once the package is installed. The
+  agent logs to `<tmpdir>/expo-emulator-capture/<serial>.log`;
 - streams each emulator that has an agent through it, with scrcpy for input, and makes
   "Emulator capture" the default stream source. Emulators without the agent use gRPC.
 
-The Hub shows "Emulator capture" in the stream source select in every case. When the
+The Hub shows "Emulator capture" in the stream source select for every emulator. When the
 source cannot work, it is disabled, and a note below the select says why and what to do:
 for example, restart the Hub with the flag, or restart an emulator that started without
-the agent from the Hub.
+the agent from the Hub. When the agent turned itself off, for example because an emulator
+update removed a renderer symbol that it needs, the note gives the agent's reason.
 
 To use a library that you built, name it instead of the installed package:
 
@@ -150,7 +152,10 @@ renderer, and the emulator used 4.4 cores. Earlier frame rate measurements (2026
   renderer symbols; it refuses to capture when they are missing.
 - The agent loads only when the emulator starts with it. Attaching to an emulator that is
   already running is not implemented.
-- Only the main display is captured. One consumer at a time; a new one replaces the old.
+- Only the main display is captured. One consumer at a time: a new one replaces the old,
+  which gets a `replaced` record first. The Hub then streams that emulator with gRPC until
+  you select "Emulator capture" again, so two Hubs do not take the capture from each other
+  in a loop.
 - The EAS macOS VMs cannot run the Android Emulator (Hypervisor.framework reports
   `HV_UNSUPPORTED` there), so the macOS agent was tested only on a physical Mac.
 

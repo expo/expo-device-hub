@@ -130,6 +130,30 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   };
 }
 
+/**
+ * Whether two statuses show the same thing, so a poll can keep the current object and skip a
+ * render. Every field that the UI shows counts, the unavailable reasons included.
+ */
+export function sameAndroidStreamSource(
+  current: DeviceStreamSourceStatus | null,
+  next: DeviceStreamSourceStatus,
+): boolean {
+  return (
+    current?.mode === next.mode &&
+    current.repeatFrameMs === next.repeatFrameMs &&
+    current.grpcImageMode === next.grpcImageMode &&
+    current.encoder === next.encoder &&
+    current.encoderName === next.encoderName &&
+    current.availableEncoders.join() === next.availableEncoders.join() &&
+    current.hardwareEncoderError === next.hardwareEncoderError &&
+    current.inputSource === next.inputSource &&
+    current.sessionGeneration === next.sessionGeneration &&
+    current.availableModes.join() === next.availableModes.join() &&
+    current.availableInputSources.join() === next.availableInputSources.join() &&
+    JSON.stringify(current.unavailableModes ?? {}) === JSON.stringify(next.unavailableModes ?? {})
+  );
+}
+
 /** Reasons per source; a malformed or unknown entry is dropped, not the whole status. */
 function parseUnavailableModes(
   value: unknown,

@@ -10,7 +10,12 @@ export const GPU_RECORD = {
   hello: 2,
   configured: 3,
   resized: 4,
+  /** A new consumer replaced this one; the agent closes the socket next. */
+  replaced: 5,
 } as const;
+
+/** The smallest longest-edge cap that the agent accepts; 0 still means the native size. */
+export const GPU_MIN_MAX_SIZE = 16;
 
 export type GpuRecord = {
   pts: bigint;
@@ -39,18 +44,16 @@ export class GpuPacketReader {
         fps = b.readUInt32BE(28);
       const media = flags === GPU_RECORD.frame || flags === GPU_RECORD.keyFrame;
       const details = flags === GPU_RECORD.hello || flags === GPU_RECORD.configured;
+      // A replaced record has no size or rate.
+      const sized = flags !== GPU_RECORD.replaced;
       if (
         length > MAX_GPU_PACKET_BYTES ||
-        flags > GPU_RECORD.resized ||
+        flags > GPU_RECORD.replaced ||
         (media && length === 0) ||
         (details && length > MAX_GPU_DETAILS_BYTES) ||
-        (flags === GPU_RECORD.resized && length !== 0) ||
-        width < 1 ||
-        width > 4096 ||
-        height < 1 ||
-        height > 4096 ||
-        fps < 1 ||
-        fps > 120
+        ((flags === GPU_RECORD.resized || flags === GPU_RECORD.replaced) && length !== 0) ||
+        (sized &&
+          (width < 1 || width > 4096 || height < 1 || height > 4096 || fps < 1 || fps > 120))
       )
         throw new Error("Invalid GPU stream header");
       if (b.length < GPU_HEADER_BYTES + length) return;
@@ -123,6 +126,9 @@ export function splitGpuAccessUnit(data: Buffer): {
 }
 
 export function gpuSettingsCommand(maxSize: number, fps: number, bitRate: number): Buffer {
+  // The Hub accepts any cap from 1; below the agent's minimum, stream at the minimum.
+  if (Number.isInteger(maxSize) && maxSize > 0 && maxSize < GPU_MIN_MAX_SIZE)
+    maxSize = GPU_MIN_MAX_SIZE;
   if (
     !Number.isInteger(maxSize) ||
     maxSize < 0 ||

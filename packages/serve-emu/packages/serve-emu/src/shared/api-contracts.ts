@@ -598,6 +598,11 @@ export type ExperimentalGpuCaptureDiagnostics = {
   rotation?: 0 | 1 | 2 | 3 | null;
   /** Rotation changes passed to the agent since the session started. Older hosts omit it. */
   rotations?: number;
+  /**
+   * The display size that touches target: the native size, upright for the rotation of the
+   * picture that clients show. Older hosts omit it.
+   */
+  touchSize?: DeviceSize;
 };
 
 export type HealthResponse = {
@@ -1904,6 +1909,9 @@ function parseExperimentalGpuCaptureDiagnostics(value: unknown): ExperimentalGpu
     ...(item.rotations === undefined
       ? {}
       : { rotations: number(item.rotations, `${name}.rotations`) }),
+    ...(item.touchSize === undefined
+      ? {}
+      : { touchSize: parseDeviceSize(item.touchSize, `${name}.touchSize`) }),
   };
 }
 

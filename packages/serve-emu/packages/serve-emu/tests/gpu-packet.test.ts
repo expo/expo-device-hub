@@ -55,7 +55,7 @@ describe("GPU capture socket records", () => {
     const cases = [record(idr), record(idr), record(idr), record(idr), record(idr)];
     cases[0]!.write("NOPE");
     cases[1]!.writeUInt32BE(MAX_GPU_PACKET_BYTES + 1, 4);
-    cases[2]!.writeUInt32BE(5, 16);
+    cases[2]!.writeUInt32BE(6, 16);
     cases[3]!.writeUInt32BE(0, 20);
     cases[4]!.writeUInt32BE(121, 28);
     for (const bytes of cases) expect(() => new GpuPacketReader(() => {}).push(bytes)).toThrow();
@@ -67,13 +67,23 @@ describe("GPU capture socket records", () => {
     ).toThrow("limit");
   });
 
-  test("rejects empty pictures, resize payloads, and oversized details", () => {
+  test("rejects empty pictures, resize and replaced payloads, and oversized details", () => {
     for (const bytes of [
       record(Buffer.alloc(0), GPU_RECORD.frame),
       record(idr, GPU_RECORD.resized),
+      record(idr, GPU_RECORD.replaced),
       record(Buffer.alloc(4097, 0x20), GPU_RECORD.hello),
     ])
       expect(() => new GpuPacketReader(() => {}).push(bytes)).toThrow("header");
+  });
+
+  test("accepts a replaced record, which has no size or rate", () => {
+    const replaced = Buffer.alloc(32);
+    replaced.write("GPC1");
+    replaced.writeUInt32BE(GPU_RECORD.replaced, 16);
+    const received: GpuRecord[] = [];
+    new GpuPacketReader((packet) => received.push(packet)).push(replaced);
+    expect(received.map((packet) => packet.flags)).toEqual([GPU_RECORD.replaced]);
   });
 
   test("parses details as a JSON object", () => {
@@ -111,5 +121,12 @@ describe("GPU capture settings command", () => {
       expect(() => gpuSettingsCommand(0, fps, 12_000_000)).toThrow();
     expect(() => gpuSettingsCommand(0, 30, 0)).toThrow();
     expect(() => gpuSettingsCommand(4097, 30, 12_000_000)).toThrow();
+  });
+
+  test("raises a cap below the agent's minimum to the minimum", () => {
+    for (const maxSize of [1, 4, 15])
+      expect(gpuSettingsCommand(maxSize, 30, 12_000_000).readUInt32BE(1)).toBe(16);
+    expect(gpuSettingsCommand(0, 30, 12_000_000).readUInt32BE(1)).toBe(0);
+    expect(gpuSettingsCommand(16, 30, 12_000_000).readUInt32BE(1)).toBe(16);
   });
 });

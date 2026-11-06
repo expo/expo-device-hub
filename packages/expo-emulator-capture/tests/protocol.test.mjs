@@ -56,6 +56,9 @@ describe("settingsCommand", () => {
   test("rejects values outside the protocol bounds", () => {
     expect(() => settingsCommand({ fps: 121 })).toThrow(RangeError);
     expect(() => settingsCommand({ maxSize: 4097 })).toThrow(RangeError);
+    // The agent refuses a cap from 1 to 15.
+    expect(() => settingsCommand({ maxSize: 4 })).toThrow(RangeError);
+    expect(settingsCommand({ maxSize: 16 }).readUInt32BE(1)).toBe(16);
     expect(() => settingsCommand({ bitRate: 99_999 })).toThrow(RangeError);
   });
 });
