@@ -58,10 +58,40 @@ export async function loadDeviceModel(
   try {
     await MeshoptDecoder.ready;
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-    return rigDeviceModel(description, await loader.parseAsync(await bytes, ""));
+    const gltf = await loader.parseAsync(await bytes, "");
+    try {
+      return rigDeviceModel(description, gltf);
+    } catch (error) {
+      // A model that cannot be rigged would otherwise keep its decoded images
+      // until garbage collection, on every attempt to show it.
+      disposeParsedModel(gltf.scene);
+      throw error;
+    }
   } catch (error) {
     modelBytes.delete(url);
     throw error;
+  }
+}
+
+/** Release a parsed model's geometries, materials, textures, and decoded images. */
+export function disposeParsedModel(object: THREE.Object3D) {
+  const materials = new Set<THREE.Material>();
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    child.geometry.dispose();
+    for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+      materials.add(material);
+    }
+  });
+  for (const material of materials) {
+    for (const value of Object.values(material)) {
+      if (!(value instanceof THREE.Texture)) continue;
+      value.dispose();
+      if (typeof ImageBitmap !== "undefined" && value.image instanceof ImageBitmap) {
+        value.image.close();
+      }
+    }
+    material.dispose();
   }
 }
 
