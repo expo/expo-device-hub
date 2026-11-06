@@ -1,54 +1,12 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { describe, expect, spyOn, test } from "bun:test";
 import * as THREE from "three";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { type GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 import { DEVICE_MODELS, type DeviceModelDescription } from "../foldable/device-models";
-import { type DeviceModelRig, rigDeviceModel } from "../foldable/device-model-rig";
+import { type DeviceModelRig, loadDeviceModel, rigDeviceModel } from "../foldable/device-model-rig";
 import { duoViewFolds } from "../foldable/duo-view";
-
-// The Hub ships the models with its dashboard.
-const MODELS = fileURLToPath(
-  new URL("../../../../expo-device-hub/assets/device-models/", import.meta.url),
-);
-const FILES: Record<keyof typeof DEVICE_MODELS, string> = {
-  "ios:iphone-duo": "iphone-duo.glb",
-  "ios:iphone-18-pro": "iphone-18-pro.glb",
-  "android:pixel-9-pro": "pixel-9-pro.glb",
-  "android:pixel-9-pro-fold": "pixel-9-pro-fold.glb",
-};
-
-/** The GLB without its images: geometry, materials, and animation are real; image decoding needs a browser. */
-function withoutTextures(path: string): ArrayBuffer {
-  const file = readFileSync(path);
-  const jsonLength = file.readUInt32LE(12);
-  const json = JSON.parse(file.subarray(20, 20 + jsonLength).toString("utf8"));
-  const binary = file.subarray(20 + jsonLength);
-  delete json.textures;
-  delete json.images;
-  delete json.samplers;
-  const strip = (value: unknown) => {
-    if (!value || typeof value !== "object") return;
-    for (const key of Object.keys(value)) {
-      if (key.endsWith("Texture")) delete (value as Record<string, unknown>)[key];
-      else strip((value as Record<string, unknown>)[key]);
-    }
-  };
-  for (const material of json.materials ?? []) strip(material);
-  let text = JSON.stringify(json);
-  while (text.length % 4) text += " ";
-  const chunk = Buffer.from(text, "utf8");
-  const out = Buffer.alloc(20 + chunk.length + binary.length);
-  file.copy(out, 0, 0, 12);
-  out.writeUInt32LE(out.length, 8);
-  out.writeUInt32LE(chunk.length, 12);
-  out.write("JSON", 16);
-  chunk.copy(out, 20);
-  binary.copy(out, 20 + chunk.length);
-  return out.buffer.slice(out.byteOffset, out.byteOffset + out.length);
-}
+import { FILES, MODELS, MODELS_AVAILABLE, withoutTextures } from "./glb-fixtures";
 
 async function rig(model: DeviceModelDescription): Promise<{ rig: DeviceModelRig; gltf: GLTF }> {
   await MeshoptDecoder.ready;
@@ -74,7 +32,7 @@ function folds(
   return duoViewFolds(((180 - angle) * Math.PI) / 360, view);
 }
 
-const available = Object.values(FILES).every((file) => existsSync(MODELS + file));
+const available = MODELS_AVAILABLE;
 
 describe.skipIf(!available)("the iPhone Duo rig, in Xcode's model's place", () => {
   test("has two halves and the displays where Xcode's model had them, in its centimeters", async () => {
@@ -199,6 +157,29 @@ describe.skipIf(!available)("the other models", () => {
           : display.size.width / display.size.height;
         expect(Math.abs(glass.x / glass.y - frame) / frame).toBeLessThan(0.02);
       }
+    }
+  });
+});
+
+describe.skipIf(!available)("loading", () => {
+  test("a model that cannot be rigged releases what it parsed", async () => {
+    const bytes = withoutTextures(MODELS + FILES["android:pixel-9-pro"]);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(bytes)) as unknown as typeof fetch;
+    const phone = DEVICE_MODELS["android:pixel-9-pro"];
+    const broken = {
+      ...phone,
+      displays: { main: { ...phone.displays.main, nodes: ["No such display"] } },
+    } as DeviceModelDescription;
+    const disposed = spyOn(THREE.BufferGeometry.prototype, "dispose");
+    try {
+      await expect(loadDeviceModel(broken, "https://hub.test/broken.glb")).rejects.toThrow(
+        "has no No such display",
+      );
+      expect(disposed).toHaveBeenCalled();
+    } finally {
+      disposed.mockRestore();
+      globalThis.fetch = realFetch;
     }
   });
 });
