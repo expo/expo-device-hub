@@ -56,13 +56,22 @@ production EAS environment. The release job then reads the cache with the public
 token, so its build is a cache hit. Both jobs use one canary id (`CANARY_ID`), because package
 versions are Turborepo inputs. If the serve-sim build is not a cache hit, the release fails at
 **Build packages**. The `expo-emulator-capture` build only warns on Linux, so a cache miss there
-leaves it without its agent; **Check the capture agent** then fails the release before the
+leaves it without its agent; **Check the capture agents** then fails the release before the
 version commit. Its `prepublishOnly` check alone would not be enough: `changeset publish`
 starts all publishes at once, so the Hub would still publish. The Hub bundles the
 `expo-emulator-capture` version of the same release, and installs that version when its
 emulator capture is on. So a changeset that releases `expo-emulator-capture` must also release
 `expo-device-hub`; **Verify pending changesets** fails otherwise. The dispatch uses the
 `EXPO_CI_ROBOT_ACCESS_TOKEN` repository secret.
+
+`expo-emulator-capture` also ships a Linux agent. It needs the x264 build 165 header from
+Ubuntu 26.04 (`libx264-dev`), so the same EAS workflow has a second job, on an Ubuntu 26.04
+image, that applies the same version steps and runs only the package's own
+`build:linux-x64` task with `--force`. That task has its own Turborepo cache entry
+(`expo-emulator-capture#build:linux-x64` in `turbo.json`), separate from the generic `build`
+task, which builds the macOS agent. The release job restores it at **Build the Linux capture
+agent**; a miss builds it on the release runner, which fails without the header, and **Check
+the capture agents** also fails without the Linux agent.
 
 The native release build is pinned to `macos-tahoe-26.5-xcode-26.6`. The EAS
 builder uses `--force` to rebuild and write fresh cache entries on that image.
