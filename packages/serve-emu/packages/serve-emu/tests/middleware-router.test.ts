@@ -7,6 +7,7 @@ import type { Device } from "../src/adb.ts";
 import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import {
   GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureEncoderError,
   GpuCaptureReplacedError,
   GpuCaptureUnavailableError,
 } from "../src/gpu-session.ts";
@@ -2078,6 +2079,43 @@ describe("createRouter emulator capture", () => {
       );
       expect(refused.ok).toBe(false);
       expect(JSON.stringify(await responseJson(refused))).toContain("Restart it.");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps the agent's encoder message when the user picks the capture", async () => {
+    const directory = await withAgentSocket();
+    const state = twoEmulators();
+    const dependencies = routerDependencies(state);
+    const createApp = dependencies.createApp!;
+    const missing =
+      "x264 build 165 (libx264.so.165) is missing. Install it with: sudo apt install libx264-165";
+    const router = createRouter(
+      {
+        streamMode: "emulator-capture",
+        emulatorCapture: { socketDirectory: directory, missingAgentReason: "Restart it." },
+      },
+      {
+        ...dependencies,
+        createApp: async (options) => {
+          if (options.streamMode === "emulator-capture") throw new GpuCaptureEncoderError(missing);
+          return createApp(options);
+        },
+      },
+    );
+    try {
+      // The default falls back to gRPC.
+      expect((await streamMode(router, "emulator-5554")).mode).toBe("grpc-screenshot");
+      // An explicit choice fails with what to install, not with the missing-agent text.
+      const refused = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5554", { mode: "emulator-capture" }),
+      );
+      expect(refused.ok).toBe(false);
+      const body = JSON.stringify(await responseJson(refused));
+      expect(body).toContain("libx264.so.165");
+      expect(body).not.toContain("Restart it.");
     } finally {
       await router.stopAll();
       await rm(directory, { recursive: true, force: true });
