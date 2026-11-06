@@ -73,18 +73,21 @@ function discoveryProcessIsAlive(file: string): boolean {
   }
 }
 
-export function findEmulatorGrpcEndpoint(
+type DiscoveryEntry = { processId: number; values: Map<string, string>; modifiedMs: number };
+
+/** The live discovery files of the emulator on a serial, newest first. */
+function readDiscoveryEntries(
   serial: string,
-  dependencies: EmulatorGrpcDiscoveryDependencies = {},
-): GrpcEndpoint | null {
+  dependencies: EmulatorGrpcDiscoveryDependencies,
+): DiscoveryEntry[] {
   const parsedSerial = parseEmulatorSerial(serial);
-  if (!parsedSerial) return null;
+  if (!parsedSerial) return [];
   const directories = dependencies.discoveryDirs ?? discoveryDirs;
   const readDirectory = dependencies.readDirectory ?? readdirSync;
   const processIsAlive = dependencies.processIsAlive ?? discoveryProcessIsAlive;
   const readText = dependencies.readText ?? ((path: string) => readFileSync(path, "utf8"));
   const readModifiedMs = dependencies.modifiedMs ?? ((path: string) => statSync(path).mtimeMs);
-  const candidates: Array<GrpcEndpoint & { modifiedMs: number }> = [];
+  const entries: DiscoveryEntry[] = [];
   for (const dir of directories()) {
     let files: string[];
     try {
@@ -108,29 +111,54 @@ export function findEmulatorGrpcEndpoint(
         values.set(line.slice(0, separator).trim(), line.slice(separator + 1).trim());
       }
       if (values.get("port.serial") !== parsedSerial.consolePort) continue;
-      const port = Number(values.get("grpc.port"));
-      if (!Number.isInteger(port) || port <= 0 || port > 65_535) continue;
       let modifiedMs = 0;
       try {
         modifiedMs = readModifiedMs(path);
       } catch {}
-      candidates.push({
-        port,
-        token: values.get("grpc.token") || null,
-        avdName: values.get("avd.name") || null,
-        modifiedMs,
-      });
+      entries.push({ processId: Number(file.match(/^pid_(\d+)/)![1]), values, modifiedMs });
     }
   }
-  candidates.sort((left, right) => right.modifiedMs - left.modifiedMs);
-  const endpoint = candidates[0];
-  return endpoint
-    ? {
-        port: endpoint.port,
-        token: endpoint.token,
-        avdName: endpoint.avdName,
-      }
-    : null;
+  return entries.sort((left, right) => right.modifiedMs - left.modifiedMs);
+}
+
+export function findEmulatorGrpcEndpoint(
+  serial: string,
+  dependencies: EmulatorGrpcDiscoveryDependencies = {},
+): GrpcEndpoint | null {
+  for (const { values } of readDiscoveryEntries(serial, dependencies)) {
+    const port = Number(values.get("grpc.port"));
+    if (!Number.isInteger(port) || port <= 0 || port > 65_535) continue;
+    return {
+      port,
+      token: values.get("grpc.token") || null,
+      avdName: values.get("avd.name") || null,
+    };
+  }
+  return null;
+}
+
+/**
+ * The QEMU process of the emulator on a serial, from the discovery file that QEMU writes; null
+ * when the emulator is not found. An emulator without gRPC has not written the file yet, but its
+ * console names the file's path, which holds the process ID.
+ */
+export async function findEmulatorProcessId(
+  serial: string,
+  dependencies: EmulatorGrpcDiscoveryDependencies = {},
+  signal?: AbortSignal,
+): Promise<number | null> {
+  if (!isEmulatorSerial(serial)) return null;
+  const fromFile = readDiscoveryEntries(serial, dependencies)[0]?.processId;
+  if (fromFile !== undefined) return fromFile;
+  const runAdb = dependencies.runAdb ?? execText;
+  const result = await runAdb("adb", ["-s", serial, "emu", "avd", "discoverypath"], {
+    timeout: 5_000,
+    signal,
+    lane: "interactive",
+  });
+  if (result.status !== 0) return null;
+  const match = /pid_(\d+)(?:_info)?\.ini\s*$/m.exec(result.stdout);
+  return match ? Number(match[1]) : null;
 }
 
 async function portIsReachable(

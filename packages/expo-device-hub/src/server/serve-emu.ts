@@ -22,6 +22,7 @@ import {
   emulatorCaptureOffReason,
   readEmulatorCapture,
 } from "./emulator-capture";
+import { attachEmulatorCapture, emulatorCaptureAttachNote } from "./emulator-capture-attach";
 import { AndroidSession, type RecordingFinish, type RecordingStart } from "./android-session";
 import { recordingEncodingFromEnv, recordingLimitsFromEnv } from "./recording-limits";
 import {
@@ -50,6 +51,10 @@ const router = createRouter({
         socketDirectory: emulatorCapture.socketDirectory,
         missingAgentReason: (serial: string) =>
           emulatorCaptureMissingAgentReason(emulatorCapture, serial),
+        // An emulator that runs without the agent gets it when the user opens it.
+        attach: (request: { serial: string; processId: number }) =>
+          attachEmulatorCapture(emulatorCapture, request),
+        attachNote: emulatorCaptureAttachNote(emulatorCapture.platform),
       }
     : { unavailableReason: emulatorCaptureOffReason() },
   ...(SERVER_SINGLE_DEVICE?.platform === "android" ? { serial: SERVER_SINGLE_DEVICE.id } : {}),

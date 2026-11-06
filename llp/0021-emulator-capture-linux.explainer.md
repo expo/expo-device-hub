@@ -158,6 +158,7 @@ Without the capture, the Hub streams an emulator from the emulator's gRPC screen
 ## Integration
 
 - **Hub.** `--experimental-emulator-capture` also works on `linux-x64`. On Linux, the Hub preloads the agent with `LD_PRELOAD`, adds `-gpu lavapipe`, installs the package's Linux agent (`dist/linux-x64/libexpo_emulator_capture.so`), and checks for x264 before each boot [observed: Hub `src/server/emulator-capture.ts`, `src/server/emulator-capture-install.ts`]. The socket directory is `<tmpdir>/expo-emulator-capture`, as on macOS; on EAS, `TMPDIR` is not set, so it is `/tmp/expo-emulator-capture` [observed: EAS run, 2026-11-05].
+- **Attach.** An emulator that started without the agent gets it from gdb when the user opens it, if Yama's `ptrace_scope` allows it ([LLP 0019](0019-emulator-capture-attach.explainer.md#linux)).
 - **serve-emu.** The Linux agent needs no other change: the protocol, the rotation reads and the touch mapping are the same as on macOS. An emulator that an EAS step started with the agent became the Hub's default capture source [observed: EAS run, 2026-11-05].
 
 ## Release
