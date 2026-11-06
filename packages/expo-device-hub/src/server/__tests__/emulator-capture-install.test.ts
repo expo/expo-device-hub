@@ -14,15 +14,19 @@ import {
 } from "../emulator-capture-install";
 
 const LIBRARY = "dist/darwin-arm64/libexpo_emulator_capture.dylib";
+const LINUX_LIBRARY = "dist/linux-x64/libexpo_emulator_capture.so";
 
 /** An npm stand-in that writes the package into `--prefix`, as `npm install` would. */
-function fakeNpm(calls: string[][], { withLibrary = true } = {}): InstallCommand {
+function fakeNpm(
+  calls: string[][],
+  { withLibrary = true, library = LIBRARY } = {},
+): InstallCommand {
   return async (command, args) => {
     calls.push([command, ...args]);
     const prefix = args[args.indexOf("--prefix") + 1]!;
     const packageDirectory = join(prefix, "node_modules", EMULATOR_CAPTURE_PACKAGE);
-    await mkdir(join(packageDirectory, "dist", "darwin-arm64"), { recursive: true });
-    if (withLibrary) await writeFile(join(packageDirectory, LIBRARY), "agent");
+    await mkdir(join(packageDirectory, library, ".."), { recursive: true });
+    if (withLibrary) await writeFile(join(packageDirectory, library), "agent");
     return { status: 0, output: "added 1 package" };
   };
 }
@@ -161,7 +165,18 @@ describe("installEmulatorCapture", () => {
       expect(await lockIsAbandoned(lock)).toBe(false);
     }));
 
-  test("has no agent for hosts other than macOS", async () => {
+  test("returns the Linux agent on Linux", () =>
+    withCache(async (baseDirectory) => {
+      const library = await installEmulatorCapture({
+        version: "1.2.3",
+        platform: "linux",
+        baseDirectory,
+        run: fakeNpm([], { library: LINUX_LIBRARY }),
+      });
+      expect(library.endsWith(join(EMULATOR_CAPTURE_PACKAGE, LINUX_LIBRARY))).toBe(true);
+    }));
+
+  test("has no agent for hosts other than macOS and Linux", async () => {
     await expect(installEmulatorCapture({ platform: "win32", run: fakeNpm([]) })).rejects.toThrow(
       "has no agent for win32",
     );

@@ -52,7 +52,7 @@ Options:
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
       --video-fps <fps>      H.264/WebRTC frame rate (1-120; default: ${DEFAULT_VIDEO_FPS})
       --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(", ")} (default: ${DEFAULT_ANDROID_STREAM_SOURCE}); emulator-capture needs ${EMULATOR_CAPTURE_FLAG}
-      --experimental-emulator-capture Experimental: stream Android emulators through the expo-emulator-capture agent (macOS on Apple silicon); the default source becomes emulator-capture
+      --experimental-emulator-capture Experimental: stream Android emulators through the expo-emulator-capture agent (macOS on Apple silicon, Linux x86-64); the default source becomes emulator-capture
       --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(", ")} (default: ${DEFAULT_GRPC_IMAGE_MODE}; used when the gRPC source is active)
       --encoder <encoder>   Android gRPC H.264 encoder: ${GRPC_ENCODERS.join(", ")} (default: ${DEFAULT_GRPC_ENCODER})
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
