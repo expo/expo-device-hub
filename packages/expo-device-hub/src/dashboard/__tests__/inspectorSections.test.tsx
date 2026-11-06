@@ -624,6 +624,35 @@ test("shows emulator capture as a source, disabled with its reason when unavaila
   expect(onHtml).not.toContain('aria-label="gRPC image mode"');
 });
 
+test("shows a note with an available emulator capture that attaches its agent", () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={
+        {
+          ...inspectorClient("android"),
+          streamSource: {
+            mode: "grpc-screenshot",
+            grpcImageMode: "rgb888",
+            encoder: "software",
+            encoderName: null,
+            availableEncoders: ["software"],
+            inputSource: "scrcpy",
+            availableInputSources: ["scrcpy"],
+            availableModes: ["scrcpy", "grpc-screenshot", "emulator-capture"],
+            modeNotes: { "emulator-capture": "Attaching the capture agent failed: no password." },
+            sessionGeneration: 1,
+          },
+        } satisfies DeviceClient
+      }
+      defaultOpen
+    />,
+  );
+  expect(selectOptionLabels(html, "Stream source")).toEqual(["scrcpy", "gRPC", "Emulator capture"]);
+  // Selectable, so that selecting it tries again.
+  expect(selectMarkup(html, "Stream source")).not.toContain('disabled=""');
+  expect(html).toContain("Emulator capture: Attaching the capture agent failed: no password.");
+});
+
 test("shows PNG, MMAP and RGB888 only while the gRPC source is active", () => {
   const scrcpyHtml = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient("android")} defaultOpen />,

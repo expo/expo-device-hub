@@ -58,6 +58,7 @@ import {
   isEmulatorSerial,
   type EmulatorCaptureOptions,
 } from "./device-capabilities.ts";
+import { findEmulatorProcessId } from "./emulator-grpc.ts";
 import {
   GPU_CAPTURE_REPLACED_CODE,
   GpuCaptureEncoderError,
@@ -2302,6 +2303,8 @@ export type RouterDependencies = {
   readCameraWiring?: typeof readCameraWiring;
   createApp?: (opts: AppOptions) => Promise<EmuApp>;
   getHardwareEncoderError?: typeof getHardwareEncoderError;
+  findEmulatorProcessId?: (serial: string) => Promise<number | null>;
+  processIsAlive?: (processId: number) => boolean;
 };
 
 /**
@@ -2340,6 +2343,18 @@ export function createRouter(
   const readWiring = dependencies.readCameraWiring ?? readCameraWiring;
   const createDeviceApp = dependencies.createApp ?? createApp;
   const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
+  const findProcessId =
+    dependencies.findEmulatorProcessId ?? ((serial: string) => findEmulatorProcessId(serial));
+  const processIsAlive =
+    dependencies.processIsAlive ??
+    ((processId: number) => {
+      try {
+        process.kill(processId, 0);
+        return true;
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "EPERM";
+      }
+    });
   const apps = new Map<string, EmuApp>();
   const pending = new Map<string, Promise<EmuApp>>();
   const failureAt = new Map<string, number>();
@@ -2347,6 +2362,10 @@ export function createRouter(
   // Emulators whose capture agent another consumer took: their default is gRPC until the user
   // selects emulator capture again.
   const captureTakenOver = new Set<string>();
+  // The last failed attach of each emulator, with the process it tried: until that process ends
+  // or the user selects emulator capture again, the emulator uses gRPC and shows the reason.
+  const attachFailures = new Map<string, { processId: number | null; reason: string }>();
+  const attachesInFlight = new Map<string, Promise<void>>();
   const grpcImageModeOverrides = new Map<string, GrpcImageMode>();
   const encoderOverrides = new Map<string, GrpcEncoder>();
   const inputSourceOverrides = new Map<string, InputSource>();
@@ -2450,13 +2469,77 @@ export function createRouter(
     return first.serial;
   };
 
+  /** Whether a capture session first attaches the agent: the app can, and no agent serves. */
+  const captureNeedsAttach = (serial: string): boolean =>
+    !!defaults.emulatorCapture?.attach &&
+    !!defaults.emulatorCapture.socketDirectory &&
+    isEmulatorSerial(serial) &&
+    !emulatorCaptureSocketFor(serial, defaults.emulatorCapture.socketDirectory);
+
+  /** Why the last attach to the emulator process on this serial failed, or null. */
+  const attachFailureFor = (serial: string): string | null => {
+    const failure = attachFailures.get(serial);
+    if (!failure) return null;
+    if (failure.processId !== null && !processIsAlive(failure.processId)) {
+      attachFailures.delete(serial); // A new emulator process on the serial gets a new attempt.
+      return null;
+    }
+    return failure.reason;
+  };
+
+  // @ref LLP 0019#router — one attempt per emulator process; opening an emulator never fails for it
+  /** Loads the agent into an emulator that runs without it. Concurrent callers share one try. */
+  const attachCapture = (serial: string): Promise<void> => {
+    const inFlight = attachesInFlight.get(serial);
+    if (inFlight) return inFlight;
+    const attempt = (async () => {
+      let processId: number | null = null;
+      try {
+        processId = await findProcessId(serial);
+        if (processId === null) {
+          throw new Error(
+            "The emulator's process was not found, so the capture agent cannot be attached.",
+          );
+        }
+        await defaults.emulatorCapture!.attach!({ serial, processId });
+        if (!emulatorCaptureSocketFor(serial, defaults.emulatorCapture!.socketDirectory)) {
+          throw new Error("The capture agent did not open its socket.");
+        }
+        attachFailures.delete(serial);
+        console.log(`[emulator capture] ${serial}: attached the agent to process ${processId}`);
+      } catch (error) {
+        attachFailures.set(serial, { processId, reason: errMsg(error) });
+        throw error;
+      }
+    })();
+    attachesInFlight.set(serial, attempt);
+    const settle = () => {
+      if (attachesInFlight.get(serial) === attempt) attachesInFlight.delete(serial);
+    };
+    attempt.then(settle, settle);
+    return attempt;
+  };
+
+  /** What selecting the capture does for an emulator without the agent, or why it failed. */
+  const attachNoteFor = (serial: string): string | undefined => {
+    const failure = attachFailureFor(serial);
+    if (failure) {
+      return `Attaching the capture agent failed: ${failure} Select Emulator capture to try again.`;
+    }
+    const note = defaults.emulatorCapture?.attachNote;
+    return typeof note === "function" ? note(serial) : note;
+  };
+
   const defaultStreamModeFor = (serial: string): StreamMode => {
     const configured = isEmulatorSerial(serial) ? defaults.streamMode : undefined;
     // @ref LLP 0017#integration — the capture default needs an agent; other emulators use gRPC
     if (configured === "emulator-capture") {
       if (!emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)) {
         captureTakenOver.delete(serial); // A new emulator on this serial starts fresh.
-        return "grpc-screenshot";
+        // Without an agent: attach one, unless the last attach to this process failed.
+        return captureNeedsAttach(serial) && attachFailureFor(serial) === null
+          ? "emulator-capture"
+          : "grpc-screenshot";
       }
       if (captureTakenOver.has(serial)) return "grpc-screenshot";
     }
@@ -2546,16 +2629,33 @@ export function createRouter(
         } catch {}
         if (apps.get(serial) === existing) apps.delete(serial);
       }
-      // A capture choice from before the emulator restarted without its agent.
+      // A capture choice from before the emulator restarted without its agent, when the app
+      // cannot attach one.
       if (
         streamModeOverrides.get(serial) === "emulator-capture" &&
-        !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory)
+        !emulatorCaptureSocketFor(serial, defaults.emulatorCapture?.socketDirectory) &&
+        !captureNeedsAttach(serial)
       ) {
         streamModeOverrides.delete(serial);
       }
+      let mode = streamModeOverrides.get(serial) ?? defaultStreamModeFor(serial);
+      if (mode === "emulator-capture" && captureNeedsAttach(serial)) {
+        try {
+          await attachCapture(serial);
+        } catch (error) {
+          // The emulator still opens: with gRPC, and the stream source select says why.
+          if (streamModeOverrides.get(serial) === "emulator-capture") {
+            streamModeOverrides.delete(serial);
+          }
+          console.warn(
+            `[emulator capture] ${serial}: attaching the agent failed (${errMsg(error)}); using grpc-screenshot`,
+          );
+          mode = "grpc-screenshot";
+        }
+      }
       let created: EmuApp;
       try {
-        created = await createConfiguredApp(serial, undefined, parentSignal);
+        created = await createConfiguredApp(serial, mode, parentSignal);
       } catch (error) {
         if (error instanceof GpuCaptureReplacedError) noteCaptureTakenOver(serial);
         // A default capture that cannot start (nothing answers the socket of an emulator that
@@ -2657,6 +2757,11 @@ export function createRouter(
     if (stopped) throw new Error("serve-emu router is stopped");
     if (stoppingSerials.has(serial)) {
       throw new Error(`device ${serial} is stopping`);
+    }
+    if (streamMode === "emulator-capture" && captureNeedsAttach(serial)) {
+      // An explicit choice tries again, also after a failed attach.
+      attachFailures.delete(serial);
+      await attachCapture(serial);
     }
     const inFlight = pending.get(serial);
     if (inFlight) await inFlight.catch(() => {});
@@ -2849,13 +2954,16 @@ export function createRouter(
   /** The modes this device can use now, and why `emulator-capture` cannot. */
   const streamModeAvailability = (serial: string, current: StreamMode) => {
     const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
+    const attach = !capture.socket && captureNeedsAttach(serial);
     // The running mode is available by definition, even if its socket went away meanwhile.
-    const emulatorCapture = !!capture.socket || current === "emulator-capture";
+    const emulatorCapture = !!capture.socket || attach || current === "emulator-capture";
+    const note = attach ? attachNoteFor(serial) : undefined;
     return {
       availableModes: availableStreamModesForSerial(serial, { emulatorCapture }),
       ...(!emulatorCapture && capture.reason
         ? { unavailableModes: { "emulator-capture": capture.reason } }
         : {}),
+      ...(note ? { modeNotes: { "emulator-capture": note } } : {}),
     };
   };
 
@@ -3039,7 +3147,9 @@ export function createRouter(
         }
         if (mode === "emulator-capture") {
           const capture = emulatorCaptureAvailability(serial, defaults.emulatorCapture);
-          if (!capture.socket) throw new Error(capture.reason ?? "Emulator capture is not offered");
+          if (!capture.socket && !captureNeedsAttach(serial)) {
+            throw new Error(capture.reason ?? "Emulator capture is not offered");
+          }
         }
         streamMode = mode;
         encoder =

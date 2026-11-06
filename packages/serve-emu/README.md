@@ -221,6 +221,12 @@ with scrcpy kept for input:
 - `emulatorCapture.unavailableReason` and `emulatorCapture.missingAgentReason` explain to the
   user why the mode is off, or why an emulator without a socket cannot use it.
   `/api/stream-mode` returns them in `unavailableModes`.
+- `emulatorCapture.attach` loads the agent into an emulator that runs without it, and
+  `emulatorCapture.attachNote` says so to the user. With them, an emulator without a socket still
+  offers the mode, with the note in `modeNotes`. The router attaches once per emulator process
+  before a session uses the mode: a default capture that cannot attach uses `grpc-screenshot`,
+  and `modeNotes` then gives the reason. An explicit request attaches again, and fails with the
+  reason.
 - With `streamMode: "emulator-capture"` as the default, an emulator without an answering agent
   uses `grpc-screenshot` instead, and so does one whose agent cannot encode on the host (its
   hello names the problem, for example a Linux host without x264 build 165). An explicit

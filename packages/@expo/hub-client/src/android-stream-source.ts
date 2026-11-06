@@ -100,7 +100,8 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   ) {
     return null;
   }
-  const unavailableModes = parseUnavailableModes(candidate.unavailableModes);
+  const unavailableModes = parseModeTexts(candidate.unavailableModes);
+  const modeNotes = parseModeTexts(candidate.modeNotes);
   if (
     typeof candidate.sessionGeneration !== "number" ||
     !Number.isInteger(candidate.sessionGeneration) ||
@@ -126,6 +127,7 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
     availableInputSources: candidate.availableInputSources,
     availableModes: candidate.availableModes,
     ...(unavailableModes ? { unavailableModes } : {}),
+    ...(modeNotes ? { modeNotes } : {}),
     sessionGeneration: candidate.sessionGeneration,
   };
 }
@@ -150,20 +152,20 @@ export function sameAndroidStreamSource(
     current.sessionGeneration === next.sessionGeneration &&
     current.availableModes.join() === next.availableModes.join() &&
     current.availableInputSources.join() === next.availableInputSources.join() &&
-    JSON.stringify(current.unavailableModes ?? {}) === JSON.stringify(next.unavailableModes ?? {})
+    JSON.stringify(current.unavailableModes ?? {}) ===
+      JSON.stringify(next.unavailableModes ?? {}) &&
+    JSON.stringify(current.modeNotes ?? {}) === JSON.stringify(next.modeNotes ?? {})
   );
 }
 
-/** Reasons per source; a malformed or unknown entry is dropped, not the whole status. */
-function parseUnavailableModes(
-  value: unknown,
-): Partial<Record<DeviceStreamSource, string>> | undefined {
+/** Texts per source; a malformed or unknown entry is dropped, not the whole status. */
+function parseModeTexts(value: unknown): Partial<Record<DeviceStreamSource, string>> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const reasons: Partial<Record<DeviceStreamSource, string>> = {};
-  for (const [mode, reason] of Object.entries(value)) {
-    if (isAndroidStreamSource(mode) && typeof reason === "string" && reason.trim()) {
-      reasons[mode] = reason.trim();
+  const texts: Partial<Record<DeviceStreamSource, string>> = {};
+  for (const [mode, text] of Object.entries(value)) {
+    if (isAndroidStreamSource(mode) && typeof text === "string" && text.trim()) {
+      texts[mode] = text.trim();
     }
   }
-  return Object.keys(reasons).length ? reasons : undefined;
+  return Object.keys(texts).length ? texts : undefined;
 }
