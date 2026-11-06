@@ -1,11 +1,14 @@
 /**
- * Frames that this client painted into a stream canvas. Android's H.264 paths
- * paint into the canvas that `attachVideo` received; a consumer that copies the
- * canvas elsewhere, such as a 3D model's texture, can skip a copy while the
- * count is unchanged. A canvas that this client has not painted in the current
- * stream session has no count.
+ * The frame that this client last painted into a stream canvas. Android's H.264
+ * paths paint into the canvas that `attachVideo` received; a consumer that
+ * copies the canvas elsewhere, such as a 3D model's texture, can skip a copy
+ * while the number is unchanged. Numbers come from one counter and never
+ * repeat, also after a canvas is forgotten, so a new session's first frame
+ * cannot look like the last one of an earlier session. A canvas that this
+ * client has not painted in the current stream session has no number.
  */
 const painted = new WeakMap<HTMLCanvasElement, number>();
+let lastFrame = 0;
 
 /** Options for the 2D context of a stream canvas; every painter uses the same ones. */
 export const STREAM_CANVAS_CONTEXT: CanvasRenderingContext2DSettings = {
@@ -13,12 +16,12 @@ export const STREAM_CANVAS_CONTEXT: CanvasRenderingContext2DSettings = {
   desynchronized: true,
 };
 
-/** Count a frame that was just painted into `canvas`. */
+/** Record a frame that was just painted into `canvas`. */
 export function markCanvasFrame(canvas: HTMLCanvasElement): void {
-  painted.set(canvas, (painted.get(canvas) ?? 0) + 1);
+  painted.set(canvas, ++lastFrame);
 }
 
-/** How many frames this client painted into `canvas`, or undefined if none in this session. */
+/** The number of the frame last painted into `canvas`, or undefined if none in this session. */
 export function canvasFrameNumber(canvas: HTMLCanvasElement): number | undefined {
   return painted.get(canvas);
 }

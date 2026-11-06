@@ -59,16 +59,28 @@ test("a replacement canvas starts from the last frame painted into the canvas it
 
   Object.assign(old, { width: 1080, height: 2424, content: "home screen" });
   markCanvasFrame(old);
-  expect(canvasFrameNumber(old)).toBe(1);
+  const painted = canvasFrameNumber(old);
+  expect(painted).toBeDefined();
   expect(carryCanvasFrame(old, replacement)).toBe(true);
   expect(content(replacement)).toBe("home screen");
   expect([replacement.width, replacement.height]).toEqual([1080, 2424]);
-  expect(canvasFrameNumber(replacement)).toBe(1);
+  expect(canvasFrameNumber(replacement)).toBeGreaterThan(painted!);
 
   // A canvas whose frames belong to an earlier session is not carried.
   forgetCanvasFrames(old);
   expect(canvasFrameNumber(old)).toBeUndefined();
   expect(carryCanvasFrame(old, canvas())).toBe(false);
+});
+
+test("a frame number never repeats, also after a new session forgets the canvas", () => {
+  // A still screen paints one frame; a token change starts a new session that
+  // paints one frame too. A copy keyed on the number must see a new frame.
+  const target = canvas();
+  markCanvasFrame(target);
+  const first = canvasFrameNumber(target);
+  forgetCanvasFrames(target);
+  markCanvasFrame(target);
+  expect(canvasFrameNumber(target)).not.toBe(first);
 });
 
 test("the MSE player keeps drawing into the canvas that replaced its first one, and draws a stalled frame once", () => {
@@ -95,7 +107,7 @@ test("the MSE player keeps drawing into the canvas that replaced its first one, 
   tick();
   expect(content(first)).toBe(1);
   expect([first.width, first.height]).toEqual([1080, 2424]);
-  expect(canvasFrameNumber(first)).toBe(1);
+  expect(canvasFrameNumber(first)).toBeDefined();
 
   // The view switches between 2D and 3D: a new canvas replaces the first one.
   target = canvas();
@@ -109,8 +121,9 @@ test("the MSE player keeps drawing into the canvas that replaced its first one, 
   expect(firstFrames).toBe(1);
 
   // A still Android screen stalls the video: the frame is not drawn again.
+  const drawn = canvasFrameNumber(target);
   tick();
   tick();
-  expect(canvasFrameNumber(target)).toBe(2);
+  expect(canvasFrameNumber(target)).toBe(drawn);
   player.destroy();
 });
