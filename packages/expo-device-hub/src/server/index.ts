@@ -38,6 +38,7 @@ import {
   EMU_TOKEN_SUBPROTOCOL_PREFIX,
   emuAllowsOrigin,
   emuCameraFeeds,
+  emulatorCapture,
   emuWebSocketHandler,
   handleEmuRequest,
   finishAndroidScreenRecording,
@@ -258,7 +259,7 @@ async function routeRequest(request: Request): Promise<Response | null> {
     try {
       const result =
         actionKind === "boot"
-          ? await bootHubDevice(action, emuCameraFeeds)
+          ? await bootHubDevice(action, emuCameraFeeds, emulatorCapture)
           : actionKind === "shutdown"
             ? await shutdownHubDevice(action)
             : await removeHubDevice(action);
@@ -284,7 +285,7 @@ async function routeRequest(request: Request): Promise<Response | null> {
     }
 
     try {
-      const result = await createHubDevice(action, emuCameraFeeds);
+      const result = await createHubDevice(action, emuCameraFeeds, emulatorCapture);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {

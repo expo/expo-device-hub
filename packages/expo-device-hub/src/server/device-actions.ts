@@ -7,6 +7,8 @@
  * calls them via `POST /api/devices/{create,shutdown,remove,boot}` (see `index.ts`).
  */
 
+import { rm } from "node:fs/promises";
+
 import {
   bootDevice as bootAndroidEmulator,
   createDevice as createAndroidDevice,
@@ -25,6 +27,13 @@ import {
 } from "@expo/hub-apple-utils";
 
 import { type HubDevicePlatform } from "./devices";
+import {
+  type EmulatorCapture,
+  emulatorCaptureArgs,
+  emulatorCaptureEnv,
+  emulatorCaptureLogPath,
+  ensurePrivateDirectory,
+} from "./emulator-capture";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
 const ANDROID_AVD_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -216,6 +225,7 @@ export interface BootDeviceResult {
 export async function bootHubDevice(
   { platform, id, name }: DeviceActionRequest,
   cameraFeeds: EmulatorCameraFeeds,
+  capture: EmulatorCapture | null = null,
 ): Promise<BootDeviceResult> {
   if (platform === "ios") {
     const booted = await bootAppleSimulator({ udid: id });
@@ -228,13 +238,14 @@ export async function bootHubDevice(
   const avdName = name || id;
   if (!avdName) return { ok: false, error: "Missing AVD name", errors: [] };
 
-  return bootAndroidHubDevice(avdName, cameraFeeds);
+  return bootAndroidHubDevice(avdName, cameraFeeds, capture);
 }
 
 /** Create a new virtual device, then boot it through the same platform utility. */
 export async function createHubDevice(
   { platform, name, runtime, deviceType }: CreateDeviceActionRequest,
   cameraFeeds: EmulatorCameraFeeds,
+  capture: EmulatorCapture | null = null,
 ): Promise<BootDeviceResult> {
   if (platform === "ios") {
     const created = await createAppleSimulator({ name, runtime, deviceType });
@@ -272,11 +283,12 @@ export async function createHubDevice(
     };
   }
 
-  return bootAndroidHubDevice(name, cameraFeeds);
+  return bootAndroidHubDevice(name, cameraFeeds, capture);
 }
 
 /**
- * Boot an emulator with camera feeds attached.
+ * Boot an emulator with camera feeds attached, and the experimental capture
+ * agent when it is configured.
  *
  * Camera feeds are optional. A seeding failure only costs the fake camera, so
  * the boot continues without the feed launch args and reports the failure in
@@ -285,7 +297,27 @@ export async function createHubDevice(
 async function bootAndroidHubDevice(
   avdName: string,
   cameraFeeds: EmulatorCameraFeeds,
+  capture: EmulatorCapture | null,
 ): Promise<BootDeviceResult> {
+  // The first boot after the Hub starts may wait for the agent package to finish installing.
+  // It waits before it picks a port: the port is free only until an emulator takes it, so two
+  // boots during the install would otherwise get the same one.
+  let captureError: SerializableError | null = null;
+  const withoutAgent = (error: unknown) => {
+    captureError = toSerializableError({
+      message: `${avdName} starts without the emulator capture agent`,
+      error,
+    });
+    return null;
+  };
+  let captureLibrary = capture ? await capture.library().catch(withoutAgent) : null;
+  if (capture && captureLibrary) {
+    captureLibrary = await ensurePrivateDirectory(capture.socketDirectory).then(
+      () => captureLibrary,
+      withoutAgent,
+    );
+  }
+
   const allocated = await freeEmulatorPort();
   if (allocated.error || allocated.value === null) {
     return {
@@ -305,19 +337,34 @@ async function bootAndroidHubDevice(
       error,
     });
   }
-  const seedErrors = errorList(seedError);
 
+  const captureEnv =
+    capture && captureLibrary
+      ? emulatorCaptureEnv({ ...capture, library: captureLibrary }, serial)
+      : null;
+  if (capture && captureEnv) {
+    // A log from an earlier emulator on this serial would give a stale reason.
+    await rm(emulatorCaptureLogPath(capture.socketDirectory, serial), { force: true }).catch(
+      () => {},
+    );
+  }
+  const preBootErrors = [...errorList(seedError), ...errorList(captureError)];
+  const extraArgs = [
+    ...(seedError === null ? cameraFeeds.launchArgs(serial) : []),
+    ...(capture ? emulatorCaptureArgs(capture.platform) : []),
+  ];
   const bootedResult = await bootAndroidEmulator({
     name: avdName,
     port: allocated.value,
-    extraArgs: seedError === null ? cameraFeeds.launchArgs(serial) : undefined,
+    ...(extraArgs.length > 0 ? { extraArgs } : {}),
+    ...(captureEnv ? { env: captureEnv } : {}),
   });
   const booted = bootedResult.value;
   if (bootedResult.error || !booted) {
     return {
       ok: false,
       error: `Failed to spawn emulator for ${avdName}`,
-      errors: [...seedErrors, ...errorList(toSerializableError(bootedResult.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(bootedResult.error))],
     };
   }
 
@@ -344,7 +391,7 @@ async function bootAndroidHubDevice(
       error:
         `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
         `For details, try running it manually:\n${booted.command}`,
-      errors: [...seedErrors, ...errorList(toSerializableError(outcome.exit.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(outcome.exit.error))],
     };
   }
 
@@ -354,17 +401,17 @@ async function bootAndroidHubDevice(
       id: booted.serial,
       serial: booted.serial,
       error: `Failed while waiting for ${avdName} to come online`,
-      errors: [...seedErrors, ...errorList(toSerializableError(outcome.online.error))],
+      errors: [...preBootErrors, ...errorList(toSerializableError(outcome.online.error))],
     };
   }
 
   return outcome.online.value
-    ? { ok: true, id: booted.serial, serial: booted.serial, errors: seedErrors }
+    ? { ok: true, id: booted.serial, serial: booted.serial, errors: preBootErrors }
     : {
         ok: false,
         id: booted.serial,
         serial: booted.serial,
         error: "Timed out waiting for the emulator to come online",
-        errors: seedErrors,
+        errors: preBootErrors,
       };
 }

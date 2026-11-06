@@ -10,7 +10,9 @@ import { type ScrcpySession, type VideoFrame, type VideoPacket } from "../src/sc
 import {
   adaptScrcpySession,
   type EmuSession,
+  type ExperimentalGpuCaptureDiagnostics,
   type GrpcCaptureDiagnostics,
+  type StartEmuSessionOptions,
 } from "../src/stream-session.ts";
 import type { WebRtcPublisher, WebRtcPublisherSessionStats } from "../src/webrtc-publisher.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
@@ -529,6 +531,129 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
         frameStats,
       },
     });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("reports GPU capture health from one diagnostics snapshot", async () => {
+  const diagnostics: ExperimentalGpuCaptureDiagnostics = {
+    backend: "expo-emulator-capture",
+    framePath: "gpu",
+    hardwareEncoder: true,
+    encoderName: "com.apple.videotoolbox.videoencoder.h264.rtvc",
+    packets: 120,
+    bytes: 1_000_000,
+    requestedKeyFrames: 2,
+    queuedBytes: 0,
+    fps: 60,
+    nativeSize: { width: 1080, height: 2424 },
+    streamSize: { width: 570, height: 1280 },
+    maxSize: 1280,
+    resizes: 0,
+  };
+  let samples = 0;
+  const { session } = fakeScrcpySession(0);
+  const app = await createApp(
+    { serial: session.serial },
+    {
+      startSession: async () => ({
+        ...adaptScrcpySession(session),
+        diagnostics: () => {
+          samples++;
+          return { experimentalGpuCapture: diagnostics };
+        },
+      }),
+    },
+  );
+  try {
+    const before = samples;
+    expect(app.health()).toMatchObject({
+      streamMode: "scrcpy",
+      captureBackend: "expo-emulator-capture",
+      experimentalGpuCapture: diagnostics,
+      encoderName: "com.apple.videotoolbox.videoencoder.h264.rtvc",
+    });
+    expect(samples - before).toBe(1);
+  } finally {
+    await app.stop();
+  }
+});
+
+test("gives every emulator capture it starts the agent socket and a rotation reader", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "create-app-capture-"));
+  await writeFile(join(directory, "emulator-5554.sock"), "");
+  const requests: StartEmuSessionOptions[] = [];
+  const app = await createApp(
+    {
+      serial: "emulator-5554",
+      streamMode: "emulator-capture",
+      emulatorCapture: { socketDirectory: directory },
+    },
+    {
+      startSession: async (options) => {
+        requests.push(options);
+        // A capture session reports its own mode, as startGpuCaptureSession does.
+        return { ...adaptScrcpySession(fakeScrcpySession(0).session), mode: options.mode };
+      },
+      readDisplayRotation: async () => 1,
+    },
+  );
+  try {
+    const response = await app.handleRequest(
+      new Request("http://localhost/api/stream-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ h264Fps: 60 }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(requests.map((request) => [request.mode, request.inputSource])).toEqual([
+      ["emulator-capture", "scrcpy"],
+      ["emulator-capture", "scrcpy"],
+    ]);
+    expect(requests.map((request) => request.emulatorCaptureSocket)).toEqual([
+      join(directory, "emulator-5554.sock"),
+      join(directory, "emulator-5554.sock"),
+    ]);
+    expect(await requests[0]!.readDisplayRotation?.(new AbortController().signal)).toBe(1);
+  } finally {
+    await app.stop();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("asks a source that follows the display to read it again after a rotation", async () => {
+  let displayChanges = 0;
+  const app = await createApp(
+    { serial: "emulator-5554" },
+    {
+      startSession: async () => ({
+        ...adaptScrcpySession(fakeScrcpySession(0).session),
+        displayChanged: () => {
+          displayChanges++;
+        },
+      }),
+      readOrientation: readNoOrientation,
+      applyRotation: async () => ({
+        mode: "lock",
+        rotation: 1,
+        orientation: "landscape",
+        pose: null,
+        raw: "accelerometer_rotation=0 user_rotation=1",
+      }),
+    },
+  );
+  try {
+    const response = await app.handleRequest(
+      new Request("http://localhost/api/orientation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orientation: "landscape" }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(displayChanges).toBe(1);
   } finally {
     await app.stop();
   }

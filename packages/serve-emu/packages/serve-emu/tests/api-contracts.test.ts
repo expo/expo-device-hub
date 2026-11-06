@@ -316,6 +316,67 @@ describe("API contracts", () => {
     expect(() => parseHealthResponse({ ...health, pose: 1 })).toThrow(
       "health response.pose is invalid",
     );
+    const experimentalGpuCapture = {
+      backend: "expo-emulator-capture",
+      framePath: "gpu",
+      hardwareEncoder: true,
+      encoderName: "com.apple.videotoolbox.videoencoder.h264.rtvc",
+      packets: 120,
+      bytes: 1_000_000,
+      requestedKeyFrames: 2,
+      queuedBytes: 0,
+      fps: 60,
+      nativeSize: { width: 2076, height: 2152 },
+      streamSize: { width: 1234, height: 1280 },
+      maxSize: 1280,
+      resizes: 2,
+    };
+    const gpuHealth = {
+      ...health,
+      streamMode: "scrcpy",
+      captureBackend: "expo-emulator-capture",
+      experimentalGpuCapture,
+    };
+    expect(parseHealthResponse(gpuHealth)).toMatchObject({
+      captureBackend: "expo-emulator-capture",
+      experimentalGpuCapture,
+    });
+    expect(
+      parseHealthResponse({
+        ...gpuHealth,
+        experimentalGpuCapture: {
+          ...experimentalGpuCapture,
+          framePath: null,
+          hardwareEncoder: null,
+        },
+      }).experimentalGpuCapture,
+    ).toMatchObject({ framePath: null, hardwareEncoder: null });
+    expect(
+      parseHealthResponse({
+        ...health,
+        captureBackend: "grpc-screenshot",
+        experimentalGpuCapture: null,
+      }),
+    ).toMatchObject({ captureBackend: "grpc-screenshot", experimentalGpuCapture: null });
+    expect(parseHealthResponse(health).experimentalGpuCapture).toBeUndefined();
+    expect(() => parseHealthResponse({ ...gpuHealth, captureBackend: "unknown" })).toThrow(
+      "captureBackend",
+    );
+    expect(() =>
+      parseHealthResponse({
+        ...gpuHealth,
+        experimentalGpuCapture: { ...experimentalGpuCapture, framePath: "metal" },
+      }),
+    ).toThrow("experimentalGpuCapture.framePath");
+    expect(() =>
+      parseHealthResponse({
+        ...gpuHealth,
+        experimentalGpuCapture: {
+          ...experimentalGpuCapture,
+          nativeSize: { width: "2076", height: 2152 },
+        },
+      }),
+    ).toThrow("experimentalGpuCapture.nativeSize.width");
     expect(() => parseHealthResponse({ ...health, clientsDetail: [{}] })).toThrow(
       "clientsDetail[0].id",
     );

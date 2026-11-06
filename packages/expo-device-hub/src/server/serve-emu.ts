@@ -17,6 +17,11 @@ import {
   refuseSingleDeviceSocket,
 } from "./single-device";
 import { type EmulatorCameraFeeds } from "./device-actions";
+import {
+  emulatorCaptureMissingAgentReason,
+  emulatorCaptureOffReason,
+  readEmulatorCapture,
+} from "./emulator-capture";
 import { AndroidSession, type RecordingFinish, type RecordingStart } from "./android-session";
 import { recordingLimitsFromEnv } from "./recording-limits";
 import {
@@ -35,8 +40,18 @@ export const EMU_TOKEN_SUBPROTOCOL_PREFIX: string = SESSION_TOKEN_SUBPROTOCOL_PR
 type EmuSocket = WsWebSocketLike & { on(event: "error", listener: () => void): unknown };
 
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
+/** Experimental emulator capture for the emulators this Hub boots; null when off. */
+export const emulatorCapture = readEmulatorCapture(process.env);
 const router = createRouter({
   ...serveEmuOptions,
+  // The UI shows the emulator capture source in every Hub: offered, or with how to turn it on.
+  emulatorCapture: emulatorCapture
+    ? {
+        socketDirectory: emulatorCapture.socketDirectory,
+        missingAgentReason: (serial: string) =>
+          emulatorCaptureMissingAgentReason(emulatorCapture, serial),
+      }
+    : { unavailableReason: emulatorCaptureOffReason() },
   ...(SERVER_SINGLE_DEVICE?.platform === "android" ? { serial: SERVER_SINGLE_DEVICE.id } : {}),
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN ? { sessionToken: SESSION_TOKEN } : {}),

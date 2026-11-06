@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { parseCliOptions } from "../cli/options";
 import {
   DEFAULT_SERVE_EMU_ICE_SERVERS,
+  defaultAndroidStreamSource,
   encodeStandaloneServeEmuOptions,
   readStandaloneServeEmuOptions,
   serveEmuWebSocketOptions,
@@ -14,6 +15,18 @@ const DEFAULT_ANDROID_STREAM = {
   grpcImageMode: "rgb888",
   encoder: "software",
 } as const;
+
+describe("defaultAndroidStreamSource", () => {
+  test("keeps gRPC capture by default and picks the emulator capture when it is on", () => {
+    expect(defaultAndroidStreamSource({})).toBe("grpc-screenshot");
+    expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "1" })).toBe(
+      "emulator-capture",
+    );
+    expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "0" })).toBe(
+      "grpc-screenshot",
+    );
+  });
+});
 
 describe("standaloneServeEmuOptions", () => {
   test("passes RGB888 CLI and programmatic options through the embedded server payload", () => {

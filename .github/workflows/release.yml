@@ -20,8 +20,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
-  # serve-sim builds native macOS binaries. An EAS macOS job builds this commit
-  # and writes the Turborepo remote cache; the Ubuntu release job then reads it.
+  # serve-sim and expo-emulator-capture build native macOS binaries. An EAS macOS
+  # job builds this commit and writes the Turborepo remote cache; the Ubuntu
+  # release job then reads it.
   build-cache:
     runs-on: ubuntu-latest
     env:
@@ -113,9 +114,17 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
-      # serve-sim must be a remote cache hit: its native build fails on Linux.
+      # serve-sim and expo-emulator-capture must be remote cache hits: serve-sim's
+      # native build fails on Linux, and expo-emulator-capture's prepublishOnly
+      # refuses to publish without its macOS agent.
       - name: Build packages
         run: bun run build
+
+      # changeset publish starts every publish at once, so the agent's prepublishOnly would stop
+      # only the agent, and the Hub would publish with a pin to a version that is not on npm.
+      # Check here, before the version commit.
+      - name: Check the capture agent
+        run: node packages/expo-emulator-capture/scripts/check-dist.mjs
 
       - name: Test
         run: bun run test

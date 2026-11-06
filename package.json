@@ -4,6 +4,7 @@
   "workspaces": {
     "packages": [
       "packages/expo-device-hub",
+      "packages/expo-emulator-capture",
       "packages/@expo/hub-*",
       "packages/serve-sim/packages/*",
       "packages/serve-emu/packages/*",
