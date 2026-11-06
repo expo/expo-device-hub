@@ -6,7 +6,7 @@
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
 **Revised:** 2026-11-04 (added the EAS macOS VM results); 2026-11-05 (source files moved to a shared C++ layout; rotation); 2026-11-06 (fixes from two deep reviews: replaced record, output limits, touch rotation, install lock, agent log, private socket directory); all by Claude Code, directed by Krystof Woldrich; 2026-11-14 (native exception boundaries, bounded command reads, consumer event ordering, locked last-post reads, install/socket checks and renderer dispatch startup ordering), by Codex (gpt-6.1-sol), directed by Krystof Woldrich
-**Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016
+**Related:** LLP 0000, LLP 0008, LLP 0009, LLP 0016, LLP 0018 (Linux)
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
 

@@ -6,7 +6,7 @@
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
-**Revised:** 2026-10-03 (reviewed and made Active by Krystof Woldrich); 2026-11-04 (added the `EmulatorCapture` package row; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-03 (reviewed and made Active by Krystof Woldrich); 2026-11-04 (added the `EmulatorCapture` package row); 2026-11-06 (Linux for `EmulatorCapture`); both by Claude Code, directed by Krystof Woldrich
 
 ## Summary
 
@@ -20,17 +20,17 @@ Read this document first. It tells you which package owns what, how the packages
 
 ## Packages
 
-| Package                                 | `Systems` name    | What it owns                                                                                                                                                                      | Published               |
-| --------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `packages/expo-device-hub`              | `Hub`             | The DevTools plugin: the dashboard UI and the device server that mounts serve-sim and serve-emu.                                                                                  | `expo-device-hub`       |
-| `packages/@expo/hub-client`             | `HubClient`       | Browser hooks and components (`DeviceScreen`, `useActiveDeviceClient`, …) that connect to serve-sim or serve-emu and paint the stream.                                            | `@expo/hub-client`      |
-| `packages/@expo/hub-components`         | `HubComponents`   | Dependency-free UI kit and design tokens ported from `@expo/styleguide`.                                                                                                          | private                 |
-| `packages/@expo/hub-apple-utils`        | `AppleUtils`      | Lists, creates, and boots simulators through `simctl`.                                                                                                                            | private                 |
-| `packages/@expo/hub-android-utils`      | `AndroidUtils`    | Lists, creates, and boots emulators through `avdmanager`, `sdkmanager`, `emulator`.                                                                                               | private                 |
-| `packages/serve-sim/packages/serve-sim` | `ServeSim`        | iOS simulator server: Swift capture addon, HTTP and WebRTC streams, input, preview UI, CLI.                                                                                       | `@expo/serve-sim`       |
-| `packages/serve-emu/packages/serve-emu` | `ServeEmu`        | Android server: scrcpy, H.264 over WebSocket, WebCodecs UI, REST control API, CLI.                                                                                                | private                 |
-| `packages/expo-emulator-capture`        | `EmulatorCapture` | Experimental emulator capture for macOS on Apple silicon: an agent preloaded into the emulator that encodes frames with VideoToolbox. The Hub installs it when its capture is on. | `expo-emulator-capture` |
-| `example`                               | `Example`         | A minimal Expo app with the plugin installed.                                                                                                                                     | private                 |
+| Package                                 | `Systems` name    | What it owns                                                                                                                                                                                                                                    | Published               |
+| --------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `packages/expo-device-hub`              | `Hub`             | The DevTools plugin: the dashboard UI and the device server that mounts serve-sim and serve-emu.                                                                                                                                                | `expo-device-hub`       |
+| `packages/@expo/hub-client`             | `HubClient`       | Browser hooks and components (`DeviceScreen`, `useActiveDeviceClient`, …) that connect to serve-sim or serve-emu and paint the stream.                                                                                                          | `@expo/hub-client`      |
+| `packages/@expo/hub-components`         | `HubComponents`   | Dependency-free UI kit and design tokens ported from `@expo/styleguide`.                                                                                                                                                                        | private                 |
+| `packages/@expo/hub-apple-utils`        | `AppleUtils`      | Lists, creates, and boots simulators through `simctl`.                                                                                                                                                                                          | private                 |
+| `packages/@expo/hub-android-utils`      | `AndroidUtils`    | Lists, creates, and boots emulators through `avdmanager`, `sdkmanager`, `emulator`.                                                                                                                                                             | private                 |
+| `packages/serve-sim/packages/serve-sim` | `ServeSim`        | iOS simulator server: Swift capture addon, HTTP and WebRTC streams, input, preview UI, CLI.                                                                                                                                                     | `@expo/serve-sim`       |
+| `packages/serve-emu/packages/serve-emu` | `ServeEmu`        | Android server: scrcpy, H.264 over WebSocket, WebCodecs UI, REST control API, CLI.                                                                                                                                                              | private                 |
+| `packages/expo-emulator-capture`        | `EmulatorCapture` | Experimental emulator capture for macOS on Apple silicon and Linux x86-64: an agent preloaded into the emulator that encodes frames with VideoToolbox on macOS and with the system's x264 on Linux. The Hub installs it when its capture is on. | `expo-emulator-capture` |
+| `example`                               | `Example`         | A minimal Expo app with the plugin installed.                                                                                                                                                                                                   | private                 |
 
 [observed: `README.md` "Repository structure", `RELEASING.md`, package directories]
 

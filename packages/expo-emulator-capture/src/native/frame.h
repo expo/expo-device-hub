@@ -2,13 +2,18 @@
 // A captured color buffer, as the frame source hands it to the encoder.
 #pragma once
 #include <cstdint>
+#include <memory>
+#include <vector>
+#if defined(__APPLE__)
 #include <CoreVideo/CoreVideo.h>
+#endif
 
 namespace expo_capture {
 
 enum class FramePath { Gpu, Cpu };
 inline const char* framePathName(FramePath path) { return path == FramePath::Gpu ? "gpu" : "cpu"; }
 
+#if defined(__APPLE__)
 // An owned reference to a 32BGRA, IOSurface-backed pixel buffer.
 class FramePixels {
  public:
@@ -37,6 +42,16 @@ class FramePixels {
  private:
   CVPixelBufferRef buffer_ = nullptr;
 };
+#else
+// Tightly packed RGBA rows, top row first, as the renderer reads them back.
+struct RgbaImage {
+  std::vector<uint8_t> data;
+  int width = 0;
+  int height = 0;
+};
+// Shared with the frame source's pool, which reuses an image once no frame holds it.
+using FramePixels = std::shared_ptr<RgbaImage>;
+#endif
 
 // A captured color buffer at its native size.
 struct CapturedFrame {
