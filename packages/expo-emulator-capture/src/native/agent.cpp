@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -133,6 +134,7 @@ class Agent {
 
  private:
   void encoderLoop();
+  void capturePost(uint32_t handle, bool needLockAndBind);
   bool captureNow(PendingFrame& out);
   void accept();
   void readCommands();
@@ -177,6 +179,7 @@ class Agent {
   std::string path_;
   int listener_ = -1;
   int client_ = -1;
+  int socketLock_ = -1;
   int wakePipe_[2] = {-1, -1};
   std::vector<uint8_t> commands_;
   std::mutex outputMutex_;
@@ -222,6 +225,16 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
 }
 
 void Agent::onPost(uint32_t handle, bool needLockAndBind) {
+  // This runs on the renderer's thread, inside its post. An exception that left it would end
+  // QEMU, for example a failed allocation for a frame after a fold.
+  try {
+    capturePost(handle, needLockAndBind);
+  } catch (...) {
+    captureErrors_++;
+  }
+}
+
+void Agent::capturePost(uint32_t handle, bool needLockAndBind) {
   posts_++;
   if (!active_.load(std::memory_order_relaxed)) return;
   if (!needLockAndBind) {
@@ -476,17 +489,33 @@ bool Agent::listen(const std::string& path, std::string& error) {
   }
   snprintf(address.sun_path, sizeof(address.sun_path), "%s", path.c_str());
   std::string directory = path.substr(0, path.rfind('/'));
-  if (!directory.empty()) mkdir(directory.c_str(), 0700);
-  // Refuse to take over a socket that another live agent still serves.
-  int probe = socket(AF_UNIX, SOCK_STREAM, 0);
-  if (probe >= 0) {
-    bool live = connect(probe, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0;
-    close(probe);
-    if (live) {
-      error = "another capture agent already serves " + path;
+  if (!directory.empty()) {
+    // @ref LLP 0017#loading — the socket directory must belong to this user alone
+    // On a shared /tmp, another user could otherwise create the directory first and replace
+    // the socket.
+    mkdir(directory.c_str(), 0700);
+    struct stat info {};
+    if (lstat(directory.c_str(), &info) != 0 || !S_ISDIR(info.st_mode) ||
+        info.st_uid != geteuid() || (info.st_mode & 077) != 0) {
+      error = directory + " must be a directory that only this user can access (mode 0700)";
       return false;
     }
   }
+  // Refuse a socket that another live agent serves. A lock next to the socket, held for the
+  // agent's lifetime, says so without a connection, which the live agent would take for a new
+  // consumer that replaces its current one.
+  std::string lockPath = path + ".lock";
+  int lock = open(lockPath.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (lock < 0) {
+    error = "cannot open " + lockPath + ": " + strerror(errno);
+    return false;
+  }
+  if (flock(lock, LOCK_EX | LOCK_NB) != 0) {
+    close(lock);
+    error = "another capture agent already serves " + path;
+    return false;
+  }
+  socketLock_ = lock;  // Released when the process exits.
   unlink(path.c_str());
   listener_ = socket(AF_UNIX, SOCK_STREAM, 0);
   if (listener_ < 0 || bind(listener_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
@@ -506,32 +535,38 @@ bool Agent::listen(const std::string& path, std::string& error) {
 
 void Agent::serve() {
   for (;;) {
-    pollfd fds[3] = {{listener_, POLLIN, 0}, {wakePipe_[0], POLLIN, 0}, {client_, 0, 0}};
-    nfds_t count = 2;
-    if (client_ >= 0) {
-      std::lock_guard<std::mutex> guard(outputMutex_);
-      fds[2].events = short(POLLIN | (output_.empty() ? 0 : POLLOUT));
-      count = 3;
-    }
-    if (poll(fds, count, 1000) < 0) {
-      if (errno == EINTR) continue;
-      logLine("poll failed: %s", strerror(errno));
-      return;
-    }
-    if (fds[1].revents) {
-      uint8_t drain[64];
-      while (read(wakePipe_[0], drain, sizeof(drain)) > 0) {
+    try {
+      pollfd fds[3] = {{listener_, POLLIN, 0}, {wakePipe_[0], POLLIN, 0}, {client_, 0, 0}};
+      nfds_t count = 2;
+      if (client_ >= 0) {
+        std::lock_guard<std::mutex> guard(outputMutex_);
+        fds[2].events = short(POLLIN | (output_.empty() ? 0 : POLLOUT));
+        count = 3;
       }
-    }
-    if (outputStalled_.exchange(false)) disconnect("consumer stopped reading");
-    if (fds[0].revents & POLLIN) accept();
-    if (client_ >= 0 && count == 3) {
-      if (fds[2].revents & (POLLERR | POLLNVAL)) {
-        disconnect("socket error");
-        continue;
+      if (poll(fds, count, 1000) < 0) {
+        if (errno == EINTR) continue;
+        logLine("poll failed: %s", strerror(errno));
+        return;
       }
-      if (fds[2].revents & (POLLIN | POLLHUP)) readCommands();
-      if (client_ >= 0) flushOutput();
+      if (fds[1].revents) {
+        uint8_t drain[64];
+        while (read(wakePipe_[0], drain, sizeof(drain)) > 0) {
+        }
+      }
+      if (outputStalled_.exchange(false)) disconnect("consumer stopped reading");
+      if (fds[0].revents & POLLIN) accept();
+      if (client_ >= 0 && count == 3) {
+        if (fds[2].revents & (POLLERR | POLLNVAL)) {
+          disconnect("socket error");
+          continue;
+        }
+        if (fds[2].revents & (POLLIN | POLLHUP)) readCommands();
+        if (client_ >= 0) flushOutput();
+      }
+    } catch (const std::exception& error) {
+      // An exception must not leave this thread either: std::terminate would end QEMU.
+      logLine("socket error: %s", error.what());
+      disconnect("agent error");
     }
   }
 }
@@ -811,7 +846,14 @@ __attribute__((constructor)) static void expoEmulatorCaptureInit() {
   expo_capture::removeFromPreload();
   const char* socketPath = getenv("EXPO_EMULATOR_CAPTURE_SOCKET");
   if (const char* logPath = getenv("EXPO_EMULATOR_CAPTURE_LOG")) {
-    if (FILE* file = fopen(logPath, "a")) expo_capture::logFile = file;
+    // O_NOFOLLOW: a symlink at the log path must not redirect the writes to another file.
+    int fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd >= 0) {
+      if (FILE* file = fdopen(fd, "a"))
+        expo_capture::logFile = file;
+      else
+        close(fd);
+    }
   }
   if (!socketPath || !*socketPath) {
     expo_capture::logLine("capture disabled: EXPO_EMULATOR_CAPTURE_SOCKET is not set");

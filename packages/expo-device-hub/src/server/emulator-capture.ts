@@ -1,4 +1,5 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
+import { lstat, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { EMULATOR_CAPTURE_PACKAGE, installEmulatorCapture } from "./emulator-capture-install";
@@ -107,6 +108,20 @@ export function readEmulatorCapture(
     socketDirectory: join(tmpdir(), "expo-emulator-capture"),
     platform: host,
   };
+}
+
+/**
+ * Creates the socket directory, or checks the one that exists: it holds the sockets and logs,
+ * so only this user may own or write it. On a shared `/tmp`, another user could otherwise
+ * create it first and replace a socket.
+ */
+export async function ensurePrivateDirectory(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  const info = await lstat(path);
+  const uid = process.getuid?.();
+  if (!info.isDirectory() || (uid !== undefined && info.uid !== uid) || (info.mode & 0o077) !== 0) {
+    throw new Error(`${path} must be a directory that only this user can access (mode 0700)`);
+  }
 }
 
 /** The agent's log for one emulator that the Hub boots, next to its socket. */

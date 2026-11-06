@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -257,6 +257,7 @@ describe("bootHubDevice emulator capture", () => {
 
   test("preloads the agent with a per-serial socket and log, and host rendering", async () => {
     await mkdir(socketDirectory, { recursive: true });
+    await chmod(socketDirectory, 0o700);
     await writeFile(join(socketDirectory, "emulator-5560.log"), "capture disabled: old\n");
     await bootHubDevice(bootRequest(), cameraFeeds(), capture);
 
@@ -281,6 +282,21 @@ describe("bootHubDevice emulator capture", () => {
 
     expect(scenario.spawned?.extraArgs).toEqual(["-gpu", "host"]);
     expect(scenario.spawned?.env?.DYLD_INSERT_LIBRARIES).toBe(library);
+  });
+
+  test("boots without the agent when another user could write its socket directory", async () => {
+    const shared = join(tmpdir(), "hub-boot-capture-shared");
+    await mkdir(shared, { recursive: true });
+    await chmod(shared, 0o755);
+    const result = await bootHubDevice(bootRequest(), cameraFeeds(), {
+      ...capture,
+      socketDirectory: shared,
+    });
+
+    expect(scenario.spawned?.env).toBeUndefined();
+    expect(scenario.spawned?.extraArgs).toEqual([...feedArgs("emulator-5560"), "-gpu", "host"]);
+    expect(result.errors[0]?.message).toBe("Pixel_9 starts without the emulator capture agent");
+    expect(JSON.stringify(result.errors[0])).toContain("only this user can access");
   });
 
   test("boots without the agent, and says so, when the agent package is not installed", async () => {
