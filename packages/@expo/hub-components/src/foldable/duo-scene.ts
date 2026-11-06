@@ -9,6 +9,7 @@
  */
 
 import {
+  canvasFrameNumber,
   type FoldPose,
   type MultiTouchSample,
   type ScrollSample,
@@ -83,6 +84,9 @@ type Surface = {
   mappingConfigKey?: string;
   lastFrameKey?: string;
   lastVideoTime?: number;
+  /** The canvas source last drawn, and its painted-frame count from hub-client. */
+  lastCanvas?: HTMLCanvasElement;
+  lastCanvasFrame?: number;
   sawOtherActiveScreen: boolean;
   nativeDeparture?: number;
   handoff?: { sawBlack: boolean };
@@ -369,17 +373,23 @@ export function createDuoScene(
     // The body carries the image, including cached frames on an inactive panel.
     const rotation = modelFrameRotation(description, config);
     const frameKey = `${config.width}:${config.height}:${rotation}:${binding}`;
-    // Only a video tells when it has a new frame. An MJPEG <img> keeps its src
-    // while its frames change, so an image is drawn again on every frame, as a
-    // canvas is.
+    // A video tells when it has a new frame, and hub-client counts the frames it
+    // paints into an Android canvas. An MJPEG <img> keeps its src while its
+    // frames change, so an image, or a canvas without a count, is drawn again on
+    // every frame.
+    const canvasFrame = source instanceof HTMLCanvasElement ? canvasFrameNumber(source) : undefined;
     if (
       frameKey === surface.lastFrameKey &&
-      source instanceof HTMLVideoElement &&
-      source.currentTime === surface.lastVideoTime
+      ((source instanceof HTMLVideoElement && source.currentTime === surface.lastVideoTime) ||
+        (canvasFrame !== undefined &&
+          source === surface.lastCanvas &&
+          canvasFrame === surface.lastCanvasFrame))
     ) {
       return;
     }
     surface.lastFrameKey = frameKey;
+    surface.lastCanvas = source instanceof HTMLCanvasElement ? source : undefined;
+    surface.lastCanvasFrame = canvasFrame;
     if (source instanceof HTMLVideoElement) surface.lastVideoTime = source.currentTime;
     const { context, canvas } = surface;
     const mapping = duoScreenMapping(config, canvas.width, canvas.height, rotation);
@@ -413,6 +423,8 @@ export function createDuoScene(
     surface.mappingConfigKey = undefined;
     surface.lastFrameKey = undefined;
     surface.lastVideoTime = undefined;
+    surface.lastCanvas = undefined;
+    surface.lastCanvasFrame = undefined;
   }
 
   function updateScreen() {
