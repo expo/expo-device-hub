@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ChildProcess } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer, Socket } from "node:net";
 import {
   availableStreamModesForSerial,
@@ -643,6 +643,9 @@ describe("emulator capture availability", () => {
         socket: null,
         reason: "Restart it.",
       });
+      // A link at the socket path is not this user's agent.
+      await symlink(`${directory}/emulator-5554.sock`, `${directory}/emulator-5558.sock`);
+      expect(emulatorCaptureSocketFor("emulator-5558", directory)).toBeNull();
       // A physical device gets no reason, so clients show no disabled option for it.
       expect(emulatorCaptureAvailability("R58M123456", options)).toEqual({ socket: null });
       expect(

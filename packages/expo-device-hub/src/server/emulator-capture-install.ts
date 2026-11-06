@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
@@ -105,25 +106,66 @@ export async function installEmulatorCapture({
   }
 }
 
+/** The owner line of a lock: pid, host and a token that names this one lock. */
+type LockOwner = { pid: string; host: string; token: string };
+
+async function readLockOwner(path: string): Promise<LockOwner | null> {
+  const text = await readFile(join(path, "owner"), "utf8").catch(() => "");
+  const [pid, host, token] = text.trim().split(" ");
+  return pid && host && token ? { pid, host, token } : null;
+}
+
 /**
  * Takes a lock directory, or waits until `done` reports that the holder finished. Returns null
  * when it finished, so the caller has nothing left to do. An abandoned lock is taken over.
+ *
+ * A lock appears with its owner file in one rename, and each lock has its own token. A takeover
+ * moves the lock aside and then checks that it moved the lock it judged dead; a lock that
+ * another Hub took over in between goes back. A release removes only its own lock.
  */
 async function acquireLock(
   path: string,
   done: () => Promise<boolean>,
 ): Promise<(() => Promise<void>) | null> {
   for (;;) {
-    try {
-      await mkdir(path);
-      await writeFile(join(path, "owner"), `${process.pid} ${hostname()}\n`).catch(() => {});
-      return () => rm(path, { recursive: true, force: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const token = randomUUID();
+    const draft = await mkdtemp(`${path}.new-`);
+    await writeFile(join(draft, "owner"), `${process.pid} ${hostname()} ${token}\n`);
+    const taken = await rename(draft, path).then(
+      () => true,
+      () => false,
+    );
+    if (taken) {
+      return async () => {
+        if ((await readLockOwner(path))?.token !== token) return;
+        const released = `${path}.released-${token}`;
+        if (
+          await rename(path, released).then(
+            () => true,
+            () => false,
+          )
+        )
+          await rm(released, { recursive: true, force: true });
+      };
     }
+    await rm(draft, { recursive: true, force: true });
     if (await done()) return null;
+    const owner = await readLockOwner(path);
     if (await lockIsAbandoned(path)) {
-      await rm(path, { recursive: true, force: true });
+      const stale = `${path}.stale-${randomUUID()}`;
+      if (
+        await rename(path, stale).then(
+          () => true,
+          () => false,
+        )
+      ) {
+        if (owner && (await readLockOwner(stale))?.token !== owner.token) {
+          // Another Hub took the lock over first: give its lock back.
+          await rename(stale, path).catch(() => {});
+        } else {
+          await rm(stale, { recursive: true, force: true });
+        }
+      }
       continue;
     }
     await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
@@ -138,9 +180,8 @@ export async function lockIsAbandoned(
   path: string,
   isAlive: (pid: number) => boolean = processIsAlive,
 ): Promise<boolean> {
-  const owner = await readFile(join(path, "owner"), "utf8").catch(() => "");
-  const [pid, host] = owner.trim().split(" ");
-  if (pid && host === hostname() && !isAlive(Number(pid))) return true;
+  const owner = await readLockOwner(path);
+  if (owner && owner.host === hostname() && !isAlive(Number(owner.pid))) return true;
   const age = await stat(path).then(
     (info) => Date.now() - info.mtimeMs,
     () => 0,

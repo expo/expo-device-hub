@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   emulatorCaptureMissingAgentReason,
   emulatorCaptureOffReason,
   emulatorCaptureRequested,
+  ensurePrivateDirectory,
   readEmulatorCapture,
 } from "../emulator-capture";
 
@@ -178,4 +179,22 @@ test("emulatorCaptureEnv names the socket and log by serial and keeps an inherit
     emulatorCaptureEnv(capture, "emulator-5556", { DYLD_INSERT_LIBRARIES: "/other.dylib" })
       .DYLD_INSERT_LIBRARIES,
   ).toBe("/lib.dylib:/other.dylib");
+});
+
+test("ensurePrivateDirectory creates a private directory and refuses one that others can use", async () => {
+  const root = mkdtempSync(join(tmpdir(), "hub-capture-dir-"));
+  try {
+    const fresh = join(root, "fresh");
+    await ensurePrivateDirectory(fresh);
+    expect(statSync(fresh).mode & 0o777).toBe(0o700);
+    const shared = join(root, "shared");
+    await ensurePrivateDirectory(shared);
+    chmodSync(shared, 0o755);
+    await expect(ensurePrivateDirectory(shared)).rejects.toThrow("only this user can access");
+    const link = join(root, "link");
+    symlinkSync(fresh, link);
+    await expect(ensurePrivateDirectory(link)).rejects.toThrow("only this user can access");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
