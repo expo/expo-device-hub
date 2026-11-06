@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient, HubComponents
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-06 (the rendered fold settles on its target, and a bend error falls back to the flat view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-11-06 (the rendered fold settles on its target, a bend error falls back to the flat view, and the scene skips an unchanged Android canvas and ignores a non-finite view; Claude Code, directed by Krystof Woldrich); 2026-11-05 (an emulator without profile metadata gets no 3D model; Claude Code, directed by Krystof Woldrich); 2026-11-05 (settle ambiguous Android sensor readback, Codex gpt-6.1-sol); 2026-11-04 (Android angle commands and range checks, Codex gpt-6.1-sol); 2026-11-04 (the foldables bend with the models repository's tighter-fold runtimes, which keep the display's spacing over the hinge; Claude Code, directed by Krystof Woldrich); 2026-11-04 (the 3D scene draws an MJPEG `<img>` on every frame; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the 3D scene turns its environment so that a device facing the camera does not mirror its brightest panel; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub draws Expo's device models instead of Xcode's, also for the iPhone 18 Pro, Pixel 9 Pro, and Pixel 9 Pro Fold; Claude Code, directed by Krystof Woldrich); 2026-11-03 (the Hub reads the native observation; a Rotate ends at its chosen orientation or after the readback grace); 2026-10-30 (the Hub's 3D stage is capped at the flat Duo's size; Claude Code, directed by Krystof Woldrich); 2026-10-21 (the Hub's 3D preview as a hub-client consumer; hub-client's generic fold contract in LLP 0016; its stage fills the stream area; Claude Code, directed by Krystof Woldrich); 2026-10-16 (ordinary iOS CoreDevice HID routing); 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001, LLP 0016
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -686,18 +686,20 @@ files, their source commit, and their sizes are in
   handles move the emulator's hinge; without a fold it shows its cover at 0° or
   its inner display at 180° [observed: `streamedPanel` in `duo-displays.ts`,
   `DeviceModelScreen.tsx`]. The scene draws an `<img>` source again on every
-  frame, as it draws a canvas, and skips only a video frame that it already
-  drew. An MJPEG `<img>` keeps its `src` while its frames change (LLP 0015), so
-  serve-sim's check for a new `src` showed only the first frame: the iPhone 18
-  Pro's 3D view did not change after a tap or Home [observed: `uploadScreen` in
-  `duo-scene.ts`; seen in the Hub on 2026-11-04].
+  frame. It skips a video frame that it already drew, and an Android canvas
+  whose frame number from hub-client did not change; a canvas without a number
+  is drawn on every frame. An MJPEG `<img>` keeps its `src` while its frames
+  change (LLP 0015), so serve-sim's check for a new `src` showed only the first
+  frame: the iPhone 18 Pro's 3D view did not change after a tap or Home
+  [observed: `uploadScreen` in `duo-scene.ts`, `canvasFrameNumber` in hub-client;
+  seen in the Hub on 2026-11-04].
 - **Orientation.** A model without fold events turns with
   `client.orientation`, or the screen's orientation before the client reports
   one, so a turned device lies on its side. Its glass keeps the hardware's
   orientation: an upright frame of a turned device, which serve-emu sends, is
   turned back onto the glass, and a raw frame, which the flat view would rotate,
-  is painted as it is. Input maps back the same way [observed: `frameRotation`
-  in `duo-scene.ts`, `deviceModelView` in `duo-view.ts`].
+  is painted as it is. Input maps back the same way [observed:
+  `modelFrameRotation` in `duo-pose.ts`, `deviceModelView` in `duo-view.ts`].
 
 ### Stage size
 

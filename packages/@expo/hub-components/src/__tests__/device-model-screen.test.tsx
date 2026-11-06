@@ -81,6 +81,20 @@ describe("DeviceModelScreen", () => {
     expect(canMoveModelHinge(DEVICE_MODELS["android:pixel-9-pro"], android)).toBe(false);
   });
 
+  test("takes a non-finite fold angle as unknown", () => {
+    const model = DEVICE_MODELS["android:pixel-9-pro-fold"];
+    const markup = render(
+      model,
+      client({
+        screen: { width: 2076, height: 2152 },
+        fold: { angle: Number.NaN, pose: null, pending: false, error: null, setControl: () => {} },
+      }),
+    );
+    expect(markup).toContain("Pixel 9 Pro Fold 3D preview");
+    expect(markup).toContain("180 degrees");
+    expect(markup).not.toContain("NaN");
+  });
+
   test("keeps the iPhone Duo's displays, fold, and hinge handles", () => {
     const duo = DEVICE_MODELS["ios:iphone-duo"];
     const displays = [

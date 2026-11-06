@@ -417,6 +417,13 @@ test.skipIf(!MODELS_AVAILABLE)(
       scene.tick(10);
       expect(scene.errors()).toBe(0);
       expect(Number.isFinite(scene.rig().folds.left)).toBe(true);
+      // A caller builds its view from the same angle, so the view is non-finite too.
+      scene.setState({ angle: Number.NaN, view: streamView(fold, Number.NaN, inner) });
+      scene.tick(10);
+      scene.setAngle(150);
+      scene.tick(300);
+      expect(scene.errors()).toBe(0);
+      expect(scene.rig().model.matrixWorld.elements.every(Number.isFinite)).toBe(true);
 
       scene.setAngle(60);
       scene.rig().fold = () => {

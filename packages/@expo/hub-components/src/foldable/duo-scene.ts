@@ -84,13 +84,17 @@ type Surface = {
   mappingConfigKey?: string;
   lastFrameKey?: string;
   lastVideoTime?: number;
-  /** The canvas source last drawn, and its painted-frame count from hub-client. */
+  /** The canvas source last drawn, and its frame number from hub-client. */
   lastCanvas?: HTMLCanvasElement;
   lastCanvasFrame?: number;
   sawOtherActiveScreen: boolean;
   nativeDeparture?: number;
   handoff?: { sawBlack: boolean };
 };
+
+function isFiniteQuaternion({ x, y, z, w }: { x: number; y: number; z: number; w: number }) {
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(w);
+}
 
 /** Owns GPU resources and the animation loop; React only supplies requested state. */
 export function createDuoScene(
@@ -373,10 +377,10 @@ export function createDuoScene(
     // The body carries the image, including cached frames on an inactive panel.
     const rotation = modelFrameRotation(description, config);
     const frameKey = `${config.width}:${config.height}:${rotation}:${binding}`;
-    // A video tells when it has a new frame, and hub-client counts the frames it
-    // paints into an Android canvas. An MJPEG <img> keeps its src while its
-    // frames change, so an image, or a canvas without a count, is drawn again on
-    // every frame.
+    // A video tells when it has a new frame, and hub-client numbers the frames
+    // it paints into an Android canvas. An MJPEG <img> keeps its src while its
+    // frames change, so an image, or a canvas without a number, is drawn again
+    // on every frame.
     const canvasFrame = source instanceof HTMLCanvasElement ? canvasFrameNumber(source) : undefined;
     if (
       frameKey === surface.lastFrameKey &&
@@ -1018,8 +1022,11 @@ export function createDuoScene(
     }
     // Ordinary folding turns toward the inside as the rendered hinge opens.
     // Tabletop views and the user's roll stay independent of native metadata.
-    targetQuaternion.copy(duoViewRotation(fold, view));
-    if (snap) root.quaternion.copy(targetQuaternion);
+    // A view built from a non-finite angle keeps the last valid rotation, and a
+    // rotation that is already non-finite starts again from the target.
+    const rotation = duoViewRotation(fold, view);
+    if (isFiniteQuaternion(rotation)) targetQuaternion.copy(rotation);
+    if (snap || !isFiniteQuaternion(root.quaternion)) root.quaternion.copy(targetQuaternion);
     else root.quaternion.slerp(targetQuaternion, 1 - Math.exp(-10 * dt));
     const renderedAngle = 180 - (fold * 360) / Math.PI;
     try {
