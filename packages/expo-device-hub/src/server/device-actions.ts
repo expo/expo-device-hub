@@ -7,7 +7,7 @@
  * calls them via `POST /api/devices/{create,shutdown,remove,boot}` (see `index.ts`).
  */
 
-import { mkdir, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 
 import {
   bootDevice as bootAndroidEmulator,
@@ -32,6 +32,7 @@ import {
   emulatorCaptureArgs,
   emulatorCaptureEnv,
   emulatorCaptureLogPath,
+  ensurePrivateDirectory,
 } from "./emulator-capture";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
@@ -302,15 +303,20 @@ async function bootAndroidHubDevice(
   // It waits before it picks a port: the port is free only until an emulator takes it, so two
   // boots during the install would otherwise get the same one.
   let captureError: SerializableError | null = null;
-  const captureLibrary = capture
-    ? await capture.library().catch((error: unknown) => {
-        captureError = toSerializableError({
-          message: `${avdName} starts without the emulator capture agent`,
-          error,
-        });
-        return null;
-      })
-    : null;
+  const withoutAgent = (error: unknown) => {
+    captureError = toSerializableError({
+      message: `${avdName} starts without the emulator capture agent`,
+      error,
+    });
+    return null;
+  };
+  let captureLibrary = capture ? await capture.library().catch(withoutAgent) : null;
+  if (capture && captureLibrary) {
+    captureLibrary = await ensurePrivateDirectory(capture.socketDirectory).then(
+      () => captureLibrary,
+      withoutAgent,
+    );
+  }
 
   const allocated = await freeEmulatorPort();
   if (allocated.error || allocated.value === null) {
@@ -337,11 +343,10 @@ async function bootAndroidHubDevice(
       ? emulatorCaptureEnv({ ...capture, library: captureLibrary }, serial)
       : null;
   if (capture && captureEnv) {
-    // The agent opens its log before it creates the socket directory; a log from an earlier
-    // emulator on this serial would give a stale reason.
-    const log = emulatorCaptureLogPath(capture.socketDirectory, serial);
-    await mkdir(capture.socketDirectory, { recursive: true, mode: 0o700 }).catch(() => {});
-    await rm(log, { force: true }).catch(() => {});
+    // A log from an earlier emulator on this serial would give a stale reason.
+    await rm(emulatorCaptureLogPath(capture.socketDirectory, serial), { force: true }).catch(
+      () => {},
+    );
   }
   const preBootErrors = [...errorList(seedError), ...errorList(captureError)];
   const extraArgs = [
