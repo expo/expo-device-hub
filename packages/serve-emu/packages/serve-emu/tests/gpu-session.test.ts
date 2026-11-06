@@ -8,6 +8,8 @@ import {
   emulatorCaptureSocketFor,
 } from "../src/device-capabilities.ts";
 import {
+  GPU_CAPTURE_REPLACED_CODE,
+  GpuCaptureReplacedError,
   GpuCaptureUnavailableError,
   startGpuCaptureSession,
   uprightTouchSize,
@@ -208,6 +210,7 @@ describe("GPU capture session", () => {
         resizes: 0,
         rotation: null,
         rotations: 0,
+        touchSize: { width: 1440, height: 2560 },
       });
       expect(fixture.controls).toHaveLength(1);
       const waiting = session.readFrame();
@@ -415,6 +418,116 @@ describe("GPU capture session", () => {
     }
   });
 
+  test("maps touches with the rotation of the picture that clients show", async () => {
+    const fixture = await gpuFixture();
+    let rotation: 0 | 1 | 2 | 3 = 0;
+    let poll: (() => void) | undefined;
+    try {
+      // The agent's configured record says which rotation its picture has.
+      fixture.onConnect((socket) => {
+        socket.write(
+          Buffer.concat([
+            record(GPU_RECORD.hello, json({ protocol: 2 }), 0n, 1440, 2560),
+            record(GPU_RECORD.configured, json({ framePath: "gpu", rotation: 0 }), 0n, 720, 1280),
+            record(GPU_RECORD.keyFrame, picture, 1n, 720, 1280),
+          ]),
+        );
+      });
+      const session = await fixture.start(
+        { readDisplayRotation: async () => rotation },
+        undefined,
+        {
+          setInterval: (callback) => {
+            poll = callback;
+            return {};
+          },
+          clearInterval: () => {},
+        },
+      );
+      await fixture.settings;
+      const touch = () => session.diagnostics?.().experimentalGpuCapture?.touchSize;
+      expect(touch()).toEqual({ width: 1440, height: 2560 });
+      // The display turned, but the turned picture has not arrived: touches stay as shown.
+      rotation = 1;
+      poll!();
+      await until(() => fixture.commands().length === 2);
+      expect(touch()).toEqual({ width: 1440, height: 2560 });
+      fixture.send(
+        Buffer.concat([
+          record(GPU_RECORD.configured, json({ framePath: "gpu", rotation: 1 }), 0n, 1280, 720),
+          record(GPU_RECORD.keyFrame, picture, 2n, 1280, 720),
+        ]),
+      );
+      await until(() => touch()?.width === 2560);
+      expect(touch()).toEqual({ width: 2560, height: 1440 });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("reads the rotation once more after a display change during a read", async () => {
+    const fixture = await gpuFixture();
+    let rotation: 0 | 1 | 2 | 3 = 0;
+    let reads = 0;
+    let release: (() => void) | undefined;
+    try {
+      fixture.onConnect((socket) => {
+        socket.write(rotatingStream(720, 1280));
+      });
+      const session = await fixture.start(
+        {
+          readDisplayRotation: async () => {
+            reads++;
+            // The second read (the first poll) waits until the test releases it.
+            if (reads === 2) await new Promise<void>((resolve) => (release = resolve));
+            return rotation;
+          },
+        },
+        undefined,
+        { setInterval: () => ({}), clearInterval: () => {} },
+      );
+      await fixture.settings;
+      session.displayChanged?.();
+      await until(() => release !== undefined);
+      // POST /api/orientation turns the display while the read runs.
+      rotation = 2;
+      session.displayChanged?.();
+      release!();
+      await until(() => fixture.commands().length === 2);
+      expect(fixture.commands()[1]).toEqual(gpuRotationCommand(2));
+      expect(reads).toBe(3);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  test("fails with a replaced error when another consumer takes the agent", async () => {
+    const fixture = await gpuFixture();
+    try {
+      const replaced = Buffer.alloc(32);
+      replaced.write("GPC1");
+      replaced.writeUInt32BE(GPU_RECORD.replaced, 16);
+      // At startup: a default capture falls back like a missing agent.
+      fixture.onConnect((socket) => {
+        socket.end(Buffer.concat([hello, replaced]));
+      });
+      await expect(fixture.start()).rejects.toBeInstanceOf(GpuCaptureReplacedError);
+      // While streaming: the failure carries its own code.
+      fixture.onConnect((socket) => {
+        socket.write(readyStream);
+      });
+      const session = await fixture.start();
+      const failures: { code?: string }[] = [];
+      session.onFatal((failure) => failures.push(failure));
+      fixture.send(replaced);
+      await until(() => failures.length === 1);
+      expect(failures[0]!.code).toBe(GPU_CAPTURE_REPLACED_CODE);
+      expect(new GpuCaptureReplacedError()).toBeInstanceOf(GpuCaptureUnavailableError);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   test("leaves an agent without the R command unrotated", async () => {
     const fixture = await gpuFixture();
     try {
@@ -530,14 +643,18 @@ describe("emulator capture availability", () => {
         socket: null,
         reason: "Restart it.",
       });
-      expect(emulatorCaptureAvailability("R58M123456", options)).toMatchObject({ socket: null });
-      // A function gives a reason that changes, such as an install in progress.
+      // A physical device gets no reason, so clients show no disabled option for it.
+      expect(emulatorCaptureAvailability("R58M123456", options)).toEqual({ socket: null });
+      expect(
+        emulatorCaptureAvailability("R58M123456", { unavailableReason: "Turn it on." }),
+      ).toEqual({ socket: null });
+      // A function gives a reason that changes, such as an install in progress, per serial.
       expect(
         emulatorCaptureAvailability("emulator-5556", {
           socketDirectory: directory,
-          missingAgentReason: () => "Installing the agent…",
+          missingAgentReason: (serial) => `Installing the agent for ${serial}…`,
         }),
-      ).toEqual({ socket: null, reason: "Installing the agent…" });
+      ).toEqual({ socket: null, reason: "Installing the agent for emulator-5556…" });
       expect(
         emulatorCaptureAvailability("emulator-5554", { unavailableReason: "Turn it on." }),
       ).toEqual({ socket: null, reason: "Turn it on." });

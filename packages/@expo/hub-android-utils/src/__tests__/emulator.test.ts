@@ -154,6 +154,22 @@ describe("formatEmulatorCommand", () => {
     expect(command.endsWith("-port 5554 -camera-back imagefile\\:/tmp/a.png")).toBe(true);
   });
 
+  test("puts the boot's variables first, so the command reproduces a preloaded agent", () => {
+    const command = formatEmulatorCommand("/sdk/emulator/emulator", {
+      name: "x",
+      port: 5554,
+      env: {
+        DYLD_INSERT_LIBRARIES: "/my cache/agent.dylib",
+        EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/a.sock",
+      },
+    });
+    expect(
+      command.startsWith(
+        "DYLD_INSERT_LIBRARIES='/my cache/agent.dylib' EXPO_EMULATOR_CAPTURE_SOCKET=/tmp/a.sock /sdk/emulator/emulator ",
+      ),
+    ).toBe(true);
+  });
+
   test("quotes parts containing whitespace", () => {
     const command = formatEmulatorCommand("/my sdk/emulator", { name: "x", port: 5554 });
     expect(command.startsWith("'/my sdk/emulator'")).toBe(true);

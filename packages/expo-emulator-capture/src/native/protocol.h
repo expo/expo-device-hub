@@ -16,6 +16,8 @@ namespace expo_capture {
 constexpr size_t kHeaderBytes = 32;
 constexpr uint32_t kMaxPayloadBytes = 8 * 1024 * 1024;
 constexpr int kMaxEdge = 4096;
+// The smallest longest-edge cap that 'S' accepts; 0 still means the native size.
+constexpr int kMinMaxSize = 16;
 constexpr int kMaxFps = 120;
 
 enum RecordFlags : uint32_t {
@@ -24,6 +26,7 @@ enum RecordFlags : uint32_t {
   kHello = 2,       // Native display size; payload is a JSON object.
   kConfigured = 3,  // Stream settings in effect; width and height are the stream size.
   kResized = 4,     // Native display size changed; a kConfigured record follows.
+  kReplaced = 5,    // Sent to a consumer that a new consumer replaces, just before the close.
 };
 
 // Commands from the consumer: 'K' requests a keyframe. 'S' is followed by three
@@ -77,8 +80,8 @@ inline bool parseSettings(const uint8_t* command, StreamSettings& out) {
   if (command[0] != kCommandSettings) return false;
   uint32_t maxSize = readU32(command + 1), fps = readU32(command + 5),
            bitRate = readU32(command + 9);
-  if (maxSize > uint32_t(kMaxEdge) || fps < 1 || fps > uint32_t(kMaxFps) ||
-      bitRate < kMinBitRate || bitRate > kMaxBitRate)
+  if (maxSize > uint32_t(kMaxEdge) || (maxSize != 0 && maxSize < uint32_t(kMinMaxSize)) ||
+      fps < 1 || fps > uint32_t(kMaxFps) || bitRate < kMinBitRate || bitRate > kMaxBitRate)
     return false;
   out.maxSize = int(maxSize);
   out.fps = int(fps);
@@ -102,16 +105,16 @@ inline std::pair<int, int> uprightSize(int width, int height, int rotation) {
   return rotation % 2 ? std::make_pair(height, width) : std::make_pair(width, height);
 }
 
-// Even-sized, aspect-preserving cap on the longest edge, as in the Linux experiment.
+// Even-sized, aspect-preserving cap on the longest edge, as in the Linux experiment. A very
+// narrow display keeps a short edge of 2, the smallest even size.
 inline std::pair<int, int> streamSize(int width, int height, int maxSize) {
   if (maxSize < 0 || maxSize > kMaxEdge || width < 2 || height < 2)
     throw std::runtime_error("invalid stream size");
   int edge = std::max(width, height);
   int target = maxSize > 0 ? std::min(maxSize, edge) : edge;
   target = std::min(target, kMaxEdge);
-  int w = int(int64_t(width) * target / edge) / 2 * 2;
-  int h = int(int64_t(height) * target / edge) / 2 * 2;
-  if (w < 2 || h < 2) throw std::runtime_error("stream size too small for H.264");
+  int w = std::max(2, int(int64_t(width) * target / edge) / 2 * 2);
+  int h = std::max(2, int(int64_t(height) * target / edge) / 2 * 2);
   return {w, h};
 }
 

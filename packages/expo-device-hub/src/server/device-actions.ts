@@ -7,6 +7,8 @@
  * calls them via `POST /api/devices/{create,shutdown,remove,boot}` (see `index.ts`).
  */
 
+import { mkdir, rm } from "node:fs/promises";
+
 import {
   bootDevice as bootAndroidEmulator,
   createDevice as createAndroidDevice,
@@ -25,7 +27,12 @@ import {
 } from "@expo/hub-apple-utils";
 
 import { type HubDevicePlatform } from "./devices";
-import { type EmulatorCapture, emulatorCaptureLaunch } from "./emulator-capture";
+import {
+  type EmulatorCapture,
+  emulatorCaptureArgs,
+  emulatorCaptureEnv,
+  emulatorCaptureLogPath,
+} from "./emulator-capture";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
 const ANDROID_AVD_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -291,6 +298,20 @@ async function bootAndroidHubDevice(
   cameraFeeds: EmulatorCameraFeeds,
   capture: EmulatorCapture | null,
 ): Promise<BootDeviceResult> {
+  // The first boot after the Hub starts may wait for the agent package to finish installing.
+  // It waits before it picks a port: the port is free only until an emulator takes it, so two
+  // boots during the install would otherwise get the same one.
+  let captureError: SerializableError | null = null;
+  const captureLibrary = capture
+    ? await capture.library().catch((error: unknown) => {
+        captureError = toSerializableError({
+          message: `${avdName} starts without the emulator capture agent`,
+          error,
+        });
+        return null;
+      })
+    : null;
+
   const allocated = await freeEmulatorPort();
   if (allocated.error || allocated.value === null) {
     return {
@@ -311,31 +332,27 @@ async function bootAndroidHubDevice(
     });
   }
 
-  // The first boot after the Hub starts may wait for the agent package to finish installing.
-  let captureError: SerializableError | null = null;
-  const captureLibrary = capture
-    ? await capture.library().catch((error: unknown) => {
-        captureError = toSerializableError({
-          message: `${avdName} starts without the emulator capture agent`,
-          error,
-        });
-        return null;
-      })
-    : null;
-  const captureLaunch =
+  const captureEnv =
     capture && captureLibrary
-      ? emulatorCaptureLaunch({ ...capture, library: captureLibrary }, serial)
+      ? emulatorCaptureEnv({ ...capture, library: captureLibrary }, serial)
       : null;
+  if (capture && captureEnv) {
+    // The agent opens its log before it creates the socket directory; a log from an earlier
+    // emulator on this serial would give a stale reason.
+    const log = emulatorCaptureLogPath(capture.socketDirectory, serial);
+    await mkdir(capture.socketDirectory, { recursive: true, mode: 0o700 }).catch(() => {});
+    await rm(log, { force: true }).catch(() => {});
+  }
   const preBootErrors = [...errorList(seedError), ...errorList(captureError)];
   const extraArgs = [
     ...(seedError === null ? cameraFeeds.launchArgs(serial) : []),
-    ...(captureLaunch?.args ?? []),
+    ...(capture ? emulatorCaptureArgs(capture.platform) : []),
   ];
   const bootedResult = await bootAndroidEmulator({
     name: avdName,
     port: allocated.value,
     ...(extraArgs.length > 0 ? { extraArgs } : {}),
-    ...(captureLaunch ? { env: captureLaunch.env } : {}),
+    ...(captureEnv ? { env: captureEnv } : {}),
   });
   const booted = bootedResult.value;
   if (bootedResult.error || !booted) {

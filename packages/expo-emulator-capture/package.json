@@ -30,6 +30,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "dist/darwin-arm64/libexpo_emulator_capture.dylib",
     "README.md",
     "LICENSE",

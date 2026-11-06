@@ -48,7 +48,8 @@ const router = createRouter({
   emulatorCapture: emulatorCapture
     ? {
         socketDirectory: emulatorCapture.socketDirectory,
-        missingAgentReason: () => emulatorCaptureMissingAgentReason(emulatorCapture),
+        missingAgentReason: (serial: string) =>
+          emulatorCaptureMissingAgentReason(emulatorCapture, serial),
       }
     : { unavailableReason: emulatorCaptureOffReason() },
   ...(SERVER_SINGLE_DEVICE?.platform === "android" ? { serial: SERVER_SINGLE_DEVICE.id } : {}),
