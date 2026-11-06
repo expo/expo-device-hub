@@ -50,6 +50,8 @@ describe("installEmulatorCapture", () => {
       expect(calls).toHaveLength(1);
       expect(calls[0]).toContain(`${EMULATOR_CAPTURE_PACKAGE}@1.2.3`);
       expect(calls[0]?.slice(0, 2)).toEqual(["npm", "install"]);
+      // A package list that npm cached before the release would not have the pinned version.
+      expect(calls[0]).toContain("--prefer-online");
       // No staging folder or lock is left behind.
       expect(await readdir(join(baseDirectory, "tools", EMULATOR_CAPTURE_PACKAGE))).toEqual([
         "1.2.3",
