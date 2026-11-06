@@ -144,9 +144,11 @@ describe("parseCliOptions", () => {
   });
 
   test("accepts the emulator capture source only with the emulator capture on", () => {
-    expect(() => parseCliOptions(["--stream-source", "emulator-capture"], {})).toThrow(
-      "--stream-source emulator-capture needs --experimental-emulator-capture",
-    );
+    expect(() =>
+      parseCliOptions(["--stream-source", "emulator-capture"], {
+        EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "0",
+      }),
+    ).toThrow("--stream-source emulator-capture needs --experimental-emulator-capture");
     expect(
       parseCliOptions(
         ["--experimental-emulator-capture", "--stream-source", "emulator-capture"],
