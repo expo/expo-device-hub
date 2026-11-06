@@ -27,15 +27,21 @@ import {
   type ClipboardRequest,
   type Device,
   type DeviceFrameAssets,
+  type DeviceModelAssets,
+  deviceModelPreview,
   type FoldPreviewOption,
 } from "@expo/hub-components";
-import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
+import { DeviceModelScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import pixelDeviceFrame from "../assets/device-frames/google-pixel-10-pro.png";
 import pixel9DeviceFrame from "../assets/device-frames/pixel_9_obsidian.png";
 import iphoneDeviceFrame from "../assets/device-frames/iphone-17-pro-silver.png";
+import iphone18ProModel from "../assets/device-models/iphone-18-pro.glb";
+import iphoneDuoModel from "../assets/device-models/iphone-duo.glb";
+import pixel9ProFoldModel from "../assets/device-models/pixel-9-pro-fold.glb";
+import pixel9ProModel from "../assets/device-models/pixel-9-pro.glb";
 import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
@@ -102,6 +108,14 @@ const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
   },
 };
 
+// The 3D preview's models ship with the dashboard; `expo export` copies them into dist/client.
+const DEVICE_MODEL_ASSETS: DeviceModelAssets = {
+  "ios:iphone-duo": String(iphoneDuoModel),
+  "ios:iphone-18-pro": String(iphone18ProModel),
+  "android:pixel-9-pro": String(pixel9ProModel),
+  "android:pixel-9-pro-fold": String(pixel9ProFoldModel),
+};
+
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
  * also cap it so the stream keeps at least `MIN_STREAM_WIDTH` next to the other
@@ -148,8 +162,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
   const duoPreview = useDashboardStore((state) => state.duoPreview);
   const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
-  // Xcode's model failed to load (or WebGL did) for this device; show the flat
-  // screen until the viewer picks 3D again, as serve-sim does.
+  // The device's model failed to load (or WebGL did); show the flat screen
+  // until the viewer picks 3D again, as serve-sim does.
   const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
@@ -351,8 +365,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       : null,
     basePath(),
   );
-  // The 3D choices apply only to a device that can feed the model.
-  const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
+  // The 3D choices apply only to a device with a model that its client can feed.
+  const modelAvailable = deviceModelPreview(selected, client, DEVICE_MODEL_ASSETS) !== null;
   const foldPreview: FoldPreviewOption = {
     mode: duoPreview.mode,
     onModeChange: (mode) => {
@@ -469,7 +483,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
-          FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceModelScreen={DeviceModelScreen}
           foldPreview={{
             mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
             cacheScreenOnFold: duoPreview.cacheScreenOnFold,
@@ -480,6 +494,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
+          deviceModelAssets={DEVICE_MODEL_ASSETS}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : singleDevice ? (

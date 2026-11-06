@@ -13,6 +13,7 @@ import {
   duoPose,
   duoScreenMapping,
   duoScreenPoint,
+  stepDuoFold,
   stepDuoSpring,
 } from "../foldable/duo-pose";
 
@@ -396,4 +397,29 @@ describe("iPhone Duo model input", () => {
     expect(duoDisplayPoint(config, 0.2, 0.3)).toEqual({ x: 0.2, y: 0.3 });
     expect(duoDisplayDelta(config, 0.2, 0.3)).toEqual({ dx: 0.2, dy: 0.3 });
   });
+});
+
+test("the rendered fold settles on its target, so a foldable's bend stops soon after a move", () => {
+  // From open to half open at 60 fps. The plain spring keeps changing the
+  // fold for about 2.8 s; each change reruns the bend of the flexible meshes.
+  const target = Math.PI / 4;
+  let state = { value: 0, velocity: 0 };
+  let changes = 0;
+  for (let frame = 0; frame < 300; frame++) {
+    const next = stepDuoFold(state.value, state.velocity, target, 1 / 60);
+    if (next.value !== state.value) changes++;
+    state = next;
+  }
+  expect(state).toEqual({ value: target, velocity: 0 });
+  expect(changes).toBeLessThan(90);
+  // Settling moves the fold by at most about 1e-4°.
+  let spring = { value: 0, velocity: 0 };
+  for (let frame = 0; frame < 300; frame++) {
+    const next = stepDuoSpring(spring.value, spring.velocity, target, 1 / 60);
+    if (Math.abs(next.value - target) < 1e-6 && Math.abs(next.velocity) < 1e-4) {
+      expect((Math.abs(next.value - target) * 360) / Math.PI).toBeLessThan(2e-4);
+      break;
+    }
+    spring = next;
+  }
 });

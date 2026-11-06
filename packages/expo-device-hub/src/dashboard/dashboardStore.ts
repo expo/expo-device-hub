@@ -78,7 +78,10 @@ export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): 
   }
 }
 
-/** serve-sim's defaults: the Duo opens in 3D, panels stay live while folding, and the model fills its stage. */
+/**
+ * serve-sim's defaults: a device with a 3D model opens in 3D, panels stay live
+ * while folding, and the model fills its stage. One choice serves every model.
+ */
 export const DEFAULT_DUO_PREVIEW: DuoPreviewPreferences = {
   mode: "3d",
   cacheScreenOnFold: false,

@@ -33,7 +33,13 @@ interface Write {
 
 /** Android's fold adapter. Requests from a retired device or token cannot update this one. */
 // @ref LLP 0016#android-emulators — share fold state and capabilities without platform UI or placeholder groups
-export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked: boolean) {
+export function useAndroidFold(
+  url: string | null,
+  fetchImpl: FoldFetch,
+  locked: boolean,
+  /** Changes when the stream switches displays, for example from the inner display to the cover. */
+  streamShape: string | null = null,
+) {
   const owner = useMemo<Owner | null>(
     () => (url ? { url, fetchImpl, revision: 0, pending: false, status: null } : null),
     [url, fetchImpl],
@@ -43,6 +49,7 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
   lockedRef.current = locked;
   const [state, setState] = useState<State | null>(null);
   const [writers] = useState(() => new Map<string, ReturnType<typeof createWriter>>());
+  const readNow = useRef<() => void>(() => {});
 
   function createWriter() {
     return createLatestWriter(
@@ -83,8 +90,13 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
     if (!owner) return;
     const controller = new AbortController();
     let reading = false;
+    let readAgain = false;
     const refresh = async () => {
-      if (reading || owner.pending) return;
+      if (owner.pending) return;
+      if (reading) {
+        readAgain = true;
+        return;
+      }
       reading = true;
       const revision = owner.revision;
       try {
@@ -105,16 +117,35 @@ export function useAndroidFold(url: string | null, fetchImpl: FoldFetch, locked:
         // Best-effort discovery: an older server or transient read failure offers no new controls.
       } finally {
         reading = false;
+        if (readAgain && !controller.signal.aborted) {
+          readAgain = false;
+          void refresh();
+        }
       }
     };
     void refresh();
+    readNow.current = () => void refresh();
     const timer = setInterval(() => void refresh(), 5_000);
     return () => {
+      readNow.current = () => {};
       current.current = null;
       clearInterval(timer);
       controller.abort();
     };
   }, [owner]);
+
+  // A fold made elsewhere, by another viewer or the emulator's own controls,
+  // switches the streamed display at once, while the poll can take 5 s to
+  // report the new angle. Read the hinge when the stream changes shape, so a
+  // 3D model folds with the display it shows.
+  const firstShape = useRef(true);
+  useEffect(() => {
+    if (firstShape.current) {
+      firstShape.current = false;
+      return;
+    }
+    readNow.current();
+  }, [streamShape]);
 
   const visible = state?.owner === owner ? state : null;
   const capabilities: DeviceFoldCapabilities = androidFoldCapabilities(visible?.status ?? null);

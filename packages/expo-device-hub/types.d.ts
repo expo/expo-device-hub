@@ -7,3 +7,9 @@ declare module "*.png" {
   const src: string;
   export default src;
 }
+
+// 3D model imports resolve to a URL (web) via Metro; metro.config.js adds `glb` to the asset types.
+declare module "*.glb" {
+  const src: string;
+  export default src;
+}

@@ -8,7 +8,8 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from "@expo/hub-client";
-import type { FoldableDeviceScreenProps } from "../foldable/FoldableDeviceScreen";
+import { type DeviceModelAssets } from "../foldable/device-models";
+import type { DeviceModelScreenProps } from "../foldable/DeviceModelScreen";
 import {
   bg,
   border,
@@ -48,12 +49,13 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
-  FoldableDeviceScreen,
+  DeviceModelScreen,
   foldPreview,
   displayScreen,
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  deviceModelAssets,
   onClipboardFallback,
 }: {
   device: Device;
@@ -61,8 +63,8 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** iPhone Duo 3D renderer from `@expo/hub-components/foldable`; without it the Duo stays flat. */
-  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  /** 3D renderer from `@expo/hub-components/foldable`; without it every device stays flat. */
+  DeviceModelScreen?: ComponentType<DeviceModelScreenProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
@@ -75,6 +77,8 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** Consumer-owned 3D model files; a device whose model has no URL stays flat. */
+  deviceModelAssets?: DeviceModelAssets;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -318,11 +322,12 @@ export function StreamPanel({
               if (!client.clipboardPending) await clipboard.copyFromSimulator();
             }}
             DeviceScreen={DeviceScreen}
-            FoldableDeviceScreen={FoldableDeviceScreen}
+            DeviceModelScreen={DeviceModelScreen}
             foldPreview={foldPreview}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
+            deviceModelAssets={deviceModelAssets}
             onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (

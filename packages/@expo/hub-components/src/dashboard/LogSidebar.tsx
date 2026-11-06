@@ -47,7 +47,7 @@ export type LogSidebarProps = {
   onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
-  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  /** Viewer-local 2D/3D choices for a device with a 3D model. */
   foldPreview?: FoldPreviewOption;
 };
 
