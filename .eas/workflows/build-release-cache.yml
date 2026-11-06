@@ -1,11 +1,12 @@
 name: Build release cache
 
 # Dispatched by .github/workflows/release.yml with --ref <release commit>.
-# Builds the release commit on macOS and writes the Turborepo remote cache, so
-# the Ubuntu release job gets cache hits for the macOS-only serve-sim and
-# expo-emulator-capture builds.
+# Builds the release commit on macOS and on Linux and writes the Turborepo remote
+# cache, so the Ubuntu release job gets cache hits for the macOS-only serve-sim and
+# expo-emulator-capture builds, and for expo-emulator-capture's Linux agent, which
+# needs the x264 build 165 header from Ubuntu 26.04.
 # The version steps repeat the release job's steps: package.json versions and
-# changelogs are Turborepo inputs, so both runs must write the same tree.
+# changelogs are Turborepo inputs, so all runs must write the same tree.
 
 on:
   workflow_dispatch:
@@ -61,3 +62,46 @@ jobs:
       - name: Build packages
         # Always rebuild on the pinned image before the Ubuntu reader uses this cache.
         run: bun run build --force
+
+  build-linux-agent:
+    name: Build the Linux capture agent and write the remote cache
+    runs_on: linux-medium
+    # Ubuntu 26.04 has x264 build 165, the build that the Linux agent loads.
+    image: ubuntu-26.04-jdk-17-ndk-r27b-sdk-58
+    environment: production
+    env:
+      TURBO_CACHE: local:rw,remote:rw
+    steps:
+      - uses: eas/checkout
+
+      - name: Check the Turborepo token
+        run: |
+          if [ -z "${TURBO_TOKEN:-}" ]; then
+            echo "TURBO_TOKEN is not set in the production EAS environment."
+            exit 1
+          fi
+
+      - name: Install the x264 build 165 header
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libx264-dev
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply version bump & generate changelog
+        run: bun run changeset:version
+
+      - name: Apply canary version
+        run: |
+          if [ "${{ inputs.canary }}" = "true" ]; then
+            CANARY_ID='${{ inputs.canary_id }}' ./scripts/apply-canary-version.ts
+          fi
+
+      - name: Summarize versions
+        run: ./scripts/summarize-versions.ts
+
+      # Only this task: the generic build task of expo-emulator-capture is the
+      # macOS agent, which the macOS job writes.
+      - name: Build the Linux agent
+        run: bunx turbo run build:linux-x64 --filter=expo-emulator-capture --force
