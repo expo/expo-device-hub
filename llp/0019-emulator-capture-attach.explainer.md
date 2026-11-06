@@ -57,6 +57,6 @@ serve-emu's `emulatorCapture` options get `attach` and `attachNote` [observed: `
 
 ## Known limitations
 
-- The debugger calls `dlopen` while it holds QEMU's threads stopped. If another thread holds the dynamic loader's lock at that moment, the call can block [inferred: from how `dlopen` locks; not observed].
-- Killing the debugger during a call could leave QEMU in that call, so the Hub does not stop a debugger that runs, and its timeouts are long [inferred].
+- The debugger calls `dlopen` in a thread that it interrupted. If another thread holds the dynamic loader's lock at that moment, the call waits for that lock [inferred: from how `dlopen` locks; not observed].
+- The Hub kills a debugger that runs longer than its timeout: 180 seconds on macOS, so that the user can type the password, and 90 seconds on Linux [observed: `DEBUGGER_TIMEOUT_MS` in `src/server/emulator-capture-attach.ts`]. If a call still runs at that moment, QEMU can crash, as it did when gdb gave up a call [inferred].
 - Only one Hub should attach to an emulator at a time; the agent serves one consumer ([LLP 0017](0017-emulator-capture-macos.explainer.md#integration)).
