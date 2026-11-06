@@ -28,13 +28,13 @@ function withLibrary(run: (library: string) => void | Promise<void>) {
 }
 
 describe("emulatorCaptureRequested", () => {
-  test("is on for 1 or true", () => {
+  // TEMPORARY testing branch: the capture is on unless the variable turns it off.
+  test("is on unless the variable turns it off", () => {
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "1" })).toBe(true);
-    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "TRUE" })).toBe(true);
-    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "/opt/lib.dylib" })).toBe(false);
-    expect(emulatorCaptureRequested({})).toBe(false);
-    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "" })).toBe(false);
+    expect(emulatorCaptureRequested({})).toBe(true);
+    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "" })).toBe(true);
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "0" })).toBe(false);
+    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "OFF" })).toBe(false);
   });
 });
 
@@ -43,10 +43,12 @@ describe("readEmulatorCapture", () => {
     throw new Error("install must not run");
   };
 
-  test("is off when the variable is unset or empty", () => {
-    expect(readEmulatorCapture({}, "darwin", "arm64", never)).toBeNull();
+  test("is off when the variable turns it off", () => {
     expect(
-      readEmulatorCapture({ [EMULATOR_CAPTURE_ENV]: "" }, "darwin", "arm64", never),
+      readEmulatorCapture({ [EMULATOR_CAPTURE_ENV]: "0" }, "darwin", "arm64", never),
+    ).toBeNull();
+    expect(
+      readEmulatorCapture({ [EMULATOR_CAPTURE_ENV]: "false" }, "darwin", "arm64", never),
     ).toBeNull();
   });
 
