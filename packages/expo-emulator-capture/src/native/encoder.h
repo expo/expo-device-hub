@@ -40,7 +40,12 @@ class H264Encoder {
 };
 
 // macOS: VideoToolbox, on the hardware encoder when the Mac has one.
+// Linux: x264 build 165 from the system (libx264-165), loaded at run time.
 std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
                                                H264Encoder::ErrorSink onError);
+
+// Why no encoder can start on this host, or an empty string. The hello record reports it,
+// so that a consumer can tell the user what to install instead of waiting for frames.
+std::string h264EncoderProblem();
 
 }  // namespace expo_capture

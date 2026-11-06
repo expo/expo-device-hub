@@ -20,7 +20,7 @@ class FrameSource {
 };
 
 // macOS: copies on the GPU into IOSurfaces when the renderer uses host OpenGL,
-// and reads the pixels back otherwise.
+// and reads the pixels back otherwise. Linux: reads the pixels back.
 std::unique_ptr<FrameSource> createFrameSource(const Gfxstream& gfxstream);
 
 }  // namespace expo_capture
