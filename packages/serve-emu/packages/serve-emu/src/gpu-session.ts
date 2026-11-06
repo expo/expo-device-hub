@@ -50,6 +50,20 @@ export function uprightTouchSize(
 /** The capture socket refused or vanished before it said hello: the emulator has no agent. */
 export class GpuCaptureUnavailableError extends Error {}
 
+/** The failure code of a session that another consumer of the agent replaced. */
+export const GPU_CAPTURE_REPLACED_CODE = "gpu-capture-replaced";
+
+// @ref LLP 0017#integration — a replaced session does not take the agent back
+/**
+ * Another consumer, such as a second Hub, connected to the agent, and the agent closed this
+ * one. A default capture then uses gRPC, so the two do not replace each other in a loop.
+ */
+export class GpuCaptureReplacedError extends GpuCaptureUnavailableError {
+  constructor() {
+    super("Another program took over the emulator capture");
+  }
+}
+
 /**
  * Video from an expo-emulator-capture agent socket; scrcpy stays the control transport.
  * The agent changes the stream size when the native display does (folding), and turns the
@@ -101,8 +115,11 @@ export async function startGpuCaptureSession(
   const maxSize = options.maxSize ?? 0;
   // Android's display rotation as last read; the agent's picture follows it.
   let displayRotation: DisplayRotation = 0;
+  // The rotation of the picture that clients show: from the agent's last configured record.
+  let pictureRotation: DisplayRotation | null = null;
   let rotationSupported = false;
   let rotationRead: Promise<void> | null = null;
+  let readAgain = false;
   let rotationTimer: unknown = null;
   const setTimer = dependencies.setInterval ?? ((callback, ms) => setInterval(callback, ms));
   const clearTimer =
@@ -113,7 +130,11 @@ export async function startGpuCaptureSession(
   const fail = (error: unknown) => {
     if (failed || closed) return;
     const cause = error instanceof Error ? error : new Error(String(error));
-    failed = { message: cause.message, code: "gpu-capture-error" };
+    failed = {
+      message: cause.message,
+      code:
+        cause instanceof GpuCaptureReplacedError ? GPU_CAPTURE_REPLACED_CODE : "gpu-capture-error",
+    };
     // Nothing answered on the socket: no agent serves it. A peer that sent bytes is broken.
     startup.fail(
       receivedBytes === 0 ? new GpuCaptureUnavailableError(cause.message, { cause }) : cause,
@@ -147,9 +168,16 @@ export async function startGpuCaptureSession(
       return null; // Keep the last rotation; the next poll tries again.
     }
   };
-  /** Reads the display rotation and passes a change to the agent; one read at a time. */
+  /**
+   * Reads the display rotation and passes a change to the agent; one read at a time. A call
+   * during a read, such as after `POST /api/orientation`, reads once more when it ends.
+   */
   const refreshRotation = () => {
-    if (!rotationSupported || closed || failed || rotationRead) return;
+    if (!rotationSupported || closed || failed) return;
+    if (rotationRead) {
+      readAgain = true;
+      return;
+    }
     rotationRead = (async () => {
       try {
         const next = await readRotation();
@@ -159,6 +187,10 @@ export async function startGpuCaptureSession(
         write(gpuRotationCommand(next));
       } finally {
         rotationRead = null;
+        if (readAgain) {
+          readAgain = false;
+          refreshRotation();
+        }
       }
     })();
   };
@@ -173,7 +205,9 @@ export async function startGpuCaptureSession(
     }
     write(gpuSettingsCommand(maxSize, streamFps, options.bitRate ?? DEFAULT_BIT_RATE));
   };
-  const touchSize = () => uprightTouchSize(nativeSize, displayRotation);
+  // Touches follow the picture that the client shows. The display can turn about a second
+  // before the agent's turned picture arrives.
+  const touchSize = () => uprightTouchSize(nativeSize, pictureRotation ?? displayRotation);
   const push = (packet: VideoPacket) => {
     const result = queue.push(packet);
     if (result.needsKeyFrame) requestKey();
@@ -199,6 +233,7 @@ export async function startGpuCaptureSession(
       return;
     }
     if (!hello) throw new Error("GPU stream did not start with a handshake");
+    if (record.flags === GPU_RECORD.replaced) throw new GpuCaptureReplacedError();
     if (record.flags === GPU_RECORD.resized) {
       // The native display changed (fold or unfold); touches target it directly.
       nativeSize.width = record.width;
@@ -213,6 +248,13 @@ export async function startGpuCaptureSession(
       hardwareEncoder =
         typeof details.hardwareEncoder === "boolean" ? details.hardwareEncoder : null;
       encoderName = typeof details.encoder === "string" ? details.encoder : null;
+      pictureRotation =
+        details.rotation === 0 ||
+        details.rotation === 1 ||
+        details.rotation === 2 ||
+        details.rotation === 3
+          ? details.rotation
+          : null;
       const announce = configured && (record.width !== meta.width || record.height !== meta.height);
       meta.width = record.width;
       meta.height = record.height;
@@ -333,6 +375,7 @@ export async function startGpuCaptureSession(
           resizes,
           rotation: rotationSupported ? displayRotation : null,
           rotations,
+          touchSize: touchSize(),
         },
       }),
       displayChanged: refreshRotation,

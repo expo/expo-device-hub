@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type {
   AndroidUtilsResult,
@@ -240,14 +244,20 @@ describe("bootHubDevice emulator identity", () => {
 
 describe("bootHubDevice emulator capture", () => {
   const library = "/opt/capture/libexpo_emulator_capture.dylib";
+  const socketDirectory = join(tmpdir(), "hub-boot-capture-test");
   const capture = {
-    library: async () => library,
+    library: async () => {
+      calls.push("library");
+      return library;
+    },
     problem: () => null,
-    socketDirectory: "/tmp/expo-emulator-capture",
+    socketDirectory,
     platform: "darwin" as const,
   };
 
-  test("preloads the agent with a per-serial socket and host rendering", async () => {
+  test("preloads the agent with a per-serial socket and log, and host rendering", async () => {
+    await mkdir(socketDirectory, { recursive: true });
+    await writeFile(join(socketDirectory, "emulator-5560.log"), "capture disabled: old\n");
     await bootHubDevice(bootRequest(), cameraFeeds(), capture);
 
     expect(scenario.spawned).toEqual({
@@ -256,9 +266,14 @@ describe("bootHubDevice emulator capture", () => {
       extraArgs: [...feedArgs("emulator-5560"), "-gpu", "host"],
       env: {
         DYLD_INSERT_LIBRARIES: library,
-        EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/expo-emulator-capture/emulator-5560.sock",
+        EXPO_EMULATOR_CAPTURE_SOCKET: join(socketDirectory, "emulator-5560.sock"),
+        EXPO_EMULATOR_CAPTURE_LOG: join(socketDirectory, "emulator-5560.log"),
       },
     });
+    // A log from an earlier emulator on this serial is gone before the boot.
+    expect(existsSync(join(socketDirectory, "emulator-5560.log"))).toBe(false);
+    // The agent comes first: two boots during the install must not get the same port.
+    expect(calls.indexOf("library")).toBeLessThan(calls.indexOf("freeEmulatorPort"));
   });
 
   test("still preloads the agent when camera seeding fails", async () => {
@@ -277,7 +292,8 @@ describe("bootHubDevice emulator capture", () => {
     });
 
     expect(scenario.spawned?.env).toBeUndefined();
-    expect(scenario.spawned?.extraArgs).toEqual(feedArgs("emulator-5560"));
+    // The renderer follows the feature, not the install.
+    expect(scenario.spawned?.extraArgs).toEqual([...feedArgs("emulator-5560"), "-gpu", "host"]);
     expect(result.ok).toBe(true);
     expect(result.errors[0]?.message).toBe("Pixel_9 starts without the emulator capture agent");
   });

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #define GL_SILENCE_DEPRECATION
 #include "frame-source.h"
+#include "log.h"
 #import <Foundation/Foundation.h>
 #include <Accelerate/Accelerate.h>
 #include <IOSurface/IOSurface.h>
@@ -351,8 +352,7 @@ void IOSurfaceFrameSource::deleteTarget(Target& target) {
 void IOSurfaceFrameSource::disableGpu(const std::string& reason) {
   if (gpuUnavailable_) return;
   gpuUnavailable_ = true;
-  fprintf(stderr, "[expo-emulator-capture] GPU frame path unavailable: %s; using CPU readback\n",
-          reason.c_str());
+  logLine("GPU frame path unavailable: %s; using CPU readback", reason.c_str());
 }
 
 }  // namespace expo_capture

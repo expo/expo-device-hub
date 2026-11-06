@@ -25,34 +25,26 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 #include "encoder.h"
 #include "frame-source.h"
 #include "frida-gum.h"
 #include "gfxstream.h"
+#include "log.h"
 #include "protocol.h"
 
+// The package version; the build passes it from package.json.
+#ifndef EXPO_EMULATOR_CAPTURE_VERSION
+#define EXPO_EMULATOR_CAPTURE_VERSION "0.0.0-dev"
+#endif
+
 namespace expo_capture {
-namespace {
-
-constexpr const char* kPlatform = "darwin-arm64";
-constexpr const char* kPreloadVariable = "DYLD_INSERT_LIBRARIES";
-constexpr const char* kRendererModule = "libgfxstream_backend.dylib";
-constexpr int kSendFlags = 0;  // SO_NOSIGPIPE is set on the socket instead.
-const char* programName() { return getprogname(); }
-
-using Clock = std::chrono::steady_clock;
-constexpr int kNativeFps = 60;
-constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
-constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
-constexpr size_t kMaxPendingFrames = 2;
-constexpr auto kIdleKeyFrameDelay = std::chrono::milliseconds(40);
 
 // Constant-initialized: the constructor below runs before dynamic initializers
 // in this file, so `= stderr` here would overwrite the log file it opens.
 FILE* logFile = nullptr;
 std::mutex logMutex;
 
-void logLine(const char* format, ...) __attribute__((format(printf, 1, 2)));
 void logLine(const char* format, ...) {
   char line[1024];
   va_list args;
@@ -64,6 +56,25 @@ void logLine(const char* format, ...) {
   fprintf(out, "[expo-emulator-capture] %s\n", line);
   fflush(out);
 }
+
+namespace {
+
+constexpr const char* kPlatform = "darwin-arm64";
+constexpr const char* kPreloadVariable = "DYLD_INSERT_LIBRARIES";
+constexpr const char* kRendererModule = "libgfxstream_backend.dylib";
+constexpr int kSendFlags = 0;  // SO_NOSIGPIPE is set on the socket instead.
+const char* programName() { return getprogname(); }
+
+using Clock = std::chrono::steady_clock;
+constexpr int kNativeFps = 60;
+// Above this, delta frames are dropped; a keyframe is requested once the queue drains to half.
+constexpr size_t kMaxQueuedOutputBytes = 8 * 1024 * 1024;
+// Keyframes and control records are never dropped. A consumer whose queue grows past this
+// stopped reading, and the agent closes it.
+constexpr size_t kMaxBufferedOutputBytes = 32 * 1024 * 1024;
+constexpr int kSocketBufferBytes = 4 * 1024 * 1024;
+constexpr size_t kMaxPendingFrames = 2;
+constexpr auto kIdleKeyFrameDelay = std::chrono::milliseconds(40);
 
 std::string jsonEscape(const std::string& text) {
   std::string out;
@@ -126,6 +137,7 @@ class Agent {
   void accept();
   void readCommands();
   void flushOutput();
+  void sendReplaced();
   void disconnect(const char* reason);
   void sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint32_t height,
                   uint32_t fps, const uint8_t* payload, size_t length, uint64_t ptsUs = 0,
@@ -173,6 +185,8 @@ class Agent {
   size_t outputOffset_ = 0;  // Bytes of output_.front() already written.
   std::atomic<uint64_t> clientGeneration_{0};
   bool dropUntilKey_ = false;
+  bool keyAfterDrain_ = false;  // Request a keyframe once the queue drains to half.
+  std::atomic<bool> outputStalled_{false};
 };
 
 Agent* agent = nullptr;
@@ -275,110 +289,128 @@ void Agent::encoderLoop() {
   uint64_t encoderGeneration = 0;
   int encoderNativeWidth = 0, encoderNativeHeight = 0;
   auto lastFrameAt = Clock::now() - std::chrono::hours(1);
+  uint64_t lastEncodedPts = 0;
   for (;;) {
-    PendingFrame pending;
-    bool havePending = false, configure = false, forceKey = false, active = false;
-    StreamSettings settings;
-    int rotation = 0;
-    uint64_t generation;
-    int announcedWidth, announcedHeight;
-    {
-      std::unique_lock<std::mutex> lock(encodeMutex_);
-      encodeWake_.wait_for(lock, keyRequested_ ? kIdleKeyFrameDelay : std::chrono::seconds(1),
-                           [&] { return !pending_.empty() || settingsChanged_; });
-      active = active_;
-      generation = generation_;
-      configure = settingsChanged_;
-      settingsChanged_ = false;
-      settings = settings_;
-      rotation = rotation_;
-      while (!pending_.empty()) {  // Keep only the newest frame.
-        pending = std::move(pending_.front());
-        pending_.pop_front();
-        havePending = true;
+    try {
+      PendingFrame pending;
+      bool havePending = false, configure = false, forceKey = false, active = false;
+      StreamSettings settings;
+      int rotation = 0;
+      uint64_t generation;
+      int announcedWidth, announcedHeight;
+      {
+        std::unique_lock<std::mutex> lock(encodeMutex_);
+        encodeWake_.wait_for(lock, keyRequested_ ? kIdleKeyFrameDelay : std::chrono::seconds(1),
+                             [&] { return !pending_.empty() || settingsChanged_; });
+        active = active_;
+        generation = generation_;
+        configure = settingsChanged_;
+        settingsChanged_ = false;
+        settings = settings_;
+        rotation = rotation_;
+        while (!pending_.empty()) {  // Keep only the newest frame.
+          pending = std::move(pending_.front());
+          pending_.pop_front();
+          havePending = true;
+        }
+        forceKey = keyRequested_ || keyNeededByOutput_.exchange(false);
+        keyRequested_ = false;
+        announcedWidth = announcedWidth_;
+        announcedHeight = announcedHeight_;
       }
-      forceKey = keyRequested_ || keyNeededByOutput_.exchange(false);
-      keyRequested_ = false;
-      announcedWidth = announcedWidth_;
-      announcedHeight = announcedHeight_;
-    }
-    if (!active || generation != encoderGeneration || configure) {
-      encoder.reset();  // Waits for packets of the old session.
-      encoderGeneration = generation;
-    }
-    if (!active) continue;
-    if (!havePending && (forceKey || !encoder) &&
-        Clock::now() - lastFrameAt >= kIdleKeyFrameDelay) {
-      // A static screen posts nothing; capture the last posted frame instead.
-      havePending = captureNow(pending);
-    }
-    if (!havePending) {
-      if (forceKey || !encoder) {
-        std::lock_guard<std::mutex> guard(encodeMutex_);
-        keyRequested_ = true;  // Retry once a frame is available.
+      if (!active || generation != encoderGeneration || configure) {
+        encoder.reset();  // Waits for packets of the old session.
+        encoderGeneration = generation;
       }
-      continue;
-    }
-    lastFrameAt = Clock::now();
-    if (!encoder || pending.frame.width != encoderNativeWidth ||
-        pending.frame.height != encoderNativeHeight) {
-      encoder.reset();
-      auto [uprightWidth, uprightHeight] =
-          uprightSize(pending.frame.width, pending.frame.height, rotation);
-      auto [width, height] = streamSize(uprightWidth, uprightHeight, settings.maxSize);
-      uint32_t fps = uint32_t(settings.fps);
-      auto next = createH264Encoder(
-          [this, generation, width = uint32_t(width), height = uint32_t(height),
-           fps](EncodedPacket&& packet) {
-            sendRecord(generation, packet.key ? kKeyFrame : kFrame, width, height, fps,
-                       packet.data.data(), packet.data.size(), packet.ptsUs, !packet.key);
-          },
-          [](const std::string& message) { logLine("%s", message.c_str()); });
-      std::string error;
-      if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
-        logLine("%s", error.c_str());
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+      if (!active) continue;
+      if (!havePending && (forceKey || !encoder) &&
+          Clock::now() - lastFrameAt >= kIdleKeyFrameDelay) {
+        // A static screen posts nothing; capture the last posted frame instead.
+        havePending = captureNow(pending);
+      }
+      if (!havePending) {
+        if (forceKey || !encoder) {
+          std::lock_guard<std::mutex> guard(encodeMutex_);
+          keyRequested_ = true;  // Retry once a frame is available.
+        }
         continue;
       }
-      if (pending.frame.width != announcedWidth || pending.frame.height != announcedHeight) {
-        {
+      // A frame that the render thread captured while this thread captured a newer one on
+      // demand is older than the last encoded frame; consumers need increasing timestamps.
+      if (pending.ptsUs <= lastEncodedPts) {
+        if (forceKey) {
           std::lock_guard<std::mutex> guard(encodeMutex_);
-          if (generation == generation_) {
-            announcedWidth_ = pending.frame.width;
-            announcedHeight_ = pending.frame.height;
-          }
+          keyRequested_ = true;  // For the next frame.
         }
-        sendRecord(generation, kResized, uint32_t(pending.frame.width),
-                   uint32_t(pending.frame.height), fps, nullptr, 0);
+        continue;
       }
-      std::string details = std::string("{\"framePath\":\"") + framePathName(pending.frame.path) +
-                            "\",\"hardwareEncoder\":" + (next->hardware() ? "true" : "false") +
-                            ",\"encoder\":\"" + jsonEscape(next->encoderId()) +
-                            "\",\"rotation\":" + std::to_string(rotation) + "}";
-      sendRecord(generation, kConfigured, uint32_t(width), uint32_t(height), fps,
-                 reinterpret_cast<const uint8_t*>(details.data()), details.size());
-      logLine("streaming %dx%d@%d from %dx%d native at rotation %d, %s frames, %s encoder %s",
-              width, height, settings.fps, pending.frame.width, pending.frame.height, rotation,
-              framePathName(pending.frame.path), next->hardware() ? "hardware" : "software",
-              next->encoderId().c_str());
-      encoder = std::move(next);
-      encoderNativeWidth = pending.frame.width;
-      encoderNativeHeight = pending.frame.height;
-      forceKey = true;
-      stats.reset();
-    }
-    std::string error;
-    auto encodeStart = Clock::now();
-    bool encoded = encoder->encode(pending.frame, pending.ptsUs, forceKey, error);
-    stats.record(pending.frame.captureMs,
-                 std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count());
-    pending.frame.pixels = FramePixels();  // Back to the frame source's pool.
-    if (!encoded) {
-      logLine("%s", error.c_str());
-      if (forceKey) {
-        std::lock_guard<std::mutex> guard(encodeMutex_);
-        keyRequested_ = true;
+      lastFrameAt = Clock::now();
+      if (!encoder || pending.frame.width != encoderNativeWidth ||
+          pending.frame.height != encoderNativeHeight) {
+        encoder.reset();
+        auto [uprightWidth, uprightHeight] =
+            uprightSize(pending.frame.width, pending.frame.height, rotation);
+        auto [width, height] = streamSize(uprightWidth, uprightHeight, settings.maxSize);
+        uint32_t fps = uint32_t(settings.fps);
+        auto next = createH264Encoder(
+            [this, generation, width = uint32_t(width), height = uint32_t(height),
+             fps](EncodedPacket&& packet) {
+              sendRecord(generation, packet.key ? kKeyFrame : kFrame, width, height, fps,
+                         packet.data.data(), packet.data.size(), packet.ptsUs, !packet.key);
+            },
+            [](const std::string& message) { logLine("%s", message.c_str()); });
+        std::string error;
+        if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
+          logLine("%s", error.c_str());
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+          continue;
+        }
+        if (pending.frame.width != announcedWidth || pending.frame.height != announcedHeight) {
+          {
+            std::lock_guard<std::mutex> guard(encodeMutex_);
+            if (generation == generation_) {
+              announcedWidth_ = pending.frame.width;
+              announcedHeight_ = pending.frame.height;
+            }
+          }
+          sendRecord(generation, kResized, uint32_t(pending.frame.width),
+                     uint32_t(pending.frame.height), fps, nullptr, 0);
+        }
+        std::string details = std::string("{\"framePath\":\"") + framePathName(pending.frame.path) +
+                              "\",\"hardwareEncoder\":" + (next->hardware() ? "true" : "false") +
+                              ",\"encoder\":\"" + jsonEscape(next->encoderId()) +
+                              "\",\"rotation\":" + std::to_string(rotation) + "}";
+        sendRecord(generation, kConfigured, uint32_t(width), uint32_t(height), fps,
+                   reinterpret_cast<const uint8_t*>(details.data()), details.size());
+        logLine("streaming %dx%d@%d from %dx%d native at rotation %d, %s frames, %s encoder %s",
+                width, height, settings.fps, pending.frame.width, pending.frame.height, rotation,
+                framePathName(pending.frame.path), next->hardware() ? "hardware" : "software",
+                next->encoderId().c_str());
+        encoder = std::move(next);
+        encoderNativeWidth = pending.frame.width;
+        encoderNativeHeight = pending.frame.height;
+        forceKey = true;
+        stats.reset();
       }
+      std::string error;
+      auto encodeStart = Clock::now();
+      bool encoded = encoder->encode(pending.frame, pending.ptsUs, forceKey, error);
+      lastEncodedPts = pending.ptsUs;
+      stats.record(pending.frame.captureMs,
+                   std::chrono::duration<double, std::milli>(Clock::now() - encodeStart).count());
+      pending.frame.pixels = FramePixels();  // Back to the frame source's pool.
+      if (!encoded) {
+        logLine("%s", error.c_str());
+        if (forceKey) {
+          std::lock_guard<std::mutex> guard(encodeMutex_);
+          keyRequested_ = true;
+        }
+      }
+    } catch (const std::exception& error) {
+      // An exception must not leave this thread: std::terminate would end QEMU.
+      logLine("encoder error: %s", error.what());
+      encoder.reset();
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
   }
 }
@@ -399,17 +431,20 @@ void Agent::sendRecord(uint64_t generation, uint32_t flags, uint32_t width, uint
   {
     std::lock_guard<std::mutex> guard(outputMutex_);
     if (generation != clientGeneration_) return;
-    if (flags == kKeyFrame) dropUntilKey_ = false;
+    if (flags == kKeyFrame) dropUntilKey_ = keyAfterDrain_ = false;
     if (droppable && dropUntilKey_) return;
     if (droppable && outputBytes_ + record.bytes.size() > kMaxQueuedOutputBytes) {
-      // The consumer is behind: drop delta frames until the next keyframe.
-      dropUntilKey_ = true;
-      keyNeededByOutput_ = true;
-      encodeWake_.notify_one();
+      // The consumer is behind: drop delta frames until the next keyframe, and ask for it
+      // only once the queue drains, so a consumer that stopped reading gets no keyframes.
+      dropUntilKey_ = keyAfterDrain_ = true;
       return;
     }
-    outputBytes_ += record.bytes.size();
-    output_.push_back(std::move(record));
+    if (outputBytes_ + record.bytes.size() > kMaxBufferedOutputBytes) {
+      outputStalled_ = true;  // serve() closes the consumer.
+    } else {
+      outputBytes_ += record.bytes.size();
+      output_.push_back(std::move(record));
+    }
   }
   wake();
 }
@@ -423,8 +458,9 @@ void Agent::wake() {
 std::string Agent::helloJson() {
   // posts counts every display post since the agent started, with or without a
   // consumer, so two hellos give the renderer's frame rate without capture.
-  return std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"platform\":\"" +
-         kPlatform + "\",\"gpuAvailable\":" +
+  return std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
+         EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform +
+         "\",\"gpuAvailable\":" +
          (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
          ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" +
          std::to_string(posts_.load()) + "}";
@@ -487,6 +523,7 @@ void Agent::serve() {
       while (read(wakePipe_[0], drain, sizeof(drain)) > 0) {
       }
     }
+    if (outputStalled_.exchange(false)) disconnect("consumer stopped reading");
     if (fds[0].revents & POLLIN) accept();
     if (client_ >= 0 && count == 3) {
       if (fds[2].revents & (POLLERR | POLLNVAL)) {
@@ -502,7 +539,10 @@ void Agent::serve() {
 void Agent::accept() {
   int next = ::accept(listener_, nullptr, nullptr);
   if (next < 0) return;
-  if (client_ >= 0) disconnect("replaced by a new consumer");
+  if (client_ >= 0) {
+    sendReplaced();
+    disconnect("replaced by a new consumer");
+  }
   fcntl(next, F_SETFD, FD_CLOEXEC);
   fcntl(next, F_SETFL, O_NONBLOCK);
   int size = kSocketBufferBytes;
@@ -635,7 +675,37 @@ void Agent::flushOutput() {
       outputBytes_ -= output_.front().bytes.size();
       output_.pop_front();
       outputOffset_ = 0;
+      if (keyAfterDrain_ && outputBytes_ <= kMaxQueuedOutputBytes / 2) {
+        keyAfterDrain_ = false;
+        keyNeededByOutput_ = true;
+        encodeWake_.notify_one();
+      }
     }
+  }
+}
+
+// @ref LLP 0017#socket-protocol — a replaced consumer learns why it closes
+// Tells the current consumer that a new one replaces it, so that it does not take the agent
+// back at once: two consumers would otherwise replace each other in a loop. Best effort on the
+// non-blocking socket: it finishes a partly sent record first, and a consumer that stopped
+// reading gets only the close.
+void Agent::sendReplaced() {
+  std::vector<uint8_t> bytes;
+  {
+    std::lock_guard<std::mutex> guard(outputMutex_);
+    if (outputOffset_ > 0 && !output_.empty())
+      bytes.assign(output_.front().bytes.begin() + ptrdiff_t(outputOffset_),
+                   output_.front().bytes.end());
+  }
+  size_t start = bytes.size();
+  bytes.resize(start + kHeaderBytes);
+  encodeHeader(bytes.data() + start, 0, 0, kReplaced, 0, 0, 0);
+  size_t sent = 0;
+  while (sent < bytes.size()) {
+    ssize_t n = send(client_, bytes.data() + sent, bytes.size() - sent, kSendFlags);
+    if (n < 0 && errno == EINTR) continue;
+    if (n <= 0) return;
+    sent += size_t(n);
   }
 }
 
@@ -655,7 +725,9 @@ void Agent::disconnect(const char* reason) {
     output_.clear();
     outputBytes_ = 0;
     outputOffset_ = 0;
+    dropUntilKey_ = keyAfterDrain_ = false;
   }
+  outputStalled_ = false;
   encodeWake_.notify_one();
   logLine("consumer disconnected: %s (posts=%llu captured=%llu busy=%llu locked=%llu errors=%llu)",
           reason, (unsigned long long)posts_.load(), (unsigned long long)captured_.load(),
@@ -750,5 +822,5 @@ __attribute__((constructor)) static void expoEmulatorCaptureInit() {
 
 // The only exported symbol: lets tools confirm which agent build is loaded.
 extern "C" __attribute__((visibility("default"))) const char* expo_emulator_capture_version() {
-  return "0.0.0";
+  return EXPO_EMULATOR_CAPTURE_VERSION;
 }

@@ -120,6 +120,12 @@ jobs:
       - name: Build packages
         run: bun run build
 
+      # changeset publish starts every publish at once, so the agent's prepublishOnly would stop
+      # only the agent, and the Hub would publish with a pin to a version that is not on npm.
+      # Check here, before the version commit.
+      - name: Check the capture agent
+        run: node packages/expo-emulator-capture/scripts/check-dist.mjs
+
       - name: Test
         run: bun run test
 

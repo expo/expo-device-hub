@@ -136,6 +136,8 @@ function record(argv) {
         socket.write(rotationCommand(rotation));
       }
       socket.write(settingsCommand(settings));
+    } else if (entry.flags === FLAGS.replaced) {
+      fail("another consumer connected to the capture socket and replaced this recording");
     } else if (entry.flags === FLAGS.resized) {
       stats.resizes++;
       console.log(`resized: native ${entry.width}x${entry.height}`);

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 // The release builds the Hub and the agent package from one commit, so the bundle carries the
 // agent version that was published with it.
@@ -107,8 +107,7 @@ export async function installEmulatorCapture({
 
 /**
  * Takes a lock directory, or waits until `done` reports that the holder finished. Returns null
- * when it finished, so the caller has nothing left to do. A lock older than the install
- * timeout belongs to a process that died, and is taken over.
+ * when it finished, so the caller has nothing left to do. An abandoned lock is taken over.
  */
 async function acquireLock(
   path: string,
@@ -117,20 +116,46 @@ async function acquireLock(
   for (;;) {
     try {
       await mkdir(path);
+      await writeFile(join(path, "owner"), `${process.pid} ${hostname()}\n`).catch(() => {});
       return () => rm(path, { recursive: true, force: true });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
     if (await done()) return null;
-    const age = await stat(path).then(
-      (info) => Date.now() - info.mtimeMs,
-      () => 0,
-    );
-    if (age > LOCK_STALE_MS) {
+    if (await lockIsAbandoned(path)) {
       await rm(path, { recursive: true, force: true });
       continue;
     }
     await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+  }
+}
+
+/**
+ * A lock whose owner process on this host is gone, such as a Hub stopped during its first
+ * install, or one older than the install timeout, from another host or without an owner.
+ */
+export async function lockIsAbandoned(
+  path: string,
+  isAlive: (pid: number) => boolean = processIsAlive,
+): Promise<boolean> {
+  const owner = await readFile(join(path, "owner"), "utf8").catch(() => "");
+  const [pid, host] = owner.trim().split(" ");
+  if (pid && host === hostname() && !isAlive(Number(pid))) return true;
+  const age = await stat(path).then(
+    (info) => Date.now() - info.mtimeMs,
+    () => 0,
+  );
+  return age > LOCK_STALE_MS;
+}
+
+function processIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to another user.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

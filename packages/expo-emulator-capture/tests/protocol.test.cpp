@@ -14,9 +14,17 @@ static void streamSizes() {
   // Pixel 9 Pro Fold: unfolded and folded displays.
   assert(streamSize(2076, 2152, 1280) == std::make_pair(1234, 1280));
   assert(streamSize(1080, 2424, 1280) == std::make_pair(570, 1280));
+  // The smallest cap that 'S' accepts, and a display narrower than 1:8 at it: the short edge
+  // stays 2, and nothing throws (an exception would end QEMU).
+  assert(streamSize(1080, 2424, kMinMaxSize) == std::make_pair(6, 16));
+  assert(streamSize(16, 2424, kMinMaxSize) == std::make_pair(2, 16));
+  for (int maxSize = 1; maxSize < kMinMaxSize; maxSize++) {
+    auto size = streamSize(1080, 2424, maxSize);
+    assert(size.first >= 2 && size.second >= 2 && size.first % 2 == 0 && size.second % 2 == 0);
+  }
   bool rejected = false;
   try {
-    streamSize(1080, 2424, 1);
+    streamSize(1080, 2424, kMaxEdge + 1);
   } catch (...) {
     rejected = true;
   }
@@ -60,6 +68,16 @@ static void settings() {
   writeU32(command + 5, 60);
   writeU32(command + 9, 99'999);
   assert(!parseSettings(command, parsed));
+  writeU32(command + 9, 8'000'000);
+  // A cap from 1 to 15 is outside the protocol; 0 (native) and 16 are inside.
+  for (uint32_t maxSize : {1u, 4u, 15u}) {
+    writeU32(command + 1, maxSize);
+    assert(!parseSettings(command, parsed));
+  }
+  for (uint32_t maxSize : {0u, 16u}) {
+    writeU32(command + 1, maxSize);
+    assert(parseSettings(command, parsed) && parsed.maxSize == int(maxSize));
+  }
   command[0] = 'K';
   assert(!parseSettings(command, parsed));
 }

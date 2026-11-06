@@ -40,9 +40,10 @@ export type EmulatorCaptureOptions = {
   unavailableReason?: string;
   /**
    * Why an emulator without an agent socket cannot use the mode, shown to the user. A function
-   * is read at every request, for a state that changes, such as an install in progress.
+   * is read at every request, for a state that changes, such as an install in progress, and
+   * gets the emulator's serial.
    */
-  missingAgentReason?: string | (() => string);
+  missingAgentReason?: string | ((serial: string) => string);
 };
 
 export const DEFAULT_MISSING_AGENT_REASON =
@@ -66,21 +67,22 @@ export function emulatorCaptureAvailability(
   serial: string,
   options: EmulatorCaptureOptions | undefined,
 ): { socket: string | null; reason?: string } {
-  if (!options) return { socket: null };
-  if (!isEmulatorSerial(serial)) {
-    return { socket: null, reason: "Emulator capture works only with Android Emulators." };
-  }
+  // A physical device never offers the mode, so it gets no reason and no disabled option.
+  if (!options || !isEmulatorSerial(serial)) return { socket: null };
   if (!options.socketDirectory) {
     return { socket: null, reason: options.unavailableReason ?? "Emulator capture is turned off." };
   }
   const socket = emulatorCaptureSocketFor(serial, options.socketDirectory);
   return socket
     ? { socket }
-    : {
-        socket: null,
-        reason:
-          (typeof options.missingAgentReason === "function"
-            ? options.missingAgentReason()
-            : options.missingAgentReason) ?? DEFAULT_MISSING_AGENT_REASON,
-      };
+    : { socket: null, reason: emulatorCaptureMissingAgent(serial, options) };
+}
+
+/** Why an emulator has no answering agent, for the user. */
+export function emulatorCaptureMissingAgent(
+  serial: string,
+  options: EmulatorCaptureOptions | undefined,
+): string {
+  const reason = options?.missingAgentReason;
+  return (typeof reason === "function" ? reason(serial) : reason) ?? DEFAULT_MISSING_AGENT_REASON;
 }

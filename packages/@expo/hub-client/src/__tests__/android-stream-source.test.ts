@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseAndroidStreamSource } from "../android-stream-source";
+import { parseAndroidStreamSource, sameAndroidStreamSource } from "../android-stream-source";
 
 describe("parseAndroidStreamSource", () => {
   test.each(["png", "mmap", "rgb888"])(
@@ -187,4 +187,25 @@ test("preserves only finite nonnegative source repeat cadence metadata", () => {
     expect(parsed).not.toBeNull();
     expect(parsed).not.toHaveProperty("repeatFrameMs");
   }
+});
+
+test("a status with only a new unavailable reason is a change", () => {
+  const status = (reason?: string) =>
+    parseAndroidStreamSource({
+      ok: true,
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy"],
+      availableModes: ["scrcpy", "grpc-screenshot"],
+      ...(reason ? { unavailableModes: { "emulator-capture": reason } } : {}),
+      sessionGeneration: 0,
+    })!;
+  const installing = status("Installing expo-emulator-capture…");
+  expect(sameAndroidStreamSource(installing, status("Installing expo-emulator-capture…"))).toBe(
+    true,
+  );
+  expect(sameAndroidStreamSource(installing, status("npm install failed: offline"))).toBe(false);
+  expect(sameAndroidStreamSource(installing, status())).toBe(false);
+  expect(sameAndroidStreamSource(null, installing)).toBe(false);
 });
