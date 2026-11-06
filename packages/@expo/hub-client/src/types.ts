@@ -415,6 +415,12 @@ export interface DeviceStreamSourceStatus {
   availableModes: readonly DeviceStreamSource[];
   /** Why a source is not available for this device, for display; omitted by older servers. */
   unavailableModes?: Readonly<Partial<Record<DeviceStreamSource, string>>>;
+  /**
+   * A note for an available source, for display: for example that selecting `emulator-capture`
+   * attaches its agent to the running emulator, or why the last attach failed. Omitted by older
+   * servers.
+   */
+  modeNotes?: Readonly<Partial<Record<DeviceStreamSource, string>>>;
   sessionGeneration: number;
 }
 

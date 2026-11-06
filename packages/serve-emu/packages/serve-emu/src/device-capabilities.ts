@@ -44,6 +44,24 @@ export type EmulatorCaptureOptions = {
    * gets the emulator's serial.
    */
   missingAgentReason?: string | ((serial: string) => string);
+  /**
+   * Loads the agent into an emulator that runs without it, for example one that Android Studio
+   * started. Resolves once the agent serves its socket in `socketDirectory`, and rejects with a
+   * reason for the user. With it, an emulator without a socket still offers the mode, and the
+   * router attaches before a session uses the mode.
+   */
+  attach?: (request: EmulatorCaptureAttachRequest) => Promise<void>;
+  /**
+   * Shown with the mode for an emulator that the router would attach to, for example that the
+   * system asks for a password. A function gets the emulator's serial.
+   */
+  attachNote?: string | ((serial: string) => string);
+};
+
+export type EmulatorCaptureAttachRequest = {
+  serial: string;
+  /** The emulator's QEMU process. */
+  processId: number;
 };
 
 export const DEFAULT_MISSING_AGENT_REASON =

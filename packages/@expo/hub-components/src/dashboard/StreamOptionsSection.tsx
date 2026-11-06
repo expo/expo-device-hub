@@ -173,6 +173,13 @@ export function StreamOptionsSection({
       ? [{ option, reason }]
       : [];
   });
+  // An available source can come with a note, such as what selecting it does first.
+  const notedSources = STREAM_SOURCE_OPTIONS.flatMap((option) => {
+    const note = streamSource?.modeNotes?.[option.value];
+    return note && streamSource?.availableModes.includes(option.value)
+      ? [{ option, reason: note }]
+      : [];
+  });
   const sourceOptions = STREAM_SOURCE_OPTIONS.flatMap((option) =>
     streamSource?.availableModes.includes(option.value)
       ? [option]
@@ -266,7 +273,7 @@ export function StreamOptionsSection({
               onChange={client.setStreamSource}
             />
           </SidebarRow>
-          {unavailableSources.map(({ option, reason }) => (
+          {[...unavailableSources, ...notedSources].map(({ option, reason }) => (
             <SectionNote key={option.value}>{`${option.label}: ${reason}`}</SectionNote>
           ))}
         </>

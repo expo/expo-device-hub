@@ -113,6 +113,15 @@ describe("API contracts", () => {
       hardwareEncoderError: "GPU unavailable",
     };
     expect(parseStreamModeResponse(failed)).toEqual(failed);
+    const noted = {
+      ...status,
+      availableModes: ["grpc-screenshot", "scrcpy", "emulator-capture"],
+      modeNotes: { "emulator-capture": "Opening the emulator attaches the agent." },
+    };
+    expect(parseStreamModeResponse(noted)).toEqual(noted);
+    expect(() => parseStreamModeResponse({ ...status, modeNotes: { screen: "x" } })).toThrow(
+      "modeNotes key",
+    );
     for (const patch of [
       { encoder: "auto" },
       { encoderName: 42 },

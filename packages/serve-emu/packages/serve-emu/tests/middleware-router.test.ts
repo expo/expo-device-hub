@@ -1909,6 +1909,142 @@ describe("createRouter emulator capture", () => {
     }
   });
 
+  /** An attach that creates the emulator's socket, or fails with `failWith`. */
+  const attachInto = (directory: string) => {
+    const calls: Array<{ serial: string; processId: number }> = [];
+    const control = { failWith: null as string | null };
+    const attach = async (request: { serial: string; processId: number }) => {
+      calls.push(request);
+      if (control.failWith) throw new Error(control.failWith);
+      await writeFile(join(directory, `${request.serial}.sock`), "");
+    };
+    return { calls, control, attach };
+  };
+
+  test("offers the capture with a note for an emulator that would need an attach", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
+    const { calls, attach } = attachInto(directory);
+    const router = createRouter(
+      { emulatorCapture: { socketDirectory: directory, attach, attachNote: "Opening attaches." } },
+      { ...routerDependencies(twoEmulators()), findEmulatorProcessId: async () => 4242 },
+    );
+    try {
+      // The scrcpy default does not attach; the capture is offered, with what selecting it does.
+      const status = await streamMode(router, "emulator-5556");
+      expect(status.mode).toBe("scrcpy");
+      expect(status.availableModes).toEqual(["scrcpy", "grpc-screenshot", "emulator-capture"]);
+      expect(status.unavailableModes).toBeUndefined();
+      expect(status.modeNotes).toEqual({ "emulator-capture": "Opening attaches." });
+      expect(calls).toEqual([]);
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("attaches the agent when an emulator without one opens with the capture default", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
+    const { calls, attach } = attachInto(directory);
+    const state = twoEmulators();
+    const router = createRouter(
+      {
+        streamMode: "emulator-capture",
+        emulatorCapture: { socketDirectory: directory, attach, attachNote: "Opening attaches." },
+      },
+      { ...routerDependencies(state), findEmulatorProcessId: async () => 4242 },
+    );
+    try {
+      const status = await streamMode(router, "emulator-5556");
+      expect(calls).toEqual([{ serial: "emulator-5556", processId: 4242 }]);
+      expect(status.mode).toBe("emulator-capture");
+      expect(status.modeNotes).toBeUndefined();
+      expect(state.createdModes).toEqual(["emulator-capture"]);
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("a failed attach opens the emulator with gRPC; selecting the capture tries again", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
+    const { calls, control, attach } = attachInto(directory);
+    control.failWith = "No password.";
+    const state = twoEmulators();
+    const router = createRouter(
+      {
+        streamMode: "emulator-capture",
+        emulatorCapture: { socketDirectory: directory, attach, attachNote: "Opening attaches." },
+      },
+      {
+        ...routerDependencies(state),
+        findEmulatorProcessId: async () => 4242,
+        processIsAlive: () => true,
+      },
+    );
+    try {
+      const failed = await streamMode(router, "emulator-5556");
+      expect(failed.mode).toBe("grpc-screenshot");
+      expect(failed.availableModes).toContain("emulator-capture");
+      expect(failed.modeNotes).toEqual({
+        "emulator-capture":
+          "Attaching the capture agent failed: No password. Select Emulator capture to try again.",
+      });
+      // The same emulator process does not ask again by itself.
+      await streamMode(router, "emulator-5556");
+      expect(calls).toHaveLength(1);
+
+      const refused = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5556", { mode: "emulator-capture" }),
+      );
+      expect(refused.status).toBe(503);
+      expect(await responseJson(refused)).toMatchObject({ error: { message: "No password." } });
+      expect(calls).toHaveLength(2);
+
+      control.failWith = null;
+      const switched = await router.handleRequest(
+        put("/api/stream-mode?device=emulator-5556", { mode: "emulator-capture" }),
+      );
+      expect(switched.status).toBe(200);
+      expect(await responseJson(switched)).toMatchObject({ mode: "emulator-capture" });
+      expect(calls).toHaveLength(3);
+      expect(state.createdModes.at(-1)).toBe("emulator-capture");
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("the end of the emulator process clears the last attach failure", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "router-capture-"));
+    const { control, attach } = attachInto(directory);
+    control.failWith = "No password.";
+    let alive = true;
+    const router = createRouter(
+      {
+        streamMode: "emulator-capture",
+        emulatorCapture: { socketDirectory: directory, attach, attachNote: "Opening attaches." },
+      },
+      {
+        ...routerDependencies(twoEmulators()),
+        findEmulatorProcessId: async () => 4242,
+        processIsAlive: (processId) => alive && processId === 4242,
+      },
+    );
+    try {
+      expect((await streamMode(router, "emulator-5556")).modeNotes).toEqual({
+        "emulator-capture":
+          "Attaching the capture agent failed: No password. Select Emulator capture to try again.",
+      });
+      alive = false; // The emulator restarted: a new process gets a new attempt.
+      expect((await streamMode(router, "emulator-5556")).modeNotes).toEqual({
+        "emulator-capture": "Opening attaches.",
+      });
+    } finally {
+      await router.stopAll();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("defaults to the capture for an emulator with an agent and to gRPC otherwise", async () => {
     const directory = await withAgentSocket();
     const router = createRouter(

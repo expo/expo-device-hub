@@ -11,6 +11,7 @@ import {
   encodeTouchEvent,
   ensureEmulatorGrpcEndpoint,
   findEmulatorGrpcEndpoint,
+  findEmulatorProcessId,
   GrpcMessagePacer,
   GrpcMessageParser,
   IMAGE_TRANSPORT_MMAP,
@@ -216,6 +217,46 @@ describe("emulator gRPC discovery", () => {
       token: "newer",
       avdName: "Pixel_9",
     });
+  });
+
+  test("names the process of the newest live discovery file for the emulator", async () => {
+    const files = new Map([
+      ["/run/pid_10.ini", "port.serial=5554\ngrpc.port=8554"],
+      // QEMU writes the file, so its process is the one that loads an attached agent.
+      ["/run/pid_11.ini", "port.serial=5554"],
+      ["/run/pid_12.ini", "port.serial=5556\ngrpc.port=8556"],
+    ]);
+    const discovery = {
+      discoveryDirs: () => ["/run"],
+      readDirectory: () => ["pid_10.ini", "pid_11.ini", "pid_12.ini"],
+      processIsAlive: (file: string) => file !== "pid_12.ini",
+      readText: (path: string) => files.get(path)!,
+      modifiedMs: (path: string) => (path.includes("11") ? 20 : 10),
+    };
+    expect(await findEmulatorProcessId("emulator-5554", discovery)).toBe(11);
+    expect(await findEmulatorProcessId("R5CT1234", discovery)).toBeNull();
+  });
+
+  test("asks the emulator console for the discovery path when there is no file yet", async () => {
+    const calls: string[][] = [];
+    const runAdb = async (_command: string, args: string[]): Promise<ExecResult<string>> => {
+      calls.push(args);
+      return {
+        status: 0,
+        signal: null,
+        stdout: "/Users/a/Library/Caches/TemporaryItems/avd/running/pid_6523.ini\r\nOK\r\n",
+        stderr: "",
+        timedOut: false,
+        error: null,
+      };
+    };
+    const processId = await findEmulatorProcessId("emulator-5556", {
+      discoveryDirs: () => ["/run"],
+      readDirectory: () => [],
+      runAdb,
+    });
+    expect(processId).toBe(6523);
+    expect(calls).toEqual([["-s", "emulator-5556", "emu", "avd", "discoverypath"]]);
   });
 
   test("retries activation and preserves the discovered bearer token", async () => {

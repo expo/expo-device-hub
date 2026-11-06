@@ -64,6 +64,17 @@ describe("parseAndroidStreamSource", () => {
       },
     });
     expect(withReasons?.unavailableModes).toEqual({ "emulator-capture": "Restart the Hub." });
+
+    const withNotes = parseAndroidStreamSource({
+      ...response,
+      mode: "grpc-screenshot",
+      // A note belongs to an available source, such as a capture that attaches its agent first.
+      modeNotes: { "emulator-capture": " Opening the emulator attaches the agent. ", scrcpy: "" },
+    });
+    expect(withNotes?.modeNotes).toEqual({
+      "emulator-capture": "Opening the emulator attaches the agent.",
+    });
+    expect(parseAndroidStreamSource(response)).not.toHaveProperty("modeNotes");
   });
 
   test("rejects missing or unsupported image modes", () => {
@@ -208,4 +219,26 @@ test("a status with only a new unavailable reason is a change", () => {
   expect(sameAndroidStreamSource(installing, status("npm install failed: offline"))).toBe(false);
   expect(sameAndroidStreamSource(installing, status())).toBe(false);
   expect(sameAndroidStreamSource(null, installing)).toBe(false);
+});
+
+test("a status with only a new source note is a change", () => {
+  const status = (note?: string) =>
+    parseAndroidStreamSource({
+      ok: true,
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      inputSource: "scrcpy",
+      availableInputSources: ["scrcpy"],
+      availableModes: ["scrcpy", "grpc-screenshot", "emulator-capture"],
+      ...(note ? { modeNotes: { "emulator-capture": note } } : {}),
+      sessionGeneration: 0,
+    })!;
+  const pending = status("Opening the emulator attaches the agent.");
+  expect(sameAndroidStreamSource(pending, status("Opening the emulator attaches the agent."))).toBe(
+    true,
+  );
+  expect(sameAndroidStreamSource(pending, status("Attaching the capture agent failed."))).toBe(
+    false,
+  );
+  expect(sameAndroidStreamSource(pending, status())).toBe(false);
 });
