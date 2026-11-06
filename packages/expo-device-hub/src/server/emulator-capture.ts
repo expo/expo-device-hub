@@ -72,10 +72,13 @@ export function emulatorCaptureEncoderProblem(
   return `x264 build 165 (${X264_LIBRARY}) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later), then start the emulator again from the Hub.`;
 }
 
-/** Whether the user turned the capture on with the variable (`1`, `true`, `yes`, `on`). */
+/**
+ * Whether the capture is on. TEMPORARY, for testing builds only (do not merge): on unless the
+ * variable turns it off (`0`, `false`, `no`, `off`), so that a canary needs no flag.
+ */
 export function emulatorCaptureRequested(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = env[EMULATOR_CAPTURE_ENV]?.trim().toLowerCase();
-  return !!value && ["1", "true", "yes", "on"].includes(value);
+  return !value || !["0", "false", "no", "off"].includes(value);
 }
 
 /** Why the `emulator-capture` stream source is not available while the feature is off. */

@@ -10,6 +10,9 @@ import {
   standaloneServeEmuOptions,
 } from "../serve-emu-options";
 
+// TEMPORARY testing branch: these tests read process.env, and expect the capture off.
+process.env.EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE = "0";
+
 const DEFAULT_ANDROID_STREAM = {
   streamMode: "grpc-screenshot",
   grpcImageMode: "rgb888",
@@ -18,7 +21,8 @@ const DEFAULT_ANDROID_STREAM = {
 
 describe("defaultAndroidStreamSource", () => {
   test("keeps gRPC capture by default and picks the emulator capture when it is on", () => {
-    expect(defaultAndroidStreamSource({})).toBe("grpc-screenshot");
+    // TEMPORARY testing branch: the capture is on unless the variable turns it off.
+    expect(defaultAndroidStreamSource({})).toBe("emulator-capture");
     expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "1" })).toBe(
       "emulator-capture",
     );
