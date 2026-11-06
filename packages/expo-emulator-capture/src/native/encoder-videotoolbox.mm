@@ -80,6 +80,9 @@ std::unique_ptr<H264Encoder> createH264Encoder(H264Encoder::Sink sink,
   return std::make_unique<VideoToolboxEncoder>(std::move(sink), std::move(onError));
 }
 
+// VideoToolbox is part of macOS, and a Mac without a hardware encoder gets its software one.
+std::string h264EncoderProblem() { return {}; }
+
 bool VideoToolboxEncoder::configure(int width, int height, int fps, int bitRate, int rotation,
                                     std::string& error) {
   invalidate();

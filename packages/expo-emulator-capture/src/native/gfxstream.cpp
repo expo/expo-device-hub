@@ -5,6 +5,10 @@
 
 namespace expo_capture {
 
+#if !defined(_LIBCPP_VERSION)
+void (*ColorBufferRef::releaseShared)(void* control) = nullptr;
+#endif
+
 namespace {
 
 // The mangled parameter type of uint64_t: unsigned long long on macOS, unsigned
@@ -21,6 +25,23 @@ template <class T> bool resolve(GumModule* module, const char* name, T& out, boo
   return address != 0;
 }
 
+#if !defined(_LIBCPP_VERSION)
+// The renderer links the emulator's own libc++ (lib64/libc++.so on Linux).
+bool resolveReleaseShared() {
+  const char* symbol = "_ZNSt3__119__shared_weak_count16__release_sharedEv";
+  GumAddress address = 0;
+  for (const char* name : {"libc++.so", "libc++.so.1"}) {
+    if (GumModule* libcxx = gum_process_find_module_by_name(name)) {
+      address = gum_module_find_export_by_name(libcxx, symbol);
+      g_object_unref(libcxx);
+      if (address) break;
+    }
+  }
+  if (!address) address = gum_module_find_global_export_by_name(symbol);
+  ColorBufferRef::releaseShared = reinterpret_cast<void (*)(void*)>(address);
+  return address != 0;
+}
+#endif
 
 }  // namespace
 
@@ -69,6 +90,10 @@ std::string resolveGfxstream(GumModule* module, Gfxstream& g) {
     if (!entry.ok)
       return std::string("unsupported emulator renderer: missing ") + entry.name + " in " + g.path;
   }
+#if !defined(_LIBCPP_VERSION)
+  if (!resolveReleaseShared())
+    return "unsupported emulator renderer: libc++ __shared_weak_count::__release_shared not found";
+#endif
 
   // Entry points for the GPU frame path. Missing ones only disable that path.
   resolve(module, "_ZN9gfxstream4host11FrameBuffer26createSharedTrivialContextEPPvS3_",

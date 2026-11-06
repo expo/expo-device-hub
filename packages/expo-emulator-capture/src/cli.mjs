@@ -26,7 +26,9 @@ const USAGE = `Usage:
 
 launch starts the emulator with the capture agent preloaded. Pass -port to the
 emulator, or --socket, so the socket path is known. On macOS, use -gpu host for
-the GPU frame path; software renderers use CPU readback.`;
+the GPU frame path; software renderers use CPU readback. On Linux, every renderer
+uses CPU readback, -gpu lavapipe is the tested one, and the agent encodes with the
+system's x264 build 165 (Ubuntu 26.04: sudo apt install libx264-165).`;
 
 function fail(message) {
   console.error(`[expo-emulator-capture] ${message}`);
@@ -34,8 +36,11 @@ function fail(message) {
 }
 
 function requireSupportedHost() {
-  if (process.platform !== "darwin" || process.arch !== "arm64")
-    fail("capture requires macOS on Apple silicon (darwin-arm64).");
+  const supported =
+    (process.platform === "darwin" && process.arch === "arm64") ||
+    (process.platform === "linux" && process.arch === "x64");
+  if (!supported)
+    fail("capture requires macOS on Apple silicon (darwin-arm64) or Linux x86-64 (linux-x64).");
 }
 
 function emulatorBinary(explicit) {
@@ -128,10 +133,13 @@ function record(argv) {
   const reader = new RecordReader((entry) => {
     if (entry.flags === FLAGS.hello) {
       console.log(`hello: native ${entry.width}x${entry.height}@${entry.fps} ${entry.payload}`);
+      const hello = JSON.parse(entry.payload.toString());
+      // No session can start, for example when Linux lacks x264 build 165.
+      if (typeof hello.encoderError === "string") fail(hello.encoderError);
       // 'R' before 'S': the agent starts streaming on 'S', so the first session is
       // already upright.
       if (rotation !== 0) {
-        if ((JSON.parse(entry.payload.toString()).protocol ?? 1) < ROTATION_PROTOCOL)
+        if ((hello.protocol ?? 1) < ROTATION_PROTOCOL)
           fail("this capture agent cannot turn the picture; rebuild it");
         socket.write(rotationCommand(rotation));
       }

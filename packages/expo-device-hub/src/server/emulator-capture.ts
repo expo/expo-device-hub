@@ -10,7 +10,7 @@ export const EMULATOR_CAPTURE_ENV = "EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTU
 export const EMULATOR_CAPTURE_LIBRARY_ENV = "EXPO_DEVICE_HUB_EMULATOR_CAPTURE_LIBRARY";
 export const EMULATOR_CAPTURE_FLAG = "--experimental-emulator-capture";
 
-/** Experimental capture for the emulators the Hub boots (macOS on Apple silicon). */
+/** Experimental capture for the emulators the Hub boots (macOS on Apple silicon, Linux x86-64). */
 export type EmulatorCapture = {
   /**
    * The agent library preloaded into each emulator. Resolves once the package is installed;
@@ -21,17 +21,55 @@ export type EmulatorCapture = {
   problem(): string | null;
   /** Where each emulator's agent socket is created as `<serial>.sock`. */
   socketDirectory: string;
-  /** The host the agent was built for: it picks the preload variable. */
-  platform: "darwin";
+  /** The host the agent was built for: it picks the preload variable and the renderer. */
+  platform: "darwin" | "linux";
 };
 
-const PRELOAD_VARIABLE = { darwin: "DYLD_INSERT_LIBRARIES" } as const;
+const PRELOAD_VARIABLE = { darwin: "DYLD_INSERT_LIBRARIES", linux: "LD_PRELOAD" } as const;
+
+const SUPPORTED_HOSTS = "macOS on Apple silicon or Linux x86-64";
 
 function capturePlatform(
   platform: NodeJS.Platform,
   arch: string,
 ): EmulatorCapture["platform"] | null {
-  return platform === "darwin" && arch === "arm64" ? "darwin" : null;
+  if (platform === "darwin" && arch === "arm64") return "darwin";
+  if (platform === "linux" && arch === "x64") return "linux";
+  return null;
+}
+
+/** The x264 library that the Linux agent encodes with. The agent supports this build only. */
+export const X264_LIBRARY = "libx264.so.165";
+
+// Where the dynamic loader finds libraries on common distributions, after LD_LIBRARY_PATH.
+const LIBRARY_DIRECTORIES = [
+  "/lib/x86_64-linux-gnu",
+  "/usr/lib/x86_64-linux-gnu",
+  "/usr/local/lib",
+  "/lib64",
+  "/usr/lib64",
+  "/lib",
+  "/usr/lib",
+];
+
+// @ref LLP 0018#encoder — the system's x264 build 165; the Hub checks for it before a boot
+/**
+ * Why the agent cannot encode on this host, or null. The Linux agent loads x264 from the
+ * system and reports a missing library itself; this check lets the Hub say so before it boots
+ * an emulator with the agent.
+ */
+export function emulatorCaptureEncoderProblem(
+  platform: EmulatorCapture["platform"],
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (path: string) => boolean = existsSync,
+): string | null {
+  if (platform !== "linux") return null;
+  const directories = [
+    ...(env.LD_LIBRARY_PATH ?? "").split(":").filter(isAbsolute),
+    ...LIBRARY_DIRECTORIES,
+  ];
+  if (directories.some((directory) => exists(join(directory, X264_LIBRARY)))) return null;
+  return `x264 build 165 (${X264_LIBRARY}) is missing. Install it with: sudo apt install libx264-165 (Ubuntu 26.04 or later), then start the emulator again from the Hub.`;
 }
 
 /** Whether the user turned the capture on with the variable (`1`, `true`, `yes`, `on`). */
@@ -45,7 +83,7 @@ export function emulatorCaptureOffReason(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
 ): string {
-  if (!capturePlatform(platform, arch)) return "Emulator capture needs macOS on Apple silicon.";
+  if (!capturePlatform(platform, arch)) return `Emulator capture needs ${SUPPORTED_HOSTS}.`;
   return `Turned off. Restart the Hub with ${EMULATOR_CAPTURE_FLAG}, or set ${EMULATOR_CAPTURE_ENV}=1 for expo start.`;
 }
 
@@ -59,6 +97,8 @@ export function readEmulatorCapture(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
   install: () => Promise<string> = () => installEmulatorCapture({ platform }),
+  encoderProblem: (host: EmulatorCapture["platform"]) => string | null = (host) =>
+    emulatorCaptureEncoderProblem(host, env),
 ): EmulatorCapture | null {
   if (!emulatorCaptureRequested(env)) return null;
   const host = capturePlatform(platform, arch);
@@ -70,13 +110,13 @@ export function readEmulatorCapture(
   const localLibrary = env[EMULATOR_CAPTURE_LIBRARY_ENV]?.trim() || undefined;
   if (localLibrary !== undefined && (!isAbsolute(localLibrary) || !existsSync(localLibrary))) {
     throw new Error(
-      `${EMULATOR_CAPTURE_LIBRARY_ENV} must be the absolute path of libexpo_emulator_capture.dylib; ${localLibrary} does not exist`,
+      `${EMULATOR_CAPTURE_LIBRARY_ENV} must be the absolute path of the agent library (libexpo_emulator_capture.dylib or .so); ${localLibrary} does not exist`,
     );
   }
   let pending: Promise<string> | null = null;
   let problem: string | null = null;
-  const library = (): Promise<string> => {
-    if (localLibrary !== undefined) return Promise.resolve(localLibrary);
+  /** Installs the package once; after a failure, the next call tries again. */
+  const installed = (): Promise<string> => {
     pending ??= install().then(
       (path) => {
         problem = null;
@@ -94,17 +134,28 @@ export function readEmulatorCapture(
     );
     return pending;
   };
+  const library = (): Promise<string> => {
+    // Checked at every boot, so an encoder that the user installs meanwhile counts.
+    const encoder = encoderProblem(host);
+    if (encoder !== null) return Promise.reject(new Error(encoder));
+    return localLibrary !== undefined ? Promise.resolve(localLibrary) : installed();
+  };
   if (localLibrary === undefined) {
     problem = `Installing ${EMULATOR_CAPTURE_PACKAGE}…`;
-    library().catch((error: unknown) => {
+    // In the background, also while the encoder is missing: a boot after the user installs
+    // it does not wait for npm.
+    installed().catch((error: unknown) => {
       console.warn(`[emulator capture] ${error instanceof Error ? error.message : String(error)}`);
     });
   }
+  const startupProblem = encoderProblem(host);
+  if (startupProblem !== null) console.warn(`[emulator capture] ${startupProblem}`);
   // The same default directory as `expo-emulator-capture launch`, so emulators
   // started either way are found by serial.
   return {
     library,
-    problem: () => problem,
+    // An encoder problem needs the user, so it comes before the install state.
+    problem: () => encoderProblem(host) ?? problem,
     socketDirectory: join(tmpdir(), "expo-emulator-capture"),
     platform: host,
   };
@@ -176,9 +227,12 @@ export function emulatorCaptureMissingAgentReason(
  * EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS comes later and can still override them.
  */
 export function emulatorCaptureArgs(platform: EmulatorCapture["platform"]): string[] {
-  // @ref LLP 0017#frame-paths — the GPU frame path needs host rendering
-  // `-gpu auto` picks a software renderer on a headless Mac.
-  return platform === "darwin" ? ["-gpu", "host"] : [];
+  return platform === "darwin"
+    ? // @ref LLP 0017#frame-paths — the GPU frame path needs host rendering
+      // `-gpu auto` picks a software renderer on a headless Mac.
+      ["-gpu", "host"]
+    : // @ref LLP 0018#renderer — lavapipe kept 60 fps with the readback on the render thread
+      ["-gpu", "lavapipe"];
 }
 
 /**
