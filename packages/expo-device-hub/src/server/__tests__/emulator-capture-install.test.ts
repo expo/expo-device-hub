@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
   EMULATOR_CAPTURE_PACKAGE,
   installEmulatorCapture,
+  lockIsAbandoned,
   npmErrorSummary,
   type InstallCommand,
 } from "../emulator-capture-install";
@@ -111,6 +112,23 @@ describe("installEmulatorCapture", () => {
       ]);
       expect(first).toBe(second);
       expect(calls).toHaveLength(1);
+    }));
+
+  test("takes over the lock of a Hub that stopped during its install", () =>
+    withCache(async (baseDirectory) => {
+      const lock = join(baseDirectory, "tools", EMULATOR_CAPTURE_PACKAGE, "1.2.3.lock");
+      await mkdir(lock, { recursive: true });
+      // Without an owner, a fresh lock is still held.
+      expect(await lockIsAbandoned(lock, () => true)).toBe(false);
+      await writeFile(join(lock, "owner"), `4242 ${hostname()}\n`);
+      expect(await lockIsAbandoned(lock, () => true)).toBe(false);
+      expect(await lockIsAbandoned(lock, () => false)).toBe(true);
+      // Another host's process cannot be checked from here.
+      await writeFile(join(lock, "owner"), "4242 another-host\n");
+      expect(await lockIsAbandoned(lock, () => false)).toBe(false);
+      // The pid of this test process is alive; a lock that names it is held.
+      await writeFile(join(lock, "owner"), `${process.pid} ${hostname()}\n`);
+      expect(await lockIsAbandoned(lock)).toBe(false);
     }));
 
   test("has no agent for hosts other than macOS", async () => {

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { EMULATOR_CAPTURE_PACKAGE, installEmulatorCapture } from "./emulator-capture-install";
@@ -33,11 +33,10 @@ function capturePlatform(
   return platform === "darwin" && arch === "arm64" ? "darwin" : null;
 }
 
-/** Whether the user turned the capture on, with the variable (`1`, `true`) or the old path form. */
+/** Whether the user turned the capture on with the variable (`1`, `true`, `yes`, `on`). */
 export function emulatorCaptureRequested(env: NodeJS.ProcessEnv = process.env): boolean {
-  const value = env[EMULATOR_CAPTURE_ENV]?.trim();
-  if (!value) return false;
-  return ["1", "true", "yes", "on"].includes(value.toLowerCase()) || isAbsolute(value);
+  const value = env[EMULATOR_CAPTURE_ENV]?.trim().toLowerCase();
+  return !!value && ["1", "true", "yes", "on"].includes(value);
 }
 
 /** Why the `emulator-capture` stream source is not available while the feature is off. */
@@ -50,9 +49,9 @@ export function emulatorCaptureOffReason(
 }
 
 /**
- * Reads the experiment's configuration, or null when it is off. Starts installing the agent
- * package in the background when no local library is named.
- * Throws when it is on but cannot work, so the Hub does not start half-configured.
+ * Reads the experiment's configuration, or null when it is off or the host cannot run it (the
+ * off reason then says why). Starts installing the agent package in the background when no
+ * local library is named. Throws for a local library path that does not exist.
  */
 export function readEmulatorCapture(
   env: NodeJS.ProcessEnv = process.env,
@@ -62,12 +61,12 @@ export function readEmulatorCapture(
 ): EmulatorCapture | null {
   if (!emulatorCaptureRequested(env)) return null;
   const host = capturePlatform(platform, arch);
-  if (!host) throw new Error(`${EMULATOR_CAPTURE_ENV} requires macOS on Apple silicon`);
-  // Before the on/off form, the variable held the library path.
-  const legacyPath = env[EMULATOR_CAPTURE_ENV]?.trim();
-  const localLibrary =
-    env[EMULATOR_CAPTURE_LIBRARY_ENV]?.trim() ||
-    (legacyPath && isAbsolute(legacyPath) ? legacyPath : undefined);
+  if (!host) {
+    // A shared environment file can turn it on for every machine; the Hub still starts.
+    console.warn(`[emulator capture] ${emulatorCaptureOffReason(platform, arch)}`);
+    return null;
+  }
+  const localLibrary = env[EMULATOR_CAPTURE_LIBRARY_ENV]?.trim() || undefined;
   if (localLibrary !== undefined && (!isAbsolute(localLibrary) || !existsSync(localLibrary))) {
     throw new Error(
       `${EMULATOR_CAPTURE_LIBRARY_ENV} must be the absolute path of libexpo_emulator_capture.dylib; ${localLibrary} does not exist`,
@@ -110,35 +109,76 @@ export function readEmulatorCapture(
   };
 }
 
+/** The agent's log for one emulator that the Hub boots, next to its socket. */
+export function emulatorCaptureLogPath(socketDirectory: string, serial: string): string {
+  return join(socketDirectory, `${serial}.log`);
+}
+
+const MAX_LOG_TAIL_BYTES = 64 * 1024;
+
+/** The end of a file, or an empty string when it cannot be read. */
+function readTail(path: string): string {
+  let descriptor: number | null = null;
+  try {
+    descriptor = openSync(path, "r");
+    const size = fstatSync(descriptor).size;
+    const length = Math.min(size, MAX_LOG_TAIL_BYTES);
+    const buffer = Buffer.alloc(length);
+    readSync(descriptor, buffer, 0, length, size - length);
+    return buffer.toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
+  }
+}
+
+// @ref LLP 0017#integration — the agent's own reason when it turned itself off
 /**
- * Why an emulator has no agent socket: the install state when it is the cause, otherwise how to
- * get one. Shown below the stream source select.
+ * Why an emulator has no agent socket, shown below the stream source select: the install state
+ * when it is the cause; else the reason from the agent's log when the agent turned itself off,
+ * for example after an emulator update; otherwise how to get the agent.
  */
-export function emulatorCaptureMissingAgentReason(capture: EmulatorCapture): string {
-  return (
-    capture.problem() ??
-    "This emulator started without the capture agent. Stop it and start it again from the Hub."
-  );
+export function emulatorCaptureMissingAgentReason(
+  capture: EmulatorCapture,
+  serial: string,
+  readLog: (path: string) => string = readTail,
+): string {
+  const problem = capture.problem();
+  if (problem) return problem;
+  const disabled = readLog(emulatorCaptureLogPath(capture.socketDirectory, serial))
+    .split("\n")
+    .map((line) => /capture disabled: (.+)$/.exec(line)?.[1]?.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (disabled) return `The capture agent turned itself off in this emulator: ${disabled}.`;
+  return "This emulator started without the capture agent. Stop it and start it again from the Hub.";
 }
 
 /**
- * Emulator flags and environment that load the capture agent for one emulator.
- * A library the Hub's own environment already preloads stays preloaded, after the agent.
+ * The renderer flags for every emulator the Hub boots while the capture is on, also when the
+ * agent cannot load, so the renderer does not depend on the install.
+ * EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS comes later and can still override them.
  */
-export function emulatorCaptureLaunch(
+export function emulatorCaptureArgs(platform: EmulatorCapture["platform"]): string[] {
+  // @ref LLP 0017#frame-paths — the GPU frame path needs host rendering
+  // `-gpu auto` picks a software renderer on a headless Mac.
+  return platform === "darwin" ? ["-gpu", "host"] : [];
+}
+
+/**
+ * The environment that loads the capture agent into one emulator: the preload, the socket and
+ * the log. A library the Hub's own environment already preloads stays preloaded, after the agent.
+ */
+export function emulatorCaptureEnv(
   capture: Pick<EmulatorCapture, "socketDirectory" | "platform"> & { library: string },
   serial: string,
   inherited: NodeJS.ProcessEnv = process.env,
-): { args: string[]; env: Record<string, string> } {
+): Record<string, string> {
   const variable = PRELOAD_VARIABLE[capture.platform];
   return {
-    // @ref LLP 0017#frame-paths — the GPU frame path needs host rendering
-    // `-gpu auto` picks a software renderer on a headless Mac.
-    // EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS comes later and can still override it.
-    args: ["-gpu", "host"],
-    env: {
-      [variable]: [capture.library, inherited[variable]].filter(Boolean).join(":"),
-      EXPO_EMULATOR_CAPTURE_SOCKET: join(capture.socketDirectory, `${serial}.sock`),
-    },
+    [variable]: [capture.library, inherited[variable]].filter(Boolean).join(":"),
+    EXPO_EMULATOR_CAPTURE_SOCKET: join(capture.socketDirectory, `${serial}.sock`),
+    EXPO_EMULATOR_CAPTURE_LOG: emulatorCaptureLogPath(capture.socketDirectory, serial),
   };
 }

@@ -22,11 +22,9 @@ describe("defaultAndroidStreamSource", () => {
     expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "1" })).toBe(
       "emulator-capture",
     );
-    expect(
-      defaultAndroidStreamSource({
-        EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "/opt/libexpo_emulator_capture.dylib",
-      }),
-    ).toBe("emulator-capture");
+    expect(defaultAndroidStreamSource({ EXPO_DEVICE_HUB_EXPERIMENTAL_EMULATOR_CAPTURE: "0" })).toBe(
+      "grpc-screenshot",
+    );
   });
 });
 

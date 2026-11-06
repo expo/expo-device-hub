@@ -46,10 +46,14 @@ export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env)
 /**
  * The boot invocation as a human-runnable shell command — what error messages
  * offer the user to reproduce a failed boot with the full emulator output
- * visible in their terminal.
+ * visible in their terminal. Variables that the boot adds, such as a preloaded
+ * library, come first, so the command reproduces their effect too.
  */
 export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceOptions): string {
-  return quote([emulatorPath, ...buildEmulatorArgs(options)]);
+  const variables = Object.entries(options.env ?? {}).map(
+    ([name, value]) => `${name}=${quote([value])}`,
+  );
+  return [...variables, quote([emulatorPath, ...buildEmulatorArgs(options)])].join(" ");
 }
 
 /**

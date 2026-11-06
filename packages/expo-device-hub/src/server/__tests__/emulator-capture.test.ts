@@ -6,7 +6,8 @@ import { join } from "node:path";
 import {
   EMULATOR_CAPTURE_ENV,
   EMULATOR_CAPTURE_LIBRARY_ENV,
-  emulatorCaptureLaunch,
+  emulatorCaptureArgs,
+  emulatorCaptureEnv,
   emulatorCaptureMissingAgentReason,
   emulatorCaptureOffReason,
   emulatorCaptureRequested,
@@ -25,10 +26,10 @@ function withLibrary(run: (library: string) => void | Promise<void>) {
 }
 
 describe("emulatorCaptureRequested", () => {
-  test("is on for 1 or true, and for the old library path form", () => {
+  test("is on for 1 or true", () => {
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "1" })).toBe(true);
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "TRUE" })).toBe(true);
-    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "/opt/lib.dylib" })).toBe(true);
+    expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "/opt/lib.dylib" })).toBe(false);
     expect(emulatorCaptureRequested({})).toBe(false);
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "" })).toBe(false);
     expect(emulatorCaptureRequested({ [EMULATOR_CAPTURE_ENV]: "0" })).toBe(false);
@@ -60,14 +61,42 @@ describe("readEmulatorCapture", () => {
     expect(capture.platform).toBe("darwin");
     expect(installs).toBe(1);
     expect(capture.problem()).toBe("Installing expo-emulator-capture…");
-    expect(emulatorCaptureMissingAgentReason(capture)).toBe("Installing expo-emulator-capture…");
+    expect(emulatorCaptureMissingAgentReason(capture, "emulator-5554")).toBe(
+      "Installing expo-emulator-capture…",
+    );
     finish("/cache/agent.dylib");
     expect(await capture.library()).toBe("/cache/agent.dylib");
     expect(capture.problem()).toBeNull();
     expect(installs).toBe(1);
-    expect(emulatorCaptureMissingAgentReason(capture)).toContain(
+    expect(emulatorCaptureMissingAgentReason(capture, "emulator-5554", () => "")).toContain(
       "started without the capture agent",
     );
+  });
+
+  test("gives the agent's own reason when it turned itself off", () => {
+    const capture = readEmulatorCapture(
+      { [EMULATOR_CAPTURE_ENV]: "1" },
+      "darwin",
+      "arm64",
+      async () => "/cache/agent.dylib",
+    )!;
+    const logs: string[] = [];
+    const log = [
+      "[expo-emulator-capture] GPU frame path disabled: renderer symbols are missing",
+      "[expo-emulator-capture] capture disabled: could not hook the renderer's display post",
+      "",
+    ].join("\n");
+    return capture.library().then(() => {
+      expect(
+        emulatorCaptureMissingAgentReason(capture, "emulator-5556", (path) => {
+          logs.push(path);
+          return log;
+        }),
+      ).toBe(
+        "The capture agent turned itself off in this emulator: could not hook the renderer's display post.",
+      );
+      expect(logs).toEqual([join(SOCKETS, "emulator-5556.log")]);
+    });
   });
 
   test("reports a failed install, and tries again on the next boot", async () => {
@@ -101,21 +130,10 @@ describe("readEmulatorCapture", () => {
       expect(capture.problem()).toBeNull();
     }));
 
-  test("accepts the old form, where the variable held the library path", () =>
-    withLibrary(async (library) => {
-      const capture = readEmulatorCapture(
-        { [EMULATOR_CAPTURE_ENV]: library },
-        "darwin",
-        "arm64",
-        never,
-      )!;
-      expect(await capture.library()).toBe(library);
-    }));
-
-  test("refuses hosts other than macOS on Apple silicon", () => {
+  test("stays off on hosts other than macOS on Apple silicon, and the Hub still starts", () => {
     const env = { [EMULATOR_CAPTURE_ENV]: "1" };
-    expect(() => readEmulatorCapture(env, "linux", "x64", never)).toThrow("Apple silicon");
-    expect(() => readEmulatorCapture(env, "darwin", "x64", never)).toThrow("Apple silicon");
+    expect(readEmulatorCapture(env, "linux", "x64", never)).toBeNull();
+    expect(readEmulatorCapture(env, "darwin", "x64", never)).toBeNull();
   });
 
   test("refuses a relative or missing library path", () => {
@@ -144,21 +162,20 @@ test("the off reason says how to turn the capture on, or why the host cannot", (
   );
 });
 
-test("emulatorCaptureLaunch names the socket by serial and keeps an inherited preload", () => {
+test("emulatorCaptureEnv names the socket and log by serial and keeps an inherited preload", () => {
   const capture = {
     library: "/lib.dylib",
     socketDirectory: "/tmp/capture",
     platform: "darwin" as const,
   };
-  expect(emulatorCaptureLaunch(capture, "emulator-5556", {})).toEqual({
-    args: ["-gpu", "host"],
-    env: {
-      DYLD_INSERT_LIBRARIES: "/lib.dylib",
-      EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/capture/emulator-5556.sock",
-    },
+  expect(emulatorCaptureArgs("darwin")).toEqual(["-gpu", "host"]);
+  expect(emulatorCaptureEnv(capture, "emulator-5556", {})).toEqual({
+    DYLD_INSERT_LIBRARIES: "/lib.dylib",
+    EXPO_EMULATOR_CAPTURE_SOCKET: "/tmp/capture/emulator-5556.sock",
+    EXPO_EMULATOR_CAPTURE_LOG: "/tmp/capture/emulator-5556.log",
   });
   expect(
-    emulatorCaptureLaunch(capture, "emulator-5556", { DYLD_INSERT_LIBRARIES: "/other.dylib" }).env
+    emulatorCaptureEnv(capture, "emulator-5556", { DYLD_INSERT_LIBRARIES: "/other.dylib" })
       .DYLD_INSERT_LIBRARIES,
   ).toBe("/lib.dylib:/other.dylib");
 });

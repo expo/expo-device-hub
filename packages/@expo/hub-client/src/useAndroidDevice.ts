@@ -49,7 +49,11 @@ import {
   parseAndroidDeviceSetting,
 } from "./android-device-settings";
 import { androidStreamSettingsPatch, parseAndroidStreamSettings } from "./android-stream-settings";
-import { androidStreamSourceErrorMessage, parseAndroidStreamSource } from "./android-stream-source";
+import {
+  androidStreamSourceErrorMessage,
+  parseAndroidStreamSource,
+  sameAndroidStreamSource,
+} from "./android-stream-source";
 import { androidTouchMessage } from "./android-touch";
 import { NO_CLIPBOARD } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
@@ -743,19 +747,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
           streamSourceRef.current = next;
           setStreamSourceState((current) =>
-            current?.mode === next.mode &&
-            current.repeatFrameMs === next.repeatFrameMs &&
-            current.grpcImageMode === next.grpcImageMode &&
-            current.encoder === next.encoder &&
-            current.encoderName === next.encoderName &&
-            current.availableEncoders.join() === next.availableEncoders.join() &&
-            current.hardwareEncoderError === next.hardwareEncoderError &&
-            current.inputSource === next.inputSource &&
-            current.sessionGeneration === next.sessionGeneration &&
-            current.availableModes.join() === next.availableModes.join() &&
-            current.availableInputSources.join() === next.availableInputSources.join()
-              ? current
-              : next,
+            sameAndroidStreamSource(current, next) ? current : next,
           );
         }
       } catch {
