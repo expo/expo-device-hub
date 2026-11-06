@@ -47,8 +47,14 @@ export function uprightTouchSize(
     : { width: native.width, height: native.height };
 }
 
-/** The capture socket refused or vanished before it said hello: the emulator has no agent. */
+/**
+ * The capture cannot start: the socket refused or vanished before it said hello (the emulator
+ * has no agent), or the agent's hello says that it cannot encode on this host.
+ */
 export class GpuCaptureUnavailableError extends Error {}
+
+/** The agent's hello says that it cannot encode on this host, and what to install. */
+export class GpuCaptureEncoderError extends GpuCaptureUnavailableError {}
 
 /** The failure code of a session that another consumer of the agent replaced. */
 export const GPU_CAPTURE_REPLACED_CODE = "gpu-capture-replaced";
@@ -223,6 +229,9 @@ export async function startGpuCaptureSession(
       if (hello) throw new Error("Unexpected second GPU stream handshake");
       hello = true;
       const details = parseGpuDetails(record.data);
+      // For example a Linux host without x264 build 165; the message says what to install.
+      if (typeof details.encoderError === "string" && details.encoderError)
+        throw new GpuCaptureEncoderError(details.encoderError);
       rotationSupported =
         !!options.readDisplayRotation &&
         typeof details.protocol === "number" &&
