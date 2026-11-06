@@ -1,17 +1,20 @@
 # Third-party licenses
 
-Original Expo code is [MIT-licensed](LICENSE). The agent library
-`libexpo_emulator_capture.dylib` also contains third-party components from the
-Frida Gum devkit under the terms below. `+` means "or later."
+Original Expo code is [MIT-licensed](LICENSE). The agent libraries
+`libexpo_emulator_capture.dylib` (macOS) and `libexpo_emulator_capture.so` (Linux)
+also contain third-party components from the Frida Gum devkits under the terms
+below. `+` means "or later."
 
 Common license texts are included once in `LICENSES/`. The shared wxWindows file
 includes Frida Gum's additional third-party notices; those notices apply to Gum.
 
 ## Native dependencies
 
-The agent links `libfrida-gum.a` from the Frida 17.18.0 macOS arm64 devkit, the
-same Frida release as the Linux experiment in PR #107. The linker removes unused
-code (`-dead_strip`), but this list follows the archive's contents.
+Each agent links `libfrida-gum.a` from the Frida 17.18.0 devkit for its platform
+(macOS arm64 or Linux x86-64), the same Frida release as the Linux experiment in
+PR #107. The linkers remove unused code (`-dead_strip`, `--gc-sections`), but this
+list follows the archives' contents. Rows marked (Linux) are only in the Linux
+devkit.
 
 | Component and pinned source                                                                                     | License text                                                                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -24,8 +27,14 @@ code (`-dead_strip`), but this list follows the archive's contents.
 | [PCRE2](https://github.com/frida/pcre2/tree/b47486922fdc3486499b310dc9cf903449700474)                           | [BSD-3-Clause-style terms and binary-package exemption](LICENSES/BSD-3-Clause-PCRE2.txt)                                                                                                                      |
 | [zlib](https://github.com/frida/zlib/tree/171a3eacaea8b731ef1fc586e7777b77742e2a1d)                             | [Zlib](LICENSES/Zlib.txt)                                                                                                                                                                                     |
 | [TinyCC](https://github.com/frida/tinycc/tree/3da7432bebd348bf16cdc7a22c3717b4f22946af) (Gum's CModule support) | [LGPL-2.1+](LICENSES/LGPL-2.1.txt)                                                                                                                                                                            |
+| [libdwarf](https://github.com/frida/libdwarf/tree/61ff154ae803d2b0202dbc1bf385cda1ac3ece54) (Linux)             | [LGPL-2.1](LICENSES/LGPL-2.1.txt); some files [BSD-2-Clause](LICENSES/BSD-2-Clause-libdwarf.txt)                                                                                                              |
+| [libunwind](https://github.com/frida/libunwind/tree/4d0abea0effd3c80916e70abe38c2a6156596f05) (Linux)           | [MIT](LICENSES/MIT.txt); notice below                                                                                                                                                                         |
 
 Frida's wxWindows exception does not replace its dependencies' separate terms.
+
+The Linux agent also links the GCC C++ library (libstdc++) and its support library
+(libgcc) statically. They are licensed under GPL-3.0 with the GCC Runtime Library
+Exception, which permits this for code that GCC compiles.
 
 ## Incorporated interfaces and notices
 
@@ -51,6 +60,14 @@ Frida's wxWindows exception does not replace its dependencies' separate terms.
 // limitations under the License.
 ```
 
+### libunwind (Linux)
+
+```text
+Copyright (c) 2002 Hewlett-Packard Co.
+```
+
+The MIT license text in `LICENSES/MIT.txt` applies with this copyright notice.
+
 ### XZ / liblzma
 
 This software includes code from XZ Utils. At the pinned revision, upstream
@@ -70,14 +87,19 @@ You can do whatever you want with the files that have been put into
 
 VideoToolbox, CoreVideo, CoreMedia, IOSurface, OpenGL and Accelerate are macOS
 system frameworks; the agent links them dynamically and does not bundle them.
-The Android Emulator and its system images are not bundled.
+The Linux agent links the C library and the math library dynamically, and loads x264
+build 165 (`libx264.so.165`, GPL-2.0-or-later) from the host system at run time; the
+package does not contain x264. The Android Emulator and its system images are not
+bundled.
 
 ## Source code
 
 The npm package contains the agent's own source code (`src/native`) and its build
-scripts (`scripts`). `bun run build` downloads the pinned Frida Gum devkit, checks
-its SHA-256 digest, and links the agent, so the agent can be rebuilt and relinked
-with a modified copy of a statically linked component. The source code of each
+scripts (`scripts`). `bun run build` (macOS with Apple silicon and the Xcode command
+line tools) and `bun run build:linux-x64` (Linux x86-64 with g++ and the x264 build 165
+header, `libx264-dev` on Ubuntu 26.04) download the pinned Frida Gum devkit, check its
+SHA-256 digest, and link the agent, so the agent can be rebuilt and relinked with a
+modified copy of a statically linked component. The source code of each
 statically linked third-party component is at the revision that the table above
 links. The revisions are the ones that Frida 17.18.0 pins in its dependency list
 (`releng/deps.toml` at `frida/releng` commit

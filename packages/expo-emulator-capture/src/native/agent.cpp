@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Capture agent preloaded into the Android Emulator's QEMU process
-// (DYLD_INSERT_LIBRARIES on macOS). It hooks gfxstream's
+// (DYLD_INSERT_LIBRARIES on macOS, LD_PRELOAD on Linux). It hooks gfxstream's
 // display post, copies posted color buffers out of the renderer, encodes them to
 // H.264, and serves one consumer on a Unix socket.
 #include <dlfcn.h>
@@ -60,11 +60,19 @@ void logLine(const char* format, ...) {
 
 namespace {
 
+#if defined(__APPLE__)
 constexpr const char* kPlatform = "darwin-arm64";
 constexpr const char* kPreloadVariable = "DYLD_INSERT_LIBRARIES";
 constexpr const char* kRendererModule = "libgfxstream_backend.dylib";
 constexpr int kSendFlags = 0;  // SO_NOSIGPIPE is set on the socket instead.
 const char* programName() { return getprogname(); }
+#else
+constexpr const char* kPlatform = "linux-x64";
+constexpr const char* kPreloadVariable = "LD_PRELOAD";
+constexpr const char* kRendererModule = "libgfxstream_backend.so";
+constexpr int kSendFlags = MSG_NOSIGNAL;
+const char* programName() { return program_invocation_short_name; }
+#endif
 
 using Clock = std::chrono::steady_clock;
 constexpr int kNativeFps = 60;
@@ -212,8 +220,10 @@ bool Agent::initialize(GumModule* backend, std::string& error) {
   error = resolveGfxstream(backend, g_);
   if (!error.empty()) return false;
   frames_ = createFrameSource(g_);
+#if defined(__APPLE__)
   if (!g_.gpuEntryPointsAvailable())
     logLine("GPU frame path disabled: renderer symbols are missing; using CPU readback");
+#endif
   if (pipe(wakePipe_) != 0) {
     error = "cannot create wake pipe";
     return false;
@@ -303,6 +313,7 @@ void Agent::encoderLoop() {
   int encoderNativeWidth = 0, encoderNativeHeight = 0;
   auto lastFrameAt = Clock::now() - std::chrono::hours(1);
   uint64_t lastEncodedPts = 0;
+  std::string lastConfigureError;
   for (;;) {
     try {
       PendingFrame pending;
@@ -374,10 +385,13 @@ void Agent::encoderLoop() {
             [](const std::string& message) { logLine("%s", message.c_str()); });
         std::string error;
         if (!next->configure(width, height, settings.fps, settings.bitRate, rotation, error)) {
-          logLine("%s", error.c_str());
+          // A missing encoder fails every 200 ms until the host changes; log each error once.
+          if (error != lastConfigureError) logLine("%s", error.c_str());
+          lastConfigureError = error;
           std::this_thread::sleep_for(std::chrono::milliseconds(200));
           continue;
         }
+        lastConfigureError.clear();
         if (pending.frame.width != announcedWidth || pending.frame.height != announcedHeight) {
           {
             std::lock_guard<std::mutex> guard(encodeMutex_);
@@ -471,12 +485,16 @@ void Agent::wake() {
 std::string Agent::helloJson() {
   // posts counts every display post since the agent started, with or without a
   // consumer, so two hellos give the renderer's frame rate without capture.
-  return std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
-         EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform +
-         "\",\"gpuAvailable\":" +
-         (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
-         ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" +
-         std::to_string(posts_.load()) + "}";
+  std::string hello =
+      std::string("{\"protocol\":") + std::to_string(kProtocolVersion) + ",\"version\":\"" +
+      EXPO_EMULATOR_CAPTURE_VERSION + "\",\"platform\":\"" + kPlatform + "\",\"gpuAvailable\":" +
+      (g_.gpuEntryPointsAvailable() && !frames_->gpuUnavailable() ? "true" : "false") +
+      ",\"renderer\":\"" + jsonEscape(g_.path) + "\",\"posts\":" + std::to_string(posts_.load());
+  // A consumer that sees encoderError stops: no session can start until the host has the
+  // encoder (on Linux, x264 build 165).
+  std::string encoderError = h264EncoderProblem();
+  if (!encoderError.empty()) hello += ",\"encoderError\":\"" + jsonEscape(encoderError) + "\"";
+  return hello + "}";
 }
 
 bool Agent::listen(const std::string& path, std::string& error) {
