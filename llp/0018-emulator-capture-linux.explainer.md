@@ -5,7 +5,7 @@
 **Systems:** EmulatorCapture, ServeEmu, Hub, Release
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-04
-**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review); all by Claude Code, directed by Krystof Woldrich
+**Revised:** 2026-11-06 (x264 build 165 from the system instead of OpenH264; rotation; `-gpu lavapipe`; the EAS emulator step; the release job; fixes from a deep review; the frame rate compared with the gRPC stream); all by Claude Code, directed by Krystof Woldrich
 **Related:** LLP 0000, LLP 0017
 
 > File paths in `src/` are relative to `packages/expo-emulator-capture` unless the text names a package.
@@ -98,6 +98,26 @@ The frame check records a page that paints each animation frame in the next of e
 | 2026-11-06 | 576×1280  | 544    | 54.4       | 0    | 445            | 21          | 77           |
 | 2026-11-06 | 1080×2400 | 540    | 54.1       | 0    | 446            | 22          | 71           |
 | 2026-11-06 | 576×1280  | 550    | 55.1       | 0    | 465            | 22          | 62           |
+
+## Frame rate compared with the gRPC stream
+
+Without the capture, the Hub streams an emulator from the emulator's gRPC screenshot stream, and it boots emulators with `-no-window -gpu auto` [observed: `buildEmulatorArgs` in `packages/@expo/hub-android-utils/src/emulator.ts`]. One EAS run compared that stream with the capture on one VM. Every recording used the same app-action script (Settings, Display settings, Chrome with an animated page, recents, home and the notification shade) and the Pixel 10 profile [observed: EAS run, 2026-11-06]. The Mac rows come from the same script on the Mac mini M2 [observed: research runs, 2026-11-05].
+
+![Bar chart of changed frames per second for the Hub's gRPC stream and the emulator capture, at the Hub's default size and at full size, on an EAS Linux VM and on a Mac mini M2](assets/0018/frame-rates.png)
+
+| Host         | Source           | `-gpu`     | 570×1280     | 1080×2424 |
+| ------------ | ---------------- | ---------- | ------------ | --------- |
+| EAS Linux VM | gRPC stream      | `auto`     | 56.7         | 41.0      |
+| EAS Linux VM | gRPC stream      | `lavapipe` | 59.7         | 49.7      |
+| EAS Linux VM | Emulator capture | `lavapipe` | 60.0         | 59.7      |
+| Mac mini M2  | gRPC stream      | `auto`     | 30.0         | 25.3      |
+| Mac mini M2  | gRPC stream      | `host`     | 60.3         | 60.3      |
+| Mac mini M2  | Emulator capture | `host`     | not measured | 60.0      |
+
+- Each value is the mean of the three busiest seconds, in changed frames per second. A frame that equals the frame before does not count (ffmpeg `mpdecimate` on copies scaled to 570 pixels wide). The gRPC recordings come from the Hub's serve-emu with the Hub's default `rgb888` image mode. The capture recordings come from the agent's socket, with the time of each frame.
+- On the EAS VM, at full size, the gRPC stream reached 41.0 with `-gpu auto` and 49.7 with `-gpu lavapipe`, and the capture reached 59.7. At the Hub's default size, all three Linux setups reached 56.7 to 60.0.
+- With `-gpu auto`, the EAS VM used the SwiftShader translator for GLES, and the Mac used SwANGLE ([LLP 0017](0017-emulator-capture-macos.explainer.md#frame-paths)). Both are software renderers [observed: emulator logs of these recordings, 2026-11-05 and 2026-11-06].
+- Each setup ran once. The Linux and the Mac rows used different emulator versions and system images: 37.1.11 with API 36 on Linux, 37.2.7 with Android 37.0 on the Mac.
 
 ## Integration
 
