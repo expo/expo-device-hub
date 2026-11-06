@@ -19,6 +19,7 @@ const MAX_ERROR_OUTPUT = 2000;
 /** The agent library inside the package, by host platform. */
 const AGENT_LIBRARIES: Partial<Record<NodeJS.Platform, string>> = {
   darwin: "dist/darwin-arm64/libexpo_emulator_capture.dylib",
+  linux: "dist/linux-x64/libexpo_emulator_capture.so",
 };
 
 export type InstallCommand = (
