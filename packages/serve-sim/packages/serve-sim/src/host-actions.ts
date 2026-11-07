@@ -822,8 +822,13 @@ function keychainTarget(
 }
 
 // In this process, so values never reach a child's argv; neither stdout nor errors carry them.
-async function runKeychainAction(run: () => Promise<HostActionResult>): Promise<HostActionResult> {
+async function runKeychainAction(
+  udid: string,
+  prepare: ((udid: string) => Promise<void>) | undefined,
+  run: () => Promise<HostActionResult>,
+): Promise<HostActionResult> {
   try {
+    await prepare?.(udid);
     return await run();
   } catch (error) {
     return {
@@ -846,6 +851,7 @@ async function runProcedureAsync(
   streamSettings: StreamSettings | undefined,
   serveSimBinPath: string,
   deviceName?: (udid: string) => string | undefined,
+  prepareKeychain?: (udid: string) => Promise<void>,
 ): Promise<HostActionResult> {
   switch (action) {
     case "clipboard.read":
@@ -880,7 +886,7 @@ async function runProcedureAsync(
     }
     case "keychain.set": {
       const p = parseParams(action, raw);
-      return runKeychainAction(async () =>
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
         keychainWriteResult(
           await setKeychainValues(keychainTarget(p), Object.entries(p.values), {
             relaunch: p.relaunch,
@@ -890,7 +896,7 @@ async function runProcedureAsync(
     }
     case "keychain.delete": {
       const p = parseParams(action, raw);
-      return runKeychainAction(async () =>
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
         keychainWriteResult(
           await deleteKeychainValues(keychainTarget(p), p.keys, { relaunch: p.relaunch }),
         ),
@@ -898,7 +904,7 @@ async function runProcedureAsync(
     }
     case "keychain.list": {
       const p = parseParams(action, raw);
-      return runKeychainAction(async () =>
+      return runKeychainAction(p.udid, prepareKeychain, async () =>
         ok(JSON.stringify({ keys: await listKeychainKeys(keychainTarget(p)) })),
       );
     }
@@ -1180,6 +1186,7 @@ export async function runHostActionAsync(
   binPath: string,
   streamSettings?: StreamSettings,
   deviceName?: (udid: string) => string | undefined,
+  prepareKeychain?: (udid: string) => Promise<void>,
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
@@ -1190,13 +1197,13 @@ export async function runHostActionAsync(
     const p = parseParams(action, params);
     result = await timeStartup(
       action,
-      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName),
+      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
+      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this into its reply. Keep the explicit public result fields;

@@ -3485,6 +3485,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     streamSettings,
+    prepareKeychain: async (udid) => {
+      if (keychainOption === false) {
+        throw new Error("The keychain capability is off on this server.");
+      }
+      await keychain?.initialize(udid);
+    },
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,

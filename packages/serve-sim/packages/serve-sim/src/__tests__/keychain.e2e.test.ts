@@ -6,6 +6,7 @@ import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 
+import { runHostActionAsync } from "../host-actions";
 import { releaseSessionSync } from "../launch-manager";
 import { runKeychainOperations, type KeychainOperation } from "../sim-keychain";
 import { setKeychainValues, type KeychainTarget } from "../keychain";
@@ -541,4 +542,38 @@ describeOrSkip("keychain round trip", () => {
     },
     60_000,
   );
+
+  test("host actions set, list, and delete values the app reads", async () => {
+    terminate();
+    launch();
+    const value = `host-action-${Date.now()}`;
+    const params = { udid: udid!, bundleId: APP };
+    const written = await runHostActionAsync(
+      { action: "keychain.set", params: { ...params, values: { [KEY]: value } } },
+      "unused",
+    );
+    expect(written.exitCode).toBe(0);
+    expect(JSON.parse(written.stdout)).toMatchObject({
+      applied: true,
+      keys: [{ key: KEY, ok: true }],
+    });
+    expect(written.stdout).not.toContain(value);
+    await waitForLastSeen(`value=${value}`);
+
+    const listed = await runHostActionAsync({ action: "keychain.list", params }, "unused");
+    expect(listed.exitCode).toBe(0);
+    expect(JSON.parse(listed.stdout).keys).toContain(KEY);
+    expect(listed.stdout).not.toContain(value);
+
+    const removed = await runHostActionAsync(
+      { action: "keychain.delete", params: { ...params, keys: [KEY] } },
+      "unused",
+    );
+    expect(removed.exitCode).toBe(0);
+    expect(JSON.parse(removed.stdout)).toMatchObject({
+      applied: true,
+      keys: [{ key: KEY, ok: true }],
+    });
+    await waitForLastSeen("status=-25300");
+  }, 60_000);
 });
