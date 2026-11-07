@@ -111,7 +111,7 @@ export function KeychainSection({
   }, [available, open, appId, query, listKeychainKeys]);
 
   const typedOptions = (): KeychainOptions => {
-    const text = fieldValue.trim();
+    const text = fieldValue;
     return { format, ...(text ? { [shown.field.option]: text } : {}) };
   };
   function listWith(options: KeychainOptions) {
