@@ -281,9 +281,11 @@ function setLocation(
   const expected =
     action === "reset" ? 0 : action === "revoke" ? 1 : service === "location-always" ? 4 : 2;
   const deadline = Date.now() + 5000;
+  let reads = 0;
   while ((readLocation(udid, bundleId)?.Authorization ?? 0) !== expected) {
-    if (Date.now() >= deadline)
-      throw new Error("locationd did not confirm the requested state (is the app installed?)");
+    reads++;
+    if (reads >= 2 && Date.now() >= deadline)
+      throw new Error("locationd did not confirm the requested state; the Simulator may be busy.");
     sleepSync(100);
   }
 }

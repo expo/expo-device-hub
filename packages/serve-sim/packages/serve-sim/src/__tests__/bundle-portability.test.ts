@@ -209,6 +209,35 @@ describeIfBuilt("bundle portability", () => {
     }
   });
 
+  test.each([false, true])(
+    "location confirmation retries a slow first read (stale=%j)",
+    (stale) => {
+      const result = spawnSync(
+        "node",
+        [
+          "--require",
+          join(import.meta.dir, "fixtures/location-confirmation-preload.child.cjs"),
+          join(PKG_DIR, "dist/serve-sim.js"),
+          "permissions",
+          "grant",
+          "location",
+          "dev.expo.test",
+          "-d",
+          "00000000-0000-0000-0000-000000000001",
+        ],
+        {
+          encoding: "utf8",
+          timeout: 5000,
+          env: { ...process.env, LOCATION_CONFIRMATION_STALE: stale ? "1" : "0" },
+        },
+      );
+      expect(result.status, result.stderr).toBe(stale ? 1 : 0);
+      expect(result.stderr.trim()).toBe(
+        stale ? "locationd did not confirm the requested state; the Simulator may be busy." : "",
+      );
+    },
+  );
+
   test("the public state export uses runnable JavaScript", () => {
     const pkg = JSON.parse(readFileSync(join(PKG_DIR, "package.json"), "utf8"));
     expect(pkg.exports["./state"].import).toBe("./dist/state.js");
