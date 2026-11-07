@@ -14,10 +14,13 @@ interface KeychainField {
   required: boolean;
 }
 
-/** How the section names each layout, its field, and an empty list. */
+/**
+ * How the section names each layout, its field, and an empty list. `note` warns where a write
+ * reaches items beyond the listed key, as the library's own does.
+ */
 export const KEYCHAIN_FORMAT_UI: Record<
   KeychainFormat,
-  { label: string; keyPlaceholder?: string; field: KeychainField; empty: string }
+  { label: string; keyPlaceholder?: string; field: KeychainField; empty: string; note?: string }
 > = {
   "expo-secure-store": {
     label: "Expo SecureStore",
@@ -40,6 +43,19 @@ export const KEYCHAIN_FORMAT_UI: Record<
       required: true,
     },
     empty: "This service has no items.",
+  },
+  "react-native-keychain": {
+    label: "react-native-keychain",
+    keyPlaceholder: "Service, such as the bundle ID",
+    field: {
+      option: "username",
+      label: "Username",
+      description: "Stored with each password",
+      placeholder: "user@example.com",
+      required: false,
+    },
+    empty: "This app has no generic-password services.",
+    note: "Each key is a service. Set replaces, and Delete removes, every item in it, including other libraries' items.",
   },
 };
 
