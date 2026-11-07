@@ -3524,7 +3524,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       if (keychainOption === false) {
         throw new Error("The keychain capability is off on this server.");
       }
-      await keychain?.initialize(udid);
+      await keychain?.prepare(udid);
     },
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),

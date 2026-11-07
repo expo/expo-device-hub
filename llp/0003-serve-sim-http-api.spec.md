@@ -741,8 +741,10 @@ All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
 Managed middleware awaits keychain setup for the target device before these actions.
 `keychain: false` refuses all three even if another session enabled the shared device
 capability; `keychain: "unmanaged"` leaves setup to its owner. A setup failure refuses
-the action before accessing the app's keychain [observed: `prepareKeychain` in
-`src/middleware.ts`, `runKeychainAction` in `src/host-actions.ts`].
+the action before accessing the app's keychain. During setup backoff, actions keep
+reporting the last setup error until a retry succeeds [observed: `prepare` in
+`src/capability-session.ts`, `prepareKeychain` in `src/middleware.ts`,
+`runKeychainAction` in `src/host-actions.ts`].
 
 These are in-process actions under the usual `/exec-ws` token and Origin policy, so
 values never reach a child process's arguments, and the event log does not record
