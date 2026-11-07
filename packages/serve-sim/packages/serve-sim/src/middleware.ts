@@ -10,7 +10,6 @@ import { ScreenshotParams } from "./host-actions";
 import { ScreenshotDisplay, SCREENSHOT_DISPLAY_CHANGED } from "./screenshot-store";
 import { createReadinessReporter } from "./startup-timing";
 import { isRunningOnEAS } from "./environment";
-import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
