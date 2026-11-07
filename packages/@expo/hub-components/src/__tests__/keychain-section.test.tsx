@@ -186,6 +186,32 @@ test("generic-password preserves spaces in a single key", async () => {
   });
 });
 
+test("generic-password preserves the exact service for list, set, and delete", async () => {
+  const { client, calls } = keychainClient({}, ["token"]);
+  const s = await setup(client);
+  await s.choose("generic-password");
+  await s.type("Keychain service", " auth ");
+  await act(async () => s.field("Keychain service").props.onKeyDown({ key: "Enter" }));
+  await s.type("Keychain key", "token");
+  await s.type("Keychain value", "synthetic");
+  await s.click("Set");
+  // Editing the field does not redirect deletion away from the service that was listed.
+  await s.type("Keychain service", "other");
+  await s.click("Delete");
+  const options = { format: "generic-password", service: " auth " };
+  expect(calls.filter((call) => call.fn === "list").at(-1)?.options).toEqual(options);
+  expect(calls.find((call) => call.fn === "set")).toMatchObject({
+    appId: APP,
+    arg: { token: "synthetic" },
+    options: { ...options, relaunch: false },
+  });
+  expect(calls.find((call) => call.fn === "delete")).toMatchObject({
+    appId: APP,
+    arg: ["token"],
+    options,
+  });
+});
+
 test("a new format drops the note of a write in the old one", async () => {
   const { client } = keychainClient();
   const s = await setup(client);

@@ -77,7 +77,7 @@ export function KeychainSection({
   }, [open, appId, query, listKeychainKeys]);
 
   const typedOptions = (): KeychainOptions => {
-    const text = fieldValue.trim();
+    const text = fieldValue;
     return { format, ...(text ? { [shown.field.option]: text } : {}) };
   };
   const reload = () => setQuery((current) => ({ ...current }));
