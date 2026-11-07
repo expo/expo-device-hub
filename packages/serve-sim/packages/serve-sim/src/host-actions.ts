@@ -1236,7 +1236,15 @@ export async function runHostActionAsync(
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName, prepareKeychain, capabilities)
+      ? runProcedureAsync(
+          action,
+          params,
+          streamSettings,
+          binPath,
+          deviceName,
+          prepareKeychain,
+          capabilities,
+        )
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave

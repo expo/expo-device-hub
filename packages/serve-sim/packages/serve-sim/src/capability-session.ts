@@ -143,6 +143,9 @@ export function createCapabilitySession(
     if (!force && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
     const want = wanted(udid);
     const previous = devices.get(udid);
+    // Disable removes setup after admitted operations drain. Polling and preparation may still
+    // share an in-flight setup, but must not turn it off underneath those operations.
+    if (!want && operations.get(udid)?.size) return previous?.work ?? Promise.resolve();
     if (previous && !force && stillHolds(udid, previous)) return previous.work;
     const earlier = previous && !previous.done ? previous.work.catch(() => {}) : undefined;
     const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
