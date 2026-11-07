@@ -5,7 +5,7 @@ import * as launchManager from "../launch-manager";
 import { simMiddleware } from "../middleware";
 import * as simKeychain from "../sim-keychain";
 import type { UpgradeHandlerWebSocket } from "../socket/types";
-import { UDID, useTempStateDir } from "./helpers";
+import { recordState, UDID, useTempStateDir } from "./helpers";
 
 const OPTIONS = {
   basePath: "/",
@@ -103,6 +103,7 @@ test.each([
     (definition, enabled) => ({
       ...originalCreate(definition, enabled),
       initialize: initialized,
+      prepare: initialized,
     }),
   );
   const dylib = spyOn(simKeychain, "locateKeychainDylib").mockReturnValue("/test/keychain.dylib");
@@ -149,6 +150,82 @@ test("unmanaged keychain actions leave setup to the owning process", async () =>
     await middleware.dispose();
     create.mockRestore();
     set.mockRestore();
+    state.restore();
+  }
+});
+
+test("a failed preview setup refuses actions during backoff and recovers after a retry", async () => {
+  const state = useTempStateDir();
+  const forget = recordState(UDID, process.pid, 3200);
+  let time = 0;
+  let started!: () => void;
+  let proceed!: () => void;
+  let failed!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    proceed = resolve;
+  });
+  const observedFailure = new Promise<void>((resolve) => {
+    failed = resolve;
+  });
+  const setupError = new Error("keychain setup failed");
+  const configure = spyOn(launchManager, "configureCapability")
+    .mockResolvedValue(undefined)
+    .mockImplementationOnce(async () => {
+      started();
+      await gate;
+      throw setupError;
+    });
+  const armed = spyOn(launchManager, "isCapabilityArmed").mockResolvedValue(false);
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const launchState = spyOn(launchManager, "readLaunchState").mockReturnValue(null);
+  const release = spyOn(launchManager, "releaseSession").mockResolvedValue(undefined);
+  const originalCreate = capabilitySessions.createCapabilitySession;
+  const create = spyOn(capabilitySessions, "createCapabilitySession").mockImplementation(
+    (definition, enabled) => originalCreate(definition, enabled, { now: () => time }),
+  );
+  const dylib = spyOn(simKeychain, "locateKeychainDylib").mockReturnValue("/test/keychain.dylib");
+  const set = spyOn(keychain, "setKeychainValues").mockResolvedValue({ applied: true, keys: [] });
+  const log = spyOn(console, "error").mockImplementation((...args) => {
+    if (args.includes(setupError)) failed();
+  });
+  const middleware = simMiddleware({ ...OPTIONS, device: UDID });
+  const api = () =>
+    middleware(
+      new Request("http://127.0.0.1:3200/api", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
+    );
+  try {
+    expect((await api())?.status).toBe(200);
+    await pending;
+    proceed();
+    await observedFailure;
+
+    // Preview polling still skips retries quietly while the setup is in backoff.
+    expect((await api())?.status).toBe(200);
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledTimes(1);
+
+    const request = connection(middleware);
+    const refused = await request("keychain.set", { values: { token: "test-value" } });
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain(setupError.message);
+    expect(set).not.toHaveBeenCalled();
+    expect(configure).toHaveBeenCalledTimes(1);
+
+    time = 5_000;
+    expect((await request("keychain.set", { values: { token: "test-value" } })).exitCode).toBe(0);
+    expect(configure).toHaveBeenCalledTimes(2);
+    expect(set).toHaveBeenCalledTimes(1);
+  } finally {
+    proceed();
+    await middleware.dispose();
+    for (const stub of [configure, armed, enabled, launchState, release, create, dylib, set, log])
+      stub.mockRestore();
+    forget();
     state.restore();
   }
 });
