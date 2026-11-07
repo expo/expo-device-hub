@@ -296,6 +296,12 @@ export async function runKeychainOperations(
   }
   // A closed app cannot answer, so its request is queued or withdrawn without a wait.
   const closed = !relaunch && (await isRunning(udid, bundleId)) === false;
+  let restartPending = false;
+  const restart = async () => {
+    // One attempt, whether publication succeeded or failed.
+    restartPending = false;
+    await startApp(udid, bundleId);
+  };
   const results = await requestKeychain(container, operations, {
     timeoutMs: closed
       ? 0
@@ -303,8 +309,25 @@ export async function runKeychainOperations(
     keepQueued: keepQueued && !relaunch,
     // Stopped first, so the old process cannot take the request and quit before it answers, and
     // only once the request is valid, so a refused one leaves the app running.
-    beforePublish: relaunch ? () => stopAppForRelaunch(udid, bundleId) : undefined,
-    afterPublish: relaunch ? () => startApp(udid, bundleId) : undefined,
+    beforePublish: relaunch
+      ? async () => {
+          await stopAppForRelaunch(udid, bundleId);
+          restartPending = true;
+        }
+      : undefined,
+    afterPublish: relaunch ? restart : undefined,
+  }).catch(async (error: unknown) => {
+    if (restartPending) {
+      try {
+        await restart();
+      } catch (restartError) {
+        throw new AggregateError(
+          [error, restartError],
+          `Could not publish the keychain request or restart ${bundleId}.`,
+        );
+      }
+    }
+    throw error;
   });
   if (!results && relaunch) {
     throw new Error(

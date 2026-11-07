@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-27
-**Revised:** 2026-11-04
+**Revised:** 2026-11-06
 **Related:** LLP 0007, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -54,7 +54,7 @@ The capability is on by default for user apps. Without a built dylib it declines
 - `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
 - `generic-password` writes the key as a string account in a given service, for other libraries.
 
-A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for the helper's answer. It does not order the write before an early native launch callback; an app that cached an earlier read needs another restart after acknowledgement. An unanswered request that the app has not claimed is withdrawn and the command fails; a lost answer after the app claimed it leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
+A closed app gets the request queued at once instead of after a wait. `--relaunch` stops the app, publishes the request, starts the app, and waits for the helper's answer. If publishing fails after the app stops, serve-sim attempts to restart it and reports the publication failure; if restarting also fails, it reports both errors. It does not order the write before an early native launch callback; an app that cached an earlier read needs another restart after acknowledgement. An unanswered request that the app has not claimed is withdrawn and the command fails; a lost answer after the app claimed it leaves the result uncertain [observed: `runKeychainOperations` and `requestKeychainUnlocked` in `src/sim-keychain.ts`]. Deleting a key that does not exist succeeds.
 
 ## Not there yet
 

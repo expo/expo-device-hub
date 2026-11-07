@@ -1,8 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, promises as fs, readdirSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { execFileSync } from "child_process";
+import * as launchManager from "../launch-manager";
+import * as simctlModule from "../simctl";
 import {
   MAX_KEYCHAIN_REQUEST_BYTES,
   QUEUED_REQUEST_TTL_MS,
@@ -233,6 +235,45 @@ describe("requestKeychain", () => {
   test("refuses a container that is not an absolute path", async () => {
     await expect(requestKeychain("(null)", [SET])).rejects.toThrow("Not an app data container");
   });
+});
+
+test.each([
+  { name: "restarts the app when request publication fails", restartFailure: undefined },
+  {
+    name: "reports publication and restart failures together",
+    restartFailure: new Error("restart failed"),
+  },
+])("$name", async ({ restartFailure }) => {
+  const root = container();
+  const enabled = spyOn(launchManager, "isCapabilityEnabled").mockReturnValue(true);
+  const getContainer = spyOn(simctlModule, "simctl").mockResolvedValue(root);
+  const stopped = spyOn(launchManager, "stopAppForRelaunch").mockImplementation(async () => {
+    // Simulate the mailbox becoming unwritable only after the app has stopped.
+    await fs.rm(mailbox(root).requests, { recursive: true });
+  });
+  const started = spyOn(launchManager, "startApp").mockImplementation(async () => {
+    if (restartFailure) throw restartFailure;
+  });
+  try {
+    const error = await runKeychainOperations("UDID", "dev.test.keychain", [SET], {
+      relaunch: true,
+    }).catch((error: unknown) => error);
+    expect(stopped).toHaveBeenCalledTimes(1);
+    expect(started).toHaveBeenCalledTimes(1);
+    if (restartFailure) {
+      expect(error).toBeInstanceOf(AggregateError);
+      const errors = (error as AggregateError).errors;
+      expect(errors[0]).toMatchObject({ code: "ENOENT" });
+      expect(errors[1]).toBe(restartFailure);
+    } else {
+      expect(error).toMatchObject({ code: "ENOENT" });
+    }
+  } finally {
+    enabled.mockRestore();
+    getContainer.mockRestore();
+    stopped.mockRestore();
+    started.mockRestore();
+  }
 });
 
 test("refuses a system app, which the capability loader never reaches", async () => {
