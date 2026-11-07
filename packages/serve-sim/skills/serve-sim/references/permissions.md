@@ -25,8 +25,11 @@ npx @expo/serve-sim permissions list   [bundle-id] [-d <udid|name>]
   single-line JSON; this command does not take `--json`.
 
 `<bundle-id>` is required for every verb except `list`. The app must be
-installed for general use. Notification and TCC pre-grants are supported, but
-location reports an error if it cannot confirm an installed-app entry.
+installed for general use. Notifications support pre-grant before installation.
+TCC accepts pre-install writes, but the public-framework first-launch regression
+in `src/__tests__/permissions.e2e.test.ts` covers only camera; do not assume the same
+post-install behavior for every TCC family. Location reports an error if it cannot
+confirm the requested state.
 
 ## Supported permissions
 

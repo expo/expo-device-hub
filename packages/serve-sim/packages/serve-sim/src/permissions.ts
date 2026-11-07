@@ -285,7 +285,7 @@ function setLocation(
   while ((readLocation(udid, bundleId)?.Authorization ?? 0) !== expected) {
     reads++;
     if (reads >= 2 && Date.now() >= deadline)
-      throw new Error("locationd did not confirm the requested state; the Simulator may be busy.");
+      throw new Error("locationd did not confirm the requested state.");
     sleepSync(100);
   }
 }

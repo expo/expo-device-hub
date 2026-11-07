@@ -233,7 +233,7 @@ describeIfBuilt("bundle portability", () => {
       );
       expect(result.status, result.stderr).toBe(stale ? 1 : 0);
       expect(result.stderr.trim()).toBe(
-        stale ? "locationd did not confirm the requested state; the Simulator may be busy." : "",
+        stale ? "locationd did not confirm the requested state." : "",
       );
     },
   );

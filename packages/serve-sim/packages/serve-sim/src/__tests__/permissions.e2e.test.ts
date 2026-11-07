@@ -90,6 +90,12 @@ async function withFreshApp(suffix: string, check: (bundle: string, app: string)
       sim("uninstall", udid!, bundle);
     } catch {}
     rmSync(directory, { recursive: true, force: true });
+    const resumed = Date.now() / 1000;
+    const pid = Number(sim("launch", udid!, BUNDLE).trim().split(":").at(-1));
+    await eventually(
+      () => state().pid === pid && state().timestamp > resumed,
+      "main permission fixture resumed after fresh-app test",
+    );
   }
 }
 
@@ -265,6 +271,7 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
     async (value) => {
       await withFreshApp(`location-${value}`, async (bundle, app) => {
         sim("install", udid!, app);
+        cli("reset", "location", bundle);
         cli("grant", "location", bundle, "--value", value);
         const pid = Number(sim("launch", udid!, bundle).trim().split(":").at(-1));
         const path = join(
