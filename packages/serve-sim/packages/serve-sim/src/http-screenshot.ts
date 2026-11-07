@@ -2,9 +2,12 @@ import { randomBytes } from "crypto";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { withScreenshotDeviceSession } from "./device-session";
+import { peekDeviceSession, withScreenshotDeviceSession } from "./device-session";
 import { convertScreenshot } from "./native";
-import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
+import {
+  getScreenshotDisplayIdsAsync,
+  getSoleScreenshotDisplayIdAsync,
+} from "./screenshot-display";
 import {
   captureNativeScreenshotAsync,
   captureScreenshotFileAsync,
@@ -12,7 +15,8 @@ import {
 } from "./screenshot-store";
 import type { StreamSettings } from "./stream-settings";
 
-/** PNG for /api/screenshot, at most maxWidth wide. HTTP downloads avoid staging and Desktop copies, but share panel election. */
+/** PNG for /api/screenshot, at most maxWidth wide. HTTP downloads avoid staging and
+ * Desktop copies, but share panel election. */
 export async function captureScreenshotPngAsync(p: {
   udid: string;
   display: number | undefined;
@@ -36,6 +40,10 @@ export async function captureScreenshotPngAsync(p: {
   };
   try {
     if (p.display !== undefined) return { png: await capture(p.display), nativeMs };
+    // @ref LLP 0003#action-catalog -- a cold session with one verified display needs no native video
+    const sole = peekDeviceSession(p.udid) ? null : await getSoleScreenshotDisplayIdAsync(p.udid);
+    // A viewer can start a session while the probes run; recheck with no await before simctl starts.
+    if (sole !== null && !peekDeviceSession(p.udid)) return { png: await capture(sole), nativeMs };
     const png = await withScreenshotDeviceSession(p.udid, p.settings, async (session) => {
       const read = () => session.activeScreenId();
       return Buffer.from(

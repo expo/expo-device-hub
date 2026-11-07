@@ -2794,7 +2794,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // Screenshot (PNG, or JPEG on request). captureScreenshotPngAsync elects the active panel; explicit displays use simctl.
+    // Screenshot (PNG, or JPEG on request). captureScreenshotPngAsync reuses native sessions;
+    // explicit displays and cold sessions with a verified sole display use simctl.
     // Consumed by the Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
     // UI when it is served through a tunnel (on loopback it uses the
     // screenshot.capture host action instead). Uses the
