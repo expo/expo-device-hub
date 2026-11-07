@@ -1,0 +1,128 @@
+Port:
+    UUID: 00000000-0000-4000-8000-000000000003
+    Class: Display
+    Port Identifier: com.apple.framebuffer.display
+    Power state: On
+    Display class: 1
+    Default width: 7680
+    Default height: 4320
+    Default pixel format: 'BGRA'
+
+Port:
+    UUID: 00000000-0000-4000-8000-000000000010
+    Class: Display
+    Port Identifier: com.apple.framebuffer.display
+    Power state: On
+    Display class: 1
+    Default width: 720
+    Default height: 480
+    Default pixel format: 'BGRA'
+
+Port:
+    UUID: 00000000-0000-4000-8000-000000000007
+    Class: Display
+    Port Identifier: com.apple.framebuffer.display
+    Power state: On
+    Display class: 1
+    Default width: 720
+    Default height: 480
+    Default pixel format: 'BGRA'
+
+Port:
+    UUID: 00000000-0000-4000-8000-000000000001
+    Class: Display
+    Port Identifier: com.apple.framebuffer.display
+    Power state: On
+    Display class: 0
+    Default width: 1206
+    Default height: 2622
+    Default pixel format: 'BGRA'
+    IOSurface port:
+        width              = 1206
+        height             = 2622
+        bytes per row      = 4864
+        size               = 12763136
+        pixel format       = 'BGRA'
+        bytes per element  = 4
+        CPU cache mode     = Default cache
+        Pixel size casting = Yes
+
+Port:
+    UUID: 00000000-0000-4000-8000-000000000009
+    Class: DisplayAdapter
+    Port Identifier: com.apple.framebuffer.server
+    Power state: On
+    Creatable Screen Properties:
+    Connected Screens:
+    (1) LCD:
+        Screen ID: 1
+        Name: LCD
+        Unique ID: 00000000-0000-4000-8000-000000000008
+        Device Name: primary
+        Seed: 19
+        Screen Type: Integrated
+        Pixel Size: {1206, 2622}
+        Dot Pitch: 460
+        Mask URL: file:///Library/Developer/DeviceKit/FramebufferMasks/00000000-0000-4000-8000-000000000004.pdf
+        Mask ID: 00000000-0000-4000-8000-000000000004
+        Chrome ID: com.apple.dt.devicekit.chrome.phone11
+        Preferred UI Scale: 3
+        Pixel Format: 'BGRA'
+        Colorspace: DCI-P3
+        HDR Mode: SDR
+        Refresh Rate: 6000
+        UI Orientation: Portrait
+    (3) Wireless:
+        Screen ID: 3
+        Name: Wireless
+        Unique ID: 00000000-0000-4000-8000-000000000005
+        Device Name: wireless0
+        Seed: 20
+        Screen Type: CarPlay
+        Pixel Size: {720, 480}
+        Dot Pitch: 72
+        Mask URL: (none)
+        Mask ID: (none)
+        Chrome ID: (none)
+        Preferred UI Scale: 1
+        Pixel Format: 'BGRA'
+        Colorspace: sRGB
+        HDR Mode: SDR
+        Refresh Rate: 6000
+        UI Orientation: Ambiguous
+    (2) TVOut:
+        Screen ID: 2
+        Name: TVOut
+        Unique ID: 00000000-0000-4000-8000-000000000006
+        Device Name: external-0
+        Seed: 21
+        Screen Type: TVOut
+        Pixel Size: {720, 480}
+        Dot Pitch: 72
+        Mask URL: (none)
+        Mask ID: (none)
+        Chrome ID: (none)
+        Preferred UI Scale: 1
+        Pixel Format: 'BGRA'
+        Colorspace: sRGB
+        HDR Mode: SDR
+        Refresh Rate: 6000
+        UI Orientation: Ambiguous
+    (4) Resizable:
+        Screen ID: 4
+        Name: Resizable
+        Unique ID: 00000000-0000-4000-8000-000000000002
+        Device Name: resizable
+        Seed: 22
+        Screen Type: Scene
+        Pixel Size: {7680, 4320}
+        Dot Pitch: 120
+        Mask URL: (none)
+        Mask ID: (none)
+        Chrome ID: (none)
+        Preferred UI Scale: 3
+        Pixel Format: 'BGRA'
+        Colorspace: sRGB
+        HDR Mode: SDR
+        Refresh Rate: 6000
+        UI Orientation: Ambiguous

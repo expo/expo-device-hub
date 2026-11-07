@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-06 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output)
+**Revised:** 2026-11-06 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output; verified sole-display capture without native video)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -713,7 +713,8 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 `DeviceSession.start`, `DeviceSession.close`, `getScreenshotDisplayIdsAsync`]
 
 The HTTP `/api/screenshot` download follows the same native active-display
-selection and three-attempt handoff bound as `screenshot.capture`. Its optional
+selection and three-attempt handoff bound as `screenshot.capture`, except for
+verified cold-session direct capture, described next. Its optional
 `display` query selects an explicit panel without starting native capture. It
 defaults to native-resolution PNG and keeps the artifact headers. Native pixels
 stay in memory through display validation and delivery; only simctl capture uses a temporary file,
@@ -723,18 +724,44 @@ one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
-`getScreenshotDisplayIdsAsync`]
+`captureScreenshotPngAsync`, `getScreenshotDisplayIdsAsync`]
+
+The HTTP `/api/screenshot` route can capture directly without starting native
+video when no device session exists, the installed profile declares exactly one
+integrated panel, and fresh runtime enumeration verifies it. The runtime must expose exactly one integrated
+framebuffer with an IOSurface and one integrated connected screen. Its ID must
+match the profile, and the default, IOSurface, and connected-screen dimensions
+must match the profile panel, allowing rotation. Known `tvOut`, `carPlay`, and
+`scene` auxiliary outputs do not require integrated-panel election; their runtime
+IDs and types must match declared outputs. A multi-panel profile still requires
+native active-display selection even when only one IOSurface exists. Unknown,
+missing, conflicting, or unavailable evidence retains native selection and the
+existing fallback. A sole declared virtual screen retains the strict single
+runtime screen/framebuffer check, with matching declared and runtime types.
+Duplicate selection fields reject the shortcut. Legacy direct capture accepts
+the same known class-1 ports and TVOut/CarPlay
+connected screens as the legacy fallback above, while requiring exactly one
+integrated panel and an IOSurface with matching dimensions. Cold-session
+verification bounds profile listing and runtime enumeration to two seconds;
+failed or timed-out verification retains the native path. Host-action display
+validation and native-failure fallback retain the simctl default timeout. Existing
+sessions skip verification and reuse native capture. Sessions created during
+verification also reuse native capture. Explicit display requests keep their
+direct capture path. [observed:
+`getSoleScreenshotDisplayIdAsync`, `captureScreenshotPngAsync`]
+
+EAS workers start capture during initialization to record video, and direct simctl capture is meant for requests that arrive while no capture is running [confirmed: Gabe Debes, 2026-11-05]. Such hosts already have a session when they request a screenshot, so they keep native capture [observed: `peekDeviceSession` checks in `captureScreenshotPngAsync`]. Foreground preview startup creates each device's session after it publishes device state ([LLP 0011](0011-serve-sim-session-startup.explainer.md#startup-order)) [observed: `serve` in `src/index.ts`]. Embedded middleware has no startup session. Its helper stream, panel, WebRTC, recording and control routes, `/readyz`, HID `/ws`, clipboard copy and paste, and prepared-process adoption with a device each create one, so a screenshot requested before any of these can take the direct path. [observed: `serveHelperInProcess`, `attachHidInProcess`, `configureSession`, `simMiddleware` `/readyz` route, `runHostActionAsync`]
 
 HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
 `format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
 Width limiting preserves aspect ratio after rotation and never upscales.
 Native capture snapshots the pixels before Core Image scales them and encodes
-PNG; explicit-display and simctl fallback PNGs are resized after capture.
+PNG; explicit-display, verified cold-session, and simctl fallback PNGs are resized after capture.
 JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
 responses use `image/png`. JPEG is lossy and does not preserve transparency.
 Collected session artifacts remain PNG at the requested size, including for
 JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
-`simMiddleware` screenshot route]
+`captureScreenshotPngAsync`, `simMiddleware` screenshot route]
 
 An authenticated exec-ws client can request
 `{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
@@ -745,9 +772,7 @@ The first four bytes are the unsigned 32-bit request ID in network byte order;
 the remaining bytes are the requested PNG or JPEG. IDs must be integers from
 0 through 4294967295.
 Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
-out of order. This request shares the HTTP screenshot route's device restrictions,
-display validation, artifact persistence and error handling, and the socket's
-eight-action admission limit. Device names resolve as for ordinary actions; the
+out of order. This request goes through the HTTP screenshot route, so it shares that route's display selection, including verified cold-session direct capture, its device restrictions, display validation, artifact persistence and error handling. It is also subject to the socket's eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
 `output` defaults to `"path"`, which still returns a staged path and rejects the
 image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
