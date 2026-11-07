@@ -4,14 +4,9 @@ import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
 export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
 import { SingleDevicePolicy } from "./single-device";
-import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
+import { captureScreenshotPngAsync } from "./http-screenshot";
 import { ScreenshotParams } from "./host-actions";
-import {
-  captureScreenshotFileAsync,
-  captureNativeScreenshotAsync,
-  ScreenshotDisplay,
-  SCREENSHOT_DISPLAY_CHANGED,
-} from "./screenshot-store";
+import { ScreenshotDisplay, SCREENSHOT_DISPLAY_CHANGED } from "./screenshot-store";
 import { createReadinessReporter } from "./startup-timing";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
@@ -26,8 +21,6 @@ import {
   watch,
   type FSWatcher,
 } from "fs";
-import { readFile, unlink } from "fs/promises";
-import { tmpdir } from "os";
 import { join } from "path";
 import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
@@ -67,7 +60,6 @@ import {
   retireDeviceSession,
   startDeviceSession,
   getDeviceSession,
-  withScreenshotDeviceSession,
   peekDeviceSession,
   retainDeviceSession,
   withDeviceSessionTask,
@@ -2802,8 +2794,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // Still-PNG capture from native pixels (explicit displays use simctl). Consumed by the
-    // Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
+    // Screenshot (PNG, or JPEG on request). captureScreenshotPngAsync elects the active panel; explicit displays use simctl.
+    // Consumed by the Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
     // UI when it is served through a tunnel (on loopback it uses the
     // screenshot.capture host action instead). Uses the
     // ?device= selection with a booted-simulator fallback.
@@ -2858,55 +2850,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         return;
       }
       udid = udid.toUpperCase();
-      // HTTP downloads avoid staging and Desktop copies, but share panel election.
-      let file: string | undefined;
       try {
         const captureStarted = performance.now();
-        let nativeDuration = 0;
-        const screenId = display?.data;
-        const capture = async (id: number) => {
-          file ??= join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
-          const result = await captureScreenshotFileAsync({
-            udid,
-            file,
-            display: id,
-            timeoutMs: 5_000,
-          });
-          if (result.exitCode !== 0)
-            throw new Error(result.stderr || "Simulator screenshot failed");
-          const png = await readFile(file);
-          return maxWidth ? await convertScreenshot(png, maxWidth) : png;
-        };
-        const png =
-          screenId !== undefined
-            ? await capture(screenId)
-            : await withScreenshotDeviceSession(udid, streamSettings, async (session) => {
-                const read = () => session.activeScreenId();
-                return Buffer.from(
-                  await captureNativeScreenshotAsync(
-                    await read(),
-                    read,
-                    async (id, timeoutMs) => {
-                      const started = performance.now();
-                      try {
-                        return await session.screenshot(id, timeoutMs, maxWidth);
-                      } finally {
-                        nativeDuration += performance.now() - started;
-                      }
-                    },
-                    5_000,
-                  ),
-                );
-              }).catch(async (error) => {
-                if (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED)
-                  throw error;
-                // A sole integrated display needs no native panel election. Never
-                // fall back on an unknown profile or a multi-display device.
-                if (!(await getBootedUdids())?.has(udid)) throw error;
-                const ids = await getScreenshotDisplayIdsAsync(udid);
-                if (ids?.length !== 1) throw error;
-                return await capture(ids[0]!);
-              });
+        const { png, nativeMs } = await captureScreenshotPngAsync({
+          udid,
+          display: display?.data,
+          maxWidth,
+          settings: streamSettings,
+          isBooted: async () => (await getBootedUdids())?.has(udid) ?? false,
+        });
         const captureDuration = performance.now() - captureStarted;
         const encodeStarted = performance.now();
         const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
@@ -2917,7 +2869,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const artifactDuration = performance.now() - artifactStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.
-        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}, encode;dur=${encodeDuration.toFixed(3)}`;
+        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeMs.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}, encode;dur=${encodeDuration.toFixed(3)}`;
         res.writeHead(200, {
           "Cache-Control": "no-store",
           "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
@@ -2952,9 +2904,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 : "Simulator screenshot failed",
           }),
         );
-      } finally {
-        // Best-effort cleanup; the PNG is already in memory by now.
-        if (file) await unlink(file).catch(() => {});
       }
       return;
     }
