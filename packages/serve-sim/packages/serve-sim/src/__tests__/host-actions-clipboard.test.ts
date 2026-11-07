@@ -34,7 +34,7 @@ describe("clipboard host actions", () => {
     const result = await run("clipboard.read", { udid: UDID.toLowerCase() });
     expect(result.exitCode).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({ text, cleanupWarning: "cleanup warning" });
-    expect(read).toHaveBeenCalledWith(UDID);
+    expect(read).toHaveBeenCalledWith(UDID, { appReader: true });
   });
 
   test("writes empty and multiline Unicode text without putting it in argv", async () => {
