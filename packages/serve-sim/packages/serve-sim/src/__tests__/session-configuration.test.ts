@@ -43,6 +43,10 @@ async function host(
       loopbackOnly: true,
       streamSettings,
       configureResources,
+      // These tests hold the device lock on purpose. Capability setup queued behind it would keep
+      // the process's launch updates pending, and releaseSession in later files waits for them.
+      clipboard: "unmanaged",
+      keychain: "unmanaged",
       ...options,
     }),
   );
