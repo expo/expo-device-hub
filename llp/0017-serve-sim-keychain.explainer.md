@@ -49,6 +49,8 @@ The dylib loads on the app's main queue after launch. A read in `application(_:d
 
 A standalone `serve-sim` session enables the capability with its other defaults. A host that mounts `simMiddleware`, such as the Hub, gets the same setup as the clipboard reader: the middleware enables `keychain` on each device it opens or starts, checks it again at most every 30 s, and releases it on `dispose()` or at exit. Both use one capability session, `createCapabilitySession` in `src/capability-session.ts` ([LLP 0010](0010-serve-sim-clipboard.explainer.md)). `keychain: false` (`--disable keychain`) removes it, and `"unmanaged"`, which stream helpers pass, leaves it alone.
 
+A managed middleware awaits its target device's keychain setup before each host action, so the first `/exec-ws` action needs no earlier preview or `/api` request. Setup failure refuses the action. `keychain: false` refuses all three host actions before calling the keychain service, even if shared device state says the capability is enabled; `"unmanaged"` leaves setup to its owning process [observed: `prepareKeychain` in `src/middleware.ts`, `runKeychainAction` in `src/host-actions.ts`].
+
 The capability is on by default for user apps. Without a built dylib it declines, so a session still starts, and keychain commands report the capability as unavailable. A `com.apple.` bundle ID is refused at once, because the loader never reaches a system app [observed: `runKeychainOperations` in `src/sim-keychain.ts`].
 
 ## Formats, the CLI, and host actions

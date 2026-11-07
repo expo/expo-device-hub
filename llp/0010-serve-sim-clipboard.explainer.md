@@ -1,11 +1,11 @@
 # LLP 0010: serve-sim clipboard
 
 **Type:** Explainer
-**Status:** Draft
+**Status:** Active
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-19
+**Revised:** 2026-11-06
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
