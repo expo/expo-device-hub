@@ -77,61 +77,70 @@ export function createCapabilitySession(
   const devices = new Map<string, { work: Promise<void>; done: boolean; checkedAt: number }>();
   // A failed setup waits before the next attempt, so a device that keeps failing is not retried and
   // logged on every request. Each failure doubles the wait; a reboot retries at once.
-  const failures = new Map<string, { retryAt: number; delayMs: number }>();
+  const failures = new Map<string, { retryAt: number; delayMs: number; error: unknown }>();
   const initializedHere = new Set<string>();
   let disposed = false;
 
-  return {
-    initialize(udid: string, rebooted = false): Promise<void> {
-      if (disposed) return Promise.resolve();
-      if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
-      const previous = devices.get(udid);
-      if (
-        previous &&
-        !rebooted &&
-        (!previous.done ||
-          (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
-          (enabled &&
-            now() - previous.checkedAt < RECHECK_MS &&
-            isCapabilityEnabled(udid, definition.name)))
-      ) {
-        return previous.work;
+  function initialize(udid: string, rebooted = false): Promise<void> {
+    if (disposed) return Promise.resolve();
+    if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
+    const previous = devices.get(udid);
+    if (
+      previous &&
+      !rebooted &&
+      (!previous.done ||
+        (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
+        (enabled &&
+          now() - previous.checkedAt < RECHECK_MS &&
+          isCapabilityEnabled(udid, definition.name)))
+    ) {
+      return previous.work;
+    }
+    // A reboot clears launchd, so configure the new boot after any setup that started before it.
+    const earlier =
+      rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
+    const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
+    entry.work = (async () => {
+      await earlier;
+      if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
+      await configureCapability(udid, definition, { enabled, relaunch: false });
+      if (enabled) {
+        initializedHere.add(udid);
+        releaseOnExit(udid);
+      } else if (readLaunchState(udid)) {
+        // Republish without dead owners, including readers left by an earlier session.
+        await rearmCapabilityLoader(udid);
+        initializedHere.add(udid);
+        releaseOnExit(udid);
       }
-      // A reboot clears launchd, so configure the new boot after any setup that started before it.
-      const earlier =
-        rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
-      const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
-      entry.work = (async () => {
-        await earlier;
-        if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
-        await configureCapability(udid, definition, { enabled, relaunch: false });
-        if (enabled) {
-          initializedHere.add(udid);
-          releaseOnExit(udid);
-        } else if (readLaunchState(udid)) {
-          // Republish without dead owners, including readers left by an earlier session.
-          await rearmCapabilityLoader(udid);
-          initializedHere.add(udid);
-          releaseOnExit(udid);
-        }
-      })().then(
-        () => {
-          entry.done = true;
-          entry.checkedAt = now();
-          failures.delete(udid);
-        },
-        (error) => {
-          if (devices.get(udid) === entry) devices.delete(udid);
-          const previousDelayMs = failures.get(udid)?.delayMs;
-          const delayMs = previousDelayMs
-            ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs)
-            : RETRY_MIN_MS;
-          failures.set(udid, { retryAt: now() + delayMs, delayMs });
-          throw error;
-        },
-      );
-      devices.set(udid, entry);
-      return entry.work;
+    })().then(
+      () => {
+        entry.done = true;
+        entry.checkedAt = now();
+        failures.delete(udid);
+      },
+      (error) => {
+        if (devices.get(udid) === entry) devices.delete(udid);
+        const previousDelayMs = failures.get(udid)?.delayMs;
+        const delayMs = previousDelayMs
+          ? Math.min(RETRY_MAX_MS, 2 * previousDelayMs)
+          : RETRY_MIN_MS;
+        failures.set(udid, { retryAt: now() + delayMs, delayMs, error });
+        throw error;
+      },
+    );
+    devices.set(udid, entry);
+    return entry.work;
+  }
+
+  return {
+    initialize,
+    /** Actions need a successful setup; background polling may skip a failed setup's backoff. */
+    async prepare(udid: string): Promise<void> {
+      await initialize(udid);
+      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
+      const failure = failures.get(udid);
+      if (failure) throw failure.error;
     },
     async dispose(): Promise<void> {
       disposed = true;
