@@ -62,6 +62,37 @@ function springboard() {
     .filter((line) => /springboard/i.test(line));
 }
 
+async function withFreshApp(suffix: string, check: (bundle: string, app: string) => Promise<void>) {
+  const bundle = `dev.expo.permissions.${suffix}`;
+  const directory = mkdtempSync(join(tmpdir(), "permission-first-launch-"));
+  const app = join(directory, "Fresh.app");
+  try {
+    cpSync(APP, app, { recursive: true });
+    execFileSync("/usr/libexec/PlistBuddy", [
+      "-c",
+      `Set :CFBundleIdentifier ${bundle}`,
+      join(app, "Info.plist"),
+    ]);
+    execFileSync("codesign", ["--force", "--sign", "-", app]);
+    // Start from an uninstalled bundle even when a previous interrupted run left it behind.
+    try {
+      sim("uninstall", udid!, bundle);
+    } catch {}
+    await check(bundle, app);
+  } finally {
+    try {
+      cli("reset", "camera", bundle);
+    } catch {}
+    try {
+      cli("reset", "location", bundle);
+    } catch {}
+    try {
+      sim("uninstall", udid!, bundle);
+    } catch {}
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
   beforeAll(async () => {
     sim("install", udid!, APP);
@@ -225,6 +256,51 @@ describe.skipIf(!ready)("service-backed permissions (real Simulator)", () => {
         expect(state().pid).toBe(initial.pid);
         expect(state().launchCount).toBe(initial.launchCount);
       }
+    },
+    T,
+  );
+
+  test.each(["inuse", "always"])(
+    "location %s can be granted after install before first launch",
+    async (value) => {
+      await withFreshApp(`location-${value}`, async (bundle, app) => {
+        sim("install", udid!, app);
+        cli("grant", "location", bundle, "--value", value);
+        const pid = Number(sim("launch", udid!, bundle).trim().split(":").at(-1));
+        const path = join(
+          sim("get_app_container", udid!, bundle, "data").trim(),
+          "Documents/state.json",
+        );
+        await eventually(() => {
+          const state = JSON.parse(readFileSync(path, "utf8"));
+          return (
+            state.pid === pid &&
+            state.launchCount === 1 &&
+            state.location === (value === "always" ? 3 : 4)
+          );
+        }, `first launch sees location ${value}`);
+      });
+    },
+    T,
+  );
+
+  test(
+    "camera pre-grant survives installation and is visible at first launch",
+    async () => {
+      await withFreshApp("camera-pregrant", async (bundle, app) => {
+        cli("reset", "camera", bundle);
+        cli("grant", "camera", bundle);
+        sim("install", udid!, app);
+        const pid = Number(sim("launch", udid!, bundle).trim().split(":").at(-1));
+        const path = join(
+          sim("get_app_container", udid!, bundle, "data").trim(),
+          "Documents/state.json",
+        );
+        await eventually(() => {
+          const state = JSON.parse(readFileSync(path, "utf8"));
+          return state.pid === pid && state.launchCount === 1 && state.camera === 3;
+        }, "first launch sees pre-granted camera");
+      });
     },
     T,
   );
