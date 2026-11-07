@@ -1,3 +1,4 @@
+import { ScreenshotImageOptions } from "./screenshot-options";
 import { timeStartup } from "./startup-timing";
 import { rm, stat } from "fs/promises";
 import { join } from "path";
@@ -79,6 +80,8 @@ export const ScreenshotParams = z.object({
   fileName: ScreenshotName.optional(),
   display: ScreenshotDisplay.optional(),
   output: z.enum(["path", "binary"]).default("path"),
+  // The CLI infers positional arguments from catalog property order. Append new options.
+  ...ScreenshotImageOptions.shape,
 });
 const CaptureRequestId = z
   .string()
@@ -965,6 +968,8 @@ async function runProcedureAsync(
       const p = parseParams(action, raw);
       if (p.output === "binary")
         throw new InvalidHostActionError("Binary screenshot output requires exec-ws.");
+      if (p.maxWidth !== undefined || p.format !== undefined || p.quality !== undefined)
+        throw new InvalidHostActionError("Screenshot image options require binary output.");
       let failure = "Could not resolve that simulator. Specify a booted simulator UDID.";
       try {
         const { resolveBootedDeviceAsync } = await import("./device");

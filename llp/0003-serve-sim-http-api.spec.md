@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-29 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-11-06 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ server's selected device.
 | `/healthz`, `/readyz`                                                                               | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting.                                                                                                                                                 |
 | `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
 | `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
-| `/api/screenshot`                                                                                   | `POST`. A still PNG from the active display, or `?display=<screen ID>`.                                                                                                                                                                                                                               |
+| `/api/screenshot`                                                                                   | `POST`. A still image from the active display, or `?display=<screen ID>`. Defaults to native-resolution PNG; optional `maxWidth`, `format`, and JPEG `quality`.                                                                                                                                       |
 | `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
 | `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
@@ -795,9 +795,9 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 The HTTP `/api/screenshot` download follows the same native active-display
 selection and three-attempt handoff bound as `screenshot.capture`. Its optional
 `display` query selects an explicit panel without starting native capture. It
-keeps the existing PNG response and artifact headers. Native pixels stay in memory
-through display validation and delivery; only simctl capture uses a temporary file,
-which is cleaned up. The completed PNG response declares `Content-Length`,
+defaults to native-resolution PNG and keeps the artifact headers. Native pixels
+stay in memory through display validation and delivery; only simctl capture uses a temporary file,
+which is cleaned up. The completed image response declares `Content-Length`,
 without the host action's Desktop copy. Default HTTP captures share the same
 one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
@@ -805,18 +805,32 @@ installed device profile confirming exactly one display permits a
 require native panel election. [observed: `simMiddleware` screenshot route,
 `getScreenshotDisplayIdsAsync`]
 
+HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
+`format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
+Width limiting preserves aspect ratio after rotation and never upscales.
+Native capture snapshots the pixels before Core Image scales them and encodes
+PNG; explicit-display and simctl fallback PNGs are resized after capture.
+JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
+responses use `image/png`. JPEG is lossy and does not preserve transparency.
+Collected session artifacts remain PNG at the requested size, including for
+JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
+`simMiddleware` screenshot route]
+
 An authenticated exec-ws client can request
 `{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
-to receive PNG bytes in one binary response, without staging or Desktop copies.
+to receive image bytes in one binary response, without staging or Desktop copies.
+The same optional `maxWidth`, `format`, and `quality` fields belong in `params`;
+omitting them preserves native-resolution PNG.
 The first four bytes are the unsigned 32-bit request ID in network byte order;
-the remaining bytes are the PNG. IDs must be integers from 0 through 4294967295.
+the remaining bytes are the requested PNG or JPEG. IDs must be integers from
+0 through 4294967295.
 Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
 out of order. This request shares the HTTP screenshot route's device restrictions,
 display validation, artifact persistence and error handling, and the socket's
 eight-action admission limit. Device names resolve as for ordinary actions; the
 single-device policy still applies. `fileName` is only supported in path mode.
-`output` defaults to `"path"`, which still returns a staged path. Output selection
-is specific to the screenshot action. `actions.describe` advertises the supported
+`output` defaults to `"path"`, which still returns a staged path and rejects the
+image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
 values in `screenshot.capture.properties.output.enum`; clients must check support
 first, since older servers may ignore the parameter and return the path as JSON.
 Binary output requires exec-ws; direct host-action execution rejects it rather
