@@ -1054,7 +1054,7 @@ async function runProcedureAsync(
   }
 }
 
-export async function runHostActionAsync(
+async function runHostActionUnqueuedAsync(
   msg: HostActionRequest,
   binPath: string,
   streamSettings?: StreamSettings,
@@ -1082,4 +1082,94 @@ export async function runHostActionAsync(
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;
   return { stdout, stderr, exitCode };
+}
+
+// @ref LLP 0003.000#ordered-requests-and-authoritative-browser-state — reconnect reads wait for native writes that outlive their socket
+const permissionRequests = new Map<string, Map<string | undefined, Promise<unknown>>>();
+let permissionAdmission = Promise.resolve();
+const PERMISSION_WRITE_WAIT_MS = 10_000;
+export async function runHostActionAsync(
+  msg: HostActionRequest,
+  binPath: string,
+  streamSettings?: StreamSettings,
+  deviceName?: (udid: string) => string | undefined,
+): Promise<HostActionResult> {
+  const run = () => runHostActionUnqueuedAsync(msg, binPath, streamSettings, deviceName);
+  if (
+    msg.action !== "permissions.set" &&
+    msg.action !== "permissions.resetAll" &&
+    msg.action !== "permissions.list"
+  )
+    return run();
+  const params = parseParams(msg.action, msg.params);
+  let expired = false;
+  let waitingTimer: ReturnType<typeof setTimeout> | undefined;
+  const waitingDeadline = performance.now() + PERMISSION_WRITE_WAIT_MS;
+  const waitingError = () =>
+    new InvalidHostActionError(
+      `Permission write timed out waiting after ${PERMISSION_WRITE_WAIT_MS}ms; it was not started.`,
+    );
+  const expiry =
+    msg.action === "permissions.list"
+      ? undefined
+      : new Promise<never>((_, reject) => {
+          waitingTimer = setTimeout(() => {
+            expired = true;
+            reject(waitingError());
+          }, PERMISSION_WRITE_WAIT_MS);
+        });
+  const admission = permissionAdmission.then(async () => {
+    // Resolve aliases in arrival order; a fast UUID lookup must not overtake an
+    // earlier name lookup. Only admission is global, execution stays per app.
+    const device = await import("./device");
+    // An unscoped list reads persisted TCC state and also works for shutdown devices.
+    const resolve =
+      msg.action === "permissions.list" && !params.bundleId
+        ? device.resolveDeviceAsync
+        : device.resolveBootedDeviceAsync;
+    const udid = await resolve(params.udid).catch((error: unknown) => {
+      if (error instanceof device.DeviceResolutionError)
+        throw new InvalidHostActionError(error.message);
+      console.error("Permission device lookup failed:", error);
+      throw new InvalidHostActionError(
+        "Could not resolve the Simulator device. Check the host logs.",
+      );
+    });
+    const key = params.bundleId;
+    const requests =
+      permissionRequests.get(udid) ?? new Map<string | undefined, Promise<unknown>>();
+    // Device-wide reads form a barrier across apps; otherwise unrelated apps stay concurrent.
+    const previous =
+      key === undefined ? [...requests.values()] : [requests.get(key), requests.get(undefined)];
+    const current = Promise.all(previous.map((request) => request?.catch(() => {}))).then(() => {
+      clearTimeout(waitingTimer);
+      if (expiry && (expired || performance.now() >= waitingDeadline)) throw waitingError();
+      return runHostActionUnqueuedAsync(
+        { ...msg, params: { ...params, udid } },
+        binPath,
+        streamSettings,
+        deviceName,
+      );
+    });
+    requests.set(key, current);
+    permissionRequests.set(udid, requests);
+    return { udid, requests, key, current };
+  });
+  permissionAdmission = admission.then(
+    () => {},
+    () => {},
+  );
+  const completion = admission
+    .then(async ({ udid, requests, key, current }) => {
+      try {
+        return await current;
+      } finally {
+        if (requests.get(key) === current) requests.delete(key);
+        if (requests.size === 0 && permissionRequests.get(udid) === requests)
+          permissionRequests.delete(udid);
+      }
+    })
+    .finally(() => clearTimeout(waitingTimer));
+  // Expiry answers the caller immediately; the queue retains its slot until earlier work ends.
+  return expiry ? Promise.race([completion, expiry]) : completion;
 }
