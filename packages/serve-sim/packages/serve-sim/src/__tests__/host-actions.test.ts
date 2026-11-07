@@ -25,7 +25,7 @@ describe("runHostActionAsync validation", () => {
   it("preserves the error when a permission target cannot be resolved", async () => {
     const device = await import("../device");
     const resolve = spyOn(device, "resolveDeviceAsync").mockRejectedValue(
-      new Error("No booted simulator matches that device name."),
+      new device.DeviceResolutionError("No booted simulator matches that device name."),
     );
     try {
       const result = runHostActionAsync(
@@ -36,6 +36,21 @@ describe("runHostActionAsync validation", () => {
       await expect(result).rejects.toThrow("No booted simulator matches that device name.");
     } finally {
       resolve.mockRestore();
+    }
+  });
+  it("logs unexpected permission lookup failures without exposing them to the client", async () => {
+    const device = await import("../device");
+    const error = new Error("simctl spawn failed in /Users/operator/private-checkout");
+    const resolve = spyOn(device, "resolveDeviceAsync").mockRejectedValue(error);
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(
+        runHostActionAsync({ action: "permissions.list", params: { udid: "missing" } }, BIN),
+      ).rejects.toThrow("Could not resolve the Simulator device. Check the host logs.");
+      expect(log).toHaveBeenCalledWith("Permission device lookup failed:", error);
+    } finally {
+      resolve.mockRestore();
+      log.mockRestore();
     }
   });
   it("refuses an unknown action", async () => {

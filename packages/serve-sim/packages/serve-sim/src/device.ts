@@ -64,6 +64,8 @@ export function resolveDeviceMatches(nameOrUDID: string): string[] {
 }
 
 /** Canonical device identity for native capture, without exiting a middleware host. */
+export class DeviceResolutionError extends Error {}
+
 export async function resolveBootedDeviceAsync(nameOrUDID: string): Promise<string> {
   return resolveDeviceAsync(nameOrUDID, true);
 }
@@ -88,7 +90,7 @@ export async function resolveDeviceAsync(nameOrUDID: string, bootedOnly = false)
   const matches =
     bootedOnly || nameOrUDID.toLowerCase() === "booted" || booted.length ? booted : named;
   if (matches.length !== 1)
-    throw new Error(
+    throw new DeviceResolutionError(
       matches.length
         ? bootedOnly
           ? "Several booted simulators match; specify a simulator UDID."
