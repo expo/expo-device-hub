@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { keychainSetOperations } from "../../keychain";
+import { keychainDeleteOperations, keychainSetOperations } from "../../keychain";
 
 test("react-native-keychain refuses a separate service option", () => {
   expect(() =>
@@ -32,4 +32,26 @@ test("valid credentials preserve service and username after an option refusal", 
     data: Buffer.from("synthetic").toString("base64"),
     clears: [{ service: " auth " }],
   });
+});
+
+test("KeychainAccess refuses missing context and then accepts default or explicit services", () => {
+  expect(() => keychainSetOperations("keychain-access", [["token", "synthetic"]], {})).toThrow(
+    "needs a service or the app's bundle ID",
+  );
+  expect(() => keychainDeleteOperations("keychain-access", ["token"], {})).toThrow(
+    "needs a service or the app's bundle ID",
+  );
+  expect(
+    keychainSetOperations("keychain-access", [["token", "synthetic"]], {
+      bundleId: "com.example.app",
+    })[0],
+  ).toMatchObject({ service: "com.example.app" });
+  expect(
+    keychainDeleteOperations("keychain-access", ["token"], {
+      bundleId: "com.example.app",
+      service: " auth ",
+    })[0],
+  ).toEqual([
+    { op: "delete", service: " auth ", account: Buffer.from("token").toString("base64") },
+  ]);
 });
