@@ -803,7 +803,7 @@ one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
-`getScreenshotDisplayIdsAsync`]
+`captureScreenshotPngAsync`, `getScreenshotDisplayIdsAsync`]
 
 HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
 `format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
@@ -814,7 +814,7 @@ JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
 responses use `image/png`. JPEG is lossy and does not preserve transparency.
 Collected session artifacts remain PNG at the requested size, including for
 JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
-`simMiddleware` screenshot route]
+`captureScreenshotPngAsync`, `simMiddleware` screenshot route]
 
 An authenticated exec-ws client can request
 `{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
