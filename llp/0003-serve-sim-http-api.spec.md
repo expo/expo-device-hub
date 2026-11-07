@@ -738,6 +738,12 @@ All three take `{udid, bundleId, format?, service?, accessGroup?}`. `format` is
 - `keychain.list` returns `{keys}`, and fails when the app does not answer. Values are
   never returned.
 
+Managed middleware awaits keychain setup for the target device before these actions.
+`keychain: false` refuses all three even if another session enabled the shared device
+capability; `keychain: "unmanaged"` leaves setup to its owner. A setup failure refuses
+the action before accessing the app's keychain [observed: `prepareKeychain` in
+`src/middleware.ts`, `runKeychainAction` in `src/host-actions.ts`].
+
 These are in-process actions under the usual `/exec-ws` token and Origin policy, so
 values never reach a child process's arguments, and the event log does not record
 them. The preview config (`/api` and the inlined page config) has `keychain: true`
