@@ -82,6 +82,7 @@ export const ScreenshotParams = z.object({
   output: z.enum(["path", "binary"]).default("path"),
   // The CLI infers positional arguments from catalog property order. Append new options.
   ...ScreenshotImageOptions.shape,
+  automation: z.boolean().default(false),
 });
 const CaptureRequestId = z
   .string()
@@ -439,9 +440,7 @@ const ACTION_SCHEMAS = {
   "file.readBase64": z
     .object({ path: ConfinedPath })
     .meta({ description: "Download a file from the simulator host.", output: "base64" }),
-  "screenshot.capture": ScreenshotParams.extend({
-    automation: z.boolean().default(false),
-  }).meta({
+  "screenshot.capture": ScreenshotParams.meta({
     description: "Take a screenshot of the active display, or the specified simctl display ID.",
     output: "path",
   }),

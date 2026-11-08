@@ -750,7 +750,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?, automation?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, output?, automation?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -789,7 +789,11 @@ background thumbnails do not refresh the session's idle deadline. Omitted or
 so callers can check support before sending an automated capture.
 [observed: `src/host-actions.ts`, `src/event-log.ts`]
 
-Automated captures keep the existing Desktop copy and staging behavior. The
+The flag applies to both path and binary output. Binary dispatch carries it as
+request-local state into the HTTP capture implementation; ordinary HTTP screenshots
+still record activity. [observed: `src/middleware.ts`]
+
+Automated path captures keep the existing Desktop copy and staging behavior. The
 caller owns reading and removing its uniquely named staged file; a client
 timeout or closed exec socket does not cancel the host action, so it must wait
 for completion or host shutdown before removing a file the action may still write.

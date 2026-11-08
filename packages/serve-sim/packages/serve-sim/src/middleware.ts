@@ -2139,6 +2139,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // Capture routes always require authentication, including future subroutes.
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
+  // Only the authenticated binary action can mark its internal HTTP capture as automated.
+  const automatedScreenshotRequests = new WeakSet<SimReq>();
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
     const requestStarted = performance.now();
     const rawUrl: string = req.url ?? "";
@@ -2921,7 +2923,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const encodeDuration = performance.now() - encodeStarted;
         const artifactStarted = performance.now();
         const artifact = await saveScreenshotArtifact(png);
-        recordScreenshotEvent(udid, artifact);
+        if (!automatedScreenshotRequests.has(req)) recordScreenshotEvent(udid, artifact);
         const artifactDuration = performance.now() - artifactStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.
@@ -2943,10 +2945,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
         console.error(`Simulator screenshot failed for ${udid}:`, message);
-        recordScreenshotEvent(udid, {
-          status: "capture-failed",
-          error: "simctl screenshot failed",
-        });
+        if (!automatedScreenshotRequests.has(req)) {
+          recordScreenshotEvent(udid, {
+            status: "capture-failed",
+            error: "simctl screenshot failed",
+          });
+        }
         res.writeHead(500, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
@@ -3532,7 +3536,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const value = parsed.data[key];
         if (value !== undefined) url.searchParams.set(key, String(value));
       }
-      return (await fetchMiddleware(
+      return (await connectToFetch(
+        (req, res, next) => {
+          if (parsed.data.automation) automatedScreenshotRequests.add(req);
+          return connectMiddleware(req, res, next);
+        },
         new Request(url, {
           method: "POST",
           headers: { authorization: `Bearer ${execToken}` },

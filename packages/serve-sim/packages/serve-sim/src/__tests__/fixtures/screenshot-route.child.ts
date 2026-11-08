@@ -1,3 +1,4 @@
+import { clearEventLogForTests, readEventLog } from "../../event-log";
 import { afterAll, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
@@ -313,4 +314,28 @@ test("JPEG conversion failure publishes only a failure and no artifact", async (
     else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("binary automation preserves manual activity and suppresses success and failure events", async () => {
+  for (const automation of [undefined, false, true]) {
+    for (const failed of [false, true]) {
+      unstable = failed;
+      reads = 0;
+      activeDisplay = 7;
+      clearEventLogForTests();
+      const result = await socketRequest({
+        udid: UDID,
+        ...(automation === undefined ? {} : { automation }),
+      });
+      if (failed) expect(Buffer.isBuffer(result)).toBe(false);
+      else expect((result as Buffer).subarray(4)).toEqual(png);
+      const events = readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot");
+      expect(events).toHaveLength(automation === true ? 0 : 1);
+      if (automation !== true) expect(events[0]!.status).toBe(failed ? "error" : "ok");
+    }
+  }
+  expect(await socketRequest({ udid: UDID, automation: "true" })).toEqual({
+    id: 42,
+    error: "Invalid screenshot request",
+  });
 });
