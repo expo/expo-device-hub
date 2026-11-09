@@ -8,7 +8,17 @@ import { dirname, join } from "node:path";
 // @ref LLP 0008#scrcpy-upgrade-checklist — Canonical wire spec and upgrade checklist
 export const SCRCPY_VERSION = "4.0";
 
-const DOWNLOAD_URL = `https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
+export const SCRCPY_DOWNLOAD_BASE_URL_ENV = "SERVE_EMU_SCRCPY_DOWNLOAD_BASE_URL";
+export const DEFAULT_SCRCPY_DOWNLOAD_BASE_URL =
+  "https://github.com/Genymobile/scrcpy/releases/download";
+
+// Mirrors must use the GitHub release layout: `<base>/v<version>/scrcpy-server-v<version>`.
+export function scrcpyServerDownloadUrl(
+  baseUrl: string | undefined = process.env[SCRCPY_DOWNLOAD_BASE_URL_ENV],
+): string {
+  const base = (baseUrl?.trim() || DEFAULT_SCRCPY_DOWNLOAD_BASE_URL).replace(/\/+$/, "");
+  return `${base}/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
+}
 
 const here = dirname(fileURLToPath(import.meta.url));
 // `src/scrcpy-server.ts` → `<pkg>/vendor`; `dist/scrcpy-server.mjs` → `<pkg>/vendor`.
@@ -18,10 +28,10 @@ export const SCRCPY_SERVER_PATH = join(VENDOR_DIR, `scrcpy-server-v${SCRCPY_VERS
 export async function ensureScrcpyServer(): Promise<string> {
   if (existsSync(SCRCPY_SERVER_PATH)) return SCRCPY_SERVER_PATH;
   await mkdir(VENDOR_DIR, { recursive: true });
-  console.log(`Downloading scrcpy-server v${SCRCPY_VERSION}…`);
-  const res = await fetch(DOWNLOAD_URL);
-  if (!res.ok)
-    throw new Error(`Failed to download ${DOWNLOAD_URL}: ${res.status} ${res.statusText}`);
+  const url = scrcpyServerDownloadUrl();
+  console.log(`Downloading scrcpy-server v${SCRCPY_VERSION} from ${url}…`);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
   const buf = new Uint8Array(await res.arrayBuffer());
   await writeFile(SCRCPY_SERVER_PATH, buf);
   console.log(`Saved ${SCRCPY_SERVER_PATH} (${buf.byteLength} bytes)`);
