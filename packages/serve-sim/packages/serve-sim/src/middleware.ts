@@ -255,6 +255,19 @@ function recordScreenshotEvent(udid: string, outcome: ScreenshotOutcome): void {
   }
 }
 
+// An older server ignores the unknown query and records activity, so the response confirms it.
+const SCREENSHOT_AUTOMATION_HEADER = "X-Expo-Screenshot-Automation";
+
+// Exactly one known value, so a typo is refused rather than captured as manual activity.
+function screenshotAutomationQuery(params: URLSearchParams): boolean | null {
+  const values = params.getAll("automation");
+  if (values.length === 0) return false;
+  if (values.length > 1) return null;
+  if (values[0] === "true" || values[0] === "1") return true;
+  if (values[0] === "false" || values[0] === "0") return false;
+  return null;
+}
+
 // Known bundle IDs that are always React Native shells (used as a fallback
 // before the app-container path resolves, since simctl can lag after launch).
 const RN_BUNDLE_IDS = new Set<string>([
@@ -2137,8 +2150,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // Capture routes always require authentication, including future subroutes.
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
-  // Only the authenticated binary action can mark its internal HTTP capture as automated.
-  const automatedScreenshotRequests = new WeakSet<SimReq>();
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
     const requestStarted = performance.now();
     const rawUrl: string = req.url ?? "";
@@ -2824,6 +2835,30 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end("method not allowed");
         return;
       }
+      const query = new URL(rawUrl, "http://localhost").searchParams;
+      const automated = screenshotAutomationQuery(query);
+      if (automated === null) {
+        res.writeHead(400, { "Cache-Control": "no-store", "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "Invalid automation value. Use true, false, 1 or 0.",
+          }),
+        );
+        return;
+      }
+      // @ref LLP 0003#automated-http-screenshots — a cookie or `?token=` cannot hide activity.
+      if (automated && !matchesBearerToken(req.headers.authorization, execToken)) {
+        res.writeHead(401, { "Cache-Control": "no-store", "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: "Automated screenshots require the session bearer token.",
+          }),
+        );
+        return;
+      }
+      if (automated) res.setHeader(SCREENSHOT_AUTOMATION_HEADER, "applied");
       let udid = selectedDevice;
       if (udid && !isSimulatorUdid(udid)) {
         res.writeHead(400, {
@@ -2845,7 +2880,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end(JSON.stringify({ ok: false, error: "No booted simulator to screenshot" }));
         return;
       }
-      const displayValue = new URL(rawUrl, "http://localhost").searchParams.get("display");
+      const displayValue = query.get("display");
       const display =
         displayValue === null ? undefined : ScreenshotDisplay.safeParse(Number(displayValue));
       if (display && !display.success) {
@@ -2904,7 +2939,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
               });
         const captureDuration = performance.now() - captureStarted;
         const artifactStarted = performance.now();
-        const automated = automatedScreenshotRequests.has(req);
         const artifact = automated
           ? { status: "disabled" as const }
           : await saveScreenshotArtifact(png);
@@ -2918,7 +2952,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Content-Type": "image/png",
           "Content-Length": String(png.byteLength),
           // The route allows configured cross-origin callers, and they can only read custom headers listed here.
-          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_AUTOMATION_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
         });
@@ -2930,7 +2964,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
         console.error(`Simulator screenshot failed for ${udid}:`, message);
-        if (!automatedScreenshotRequests.has(req)) {
+        if (!automated) {
           recordScreenshotEvent(udid, {
             status: "capture-failed",
             error: "simctl screenshot failed",
@@ -3517,11 +3551,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       }
       if (parsed.data.display !== undefined)
         url.searchParams.set("display", String(parsed.data.display));
-      return (await connectToFetch(
-        (req, res, next) => {
-          if (parsed.data.automation) automatedScreenshotRequests.add(req);
-          return connectMiddleware(req, res, next);
-        },
+      if (parsed.data.automation) url.searchParams.set("automation", "1");
+      return (await fetchMiddleware(
         new Request(url, {
           method: "POST",
           headers: { authorization: `Bearer ${execToken}` },

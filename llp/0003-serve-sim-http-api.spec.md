@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity)
+**Revised:** 2026-11-09 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; automated HTTP screenshots)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ server's selected device.
 | `/healthz`, `/readyz`                                                                               | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting.                                                                                                                                                 |
 | `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
 | `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
-| `/api/screenshot`                                                                                   | `POST`. A still PNG from the active display, or `?display=<screen ID>`.                                                                                                                                                                                                                               |
+| `/api/screenshot`                                                                                   | `POST`. A still PNG from the active display, or `?display=<screen ID>`. `?automation=true` with the bearer header records no activity or artifact; see [Automated HTTP screenshots](#automated-http-screenshots).                                                                                     |
 | `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
 | `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
@@ -248,6 +248,8 @@ exceptions, because a liveness probe cannot carry a credential.
 
 Recording control requires the bearer token when the preview is gated; its
 cookie and query-token forms do not authorize `POST`, `PUT`, or `DELETE`.
+An automated `/api/screenshot` request requires the bearer header with or
+without `--require-token`; see [Automated HTTP screenshots](#automated-http-screenshots).
 
 There are three ways to present the token, and which one you use depends on what
 the client is.
@@ -789,10 +791,11 @@ background thumbnails do not refresh the session's idle deadline. Omitted or
 so callers can check support before sending an automated capture.
 [observed: `src/host-actions.ts`, `src/event-log.ts`]
 
-The flag applies to both path and binary output. Binary dispatch carries it as
-request-local state into the HTTP capture implementation. Automated binary captures
-return PNG bytes without publishing a manual screenshot artifact; ordinary HTTP
-screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
+The flag applies to both path and binary output. Binary dispatch forwards it to
+the HTTP capture as the route's `automation` query, with the session bearer token.
+Automated binary captures return PNG bytes without publishing a manual screenshot
+artifact; HTTP screenshots without that query still publish artifacts and record
+activity. [observed: `src/middleware.ts`]
 
 Automated path captures skip the convenience Desktop copy and do not consume its
 copy-count limit. They keep the existing staging behavior. Manual captures keep
@@ -849,3 +852,41 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+### Automated HTTP screenshots
+
+`POST /api/screenshot?automation=true` returns the same PNG and status as a
+default request. It records no screenshot activity event on success or failure,
+and it publishes no manual screenshot artifact, so `X-Expo-Screenshot-Artifact`
+is `disabled`. This is the effect of `screenshot.capture` with `automation: true`;
+binary dispatch uses this query. A trusted client on the host, such as the EAS
+worker, can take a background session preview with one request and read the PNG
+from the body, without a staged file to copy and remove.
+[observed: `simMiddleware` screenshot route]
+
+The query takes one value: `true`, `1`, `false` or `0`. `false`, `0` and no query
+keep the default capture. An empty value, another value, or a repeated query
+answers 400 `{ok: false, error}` before capture.
+
+Only `Authorization: Bearer <token>` can set it, with or without
+`--require-token`. Without the header, an automated request answers 401
+`{ok: false, error}` before capture. The access cookie and `?token=` still
+authorize a default capture. A browser attaches the cookie without the caller
+choosing it, and a URL token lands in logs and links, so neither can hide
+activity. The header is the deliberate form, as for recording control and
+`/api/pasteboard`, and the exec channel also needs the raw token. The preview page
+receives `execToken` in its config, so this rule does not stop a script on that
+page; such a script can already send `automation: true` over exec-ws.
+[observed: `src/session-auth.ts`, `src/socket/server-control.ts`]
+
+When the server applies the option, the response carries
+`X-Expo-Screenshot-Automation: applied`, on success and on capture failure. A
+successful response lists the header in `Access-Control-Expose-Headers`. An older
+server ignores the unknown query: it returns the PNG without this header, after it
+recorded activity and published an artifact. A client must check the header. If
+it is missing, the client stops sending the query to that server and falls back
+to exec-ws, after it checks `actions.describe` for the `automation` field. The
+header follows the `X-Expo-Screenshot-Artifact` convention and needs no extra
+request; the cost is that one automated request to an older server still counts
+as activity. serve-emu's screenshot route has no `automation` query.
+[observed: `simMiddleware` screenshot route; no `automation` in serve-emu sources]
