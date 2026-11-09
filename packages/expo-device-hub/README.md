@@ -104,9 +104,10 @@ npx expo-device-hub --platform android --single-device <adb-serial>
 ```
 
 Start the device before opening the Hub. The session stays bound to that ID,
-including after a disconnect. The left sidebar and its toggle are removed;
-HTTP and control sockets reject other devices, device creation, and device
-deletion. An iOS session can boot its original simulator again. Android AVD
+including after a disconnect. The left sidebar stays: it lists only that device,
+above its inspector. The controls that boot or create devices, and the Remove
+action, are hidden. HTTP and control sockets reject other devices, device
+creation, and device deletion. An iOS session can boot its original simulator again. Android AVD
 launch actions are disabled because an AVD name does not pin an adb serial.
 WebKit DevTools is unavailable in this mode because its bridge cannot reliably
 associate targets with a simulator UDID.

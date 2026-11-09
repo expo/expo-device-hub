@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -169,10 +169,17 @@ The standalone Hub accepts `--platform ios|android --single-device <id>`; iOS
 requires a simulator UUID and Android requires an adb serial. Like the other
 standalone CLI options, its environment setting is ignored in plugin mode. The server
 propagates that startup identity to the backend and shell. Device discovery and
-agent activity expose only that ID. The dashboard does not mount its left
-sidebar, toggle, creation picker or delete action, and a missing device does not
-cause selection of another device
+agent activity expose only that ID. The dashboard keeps its left sidebar and
+toggle, so the sidebar lists only that device, above its inspector. It hides the
+controls that boot or create devices and the delete action, and a missing device
+does not cause selection of another device
 [observed: `packages/expo-device-hub/src/server/single-device.ts`, `src/Dashboard.tsx`].
+
+The left sidebar stays because it holds the inspector. Single-device mode first
+removed the whole left sidebar, when the inspector had its own right sidebar.
+Then the inspector moved into the left sidebar, and locked sessions lost it.
+[confirmed: Krystof Woldrich, 2026-11-09, single-device mode keeps the left
+sidebar and hides only the controls that boot or create devices]
 
 Boot, shutdown and remove share request parsing and one lifecycle policy check
 [observed: `src/server/index.ts`, `src/server/single-device.ts`].

@@ -174,24 +174,15 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     deviceId: string | null;
     request: ClipboardRequest;
   } | null>(null);
-  const [singleDeviceInspectorOpen, setSingleDeviceInspectorOpen] = useState(false);
-  const closeInspector = () => {
-    setSingleDeviceInspectorOpen(false);
-    sidebars.closeLeft();
-  };
   const clipboardRequest =
     clipboardFallback && clipboardFallback.deviceId === selectedId
       ? clipboardFallback.request
       : null;
-  useEffect(() => {
-    setClipboardFallback(null);
-    setSingleDeviceInspectorOpen(false);
-  }, [selectedId]);
+  useEffect(() => setClipboardFallback(null), [selectedId]);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    if (singleDevice) setSingleDeviceInspectorOpen(true);
-    else sidebars.openLeft();
+    sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -421,34 +412,32 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         overflow: "hidden",
       }}
     >
-      {!singleDevice && (
-        <AnimatedDockedSidebar
-          side="left"
+      <AnimatedDockedSidebar
+        side="left"
+        width={sidebarWidth}
+        open={sidebars.leftDocked}
+        sidebarOpen={sidebars.leftOpen}
+        resizing={resizing}
+      >
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={selectDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          platform={platform}
           width={sidebarWidth}
-          open={sidebars.leftDocked}
-          sidebarOpen={sidebars.leftOpen}
-          resizing={resizing}
         >
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            agentDeviceIds={agentDeviceIds}
-            selectedId={selectedId}
-            onSelect={selectDevice}
-            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          >
-            {inspector}
-          </Sidebar>
-        </AnimatedDockedSidebar>
-      )}
-      {!singleDevice && sidebars.leftDocked && (
+          {inspector}
+        </Sidebar>
+      </AnimatedDockedSidebar>
+      {sidebars.leftDocked && (
         <ResizeHandle
           side="left"
           offset={sidebarWidth}
@@ -515,24 +504,23 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
 
       <SidebarOverlay
         side="left"
-        open={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOverlay}
-        sidebarOpen={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOpen}
+        open={sidebars.leftOverlay}
+        sidebarOpen={sidebars.leftOpen}
         topmost
-        onDismiss={closeInspector}
+        onDismiss={sidebars.closeLeft}
       >
         <Sidebar
-          showDeviceLists={!singleDevice}
-          simulators={singleDevice ? [] : simulators}
-          emulators={singleDevice ? [] : emulators}
-          recentSimulators={singleDevice ? [] : recentSimulators}
-          recentEmulators={singleDevice ? [] : recentEmulators}
-          simulatorOptions={singleDevice ? { runtimes: [] } : simulatorOptions}
-          emulatorOptions={singleDevice ? { runtimes: [] } : emulatorOptions}
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
           onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-          onToggle={closeInspector}
+          onToggle={sidebars.closeLeft}
           // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
           toggleIcon={viewport.mobile ? "close" : "sidebar"}
           topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
@@ -547,18 +535,17 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         </Sidebar>
       </SidebarOverlay>
 
-      {!singleDevice &&
-        floatingSidebarToggleVisible({
-          sidebarOpen: sidebars.leftOpen,
-          mobile: viewport.mobile,
-          keyboardRaised: viewport.keyboardRaised,
-        }) && (
-          <FloatingSidebarToggle
-            side="left"
-            top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
-            onClick={sidebars.openLeft}
-          />
-        )}
+      {floatingSidebarToggleVisible({
+        sidebarOpen: sidebars.leftOpen,
+        mobile: viewport.mobile,
+        keyboardRaised: viewport.keyboardRaised,
+      }) && (
+        <FloatingSidebarToggle
+          side="left"
+          top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
+          onClick={sidebars.openLeft}
+        />
+      )}
       {connectionBlocked &&
         createPortal(
           <ServerConnectionOverlay
