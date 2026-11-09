@@ -131,6 +131,34 @@ const ClipboardText = z
 const KeychainKey = z.string().min(1).max(1024);
 // Bounded per action as well as by the app's 1 MiB request limit, so a bad call fails before IO.
 const MAX_KEYCHAIN_KEYS = 200;
+const KeychainValue = z.string().max(256 * 1024);
+const KeychainEntries = z
+  .array(z.tuple([KeychainKey, KeychainValue]))
+  .min(1)
+  .max(MAX_KEYCHAIN_KEYS);
+const { $schema: _$keychainValuesSchema, ...keychainValuesSchema } = z.toJSONSchema(
+  z.record(KeychainKey, KeychainValue),
+  { io: "input" },
+);
+// Credential names are data: record reconstruction would silently discard __proto__.
+// Validate entries once, while retaining the object-shaped wire/catalog contract.
+const KeychainValues = z
+  .unknown()
+  .transform((input, ctx) => {
+    const entries =
+      input !== null && typeof input === "object" && !Array.isArray(input)
+        ? Object.entries(input)
+        : null;
+    const parsed = KeychainEntries.safeParse(entries);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      }
+      return z.NEVER;
+    }
+    return Object.fromEntries(parsed.data);
+  })
+  .meta({ ...keychainValuesSchema, minProperties: 1, maxProperties: MAX_KEYCHAIN_KEYS });
 const KeychainTargetParams = {
   udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
   bundleId: BundleId,
@@ -170,10 +198,7 @@ const ACTION_SCHEMAS = {
   "keychain.set": z
     .object({
       ...KeychainTargetParams,
-      values: z.record(KeychainKey, z.string().max(256 * 1024)).refine((values) => {
-        const count = Object.keys(values).length;
-        return count > 0 && count <= MAX_KEYCHAIN_KEYS;
-      }, `must hold 1 to ${MAX_KEYCHAIN_KEYS} keys`),
+      values: KeychainValues,
       accessible: z.enum(KEYCHAIN_ACCESSIBLE).optional(),
       relaunch: z.boolean().default(false),
     })
