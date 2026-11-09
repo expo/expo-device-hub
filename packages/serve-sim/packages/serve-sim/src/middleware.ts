@@ -1,6 +1,10 @@
 import { ScreenshotImageOptions } from "./screenshot-options";
 import { convertScreenshot } from "./native";
-import { SCREENSHOT_METADATA_HEADER, screenshotMetadataHeaders } from "./screenshot-metadata";
+import {
+  SCREENSHOT_METADATA_HEADER,
+  screenshotMetadata,
+  screenshotMetadataHeaders,
+} from "./screenshot-metadata";
 import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
 export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
@@ -2895,8 +2899,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       try {
         const captureStarted = performance.now();
         let nativeDuration = 0;
+        let metadata = screenshotMetadata();
         const screenId = display?.data;
         const capture = async (id: number) => {
+          metadata = screenshotMetadata();
           file ??= join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
           const result = await captureScreenshotFileAsync({
             udid,
@@ -2921,7 +2927,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                     async (id, timeoutMs) => {
                       const started = performance.now();
                       try {
-                        return await session.screenshot(id, timeoutMs, maxWidth);
+                        const shot = await session.screenshotWithMetadata(id, timeoutMs, maxWidth);
+                        metadata = shot.metadata;
+                        return shot.data;
                       } finally {
                         nativeDuration += performance.now() - started;
                       }
@@ -2960,7 +2968,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_METADATA_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
-          ...screenshotMetadataHeaders(),
+          ...screenshotMetadataHeaders(metadata),
         });
         res.end(image);
       } catch (err) {

@@ -18,6 +18,6 @@ export function screenshotMetadata(): ScreenshotMetadata {
 
 export const SCREENSHOT_METADATA_HEADER = "X-Expo-Screenshot-Metadata";
 
-export function screenshotMetadataHeaders(): Record<string, string> {
-  return { [SCREENSHOT_METADATA_HEADER]: JSON.stringify(screenshotMetadata()) };
+export function screenshotMetadataHeaders(metadata = screenshotMetadata()): Record<string, string> {
+  return { [SCREENSHOT_METADATA_HEADER]: JSON.stringify(metadata) };
 }

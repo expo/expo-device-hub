@@ -13,6 +13,12 @@ let startupError: Error | undefined;
 let screenshotGate: Promise<void> | undefined;
 const captures: Array<{ udid: string; settings: StreamEncoderSettings }> = [];
 class Capture {
+  async screenshotWithMetadata(display: number) {
+    return {
+      data: await this.screenshot(display),
+      metadata: { width: 0, height: 0, displayRotation: null },
+    };
+  }
   async screenshot(display: number) {
     await screenshotGate;
     appendFileSync(process.env.SERVE_SIM_HTTP_SHOTS!, `native --display=${display}\n`);

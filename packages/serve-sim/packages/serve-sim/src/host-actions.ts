@@ -1021,9 +1021,13 @@ async function runProcedureAsync(
             };
             const display = await read();
             selected = true;
-            return await capture(display, read, (id, timeoutMs) =>
-              session.screenshot(id, timeoutMs),
-            );
+            let metadata = screenshotMetadata();
+            const result = await capture(display, read, async (id, timeoutMs) => {
+              const shot = await session.screenshotWithMetadata(id, timeoutMs);
+              metadata = shot.metadata;
+              return shot.data;
+            });
+            return result.exitCode === 0 ? { ...result, metadata } : result;
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
