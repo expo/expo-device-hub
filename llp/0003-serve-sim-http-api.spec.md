@@ -466,6 +466,15 @@ physical pose stay unchanged. This adds no per-screenshot pose query.
 [observed: `src/device-session.ts` `observeDeviceState`, `retainDeviceSession`,
 `readScreenFromNative`; `Sources/SimNative/CaptureEngine.swift`]
 
+HubClient opts confirmed ordinary devices into those observations. The controls
+follow physical pose, while video and input use the interface-to-physical
+rotation. Frame dimensions follow physical pose even for portrait-only apps;
+unknown observations do not reuse the legacy requested pose. Home gestures
+follow the interface edge and retain that edge through release. Duo and older
+helpers keep their existing geometry.
+[observed: `packages/@expo/hub-client/src/orientation.ts`, `screen-config.ts`,
+`useIosDevice.ts`]
+
 The standalone preview advances Rotate from requested poses, so rapid clicks or
 an app-declined pose do not repeat the same request. It ignores mismatched
 orientation readback for up to 1,500 ms after the latest request; its

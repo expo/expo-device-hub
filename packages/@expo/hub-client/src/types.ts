@@ -20,6 +20,7 @@
 import { type CSSProperties } from "react";
 
 import { type FoldControlCommand, type FoldPose } from "./fold";
+import type { HingePhysicalOrientation } from "./hinge-control";
 
 export type DevicePlatform = "ios" | "android";
 
@@ -70,6 +71,10 @@ export interface ScreenSize {
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim, serve-emu). */
   orientation?: DeviceOrientation;
+  /** Independently observed interface orientation; null means unknown. */
+  screenOrientation?: DeviceOrientation | null;
+  /** Independently observed physical pose; absent on older helpers, null when unknown. */
+  deviceOrientation?: HingePhysicalOrientation | null;
   /**
    * True when frames already show the display as it faces (serve-emu), so the client never
    * turns the video. serve-sim can send raw portrait frames for a turned device instead.
