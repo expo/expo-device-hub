@@ -829,6 +829,12 @@ because streamed frames may be scaled; panel identity remains unknown and `scree
 [observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
+HubClient returns recognized response metadata beside the screenshot Blob and
+artifact outcome. Older servers omit the optional metadata. Invalid or oversized
+metadata headers are ignored without losing the PNG; unknown extra fields are
+not forwarded. Zero/null values remain unknown and must not become layout sizes.
+[observed: `packages/@expo/hub-client/src/screenshot.ts`, `types.ts`]
+
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic
 background thumbnails do not refresh the session's idle deadline. Omitted or
