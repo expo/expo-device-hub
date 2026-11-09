@@ -7,7 +7,7 @@ import {
 } from "./screenshot-artifacts.ts";
 import type { ScreenshotArtifactReport, ScreenshotBase64Response } from "./shared/api-contracts.ts";
 
-/** Validate before capture; preserve PNG artifacts even when the response is JPEG. */
+// @ref LLP 0003#android-screenshot-images — keep PNG session artifacts for JPEG responses.
 export async function screenshotResponse(
   capture: () => Promise<Uint8Array>,
   url: URL,
