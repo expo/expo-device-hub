@@ -2904,8 +2904,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
               });
         const captureDuration = performance.now() - captureStarted;
         const artifactStarted = performance.now();
-        const artifact = await saveScreenshotArtifact(png);
-        if (!automatedScreenshotRequests.has(req)) recordScreenshotEvent(udid, artifact);
+        const automated = automatedScreenshotRequests.has(req);
+        const artifact = automated
+          ? { status: "disabled" as const }
+          : await saveScreenshotArtifact(png);
+        if (!automated) recordScreenshotEvent(udid, artifact);
         const artifactDuration = performance.now() - artifactStarted;
         // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
         // Total stops before response delivery; durations overlap, so do not add them.

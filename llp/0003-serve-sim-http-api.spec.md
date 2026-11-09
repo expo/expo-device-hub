@@ -790,8 +790,9 @@ so callers can check support before sending an automated capture.
 [observed: `src/host-actions.ts`, `src/event-log.ts`]
 
 The flag applies to both path and binary output. Binary dispatch carries it as
-request-local state into the HTTP capture implementation; ordinary HTTP screenshots
-still record activity. [observed: `src/middleware.ts`]
+request-local state into the HTTP capture implementation. Automated binary captures
+return PNG bytes without publishing a manual screenshot artifact; ordinary HTTP
+screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
 
 Automated path captures keep the existing Desktop copy and staging behavior. The
 caller owns reading and removing its uniquely named staged file; a client

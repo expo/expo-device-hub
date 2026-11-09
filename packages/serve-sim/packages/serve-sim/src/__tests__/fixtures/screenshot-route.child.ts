@@ -3,7 +3,9 @@ import { afterAll, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
 import * as simctl from "../../simctl";
-import { writeFileSync } from "fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
 
@@ -81,11 +83,18 @@ mock.module("child_process", () => ({
   },
 }));
 const temp = useTempStateDir();
+const screenshotDirectory = mkdtempSync(join(tmpdir(), "automated-screenshot-artifacts-"));
+const previousScreenshotDirectory = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = screenshotDirectory;
 const { simMiddleware } = await import("../../middleware");
 const middleware = simMiddleware({ basePath: "/preview", execToken: "test", device: UDID });
 afterAll(async () => {
   await middleware.dispose();
   temp.restore();
+  rmSync(screenshotDirectory, { recursive: true, force: true });
+  if (previousScreenshotDirectory === undefined)
+    delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previousScreenshotDirectory;
 });
 
 function socketRequest(
@@ -208,12 +217,16 @@ test("binary automation preserves manual activity and suppresses success and fai
       reads = 0;
       activeDisplay = 7;
       clearEventLogForTests();
+      const filesBefore = readdirSync(screenshotDirectory).length;
       const result = await socketRequest({
         udid: UDID,
         ...(automation === undefined ? {} : { automation }),
       });
       if (failed) expect(Buffer.isBuffer(result)).toBe(false);
       else expect((result as Buffer).subarray(4)).toEqual(png);
+      expect(readdirSync(screenshotDirectory).length - filesBefore).toBe(
+        !failed && automation !== true ? 1 : 0,
+      );
       const events = readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot");
       expect(events).toHaveLength(automation === true ? 0 : 1);
       if (automation !== true) expect(events[0]!.status).toBe(failed ? "error" : "ok");
