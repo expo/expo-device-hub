@@ -1,3 +1,4 @@
+import { clearEventLogForTests, readEventLog } from "../../event-log";
 import { afterAll, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
@@ -7,7 +8,6 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describeHostActions } from "../../host-actions";
-import { clearEventLogForTests, readEventLog } from "../../event-log";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
 
@@ -98,6 +98,9 @@ mock.module("child_process", () => ({
   },
 }));
 const temp = useTempStateDir();
+const screenshotDirectory = mkdtempSync(join(tmpdir(), "automated-screenshot-artifacts-"));
+const previousScreenshotDirectory = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = screenshotDirectory;
 const { simMiddleware } = await import("../../middleware");
 const middleware = simMiddleware({ basePath: "/preview", execToken: "test", device: UDID });
 test("invalid image options are refused before capture", async () => {
@@ -120,6 +123,10 @@ test("invalid image options are refused before capture", async () => {
 afterAll(async () => {
   await middleware.dispose();
   temp.restore();
+  rmSync(screenshotDirectory, { recursive: true, force: true });
+  if (previousScreenshotDirectory === undefined)
+    delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previousScreenshotDirectory;
 });
 
 function socketRequest(
@@ -313,4 +320,125 @@ test("JPEG conversion failure publishes only a failure and no artifact", async (
     else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("binary automation preserves manual activity and suppresses success and failure events", async () => {
+  for (const automation of [undefined, false, true]) {
+    for (const failed of [false, true]) {
+      unstable = failed;
+      reads = 0;
+      activeDisplay = 7;
+      clearEventLogForTests();
+      const filesBefore = readdirSync(screenshotDirectory).length;
+      const result = await socketRequest({
+        udid: UDID,
+        ...(automation === undefined ? {} : { automation }),
+      });
+      if (failed) expect(Buffer.isBuffer(result)).toBe(false);
+      else expect((result as Buffer).subarray(4)).toEqual(png);
+      expect(readdirSync(screenshotDirectory).length - filesBefore).toBe(
+        !failed && automation !== true ? 1 : 0,
+      );
+      const events = readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot");
+      expect(events).toHaveLength(automation === true ? 0 : 1);
+      if (automation !== true) expect(events[0]!.status).toBe(failed ? "error" : "ok");
+    }
+  }
+  expect(await socketRequest({ udid: UDID, automation: "true" })).toEqual({
+    id: 42,
+    error: "Invalid screenshot request",
+  });
+});
+
+test("HTTP automation preserves manual defaults and suppresses automated artifacts/activity", async () => {
+  for (const automation of [undefined, false, true]) {
+    for (const failed of [false, true]) {
+      unstable = failed;
+      reads = 0;
+      clearEventLogForTests();
+      const before = readdirSync(screenshotDirectory).length;
+      const response = await middleware(
+        new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+          method: "POST",
+          headers: { authorization: "Bearer test", "content-type": "application/json" },
+          body: JSON.stringify(automation === undefined ? {} : { automation }),
+        }),
+      );
+      expect(response!.status).toBe(failed ? 500 : 200);
+      expect(readdirSync(screenshotDirectory).length - before).toBe(
+        !failed && automation !== true ? 1 : 0,
+      );
+      expect(
+        readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot"),
+      ).toHaveLength(automation === true ? 0 : 1);
+      if (!failed) expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+    }
+  }
+});
+
+test("HTTP automation rejects invalid bodies before capture and retains authentication", async () => {
+  for (const [body, status] of [
+    ["{", 400],
+    ['{"automation":"true"}', 400],
+    ['{"automation":1}', 400],
+    ["null", 400],
+    ["[]", 400],
+    ['{"extra":true}', 400],
+    [" ".repeat(1025), 413],
+  ] as const) {
+    const before = targets.length;
+    const response = await middleware(
+      new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+        body,
+      }),
+    );
+    expect(response!.status).toBe(status);
+    expect(targets).toHaveLength(before);
+  }
+  const before = targets.length;
+  const response = await middleware(
+    new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+      method: "POST",
+      body: JSON.stringify({ automation: true }),
+    }),
+  );
+  expect(response!.status).toBe(401);
+  expect(targets).toHaveLength(before);
+});
+
+test("automation also suppresses artifacts and activity for resized JPEG HTTP and WS captures", async () => {
+  unstable = false;
+  activeDisplay = 7;
+  clearEventLogForTests();
+  const before = readdirSync(screenshotDirectory).length;
+  const response = await middleware(
+    new Request(
+      `http://localhost/preview/api/screenshot?device=${UDID}&maxWidth=402&format=jpeg&quality=65`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+        body: JSON.stringify({ automation: true }),
+      },
+    ),
+  );
+  expect(response!.status).toBe(200);
+  expect(response!.headers.get("content-type")).toBe("image/jpeg");
+  expect(response!.headers.get("X-Expo-Screenshot-Artifact")).toBe("disabled");
+  expect(Buffer.from(await response!.arrayBuffer())).toEqual(jpeg);
+  const binary = await socketRequest({
+    udid: UDID,
+    automation: true,
+    maxWidth: 402,
+    format: "jpeg",
+    quality: 65,
+  });
+  expect((binary as Buffer).subarray(4)).toEqual(jpeg);
+  expect(converted.at(-1)).toEqual([0, 65]);
+  expect(widths.at(-1)).toBe(402);
+  expect(readdirSync(screenshotDirectory)).toHaveLength(before);
+  expect(
+    readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot"),
+  ).toHaveLength(0);
 });

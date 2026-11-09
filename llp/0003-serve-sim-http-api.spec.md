@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-06 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output)
+**Revised:** 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -750,7 +750,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, output?, automation?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -781,6 +781,34 @@ cleanup share the reservation queue so a failed capture cannot delete a
 concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
+
+HTTP `POST /api/screenshot` also accepts an optional JSON body
+`{ "automation": true }` (at most 1 KiB). Empty bodies or omitted/false automation
+retain manual behavior. True requires the existing exec bearer token and skips
+manual artifact publication and screenshot activity on success/failure. Invalid
+JSON, unknown fields, and nonboolean values return 400 before capture; oversized
+bodies return 413. Binary exec-ws delegates through this same HTTP contract.
+[observed: `src/middleware.ts`, screenshot route and binary adapter]
+
+The optional `automation` flag defaults to `false`. Setting it to `true`
+suppresses the screenshot activity event on both success and failure, so periodic
+background thumbnails do not refresh the session's idle deadline. Omitted or
+`false` preserves manual activity. `actions.describe` exposes the boolean field
+so callers can check support before sending an automated capture.
+[observed: `src/host-actions.ts`, `src/event-log.ts`]
+
+The flag applies to both path and binary output. Binary dispatch carries it as
+a JSON body into the same HTTP capture implementation. Automated captures
+return PNG bytes without publishing a manual screenshot artifact; manual HTTP
+screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
+
+Automated path captures skip the convenience Desktop copy and do not consume its
+copy-count limit. They keep the existing staging behavior. Manual captures keep
+their Desktop copy. The
+caller owns reading and removing its uniquely named staged file; a client
+timeout or closed exec socket does not cancel the host action, so it must wait
+for completion or host shutdown before removing a file the action may still write.
+[observed: `src/screenshot-store.ts`, `src/socket/server-control.ts`]
 
 Native screenshot startup and active-display reads use the configured host-action
 deadline. A timed-out one-shot releases its temporary session and stops native

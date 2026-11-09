@@ -82,6 +82,7 @@ export const ScreenshotParams = z.object({
   output: z.enum(["path", "binary"]).default("path"),
   // The CLI infers positional arguments from catalog property order. Append new options.
   ...ScreenshotImageOptions.shape,
+  automation: z.boolean().default(false),
 });
 const CaptureRequestId = z
   .string()
@@ -981,7 +982,12 @@ async function runProcedureAsync(
           native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
         ) =>
           captureScreenshotAsync(
-            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            {
+              udid: p.udid,
+              fileName: p.fileName ?? newScreenshotName(),
+              display,
+              automation: p.automation,
+            },
             read,
             native,
           );
