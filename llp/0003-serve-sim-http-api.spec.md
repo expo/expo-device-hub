@@ -825,8 +825,9 @@ integration are separate changes. [observed: `src/host-actions.ts`,
 ServeEmu returns the same object in PNG headers and its existing base64 JSON
 response. Both standalone and Hub-mounted routes use the same capture helper.
 Only a fresh native orientation observation, unchanged across capture, fills
-`displayRotation`; a command, stale/failed observation, or source change leaves
-it null. The cache accessor never starts an adb query. Width/height remain zero
+`displayRotation`; a command or lack of a fresh observation leaves it null.
+The device-owned cache survives stream-source switches; a switch alone does not
+invalidate a still-fresh observation. The cache accessor never starts an adb query. Width/height remain zero
 because streamed frames may be scaled; display identity/count remain unknown.
 [observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]

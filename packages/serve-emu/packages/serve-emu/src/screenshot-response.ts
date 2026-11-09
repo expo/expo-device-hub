@@ -14,6 +14,7 @@ import {
 } from "./screenshot-artifacts.ts";
 import type { ScreenshotArtifactReport, ScreenshotBase64Response } from "./shared/api-contracts.ts";
 
+// @ref LLP 0003#action-catalog — metadata uses fresh device observations without starting an adb query.
 /** Capture with fresh observed cache values only; never query the device for metadata. */
 export async function captureScreenshot(
   capture: () => Promise<Uint8Array>,
