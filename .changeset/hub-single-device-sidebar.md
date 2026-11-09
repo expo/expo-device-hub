@@ -2,4 +2,4 @@
 "expo-device-hub": patch
 ---
 
-Keep the device sidebar and inspector in single-device mode. The mode now hides only the controls that boot or create devices, and device removal.
+Keep the device sidebar and inspector in single-device mode, and hide all device lifecycle controls there: boot, create, Shut down, Start and Remove.

@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -170,16 +170,18 @@ requires a simulator UUID and Android requires an adb serial. Like the other
 standalone CLI options, its environment setting is ignored in plugin mode. The server
 propagates that startup identity to the backend and shell. Device discovery and
 agent activity expose only that ID. The dashboard keeps its left sidebar and
-toggle, so the sidebar lists only that device, above its inspector. It hides the
-controls that boot or create devices and the delete action, and a missing device
-does not cause selection of another device
+toggle, so the sidebar lists only that device, above its inspector. It shows no
+device lifecycle controls: no boot or create picker, no Shut down, no Remove, and
+no Start in the missing-device view. A missing device does not cause selection
+of another device
 [observed: `packages/expo-device-hub/src/server/single-device.ts`, `src/Dashboard.tsx`].
 
 The left sidebar stays because it holds the inspector. Single-device mode first
 removed the whole left sidebar, when the inspector had its own right sidebar.
 Then the inspector moved into the left sidebar, and locked sessions lost it.
-[confirmed: Krystof Woldrich, 2026-11-09, single-device mode keeps the left
-sidebar and hides only the controls that boot or create devices]
+The session is locked to one device, and the device lifecycle is managed outside
+the dashboard. [confirmed: Krystof Woldrich, 2026-11-09, single-device mode keeps
+the left sidebar and removes the device lifecycle controls from the dashboard]
 
 Boot, shutdown and remove share request parsing and one lifecycle policy check
 [observed: `src/server/index.ts`, `src/server/single-device.ts`].
@@ -190,11 +192,11 @@ passes serve-sim's single-device policy through without bypassing either token
 gate. The Android adapter pins omitted `device` parameters, rejects conflicting
 ones, and closes its fleet listing, selection and AVD launch/stop routes before
 calling the backend. AVD names are not accepted as lifecycle replacements for an
-adb serial. The missing-device view offers Start for the pinned iOS simulator, including
-when discovery has no recent entry. It uses the same pending/error presentation
-as the empty state and cannot select or create a different simulator. Android
-may reconnect under its original serial
-[observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`].
+adb serial. The server still accepts shutdown of the session device, and boot of
+the original iOS simulator, from clients other than the dashboard. Android may
+reconnect under its original serial
+[observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`,
+`allowsSessionDeviceAction` in `src/server/single-device.ts`].
 
 The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
 explains helper and control-channel restrictions. A single-device session is

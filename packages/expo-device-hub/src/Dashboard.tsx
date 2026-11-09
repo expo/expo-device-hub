@@ -127,6 +127,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
 export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
   const viewport = useMobileViewport();
+  // @ref LLP 0013#single-device-sessions — a locked session keeps the sidebar but shows no device lifecycle controls.
   const singleDevice = dashboardSingleDevice();
   const hideBootDevice = !!singleDevice || dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
@@ -259,9 +260,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
-    // Pinned sessions follow discovery, including shutdowns outside this UI.
-    // An optimistic entry would otherwise keep the stopped device selected.
-    if (!singleDevice) trackAddedDevice(device, replacedIds);
+    trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
@@ -376,7 +375,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       streamModeAvailability={selectedStreamModeAvailability}
       onStreamModeChange={handleStreamModeChange}
       onHttpCodecChange={setHttpCodec}
-      onShutdown={selected ? () => handleShutdown(selected) : undefined}
+      onShutdown={!singleDevice && selected ? () => handleShutdown(selected) : undefined}
       onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
       clipboardRequest={clipboardRequest}
       onClipboardRequestHandled={() => setClipboardFallback(null)}
@@ -476,24 +475,6 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           platform={platform}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           singleDevice
-          onStart={
-            platform === "ios"
-              ? () =>
-                  handleAddDevice({
-                    kind: "recent",
-                    device: recent.simulators.find((device) => device.id === singleDevice) ?? {
-                      id: singleDevice,
-                      platform: "ios",
-                      name: "Session Simulator",
-                      version: "iOS",
-                      booted: false,
-                      physical: false,
-                      supported: true,
-                      deviceFrame: null,
-                    },
-                  })
-              : undefined
-          }
         />
       ) : (
         <EmptyState
