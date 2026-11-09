@@ -526,7 +526,7 @@ actor FrameCapture {
 
     /// Retain the selected native surface independently of video size, cadence and subscribers.
     /// CPU readback and compression belong on the screenshot queue, not the video capture actor.
-    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?) {
+    func screenshotPixels(screenID: UInt32) async throws -> (pixels: CVPixelBuffer, orientation: String?, screen: RecordingScreen?) {
         guard displayConfigurationReady else { throw makeError(10, "Simulator display is unavailable") }
         // The producer maintains these surfaces through callbacks and bounded revalidation.
         // A synchronous ROCKit lookup here can stall the same queue that delivers video.
@@ -540,7 +540,8 @@ actor FrameCapture {
             throw makeError(10, "Could not read simulator display")
         }
         // CVPixelBuffer retains its IOSurface even if a transition retires this descriptor.
-        return (source, screenMetadata[key]?.applying(authoritativeDisplay).orientation)
+        let display = screenMetadata[key]?.applying(authoritativeDisplay)
+        return (source, display?.orientation, display?.recordingScreen(in: displayProfile))
     }
 
     private func captureFrame(force: Bool = false, allowLiveRevalidation: Bool = true) {

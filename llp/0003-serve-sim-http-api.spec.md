@@ -796,12 +796,21 @@ the existing `stdout` path, `stderr`, and `exitCode`. The contract is
 two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
 omitted on single-display devices and when unknown; numeric display IDs remain
 internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
-The response contract is available through:
-zero numeric fields and null rotation mean unknown, not a zero-sized image.
+Zero dimensions and null rotation mean unknown, not a zero-sized image.
 Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
-`landscape-right`. This initial contract layer returns defaults; the owning
-capture source will supply known values from its maintained local state.
+`landscape-right`. Unknown values retain these defaults; known values come from the owning
+capture source's maintained local state.
 [confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
+
+Native screenshot metadata is captured with the selected IOSurface: screen
+orientation and optional panel name come from FrameCapture's maintained
+surface/profile state. The panel name uses the same native resolver as recordings. Width and height come from ScreenshotEncoder's final
+CGImage after its existing rotation. The snapshot travels with the PNG through
+the native bridge and the existing serialized screenshot lifetime. Active-panel
+retry replaces both pixels and metadata together. Older native helpers and the
+simctl fallback retain unknown defaults. Metadata adds no CoreDevice reads, PNG
+parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
+`ScreenshotEncoder.swift`, `CaptureEngine.swift`; `src/device-session.ts`]
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
 `X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws

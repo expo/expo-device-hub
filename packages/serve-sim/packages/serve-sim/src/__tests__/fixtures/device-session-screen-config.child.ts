@@ -302,6 +302,12 @@ mock.module("../../native", () => ({
     screenshot() {
       return screenshotRun();
     }
+    async screenshotWithMetadata() {
+      return {
+        data: await screenshotRun(),
+        metadata: { width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0 },
+      };
+    }
     async start() {
       if (captureStartError) throw captureStartError;
     }

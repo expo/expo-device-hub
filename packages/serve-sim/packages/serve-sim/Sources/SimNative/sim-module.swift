@@ -256,6 +256,13 @@ private func u32(_ v: Int) -> UInt32 {
         return try buffer.setData(data)
     }
 
+    @NodeMethod func screenshotWithMetadata(_ value: Int, _ maxWidth: Int = 0) async throws -> [String: any NodePropertyConvertible] {
+        guard let screenID = UInt32(exactly: value), screenID > 0 else { throw Errors.invalidScreenID }
+        let result = try await engine.screenshotWithMetadata(screenID, maxWidth: maxWidth)
+        var buffer = try CaptureBuffer(initialCapacity: result.data.count)
+        return ["data": try buffer.setData(result.data), "metadata": try result.metadata.json()]
+    }
+
     @NodeMethod func startRecording(_ outputDirectory: String) async throws {
         try await engine.startRecording(outputDirectory: outputDirectory)
     }

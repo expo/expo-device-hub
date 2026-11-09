@@ -27,6 +27,12 @@ const nativeWidths: number[] = [];
 let rejectJpeg = false;
 const captures: Array<{ udid: string; settings: StreamEncoderSettings }> = [];
 class Capture {
+  async screenshotWithMetadata(display: number, maxWidth = 0) {
+    return {
+      data: await this.screenshot(display, maxWidth),
+      metadata: { width: 0, height: 0, displayRotation: null },
+    };
+  }
   async screenshot(display: number, maxWidth = 0) {
     nativeWidths.push(maxWidth);
     await screenshotGate;
