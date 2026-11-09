@@ -330,7 +330,12 @@ export class DeviceSession {
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
   private unsubscribeDeviceState?: NativeUnsubscribe;
-  private deviceStateVersion?: { generation: number; revision: number };
+  private deviceStateObservationStarted = false;
+  private deviceStateVersion?: {
+    generation: number;
+    revision: number;
+    orientationObserved?: boolean;
+  };
   private observedDeviceState?: NativeHingeState;
   private screenRefreshTimer?: ReturnType<typeof setTimeout>;
 
@@ -470,20 +475,7 @@ export class DeviceSession {
           return;
         }
         this.unsubscribeScreenChanges = unsubscribe;
-        void this.capture
-          .subscribeDeviceState(async (snapshot) => {
-            this.applyDeviceState(snapshot);
-          })
-          .then(async (unsubscribeDeviceState) => {
-            if (this.phase !== "running") {
-              await unsubscribeDeviceState();
-              return;
-            }
-            this.unsubscribeDeviceState = unsubscribeDeviceState;
-          })
-          .catch((error) => {
-            console.error(`[capture] Device state observation unavailable: ${error}`);
-          });
+        this.observeDeviceState();
         if (
           await timeStartup(
             "screen-configuration",
@@ -500,6 +492,32 @@ export class DeviceSession {
         this.captureReady = true;
       });
     return this.captureStart;
+  }
+
+  /** Capture must be started; temporary screenshots do not need a device-pose observer. */
+  observeDeviceState(): void {
+    const owner = screenshotOwners.get(this);
+    if (
+      this.phase !== "running" ||
+      this.deviceStateObservationStarted ||
+      (owner && !owner.retained)
+    )
+      return;
+    this.deviceStateObservationStarted = true;
+    void this.capture
+      .subscribeDeviceState(async (snapshot) => {
+        this.applyDeviceState(snapshot);
+      })
+      .then(async (unsubscribeDeviceState) => {
+        if (this.phase !== "running") {
+          await unsubscribeDeviceState();
+          return;
+        }
+        this.unsubscribeDeviceState = unsubscribeDeviceState;
+      })
+      .catch((error) => {
+        console.error(`[capture] Device state observation unavailable: ${error}`);
+      });
   }
 
   async suspendForReboot(): Promise<void> {
@@ -2911,12 +2929,19 @@ export class DeviceSession {
         (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))
     )
       return;
-    this.deviceStateVersion = { generation: snapshot.generation, revision: snapshot.revision };
+    this.deviceStateVersion = {
+      generation: snapshot.generation,
+      revision: snapshot.revision,
+      ...(typeof snapshot.orientationObserved === "boolean"
+        ? { orientationObserved: snapshot.orientationObserved }
+        : {}),
+    };
     const previousState = this.observedDeviceState;
     const { hingeAngle, physicalOrientation, tableMode } = snapshot.state;
     this.observedDeviceState = { hingeAngle, physicalOrientation, tableMode };
     if (
       !previousState ||
+      previous?.orientationObserved !== this.deviceStateVersion.orientationObserved ||
       previousState.hingeAngle !== hingeAngle ||
       previousState.physicalOrientation !== physicalOrientation ||
       previousState.tableMode !== tableMode
@@ -2929,6 +2954,8 @@ export class DeviceSession {
     width: number;
     height: number;
     orientation: string;
+    screenOrientation?: NativeScreenInfo["orientation"] | null;
+    deviceOrientation?: HingePhysicalOrientation | null;
     inputUnavailable: boolean;
     keyboardUnavailable: boolean;
     screenId?: number;
@@ -2946,6 +2973,12 @@ export class DeviceSession {
       width: this.width,
       height: this.height,
       orientation: this.orientation,
+      ...(this.deviceStateVersion?.orientationObserved !== undefined
+        ? {
+            screenOrientation: this.nativeScreen?.orientation ?? null,
+            deviceOrientation: this.observedDeviceState?.physicalOrientation ?? null,
+          }
+        : {}),
       inputUnavailable: this.hid.inputUnavailable,
       keyboardUnavailable: this.hid.keyboardUnavailable,
       ...(this.nativeScreen?.screenId !== undefined
@@ -3018,7 +3051,8 @@ export class DeviceSession {
       else this.hingeScreenTransition = undefined;
     }
     const previous = this.nativeScreen;
-    let changed = false;
+    // Native interface orientation can change while legacy requested framing stays fixed.
+    let changed = screen.orientation !== previous?.orientation;
     if (this.routedHid !== hid || !previous || screen.screenId !== previous.screenId) {
       await hid.setScreen(screen.screenId ?? 0);
       if (this.phase !== "running" || hid !== this.hid) return false;
@@ -3213,7 +3247,13 @@ export async function startDeviceSession(
 /** Claim session state for a persistent consumer, such as an accepted settings update. */
 export function retainDeviceSession(session: DeviceSession): void {
   const owner = screenshotOwners.get(session);
-  if (owner) owner.retained = true;
+  if (owner) {
+    owner.retained = true;
+    void session
+      .start()
+      .then(() => session.observeDeviceState())
+      .catch(() => {});
+  }
 }
 
 /** Prevent screenshot cleanup from closing a session while a finite helper task uses it. */

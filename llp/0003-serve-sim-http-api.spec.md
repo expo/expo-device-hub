@@ -435,6 +435,25 @@ physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
 
+New native state snapshots also expose `screenOrientation` and
+`deviceOrientation` in screen config. The first is the observed CoreSimulator
+interface orientation; the second is the independent physical pose from the
+native state stream, using the existing physical names (`portrait`, `pud`,
+`landscape-left`, `landscape-right`, `faceup`, `facedown`). Unknown values are
+null. The legacy `orientation` field retains the requested-framing policy above
+for older clients; new consumers must not treat it as a native observation.
+Older addons without the snapshot marker omit the new fields.
+[observed: `src/device-session.ts`, `src/native.ts`,
+`Sources/SimNative/CoreDeviceState.swift`]
+
+Persistent ordinary-device sessions observe the same deduplicated native state
+stream as Duo. Temporary screenshot sessions skip pose observation; a persistent
+consumer retaining one starts observation once. Screen orientation changes are
+broadcast independently of the legacy requested framing, even if dimensions and
+physical pose stay unchanged. This adds no per-screenshot pose query.
+[observed: `src/device-session.ts` `observeDeviceState`, `retainDeviceSession`,
+`readScreenFromNative`; `Sources/SimNative/CaptureEngine.swift`]
+
 The standalone preview advances Rotate from requested poses, so rapid clicks or
 an app-declined pose do not repeat the same request. It ignores mismatched
 orientation readback for up to 1,500 ms after the latest request; its
