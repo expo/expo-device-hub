@@ -188,8 +188,11 @@ test("real socket callback returns HTTP PNG bytes and validates device/display i
     );
     expect(response!.headers.get("content-length")).toBe(String(png.length));
     expect(JSON.parse(response!.headers.get("x-expo-screenshot-metadata")!)).toEqual({
-      width: 1,
-      height: 1,
+      width: 0,
+      height: 0,
+      displayRotation: null,
+      displayId: 0,
+      displayCount: 0,
     });
     expect(response!.headers.get("access-control-expose-headers")).toContain(
       "X-Expo-Screenshot-Metadata",
