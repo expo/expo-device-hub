@@ -1746,11 +1746,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        const shot = await captureScreenshot(
-          () => screencapPng(opts.serial),
-          deviceState.orientation,
+        return await screenshotResponse(
+          () => captureScreenshot(() => screencapPng(opts.serial), deviceState.orientation),
+          url,
         );
-        return await screenshotResponse(shot.png, url, shot.metadata);
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },

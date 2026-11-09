@@ -5,7 +5,7 @@
 **Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
+**Revised:** 2026-11-18 (Android screenshot image options; Codex, directed by Gabe Debes), 2026-11-13 (exec-ws binary screenshots are followed by a `{id, screenshotMetadata}` frame; Claude Code, directed by Gabe Debes), 2026-11-13 (`/api/apps/icon`: serve-emu returns `label`, serve-sim does not; Claude Code, directed by Krystof Woldrich), 2026-11-12 (`/appstate` events carry the app label; Claude Code, directed by Krystof Woldrich), 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video), 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output), 2026-11-10 (hub-client keeps the legacy orientation controls for an unknown observed pose; Claude Code, directed by Gabe Debes)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -889,8 +889,9 @@ or a test tool) that return to the starting pose between the readings are not
 detected.
 Each read is about 90 ms on an emulator. A newer reading also refreshes the
 device-owned cache that `/api` uses.
-Width and height come from the PNG's IHDR, because `screencap` returns the
-display at native size; panel identity remains unknown and `screen` is omitted.
+Width and height come from the returned PNG's IHDR, after any requested resizing;
+rotation is observed around the native capture before resizing. Panel identity
+remains unknown and `screen` is omitted.
 [confirmed: Gabe Debes, 2026-11-11; observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
@@ -1029,3 +1030,16 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+## Android screenshot images
+
+serve-emu's POST screenshot endpoint accepts the same `maxWidth`, `format=png`
+or `format=jpeg`, and `quality` image controls described above. Validation runs
+before capture. Its existing `format=base64` response remains JSON containing PNG,
+and can also use `maxWidth`. Default requests preserve the original PNG bytes.
+Resizing and JPEG conversion use Sharp on the host after `adb screencap`; session
+artifacts remain PNG at the requested size. Binary responses declare
+`Content-Length`. `Server-Timing` exposes capture, encode, artifact, and server
+total durations; total includes response construction but excludes delivery [observed:
+`packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
+middleware, and inspection route callers].

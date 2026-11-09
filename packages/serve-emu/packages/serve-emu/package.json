@@ -85,7 +85,8 @@
     "mediabunny": "1.55.3",
     "node-datachannel": "^0.33.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@swc/cli": "^0.8.1",
