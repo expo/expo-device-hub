@@ -349,3 +349,61 @@ test("binary automation preserves manual activity and suppresses success and fai
     error: "Invalid screenshot request",
   });
 });
+
+test("HTTP automation preserves manual defaults and suppresses automated artifacts/activity", async () => {
+  for (const automation of [undefined, false, true]) {
+    for (const failed of [false, true]) {
+      unstable = failed;
+      reads = 0;
+      clearEventLogForTests();
+      const before = readdirSync(screenshotDirectory).length;
+      const response = await middleware(
+        new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+          method: "POST",
+          headers: { authorization: "Bearer test", "content-type": "application/json" },
+          body: JSON.stringify(automation === undefined ? {} : { automation }),
+        }),
+      );
+      expect(response!.status).toBe(failed ? 500 : 200);
+      expect(readdirSync(screenshotDirectory).length - before).toBe(
+        !failed && automation !== true ? 1 : 0,
+      );
+      expect(
+        readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot"),
+      ).toHaveLength(automation === true ? 0 : 1);
+      if (!failed) expect(Buffer.from(await response!.arrayBuffer())).toEqual(png);
+    }
+  }
+});
+
+test("HTTP automation rejects invalid bodies before capture and retains authentication", async () => {
+  for (const [body, status] of [
+    ["{", 400],
+    ['{"automation":"true"}', 400],
+    ['{"automation":1}', 400],
+    ["null", 400],
+    ["[]", 400],
+    ['{"extra":true}', 400],
+    [" ".repeat(1025), 413],
+  ] as const) {
+    const before = targets.length;
+    const response = await middleware(
+      new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+        body,
+      }),
+    );
+    expect(response!.status).toBe(status);
+    expect(targets).toHaveLength(before);
+  }
+  const before = targets.length;
+  const response = await middleware(
+    new Request(`http://localhost/preview/api/screenshot?device=${UDID}`, {
+      method: "POST",
+      body: JSON.stringify({ automation: true }),
+    }),
+  );
+  expect(response!.status).toBe(401);
+  expect(targets).toHaveLength(before);
+});

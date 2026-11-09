@@ -2139,8 +2139,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // Capture routes always require authentication, including future subroutes.
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
-  // Only the authenticated binary action can mark its internal HTTP capture as automated.
-  const automatedScreenshotRequests = new WeakSet<SimReq>();
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
     const requestStarted = performance.now();
     const rawUrl: string = req.url ?? "";
@@ -2826,6 +2824,29 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end("method not allowed");
         return;
       }
+      let automated = false;
+      try {
+        const body = await readRequestBodyAsync(req, 1024);
+        const parsed = ScreenshotParams.pick({ automation: true })
+          .strict()
+          .safeParse(body?.length ? JSON.parse(body.toString("utf-8")) : {});
+        if (!parsed.success) throw new Error("Invalid screenshot request");
+        automated = parsed.data.automation;
+      } catch (error) {
+        const tooLarge = error instanceof RequestBodyTooLargeError;
+        res.writeHead(tooLarge ? 413 : 400, {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: tooLarge ? "Screenshot request is too large" : "Invalid screenshot request",
+          }),
+        );
+        return;
+      }
+      if (automated && !assertBearerAccess(req, res, execToken)) return;
       let udid = selectedDevice;
       if (udid && !isSimulatorUdid(udid)) {
         res.writeHead(400, {
@@ -2922,7 +2943,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
         const encodeDuration = performance.now() - encodeStarted;
         const artifactStarted = performance.now();
-        const automated = automatedScreenshotRequests.has(req);
         const artifact = automated
           ? { status: "disabled" as const }
           : await saveScreenshotArtifact(png);
@@ -2948,7 +2968,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
         console.error(`Simulator screenshot failed for ${udid}:`, message);
-        if (!automatedScreenshotRequests.has(req)) {
+        if (!automated) {
           recordScreenshotEvent(udid, {
             status: "capture-failed",
             error: "simctl screenshot failed",
@@ -3540,13 +3560,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         if (value !== undefined) url.searchParams.set(key, String(value));
       }
       return (await connectToFetch(
-        (req, res, next) => {
-          if (parsed.data.automation) automatedScreenshotRequests.add(req);
-          return connectMiddleware(req, res, next);
-        },
+        connectMiddleware,
         new Request(url, {
           method: "POST",
-          headers: { authorization: `Bearer ${execToken}` },
+          headers: { authorization: `Bearer ${execToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ automation: parsed.data.automation }),
         }),
       ))!;
     },

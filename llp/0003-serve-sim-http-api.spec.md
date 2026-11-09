@@ -782,6 +782,14 @@ concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
 
+HTTP `POST /api/screenshot` also accepts an optional JSON body
+`{ "automation": true }` (at most 1 KiB). Empty bodies or omitted/false automation
+retain manual behavior. True requires the existing exec bearer token and skips
+manual artifact publication and screenshot activity on success/failure. Invalid
+JSON, unknown fields, and nonboolean values return 400 before capture; oversized
+bodies return 413. Binary exec-ws delegates through this same HTTP contract.
+[observed: `src/middleware.ts`, screenshot route and binary adapter]
+
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic
 background thumbnails do not refresh the session's idle deadline. Omitted or
