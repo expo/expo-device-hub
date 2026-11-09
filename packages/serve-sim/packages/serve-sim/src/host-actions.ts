@@ -982,7 +982,12 @@ async function runProcedureAsync(
           native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
         ) =>
           captureScreenshotAsync(
-            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            {
+              udid: p.udid,
+              fileName: p.fileName ?? newScreenshotName(),
+              display,
+              automation: p.automation,
+            },
             read,
             native,
           );

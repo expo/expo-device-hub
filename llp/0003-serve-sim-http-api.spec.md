@@ -794,7 +794,9 @@ request-local state into the HTTP capture implementation. Automated binary captu
 return PNG bytes without publishing a manual screenshot artifact; ordinary HTTP
 screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
 
-Automated path captures keep the existing Desktop copy and staging behavior. The
+Automated path captures skip the convenience Desktop copy and do not consume its
+copy-count limit. They keep the existing staging behavior. Manual captures keep
+their Desktop copy. The
 caller owns reading and removing its uniquely named staged file; a client
 timeout or closed exec socket does not cancel the host action, so it must wait
 for completion or host shutdown before removing a file the action may still write.
