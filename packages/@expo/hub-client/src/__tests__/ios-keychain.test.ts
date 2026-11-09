@@ -58,6 +58,18 @@ describe("setIosKeychainValues", () => {
     });
   });
 
+  test("passes react-native-keychain's username", async () => {
+    const { run, calls } = fakeRun(reply(APPLIED));
+    await setIosKeychainValues(
+      run,
+      UDID,
+      APP,
+      { [APP]: "pw" },
+      { format: "react-native-keychain", username: "alice" },
+    );
+    expect(calls[0]?.params).toMatchObject({ format: "react-native-keychain", username: "alice" });
+  });
+
   test("passes the format", async () => {
     const { run, calls } = fakeRun(reply(APPLIED));
     await setIosKeychainValues(
