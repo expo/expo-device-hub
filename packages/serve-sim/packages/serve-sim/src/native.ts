@@ -61,7 +61,7 @@ interface SimHIDHandle {
 }
 
 interface SimCaptureHandle {
-  screenshot(screenID: number): Promise<Uint8Array>;
+  screenshot(screenID: number, maxWidth: number): Promise<Uint8Array>;
   start(): Promise<void>;
   suspendForReboot(): Promise<void>;
   resumeAfterReboot(): Promise<void>;
@@ -86,6 +86,7 @@ interface SimCaptureHandle {
 }
 
 interface NativeAddon {
+  convertScreenshot(bytes: Uint8Array, maxWidth: number, quality?: number): Promise<Uint8Array>;
   SimHID: new (udid: string) => SimHIDHandle;
   SimCapture: new (
     udid: string,
@@ -395,8 +396,8 @@ export class NativeHid {
  * thread after being marshalled from the native encode thread.
  */
 export class NativeCapture {
-  screenshot(screenID: number): Promise<Uint8Array> {
-    return this.handle.screenshot(screenID);
+  screenshot(screenID: number, maxWidth = 0): Promise<Uint8Array> {
+    return this.handle.screenshot(screenID, maxWidth);
   }
 
   private readonly handle: SimCaptureHandle;
@@ -552,4 +553,13 @@ export function axTypeKeyboardCharacterAsync(udid: string, character: string): P
  */
 export function setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean> {
   return load().setHardwareKeyboard(udid, enabled);
+}
+
+/** Resize an encoded fallback PNG or encode a JPEG response using Core Image / ImageIO. */
+export function convertScreenshot(
+  bytes: Uint8Array,
+  maxWidth = 0,
+  quality?: number,
+): Promise<Uint8Array> {
+  return load().convertScreenshot(bytes, maxWidth, quality);
 }

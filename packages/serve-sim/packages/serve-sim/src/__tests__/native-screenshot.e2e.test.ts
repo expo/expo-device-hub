@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NativeCapture } from "../native";
+import { convertScreenshot, NativeCapture } from "../native";
 import { DEFAULT_STREAM_ENCODER_SETTINGS } from "../stream-settings";
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 
@@ -34,6 +34,11 @@ describe.skipIf(!udid)("native full-resolution screenshots", () => {
         expect(Math.min(size.width, size.height)).toBe(Math.min(screen.width, screen.height));
         expect(Math.max(size.width, size.height)).toBeGreaterThan(320);
       }
+      const resized = await capture.screenshot(display, 402);
+      const size = dimensions(resized);
+      expect(size.width).toBe(Math.min(402, dimensions(screenshots[0]!).width));
+      const jpeg = await convertScreenshot(resized, 0, 80);
+      expect([...jpeg.subarray(0, 3)]).toEqual([255, 216, 255]);
       await expect(capture.screenshot(0)).rejects.toThrow();
       await expect(capture.screenshot(0x1_0000_0000)).rejects.toThrow();
     } finally {

@@ -2,7 +2,12 @@ import { afterAll, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import * as sessions from "../../device-session";
 import * as simctl from "../../simctl";
-import { writeFileSync } from "fs";
+import * as native from "../../native";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { describeHostActions } from "../../host-actions";
+import { clearEventLogForTests, readEventLog } from "../../event-log";
 import { UDID, useTempStateDir } from "../helpers";
 import type { UpgradeHandlerWebSocket } from "../../socket/types";
 
@@ -14,6 +19,18 @@ const secondPanelPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==",
   "base64",
 );
+const converted: number[][] = [];
+const widths: (number | undefined)[] = [];
+let rejectConversion = false;
+const jpeg = Buffer.from([255, 216, 255, 217]);
+mock.module("../../native", () => ({
+  ...native,
+  convertScreenshot: async (bytes: Uint8Array, width = 0, quality = 0) => {
+    if (rejectConversion) throw new Error("Injected JPEG conversion failure");
+    converted.push([width, quality]);
+    return quality ? jpeg : bytes;
+  },
+}));
 let activeDisplay = 7;
 const capturedDisplays: number[] = [];
 let unstable = false,
@@ -40,7 +57,8 @@ mock.module("../../device-session", () => ({
     targets.push(device);
     return await capture({
       activeScreenId: async () => (unstable ? (++reads % 2 ? 7 : 8) : activeDisplay),
-      screenshot: async (display: number) => {
+      screenshot: async (display: number, _timeout: number, maxWidth?: number) => {
+        widths.push(maxWidth);
         capturedDisplays.push(display);
         if (display !== 7 && display !== 8) throw new Error("Unexpected display");
         return display === 7 ? png : secondPanelPng;
@@ -82,6 +100,23 @@ mock.module("child_process", () => ({
 const temp = useTempStateDir();
 const { simMiddleware } = await import("../../middleware");
 const middleware = simMiddleware({ basePath: "/preview", execToken: "test", device: UDID });
+test("invalid image options are refused before capture", async () => {
+  for (const query of [
+    "maxWidth=0",
+    "maxWidth=1.5",
+    "maxWidth=8193",
+    "format=gif",
+    "quality=101",
+  ]) {
+    const response = await middleware(
+      new Request(`http://localhost/preview/api/screenshot?device=${UDID}&${query}`, {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+      }),
+    );
+    expect(response!.status, query).toBe(400);
+  }
+});
 afterAll(async () => {
   await middleware.dispose();
   temp.restore();
@@ -198,4 +233,84 @@ test("binary mode resolves action device names and rejects path-only filename op
     id: 42,
     error: "Invalid screenshot request",
   });
+});
+
+test("image options reach native capture and JPEG response for HTTP and binary WS", async () => {
+  unstable = false;
+  activeDisplay = 7;
+  const response = await middleware(
+    new Request(
+      `http://localhost/preview/api/screenshot?device=${UDID}&maxWidth=402&format=jpeg&quality=65`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+      },
+    ),
+  );
+  expect(response!.headers.get("content-type")).toBe("image/jpeg");
+  expect(response!.headers.get("content-length")).toBe(String(jpeg.length));
+  expect(Buffer.from(await response!.arrayBuffer())).toEqual(jpeg);
+  expect(widths.at(-1)).toBe(402);
+  expect(converted.at(-1)).toEqual([0, 65]);
+  const binary = (await socketRequest({
+    udid: UDID,
+    maxWidth: 402,
+    format: "jpeg",
+    quality: 65,
+  })) as Buffer;
+  expect(binary.subarray(4)).toEqual(jpeg);
+  expect(widths.at(-1)).toBe(402);
+  expect(converted.at(-1)).toEqual([0, 65]);
+  const fallback = await middleware(
+    new Request(`http://localhost/preview/api/screenshot?device=${UDID}&display=7&maxWidth=402`, {
+      method: "POST",
+      headers: { authorization: "Bearer test" },
+    }),
+  );
+  expect(fallback!.status).toBe(200);
+  expect(converted.at(-1)).toEqual([402, 0]);
+});
+
+test("screenshot catalog keeps the filename as the first positional option", () => {
+  const entry = describeHostActions()["screenshot.capture"]!;
+  expect(
+    Object.keys(entry.properties ?? {})
+      .filter((key) => key !== "udid")
+      .slice(0, 3),
+  ).toEqual(["fileName", "display", "output"]);
+});
+
+test("JPEG conversion failure publishes only a failure and no artifact", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "jpeg-failure-"));
+  const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+  process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+  rejectConversion = true;
+  try {
+    for (const transport of ["http", "binary"]) {
+      clearEventLogForTests();
+      if (transport === "http") {
+        const response = await middleware(
+          new Request(`http://localhost/preview/api/screenshot?device=${UDID}&format=jpeg`, {
+            method: "POST",
+            headers: { authorization: "Bearer test" },
+          }),
+        );
+        expect(response!.status).toBe(500);
+      } else {
+        expect(await socketRequest({ udid: UDID, format: "jpeg" })).toEqual({
+          id: 42,
+          error: "Simulator screenshot failed",
+        });
+      }
+      expect(readEventLog().map(({ status, summary }) => ({ status, summary }))).toEqual([
+        { status: "error", summary: "Screenshot failed" },
+      ]);
+      expect(readdirSync(directory)).toEqual([]);
+    }
+  } finally {
+    rejectConversion = false;
+    if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

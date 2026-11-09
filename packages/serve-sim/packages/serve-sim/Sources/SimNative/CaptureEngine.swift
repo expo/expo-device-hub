@@ -241,12 +241,12 @@ actor CaptureEngine {
         await refreshSnapshotSize()
     }
 
-    func screenshot(_ screenID: UInt32) async throws -> Data {
+    func screenshot(_ screenID: UInt32, maxWidth: Int = 0) async throws -> Data {
         guard phase == .running, !rebootSuspended else { throw CancellationError() }
         let generation = captureGeneration
         let frame = try await frameCapture.screenshotPixels(screenID: screenID)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
-        let png = try await screenshotEncoder.encode(frame.pixels, orientation: frame.orientation)
+        let png = try await screenshotEncoder.encode(frame.pixels, orientation: frame.orientation, maxWidth: maxWidth)
         guard phase == .running, generation == captureGeneration, !rebootSuspended else { throw CancellationError() }
         return png
     }
