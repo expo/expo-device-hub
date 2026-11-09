@@ -227,6 +227,7 @@ describe("parseCliOptions", () => {
       "--require-token",
       "--frame-ancestor",
       "--cors-origin",
+      "--disable",
     ]) {
       expect(HELP).toContain(flag);
     }
@@ -265,6 +266,15 @@ describe("parseCliOptions", () => {
         "--frame-ancestor=http://localhost:3000",
       ]).frameAncestors,
     ).toEqual(["https://*.expo.dev", "http://localhost:3000"]);
+  });
+
+  test("accepts only the capabilities the Hub sets up for --disable", () => {
+    expect(parseCliOptions(["--disable", "keychain"]).disabledCapabilities).toEqual(["keychain"]);
+    expect(parseCliOptions(["--disable", "Keychain"]).disabledCapabilities).toEqual(["keychain"]);
+    expect(parseCliOptions([])).not.toHaveProperty("disabledCapabilities");
+    expect(() => parseCliOptions(["--disable", "networkCapture"])).toThrow(
+      "Invalid --disable: networkCapture (expected clipboard or keychain)",
+    );
   });
 
   test("collects every --cors-origin as an exact origin", () => {
