@@ -44,6 +44,18 @@ export const KEYCHAIN_FORMAT_UI: Record<
     },
     empty: "This service has no items.",
   },
+  "keychain-access": {
+    label: "KeychainAccess",
+    keyPlaceholder: "accessToken",
+    field: {
+      option: "service",
+      label: "Service",
+      description: "Keychain(service:); the bundle ID when empty",
+      placeholder: "Bundle ID",
+      required: false,
+    },
+    empty: "This service has no items.",
+  },
   "react-native-keychain": {
     label: "react-native-keychain",
     keyPlaceholder: "Service, such as the bundle ID",
