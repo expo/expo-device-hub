@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, HubClient
+**Systems:** ServeSim, ServeEmu, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
 **Revised:** 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output)
@@ -818,6 +818,15 @@ framing remains unchanged. The contract adds no PNG parsing, file readback,
 sidecars, device queries, or opt-in environment variable. ServeEmu and client
 integration are separate changes. [observed: `src/host-actions.ts`,
 `src/middleware.ts`]
+
+ServeEmu returns the same object in PNG headers and its existing base64 JSON
+response. Both standalone and Hub-mounted routes use the same capture helper.
+Only a fresh native orientation observation, unchanged across capture, fills
+`displayRotation`; a command, stale/failed observation, or source change leaves
+it null. The cache accessor never starts an adb query. Width/height remain zero
+because streamed frames may be scaled; display identity/count remain unknown.
+[observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
+`display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic

@@ -4,6 +4,8 @@ const MAX_AGE_MS = 1_000;
 const FRESH_WAIT_MS = 300;
 
 export type DisplayOrientationReader = {
+  /** Fresh observed state only; never starts a device query or returns a commanded pose. */
+  peek(): Readonly<{ orientation: ScreenOrientation }> | null;
   /**
    * The last reading, or null before the first one. Starts a new reading in the background
    * when this one is older than a second, for the synchronous `/health` snapshot. The reader
@@ -38,6 +40,8 @@ export function createDisplayOrientationReader({
 } {
   let orientation: ScreenOrientation | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
+  let observed: Readonly<{ orientation: ScreenOrientation }> | null = null;
+  let observedAt = Number.NEGATIVE_INFINITY;
   // Each lock starts a new generation; a read only counts for the generation it started in.
   let generation = 0;
   let pending: { generation: number; read: Promise<ScreenOrientation | null> } | null = null;
@@ -54,7 +58,11 @@ export function createDisplayOrientationReader({
     entry.read = (async () => {
       try {
         const next = await read();
-        if (readGeneration === generation) orientation = next;
+        if (readGeneration === generation) {
+          orientation = next;
+          observed = { orientation: next };
+          observedAt = startedAt;
+        }
       } catch {
         // Keep the last reading.
       } finally {
@@ -68,6 +76,9 @@ export function createDisplayOrientationReader({
 
   return {
     reader: {
+      peek() {
+        return now() - observedAt <= MAX_AGE_MS ? observed : null;
+      },
       current() {
         if (now() - readAt > MAX_AGE_MS) void refresh();
         return orientation;
@@ -87,6 +98,8 @@ export function createDisplayOrientationReader({
     },
     locked(pose) {
       generation++;
+      observed = null;
+      observedAt = Number.NEGATIVE_INFINITY;
       if (pose) {
         orientation = pose;
         readAt = now();
