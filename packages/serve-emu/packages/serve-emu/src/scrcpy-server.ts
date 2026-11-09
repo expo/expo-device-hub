@@ -48,11 +48,29 @@ export async function downloadWithRetry(
   throw lastError;
 }
 
+// A mirror that fails falls back to the GitHub release, so a missing or broken mirror does not
+// fail a download that GitHub can still serve.
+export async function downloadScrcpyServer(
+  env: NodeJS.ProcessEnv = process.env,
+  options?: { attempts?: number; baseDelayMs?: number },
+): Promise<Uint8Array> {
+  const url = scrcpyServerUrl(env);
+  const githubUrl = scrcpyServerUrl({});
+  if (url === githubUrl) return downloadWithRetry(url, options);
+  try {
+    return await downloadWithRetry(url, options);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`Could not download from the mirror (${reason}); trying ${githubUrl}`);
+    return downloadWithRetry(githubUrl, options);
+  }
+}
+
 export async function ensureScrcpyServer(): Promise<string> {
   if (existsSync(SCRCPY_SERVER_PATH)) return SCRCPY_SERVER_PATH;
   await mkdir(VENDOR_DIR, { recursive: true });
   console.log(`Downloading scrcpy-server v${SCRCPY_VERSION}…`);
-  const buf = await downloadWithRetry(scrcpyServerUrl());
+  const buf = await downloadScrcpyServer();
   await writeFile(SCRCPY_SERVER_PATH, buf);
   console.log(`Saved ${SCRCPY_SERVER_PATH} (${buf.byteLength} bytes)`);
   return SCRCPY_SERVER_PATH;

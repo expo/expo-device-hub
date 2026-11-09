@@ -1,5 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
-import { downloadWithRetry, scrcpyServerUrl, SCRCPY_VERSION } from "../src/scrcpy-server.ts";
+import {
+  downloadScrcpyServer,
+  downloadWithRetry,
+  scrcpyServerUrl,
+  SCRCPY_VERSION,
+} from "../src/scrcpy-server.ts";
 
 const realFetch = globalThis.fetch;
 
@@ -66,4 +71,31 @@ test("downloadWithRetry does not retry a 404", async () => {
     downloadWithRetry("https://mirror.test/scrcpy-server", { baseDelayMs: 0 }),
   ).rejects.toThrow("Failed to download https://mirror.test/scrcpy-server: 404 Not Found");
   expect(urls).toHaveLength(1);
+});
+
+test("downloadScrcpyServer falls back to GitHub when the mirror fails", async () => {
+  const urls = stubFetch([
+    new Response("", { status: 404, statusText: "Not Found" }),
+    new Response(new Uint8Array([4, 2]), { status: 200 }),
+  ]);
+  const buf = await downloadScrcpyServer(
+    { SERVE_EMU_SCRCPY_BASE_URL: "https://mirror.test/scrcpy" },
+    { baseDelayMs: 0 },
+  );
+  expect(Array.from(buf)).toEqual([4, 2]);
+  expect(urls).toEqual([
+    scrcpyServerUrl({ SERVE_EMU_SCRCPY_BASE_URL: "https://mirror.test/scrcpy" }),
+    scrcpyServerUrl({}),
+  ]);
+});
+
+test("downloadScrcpyServer tries GitHub only once when no mirror is set", async () => {
+  const urls = stubFetch([
+    new Response("", { status: 504, statusText: "Gateway Time-out" }),
+    new Response("", { status: 504, statusText: "Gateway Time-out" }),
+  ]);
+  await expect(downloadScrcpyServer({}, { attempts: 2, baseDelayMs: 0 })).rejects.toThrow(
+    "504 Gateway Time-out",
+  );
+  expect(urls).toHaveLength(2);
 });
