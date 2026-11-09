@@ -11,7 +11,7 @@ test("lets a cross-origin caller read the screenshot artifact headers", async ()
   ]) {
     const response = await screenshotResponse(png, new URL(url));
     expect(response.headers.get("access-control-expose-headers")).toBe(
-      "X-Expo-Screenshot-Artifact, X-Expo-Screenshot-Artifact-Error",
+      "X-Expo-Screenshot-Artifact, X-Expo-Screenshot-Artifact-Error, X-Expo-Screenshot-Metadata",
     );
   }
 });

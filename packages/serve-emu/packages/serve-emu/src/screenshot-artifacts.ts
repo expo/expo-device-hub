@@ -2,28 +2,6 @@ import { randomBytes } from "node:crypto";
 import { mkdir, rename, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-/** Dimensions of the encoded PNG, not the device framebuffer or physical pose. */
-export type ScreenshotMetadata = { width: number; height: number };
-
-export function screenshotMetadata(png: Uint8Array): ScreenshotMetadata | undefined {
-  const signature = [137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82];
-  if (png.length < 33 || !signature.every((byte, index) => png[index] === byte)) return;
-  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
-  // Check only the fixed-size IHDR, not the compressed pixel stream.
-  let crc = 0xffffffff;
-  for (const byte of png.subarray(12, 29)) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit++) {
-      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
-    }
-  }
-  if ((crc ^ 0xffffffff) >>> 0 !== view.getUint32(29)) return;
-  const width = view.getUint32(16);
-  const height = view.getUint32(20);
-  if (!width || !height || width > 0x7fffffff || height > 0x7fffffff) return;
-  return { width, height };
-}
-
 export type ScreenshotArtifactResult =
   | { status: "disabled" }
   | { status: "saved"; file: string }
@@ -60,29 +38,14 @@ export async function saveScreenshotArtifact(
   const name = `screenshot-${timestamp}-${uniqueSuffix}`;
   const destination = join(directory, `${name}.png`);
   const temporary = `${destination}.tmp`;
-  const sidecar = `${destination}.json`;
-  const sidecarTemporary = `${sidecar}.tmp`;
   try {
     await mkdir(directory, { recursive: true });
     await writeFile(temporary, png, { flag: "wx", mode: 0o600 });
-    // Older workers count every leftover file as an upload failure. Only a sidecar-aware
-    // collector may opt in; the default must remain PNG-only during the rollout.
-    const metadata =
-      process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA === "1" ? screenshotMetadata(png) : undefined;
-    if (metadata) {
-      await writeFile(sidecarTemporary, JSON.stringify(metadata), { flag: "wx", mode: 0o600 });
-      // The worker watches PNG publication; metadata must be ready before that notification.
-      await rename(sidecarTemporary, sidecar);
-    }
     await rename(temporary, destination);
     return { status: "saved", file: destination };
   } catch (error) {
     console.error(`could not save screenshot artifact ${destination}:`, error);
-    await Promise.allSettled([
-      rm(temporary, { force: true }),
-      rm(sidecarTemporary, { force: true }),
-      rm(sidecar, { force: true }),
-    ]);
+    await rm(temporary, { force: true }).catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
     await writeFailureRecord(join(directory, `${name}.failed.json`), `${name}.png`, message);
     return { status: "failed", file: destination, error: clientSafeErrorMessage(error) };

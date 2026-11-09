@@ -1,6 +1,7 @@
 import { ScreenshotImageOptions } from "./screenshot-options";
+import { screenshotMetadata } from "./screenshot-metadata";
 import { timeStartup } from "./startup-timing";
-import { rm, stat } from "fs/promises";
+import { readFile, rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
@@ -976,12 +977,12 @@ async function runProcedureAsync(
         const { resolveBootedDeviceAsync } = await import("./device");
         const { getScreenshotDisplayIdsAsync } = await import("./screenshot-display");
         p.udid = await resolveBootedDeviceAsync(p.udid);
-        const capture = (
+        const capture = async (
           display: number,
           read?: () => Promise<number>,
           native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
-        ) =>
-          captureScreenshotAsync(
+        ) => {
+          const result = await captureScreenshotAsync(
             {
               udid: p.udid,
               fileName: p.fileName ?? newScreenshotName(),
@@ -991,6 +992,10 @@ async function runProcedureAsync(
             read,
             native,
           );
+          if (result.exitCode !== 0) return result;
+          const metadata = screenshotMetadata(await readFile(result.stdout));
+          return metadata ? { ...result, metadata } : result;
+        };
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {
           const ids = await getScreenshotDisplayIdsAsync(p.udid);
@@ -1089,8 +1094,8 @@ export async function runHostActionAsync(
       ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
-  // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
-  // the process. `timedOut` steers the message a handler composes; the page has no use for it.
-  const { stdout, stderr, exitCode } = result;
-  return { stdout, stderr, exitCode };
+  // exec-ws spreads this into its reply. Keep the explicit public result fields;
+  // `timedOut` stays internal, while screenshot metadata accompanies the path.
+  const { stdout, stderr, exitCode, metadata } = result;
+  return metadata ? { stdout, stderr, exitCode, metadata } : { stdout, stderr, exitCode };
 }

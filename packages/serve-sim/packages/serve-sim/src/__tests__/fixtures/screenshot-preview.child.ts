@@ -7,7 +7,9 @@ import { UDID } from "../helpers";
 import * as device from "../../device";
 
 const calls: Array<{ file: string; args: string[] }> = [];
-const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]);
+const png = readFileSync(
+  new URL("../../../Sources/SimPasteboard/Icons/AppIcon60x60@2x.png", import.meta.url),
+);
 const names: string[] = [];
 let fail = false;
 let displays: number[] = [];
@@ -85,6 +87,7 @@ test("only manual captures make a Desktop copy", async () => {
       extra.automation === true ? 0 : 1,
     );
     expect(readFileSync(result.stdout)).toEqual(png);
+    expect(result.metadata).toEqual({ width: 120, height: 120 });
   }
 });
 
@@ -96,6 +99,7 @@ test("automated captures preserve active-panel selection and staged PNG", async 
   expect(readFileSync(result.stdout)).toEqual(png);
   expect(calls.map((call) => call.file)).toEqual([]);
   expect(capturedDisplays).toEqual([1, 3]);
+  expect(result.metadata).toEqual({ width: 120, height: 120 });
 });
 
 test("failed background captures do not copy or leave an empty reservation", async () => {
@@ -110,4 +114,47 @@ test("invalid boolean flags are refused before capture", async () => {
     await expect(capture(extra)).rejects.toThrow();
   }
   expect(calls).toEqual([]);
+});
+
+test("authenticated exec-ws path replies carry dimensions beside the unchanged path", async () => {
+  const { createExecWebSocketHandler } = await import("../../socket/server-control");
+  let receive!: (data: Buffer) => void;
+  const sent: string[] = [];
+  const pending = new Set<Promise<unknown>>();
+  const ws = {
+    OPEN: 1,
+    readyState: 1,
+    send(data: string) {
+      sent.push(data);
+    },
+    close() {},
+    on(event: string, callback: typeof receive) {
+      if (event === "message") receive = callback;
+    },
+  } as import("../../socket/types").UpgradeHandlerWebSocket;
+  createExecWebSocketHandler({ path: "/exec-ws", execToken: "test", pendingActions: pending })(
+    new Request("http://localhost/exec-ws", {
+      headers: { "sec-websocket-protocol": "serve-sim.token.test" },
+    }),
+    ws,
+  );
+  const fileName = `serve-sim-screenshot-preview-test-${names.length}.png`;
+  names.push(fileName);
+  receive(
+    Buffer.from(
+      JSON.stringify({
+        id: 7,
+        action: "screenshot.capture",
+        params: { udid: UDID, fileName, automation: true },
+      }),
+    ),
+  );
+  await Promise.all(pending);
+  expect(JSON.parse(sent.at(-1)!)).toEqual({
+    id: 7,
+    stdout: join(SCREENSHOT_DIR, fileName),
+    stderr: "",
+    exitCode: 0,
+    metadata: { width: 120, height: 120 },
+  });
 });

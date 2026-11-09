@@ -6,7 +6,6 @@ import {
   clientSafeErrorMessage,
   saveScreenshotArtifact,
   screenshotArtifactHeaders,
-  screenshotMetadata,
 } from "./screenshot-artifacts.ts";
 
 describe("screenshot artifacts", () => {
@@ -155,42 +154,5 @@ describe("screenshot artifact headers", () => {
       error: "x".repeat(2000),
     });
     expect(headers["X-Expo-Screenshot-Artifact-Error"]).toHaveLength(512);
-  });
-});
-
-describe("screenshot metadata sidecar", () => {
-  test("publishes encoded dimensions beside a real PNG", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "screenshot-metadata-"));
-    const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA;
-    process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA = "1";
-    try {
-      const png = await readFile(
-        new URL(
-          "../../../../serve-sim/packages/serve-sim/Sources/SimPasteboard/Icons/AppIcon60x60@2x.png",
-          import.meta.url,
-        ),
-      );
-      expect(screenshotMetadata(png)).toEqual({ width: 120, height: 120 });
-      const result = await saveScreenshotArtifact(png, directory);
-      if (result.status !== "saved") throw new Error(`capture was ${result.status}`);
-      expect(JSON.parse(await readFile(`${result.file}.json`, "utf8"))).toEqual({
-        width: 120,
-        height: 120,
-      });
-      expect(await readFile(result.file)).toEqual(png);
-      expect(await readdir(directory)).toHaveLength(2);
-      delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA;
-      const legacy = await saveScreenshotArtifact(png, directory);
-      expect(legacy.status).toBe("saved");
-      expect(await readdir(directory)).toHaveLength(3);
-      expect(screenshotMetadata(png.subarray(0, 24))).toBeUndefined();
-      const invalid = Buffer.from(png);
-      invalid.writeUInt32BE(121, 16);
-      expect(screenshotMetadata(invalid)).toBeUndefined();
-    } finally {
-      if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA;
-      else process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA = previous;
-      await rm(directory, { recursive: true, force: true });
-    }
   });
 });
