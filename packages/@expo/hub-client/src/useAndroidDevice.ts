@@ -102,6 +102,7 @@ import {
   type DeviceClient,
   type DeviceCapabilities,
   type ScreenshotCapture,
+  type ScreenshotOptions,
   type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
   type DeviceEvent,
@@ -563,13 +564,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     rotateOrientation(screen && screen.width > screen.height ? "landscape_right" : "portrait");
   }, [rotateOrientation, screen]);
 
-  // serve-emu captures the frame buffer server-side (`adb exec-out screencap
-  // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
-  // first available, matching the stream).
-  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
-    if (!baseUrl) return null;
-    return fetchScreenshot(baseUrl, targetDevice, sessionFetch);
-  }, [baseUrl, targetDevice, sessionFetch]);
+  // Use the same authenticated endpoint for native PNG and optional image controls.
+  const screenshot = useCallback(
+    async (options?: ScreenshotOptions): Promise<ScreenshotCapture | null> => {
+      if (!baseUrl) return null;
+      return fetchScreenshot(baseUrl, targetDevice, sessionFetch, options);
+    },
+    [baseUrl, targetDevice, sessionFetch],
+  );
 
   // Device-wide options use the same GET/POST contracts as serve-emu's own UI.
   // Writes are optimistic and independently serialized by key; a failed write

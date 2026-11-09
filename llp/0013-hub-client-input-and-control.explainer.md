@@ -5,7 +5,7 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich)
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (optional screenshot image controls)
 **Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
@@ -150,6 +150,16 @@ The Hub dashboard reads and writes the browser clipboard for HubClient. Paths in
 Browser clipboard writes from toolbar Copy are serialized. An older write that has already started cannot be cancelled; a newer result waits for it and writes last. A queued write whose action has been superseded is skipped [observed: `copyWrites` in `ClipboardToast.tsx`].
 
 Clipboard fallbacks belong to the selected device and are discarded on a selection change. A new fallback clears an earlier inspector error. A new inspector Copy clears its previous result before reading, including on failure. Key warnings are shown even when React batches an action's start and completion. The toolbar wraps at narrow widths; its measured height reserves space below the stream [observed: `Dashboard.tsx`, `ClipboardSection.tsx`, `ClipboardToast.tsx`, `StreamPanel.tsx`].
+
+## Screenshots
+
+`DeviceClient.screenshot(options?)` forwards optional `maxWidth`, `format`, and
+`quality` fields to the backend screenshot endpoint on iOS and Android. An
+omitted options object preserves the existing native-resolution PNG request.
+The result retains the response Blob MIME type and artifact headers; older
+backends may ignore options, so callers inspect `blob.type`. This adds no
+website or dashboard UI selection [observed: `screenshot.ts`, `types.ts`,
+`useIosDevice.ts`, `useAndroidDevice.ts` in `packages/@expo/hub-client/src`].
 
 ## Orientation
 
