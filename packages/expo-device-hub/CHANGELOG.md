@@ -1,5 +1,16 @@
 # expo-device-hub
 
+## 0.22.0
+
+### Minor Changes
+
+- fced3d6: Allow foldable Android emulators to set hinge angles from 0 to 180 degrees through `/api/fold`, with device-range validation and confirmed readback. Fold status now includes the hinge range, and ambiguous rounded readings get time to settle before an angle write answers.
+- fced3d6: Expose Android emulator folding through `client.fold` and `capabilities.fold`, with angle controls and closed, book, and open presets in the existing dashboard. Controls honor recording locks and remain hidden unless the emulator reports a supported 0 to 180 degree hinge range.
+
+### Patch Changes
+
+- 0d95b3d: Try the Android scrcpy server download up to 3 times on a temporary failure, and let `SERVE_EMU_SCRCPY_BASE_URL` point the download at a mirror that keeps the GitHub release layout. If the mirror fails, the download falls back to GitHub.
+
 ## 0.21.0
 
 ### Minor Changes
