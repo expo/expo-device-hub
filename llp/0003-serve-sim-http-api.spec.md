@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, ServeEmu, HubClient
+**Systems:** ServeSim, ServeEmu, Hub, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
 **Revised:** 2026-11-10 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output; verified sole-display capture without native video)
@@ -846,6 +846,12 @@ artifact outcome. Older servers omit the optional metadata. Invalid or oversized
 metadata headers are ignored without losing the PNG; unknown extra fields are
 not forwarded. Zero/null values remain unknown and must not become layout sizes.
 [observed: `packages/@expo/hub-client/src/screenshot.ts`, `types.ts`]
+
+Device Hub's authenticated mounts preserve the screenshot PNG, metadata header,
+and CORS exposure from each backend. An unauthenticated request is refused
+before reaching either backend. Hub adds no separate screenshot state.
+[observed: `packages/expo-device-hub/src/server/index.ts`, `serve-sim.ts`,
+`serve-emu.ts`; `__tests__/fixtures/single-device-routes.fixture.ts`]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic
