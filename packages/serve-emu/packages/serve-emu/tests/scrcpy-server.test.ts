@@ -19,12 +19,16 @@ function stubFetch(responses: Array<Response | Error>): string[] {
   return urls;
 }
 
-test("scrcpyServerUrl uses SERVE_EMU_SCRCPY_SERVER_URL when it is set", () => {
-  expect(
-    scrcpyServerUrl({ SERVE_EMU_SCRCPY_SERVER_URL: "https://mirror.test/scrcpy-server" }),
-  ).toBe("https://mirror.test/scrcpy-server");
+test("scrcpyServerUrl keeps the release layout under SERVE_EMU_SCRCPY_BASE_URL", () => {
+  const file = `v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
+  expect(scrcpyServerUrl({ SERVE_EMU_SCRCPY_BASE_URL: "https://mirror.test/scrcpy" })).toBe(
+    `https://mirror.test/scrcpy/${file}`,
+  );
+  expect(scrcpyServerUrl({ SERVE_EMU_SCRCPY_BASE_URL: "https://mirror.test/scrcpy/" })).toBe(
+    `https://mirror.test/scrcpy/${file}`,
+  );
   expect(scrcpyServerUrl({})).toBe(
-    `https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`,
+    `https://github.com/Genymobile/scrcpy/releases/download/${file}`,
   );
 });
 

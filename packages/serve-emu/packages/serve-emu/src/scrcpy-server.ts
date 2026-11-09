@@ -8,11 +8,11 @@ import { dirname, join } from "node:path";
 // @ref LLP 0008#scrcpy-upgrade-checklist — Canonical wire spec and upgrade checklist
 export const SCRCPY_VERSION = "4.0";
 
-const DEFAULT_DOWNLOAD_URL = `https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
+const DEFAULT_BASE_URL = "https://github.com/Genymobile/scrcpy/releases/download";
 
 // GitHub release downloads sometimes return 5xx, which fails the session. A host can point the
-// download at a mirror of the same file with SERVE_EMU_SCRCPY_SERVER_URL, and temporary
-// failures are retried.
+// download at a mirror with SERVE_EMU_SCRCPY_BASE_URL. The mirror keeps the release layout, so
+// a version bump fetches the matching file. Temporary failures are retried.
 const DOWNLOAD_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 1000;
 
@@ -22,7 +22,8 @@ const VENDOR_DIR = join(here, "..", "vendor");
 export const SCRCPY_SERVER_PATH = join(VENDOR_DIR, `scrcpy-server-v${SCRCPY_VERSION}`);
 
 export function scrcpyServerUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return env.SERVE_EMU_SCRCPY_SERVER_URL || DEFAULT_DOWNLOAD_URL;
+  const base = (env.SERVE_EMU_SCRCPY_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return `${base}/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
 }
 
 export async function downloadWithRetry(

@@ -98,6 +98,8 @@ bun run --filter serve-emu start
 
 `setup` downloads the pinned `scrcpy-server-v4.0` into `packages/serve-emu/vendor/` and builds the browser UI. The CLI also runs the scrcpy setup lazily on first start, so you can skip the setup step for a quick local run.
 
+The download comes from the scrcpy GitHub release. To use a mirror, set `SERVE_EMU_SCRCPY_BASE_URL` to a base URL that keeps the release layout (`<base>/v4.0/scrcpy-server-v4.0`). A download that fails with a server or network error is tried up to 3 times.
+
 ## CLI
 
 ```text
