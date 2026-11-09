@@ -993,8 +993,14 @@ async function runProcedureAsync(
             native,
           );
           if (result.exitCode !== 0) return result;
-          const metadata = screenshotMetadata(await readFile(result.stdout));
-          return metadata ? { ...result, metadata } : result;
+          try {
+            const metadata = screenshotMetadata(await readFile(result.stdout));
+            return metadata ? { ...result, metadata } : result;
+          } catch (error) {
+            // The screenshot is already published; optional metadata must not turn it into a failure.
+            console.error("Could not read screenshot metadata:", error);
+            return result;
+          }
         };
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {
