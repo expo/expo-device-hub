@@ -116,6 +116,7 @@ const pkgVersion = JSON.parse(readFileSync(resolve(root, "package.json"), "utf-8
 const PREVIEW_DEFINE = {
   __PREVIEW_HTML_B64__: JSON.stringify(htmlB64),
   __SERVE_SIM_VERSION__: JSON.stringify(pkgVersion),
+  __SERVE_SIM_COMPILED__: "false",
 };
 
 // ─── 3. Middleware ESM (@expo/serve-sim/middleware) ─────────────────────────────
@@ -234,7 +235,7 @@ try {
     minify: true,
     outdir: compileDir,
     naming: "serve-sim.js",
-    define: PREVIEW_DEFINE,
+    define: { ...PREVIEW_DEFINE, __SERVE_SIM_COMPILED__: "true" },
     external: ["ws"],
   });
   if (!staged.success) {
