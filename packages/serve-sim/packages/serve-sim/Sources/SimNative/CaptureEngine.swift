@@ -125,6 +125,7 @@ actor CaptureEngine {
     private var rebootSuspended = false
     // The device trait survives reboot while FrameCapture's boot-bound state is cleared.
     private var isFoldable = false
+    private var supportsDevicePose = false
     private var captureGeneration: UInt64 = 0
     private var recording: NativeVideoRecorder?
     private var recordingStarting = false
@@ -173,6 +174,7 @@ actor CaptureEngine {
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas, captureGeneration: generation, isActivePanel: screen.isActivePanel))
             }
             isFoldable = await frameCapture.isFoldable
+            supportsDevicePose = await frameCapture.supportsDevicePose
         } catch {
             frameContinuation.finish()
             self.frameContinuation = nil
@@ -533,7 +535,7 @@ actor CaptureEngine {
 
     func subscribeDeviceState(_ callback: @escaping @Sendable (DeviceStateSnapshot) -> Void,
                               onDetach: @escaping @Sendable () async -> Void = {}) async -> @Sendable () async -> Void {
-        guard phase == .running else { await onDetach(); return {} }
+        guard phase == .running, supportsDevicePose else { await onDetach(); return {} }
         let id = UUID()
         let unsubscribe: @Sendable () async -> Void
         let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)

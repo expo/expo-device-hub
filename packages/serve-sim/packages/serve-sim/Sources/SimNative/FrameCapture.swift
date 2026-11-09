@@ -98,6 +98,7 @@ actor FrameCapture {
     private var deviceUDID: String?
     private var displayProfile = SimulatorDisplayProfile()
     private(set) var isFoldable = false
+    private(set) var supportsDevicePose = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var capturedPanelActivity: Bool?
     private var displayInfoTask: Task<Void, Never>?
@@ -146,6 +147,11 @@ actor FrameCapture {
         displayProfile = SimulatorDisplayProfile.read(from: device)
         legacyScreenSize = SimDisplayMetadata.legacyScreenSize(from: device)
         isFoldable = displayProfile.isFoldable
+        let runtimeSelector = NSSelectorFromString("runtime")
+        let runtime = device.responds(to: runtimeSelector)
+            ? device.perform(runtimeSelector)?.takeUnretainedValue() as? NSObject : nil
+        let runtimeIdentifier = runtime?.value(forKey: "identifier") as? String ?? ""
+        supportsDevicePose = displayProfile.supportsDevicePose(runtimeIdentifier: runtimeIdentifier)
         if screenID == nil {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
@@ -798,6 +804,7 @@ actor FrameCapture {
         if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
         isFoldable = false
+        supportsDevicePose = false
         displayProfile = SimulatorDisplayProfile()
         legacyScreenSize = nil
         authoritativeDisplay = nil
