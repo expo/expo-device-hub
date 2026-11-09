@@ -1,5 +1,17 @@
 # @expo/serve-sim
 
+## 0.14.0
+
+### Minor Changes
+
+- d0f7c95: Add optional screenshot resizing and JPEG output to the HTTP and binary WebSocket APIs. Full-resolution PNG remains the default.
+
+### Patch Changes
+
+- b66e959: Add an `automation` flag to screenshot captures so background session thumbnails do not count as user activity. Automated captures skip Desktop copies, and binary captures do not create manual screenshot artifacts.
+
+  The POST screenshot endpoint also accepts `automation: true` in its JSON body with the existing bearer token.
+
 ## 0.13.3
 
 ### Patch Changes
