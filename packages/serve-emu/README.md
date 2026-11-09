@@ -401,7 +401,7 @@ it can also use `maxWidth`. JPEG is lossy; session artifacts remain PNG at the
 requested size. Resizing/JPEG conversion runs on the host after `adb screencap`.
 
 Responses report `Server-Timing` for capture, encoding, artifact saving, and
-server total. Total excludes response transfer. Benchmark a running local session
+server total. Total includes response construction and excludes transfer. Benchmark a running local session
 with `node scripts/benchmark-screenshots.mjs http://127.0.0.1:3300`; set
 `SERVE_EMU_TOKEN` for authenticated sessions. The command reports seven samples
 per image mode after warmup, payload bytes, socket reuse, and stage timings.
