@@ -9,6 +9,23 @@ import {
 } from "./launch-manager";
 import type { CapabilityDefinition } from "./capabilities";
 import { LaunchStateLockedError } from "./launch-state-lock";
+import { ownerIsGone } from "./launch-state";
+import { KEYCHAIN_CAPABILITY } from "./sim-keychain";
+import { CLIPBOARD_CAPABILITY } from "./sim-pasteboard-reader";
+
+/** The capabilities a preview sets up on each device it opens; `capabilities.set` switches them. */
+export const SESSION_CAPABILITIES = [CLIPBOARD_CAPABILITY, KEYCHAIN_CAPABILITY] as const;
+export type SessionCapability = (typeof SESSION_CAPABILITIES)[number];
+
+/** What host actions reach: the middleware's sessions. */
+export interface CapabilityController {
+  list(udid: string): { name: SessionCapability; enabled: boolean }[];
+  set(udid: string, name: SessionCapability, enabled: boolean): Promise<void>;
+  /** False when this server turned the capability off for the device, whoever set it up. */
+  allows(udid: string, name: SessionCapability): boolean;
+  /** Disabling waits for admitted operations; other devices can still proceed. */
+  run<T>(udid: string, name: SessionCapability, operation: () => Promise<T>): Promise<T>;
+}
 
 const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 5 * 60_000;
@@ -64,7 +81,8 @@ function exitReleaseFailure(error: unknown): string {
 
 /**
  * Sets up one default capability on each device the middleware opens or starts, keeps it in place,
- * and releases it on `dispose()` or at exit.
+ * and releases it on `dispose()` or at exit. `setEnabled` switches it on one device until dispose;
+ * a capability the session starts disabled stays off.
  */
 export function createCapabilitySession(
   definition: CapabilityDefinition,
@@ -75,44 +93,80 @@ export function createCapabilitySession(
   // check (two simctl spawns) runs at most once per RECHECK_MS per device. That check is what repairs
   // a reboot the middleware did not see.
   const devices = new Map<string, { work: Promise<void>; done: boolean; checkedAt: number }>();
+  const operations = new Map<string, Set<Promise<unknown>>>();
+  let disposed = false;
+  // Per-device choices from `setEnabled`; the periodic check keeps them rather than `enabled`.
+  const choices = new Map<string, boolean>();
+  const wanted = (udid: string) => !disposed && (choices.get(udid) ?? enabled);
+  // A running process that set the capability up would set it up again on its next check, so
+  // turning it off here leaves that record; this server's own actions still refuse it.
+  const ownedElsewhere = (udid: string) => {
+    const owner = readLaunchState(udid)?.capabilities[definition.name]?.ownerPid;
+    return owner != null && owner !== process.pid && !ownerIsGone(owner);
+  };
   // A failed setup waits before the next attempt, so a device that keeps failing is not retried and
-  // logged on every request. Each failure doubles the wait; a reboot retries at once.
+  // logged on every request. Each failure doubles the wait; a reboot or a choice retries at once.
   const failures = new Map<string, { retryAt: number; delayMs: number; error: unknown }>();
   const initializedHere = new Set<string>();
-  let disposed = false;
 
-  function initialize(udid: string, rebooted = false): Promise<void> {
-    if (disposed) return Promise.resolve();
-    if (!rebooted && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
-    const previous = devices.get(udid);
-    if (
-      previous &&
-      !rebooted &&
-      (!previous.done ||
-        (!enabled && !isCapabilityEnabled(udid, definition.name)) ||
-        (enabled &&
-          now() - previous.checkedAt < RECHECK_MS &&
-          isCapabilityEnabled(udid, definition.name)))
-    ) {
-      return previous.work;
+  function runOperation<T>(udid: string, operation: () => Promise<T>): Promise<T> {
+    if (disposed) return Promise.reject(new Error(`The ${definition.name} session has ended.`));
+    if (!wanted(udid)) {
+      return Promise.reject(
+        new Error(`The ${definition.name} capability is off for ${udid} on this server.`),
+      );
     }
-    // A reboot clears launchd, so configure the new boot after any setup that started before it.
-    const earlier =
-      rebooted && previous && !previous.done ? previous.work.catch(() => {}) : undefined;
+    const active = operations.get(udid) ?? new Set<Promise<unknown>>();
+    const work = Promise.resolve().then(operation);
+    // Register before the operation starts, so a simultaneous disable cannot miss it.
+    active.add(work);
+    operations.set(udid, active);
+    return work.finally(() => {
+      active.delete(work);
+      if (active.size === 0) operations.delete(udid);
+    });
+  }
+
+  /** Whether the last setup still holds, so a call can share it instead of starting another. */
+  function stillHolds(udid: string, previous: { done: boolean; checkedAt: number }): boolean {
+    if (!previous.done) return true;
+    if (!wanted(udid)) return !isCapabilityEnabled(udid, definition.name) || ownedElsewhere(udid);
+    return now() - previous.checkedAt < RECHECK_MS && isCapabilityEnabled(udid, definition.name);
+  }
+
+  /**
+   * `force` is for a reboot, which clears launchd, and for a new choice, which reverses the last
+   * one: it skips the retry wait and the shared setup, and runs after any setup still running.
+   */
+  function initialize(udid: string, force = false): Promise<void> {
+    if (disposed) return Promise.resolve();
+    if (!force && now() < (failures.get(udid)?.retryAt ?? 0)) return Promise.resolve();
+    const want = wanted(udid);
+    const previous = devices.get(udid);
+    // Disable removes setup after admitted operations drain. Polling and preparation may still
+    // share an in-flight setup, but must not turn it off underneath those operations.
+    if (!want && operations.get(udid)?.size) return previous?.work ?? Promise.resolve();
+    if (previous && !force && stillHolds(udid, previous)) return previous.work;
+    const earlier = previous && !previous.done ? previous.work.catch(() => {}) : undefined;
     const entry = { work: Promise.resolve(), done: false, checkedAt: 0 };
     entry.work = (async () => {
       await earlier;
-      if (enabled && !rebooted && (await isCapabilityArmed(udid, definition.name))) return;
-      await configureCapability(udid, definition, { enabled, relaunch: false });
-      if (enabled) {
-        initializedHere.add(udid);
-        releaseOnExit(udid);
-      } else if (readLaunchState(udid)) {
+      // Another running process's setup stays its own; a forced setup redoes only this server's.
+      if (
+        want &&
+        (!force || ownedElsewhere(udid)) &&
+        (await isCapabilityArmed(udid, definition.name))
+      )
+        return;
+      if (!want && ownedElsewhere(udid)) return;
+      await configureCapability(udid, definition, { enabled: want, relaunch: false });
+      if (!want) {
+        if (!readLaunchState(udid)) return;
         // Republish without dead owners, including readers left by an earlier session.
         await rearmCapabilityLoader(udid);
-        initializedHere.add(udid);
-        releaseOnExit(udid);
       }
+      initializedHere.add(udid);
+      releaseOnExit(udid);
     })().then(
       () => {
         entry.done = true;
@@ -142,8 +196,29 @@ export function createCapabilitySession(
       const failure = failures.get(udid);
       if (failure) throw failure.error;
     },
+    run: runOperation,
+    /** Whether this server lets the capability work on the device: the startup setting or a choice. */
+    allows: wanted,
+    async setEnabled(udid: string, value: boolean): Promise<void> {
+      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
+      if (value && !enabled) {
+        throw new Error(
+          `This server started with ${definition.name} disabled. Restart it without --disable ${definition.name} to turn it on.`,
+        );
+      }
+      if (!devices.has(udid) && !failures.has(udid)) {
+        throw new Error(`This server has not opened ${udid}.`);
+      }
+      choices.set(udid, value);
+      // Close admission first, then drain before completing the disable.
+      // Action failures remain with their callers and do not prevent disabling.
+      if (!value) await Promise.allSettled(operations.get(udid) ?? []);
+      if (disposed) throw new Error(`The ${definition.name} session has ended.`);
+      await initialize(udid, true);
+    },
     async dispose(): Promise<void> {
       disposed = true;
+      await Promise.allSettled([...operations.values()].flatMap((active) => [...active]));
       await Promise.allSettled([...devices.values()].map(({ work }) => work));
       const results = await Promise.allSettled(
         [...initializedHere].map(async (udid) => {
@@ -166,6 +241,44 @@ export function createCapabilitySession(
         .map((result) => result.reason);
       if (errors.length > 0)
         throw new AggregateError(errors, `Could not release the ${definition.name} session`);
+    },
+  };
+}
+
+export type CapabilitySession = ReturnType<typeof createCapabilitySession>;
+
+/**
+ * A null session is a capability the middleware does not manage: one it leaves `"unmanaged"`, or
+ * keychain without its library. It is neither listed nor switched.
+ */
+export function createCapabilityController(
+  sessions: Record<SessionCapability, CapabilitySession | null>,
+  onChange: () => void = () => {},
+): CapabilityController {
+  return {
+    // On only where this server allows it and the device has it set up, so a reply never shows a
+    // capability on that this server's actions refuse.
+    list: (udid) =>
+      SESSION_CAPABILITIES.flatMap((name) => {
+        const session = sessions[name];
+        return session
+          ? [{ name, enabled: session.allows(udid) && isCapabilityEnabled(udid, name) }]
+          : [];
+      }),
+    async set(udid, name, enabled) {
+      const session = sessions[name];
+      if (!session) throw new Error(`This server does not manage ${name}.`);
+      // A choice can leave the launch state as it was, so watchers of that state would miss it.
+      try {
+        await session.setEnabled(udid, enabled);
+      } finally {
+        onChange();
+      }
+    },
+    allows: (udid, name) => sessions[name]?.allows(udid) ?? true,
+    async run<T>(udid: string, name: SessionCapability, operation: () => Promise<T>): Promise<T> {
+      const session = sessions[name];
+      return session ? await session.run(udid, operation) : await operation();
     },
   };
 }
