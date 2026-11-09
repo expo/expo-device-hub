@@ -2,10 +2,10 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim, HubClient
+**Systems:** ServeSim, ServeEmu, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-11-06 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output)
+**Revised:** 2026-11-09 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; screenshot resizing and JPEG output; Android screenshot image options)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -843,3 +843,16 @@ when the active display keeps changing. Private native-startup and simctl
 diagnostics stay in host logs. The `display` query uses CoreSimulator IDs;
 serve-emu's screenshot route has no equivalent query and retains its existing
 device screenshot behavior. [observed: serve-sim and serve-emu `middleware.ts`]
+
+## Android screenshot images
+
+serve-emu's POST screenshot endpoint accepts the same `maxWidth`, `format=png`
+or `format=jpeg`, and `quality` image controls described above. Validation runs
+before capture. Its existing `format=base64` response remains JSON containing PNG,
+and can also use `maxWidth`. Default requests preserve the original PNG bytes.
+Resizing and JPEG conversion use Sharp on the host after `adb screencap`; session
+artifacts remain PNG at the requested size. Binary responses declare
+`Content-Length`. `Server-Timing` exposes capture, encode, artifact, and server
+total durations; total includes response construction but excludes delivery [observed:
+`packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
+middleware, and inspection route callers].

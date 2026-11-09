@@ -6,8 +6,7 @@ import { downstream, parseInput, readObject, shouldRecord } from "./route-helper
 
 export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
   const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({ url, deps }) => {
-    const png = await downstream("capture screenshot", deps.takeScreenshot);
-    return screenshotResponse(png, url);
+    return screenshotResponse(() => downstream("capture screenshot", deps.takeScreenshot), url);
   };
 
   return [

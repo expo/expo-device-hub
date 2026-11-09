@@ -1639,7 +1639,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        return await screenshotResponse(await screencapPng(opts.serial), url);
+        return await screenshotResponse(() => screencapPng(opts.serial), url);
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
