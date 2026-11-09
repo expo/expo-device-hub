@@ -76,12 +76,14 @@ test("catalog advertises the optional automation field", async () => {
   expect(schema.required).not.toContain("automation");
 });
 
-test("manual and automated captures preserve the existing Desktop copy", async () => {
+test("only manual captures make a Desktop copy", async () => {
   for (const extra of [{}, { automation: false }, { automation: true }]) {
     calls.length = 0;
     const result = await capture(extra);
     expect(result.exitCode).toBe(0);
-    expect(calls.filter((call) => call.file === "cp")).toHaveLength(1);
+    expect(calls.filter((call) => call.file === "cp")).toHaveLength(
+      extra.automation === true ? 0 : 1,
+    );
     expect(readFileSync(result.stdout)).toEqual(png);
   }
 });
@@ -92,7 +94,7 @@ test("automated captures preserve active-panel selection and staged PNG", async 
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe("");
   expect(readFileSync(result.stdout)).toEqual(png);
-  expect(calls.map((call) => call.file)).toEqual(["cp"]);
+  expect(calls.map((call) => call.file)).toEqual([]);
   expect(capturedDisplays).toEqual([1, 3]);
 });
 
