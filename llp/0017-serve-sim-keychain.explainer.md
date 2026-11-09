@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-10-27
-**Revised:** 2026-11-06
+**Revised:** 2026-11-08
 **Related:** LLP 0007, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -49,7 +49,7 @@ The capability is on by default for user apps. Without a built dylib it declines
 
 ## Formats and the CLI
 
-`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`:
+`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON file input validates own entries without rebuilding an object, so credential names such as `__proto__` survive and every non-string value is refused before publication [observed: `parseKeychainEntries` in `src/keychain-cli.ts`]:
 
 - `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
 - `generic-password` writes the key as a string account in a given service, for other libraries.
