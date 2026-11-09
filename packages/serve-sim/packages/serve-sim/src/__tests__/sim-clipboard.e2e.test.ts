@@ -4,7 +4,8 @@ import { createServer } from "http";
 import { join } from "path";
 import { WebSocket, WebSocketServer } from "ws";
 import { locateNativeAddon } from "../native";
-import { createClipboardSession } from "../clipboard-session";
+import { createCapabilitySession } from "../capability-session";
+import { clipboardCapability } from "../sim-pasteboard-reader";
 import { closeDeviceSession, getDeviceSession } from "../device-session";
 import { getUiOption, setUiOption } from "../ui-settings";
 import { simctlSync } from "../simctl";
@@ -27,7 +28,7 @@ function simctl(...args: string[]): string {
 describeApp(`simulator app paste (booted sim ${udid ?? "<skipped>"})`, () => {
   let previousKeyboard: string;
   let fixtureLog: string;
-  const clipboard = createClipboardSession();
+  const clipboard = createCapabilitySession(clipboardCapability);
 
   function fixtureLines(): string[] {
     try {

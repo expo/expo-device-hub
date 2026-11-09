@@ -84,6 +84,8 @@ interface ExecChannelOptions {
   deviceName?: (udid: string) => string | undefined;
   /** Trusted initial settings from the owning middleware, never from action parameters. */
   streamSettings?: StreamSettings;
+  /** Owning middleware policy/setup, awaited before Keychain actions. */
+  prepareKeychain?: (udid: string) => Promise<void>;
 }
 
 function wireExecSocket(
@@ -333,6 +335,7 @@ function wireExecSocket(
       opts.serveSimBinPath ?? "serve-sim",
       opts.streamSettings,
       opts.deviceName,
+      opts.prepareKeychain,
     )
       .then((result) => {
         try {

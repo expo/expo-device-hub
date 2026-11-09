@@ -67,11 +67,11 @@ mock.module("../../simctl", () => ({
     throw new Error(`Unexpected host command: ${args.join(" ")}`);
   },
 }));
-mock.module("../../clipboard-session", () => ({
-  createClipboardSession: () => ({
+mock.module("../../capability-session", () => ({
+  createCapabilitySession: ({ name }: { name: string }) => ({
     initialize: async () => {},
     dispose: async () => {
-      event("clipboard-dispose");
+      if (name === "clipboard") event("clipboard-dispose");
     },
   }),
 }));

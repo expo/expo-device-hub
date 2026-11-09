@@ -122,8 +122,13 @@ import {
   PasteboardTooLargeError,
   writeSimPasteboard,
 } from "./sim-pasteboard";
-import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
-import { createClipboardSession } from "./clipboard-session";
+import {
+  clipboardCapability,
+  PasteboardUnavailableError,
+  readSimPasteboardResult,
+} from "./sim-pasteboard-reader";
+import { createCapabilitySession } from "./capability-session";
+import { keychainCapability, locateKeychainDylib } from "./sim-keychain";
 import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
@@ -1003,6 +1008,7 @@ export function previewConfigForState(
   shareUrl?: string,
   disableShare = false,
   singleDevice?: string,
+  keychain = false,
 ): ServeSimState & {
   basePath: string;
   logsEndpoint: string;
@@ -1036,6 +1042,8 @@ export function previewConfigForState(
   shareUrl?: string;
   disableShare?: boolean;
   singleDevice?: string;
+  /** The keychain actions can reach apps on this device. */
+  keychain?: boolean;
 } {
   const gridApiBase = (base === "" ? "" : base) + "/grid/api";
   const legacyCodec = typeof streamSettingsOrCodec === "string" ? streamSettingsOrCodec : undefined;
@@ -1078,6 +1086,7 @@ export function previewConfigForState(
     ...(requirePreviewToken ? { requireToken: true } : {}),
     ...(shareUrl ? { shareUrl } : {}),
     ...(disableShare ? { disableShare: true } : {}),
+    ...(keychain ? { keychain: true } : {}),
   };
 }
 
@@ -1575,6 +1584,8 @@ export interface SimMiddlewareOptions {
    * stream helpers pass it, because they can outlive the session that owns the capability loader.
    */
   clipboard?: boolean | "unmanaged";
+  /** The keychain helper, which keychain actions need, with the same values as `clipboard`. */
+  keychain?: boolean | "unmanaged";
   /**
    * The server listens on loopback only. Without the token gate, network capture is refused unless
    * this is set: anyone who can load the preview could otherwise read captured traffic. An embedder
@@ -2047,13 +2058,28 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
   const clipboardOption = options?.clipboard ?? true;
   const clipboard =
-    clipboardOption === "unmanaged" ? null : createClipboardSession(clipboardOption);
-  const initializeClipboard = async (udid: string, rebooted = false): Promise<void> => {
-    try {
-      await clipboard?.initialize(udid, rebooted);
-    } catch (error) {
-      console.error(`[serve-sim] Could not initialize the simulator clipboard on ${udid}:`, error);
-    }
+    clipboardOption === "unmanaged"
+      ? null
+      : createCapabilitySession(clipboardCapability, clipboardOption);
+  const keychainOption = options?.keychain ?? true;
+  // Without the dylib the capability declines: no session tries to set it up, and clients show no
+  // controls that would always fail.
+  const keychainAdvertised = keychainOption !== false && locateKeychainDylib() !== null;
+  const keychain =
+    keychainOption === "unmanaged" || (keychainOption === true && !keychainAdvertised)
+      ? null
+      : createCapabilitySession(keychainCapability, keychainOption);
+  const initializeCapabilities = async (udid: string, rebooted = false): Promise<void> => {
+    const sessions = { clipboard, keychain };
+    await Promise.all(
+      Object.entries(sessions).map(async ([name, session]) => {
+        try {
+          await session?.initialize(udid, rebooted);
+        } catch (error) {
+          console.error(`[serve-sim] Could not set up the ${name} capability on ${udid}:`, error);
+        }
+      }),
+    );
   };
   // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
   // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
@@ -2282,7 +2308,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base || url === base + "/") {
       const states = await readServeSimStates(policy?.device);
       const state = selectServeSimState(states, selectedDevice);
-      if (state && !awaitingAdoption) void initializeClipboard(state.device);
+      if (state && !awaitingAdoption) void initializeCapabilities(state.device);
       let html = loadHtml();
 
       if (!state) {
@@ -2321,6 +2347,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             shareUrl,
             disableShare,
             policy?.device,
+            keychainAdvertised,
           ),
         );
         const configScript = `<script>window.__SIM_PREVIEW__=${config}</script>`;
@@ -2569,7 +2596,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           streamSettings,
           gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
           async () => {
-            await initializeClipboard(udid, true);
+            await initializeCapabilities(udid, true);
             await enableNetworkCaptureForStartedDevice(udid, networkCapture);
           },
         )
@@ -2759,7 +2786,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api") {
       const states = await readServeSimStates(policy?.device);
       const state = selectServeSimState(states, selectedDevice);
-      if (state && !awaitingAdoption) void initializeClipboard(state.device);
+      if (state && !awaitingAdoption) void initializeCapabilities(state.device);
       // The web UI polls /api every ~2s, so logging every hit floods the
       // debug stream with identical lines. Only log when the selection
       // result changes.
@@ -2801,6 +2828,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 shareUrl,
                 disableShare,
                 policy?.device,
+                keychainAdvertised,
               )
             : null,
         ),
@@ -3132,7 +3160,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const computeConfig = async (): Promise<string> => {
         const states = await readServeSimStates(policy?.device);
         const state = selectServeSimState(states, selectedDevice);
-        if (state && !awaitingAdoption) void initializeClipboard(state.device);
+        if (state && !awaitingAdoption) void initializeCapabilities(state.device);
         const remoteState = state
           ? rewriteStateForRequestHost(
               state,
@@ -3154,6 +3182,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 shareUrl,
                 disableShare,
                 policy?.device,
+                keychainAdvertised,
               )
             : null,
         );
@@ -3491,6 +3520,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     streamSettings,
+    prepareKeychain: async (udid) => {
+      if (keychainOption === false) {
+        throw new Error("The keychain capability is off on this server.");
+      }
+      await keychain?.prepare(udid);
+    },
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
@@ -3663,7 +3698,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     configuringSession = false;
   };
   fetchMiddleware.dispose = async () => {
-    await clipboard?.dispose();
+    // In turn: the last session to release a device also releases its capability loader.
+    const failures: unknown[] = [];
+    for (const session of [clipboard, keychain]) {
+      try {
+        await session?.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "Could not release preview capabilities");
   };
   return fetchMiddleware;
 }

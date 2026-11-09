@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { spawn } from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
-import { createClipboardSession } from "../clipboard-session";
+import { createCapabilitySession } from "../capability-session";
+import { keychainCapability } from "../sim-keychain";
 import {
   capabilityConfigPath,
   enableCapabilities,
@@ -82,9 +83,9 @@ afterEach(() => {
   else process.env.TEST_CLIPBOARD_OFF_DEVICE = oldOffDevice;
 });
 
-describe("clipboard session", () => {
+describe("capability session, through the clipboard capability", () => {
   test("initializes each device once, including simultaneous requests, without restarting apps", async () => {
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await Promise.all([
       clipboard.initialize(UDID),
       clipboard.initialize(UDID),
@@ -102,11 +103,35 @@ describe("clipboard session", () => {
     expect(readLaunchState(`${UDID}-2`)).toBeNull();
   });
 
+  test("sets up another capability the same way, beside the clipboard reader", async () => {
+    const KEYCHAIN = "/test/libSimKeychain.dylib";
+    const keychainPrepare = spyOn(keychainCapability, "setEnabled").mockImplementation(
+      async ({ enabled }) => (enabled ? { dylib: KEYCHAIN } : null),
+    );
+    try {
+      const clipboard = createCapabilitySession(clipboardCapability);
+      const keychain = createCapabilitySession(keychainCapability);
+      await Promise.all([clipboard.initialize(UDID), keychain.initialize(UDID)]);
+      expect(isCapabilityEnabled(UDID, "clipboard")).toBe(true);
+      expect(isCapabilityEnabled(UDID, "keychain")).toBe(true);
+      expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain(
+        `user\t${KEYCHAIN}\t\t0\n`,
+      );
+      await clipboard.dispose();
+      // The keychain session still owns the device, so the loader stays.
+      expect(isCapabilityEnabled(UDID, "keychain")).toBe(true);
+      await keychain.dispose();
+      expect(readLaunchState(UDID)).toBeNull();
+    } finally {
+      keychainPrepare.mockRestore();
+    }
+  });
+
   test("uses an existing CLI reader without taking its cleanup ownership", async () => {
     await enableCapabilities(UDID, null, [reader], { relaunch: false });
     writeLaunchState(UDID, { ...readLaunchState(UDID)!, sessionPids: [process.pid] });
     prepare.mockClear();
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await clipboard.initialize(UDID);
     await clipboard.dispose();
     expect(prepare).not.toHaveBeenCalled();
@@ -117,7 +142,7 @@ describe("clipboard session", () => {
   test("retries failed initialization after a wait and restores launchd setup after an external device boot", async () => {
     let time = 0;
     prepare.mockRejectedValueOnce(new Error("reader could not load"));
-    const clipboard = createClipboardSession(true, { now: () => time });
+    const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => time });
     await expect(clipboard.initialize(UDID)).rejects.toThrow("reader could not load");
     time += 5_000;
     await clipboard.initialize(UDID);
@@ -135,7 +160,7 @@ describe("clipboard session", () => {
       readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8")
         .split("\n")
         .filter((line) => line.includes("launchctl getenv")).length;
-    const clipboard = createClipboardSession(true, { now: () => time });
+    const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => time });
     await clipboard.initialize(UDID);
     const afterSetup = getenvCalls();
     time += 29_999;
@@ -158,7 +183,7 @@ describe("clipboard session", () => {
     prepare
       .mockRejectedValueOnce(new Error("reader could not load"))
       .mockRejectedValueOnce(new Error("reader could not load"));
-    const clipboard = createClipboardSession(true, { now: () => time });
+    const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => time });
     await expect(clipboard.initialize(UDID)).rejects.toThrow("reader could not load");
     time += 4_999;
     await clipboard.initialize(UDID);
@@ -179,7 +204,7 @@ describe("clipboard session", () => {
 
   test("a reboot retries a failed setup without waiting", async () => {
     prepare.mockRejectedValueOnce(new Error("reader could not load"));
-    const clipboard = createClipboardSession(true, { now: () => 0 });
+    const clipboard = createCapabilitySession(clipboardCapability, true, { now: () => 0 });
     await expect(clipboard.initialize(UDID)).rejects.toThrow("reader could not load");
     await clipboard.initialize(UDID, true);
     expect(prepare).toHaveBeenCalledTimes(2);
@@ -188,7 +213,7 @@ describe("clipboard session", () => {
   });
 
   test("reinitializes if another action removed the reader", async () => {
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await clipboard.initialize(UDID);
     writeLaunchState(UDID, { launchArgs: [], capabilities: {} });
     await clipboard.initialize(UDID);
@@ -199,7 +224,7 @@ describe("clipboard session", () => {
 
   test("an explicit disable removes an armed reader and does not restart apps", async () => {
     await enableCapabilities(UDID, null, [reader], { relaunch: false });
-    const clipboard = createClipboardSession(false);
+    const clipboard = createCapabilitySession(clipboardCapability, false);
     await clipboard.initialize(UDID);
     expect(isCapabilityEnabled(UDID, "clipboard")).toBe(false);
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
@@ -211,7 +236,7 @@ describe("clipboard session", () => {
   });
 
   test("disposal leaves another capability and its loader ownership intact", async () => {
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await clipboard.initialize(UDID);
     await enableCapabilities(
       UDID,
@@ -234,7 +259,7 @@ describe("clipboard session", () => {
       await blocked;
       return { dylib: READER };
     });
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     const initialized = clipboard.initialize(UDID);
     let disposed = false;
     const disposal = clipboard.dispose().then(() => {
@@ -263,7 +288,7 @@ describe("clipboard session", () => {
         order.push("after reboot");
         return { dylib: READER };
       });
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     const pending = clipboard.initialize(UDID);
     const rebooted = clipboard.initialize(UDID, true);
     proceed();
@@ -278,7 +303,7 @@ describe("clipboard session", () => {
       launchArgs: [],
       capabilities: { clipboard: { ...reader, ownerPid: 2_147_483_647 } },
     });
-    const clipboard = createClipboardSession(false);
+    const clipboard = createCapabilitySession(clipboardCapability, false);
     await clipboard.initialize(UDID);
     expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe("");
     await clipboard.dispose();
@@ -286,7 +311,7 @@ describe("clipboard session", () => {
   });
 
   test("disposal reports a failed device and still releases the other devices", async () => {
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await clipboard.initialize(UDID);
     await clipboard.initialize(`${UDID}-2`);
     process.env.TEST_CLIPBOARD_FAIL_DEVICE = UDID;
@@ -299,7 +324,7 @@ describe("clipboard session", () => {
   });
 
   test("disposal clears saved ownership after the simulator has shut down", async () => {
-    const clipboard = createClipboardSession();
+    const clipboard = createCapabilitySession(clipboardCapability);
     await clipboard.initialize(UDID);
     process.env.TEST_CLIPBOARD_OFF_DEVICE = UDID;
     const log = spyOn(console, "error").mockImplementation(() => {});
@@ -346,7 +371,11 @@ describe("clipboard in the preview middleware", () => {
     const armed = readLaunchState(UDID);
     const forgetState = recordState(UDID, process.pid, 3200);
     const callsBefore = readFileSync(process.env.TEST_CLIPBOARD_CALLS!, "utf8");
-    const middleware = simMiddleware({ device: UDID, clipboard: "unmanaged" });
+    const middleware = simMiddleware({
+      device: UDID,
+      clipboard: "unmanaged",
+      keychain: "unmanaged",
+    });
     try {
       expect((await middleware(apiRequest()))?.status).toBe(200);
       await Bun.sleep(50);
@@ -370,10 +399,10 @@ describe("clipboard release at process exit", () => {
   // A host like the Hub: it sets up the reader, and its SIGINT handler ends with process.exit.
   async function runHost(beforeExit = "", { handlesSigint = true } = {}) {
     const script = `
-      const { createClipboardSession } = await import(${JSON.stringify(join(import.meta.dir, "../clipboard-session.ts"))});
+      const { createCapabilitySession } = await import(${JSON.stringify(join(import.meta.dir, "../capability-session.ts"))});
       const { clipboardCapability } = await import(${JSON.stringify(join(import.meta.dir, "../sim-pasteboard-reader.ts"))});
       clipboardCapability.setEnabled = async ({ enabled }) => enabled ? { dylib: ${JSON.stringify(READER)} } : null;
-      const clipboard = createClipboardSession();
+      const clipboard = createCapabilitySession(clipboardCapability);
       await clipboard.initialize(${JSON.stringify(UDID)});
       ${beforeExit}
       ${handlesSigint ? `process.on("SIGINT", () => process.exit(0));` : ""}
@@ -442,7 +471,7 @@ describe("clipboard release at process exit", () => {
     `).finally(() => rmSync(lock, { force: true }));
     expect(code).toBe(0);
     expect(stderr).toContain(
-      `Could not release the clipboard reader on ${UDID} at exit: an update in this process still holds ` +
+      `Could not release the capability loader on ${UDID} at exit: an update in this process still holds ` +
         "the device lock. The loader can stay until the simulator reboots or serve-sim sets it up again.",
     );
     expect(stderr).not.toContain("Run cleanup again");
@@ -456,7 +485,7 @@ describe("clipboard release at process exit", () => {
     `).finally(() => rmSync(lock, { force: true }));
     expect(code).toBe(0);
     expect(stderr).toContain(
-      `Could not release the clipboard reader on ${UDID} at exit: another process held the device lock ` +
+      `Could not release the capability loader on ${UDID} at exit: another process held the device lock ` +
         "for 5 s. The loader can stay until the simulator reboots or serve-sim sets it up again.",
     );
     expect(stderr).not.toContain("Retry cleanup");
