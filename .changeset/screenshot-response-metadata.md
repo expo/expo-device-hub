@@ -1,6 +1,5 @@
 ---
 "@expo/serve-sim": patch
-"expo-device-hub": patch
 ---
 
-Return encoded screenshot dimensions with screenshot capture responses. Existing path and PNG output remain unchanged.
+Add a screenshot metadata response contract with zero/null defaults for unknown values. Existing paths and PNG output remain unchanged.

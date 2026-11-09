@@ -1,23 +1,10 @@
-import { afterAll, beforeEach, expect, mock, spyOn, test } from "bun:test";
-import * as fsPromises from "fs/promises";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import * as childProcess from "child_process";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { SCREENSHOT_DIR } from "../../host-paths";
 import { UDID } from "../helpers";
 import * as device from "../../device";
-
-const actualFs = { ...fsPromises };
-let failMetadataRead = false;
-mock.module("fs/promises", () => ({
-  ...actualFs,
-  readFile: async (...args: Parameters<typeof fsPromises.readFile>) => {
-    if (failMetadataRead && String(args[0]).startsWith(SCREENSHOT_DIR)) {
-      throw Object.assign(new Error("metadata read denied after publication"), { code: "EACCES" });
-    }
-    return await actualFs.readFile(...args);
-  },
-}));
 
 const calls: Array<{ file: string; args: string[] }> = [];
 const png = readFileSync(
@@ -70,7 +57,6 @@ beforeEach(() => {
   calls.length = 0;
   capturedDisplays.length = 0;
   fail = false;
-  failMetadataRead = false;
   displays = [];
 });
 afterAll(() => {
@@ -101,7 +87,13 @@ test("only manual captures make a Desktop copy", async () => {
       extra.automation === true ? 0 : 1,
     );
     expect(readFileSync(result.stdout)).toEqual(png);
-    expect(result.metadata).toEqual({ width: 120, height: 120 });
+    expect(result.metadata).toEqual({
+      width: 0,
+      height: 0,
+      displayRotation: null,
+      displayId: 0,
+      displayCount: 0,
+    });
   }
 });
 
@@ -113,7 +105,13 @@ test("automated captures preserve active-panel selection and staged PNG", async 
   expect(readFileSync(result.stdout)).toEqual(png);
   expect(calls.map((call) => call.file)).toEqual([]);
   expect(capturedDisplays).toEqual([1, 3]);
-  expect(result.metadata).toEqual({ width: 120, height: 120 });
+  expect(result.metadata).toEqual({
+    width: 0,
+    height: 0,
+    displayRotation: null,
+    displayId: 0,
+    displayCount: 0,
+  });
 });
 
 test("failed background captures do not copy or leave an empty reservation", async () => {
@@ -169,26 +167,6 @@ test("authenticated exec-ws path replies carry dimensions beside the unchanged p
     stdout: join(SCREENSHOT_DIR, fileName),
     stderr: "",
     exitCode: 0,
-    metadata: { width: 120, height: 120 },
+    metadata: { width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0 },
   });
 });
-
-test.each([false, true])(
-  "metadata read failure preserves the saved capture (automation=%s)",
-  async (automation) => {
-    failMetadataRead = true;
-    const log = spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const result = await capture({ automation });
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe("");
-      expect(result.metadata).toBeUndefined();
-      expect(result.stdout).toBe(join(SCREENSHOT_DIR, names.at(-1)!));
-      expect(readFileSync(result.stdout)).toEqual(png);
-      expect(capturedDisplays).toEqual([3]);
-      expect(calls.filter((call) => call.file === "cp")).toHaveLength(automation ? 0 : 1);
-    } finally {
-      log.mockRestore();
-    }
-  },
-);

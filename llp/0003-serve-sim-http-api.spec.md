@@ -790,18 +790,21 @@ JSON, unknown fields, and nonboolean values return 400 before capture; oversized
 bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 [observed: `src/middleware.ts`, screenshot route and binary adapter]
 
-Successful path-mode `screenshot.capture` replies add `metadata: {width, height}`
-beside the existing `stdout` path, `stderr`, and `exitCode`. Dimensions come from
-the final PNG's checksum-validated IHDR, not the framebuffer or physical pose.
-HTTP `/api/screenshot` retains its PNG body and returns the same object in the
-`X-Expo-Screenshot-Metadata` header, exposed to allowed CORS callers. ServeEmu's
-existing base64 JSON response also includes `metadata`. Unknown or invalid PNG
-headers omit metadata rather than failing the capture. If a saved path capture
-cannot be read back for metadata, the successful path result remains intact and
-the read error stays in the host log. Binary exec-ws framing is
-unchanged; its PNG bytes still follow the four-byte request ID. No sidecar or
-metadata opt-in environment variable is used. [observed: `src/host-actions.ts`,
-`src/middleware.ts`, and ServeEmu `src/screenshot-response.ts`]
+Successful path-mode `screenshot.capture` replies add a `metadata` object beside
+the existing `stdout` path, `stderr`, and `exitCode`. The contract is
+`{width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0}`:
+zero numeric fields and null rotation mean unknown, not a zero-sized image.
+Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
+`landscape-right`. This initial contract layer returns defaults; the owning
+capture source will supply known values from its maintained local state.
+[confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
+
+HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
+`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
+framing remains unchanged. The contract adds no PNG parsing, file readback,
+sidecars, device queries, or opt-in environment variable. ServeEmu and client
+integration are separate changes. [observed: `src/host-actions.ts`,
+`src/middleware.ts`]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic

@@ -1,7 +1,7 @@
 import { ScreenshotImageOptions } from "./screenshot-options";
 import { screenshotMetadata } from "./screenshot-metadata";
 import { timeStartup } from "./startup-timing";
-import { readFile, rm, stat } from "fs/promises";
+import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 import { installAppAsync } from "./app-install";
@@ -993,14 +993,7 @@ async function runProcedureAsync(
             native,
           );
           if (result.exitCode !== 0) return result;
-          try {
-            const metadata = screenshotMetadata(await readFile(result.stdout));
-            return metadata ? { ...result, metadata } : result;
-          } catch (error) {
-            // The screenshot is already published; optional metadata must not turn it into a failure.
-            console.error("Could not read screenshot metadata:", error);
-            return result;
-          }
+          return { ...result, metadata: screenshotMetadata() };
         };
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {

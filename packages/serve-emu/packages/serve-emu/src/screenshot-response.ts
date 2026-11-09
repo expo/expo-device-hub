@@ -1,8 +1,3 @@
-import {
-  SCREENSHOT_METADATA_HEADER,
-  screenshotMetadata,
-  screenshotMetadataHeaders,
-} from "./screenshot-metadata.ts";
 import { Buffer } from "node:buffer";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
@@ -17,9 +12,8 @@ export async function screenshotResponse(png: Uint8Array, url: URL): Promise<Res
   const result = await saveScreenshotArtifact(png);
   const headers: Record<string, string> = {
     ...screenshotArtifactHeaders(result),
-    ...screenshotMetadataHeaders(png),
     // An allowed cross-origin caller can read only the custom headers listed here, as in serve-sim.
-    "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_METADATA_HEADER}`,
+    "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}`,
   };
   if (url.searchParams.get("format") === "base64") {
     const artifact: ScreenshotArtifactReport =
@@ -31,7 +25,6 @@ export async function screenshotResponse(png: Uint8Array, url: URL): Promise<Res
       mimeType: "image/png",
       data: Buffer.from(png).toString("base64"),
       artifact,
-      metadata: screenshotMetadata(png),
     };
     return Response.json(body, { headers });
   }

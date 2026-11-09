@@ -2913,7 +2913,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, ${SCREENSHOT_METADATA_HEADER}, Server-Timing`,
           "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
-          ...screenshotMetadataHeaders(png),
+          ...screenshotMetadataHeaders(),
         });
         res.end(image);
       } catch (err) {
