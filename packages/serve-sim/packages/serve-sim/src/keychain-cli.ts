@@ -22,7 +22,7 @@ interface KeychainCliOptions {
   json?: boolean;
 }
 
-const KeychainEntries = z.record(z.string(), z.string());
+const KeychainEntries = z.array(z.tuple([z.string(), z.string()]));
 
 function fail(message: string): never {
   console.error(message);
@@ -57,11 +57,17 @@ export function parseKeychainEntries(
     try {
       payload = JSON.parse(fileText);
     } catch {}
-    const parsed = KeychainEntries.safeParse(payload);
+    // Validate entries instead of rebuilding a record: every own key, including __proto__,
+    // names a credential and must survive validation.
+    const fileEntries =
+      payload !== null && typeof payload === "object" && !Array.isArray(payload)
+        ? Object.entries(payload)
+        : null;
+    const parsed = KeychainEntries.safeParse(fileEntries);
     if (!parsed.success) {
       throw new Error("--from-file must hold a JSON object of string keys and values.");
     }
-    for (const [key, value] of Object.entries(parsed.data)) entries.set(key, value);
+    for (const [key, value] of parsed.data) entries.set(key, value);
   }
   if (entries.size === 0) throw new Error("Pass key=value pairs or --from-file.");
   return [...entries];
