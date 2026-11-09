@@ -8,13 +8,13 @@ import { dirname, join } from "node:path";
 // @ref LLP 0008#scrcpy-upgrade-checklist — Canonical wire spec and upgrade checklist
 export const SCRCPY_VERSION = "4.0";
 
-export const SCRCPY_DOWNLOAD_BASE_URL_ENV = "SERVE_EMU_SCRCPY_DOWNLOAD_BASE_URL";
+export const SCRCPY_BASE_URL_ENV = "SERVE_EMU_SCRCPY_BASE_URL";
 export const DEFAULT_SCRCPY_DOWNLOAD_BASE_URL =
   "https://github.com/Genymobile/scrcpy/releases/download";
 
 // Mirrors must use the GitHub release layout: `<base>/v<version>/scrcpy-server-v<version>`.
 export function scrcpyServerDownloadUrl(
-  baseUrl: string | undefined = process.env[SCRCPY_DOWNLOAD_BASE_URL_ENV],
+  baseUrl: string | undefined = process.env[SCRCPY_BASE_URL_ENV],
 ): string {
   const base = (baseUrl?.trim() || DEFAULT_SCRCPY_DOWNLOAD_BASE_URL).replace(/\/+$/, "");
   return `${base}/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;

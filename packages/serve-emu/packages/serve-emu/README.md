@@ -98,7 +98,7 @@ bun run --filter serve-emu start
 # -> http://localhost:3300
 ```
 
-`setup` downloads the pinned `scrcpy-server-v4.0` into `vendor/` and builds the browser UI. The CLI also runs the scrcpy setup lazily on first start, so you can skip the setup step for a quick local run. To download from a mirror, set `SERVE_EMU_SCRCPY_DOWNLOAD_BASE_URL`. The file must be at `${SERVE_EMU_SCRCPY_DOWNLOAD_BASE_URL}/v4.0/scrcpy-server-v4.0`, the same layout as the GitHub releases at `https://github.com/Genymobile/scrcpy/releases/download`.
+`setup` downloads the pinned `scrcpy-server-v4.0` into `vendor/` and builds the browser UI. The CLI also runs the scrcpy setup lazily on first start, so you can skip the setup step for a quick local run. To download from a mirror, set `SERVE_EMU_SCRCPY_BASE_URL`. The file must be at `${SERVE_EMU_SCRCPY_BASE_URL}/v4.0/scrcpy-server-v4.0`, the same layout as the GitHub releases at `https://github.com/Genymobile/scrcpy/releases/download`.
 
 ## CLI
 
