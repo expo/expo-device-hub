@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { type DeviceClient } from "@expo/hub-client";
+import { displayScreen as observedDisplayScreen } from "../../../hub-client/src/orientation";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { type Device } from "../dashboard/data";
@@ -257,5 +258,33 @@ test("the 3D stage is capped at the flat Duo's size, so both modes fill the stre
     expect(render("3d", screen)).toStartWith(
       `width:min(${cap}, 100cqw);height:min(${cap}, 100cqh);`,
     );
+  }
+});
+
+test("frame artwork follows physical pose when the app stays portrait", () => {
+  const render = (screen: DeviceClient["screen"]) =>
+    renderToStaticMarkup(
+      <PhoneFrame
+        device={IPHONE}
+        client={client(screen)}
+        DeviceScreen={() => <div />}
+        displayScreen={observedDisplayScreen}
+        deviceFrameAssets={FRAME_ASSETS}
+      />,
+    );
+  for (const [deviceOrientation, orientation] of [
+    ["landscape-left", "landscape_right"],
+    ["landscape-right", "landscape_left"],
+    ["pud", "portrait_upside_down"],
+  ] as const) {
+    const observed = render({
+      width: 1206,
+      height: 2622,
+      orientation: "portrait",
+      screenOrientation: "portrait",
+      deviceOrientation,
+    });
+    const legacy = render({ width: 1206, height: 2622, orientation });
+    expect(observed).toBe(legacy);
   }
 });

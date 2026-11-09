@@ -690,3 +690,12 @@ intended.
   the stage, so they need no square [observed: `castRay` and `projectedHandle`
   in `duo-scene.ts`]. The agent overlay covers the whole stage, as it covered
   the square one [observed: `PhoneFrame.tsx`].
+
+### Ordinary-device frame pose
+
+For ordinary devices, PhoneFrame uses the injected display sizer's orientation
+for artwork as well as its dimensions. The sizer can use observed physical pose
+independently of a portrait-only app's interface orientation. Legacy clients
+retain their existing frame orientation; the Duo 3D stage is unchanged.
+[observed: `packages/@expo/hub-components/src/dashboard/PhoneFrame.tsx`,
+`packages/@expo/hub-client/src/orientation.ts`]

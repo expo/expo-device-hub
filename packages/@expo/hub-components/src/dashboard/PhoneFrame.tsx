@@ -261,7 +261,7 @@ export function PhoneFrame({
   const framed = frameAsset
     ? deviceFramePresentation({
         asset: frameAsset,
-        orientation: client?.screen?.orientation,
+        orientation: display?.orientation ?? client?.screen?.orientation,
         displayRatio: ratio,
         maxScreenShortSide: MAX_SHORT_SIDE,
       })
