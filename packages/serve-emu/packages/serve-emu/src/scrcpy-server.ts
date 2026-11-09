@@ -26,6 +26,16 @@ export function scrcpyServerUrl(env: NodeJS.ProcessEnv = process.env): string {
   return `${base}/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
 }
 
+// Errors and logs show a download URL without credentials or a query string.
+function redactUrl(url: string): string {
+  try {
+    const { origin, pathname } = new URL(url);
+    return `${origin}${pathname}`;
+  } catch {
+    return "<invalid URL>";
+  }
+}
+
 export async function downloadWithRetry(
   url: string,
   { attempts = DOWNLOAD_ATTEMPTS, baseDelayMs = RETRY_BASE_DELAY_MS } = {},
@@ -35,7 +45,9 @@ export async function downloadWithRetry(
     try {
       const res = await fetch(url);
       if (res.ok) return new Uint8Array(await res.arrayBuffer());
-      lastError = new Error(`Failed to download ${url}: ${res.status} ${res.statusText}`);
+      lastError = new Error(
+        `Failed to download ${redactUrl(url)}: ${res.status} ${res.statusText}`,
+      );
       // A 4xx other than 429 does not change on a retry.
       if (res.status < 500 && res.status !== 429) break;
     } catch (error) {

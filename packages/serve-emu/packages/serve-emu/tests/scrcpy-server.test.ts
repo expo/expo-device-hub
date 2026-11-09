@@ -99,3 +99,10 @@ test("downloadScrcpyServer tries GitHub only once when no mirror is set", async 
   );
   expect(urls).toHaveLength(2);
 });
+
+test("downloadWithRetry leaves credentials and the query string out of its error", async () => {
+  stubFetch([new Response("", { status: 404, statusText: "Not Found" })]);
+  await expect(
+    downloadWithRetry("https://user:secret@mirror.test/scrcpy/file?sig=abc", { baseDelayMs: 0 }),
+  ).rejects.toThrow(/^Failed to download https:\/\/mirror\.test\/scrcpy\/file: 404 Not Found$/);
+});
