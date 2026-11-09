@@ -402,7 +402,7 @@ requested size. Resizing/JPEG conversion runs on the host after `adb screencap`.
 
 Responses report `Server-Timing` for capture, encoding, artifact saving, and
 server total. Total excludes response transfer. Benchmark a running local session
-with `node scripts/benchmark-screenshots.mjs http://127.0.0.1:3401`; set
+with `node scripts/benchmark-screenshots.mjs http://127.0.0.1:3300`; set
 `SERVE_EMU_TOKEN` for authenticated sessions. The command reports seven samples
 per image mode after warmup, payload bytes, socket reuse, and stage timings.
 No Android device latency improvement is claimed without a baseline/device run.
