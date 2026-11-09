@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { screenshotResponse } from "../src/screenshot-response.ts";
 
 // An allowed cross-origin caller can read a custom header only when the response lists it, as serve-sim's does.
@@ -114,5 +114,26 @@ test("JPEG returns a resized PNG artifact and failed conversion publishes nothin
     if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
     else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("server total includes base64 response preparation", async () => {
+  let clock = 0;
+  const originalJson = Response.json.bind(Response);
+  const timer = spyOn(performance, "now").mockImplementation(() => clock);
+  const json = spyOn(Response, "json").mockImplementation((data, init) => {
+    const response = originalJson(data, init);
+    clock += 25;
+    return response;
+  });
+  try {
+    const response = await screenshotResponse(
+      async () => new Uint8Array([137, 80, 78, 71]),
+      new URL("http://router.test/api/screenshot?format=base64"),
+    );
+    expect(response.headers.get("server-timing")).toContain("total;dur=25.000");
+  } finally {
+    json.mockRestore();
+    timer.mockRestore();
   }
 });

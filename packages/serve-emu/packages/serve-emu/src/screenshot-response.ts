@@ -48,13 +48,8 @@ export async function screenshotResponse(
   }
   const encoded = performance.now();
   const result = await saveScreenshotArtifact(png);
-  const finished = performance.now();
-  const headers: Record<string, string> = {
-    ...screenshotArtifactHeaders(result),
-    "Cache-Control": "no-store",
-    "Server-Timing": `total;dur=${(finished - started).toFixed(3)}, capture;dur=${(captured - started).toFixed(3)}, encode;dur=${(encoded - captured).toFixed(3)}, artifact;dur=${(finished - encoded).toFixed(3)}`,
-    "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
-  };
+  const saved = performance.now();
+  let response: Response;
   if (format === "base64") {
     const artifact: ScreenshotArtifactReport =
       result.status === "failed"
@@ -66,13 +61,22 @@ export async function screenshotResponse(
       data: Buffer.from(png).toString("base64"),
       artifact,
     };
-    return Response.json(body, { headers });
+    response = Response.json(body);
+  } else {
+    response = new Response(new Uint8Array(image), {
+      headers: {
+        "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
+        "Content-Length": String(image.byteLength),
+      },
+    });
   }
-  return new Response(new Uint8Array(image), {
-    headers: {
-      ...headers,
-      "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
-      "Content-Length": String(image.byteLength),
-    },
-  });
+  const finished = performance.now();
+  const headers: Record<string, string> = {
+    ...screenshotArtifactHeaders(result),
+    "Cache-Control": "no-store",
+    "Server-Timing": `total;dur=${(finished - started).toFixed(3)}, capture;dur=${(captured - started).toFixed(3)}, encode;dur=${(encoded - captured).toFixed(3)}, artifact;dur=${(saved - encoded).toFixed(3)}`,
+    "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
+  };
+  for (const [name, value] of Object.entries(headers)) response.headers.set(name, value);
+  return response;
 }

@@ -853,6 +853,6 @@ and can also use `maxWidth`. Default requests preserve the original PNG bytes.
 Resizing and JPEG conversion use Sharp on the host after `adb screencap`; session
 artifacts remain PNG at the requested size. Binary responses declare
 `Content-Length`. `Server-Timing` exposes capture, encode, artifact, and server
-total durations; total excludes response delivery [observed:
+total durations; total includes response construction but excludes delivery [observed:
 `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`, its server,
 middleware, and inspection route callers].
