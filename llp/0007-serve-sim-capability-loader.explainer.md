@@ -5,12 +5,100 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
+**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer); 2026-11-10 (documented the internal module and capability migration order)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 The capability loader loads capabilities into eligible simulator apps while keeping
 system daemons free of framework dependencies.
+
+## Internal capability module
+
+`src/capabilities/` is an internal module inside serve-sim. It adds no workspace,
+npm package, import alias or release boundary. Its public entry point is
+`src/capabilities/index.ts`; the existing `src/capabilities.ts` explicitly re-exports
+that API so callers can migrate without a mass import rewrite. Both paths reach
+one registry in `runtime/registry.ts`. Definition and preparation types live beside
+the runtime code in `runtime/capability.ts`, without a separate contracts file
+[observed: those modules].
+
+Importing the module does not import concrete capabilities, install process handlers,
+arm a device, start a server or build native assets. The CLI still explicitly registers
+`clipboardCapability` and `captureRuntime.capability`; their IDs, defaults and override
+selection are unchanged [observed: `src/index.ts`, `src/capabilities/runtime/registry.ts`,
+`src/sim-pasteboard-reader.ts`, `src/capture/runtime.ts`].
+
+### Dependency direction
+
+The host composes the generic runtime and concrete capabilities. Each migrated
+capability gets one entry point, such as `./capabilities/clipboard` or
+`./capabilities/capture`. Generic runtime code must not import those implementations.
+Capability types belong with the runtime implementation and may be imported with
+`import type`; there is no second registry or cache of shared enabled state.
+CLI, HTTP, WebSocket, security and UI adapters stay with the host
+[confirmed: Gabe Debes, 2026-11-10].
+
+App launch, config publication, loader insertion, PID ownership and cross-process
+locking remain in `src/launch-manager.ts` and its helpers initially. A lifecycle
+manager receives the operations it needs from that host boundary; it must not split
+preparation from locked publication or introduce another state/lock namespace
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/launch-manager.ts`].
+
+### Migration order
+
+Move the existing code in serial, independently reviewable layers. Do not begin the
+next layer until the current head has been reviewed and its relevant CI is clear
+[confirmed: Gabe Debes, 2026-11-10].
+
+1. **Module foundation:** extract the unchanged types and registry/selection,
+   expose the module entry point, and preserve the old exports. This is the
+   implemented boundary; the consumer moves below are still planned
+   [observed: `src/capabilities/`].
+2. **Clipboard:** add `capabilities/clipboard/index.ts`, move its implementation
+   behind that entry point, and derive reusable setup/recheck/retry/disposal policy
+   from `src/clipboard-session.ts`. Keep host input arbitration and process-handler
+   ownership outside the generic manager. Preserve setup coalescing, reboot repair,
+   disabled versus unmanaged behavior, foreign setup and owned cleanup; see
+   [LLP 0010](0010-serve-sim-clipboard.explainer.md#set-up-at-session-start-re-checked-every-30-s).
+   Start with the definition, reader and session wrapper; keep the path-sensitive
+   native locator in `src/sim-pasteboard.ts` stable. The old reader/session modules
+   can re-export the moved code while callers migrate.
+3. **Network Capture:** add `capabilities/capture/index.ts` around the existing
+   engine boundary. Reuse the same runtime definition/preparation API while keeping
+   Capture's resource implementation, public cancellation queue and engine together.
+   Move pure preparation helpers into the runtime only as needed; preserve
+   [host resource lifecycle](#host-resource-lifecycle) and the policy in
+   [LLP 0005](0005-serve-sim-network-capture.explainer.md).
+   Move `src/capture/runtime.ts` behind the new entry point with a compatibility
+   re-export at the old path and one canonical `captureRuntime` instance. Keep its
+   engine, store and path-sensitive helpers at their existing paths initially;
+   import those leaf modules rather than the old Capture barrel to avoid a cycle.
+
+Here `capabilities/capture` means network capture. Native screen/video capture,
+streaming and recording are separate subsystems and stay outside this module
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/capture/runtime.ts`, `src/native.ts`].
+
+Camera can become a later sibling after these consumers establish the boundary.
+Keychain stays outside this foundation. Do not add runtime controls or lifecycle
+features solely for a future consumer. If either existing consumer needs new lifecycle
+semantics, stop that extraction and identify the concrete behavior change first
+[confirmed: Gabe Debes, 2026-11-10].
+
+### Native paths and validation
+
+Source ownership does not require changing native build or output directories.
+Keep the existing `Sources/` trees, dylib/helper names and `dist/` paths during the
+first moves. Moving a TypeScript file must not silently change asset resolution;
+keep the locator at a stable host boundary or pass it explicitly. In particular,
+do not import the host's HTTP/WebSocket `src/runtime.ts` just to obtain a path helper
+[confirmed: Gabe Debes, 2026-11-10; observed: `src/capability-config.ts`, `src/runtime.ts`].
+
+Each layer checks old and new entry points against one registry, then runs the
+existing capability, Clipboard and Capture ownership/rollback tests as applicable.
+Validate source typechecking, lint and LLP references, plus the Node ESM/CJS
+middleware, CLI, compiled executable and packed/vendored native asset paths.
+Simulator CI remains a separate gate from the isolated test run
+[confirmed: Gabe Debes, 2026-11-10].
 
 ## The problem
 
