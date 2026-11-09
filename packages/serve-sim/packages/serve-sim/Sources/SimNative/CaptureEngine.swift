@@ -536,13 +536,8 @@ actor CaptureEngine {
         guard phase == .running else { await onDetach(); return {} }
         let id = UUID()
         let unsubscribe: @Sendable () async -> Void
-        if isFoldable {
-            let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
-            unsubscribe = { await onDetach(); await removeListener() }
-        } else {
-            callback(await CoreDeviceBridge.shared.observedDeviceState(udid: deviceUDID))
-            unsubscribe = onDetach
-        }
+        let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
+        unsubscribe = { await onDetach(); await removeListener() }
         guard phase == .running else {
             await unsubscribe()
             return {}

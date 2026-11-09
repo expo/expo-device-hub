@@ -475,6 +475,59 @@ beforeEach(() => {
   hingeEligibilityGate = undefined;
 });
 
+describe("independent native device pose", () => {
+  test("outside observations replace commanded framing without changing a portrait-only screen", async () => {
+    const { configs } = await start({ width: 1170, height: 2532, orientation: "portrait" }, false);
+    ws!.send(
+      Buffer.concat([
+        Buffer.from([0x07]),
+        Buffer.from(JSON.stringify({ orientation: "landscape_right" })),
+      ]),
+    );
+    await waitUntil(() => session!.screenConfig().orientation === "landscape_right");
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 1,
+      orientationObserved: true,
+      state: { physicalOrientation: "portrait" },
+    });
+    expect(session!.screenConfig()).toMatchObject({
+      orientation: "landscape_right",
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    });
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 2,
+      orientationObserved: true,
+      state: { physicalOrientation: "landscape-left" },
+    });
+    expect(session!.screenConfig()).toMatchObject({
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    });
+    await waitUntil(() => configs.at(-1)?.deviceOrientation === "landscape-left");
+    screen = { ...screen, orientation: "landscape_right" };
+    await screenChanged!();
+    await waitUntil(() => configs.at(-1)?.screenOrientation === "landscape_right");
+    expect(configs.at(-1)?.deviceOrientation).toBe("landscape-left");
+    await deviceStateChanged!({ generation: 1, revision: 3, orientationObserved: true, state: {} });
+    expect(session!.screenConfig().deviceOrientation).toBeNull();
+    await waitUntil(() => configs.at(-1)?.deviceOrientation === null);
+    expect(configs.at(-1)).toMatchObject({
+      screenOrientation: "landscape_right",
+      deviceOrientation: null,
+    });
+    await deviceStateChanged!({
+      generation: 1,
+      revision: 2,
+      orientationObserved: true,
+      state: { physicalOrientation: "portrait" },
+    });
+    expect(session!.screenConfig().deviceOrientation).toBeNull();
+  });
+});
+
 describe("native device state", () => {
   const send = (requestId: number, command: unknown) =>
     ws!.send(
