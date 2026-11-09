@@ -35,6 +35,7 @@ const ARM64_MACH_O_ARTIFACTS = [
   "dist/simcam/libSimCameraInjector.dylib",
   "dist/simcam/serve-sim-camera-helper",
   "dist/simax/serve-sim-ax-settings",
+  "dist/simperm/serve-sim-permissions",
   "dist/simpb/libSimPasteboardReader.dylib",
   "dist/simpb/serve-sim-pasteboard",
   "dist/capability-loader/libServeSimCapabilityLoader.dylib",
@@ -64,6 +65,21 @@ describeIfBuilt("bundle portability", () => {
   test.each([...BUNDLES])("%s has no build-machine path baked in", (bundle) => {
     const js = readFileSync(join(PKG_DIR, bundle), "utf-8");
     expect(js).not.toContain(SRC_DIR);
+  });
+
+  test("both published packages include the permissions helper", () => {
+    const pkg = JSON.parse(readFileSync(join(PKG_DIR, "package.json"), "utf8"));
+    const hub = JSON.parse(
+      readFileSync(join(PKG_DIR, "../../../expo-device-hub/package.json"), "utf8"),
+    );
+    expect(pkg.files).toContain("dist/simperm/serve-sim-permissions");
+    expect(hub.files).toContain("vendor/serve-sim/dist/simperm");
+    expect(hub.files).toContain("vendor/serve-sim/package.json");
+    execFileSync("codesign", [
+      "--verify",
+      "--strict",
+      join(PKG_DIR, "dist/simperm/serve-sim-permissions"),
+    ]);
   });
 
   test.each(["package", "vendor"])(
