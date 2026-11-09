@@ -55,7 +55,7 @@ The capability is on by default for user apps. Without a built dylib it declines
 
 ## Formats, the CLI, and host actions
 
-`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON credential input in the CLI and controls validates own entries without discarding object-property names, so keys such as `__proto__` survive and every non-string value is refused before publication. Controls retain the object-shaped action catalog and apply key/value/count limits to every entry [observed: `parseKeychainEntries` in `src/keychain-cli.ts`, `KeychainValues` in `src/host-actions.ts`]:
+`serve-sim keychain set|delete|list` (`src/keychain-cli.ts`) maps string keys and values to attributes in `src/keychain.ts`. JSON credential input in the CLI and controls validates own entries without discarding object-property names, so keys such as `__proto__` survive and every non-string value is refused before publication. Controls retain the object-shaped action catalog, apply key/value/count limits to every entry, and identify invalid credentials by name [observed: `parseKeychainEntries` in `src/keychain-cli.ts`, `KeychainValues` in `src/host-actions.ts`]:
 
 - `expo-secure-store` (default) writes service `<keychainService>:no-auth`, with account and generic as the key's bytes, and `whenUnlocked`, as SecureStore does. Like SecureStore's `setItemAsync`, a successful `set` then removes the `:auth` and legacy items, so `getItemAsync` cannot return an older copy. `delete` removes all three services SecureStore reads.
 - `generic-password` writes the key as a string account in a given service, for other libraries.

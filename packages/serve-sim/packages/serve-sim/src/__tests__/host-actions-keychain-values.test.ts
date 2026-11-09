@@ -5,8 +5,11 @@ test("Keychain controls preserve credential keys and limits in a child process",
   const { exitCode, output } = await runChildSuite("host-actions-keychain-values.child.ts", {
     timeoutMs: 20_000,
   });
-  expect(output).toContain("10 pass");
+  expect(output).toContain("12 pass");
   expect(output).toContain("controls preserve a sole __proto__ credential");
   expect(output).toContain("the control catalog keeps an object-shaped credential schema");
+  expect(output).toContain(
+    "controls identify invalid credentials by name without returning values",
+  );
   expect(exitCode).toBe(0);
 }, 30_000);

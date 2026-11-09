@@ -100,6 +100,39 @@ test("controls retain key limits and require a nonempty values object", async ()
   expect(set).not.toHaveBeenCalled();
 });
 
+test("controls identify invalid credentials by name without returning values", async () => {
+  const set = writer();
+  for (const [key, value] of [
+    ["second", 42],
+    ["__proto__", null],
+    ["oversized", "x".repeat(256 * 1024 + 1)],
+    ["x".repeat(1025), "synthetic-secret-value"],
+  ] as const) {
+    const error = await run(
+      Object.fromEntries([
+        ["first", "synthetic-secret-value"],
+        [key, value],
+      ]),
+    ).then(
+      () => {
+        throw new Error("expected invalid credentials to be rejected");
+      },
+      (cause: Error) => cause,
+    );
+    expect(error.message).toContain(`values.${key} `);
+    expect(error.message).not.toContain("synthetic-secret-value");
+  }
+  expect(set).not.toHaveBeenCalled();
+});
+
+test("controls keep object-level paths for count and type errors", async () => {
+  const set = writer();
+  for (const values of [{}, valuesAtCount(201), [], null, "synthetic"]) {
+    await expect(run(values)).rejects.toThrow(/^keychain\.set: values /);
+  }
+  expect(set).not.toHaveBeenCalled();
+});
+
 test("the control catalog keeps an object-shaped credential schema", () => {
   const action = describeHostActions()["keychain.set"];
   expect(action?.properties?.values).toMatchObject({

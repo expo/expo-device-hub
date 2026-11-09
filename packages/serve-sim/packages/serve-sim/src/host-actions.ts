@@ -152,7 +152,9 @@ const KeychainValues = z
     const parsed = KeychainEntries.safeParse(entries);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
-        ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+        const entry = typeof issue.path[0] === "number" ? entries?.[issue.path[0]] : undefined;
+        const path = entry ? [entry[0], ...issue.path.slice(2)] : issue.path;
+        ctx.addIssue({ code: "custom", path, message: issue.message });
       }
       return z.NEVER;
     }
