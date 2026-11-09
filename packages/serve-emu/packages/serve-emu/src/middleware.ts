@@ -27,7 +27,7 @@ import {
   setUserRotation,
   type NightModeStatus,
 } from "./adb.ts";
-import { screenshotResponse } from "./screenshot-response.ts";
+import { captureScreenshot, screenshotResponse } from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import { applyFoldRequest, getFoldStatus } from "./fold.ts";
@@ -1639,7 +1639,11 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        return await screenshotResponse(await screencapPng(opts.serial), url);
+        const shot = await captureScreenshot(
+          () => screencapPng(opts.serial),
+          deviceState.orientation,
+        );
+        return await screenshotResponse(shot.png, url, shot.metadata);
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },

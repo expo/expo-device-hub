@@ -97,3 +97,19 @@ describe("display orientation reader", () => {
     await expect(next).resolves.toBe("landscape_right");
   });
 });
+
+test("cached metadata reads never query or report commanded, stale, or failed observations", async () => {
+  const { instance, locked, advance, reads } = reader(["portrait", new Error("offline")]);
+  expect(instance.peek()).toBeNull();
+  expect(reads()).toBe(0);
+  await instance.fresh();
+  expect(instance.peek()).toEqual({ orientation: "portrait" });
+  advance(1001);
+  expect(instance.peek()).toBeNull();
+  expect(reads()).toBe(1);
+  await instance.fresh();
+  expect(instance.peek()).toBeNull();
+  locked("landscape_left");
+  expect(instance.peek()).toBeNull();
+  expect(reads()).toBe(2);
+});
