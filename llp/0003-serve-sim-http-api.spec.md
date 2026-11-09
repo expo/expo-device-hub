@@ -798,8 +798,8 @@ so callers can check support before sending an automated capture.
 [observed: `src/host-actions.ts`, `src/event-log.ts`]
 
 The flag applies to both path and binary output. Binary dispatch carries it as
-request-local state into the HTTP capture implementation. Automated binary captures
-return PNG bytes without publishing a manual screenshot artifact; ordinary HTTP
+a JSON body into the same HTTP capture implementation. Automated captures
+return PNG bytes without publishing a manual screenshot artifact; manual HTTP
 screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
 
 Automated path captures skip the convenience Desktop copy and do not consume its
