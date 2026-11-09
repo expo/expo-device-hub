@@ -2,7 +2,7 @@
 import http from "node:http";
 import https from "node:https";
 
-const base = new URL(process.argv[2] ?? "http://127.0.0.1:3401");
+const base = new URL(process.argv[2] ?? "http://127.0.0.1:3300");
 if (!["http:", "https:"].includes(base.protocol)) throw new Error("Expected an HTTP endpoint");
 const transport = base.protocol === "https:" ? https : http;
 const agent =
