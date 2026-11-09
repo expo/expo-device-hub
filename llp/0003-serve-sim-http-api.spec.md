@@ -446,8 +446,10 @@ Older addons without the snapshot marker omit the new fields.
 [observed: `src/device-session.ts`, `src/native.ts`,
 `Sources/SimNative/CoreDeviceState.swift`]
 
-Persistent ordinary-device sessions observe the same deduplicated native state
-stream as Duo. Temporary screenshot sessions skip pose observation; a persistent
+Persistent ordinary iOS sessions with one integrated display observe the same
+deduplicated native state stream as Duo. The startup profile/runtime snapshot
+gates this capability before subscribing; unknown profiles and ordinary tvOS,
+watchOS, or other runtimes do not start this pose observer. Temporary screenshot sessions skip pose observation; a persistent
 consumer retaining one starts observation once. Screen orientation changes are
 broadcast independently of the legacy requested framing, even if dimensions and
 physical pose stay unchanged. This adds no per-screenshot pose query.
