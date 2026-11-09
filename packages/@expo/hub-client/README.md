@@ -337,6 +337,10 @@ const capture = await client.screenshot();
 if (capture?.artifact?.status === "failed")
   console.warn("not saved to session artifacts", capture.artifact.error);
 
+// Optional smaller JPEG (requires a backend that supports image options).
+// Check blob.type: older servers may ignore the requested options.
+const smaller = await client.screenshot({ maxWidth: 402, format: "jpeg", quality: 80 });
+
 // Input is normalized to 0..1 of the screen, so it works for every device size.
 client.sendTouch({ phase: "begin", x: 0.5, y: 0.5 });
 client.sendTouch({ phase: "end", x: 0.5, y: 0.5 });

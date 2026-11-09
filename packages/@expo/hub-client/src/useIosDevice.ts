@@ -137,6 +137,7 @@ import {
   type RunningDevice,
   type ScreenSize,
   type ScreenshotCapture,
+  type ScreenshotOptions,
   type ScrollSample,
   type TouchSample,
 } from "./types";
@@ -1333,14 +1334,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [emitHingeEvent, endRotation],
   );
 
-  // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
-  // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
-  // to the requested device); the middleware defaults to the booted sim if none.
-  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
-    if (!baseUrl) return null;
-    const udid = config?.device ?? targetDevice;
-    return fetchScreenshot(baseUrl, udid, sessionFetch);
-  }, [baseUrl, targetDevice, config, sessionFetch]);
+  // Use the resolved device and authenticated fetch for screenshot downloads.
+  const screenshot = useCallback(
+    async (options?: ScreenshotOptions): Promise<ScreenshotCapture | null> => {
+      if (!baseUrl) return null;
+      const udid = config?.device ?? targetDevice;
+      return fetchScreenshot(baseUrl, udid, sessionFetch, options);
+    },
+    [baseUrl, targetDevice, config, sessionFetch],
+  );
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at

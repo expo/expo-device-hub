@@ -33,6 +33,30 @@ describe("screenshot capture", () => {
     expect(capture?.artifact).toBeNull();
   });
 
+  test("forwards image options and preserves the returned JPEG MIME type", async () => {
+    let requested = "";
+    const capture = await fetchScreenshot(
+      "http://localhost:3400/preview",
+      "DEVICE",
+      async (url) => {
+        requested = url;
+        return new Response(new Uint8Array([255, 216, 255, 217]), {
+          headers: { "Content-Type": "image/jpeg", "X-Expo-Screenshot-Artifact": "saved" },
+        });
+      },
+      { maxWidth: 402, format: "jpeg", quality: 80 },
+    );
+    const url = new URL(requested);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      device: "DEVICE",
+      maxWidth: "402",
+      format: "jpeg",
+      quality: "80",
+    });
+    expect(capture?.blob.type).toBe("image/jpeg");
+    expect(capture?.artifact).toEqual({ status: "saved" });
+  });
+
   test("reads the session artifact outcome from the response headers", async () => {
     const artifact = async (headers: Record<string, string>) =>
       (await fetchScreenshot("", null, pngResponse(headers)))?.artifact;
