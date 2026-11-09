@@ -30,6 +30,28 @@ describe("homeIndicatorEdge", () => {
   test("never tags a sample that opted out of edge gestures", () => {
     expect(homeIndicatorEdge({ y: 0.99, edgeGestures: false })).toBeUndefined();
   });
+  test("the home band follows the interface relative to physical framing", () => {
+    const base = { width: 1206, height: 2622, screenOrientation: "portrait" as const };
+    expect(
+      homeIndicatorEdge({ x: 0.99, y: 0.5 }, { ...base, deviceOrientation: "landscape-left" }),
+    ).toBe(4);
+    expect(
+      homeIndicatorEdge({ x: 0.01, y: 0.5 }, { ...base, deviceOrientation: "landscape-right" }),
+    ).toBe(1);
+    expect(homeIndicatorEdge({ x: 0.5, y: 0.01 }, { ...base, deviceOrientation: "pud" })).toBe(2);
+    expect(
+      homeIndicatorEdge(
+        { x: 0.5, y: 0.99 },
+        { ...base, deviceOrientation: "landscape-left", screenOrientation: "landscape_right" },
+      ),
+    ).toBe(3);
+    expect(
+      homeIndicatorEdge(
+        { x: 0.99, y: 0.5, edgeGestures: false },
+        { ...base, deviceOrientation: "landscape-left" },
+      ),
+    ).toBeUndefined();
+  });
 });
 
 describe("rawDeltaForDisplayDelta", () => {
@@ -123,5 +145,45 @@ describe("displayPointForRawPoint", () => {
       expect(rawDelta.dx).toBeCloseTo(0.1, 12);
       expect(rawDelta.dy).toBeCloseTo(-0.2, 12);
     }
+  });
+});
+
+describe("observed physical framing", () => {
+  test("an externally turned phone keeps a landscape frame around a portrait-only app", () => {
+    const geometry = streamGeometry({
+      width: 1206,
+      height: 2622,
+      orientation: "landscape_left",
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    });
+    expect(geometry.display).toMatchObject({
+      width: 2622,
+      height: 1206,
+      orientation: "landscape_right",
+    });
+    expect(geometry.rotationDegrees).toBe(-90);
+    expect(geometry.inputOrientation).toBe("landscape_right");
+  });
+  test("already-landscape pixels stay upright, or turn with a portrait device", () => {
+    const pixels = { width: 2622, height: 1206, screenOrientation: "landscape_right" as const };
+    expect(streamGeometry({ ...pixels, deviceOrientation: "landscape-left" }).rotationDegrees).toBe(
+      0,
+    );
+    const portrait = streamGeometry({ ...pixels, deviceOrientation: "portrait" });
+    expect(portrait.display).toMatchObject({ width: 1206, height: 2622 });
+    expect(portrait.rotationDegrees).toBe(90);
+    expect(portrait.inputOrientation).toBe("landscape_left");
+  });
+  test("unknown observed pose falls back to the native screen, not a cached command", () => {
+    const geometry = streamGeometry({
+      width: 1206,
+      height: 2622,
+      orientation: "landscape_right",
+      screenOrientation: "portrait",
+      deviceOrientation: null,
+    });
+    expect(geometry.display).toMatchObject({ width: 1206, height: 2622, orientation: "portrait" });
+    expect(geometry.rotationDegrees).toBe(0);
   });
 });

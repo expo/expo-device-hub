@@ -77,7 +77,6 @@ import { useActivityStatus } from "./useActivityStatus";
 import { type AccessibilityLoader, loadIosAccessibility } from "./accessibility";
 import { isAvccSupported } from "./avcc";
 import {
-  HID_EDGE_BOTTOM,
   homeIndicatorEdge,
   rawDeltaForDisplayDelta,
   rawEdgeForDisplayEdge,
@@ -147,6 +146,8 @@ import { IOS_INPUT_UNAVAILABLE_MESSAGE } from "./ios-input-error";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
 import {
   clockwiseQuarterTurns,
+  deviceOrientationForPose,
+  legacyOrientationForDeviceChoice,
   DEVICE_ORIENTATIONS,
   CLOCKWISE_ORIENTATIONS,
   isDeviceOrientation,
@@ -823,7 +824,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setActiveWebRtcCodec(webRtcCodec);
   }, [streamMode, webRtcCodec]);
   // True while the in-flight single-finger drag began in the home-indicator band.
-  const edgeGestureRef = useRef(false);
+  const edgeGestureRef = useRef<number | undefined>(undefined);
   // Latest screen config, read by the (stable) input callbacks for orientation.
   const screenRef = useRef<SimScreenConfig | null>(null);
   // Layout effects, so an input event right after a paint already maps with the new screen.
@@ -833,10 +834,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // @ref LLP 0015#temporary-drops — input maps with the screen the view shows, also a kept one
   // Pointer input is measured on the shown frame, so it maps back with the
   // same orientation: the helper's config, or the kept one while a helper restarts.
-  const viewScreenRef = useRef<SimScreenConfig | null>(null);
+  const viewScreenRef = useRef<ScreenSize | null>(null);
   useLayoutEffect(() => {
-    viewScreenRef.current = viewScreen;
-  }, [viewScreen]);
+    viewScreenRef.current = publicScreen;
+  }, [publicScreen]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -919,14 +920,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!ownsInput() || dropsDisplayInput("touch", sample.display, sample.phase)) return;
       const orientation = streamGeometry(viewScreenRef.current).inputOrientation;
 
-      let displayEdge: number | undefined;
       if (sample.phase === "begin") {
-        edgeGestureRef.current = homeIndicatorEdge(sample) !== undefined;
-        if (edgeGestureRef.current) displayEdge = HID_EDGE_BOTTOM;
-      } else if (edgeGestureRef.current) {
-        displayEdge = HID_EDGE_BOTTOM;
-        if (sample.phase === "end") edgeGestureRef.current = false;
+        edgeGestureRef.current = homeIndicatorEdge(sample, viewScreenRef.current);
       }
+      const displayEdge = edgeGestureRef.current;
+      if (sample.phase === "end") edgeGestureRef.current = undefined;
 
       const p = rawPointForDisplayPoint(orientation, sample.x, sample.y);
       const edge =
@@ -1159,7 +1157,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The answer is the send: serve-sim has no reply, so the shown pose then waits for the
   // helper's readback. A choice the queue drops for age, which the queue notices only at its
   // next flush, fails when the queue's age limit has passed.
-  const readbackOrientation = isDeviceOrientation(screen?.orientation) ? screen.orientation : null;
+  const usesNativeDevicePose =
+    !isDuo && screen?.supportsHingeAngle === false && screen.deviceOrientation !== undefined;
+  const readbackOrientation = usesNativeDevicePose
+    ? deviceOrientationForPose(screen!.deviceOrientation)
+    : isDeviceOrientation(screen?.orientation)
+      ? screen.orientation
+      : null;
   const orientationBackend = useMemo<DeviceOrientationBackend | null>(
     () =>
       connectionScope === null
@@ -1168,7 +1172,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             // The simulator, not the token: a reconnect keeps its choices in order.
             device: JSON.stringify([baseUrl, targetDevice]),
             // Xcode's Device Hub turns the iPhone Duo clockwise.
-            orientations: isDuo ? CLOCKWISE_ORIENTATIONS : DEVICE_ORIENTATIONS,
+            orientations:
+              isDuo || usesNativeDevicePose ? CLOCKWISE_ORIENTATIONS : DEVICE_ORIENTATIONS,
             reportsPose: true,
             pushesReports: true,
             set: (orientation) =>
@@ -1177,7 +1182,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                   () => reject(new Error(ORIENTATION_NOT_SENT_MESSAGE)),
                   WS_QUEUE_MAX_AGE_MS,
                 );
-                const queued = sendWs(WS_MSG_ORIENTATION, { orientation }, () => {
+                const wireOrientation = usesNativeDevicePose
+                  ? legacyOrientationForDeviceChoice(orientation)
+                  : orientation;
+                const queued = sendWs(WS_MSG_ORIENTATION, { orientation: wireOrientation }, () => {
                   clearTimeout(timer);
                   resolve(orientation);
                 });
@@ -1187,7 +1195,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
                 }
               }),
           },
-    [baseUrl, connectionScope, sendWs, targetDevice, isDuo],
+    [baseUrl, connectionScope, sendWs, targetDevice, isDuo, usesNativeDevicePose],
   );
   // The native preset, which a rotation clears, is forgotten at once, and the
   // 3D view of an iPhone Duo turns with the `rotated` event.

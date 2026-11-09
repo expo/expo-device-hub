@@ -455,3 +455,71 @@ test("an iOS orientation choice is still sent under Strict Mode, which runs effe
   await act(async () => client().setOrientation("landscape_right"));
   expect(helper().rotations()).toEqual(["landscape_right"]);
 });
+
+test("ordinary-device controls follow observed pose independently of a portrait-only app", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  expect(client().orientation).toBe("landscape_left");
+  expect(client().screen?.orientation).toBe("portrait");
+  expect(client().screen?.deviceOrientation).toBe("landscape-left");
+  await act(async () =>
+    client().sendTouch({ phase: "begin", x: 0.2, y: 0.4, edgeGestures: false }),
+  );
+  const touch = helper()
+    .sent.map((frame) => new Uint8Array(frame))
+    .find((frame) => frame[0] === 0x03)!;
+  const point = JSON.parse(new TextDecoder().decode(touch.subarray(1)));
+  expect(point.x).toBeCloseTo(0.6);
+  expect(point.y).toBeCloseTo(0.2);
+  await act(async () => client().setOrientation("landscape_left"));
+  expect(helper().rotations().at(-1)).toBe("landscape_right");
+  now = 2000;
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "portrait",
+    }),
+  );
+  expect(client().orientation).toBe("portrait");
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: null,
+    }),
+  );
+  expect(client().orientation).toBeNull();
+});
+
+test("portrait-locked landscape home swipes retain the interface edge through release", async () => {
+  const { client, helper } = await mount();
+  await act(async () =>
+    helper().screen("landscape_right", {
+      supportsHingeAngle: false,
+      screenOrientation: "portrait",
+      deviceOrientation: "landscape-left",
+    }),
+  );
+  await act(async () => {
+    client().sendTouch({ phase: "begin", x: 0.99, y: 0.5 });
+    client().sendTouch({ phase: "move", x: 0.7, y: 0.5 });
+    client().sendTouch({ phase: "end", x: 0.6, y: 0.5 });
+    client().sendTouch({ phase: "begin", x: 0.5, y: 0.99 });
+    client().sendTouch({ phase: "end", x: 0.5, y: 0.99 });
+  });
+  const touches = helper()
+    .sent.map((frame) => new Uint8Array(frame))
+    .filter((frame) => frame[0] === 0x03)
+    .map((frame) => JSON.parse(new TextDecoder().decode(frame.subarray(1))));
+  expect(touches.slice(0, 3).map((touch) => touch.edge)).toEqual([3, 3, 3]);
+  expect(touches[0].x).toBeCloseTo(0.5);
+  expect(touches[0].y).toBeCloseTo(0.99);
+  expect(touches.slice(3).map((touch) => touch.edge)).toEqual([undefined, undefined]);
+});

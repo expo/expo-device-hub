@@ -174,3 +174,23 @@ describe("simScreenSize", () => {
     expect(screenSizesEqual(null, null)).toBe(true);
   });
 });
+
+test("ordinary native pose and screen updates survive adapter equality and clear stale commands", () => {
+  const raw = {
+    width: 1206,
+    height: 2622,
+    orientation: "landscape_right" as const,
+    supportsHingeAngle: false,
+    screenOrientation: "portrait" as const,
+    deviceOrientation: "landscape-left" as const,
+  };
+  const adapted = simScreenSize(raw, false);
+  expect(adapted.orientation).toBe("portrait");
+  expect(adapted.deviceOrientation).toBe("landscape-left");
+  expect(screenConfigsEqual(raw, { ...raw, deviceOrientation: "portrait" })).toBe(false);
+  expect(screenSizesEqual(adapted, { ...adapted, deviceOrientation: "portrait" })).toBe(false);
+  expect(screenConfigsEqual(raw, { ...raw, screenOrientation: "landscape_right" })).toBe(false);
+  expect(
+    simScreenSize({ ...raw, supportsHingeAngle: true }, true).deviceOrientation,
+  ).toBeUndefined();
+});
