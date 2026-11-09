@@ -796,7 +796,9 @@ the final PNG's checksum-validated IHDR, not the framebuffer or physical pose.
 HTTP `/api/screenshot` retains its PNG body and returns the same object in the
 `X-Expo-Screenshot-Metadata` header, exposed to allowed CORS callers. ServeEmu's
 existing base64 JSON response also includes `metadata`. Unknown or invalid PNG
-headers omit metadata rather than failing the capture. Binary exec-ws framing is
+headers omit metadata rather than failing the capture. If a saved path capture
+cannot be read back for metadata, the successful path result remains intact and
+the read error stays in the host log. Binary exec-ws framing is
 unchanged; its PNG bytes still follow the four-byte request ID. No sidecar or
 metadata opt-in environment variable is used. [observed: `src/host-actions.ts`,
 `src/middleware.ts`, and ServeEmu `src/screenshot-response.ts`]
