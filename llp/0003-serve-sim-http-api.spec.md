@@ -794,10 +794,17 @@ When a sidecar-aware worker opts in with
 `EXPO_DEVICE_HUB_SCREENSHOT_METADATA=1`, manual screenshot artifact persistence writes `<file>.png.json` before publishing
 `<file>.png`. The sidecar contains `width` and `height` from the encoded PNG IHDR,
 not framebuffer dimensions. Readers may ignore absent sidecars from older servers.
-Invalid or incomplete PNG headers do not produce dimensions. A failed publication
+Invalid, incomplete, or checksum-corrupt IHDR headers do not produce dimensions. A failed publication
 removes its sidecar and temporary files. ServeSim and ServeEmu use byte-identical
 persistence code. The default remains PNG-only so older collectors do not
 misreport sidecars as failed uploads. [observed: `src/screenshot-artifacts.ts` in both servers]
+
+A process can stop after sidecar publication and before PNG publication. Before
+enabling the opt-in, the worker must ignore sidecars as upload candidates, remove
+the matching sidecar after a successful PNG upload, and ignore orphan sidecars in
+upload-failure reporting. It may remove orphans only after the host has stopped,
+so cleanup cannot race a capture still publishing its PNG. That collector work is
+not implemented by this producer draft. [observed: publication order in `saveScreenshotArtifact`; collector integration pending]
 
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic

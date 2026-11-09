@@ -185,7 +185,7 @@ describe("screenshot metadata sidecar", () => {
       expect(await readdir(directory)).toHaveLength(3);
       expect(screenshotMetadata(png.subarray(0, 24))).toBeUndefined();
       const invalid = Buffer.from(png);
-      invalid.writeUInt32BE(0, 16);
+      invalid.writeUInt32BE(121, 16);
       expect(screenshotMetadata(invalid)).toBeUndefined();
     } finally {
       if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_METADATA;
