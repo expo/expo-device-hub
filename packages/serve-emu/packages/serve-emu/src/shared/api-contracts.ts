@@ -520,6 +520,8 @@ export type ScreenshotBase64Response = ApiSuccess<{
   data: string;
   /** Absent from servers older than the artifact persistence feature. */
   artifact?: ScreenshotArtifactReport;
+  /** Encoded image dimensions; absent on older servers. */
+  metadata?: DeviceSize;
 }>;
 
 export type LogcatEventMap = {
@@ -1716,7 +1718,12 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
   if (root.ok !== true) fail("screenshot response.ok must be true");
   if (root.mimeType !== "image/png") fail("screenshot response.mimeType must be image/png");
   const data = string(root.data, "screenshot response.data");
-  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data };
+  const metadata =
+    root.metadata === undefined
+      ? undefined
+      : parseDeviceSize(root.metadata, "screenshot response.metadata");
+  const dimensions = metadata ? { metadata } : {};
+  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data, ...dimensions };
   const artifact = record(root.artifact, "screenshot response.artifact");
   const status = oneOf(
     artifact.status,
@@ -1727,6 +1734,7 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
     ok: true,
     mimeType: "image/png",
     data,
+    ...dimensions,
     artifact:
       status === "failed"
         ? { status, error: string(artifact.error, "screenshot response.artifact.error") }
