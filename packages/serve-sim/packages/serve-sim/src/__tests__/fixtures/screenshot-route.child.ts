@@ -407,3 +407,38 @@ test("HTTP automation rejects invalid bodies before capture and retains authenti
   expect(response!.status).toBe(401);
   expect(targets).toHaveLength(before);
 });
+
+test("automation also suppresses artifacts and activity for resized JPEG HTTP and WS captures", async () => {
+  unstable = false;
+  activeDisplay = 7;
+  clearEventLogForTests();
+  const before = readdirSync(screenshotDirectory).length;
+  const response = await middleware(
+    new Request(
+      `http://localhost/preview/api/screenshot?device=${UDID}&maxWidth=402&format=jpeg&quality=65`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer test" },
+        body: JSON.stringify({ automation: true }),
+      },
+    ),
+  );
+  expect(response!.status).toBe(200);
+  expect(response!.headers.get("content-type")).toBe("image/jpeg");
+  expect(response!.headers.get("X-Expo-Screenshot-Artifact")).toBe("disabled");
+  expect(Buffer.from(await response!.arrayBuffer())).toEqual(jpeg);
+  const binary = await socketRequest({
+    udid: UDID,
+    automation: true,
+    maxWidth: 402,
+    format: "jpeg",
+    quality: 65,
+  });
+  expect((binary as Buffer).subarray(4)).toEqual(jpeg);
+  expect(converted.at(-1)).toEqual([0, 65]);
+  expect(widths.at(-1)).toBe(402);
+  expect(readdirSync(screenshotDirectory)).toHaveLength(before);
+  expect(
+    readEventLog({ device: UDID }).filter((event) => event.kind === "screenshot"),
+  ).toHaveLength(0);
+});
