@@ -261,6 +261,7 @@ export function PhoneFrame({
   const framed = frameAsset
     ? deviceFramePresentation({
         asset: frameAsset,
+        // @ref LLP 0004#ordinary-device-frame-pose — artwork follows physical framing, independently of app orientation.
         orientation: display?.orientation ?? client?.screen?.orientation,
         displayRatio: ratio,
         maxScreenShortSide: MAX_SHORT_SIDE,
