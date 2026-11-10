@@ -167,6 +167,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       ? clipboardFallback.request
       : null;
   useEffect(() => setClipboardFallback(null), [selectedId]);
+  // Counts the Shake clicks; each new count wobbles the device in the stream panel once.
+  const [shakeNonce, setShakeNonce] = useState(0);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
@@ -277,6 +279,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       onRemove={!singleDevice && selected ? () => remove(selected) : undefined}
       clipboardRequest={clipboardRequest}
       onClipboardRequestHandled={() => setClipboardFallback(null)}
+      onShake={() => setShakeNonce((count) => count + 1)}
     />
   );
 
@@ -379,6 +382,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           deviceModelAssets={DEVICE_MODEL_ASSETS}
           screenShape={screenShape}
           onClipboardFallback={handleClipboardFallback}
+          shakeNonce={shakeNonce}
         />
       ) : (
         <EmptyState platform={platform} framed={framed} singleDevice={!!singleDevice} />
