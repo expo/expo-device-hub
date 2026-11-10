@@ -83,7 +83,7 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
+import { createShakeRunner, readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -395,6 +395,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     ((serial: string, fix: GeoFix, signal: AbortSignal) =>
       setEmulatorLocationAsync(serial, fix, signal));
   const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
+  const shakeRunner = createShakeRunner(shakeDevice);
   const createInputQueue =
     dependencies.createInputQueue ??
     ((session: ScrcpySession) => new ControlInputQueue({ socket: session.controlSocket }));
@@ -2225,10 +2226,11 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         try {
           const { record } = await readShakeRequest(req);
-          await runForContext(requestContext, async (context) => {
-            await shakeDevice(context.serial);
-            if (record) context.recorder.recordShake("rest:shake");
-          });
+          await runForContext(requestContext, (context) =>
+            shakeRunner.run(context.serial, () => {
+              if (record) context.recorder.recordShake("rest:shake");
+            }),
+          );
           return Response.json({ ok: true });
         } catch (err) {
           return errorResponse(err);
@@ -3024,8 +3026,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     stopTask = Promise.all([
       sessions.close("server stopping"),
       uploads.close(error),
-      // Exit only after a running shake has put the resting acceleration back.
-      settleShakes(),
+      // Exit only after this server's running shakes have put the resting acceleration back.
+      settleShakes(shakeRunner.serials()),
     ]).then(() => {});
     return stopTask;
   };

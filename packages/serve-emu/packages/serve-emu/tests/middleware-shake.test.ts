@@ -67,6 +67,54 @@ function fakeConsole() {
 }
 
 describe("middleware shake", () => {
+  test("a tap during a shake replays after it, and overlapping shakes record once", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const shaken: string[] = [];
+    const app = await startApp("emulator-5608", {
+      shake: async (serial) => {
+        shaken.push(serial);
+        await gate;
+      },
+    });
+    try {
+      const first = app.handleRequest(post("/api/shake", {}));
+      const second = app.handleRequest(post("/api/shake", {}));
+      while (shaken.length === 0) await Bun.sleep(1);
+      const tap = await app.handleRequest(post("/api/tap", { x: 0.5, y: 0.5 }));
+      expect(tap.status).toBe(200);
+      release();
+      expect((await first).status).toBe(200);
+      expect((await second).status).toBe(200);
+
+      expect(shaken).toHaveLength(1);
+      const session = (await (await app.handleRequest(request("/api/session"))).json()) as {
+        events: Array<{ kind: string }>;
+      };
+      expect(session.events.map((event) => event.kind)).toEqual(["shake", "gesture"]);
+    } finally {
+      await app.stop();
+    }
+  });
+
+  test("an oversized shake body gets 413 and does not shake", async () => {
+    const shaken: string[] = [];
+    const app = await startApp("emulator-5610", {
+      shake: async (serial) => {
+        shaken.push(serial);
+      },
+    });
+    try {
+      const response = await app.handleRequest(post("/api/shake", { pad: "x".repeat(1100) }));
+      expect(response.status).toBe(413);
+      expect(shaken).toEqual([]);
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("records a shake unless asked not to, and a replay shakes again", async () => {
     const shaken: string[] = [];
     const app = await startApp("emulator-5604", {

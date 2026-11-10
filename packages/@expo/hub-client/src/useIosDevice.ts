@@ -1153,10 +1153,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const shakeSupported = config?.inputShake ?? false;
   const [shakeError, setShakeError] = useState<string | null>(null);
-  useEffect(() => setShakeError(null), [baseUrl, targetDevice]);
+  // Counts shakes and device changes, so only the latest shake can show an error.
+  const shakeRequest = useRef(0);
+  const shakeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    shakeRequest.current++;
+    setShakeError(null);
+  }, [baseUrl, targetDevice]);
+  useEffect(
+    () => () => {
+      if (shakeTimer.current) clearTimeout(shakeTimer.current);
+    },
+    [],
+  );
   const shake = useCallback(() => {
     if (!shakeSupported) return;
-    setShakeError(sendWs(WS_MSG_SHAKE, {}) ? null : SHAKE_NOT_SENT_MESSAGE);
+    const request = ++shakeRequest.current;
+    const fail = () => {
+      if (shakeRequest.current === request) setShakeError(SHAKE_NOT_SENT_MESSAGE);
+    };
+    setShakeError(null);
+    if (shakeTimer.current) clearTimeout(shakeTimer.current);
+    // A queued shake counts as accepted, but the queue drops it after its age limit if the input
+    // socket does not send it by then, as for an orientation choice.
+    const timer = setTimeout(fail, WS_QUEUE_MAX_AGE_MS);
+    shakeTimer.current = timer;
+    if (!sendWs(WS_MSG_SHAKE, {}, () => clearTimeout(timer))) {
+      clearTimeout(timer);
+      fail();
+    }
   }, [sendWs, shakeSupported]);
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel

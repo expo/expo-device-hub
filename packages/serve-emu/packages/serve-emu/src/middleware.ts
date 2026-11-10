@@ -67,7 +67,7 @@ import {
 } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
+import { createShakeRunner, readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 import {
@@ -472,6 +472,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   let removeFatalListener: (() => void) | null = null;
   const deviceStateOwner = {};
   const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
+  const shakeRunner = createShakeRunner(shakeDevice);
   const deviceState =
     opts.deviceState ??
     new DeviceSessionState({
@@ -1804,13 +1805,14 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       try {
         const { record } = await readShakeRequest(req);
-        await shakeDevice(opts.serial);
-        if (record) sessionRecorder.recordShake("rest:shake");
+        await shakeRunner.run(opts.serial, () => {
+          if (record) sessionRecorder.recordShake("rest:shake");
+        });
         return Response.json({ ok: true });
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
-          { status: 400 },
+          { status: err instanceof HttpBodyError ? err.status : 400 },
         );
       }
     }
