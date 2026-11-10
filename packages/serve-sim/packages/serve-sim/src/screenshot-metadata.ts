@@ -8,12 +8,12 @@ export type ScreenshotMetadata = {
     | "landscape-left"
     | "landscape-right"
     | null;
-  displayId: number;
-  displayCount: number;
+  /** Two-panel device identity; omitted for single-display devices or unknown panels. */
+  screen?: "inner" | "outer";
 };
 
 export function screenshotMetadata(): ScreenshotMetadata {
-  return { width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0 };
+  return { width: 0, height: 0, displayRotation: null };
 }
 
 export const SCREENSHOT_METADATA_HEADER = "X-Expo-Screenshot-Metadata";

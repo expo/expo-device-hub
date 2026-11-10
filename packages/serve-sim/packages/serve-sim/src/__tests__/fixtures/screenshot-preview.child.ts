@@ -91,8 +91,6 @@ test("only manual captures make a Desktop copy", async () => {
       width: 0,
       height: 0,
       displayRotation: null,
-      displayId: 0,
-      displayCount: 0,
     });
   }
 });
@@ -109,8 +107,6 @@ test("automated captures preserve active-panel selection and staged PNG", async 
     width: 0,
     height: 0,
     displayRotation: null,
-    displayId: 0,
-    displayCount: 0,
   });
 });
 
@@ -167,6 +163,6 @@ test("authenticated exec-ws path replies carry dimensions beside the unchanged p
     stdout: join(SCREENSHOT_DIR, fileName),
     stderr: "",
     exitCode: 0,
-    metadata: { width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0 },
+    metadata: { width: 0, height: 0, displayRotation: null },
   });
 });
