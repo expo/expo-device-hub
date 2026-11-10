@@ -628,6 +628,8 @@ export type ApiInfoResponse = {
    * servers. `GET /api/orientation` reports the lock policy instead.
    */
   pose?: ScreenOrientation | null;
+  /** Whether `POST /api/shake` can shake this device: true only for an emulator. Absent on older servers. */
+  shake?: boolean;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -738,6 +740,7 @@ export type ApiContractMap = {
   "/api/swipe": { POST: EndpointContract<SwipeRequest, EmptyResponse> };
   "/api/text": { POST: EndpointContract<TextRequest, EmptyResponse> };
   "/api/key": { POST: EndpointContract<KeyRequest, EmptyResponse> };
+  "/api/shake": { POST: EndpointContract<undefined, EmptyResponse> };
   "/api/session": {
     GET: EndpointContract<undefined, SessionSnapshot>;
     DELETE: EndpointContract<undefined, SessionMutationResponse>;
@@ -1016,6 +1019,7 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.pose === undefined
       ? {}
       : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
+    ...(root.shake === undefined ? {} : { shake: boolean(root.shake, "API info response.shake") }),
   };
 }
 
@@ -2058,6 +2062,7 @@ export const API_SUCCESS_PARSERS = {
   "/api/swipe": { POST: parseEmptyResponse },
   "/api/text": { POST: parseEmptyResponse },
   "/api/key": { POST: parseEmptyResponse },
+  "/api/shake": { POST: parseEmptyResponse },
   "/api/session": { GET: parseSessionSnapshot, DELETE: parseSessionMutationResponse },
   "/api/session/replay": { POST: parseSessionMutationResponse },
   "/api/session/replay/stop": { POST: parseSessionMutationResponse },

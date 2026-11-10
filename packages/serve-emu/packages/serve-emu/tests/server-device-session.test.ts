@@ -465,3 +465,63 @@ describe("startServer device session lifecycle", () => {
     }
   });
 });
+
+describe("startServer shake", () => {
+  // No test here reaches adb: the emulator serial uses an injected shake, and the default
+  // shake refuses a physical serial before it runs a command.
+  async function startShakeServer(serial: string, shake?: (serial: string) => Promise<void>) {
+    const captured: CapturedServer = { options: null, stopCalls: 0 };
+    const started = await startServer(
+      { serial, port: 3300 },
+      {
+        readOrientation: readNoOrientation,
+        openScrcpy: async (target) => fakeScrcpy(target).session,
+        listDevices: async () => [{ serial, state: "device" }],
+        listRunningAvds: async () => [],
+        listAvds: async () => [],
+        ...(shake ? { shake } : {}),
+        serve: capturingServe(captured),
+      },
+    );
+    return { captured, started };
+  }
+
+  test("advertises shake for an emulator and shakes the current device", async () => {
+    const shaken: string[] = [];
+    const { captured, started } = await startShakeServer("emulator-5598", async (serial) => {
+      shaken.push(serial);
+    });
+    try {
+      const info = await invokeFetch(captured, "/api");
+      expect(((await info.json()) as { shake?: unknown }).shake).toBe(true);
+
+      const response = await invokeFetch(captured, "/api/shake", { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(shaken).toEqual(["emulator-5598"]);
+
+      const wrongMethod = await invokeFetch(captured, "/api/shake");
+      expect(wrongMethod.status).toBe(405);
+      expect(shaken).toHaveLength(1);
+    } finally {
+      await started.stop();
+    }
+  });
+
+  test("does not advertise or shake a physical device", async () => {
+    const { captured, started } = await startShakeServer("A");
+    try {
+      const info = await invokeFetch(captured, "/api");
+      expect(((await info.json()) as { shake?: unknown }).shake).toBe(false);
+
+      const response = await invokeFetch(captured, "/api/shake", { method: "POST" });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        error: "Shake is available only on Android Emulator devices",
+      });
+    } finally {
+      await started.stop();
+    }
+  });
+});

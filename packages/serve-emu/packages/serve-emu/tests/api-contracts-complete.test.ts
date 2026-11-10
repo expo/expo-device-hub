@@ -697,6 +697,15 @@ describe("orientation in API info and health", () => {
       "API info response.pose is invalid",
     );
   });
+
+  test("keeps the shake support flag, and leaves it out for older servers", () => {
+    expect(parseApiInfoResponse({ ...info, shake: true }).shake).toBe(true);
+    expect(parseApiInfoResponse({ ...info, shake: false }).shake).toBe(false);
+    expect("shake" in parseApiInfoResponse(info)).toBe(false);
+    expect(() => parseApiInfoResponse({ ...info, shake: "yes" })).toThrow(
+      "API info response.shake",
+    );
+  });
 });
 
 describe("API parser rejection boundaries", () => {

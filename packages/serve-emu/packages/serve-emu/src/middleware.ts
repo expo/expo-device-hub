@@ -67,6 +67,7 @@ import {
 } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
+import { shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 import {
@@ -360,6 +361,8 @@ export type CreateAppDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for a new device state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
+  /** Shake the device for `POST /api/shake`; the emulator console by default. */
+  shake?: (serial: string) => Promise<void>;
 };
 
 async function createAppInternal(opts: AppOptions, dependencies: CreateAppDependencies = {}) {
@@ -478,6 +481,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       applyRotation:
         dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
     });
+  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
   try {
     deviceState.acquire(deviceStateOwner);
   } catch (error) {
@@ -1304,6 +1308,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
           pose: await deviceState.orientation.fresh(),
+          shake: isEmulatorSerial(opts.serial),
           status,
           lastFrameAt: lastFrameMs > 0 ? new Date(lastFrameMs).toISOString() : null,
           lastError,
@@ -1791,6 +1796,20 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
         }
       }
       return new Response("method not allowed", { status: 405 });
+    }
+
+    if (url.pathname === "/api/shake") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      // The shake has no parameters, so the body is not read.
+      try {
+        await shakeDevice(opts.serial);
+        return Response.json({ ok: true });
+      } catch (err) {
+        return Response.json(
+          { ok: false, error: err instanceof Error ? err.message : String(err) },
+          { status: 400 },
+        );
+      }
     }
 
     if (url.pathname === "/api/session") {

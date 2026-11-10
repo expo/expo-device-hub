@@ -99,6 +99,8 @@ export type ApiDependencies = {
   ) => Promise<AccessibilityTapResponse>;
 
   dispatchGesture: (gesture: Gesture, source: string, record: boolean) => Promise<void>;
+  /** Shake an emulator with a short accelerometer burst. Rejects a physical device. */
+  shake: () => Promise<void>;
 
   getSession: () => SessionSnapshot;
   clearSession: () => SessionSnapshot;
