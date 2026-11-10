@@ -83,6 +83,7 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
+import { shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -330,6 +331,8 @@ export type ServerDependencies = {
   readOrientation?: DeviceSessionStateOptions["readOrientation"];
   /** Lock or free the rotation for each device's state; adb by default. */
   applyRotation?: DeviceSessionStateOptions["applyRotation"];
+  /** Shake the device for `POST /api/shake`; the emulator console by default. */
+  shake?: (serial: string) => Promise<void>;
   createInputQueue?: (session: ScrcpySession) => ControlInputQueue;
   recoveryClock?: RecoveryWatchdogClock;
   createUploadManager?: (options: UploadManagerOptions) => UploadManager;
@@ -391,6 +394,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
     dependencies.setLocation ??
     ((serial: string, fix: GeoFix, signal: AbortSignal) =>
       setEmulatorLocationAsync(serial, fix, signal));
+  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
   const createInputQueue =
     dependencies.createInputQueue ??
     ((session: ScrcpySession) => new ControlInputQueue({ socket: session.controlSocket }));
@@ -1847,6 +1851,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               height: requestContext.screen.height,
             },
             pose: await requestContext.deviceState.orientation.fresh(),
+            shake: isEmulatorSerial(requestContext.serial),
             status: requestContext.status,
             clients: requestContext.clients.size,
             stream: streamSettings,
@@ -2213,6 +2218,17 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
           }
         }
         return new Response("method not allowed", { status: 405 });
+      }
+
+      if (url.pathname === "/api/shake") {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        // The shake has no parameters, so the body is not read.
+        try {
+          await runForContext(requestContext, (context) => shakeDevice(context.serial));
+          return Response.json({ ok: true });
+        } catch (err) {
+          return errorResponse(err);
+        }
       }
 
       if (url.pathname === "/api/night-mode") {

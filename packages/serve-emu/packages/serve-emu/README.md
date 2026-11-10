@@ -380,6 +380,25 @@ curl -X POST "$BASE/api/key" -H 'Content-Type: application/json' -d '{"keycode":
 curl -X POST "$BASE/api/key" -H 'Content-Type: application/json' -d '{"keycode":20,"action":"up"}'
 ```
 
+### Shake
+
+Shake is emulator-only. `GET /api` reports `"shake": true` when the current device
+can shake. Android has no system shake event, so apps detect a shake from the
+accelerometer. serve-emu writes a short burst of alternating ±2 g on the x axis with
+the emulator console `sensor set acceleration`, then writes the resting value back.
+The request has no body. It answers `{"ok":true}` after the burst and the restore.
+A physical device gets `400` with `ok: false`. A request during a running shake waits
+for that shake and does not start another burst.
+
+```sh
+curl -X POST "$BASE/api/shake"
+```
+
+The burst opens or closes the dev menu in Expo Go and in apps with `expo-dev-menu`.
+Their detector needs 3 changes of direction. React Native's own detector needs 16,
+so a React Native app without `expo-dev-menu` does not react to this burst. Shake is
+not recorded in the session.
+
 ### Inspection
 
 ```sh

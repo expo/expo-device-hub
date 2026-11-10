@@ -1,3 +1,4 @@
+import { ShakeUnsupportedError } from "../../shake.ts";
 import { parseGesture, type Gesture } from "../../shared/control-contracts.ts";
 import { readJsonBody } from "../body.ts";
 import type { ApiDependencies } from "../dependencies.ts";
@@ -44,6 +45,22 @@ export function inputRoutes(): ContractApiRoute<ApiDependencies>[] {
         await downstream("dispatch key", () =>
           deps.dispatchGesture(gesture, "rest:key", shouldRecord(payload)),
         );
+        return Response.json({ ok: true });
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/shake",
+      // The shake has no parameters, so the body is not read.
+      handler: async ({ deps }) => {
+        await downstream("shake device", async () => {
+          try {
+            await deps.shake();
+          } catch (error) {
+            if (error instanceof ShakeUnsupportedError) invalid(error.message, error);
+            throw error;
+          }
+        });
         return Response.json({ ok: true });
       },
     },
