@@ -326,6 +326,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Set when `/api` fails or does not answer in time, so H.264 video does not wait forever.
   const [streamMetadataFailed, setStreamMetadataFailed] = useState(false);
   const [shakeSupported, setShakeSupported] = useState(false);
+  const [shakeError, setShakeError] = useState<string | null>(null);
+  // Counts shakes and device changes, so only the latest shake's answer is shown.
+  const shakeRequest = useRef(0);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -525,11 +528,25 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // serve-emu answers when the burst ends and the accelerometer is restored; nothing waits for it.
   const shake = useCallback(() => {
     if (!shakeSupported || !baseUrl) return;
+    const request = ++shakeRequest.current;
+    const fail = (message: string) => {
+      if (shakeRequest.current === request) setShakeError(message);
+    };
+    setShakeError(null);
     void sessionFetch(deviceApiUrl(baseUrl, "/api/shake", targetDevice), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
-    }).catch(() => {});
+    })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as {
+          ok?: unknown;
+          error?: unknown;
+        } | null;
+        if (response.ok && payload?.ok === true) return;
+        fail(typeof payload?.error === "string" ? payload.error : "The emulator did not shake.");
+      })
+      .catch(() => fail("The emulator could not be reached to shake it."));
   }, [shakeSupported, baseUrl, sessionFetch, targetDevice]);
 
   const orientationKind = orientationState ? (orientationState.reports ? "poses" : "legacy") : null;
@@ -991,6 +1008,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setServerViewerTransports(null);
     setStreamMetadataFailed(false);
     setShakeSupported(false);
+    shakeRequest.current++;
+    setShakeError(null);
     if (!active || !baseUrl) return;
 
     let cancelled = false;
@@ -2361,6 +2380,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     pressButton,
     reload,
     shake,
+    shakeError,
     rotate,
     orientation,
     orientationPending,

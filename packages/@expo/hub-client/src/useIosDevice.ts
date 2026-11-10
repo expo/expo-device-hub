@@ -250,6 +250,8 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
 // Shake the device, like Simulator.app's Device → Shake. Only helpers advertising `inputShake` take it.
 const WS_MSG_SHAKE = 0x14;
+const SHAKE_NOT_SENT_MESSAGE =
+  "The shake was not sent because simulator input is not connected. Try again.";
 export { WS_MSG_CONFIG as WS_TAG_SCREEN_CONFIG } from "./input-protocol";
 // iPhone Duo hinge commands carry a requestId that the helper acknowledges with 0x90.
 const WS_MSG_HINGE_CONTROL = 0x10;
@@ -1150,8 +1152,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
 
   const shakeSupported = config?.inputShake ?? false;
+  const [shakeError, setShakeError] = useState<string | null>(null);
+  useEffect(() => setShakeError(null), [baseUrl, targetDevice]);
   const shake = useCallback(() => {
-    if (shakeSupported) sendWs(WS_MSG_SHAKE, {});
+    if (!shakeSupported) return;
+    setShakeError(sendWs(WS_MSG_SHAKE, {}) ? null : SHAKE_NOT_SENT_MESSAGE);
   }, [sendWs, shakeSupported]);
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
@@ -3094,6 +3099,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pressButton,
     reload,
     shake,
+    shakeError,
     rotate,
     orientation,
     orientationPending,

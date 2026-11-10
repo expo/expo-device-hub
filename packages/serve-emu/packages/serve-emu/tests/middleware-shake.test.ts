@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
 import { createApp, type CreateAppDependencies, type EmuApp } from "../src/middleware.ts";
-import { SHAKE_EMULATOR_ONLY_MESSAGE } from "../src/shake.ts";
+import type { ExecResult, execText } from "../src/exec.ts";
+import { SHAKE_ACCELERATION, SHAKE_EMULATOR_ONLY_MESSAGE, shakeEmulator } from "../src/shake.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
 
 // No test here reaches adb: emulator serials use an injected shake, and the default shake
@@ -38,7 +39,52 @@ function request(path: string, method = "GET"): Request {
   return new Request(`http://router.test${path}`, { method });
 }
 
+/** An emulator console that records `sensor set acceleration` values and rests at 0:9.8:0. */
+function fakeConsole() {
+  const written: string[] = [];
+  const ok = (stdout: string): ExecResult<string> => ({
+    status: 0,
+    stdout,
+    stderr: "",
+    signal: null,
+    timedOut: false,
+    error: null,
+  });
+  const runExec = (async (_cmd: string, args: string[]) => {
+    if (args.includes("get")) return ok("acceleration = 0:9.8:0\r\nOK\r\n");
+    written.push(args.at(-1)!);
+    return ok("OK\r\n");
+  }) as unknown as typeof execText;
+  return { written, runExec };
+}
+
 describe("middleware shake", () => {
+  test("stop waits until a running shake restores the resting acceleration", async () => {
+    const { written, runExec } = fakeConsole();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = await startApp("emulator-5600", {
+      shake: (serial) => shakeEmulator(serial, runExec, () => gate),
+    });
+    const response = app.handleRequest(request("/api/shake", "POST"));
+    while (written.length === 0) await Bun.sleep(1);
+
+    let stopped = false;
+    const stopping = app.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+    expect(written).toEqual([`${SHAKE_ACCELERATION}:9.8:0`]);
+
+    release();
+    await stopping;
+    expect(written).toEqual([`${SHAKE_ACCELERATION}:9.8:0`, "0:9.8:0"]);
+    await response;
+  });
+
   test("advertises shake for an emulator and shakes it", async () => {
     const shaken: string[] = [];
     const app = await startApp("emulator-5598", {

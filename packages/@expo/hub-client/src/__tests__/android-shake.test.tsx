@@ -21,7 +21,7 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-async function mount(api: { shake?: boolean }) {
+async function mount(api: { shake?: boolean }, answer?: () => Promise<Response>) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     addEventListener() {},
@@ -39,7 +39,7 @@ async function mount(api: { shake?: boolean }) {
     if (path === "/api") {
       return Response.json({ size: { width: 1080, height: 2400 }, pose: "portrait", ...api });
     }
-    if (path === "/api/shake") return Response.json({ ok: true });
+    if (path === "/api/shake") return answer ? answer() : Response.json({ ok: true });
     return Response.json({}, { status: 404 });
   });
   let client!: DeviceClient;
@@ -83,4 +83,30 @@ test("a device or server without shake support does not offer it or send a reque
     renderer = undefined;
     restoreGlobals();
   }
+});
+
+test("a failed Android shake shows its error until the next shake starts", async () => {
+  let reply = () =>
+    Promise.resolve(
+      Response.json(
+        { ok: false, error: "Emulator acceleration write failed: KO: busy" },
+        { status: 400 },
+      ),
+    );
+  const harness = await mount({ shake: true }, () => reply());
+  expect(harness.client().shakeError).toBeNull();
+
+  await act(async () => harness.client().shake());
+  await harness.settle();
+  expect(harness.client().shakeError).toBe("Emulator acceleration write failed: KO: busy");
+
+  reply = () => Promise.reject(new TypeError("Failed to fetch"));
+  await act(async () => harness.client().shake());
+  await harness.settle();
+  expect(harness.client().shakeError).toBe("The emulator could not be reached to shake it.");
+
+  reply = () => Promise.resolve(Response.json({ ok: true }));
+  await act(async () => harness.client().shake());
+  await harness.settle();
+  expect(harness.client().shakeError).toBeNull();
 });

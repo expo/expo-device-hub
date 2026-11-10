@@ -163,6 +163,7 @@ export function DeviceOptionsSection({
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
+  const shakeErrorId = useId();
   const settings = client?.deviceSettings ?? null;
   const settingsAvailable = client?.deviceSettingsStatus === "ready";
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
@@ -358,8 +359,13 @@ export function DeviceOptionsSection({
       )}
 
       {client?.capabilities.shake && (
-        <SidebarRow label="Shake device">
+        <SidebarRow
+          label="Shake device"
+          description={client.shakeError ?? undefined}
+          descriptionId={client.shakeError ? shakeErrorId : undefined}
+        >
           <SidebarActionButton
+            descriptionId={client.shakeError ? shakeErrorId : undefined}
             onClick={() => {
               client.shake();
               onShake?.();

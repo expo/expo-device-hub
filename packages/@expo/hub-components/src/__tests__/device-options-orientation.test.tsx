@@ -148,3 +148,38 @@ test("Shake sends the shake and then tells the dashboard, which wobbles the stre
   await act(async () => button.props.onClick());
   expect(calls).toEqual(["client.shake", "onShake"]);
 });
+
+test("a failed shake shows its error under the Shake row", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("HTMLFormElement", class {});
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const client = {
+    platform: "android",
+    status: "streaming",
+    recordingControlsLocked: false,
+    orientationUnavailable: null,
+    capabilities: { orientation: false, shake: true },
+    orientation: null,
+    shake: () => {},
+    shakeError: "Emulator acceleration write failed: KO: busy",
+    deviceSettings: null,
+    deviceSettingsStatus: "idle",
+    deviceSettingsPending: new Set(),
+  } as unknown as DeviceClient;
+  await act(async () => {
+    renderer = create(<DeviceOptionsSection client={client} showDeviceSettings={false} />);
+  });
+  const row = renderer!.root.find(
+    (node) => node.props.label === "Shake device" && "description" in node.props,
+  );
+  expect(row.props.description).toBe("Emulator acceleration write failed: KO: busy");
+  const button = renderer!.root.find(
+    (node) => node.type === "button" && node.props.children === "Shake",
+  );
+  expect(button.props["aria-describedby"]).toBe(row.props.descriptionId);
+});

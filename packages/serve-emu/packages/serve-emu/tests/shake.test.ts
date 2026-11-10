@@ -6,6 +6,7 @@ import {
   SHAKE_INTERVAL_MS,
   SHAKE_WRITES,
   ShakeUnsupportedError,
+  settleShakes,
   shakeEmulator,
 } from "../src/shake.ts";
 
@@ -163,6 +164,45 @@ describe("shakeEmulator", () => {
     // A later request starts its own shake.
     await shakeEmulator("emulator-5568", runExec, noWait);
     expect(calls.filter((call) => call.args.includes("get"))).toHaveLength(2);
+  });
+
+  test("settling stops a running burst after its current write and waits for the restore", async () => {
+    const { calls, runExec } = fakeConsole();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstWait = true;
+    const wait = async () => {
+      if (firstWait) {
+        firstWait = false;
+        await gate;
+      }
+    };
+
+    const shake = shakeEmulator("emulator-5572", runExec, wait);
+    while (writes(calls).length === 0) await Bun.sleep(1);
+    let settled = false;
+    const settling = settleShakes(["emulator-5572"]).then(() => {
+      settled = true;
+    });
+    await Bun.sleep(5);
+    expect(settled).toBe(false);
+
+    release();
+    await settling;
+    await shake;
+    expect(writes(calls)).toEqual([`${SHAKE_ACCELERATION}:9.77631:0.812349`, "0:9.77631:0.812349"]);
+  });
+
+  test("settling resolves when nothing runs and when a restore fails", async () => {
+    await settleShakes();
+    const { runExec } = fakeConsole(undefined, (args) =>
+      args.includes("set") && args.at(-1) === "0:9.77631:0.812349" ? result("KO: busy\r\n") : undefined,
+    );
+    const shake = shakeEmulator("emulator-5574", runExec, noWait);
+    await settleShakes(["emulator-5574"]);
+    await expect(shake).rejects.toThrow("restore");
   });
 
   test("a failed shake does not block the next one", async () => {

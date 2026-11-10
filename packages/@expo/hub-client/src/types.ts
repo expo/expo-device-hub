@@ -1147,6 +1147,12 @@ export interface DeviceClient {
    */
   shake: () => void;
   /**
+   * Why the last {@link shake} failed, or null. Cleared when the next shake starts and when
+   * another device is selected. Android reports the server's error or an unreachable server;
+   * iOS reports a shake that the input socket could not take.
+   */
+  shakeError: string | null;
+  /**
    * Rotate the device to the next pose in `DEVICE_ORIENTATIONS` order, or clockwise on an
    * iPhone Duo, as Xcode's Device Hub turns it. serve-sim sends it
    * over the helper's orientation channel; serve-emu locks it via `POST /api/orientation`,

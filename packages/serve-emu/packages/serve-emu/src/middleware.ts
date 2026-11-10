@@ -67,7 +67,7 @@ import {
 } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { shakeEmulator } from "./shake.ts";
+import { settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 import {
@@ -149,6 +149,7 @@ import {
 export { fromBunSocket, fromWsSocket } from "./stream-socket.ts";
 export type { StreamSocket, WsWebSocketLike } from "./stream-socket.ts";
 export { pickDevice } from "./adb.ts";
+export { settleShakes } from "./shake.ts";
 export type { ScrcpySession } from "./scrcpy.ts";
 export type {
   EmuSession,
@@ -2099,6 +2100,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       uploader.close(new Error("server stopping")),
       session.close(),
       deviceState.release(deviceStateOwner, "server stopping"),
+      settleShakes([opts.serial]),
     ]).then((results) => {
       const failure = results
         .slice(1)

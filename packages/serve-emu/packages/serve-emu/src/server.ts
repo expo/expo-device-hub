@@ -83,7 +83,7 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { shakeEmulator } from "./shake.ts";
+import { settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -3017,9 +3017,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
       serial: context.serial,
       generation: context.generation,
     });
-    stopTask = Promise.all([sessions.close("server stopping"), uploads.close(error)]).then(
-      () => {},
-    );
+    stopTask = Promise.all([
+      sessions.close("server stopping"),
+      uploads.close(error),
+      // Exit only after a running shake has put the resting acceleration back.
+      settleShakes(),
+    ]).then(() => {});
     return stopTask;
   };
 

@@ -680,9 +680,11 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
   in CoreSimDeviceIO; Safari showed "Undo Typing" after `simctl notify_post`
   on iOS 26.5, 2026-11-10]. HID tag `0x14` carries it. Helpers that accept the
   tag advertise `inputShake: true` in their state record; an older helper
-  drops the tag. The preview toolbar shows a Shake button between Clipboard
-  and Rotate while the helper advertises the flag [observed: `client.tsx`,
-  `simulator-toolbar.tsx`].
+  drops the tag, so `serve-sim shake` and the `shake` action fail with a
+  restart message when the helper does not advertise the flag, instead of
+  reporting a shake that did not happen [observed: `shake` in `src/index.ts`].
+  The preview toolbar shows a Shake button between Clipboard and Rotate while
+  the helper advertises the flag [observed: `client.tsx`, `simulator-toolbar.tsx`].
 - `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
   `value` is `on` or `off`.
 - `hinge.get`: `{udid}`. Reads hinge state as JSON. New helpers advertise
