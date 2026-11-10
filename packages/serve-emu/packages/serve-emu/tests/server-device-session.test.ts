@@ -546,6 +546,54 @@ describe("startServer shake", () => {
     expect(written).toHaveLength(6);
   });
 
+  test("stop also settles a shake that a session replay started", async () => {
+    const written: string[] = [];
+    const ok = (stdout: string): ExecResult<string> => ({
+      status: 0,
+      stdout,
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      error: null,
+    });
+    const runExec = (async (_cmd: string, args: string[]) => {
+      if (args.includes("get")) return ok("acceleration = 0:9.8:0\r\nOK\r\n");
+      written.push(args.at(-1)!);
+      return ok("OK\r\n");
+    }) as unknown as typeof execText;
+    let armed = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { captured, started } = await startShakeServer("emulator-5618", (serial) =>
+      shakeEmulator(serial, runExec, async () => {
+        if (armed) await gate;
+      }),
+    );
+    const post = (path: string, body: unknown) =>
+      invokeFetch(captured, path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await post("/api/shake", {})).status).toBe(200);
+    written.length = 0;
+    armed = true;
+    expect((await post("/api/session/replay", {})).status).toBe(200);
+    while (written.length === 0) await Bun.sleep(1);
+
+    let stopped = false;
+    const stopping = started.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(written).toEqual([`${SHAKE_ACCELERATION}:9.8:0`, "0:9.8:0"]);
+  });
+
   test("records a shake unless asked not to", async () => {
     const shaken: string[] = [];
     const { captured, started } = await startShakeServer("emulator-5606", async (serial) => {

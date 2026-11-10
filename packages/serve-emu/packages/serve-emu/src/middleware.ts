@@ -483,7 +483,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
       applyRotation:
         dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
-      shake: shakeDevice,
+      // Replay shakes through the runner too, so a request joins them and stop settles them.
+      shake: (serial) => shakeRunner.run(serial),
     });
   try {
     deviceState.acquire(deviceStateOwner);
@@ -1805,9 +1806,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       try {
         const { record } = await readShakeRequest(req);
-        await shakeRunner.run(opts.serial, () => {
-          if (record) sessionRecorder.recordShake("rest:shake");
-        });
+        await shakeRunner.run(opts.serial, record ? sessionRecorder : undefined);
         return Response.json({ ok: true });
       } catch (err) {
         return Response.json(

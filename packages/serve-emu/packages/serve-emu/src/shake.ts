@@ -37,25 +37,49 @@ export class ShakeUnsupportedError extends Error {
   }
 }
 
+/** Where a shake is recorded: a server's session recorder. */
+export type ShakeRecorder = {
+  recordShake(source: string): number | null;
+  discard(id: number): void;
+};
+
+type Burst = { done: Promise<void>; recorder: ShakeRecorder | null; eventId: number | null };
+
 /**
- * One shake per device at a time for one server. A request during a running shake joins it, so
- * overlapping requests record one shake. `onStart` runs once per burst, before it, so the caller
- * records the shake ahead of any input that arrives during the burst, and replay keeps that
- * order. `serials()` names the devices this server shakes now, so its stop settles only those.
+ * One shake per device at a time for one server, for requests and for session replay. A request
+ * during a running shake joins it, so overlapping requests record one shake. The shake records
+ * before its burst, so input that arrives during the burst replays after it; a request that asks
+ * for recording records a burst that has no event yet; a failed burst removes its event, as a
+ * failed tap is never recorded. `serials()` names the devices this server shakes now, replays
+ * included, so its stop settles only those.
  */
 export function createShakeRunner(shake: (serial: string) => Promise<void>) {
-  const running = new Map<string, Promise<void>>();
+  const running = new Map<string, Burst>();
+  const record = (burst: Burst, recorder: ShakeRecorder) => {
+    burst.recorder = recorder;
+    burst.eventId = recorder.recordShake("rest:shake");
+  };
   return {
-    run(serial: string, onStart: () => void): Promise<void> {
+    /** Shake `serial`, recording it in `recorder` when given. */
+    run(serial: string, recorder?: ShakeRecorder): Promise<void> {
       if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
       const current = running.get(serial);
-      if (current) return current;
-      onStart();
-      const done = shake(serial).finally(() => {
-        if (running.get(serial) === done) running.delete(serial);
-      });
-      running.set(serial, done);
-      return done;
+      if (current) {
+        if (recorder && !current.recorder) record(current, recorder);
+        return current.done;
+      }
+      const burst: Burst = { done: Promise.resolve(), recorder: null, eventId: null };
+      if (recorder) record(burst, recorder);
+      burst.done = shake(serial)
+        .catch((error: unknown) => {
+          if (burst.recorder && burst.eventId !== null) burst.recorder.discard(burst.eventId);
+          throw error;
+        })
+        .finally(() => {
+          if (running.get(serial) === burst) running.delete(serial);
+        });
+      running.set(serial, burst);
+      return burst.done;
     },
     serials(): string[] {
       return [...running.keys()];
