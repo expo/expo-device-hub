@@ -386,8 +386,9 @@ accelerometer. serve-emu writes a short burst of alternating ±2 g on the x axis
 the emulator console `sensor set acceleration`, then writes the resting value back.
 The body is optional. It answers `{"ok":true}` after the burst and the restore.
 A shake records into the session as a `shake` event when its burst starts, so
-input sent during the burst replays after it. Overlapping requests record one
-shake, a failed shake leaves no event, and a replay shakes again. Send `{"record":false}` to leave it out of
+input sent during the burst replays after it. A request that arrives during a
+running shake joins it, including whether its first request recorded it. A
+failed shake leaves no event, and a replay shakes again. Send `{"record":false}` to leave it out of
 the session. A body larger than 1 KiB gets `413`.
 A physical device gets `400` with `ok: false`. A request during a running shake waits
 for that shake and does not start another burst. When the server stops during a

@@ -6,6 +6,7 @@ import {
   SHAKE_INTERVAL_MS,
   SHAKE_WRITES,
   ShakeUnsupportedError,
+  createShakeRunner,
   settleShakes,
   shakeEmulator,
 } from "../src/shake.ts";
@@ -217,5 +218,69 @@ describe("shakeEmulator", () => {
     fail = false;
     await shakeEmulator("emulator-5570", runExec, noWait);
     expect(writes(calls)).toHaveLength(SHAKE_WRITES + 1);
+  });
+});
+
+describe("createShakeRunner", () => {
+  function recorder() {
+    const calls: string[] = [];
+    let nextId = 1;
+    return {
+      calls,
+      recordShake: (source: string) => {
+        calls.push(`record:${source}`);
+        return nextId++;
+      },
+      discard: (id: number) => {
+        calls.push(`discard:${id}`);
+      },
+    };
+  }
+
+  test("a request that joins a running shake shares it and its recording choice", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let bursts = 0;
+    const runner = createShakeRunner(async () => {
+      bursts++;
+      await gate;
+    });
+    const sessions = recorder();
+
+    const first = runner.run("emulator-5620");
+    const second = runner.run("emulator-5620", sessions);
+    expect(second).toBe(first);
+    expect(runner.serials()).toEqual(["emulator-5620"]);
+    release();
+    await Promise.all([first, second]);
+
+    expect(bursts).toBe(1);
+    expect(sessions.calls).toEqual([]);
+    expect(runner.serials()).toEqual([]);
+  });
+
+  test("records before the burst and discards the event when the burst fails", async () => {
+    const sessions = recorder();
+    const runner = createShakeRunner(async () => {
+      sessions.calls.push("burst");
+      throw new Error("Emulator acceleration write failed: KO: busy");
+    });
+
+    await expect(runner.run("emulator-5622", sessions)).rejects.toThrow("KO: busy");
+    expect(sessions.calls).toEqual(["record:rest:shake", "burst", "discard:1"]);
+  });
+
+  test("refuses a physical device without shaking or recording", async () => {
+    const sessions = recorder();
+    let bursts = 0;
+    const runner = createShakeRunner(async () => {
+      bursts++;
+    });
+
+    await expect(runner.run("A", sessions)).rejects.toThrow(SHAKE_EMULATOR_ONLY_MESSAGE);
+    expect(bursts).toBe(0);
+    expect(sessions.calls).toEqual([]);
   });
 });

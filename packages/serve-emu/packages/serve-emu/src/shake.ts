@@ -47,29 +47,25 @@ type Burst = { done: Promise<void>; recorder: ShakeRecorder | null; eventId: num
 
 /**
  * One shake per device at a time for one server, for requests and for session replay. A request
- * during a running shake joins it, so overlapping requests record one shake. The shake records
- * before its burst, so input that arrives during the burst replays after it; a request that asks
- * for recording records a burst that has no event yet; a failed burst removes its event, as a
- * failed tap is never recorded. `serials()` names the devices this server shakes now, replays
- * included, so its stop settles only those.
+ * during a running shake joins it and shares it, including whether the request that started it
+ * records it, so overlapping requests record at most one shake. The shake records only before its
+ * burst, so input that arrives during the burst replays after it; a later record could not keep
+ * that order. A failed burst removes its event, as a failed tap is never recorded. `serials()`
+ * names the devices this server shakes now, replays included, so its stop settles only those.
  */
 export function createShakeRunner(shake: (serial: string) => Promise<void>) {
   const running = new Map<string, Burst>();
-  const record = (burst: Burst, recorder: ShakeRecorder) => {
-    burst.recorder = recorder;
-    burst.eventId = recorder.recordShake("rest:shake");
-  };
   return {
     /** Shake `serial`, recording it in `recorder` when given. */
     run(serial: string, recorder?: ShakeRecorder): Promise<void> {
       if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
       const current = running.get(serial);
-      if (current) {
-        if (recorder && !current.recorder) record(current, recorder);
-        return current.done;
-      }
+      if (current) return current.done;
       const burst: Burst = { done: Promise.resolve(), recorder: null, eventId: null };
-      if (recorder) record(burst, recorder);
+      if (recorder) {
+        burst.recorder = recorder;
+        burst.eventId = recorder.recordShake("rest:shake");
+      }
       burst.done = shake(serial)
         .catch((error: unknown) => {
           if (burst.recorder && burst.eventId !== null) burst.recorder.discard(burst.eventId);
