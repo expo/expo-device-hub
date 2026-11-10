@@ -24,6 +24,21 @@ import {
   type ScreenCornerRadiiCqw,
 } from "./deviceScreenClipPath";
 
+// No solid layer stays under a presented stream. The browser blends the
+// anti-aliased clipped edge of every layer it clips, so a solid layer under the
+// stream shows as a thin line along the screen's edge. The surface is its own
+// layer, shown only until the stream presents its first frame.
+// @ref LLP 0017#hub-dashboard — no solid layer under the stream; the shape moves in by 1px
+const SCREEN_SURFACE_STYLE: CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  backgroundColor: bg.element,
+};
+
+// A stream can paint up to about 0.75 CSS px short of its box, so a known screen
+// shape moves in by this much and the picture reaches past its edges.
+const SCREEN_SHAPE_INSET_PX = 1;
+
 const PRELOADED_FRAME_STYLE: CSSProperties = {
   position: "absolute",
   inset: 0,
@@ -217,7 +232,7 @@ export function PhoneFrame({
       preserveKeyboardFocus={preserveKeyboardFocus}
     />
   ) : (
-    <div style={{ position: "absolute", inset: 0, backgroundColor: bg.element }} />
+    <div style={SCREEN_SURFACE_STYLE} />
   );
   const takeoverOverlay = (
     <div
@@ -277,12 +292,10 @@ export function PhoneFrame({
       })
     : null;
   const screenStyle: CSSProperties = framed
-    ? { ...framed.screenStyle, backgroundColor: bg.element }
+    ? framed.screenStyle
     : {
         position: "absolute",
         inset: 0,
-        // The surface until the stream presents a frame, as under frame artwork.
-        backgroundColor: bg.element,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
         clipPath: displayCorners
@@ -292,6 +305,9 @@ export function PhoneFrame({
 
   const screenContent = (
     <>
+      {live && !client.framePresented ? (
+        <div data-testid="device-screen-surface" style={SCREEN_SURFACE_STYLE} />
+      ) : null}
       <div
         data-testid="device-frame-stream-cover"
         style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
@@ -328,6 +344,7 @@ export function PhoneFrame({
           model={device.model}
           shape={framed ? null : undefined}
           aspectRatio={ratio}
+          insetPx={SCREEN_SHAPE_INSET_PX}
           style={screenStyle}
         >
           {screenContent}

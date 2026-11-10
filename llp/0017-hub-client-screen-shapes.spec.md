@@ -69,6 +69,7 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 - The Hub server sends each device's `model`: the device type name from `simctl list runtimes` for a simulator, and `hw.device.name` for an emulator. A physical device has none [observed: `expo-device-hub/src/server/device-models.ts`].
 - The device list is polled every 500 ms, so the server reads the device type names once and again only for an unknown device type, at most once a minute [observed: `POLL_INTERVAL_MS` in `device-list-websocket.ts`].
 - `PhoneFrame` takes `DeviceShape` as an injected prop, like `DeviceScreen` and the three.js `FoldableDeviceScreen`, so a hub-components consumer that does not pass it does not bundle the shape table. The known shape replaces the generic squircle only where no frame artwork shows; the artwork keeps its calibrated opening [observed: `hub-components/src/dashboard/PhoneFrame.tsx`].
+- No solid layer stays under a presented stream. A solid background under the clipped screen showed as a thin line along the shape's edge, because the browser blends the anti-aliased clipped edge of each layer [confirmed] (Krystof Woldrich, 2026-11-10, in the dashboard). The surface is its own layer, shown only until the stream presents its first frame, and a known shape moves in by 1px, because a stream can paint up to about 0.75px short of its box. The website made the same change [observed: expo/universe#32807].
 
 ## Decisions
 

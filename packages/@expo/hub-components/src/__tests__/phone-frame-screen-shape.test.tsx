@@ -111,6 +111,7 @@ describe("PhoneFrame screen shape", () => {
     const markup = render(IPHONE, { width: 1206, height: 2622 });
     const expected = screenShapeClipPath(SCREEN_SHAPES.iPhone16Pro, {
       aspectRatio: 1206 / 2622,
+      insetPx: 1,
     });
     expect(markup).toContain('data-screen-shape="device"');
     expect(clipStyle(markup)).toContain(`clip-path:${expected}`);
@@ -120,7 +121,7 @@ describe("PhoneFrame screen shape", () => {
     const markup = render(PIXEL, { width: 2424, height: 1080, orientation: "landscape_left" });
     const turned = rotateScreenShape(SCREEN_SHAPES.pixel9, "landscape_left");
     expect(clipStyle(markup)).toContain(
-      `clip-path:${screenShapeClipPath(turned, { aspectRatio: 2424 / 1080 })}`,
+      `clip-path:${screenShapeClipPath(turned, { aspectRatio: 2424 / 1080, insetPx: 1 })}`,
     );
   });
 
@@ -147,11 +148,31 @@ describe("PhoneFrame screen shape", () => {
     const cover = { width: 1398, height: 2034, display: "cover" } as const;
     const inner = { width: 2007, height: 2853, display: "inner" } as const;
     expect(clipStyle(render(cover))).toContain(
-      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoCover, { aspectRatio: 1398 / 2034 })}`,
+      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoCover, { aspectRatio: 1398 / 2034, insetPx: 1 })}`,
     );
     expect(clipStyle(render(inner))).toContain(
-      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoInner, { aspectRatio: 2007 / 2853 })}`,
+      `clip-path:${screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoInner, { aspectRatio: 2007 / 2853, insetPx: 1 })}`,
     );
+  });
+
+  test("draws no solid layer under a presented stream, only until the first frame", () => {
+    const markup = (framePresented: boolean) =>
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={IPHONE}
+          client={
+            { ...client({ width: 1206, height: 2622 }, "ios"), framePresented } as DeviceClient
+          }
+          DeviceScreen={Screen}
+          DeviceShape={DeviceShape}
+          displayScreen={(value) => value ?? null}
+          deviceFrameAssets={FRAME_ASSETS}
+        />,
+      );
+    expect(clipStyle(markup(false))).not.toContain("background-color");
+    expect(markup(false)).toContain('data-testid="device-screen-surface"');
+    expect(clipStyle(markup(true))).not.toContain("background-color");
+    expect(markup(true)).not.toContain('data-testid="device-screen-surface"');
   });
 
   test("keeps the generic corners for an unknown model", () => {
