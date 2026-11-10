@@ -50,7 +50,7 @@ A model is the name that identifies its hardware exactly, not the name a running
 - iOS: the simulator device type name from `xcrun simctl list devicetypes`, such as `iPhone 17 Pro`. It matches without case and surrounding spaces. The simulator names the iPhone XR `iPhone Xʀ` [observed: expo/universe#32697].
 - Android: the AVD hardware profile id, an AVD's `hw.device.name`, such as `pixel_9`. It matches exactly. An emulator's adb name does not say which Pixel it is [observed: expo/universe#33238].
 
-A client's current device name is only the default: iOS reports the placeholder `iPhone Simulator` until the simulator names itself [observed: `useIosDevice.ts`], and the website saw the name never arrive on staging [observed: expo/universe#32890]. A consumer that knows the model, such as the website from the saved session device, passes `model`.
+A client's current device name is only the default: iOS reports the placeholder `iPhone Simulator` until the simulator names itself [observed: `useIosDevice.ts`], and the website saw the name never arrive on staging [observed: expo/universe#32890]. The iOS client marks only the streamed simulator as current, because the server lists every simulator with a running helper [observed: `useIosDevice.ts`]. A consumer that knows the model, such as the website from the saved session device, passes `model`.
 
 ## Clip path, not mask
 
