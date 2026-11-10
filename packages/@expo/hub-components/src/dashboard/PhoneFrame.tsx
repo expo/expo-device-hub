@@ -1,4 +1,4 @@
-import { type ComponentType, type CSSProperties, useLayoutEffect, useState } from "react";
+import { type ComponentType, type CSSProperties, useLayoutEffect, useRef, useState } from "react";
 
 import {
   type AgentInteraction,
@@ -13,6 +13,7 @@ import { bg } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
+import { useShakeWobble } from "./shakeWobble";
 import { deviceViewportStyle } from "./deviceViewport";
 import { deviceScreenCornersClipPath, type ScreenCornerRadiiCqw } from "./deviceScreenClipPath";
 
@@ -102,6 +103,7 @@ export function PhoneFrame({
   displayScreen,
   showScreenShape = true,
   onLoadingChange,
+  shakeNonce,
 }: {
   device: Device;
   client?: DeviceClient;
@@ -132,8 +134,15 @@ export function PhoneFrame({
   showScreenShape?: boolean;
   /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
   onLoadingChange?: (loading: boolean) => void;
+  /**
+   * Changes each time the viewer shakes the device. Each change after mount wobbles the frame
+   * once, with its stream and overlays; with reduced motion it stays still.
+   */
+  shakeNonce?: number;
 }) {
   const [hovered, setHovered] = useState(false);
+  const frameRef = useRef<HTMLDivElement>(null);
+  useShakeWobble(frameRef, shakeNonce);
   // The device whose 3D model is loaded or unavailable; the 3D preview loads until it has one.
   const [modelSettledDevice, setModelSettledDevice] = useState<string | null>(null);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
@@ -235,6 +244,7 @@ export function PhoneFrame({
     const { mode: _mode, ...modelOptions } = foldPreview;
     return (
       <div
+        ref={frameRef}
         data-testid="device-screen-frame"
         data-device-frame-kind="duo-model"
         data-agent-active={agentInteraction ? "true" : "false"}
@@ -282,6 +292,7 @@ export function PhoneFrame({
 
   return (
     <div
+      ref={frameRef}
       data-testid="device-screen-frame"
       data-device-frame-kind="flat"
       data-display-corners={displayCorners ? "device" : undefined}

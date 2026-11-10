@@ -110,3 +110,41 @@ test("the Orientation row follows the client's pose, not the frame, and goes wit
   });
   expect(hasRow()).toBe(false);
 });
+
+test("Shake sends the shake and then tells the dashboard, which wobbles the stream", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("HTMLFormElement", class {});
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const calls: string[] = [];
+  const client = {
+    platform: "ios",
+    status: "streaming",
+    recordingControlsLocked: false,
+    orientationUnavailable: null,
+    capabilities: { orientation: false, shake: true },
+    orientation: null,
+    shake: () => calls.push("client.shake"),
+    deviceSettings: null,
+    deviceSettingsStatus: "idle",
+    deviceSettingsPending: new Set(),
+  } as unknown as DeviceClient;
+  await act(async () => {
+    renderer = create(
+      <DeviceOptionsSection
+        client={client}
+        showDeviceSettings={false}
+        onShake={() => calls.push("onShake")}
+      />,
+    );
+  });
+  const button = renderer!.root.find(
+    (node) => node.type === "button" && node.props.children === "Shake",
+  );
+  await act(async () => button.props.onClick());
+  expect(calls).toEqual(["client.shake", "onShake"]);
+});

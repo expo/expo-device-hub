@@ -204,6 +204,8 @@ type ServeEmuApiInfo = {
   pose?: unknown;
   stream?: unknown;
   viewerTransports?: unknown;
+  /** Whether `POST /api/shake` can shake this device. Absent on older servers. */
+  shake?: unknown;
 };
 
 type ServeEmuViewerTransport = "websocket" | "webrtc";
@@ -323,6 +325,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   >(null);
   // Set when `/api` fails or does not answer in time, so H.264 video does not wait forever.
   const [streamMetadataFailed, setStreamMetadataFailed] = useState(false);
+  const [shakeSupported, setShakeSupported] = useState(false);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -518,6 +521,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const reload = useCallback(() => {
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
+
+  // serve-emu answers when the burst ends and the accelerometer is restored; nothing waits for it.
+  const shake = useCallback(() => {
+    if (!shakeSupported || !baseUrl) return;
+    void sessionFetch(deviceApiUrl(baseUrl, "/api/shake", targetDevice), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
+  }, [shakeSupported, baseUrl, sessionFetch, targetDevice]);
 
   const orientationKind = orientationState ? (orientationState.reports ? "poses" : "legacy") : null;
   // No backend before the first `/api` answer: the kind of server is not known yet.
@@ -977,6 +990,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setServerStreamSettings(null);
     setServerViewerTransports(null);
     setStreamMetadataFailed(false);
+    setShakeSupported(false);
     if (!active || !baseUrl) return;
 
     let cancelled = false;
@@ -1025,6 +1039,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             ? current
             : nextViewerTransports,
         );
+        setShakeSupported(info.shake === true);
         const reports = info.pose !== undefined;
         const orientation = parseAndroidOrientation(info.pose);
         setOrientationReport((current) =>
@@ -2251,6 +2266,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       clipboard: false,
       orientation: orientationCapabilities,
       fold: foldCapabilities,
+      shake: shakeSupported,
     }),
     [
       cameraSupported,
@@ -2259,6 +2275,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       permissionsAvailable,
       orientationCapabilities,
       foldCapabilities,
+      shakeSupported,
     ],
   );
 
@@ -2343,6 +2360,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendKey,
     pressButton,
     reload,
+    shake,
     rotate,
     orientation,
     orientationPending,
