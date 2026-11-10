@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { Sidebar } from "../dashboard/Sidebar";
+import { type Device } from "../dashboard/data";
 import { SidebarToggle } from "../components/SidebarToggle";
 
 // The sidebar glyph is a rounded square with a divider; the close glyph is two crossing lines.
@@ -54,27 +55,36 @@ describe("Sidebar toggle glyph", () => {
   });
 });
 
-test("an inspector-only sidebar omits device lists and their empty-state messages", () => {
+// A single-device session renders the sidebar this way: its one device, then the inspector.
+test("a sidebar without an add handler lists devices above the inspector, without add controls", () => {
+  const pinned: Device = {
+    id: "pinned",
+    name: "iPhone 17 Pro",
+    version: "iOS 26.5",
+    platform: "ios",
+    booted: true,
+    physical: false,
+    supported: true,
+    deviceFrame: null,
+  };
   const markup = renderToStaticMarkup(
     <Sidebar
-      simulators={[]}
+      simulators={[pinned]}
       emulators={[]}
       recentSimulators={[]}
       recentEmulators={[]}
       simulatorOptions={{ runtimes: [] }}
       emulatorOptions={{ runtimes: [] }}
-      selectedId="locked"
+      selectedId="pinned"
       onSelect={() => {}}
-      showDeviceLists={false}
       onToggle={() => {}}
-      toggleIcon="close"
+      platform="ios"
     >
-      <div>Clipboard inspector</div>
+      <div>Device inspector</div>
     </Sidebar>,
   );
-  expect(markup).toContain("Clipboard inspector");
-  expect(markup).toContain('aria-label="Close sidebar"');
-  expect(markup).not.toContain("No booted");
-  expect(markup).not.toContain("Simulators");
-  expect(markup).not.toContain("Emulators");
+  expect(markup).toContain("Device inspector");
+  expect(markup.indexOf("iPhone 17 Pro")).toBeGreaterThan(-1);
+  expect(markup.indexOf("iPhone 17 Pro")).toBeLessThan(markup.indexOf("Device inspector"));
+  expect(markup).not.toContain('aria-label="Add simulator"');
 });
