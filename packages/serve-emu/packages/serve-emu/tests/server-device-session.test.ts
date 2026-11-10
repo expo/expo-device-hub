@@ -4,6 +4,8 @@ import { startServer } from "../src/server.ts";
 import type { EmulatorLaunch } from "../src/emulator.ts";
 import type { GeoFix } from "../src/location.ts";
 import type { ScrcpySession, VideoPacket } from "../src/scrcpy.ts";
+import type { ExecResult, execText } from "../src/exec.ts";
+import { SHAKE_ACCELERATION, shakeEmulator } from "../src/shake.ts";
 import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type Deferred<T> = {
@@ -506,6 +508,44 @@ describe("startServer shake", () => {
     } finally {
       await started.stop();
     }
+  });
+
+  test("stop waits until a running shake restores the resting acceleration", async () => {
+    const written: string[] = [];
+    const ok = (stdout: string): ExecResult<string> => ({
+      status: 0,
+      stdout,
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      error: null,
+    });
+    const runExec = (async (_cmd: string, args: string[]) => {
+      if (args.includes("get")) return ok("acceleration = 0:9.8:0\r\nOK\r\n");
+      written.push(args.at(-1)!);
+      return ok("OK\r\n");
+    }) as unknown as typeof execText;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { captured, started } = await startShakeServer("emulator-5602", (serial) =>
+      shakeEmulator(serial, runExec, () => gate),
+    );
+    const response = invokeFetch(captured, "/api/shake", { method: "POST" });
+    while (written.length === 0) await Bun.sleep(1);
+
+    let stopped = false;
+    const stopping = started.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(5);
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(written).toEqual([`${SHAKE_ACCELERATION}:9.8:0`, "0:9.8:0"]);
+    await response;
   });
 
   test("does not advertise or shake a physical device", async () => {

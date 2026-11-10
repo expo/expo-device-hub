@@ -39,7 +39,9 @@ export class ShakeUnsupportedError extends Error {
 /** The resting value as the console printed it, so the restore writes the same tokens. */
 type Acceleration = [x: string, y: string, z: string];
 
-const running = new Map<string, Promise<void>>();
+type RunningShake = { done: Promise<void>; stop(): void };
+
+const running = new Map<string, RunningShake>();
 
 /**
  * Shake an emulator: read the resting acceleration, write the burst, then write the resting
@@ -53,23 +55,44 @@ export function shakeEmulator(
 ): Promise<void> {
   if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
   const current = running.get(serial);
-  if (current) return current;
-  const shake = runShake(serial, runExec, wait).finally(() => {
-    if (running.get(serial) === shake) running.delete(serial);
+  if (current) return current.done;
+  let stopped = false;
+  const done = runShake(serial, runExec, wait, () => stopped).finally(() => {
+    if (running.get(serial)?.done === done) running.delete(serial);
   });
-  running.set(serial, shake);
-  return shake;
+  running.set(serial, {
+    done,
+    stop: () => {
+      stopped = true;
+    },
+  });
+  return done;
+}
+
+/**
+ * Stop the bursts that run on `serials`, or on every device, after their current write, and wait
+ * until each one has written its resting value back. A server calls this before it stops, so an
+ * emulator does not keep a shaken acceleration when the process exits during a burst. It never
+ * rejects; a failed restore stays the shake's own error.
+ */
+export async function settleShakes(serials?: Iterable<string>): Promise<void> {
+  const shakes = serials
+    ? [...serials].flatMap((serial) => running.get(serial) ?? [])
+    : [...running.values()];
+  for (const shake of shakes) shake.stop();
+  await Promise.allSettled(shakes.map((shake) => shake.done));
 }
 
 async function runShake(
   serial: string,
   runExec: typeof execText,
   wait: (ms: number) => Promise<unknown>,
+  stopped: () => boolean,
 ): Promise<void> {
   const [restX, restY, restZ] = await readAcceleration(serial, runExec);
   let burstError: unknown = null;
   try {
-    for (let index = 0; index < SHAKE_WRITES; index++) {
+    for (let index = 0; index < SHAKE_WRITES && !stopped(); index++) {
       const x = index % 2 === 0 ? SHAKE_ACCELERATION : -SHAKE_ACCELERATION;
       await writeAcceleration(serial, [String(x), restY, restZ], runExec);
       await wait(SHAKE_INTERVAL_MS);

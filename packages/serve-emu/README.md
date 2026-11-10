@@ -386,7 +386,8 @@ accelerometer. serve-emu writes a short burst of alternating ±2 g on the x axis
 the emulator console `sensor set acceleration`, then writes the resting value back.
 The request has no body. It answers `{"ok":true}` after the burst and the restore.
 A physical device gets `400` with `ok: false`. A request during a running shake waits
-for that shake and does not start another burst.
+for that shake and does not start another burst. When the server stops during a
+burst, it stops the burst and waits until the resting value is written back.
 
 ```sh
 curl -X POST "$BASE/api/shake"

@@ -1185,6 +1185,13 @@ async function shake(deviceArg?: string) {
     console.error("No serve-sim server running. Run `serve-sim` first.");
     process.exit(1);
   }
+  // An older helper drops 0x14, so sending it would report a shake that never happened.
+  if (stateFile.inputShake !== true) {
+    console.error(
+      "The running serve-sim server cannot shake the device. Restart serve-sim to update it.",
+    );
+    process.exit(1);
+  }
   return sendHelperMessage(stateFile, helperMessage(0x14));
 }
 
