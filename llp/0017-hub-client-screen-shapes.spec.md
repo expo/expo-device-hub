@@ -20,6 +20,7 @@
 - The public API is a component, `DeviceShape`, that takes a device client like `DeviceScreen` does. Other props override what the client reports [confirmed] (Krystof Woldrich, 2026-11-05).
 - The display of a multi-display device is part of selecting the shape, together with the platform and the model [confirmed] (Krystof Woldrich, 2026-11-05).
 - An app that does not use shapes must not bundle the shape table or the shape code [confirmed] (Krystof Woldrich, 2026-11-05).
+- The table has the Pixel 10 family and both displays of the Pixel 9 Pro Fold and the Pixel 10 Pro Fold, with corner values from Krystof Woldrich, beyond the Pixel 9 shapes the website had [confirmed] (Krystof Woldrich, 2026-11-10). The Pixel 10a has the same screen as the Pixel 10 [confirmed] (Krystof Woldrich, 2026-11-10).
 
 ## Public surface
 
@@ -57,7 +58,7 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 
 ## Displays and orientation
 
-- A table entry is one shape, or one shape per display with the display a new session starts on. The iPhone Duo is the only per-display entry today. iOS and Android share one lookup, so a foldable on either platform needs only a new entry [observed: `catalog.ts`].
+- A table entry is one shape, or one shape per display with the display a new session starts on. The iPhone Duo and the Pixel 9 Pro Fold and Pixel 10 Pro Fold have per-display entries. A Pixel Pro Fold starts on its inner display, because its AVD profile starts open with the hinge at 180° [observed: `defaults` in the `pixel_9_pro_fold` and `pixel_10_pro_fold` profiles of Android Studio's `sdklib` device list]. iOS and Android share one lookup, so a foldable on either platform needs only a new entry [observed: `catalog.ts`].
 - A multi-display device picks its shape from `display`, the client's `screen.display` by default (LLP 0016 [Display identity](0016-hub-client-foldable-devices.spec.md#display-identity)). When a screen size is known without a display, the display with the closest aspect ratio wins, as the website did [observed: `iphoneDuoStreamScreenShape` in expo/universe#32807]. Without either, the iPhone Duo shows its cover display, which a new session streams first [observed: expo/universe#32807].
 - The shape turns with the device: `landscape_left` moves each corner one step clockwise [observed: expo/universe#32682; the same order as `displayCornerRadii` in `display-corners.ts`].
 - A landscape frame can only come from a sideways device. When the stream reports no orientation or an upright one for it, the shape counts it as `landscape_left` [observed: `simulatorDeviceRotation` in expo/universe#32682].

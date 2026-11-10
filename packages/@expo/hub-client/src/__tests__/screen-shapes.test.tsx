@@ -49,6 +49,41 @@ describe("resolveScreenShape", () => {
     expect(resolveScreenShape({ platform: "android", model: "emulator-5554" })).toBeNull();
   });
 
+  test("finds the Pixel 10 family, with the Pixel 10a on the Pixel 10 shape", () => {
+    const android = (model: string) => resolveScreenShape({ platform: "android", model });
+    expect(android("pixel_10")).toBe(SCREEN_SHAPES.pixel10);
+    expect(android("pixel_10a")).toBe(SCREEN_SHAPES.pixel10);
+    expect(android("pixel_10_pro")).toBe(SCREEN_SHAPES.pixel10Pro);
+    expect(android("pixel_10_pro_xl")).toBe(SCREEN_SHAPES.pixel10ProXL);
+  });
+
+  test("picks a Pixel Pro Fold display, and the inner display until one is known", () => {
+    for (const [model, cover, inner, closed] of [
+      [
+        "pixel_9_pro_fold",
+        SCREEN_SHAPES.pixel9ProFoldCover,
+        SCREEN_SHAPES.pixel9ProFoldInner,
+        2424,
+      ],
+      [
+        "pixel_10_pro_fold",
+        SCREEN_SHAPES.pixel10ProFoldCover,
+        SCREEN_SHAPES.pixel10ProFoldInner,
+        2364,
+      ],
+    ] as const) {
+      const fold = { platform: "android", model } as const;
+      expect(hasDisplayScreenShapes(fold)).toBe(true);
+      // The AVD profile starts open, on the inner display.
+      expect(resolveScreenShape(fold)).toBe(inner);
+      expect(resolveScreenShape({ ...fold, display: "cover" })).toBe(cover);
+      // serve-emu reports no display, so the stream size picks it, in either orientation.
+      expect(resolveScreenShape({ ...fold, screen: { width: 1080, height: closed } })).toBe(cover);
+      expect(resolveScreenShape({ ...fold, screen: { width: 2076, height: 2152 } })).toBe(inner);
+      expect(resolveScreenShape({ ...fold, screen: { width: 2152, height: 2076 } })).toBe(inner);
+    }
+  });
+
   test("gives no shape to an unknown, generic, or missing model, or to the other platform", () => {
     expect(resolveScreenShape({ platform: "ios", model: "iPhone Simulator" })).toBeNull();
     expect(resolveScreenShape({ platform: "ios", model: "iPhone SE (3rd generation)" })).toBeNull();

@@ -75,6 +75,20 @@ const AndroidScreenShapes = {
   pixel9ProXL: uniform(448, 997.33, { n: 2.32, size: 64.54 }),
   // Pixel 9a.
   pixel9a: uniform(411.43, 923.43, { n: 2, size: 55.23 }),
+  // Pixel 9 Pro Fold, closed: the cover display.
+  pixel9ProFoldCover: uniform(411.43, 923.43, { n: 2.3, size: 62.42 }),
+  // Pixel 9 Pro Fold, open: the inner display.
+  pixel9ProFoldInner: uniform(851.69, 882.87, { n: 2.22, size: 52.72 }),
+  // Pixel 10, and the Pixel 10a with the same screen.
+  pixel10: uniform(411.43, 923.43, { n: 2, size: 55.62 }),
+  // Pixel 10 Pro.
+  pixel10Pro: uniform(426.67, 952, { n: 2, size: 59.64 }),
+  // Pixel 10 Pro XL.
+  pixel10ProXL: uniform(448, 997.33, { n: 2.02, size: 60.64 }),
+  // Pixel 10 Pro Fold, closed: the cover display.
+  pixel10ProFoldCover: uniform(411.43, 900.57, { n: 2, size: 49.14 }),
+  // Pixel 10 Pro Fold, open: the inner display.
+  pixel10ProFoldInner: uniform(851.69, 882.87, { n: 2, size: 53.74 }),
 } as const satisfies Record<string, ScreenShape>;
 
 /**
@@ -205,21 +219,62 @@ const IosShapesByModel = new Map<string, DeviceScreenShapes>([
 
 /**
  * The emulators of each Android screen shape, by their AVD hardware profile ids
- * from `avdmanager list device` (an AVD's `hw.device.name`).
+ * from `avdmanager list device` (an AVD's `hw.device.name`). The Pro Folds have
+ * two displays, so they have no single shape here.
  */
-const AndroidScreenShapeModels: Record<keyof typeof AndroidScreenShapes, readonly string[]> = {
+const AndroidScreenShapeModels: Record<
+  Exclude<
+    keyof typeof AndroidScreenShapes,
+    "pixel9ProFoldCover" | "pixel9ProFoldInner" | "pixel10ProFoldCover" | "pixel10ProFoldInner"
+  >,
+  readonly string[]
+> = {
   pixel9: ["pixel_9"],
   pixel9Pro: ["pixel_9_pro"],
   pixel9ProXL: ["pixel_9_pro_xl"],
   pixel9a: ["pixel_9a"],
+  pixel10: ["pixel_10", "pixel_10a"],
+  pixel10Pro: ["pixel_10_pro"],
+  pixel10ProXL: ["pixel_10_pro_xl"],
 };
 
-const AndroidShapesByModel = new Map<string, DeviceScreenShapes>(
-  (Object.keys(AndroidScreenShapeModels) as (keyof typeof AndroidScreenShapeModels)[]).flatMap(
+/** Android models with a shape per display, by their AVD hardware profile ids. */
+const AndroidDisplayScreenShapeModels: readonly {
+  models: readonly string[];
+  shapes: DeviceScreenShapes;
+}[] = [
+  {
+    models: ["pixel_9_pro_fold"],
+    shapes: {
+      displays: {
+        cover: AndroidScreenShapes.pixel9ProFoldCover,
+        inner: AndroidScreenShapes.pixel9ProFoldInner,
+      },
+      // The AVD profile starts with the hinge at 180°, open on the inner display.
+      initialDisplay: "inner",
+    },
+  },
+  {
+    models: ["pixel_10_pro_fold"],
+    shapes: {
+      displays: {
+        cover: AndroidScreenShapes.pixel10ProFoldCover,
+        inner: AndroidScreenShapes.pixel10ProFoldInner,
+      },
+      initialDisplay: "inner",
+    },
+  },
+];
+
+const AndroidShapesByModel = new Map<string, DeviceScreenShapes>([
+  ...(Object.keys(AndroidScreenShapeModels) as (keyof typeof AndroidScreenShapeModels)[]).flatMap(
     (name) =>
       AndroidScreenShapeModels[name].map((model) => [model, AndroidScreenShapes[name]] as const),
   ),
-);
+  ...AndroidDisplayScreenShapeModels.flatMap(({ models, shapes }) =>
+    models.map((model) => [model, shapes] as const),
+  ),
+]);
 
 /** The shapes of a model: an iOS name matches without case and surrounding spaces, an Android id exactly. */
 function deviceScreenShapes(
@@ -252,8 +307,8 @@ export interface ScreenShapeQuery {
   /**
    * The streamed screen size, which picks the display when `display` is not
    * known: the display whose aspect ratio is closest, in either orientation.
-   * Without both, a device shows the display that a new session starts on,
-   * the cover display for the iPhone Duo.
+   * Without both, a device shows the display that a new session starts on:
+   * the cover display for the iPhone Duo, the inner display for a Pixel Pro Fold.
    */
   screen?: Pick<ScreenSize, "width" | "height"> | null;
 }
