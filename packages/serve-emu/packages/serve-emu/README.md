@@ -386,7 +386,9 @@ Shake is emulator-only. `GET /api` reports `"shake": true` when the current devi
 can shake. Android has no system shake event, so apps detect a shake from the
 accelerometer. serve-emu writes a short burst of alternating ±2 g on the x axis with
 the emulator console `sensor set acceleration`, then writes the resting value back.
-The request has no body. It answers `{"ok":true}` after the burst and the restore.
+The body is optional. It answers `{"ok":true}` after the burst and the restore.
+A shake records into the session as a `shake` event, and a replay shakes again.
+Send `{"record":false}` to leave it out of the session.
 A physical device gets `400` with `ok: false`. A request during a running shake waits
 for that shake and does not start another burst. When the server stops during a
 burst, it stops the burst and waits until the resting value is written back.
@@ -605,8 +607,8 @@ belongs to an unrelated earlier run.
 
 ### Sessions
 
-REST and WebSocket input events are recorded by default. Add `"record":false`
-to supported input payloads when an event should not be saved. History uses a
+REST and WebSocket input events, locations, and shakes are recorded by default.
+Add `"record":false` to supported input payloads when an event should not be saved. History uses a
 2,000-event, 1 MiB circular retention budget; `/health` contains only its
 compact count/byte/replay summary. Text is normalized to scrcpy's 300-byte
 UTF-8 control limit before both dispatch and recording.

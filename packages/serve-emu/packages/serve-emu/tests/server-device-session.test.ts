@@ -510,6 +510,32 @@ describe("startServer shake", () => {
     }
   });
 
+  test("records a shake unless asked not to", async () => {
+    const shaken: string[] = [];
+    const { captured, started } = await startShakeServer("emulator-5606", async (serial) => {
+      shaken.push(serial);
+    });
+    const post = (body: unknown) =>
+      invokeFetch(captured, "/api/shake", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      expect((await post({})).status).toBe(200);
+      expect((await post({ record: false })).status).toBe(200);
+      expect((await post({ record: "no" })).status).toBe(400);
+      expect(shaken).toHaveLength(2);
+
+      const session = (await (await invokeFetch(captured, "/api/session")).json()) as {
+        events: unknown[];
+      };
+      expect(session.events).toMatchObject([{ kind: "shake", source: "rest:shake" }]);
+    } finally {
+      await started.stop();
+    }
+  });
+
   test("stop waits until a running shake restores the resting acceleration", async () => {
     const written: string[] = [];
     const ok = (stdout: string): ExecResult<string> => ({

@@ -513,6 +513,7 @@ describe("stream settings HTTP API", () => {
     const replay = app.deviceState.recorder.startReplay({
       dispatchGesture: () => replayGate.promise,
       setLocation: () => {},
+      shake: () => {},
     });
 
     try {

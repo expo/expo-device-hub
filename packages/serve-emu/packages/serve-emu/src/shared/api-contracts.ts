@@ -475,7 +475,14 @@ export type LocationSessionEvent = {
   kind: "location";
   location: GeoFix;
 };
-export type SessionEvent = GestureSessionEvent | LocationSessionEvent;
+export type ShakeSessionEvent = {
+  id: number;
+  at: string;
+  delayMs: number;
+  source: string;
+  kind: "shake";
+};
+export type SessionEvent = GestureSessionEvent | LocationSessionEvent | ShakeSessionEvent;
 export type RecordedEvent = SessionEvent;
 export type SessionSnapshot = {
   events: SessionEvent[];
@@ -1631,6 +1638,7 @@ function parseSessionEvent(value: unknown, index: number): SessionEvent {
       location: parseGeoFix(item.location, `session.events[${index}].location`),
     };
   }
+  if (item.kind === "shake") return { ...base, kind: "shake" };
   return fail(`session.events[${index}].kind is invalid`);
 }
 

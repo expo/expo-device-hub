@@ -67,7 +67,7 @@ import {
 } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { settleShakes, shakeEmulator } from "./shake.ts";
+import { readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 import {
@@ -471,6 +471,7 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
   const webRtcStatsCollector = new WebRtcStatsCollector(() => clock.now());
   let removeFatalListener: (() => void) | null = null;
   const deviceStateOwner = {};
+  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
   const deviceState =
     opts.deviceState ??
     new DeviceSessionState({
@@ -481,8 +482,8 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
       readOrientation: dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
       applyRotation:
         dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
+      shake: shakeDevice,
     });
-  const shakeDevice = dependencies.shake ?? ((serial: string) => shakeEmulator(serial));
   try {
     deviceState.acquire(deviceStateOwner);
   } catch (error) {
@@ -1801,9 +1802,10 @@ async function createAppInternal(opts: AppOptions, dependencies: CreateAppDepend
 
     if (url.pathname === "/api/shake") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-      // The shake has no parameters, so the body is not read.
       try {
+        const { record } = await readShakeRequest(req);
         await shakeDevice(opts.serial);
+        if (record) sessionRecorder.recordShake("rest:shake");
         return Response.json({ ok: true });
       } catch (err) {
         return Response.json(

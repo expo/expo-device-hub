@@ -8,6 +8,7 @@ import type { GeoFix } from "./location.ts";
 import { LogcatHub } from "./logcat.ts";
 import { MetricsSampler } from "./metrics.ts";
 import { RoutePlayback, type RoutePlaybackClock } from "./route-playback.ts";
+import { shakeEmulator } from "./shake.ts";
 import type { OrientationMode, ScreenOrientation } from "./shared/api-contracts.ts";
 import {
   SessionRecorder,
@@ -29,6 +30,8 @@ type DeviceSessionStateOptions = {
   readOrientation(serial: string): Promise<ScreenOrientation>;
   /** Lock or free the rotation. */
   applyRotation(serial: string, mode: OrientationMode): Promise<OrientationStatus>;
+  /** Shake the device when a replay reaches a recorded shake; the emulator console by default. */
+  shake?(serial: string): Promise<void>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -61,6 +64,7 @@ export class DeviceSessionState {
   readonly orientation: DisplayOrientationReader;
 
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
+  readonly #shake: (serial: string) => Promise<void>;
   readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
   readonly #recordLock: (pose: ScreenOrientation | null) => void;
   readonly #now: () => number;
@@ -72,6 +76,7 @@ export class DeviceSessionState {
   constructor(options: DeviceSessionStateOptions) {
     this.serial = options.serial;
     this.#applyLocation = options.applyLocation;
+    this.#shake = options.shake ?? ((serial) => shakeEmulator(serial));
     this.#applyRotation = options.applyRotation;
     const display = createDisplayOrientationReader({
       read: () => options.readOrientation(options.serial),
@@ -114,6 +119,10 @@ export class DeviceSessionState {
       setLocation: async (fix, signal) => {
         this.route.stop();
         await this.#setLocation(fix, signal, true);
+      },
+      shake: async (signal) => {
+        if (signal.aborted) throw abortReason(signal, "session replay cancelled");
+        await this.#shake(this.serial);
       },
     };
   }

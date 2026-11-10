@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execText, type ExecResult } from "./exec.ts";
+import { readBodyLimited } from "./request-body.ts";
 
 /**
  * Android has no system shake event: apps detect a shake from the accelerometer. A shake is a
@@ -34,6 +35,39 @@ export class ShakeUnsupportedError extends Error {
     super(SHAKE_EMULATOR_ONLY_MESSAGE);
     this.name = "ShakeUnsupportedError";
   }
+}
+
+/** A `POST /api/shake` body that is not empty JSON `{}` or `{ "record": boolean }`. */
+export class ShakeRequestError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ShakeRequestError";
+  }
+}
+
+const MAX_SHAKE_BODY_BYTES = 1024;
+
+/**
+ * Read the optional body of `POST /api/shake`. A shake records into the session by default, as
+ * REST actions do; `{ "record": false }` leaves it out. An empty body records.
+ */
+export async function readShakeRequest(request: Request): Promise<{ record: boolean }> {
+  const bytes = await readBodyLimited(request, MAX_SHAKE_BODY_BYTES);
+  if (bytes.byteLength === 0) return { record: true };
+  let body: unknown;
+  try {
+    body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new ShakeRequestError("shake payload must be JSON");
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ShakeRequestError("shake payload must be an object");
+  }
+  const record = (body as Record<string, unknown>).record;
+  if (record !== undefined && typeof record !== "boolean") {
+    throw new ShakeRequestError("record must be a boolean");
+  }
+  return { record: record !== false };
 }
 
 /** The resting value as the console printed it, so the restore writes the same tokens. */
