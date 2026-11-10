@@ -828,7 +828,7 @@ Only a fresh native orientation observation, unchanged across capture, fills
 `displayRotation`; a command or lack of a fresh observation leaves it null.
 The device-owned cache survives stream-source switches; a switch alone does not
 invalidate a still-fresh observation. The cache accessor never starts an adb query. Width/height remain zero
-because streamed frames may be scaled; display identity/count remain unknown.
+because streamed frames may be scaled; panel identity remains unknown and `screen` is omitted.
 [observed: `packages/serve-emu/packages/serve-emu/src/screenshot-response.ts`,
 `display-orientation.ts`, `middleware.ts`, and `server.ts`]
 
