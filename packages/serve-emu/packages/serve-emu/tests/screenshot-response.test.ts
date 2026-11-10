@@ -23,8 +23,6 @@ test("returns the contract in PNG headers and existing JSON responses without ch
     width: 0,
     height: 0,
     displayRotation: "landscape-left" as const,
-    displayId: 0,
-    displayCount: 0,
   };
   const raw = await screenshotResponse(png, new URL("http://router.test/api/screenshot"), metadata);
   expect(JSON.parse(raw.headers.get("X-Expo-Screenshot-Metadata")!)).toEqual(metadata);
@@ -36,6 +34,24 @@ test("returns the contract in PNG headers and existing JSON responses without ch
   );
   const result = parseScreenshotBase64Response(await json.json());
   expect(result.metadata).toEqual(metadata);
+  for (const screen of ["inner", "outer"] as const) {
+    expect(
+      parseScreenshotBase64Response({
+        ok: true,
+        mimeType: "image/png",
+        data: "",
+        metadata: { ...metadata, screen },
+      }).metadata?.screen,
+    ).toBe(screen);
+  }
+  expect(() =>
+    parseScreenshotBase64Response({
+      ok: true,
+      mimeType: "image/png",
+      data: "",
+      metadata: { ...metadata, screen: 0 },
+    }),
+  ).toThrow();
   expect(Buffer.from(result.data, "base64")).toEqual(Buffer.from(png));
   expect(
     parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "" }).metadata,
