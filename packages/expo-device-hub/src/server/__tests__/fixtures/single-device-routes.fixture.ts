@@ -19,8 +19,6 @@ const metadata = {
   width: 120,
   height: 120,
   displayRotation: "portrait",
-  displayId: 1,
-  displayCount: 1,
 };
 function backendResponse(request: Request, fallback: string) {
   if (!new URL(request.url).pathname.endsWith("/api/screenshot")) return new Response(fallback);
