@@ -26,7 +26,10 @@ export interface ScreenShape {
   bottomLeft: ScreenCorner;
 }
 
-/** A screen whose four corners are the same. */
+/**
+ * A screen whose four corners are the same. Internal: it builds the device
+ * table, and `@expo/hub-client/shapes` exports device shapes only.
+ */
 export function uniformScreenShape(
   width: number,
   height: number,
@@ -291,58 +294,4 @@ export function screenShapeClipPath(
     byKey.set(key, clipPath);
   }
   return clipPath;
-}
-
-/** One corner's cut-out: the region between the corner curve and the outer corner. */
-function screenCornerPath(n: number) {
-  const draw = (x: number, y: number) => `${x.toFixed(2)},${y.toFixed(2)}`;
-  const curve = cornerPoints(n).map(([x, y], i) => `${i === 0 ? "M" : "L"} ${draw(x, y)} `);
-  return `${curve.join("")}L 0,0 Z`;
-}
-
-const CornerPlacements = [
-  { corner: "topLeft", align: "xMinYMin", farX: false, farY: false },
-  { corner: "topRight", align: "xMaxYMin", farX: true, farY: false },
-  { corner: "bottomRight", align: "xMaxYMax", farX: true, farY: true },
-  { corner: "bottomLeft", align: "xMinYMax", farX: false, farY: true },
-] as const;
-
-/**
- * The mask as an SVG that fills the masked element. Each corner box is `size`
- * divided by the screen's short side, taken of the element's short side:
- * `meet` scales the square corner by the smaller of the box's percentage width
- * and height. On any aspect ratio the corners stay round instead of
- * stretching. The corners do not turn with a sideways element.
- */
-function screenShapeMaskSvg(shape: ScreenShape) {
-  const shortSide = Math.min(shape.width, shape.height);
-  const corners = CornerPlacements.map(({ corner, align, farX, farY }) => {
-    const { size, n } = shape[corner];
-    const box = size / shortSide;
-    const transform =
-      farX || farY
-        ? ` transform='translate(${farX ? Tile : 0} ${farY ? Tile : 0}) scale(${farX ? -1 : 1} ${farY ? -1 : 1})'`
-        : "";
-    return (
-      `<svg x='${farX ? percent(1 - box) : "0"}' y='${farY ? percent(1 - box) : "0"}' ` +
-      `width='${percent(box)}' height='${percent(box)}' viewBox='0 0 ${Tile} ${Tile}' ` +
-      `preserveAspectRatio='${align} meet'><path d='${screenCornerPath(n)}'${transform}/></svg>`
-    );
-  }).join("");
-  // A full rectangle with the four corner nubs cut out via an inner luminance mask.
-  return (
-    `<svg xmlns='http://www.w3.org/2000/svg' width='100%' height='100%'>` +
-    `<mask id='cut'><rect width='100%' height='100%' fill='white'/><g fill='black'>${corners}</g></mask>` +
-    `<rect width='100%' height='100%' mask='url(#cut)'/>` +
-    "</svg>"
-  );
-}
-
-/**
- * The CSS `mask-image` value that masks an element to a screen shape at any
- * aspect ratio. Prefer {@link screenShapeClipPath} for a device screen: a mask
- * image can land a few device pixels off at fractional element sizes.
- */
-export function screenShapeMaskImage(shape: ScreenShape): string {
-  return `url("data:image/svg+xml,${encodeURIComponent(screenShapeMaskSvg(shape))}")`;
 }

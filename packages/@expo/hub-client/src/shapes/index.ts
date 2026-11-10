@@ -8,7 +8,8 @@
  * - {@link DeviceShape} — a `div` clipped to a device's screen shape, which
  *   follows a device client like `DeviceScreen`.
  * - {@link useScreenShape} — the shape as the viewer sees it, for layout.
- * - {@link resolveScreenShape} + {@link SCREEN_SHAPES} — the shape table.
+ * - {@link resolveScreenShape} + {@link SCREEN_SHAPES} — the shape table, with
+ *   real devices only.
  * - {@link screenShapeClipPath} and the geometry helpers — the CSS for an
  *   element that cannot be wrapped, and blends between two shapes.
  */
@@ -29,9 +30,7 @@ export {
   screenShapeClipPath,
   screenShapeGeometry,
   screenShapeGeometryClipPath,
-  screenShapeMaskImage,
   screenShapeOrientation,
-  uniformScreenShape,
   type ScreenCorner,
   type ScreenShape,
   type ScreenShapeClipOptions,

@@ -13,8 +13,8 @@ import {
   screenShapeGeometry,
   screenShapeGeometryClipPath,
   screenShapeOrientation,
-  uniformScreenShape,
 } from "../shapes";
+import { uniformScreenShape } from "../shapes/screen-shape";
 import { type ScreenSize } from "../types";
 import { createGlobalStubs } from "./test-globals";
 
@@ -297,9 +297,9 @@ describe("DeviceShape", () => {
       }),
     );
 
-    const custom = uniformScreenShape(300, 600, { n: 2, size: 30 });
-    await act(async () => root.update(<DeviceShape shape={custom} />));
-    expect(clipPathOf(root)).toBe(screenShapeClipPath(custom));
+    const picked = SCREEN_SHAPES.iPhone16ProMax;
+    await act(async () => root.update(<DeviceShape shape={picked} />));
+    expect(clipPathOf(root)).toBe(screenShapeClipPath(picked));
   });
 
   test("follows a screen-only client, such as useDeviceScreenClient's, with the model as a prop", async () => {
@@ -312,19 +312,17 @@ describe("DeviceShape", () => {
     expect(clipPathOf(root)).toBe(screenShapeClipPath(SCREEN_SHAPES.iPhoneDuoInner));
   });
 
-  test("turns a custom portrait shape with the client's orientation", async () => {
-    const custom = {
-      ...uniformScreenShape(300, 600, { n: 2, size: 30 }),
-      topLeft: { n: 2, size: 5 },
-    };
+  test("turns a picked portrait shape with the client's orientation", async () => {
+    // The iPhone Duo cover has small hinge-side corners, so a wrong turn shows.
+    const picked = SCREEN_SHAPES.iPhoneDuoCover;
     const root = await render(
       <DeviceShape
-        client={client({ width: 600, height: 300, orientation: "landscape_right" })}
-        shape={custom}
+        client={client({ width: 2034, height: 1398, orientation: "landscape_right" })}
+        shape={picked}
       />,
     );
     expect(clipPathOf(root)).toBe(
-      screenShapeClipPath(rotateScreenShape(custom, "landscape_right")),
+      screenShapeClipPath(rotateScreenShape(picked, "landscape_right")),
     );
   });
 
@@ -351,4 +349,12 @@ test("an app that imports only the main entry bundles no shape table or shape co
   for (const marker of ["iPhone 17 Pro", "pixel_9", "superellipse", "clipPath:"]) {
     expect(output).not.toContain(marker);
   }
+});
+
+test("the shapes entry exports device shapes only, no generic shape builder or mask", async () => {
+  // @ref LLP 0017#decisions — a non-device shape, such as the expo.dev Demos squircle, stays with its app
+  const entry = await import("../shapes");
+  expect(Object.keys(entry)).not.toContain("uniformScreenShape");
+  expect(Object.keys(entry)).not.toContain("screenShapeMaskImage");
+  expect(Object.keys(entry)).toContain("SCREEN_SHAPES");
 });

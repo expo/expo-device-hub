@@ -39,8 +39,9 @@ export interface ScreenShapeSource {
   /** The device orientation. Defaults to the client's screen, else portrait. */
   orientation?: DeviceOrientation;
   /**
-   * A portrait shape to use instead of the looked-up one, such as a custom
-   * device's. It still turns with `orientation`. `null` means no shape.
+   * A portrait shape to use instead of the looked-up one, such as a
+   * {@link SCREEN_SHAPES} entry that a viewer picks. It still turns with
+   * `orientation`. `null` means no shape.
    */
   shape?: ScreenShape | null;
 }

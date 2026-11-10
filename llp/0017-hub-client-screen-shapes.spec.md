@@ -5,6 +5,7 @@
 **Systems:** HubClient, HubComponents
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-05
+**Revised:** 2026-11-10
 **Related:** LLP 0000, LLP 0016
 
 ## Summary
@@ -28,11 +29,12 @@
 | `useScreenShape(source)`                                                               | The same lookup as `DeviceShape`, for layout: the shape as the viewer sees it, or null.                                                                                           |
 | `resolveScreenShape({ platform, model, display })`                                     | The portrait shape of a model, or null.                                                                                                                                           |
 | `hasDisplayScreenShapes({ platform, model })`                                          | Whether a model has a shape per display.                                                                                                                                          |
-| `SCREEN_SHAPES`                                                                        | Every shape by name, for picking one by hand.                                                                                                                                     |
+| `SCREEN_SHAPES`                                                                        | Every device shape by name, for picking one by hand, such as for the `shape` prop.                                                                                                |
 | `rotateScreenShape`, `screenShapeOrientation`                                          | Turning a portrait shape with the device.                                                                                                                                         |
-| `uniformScreenShape`                                                                   | Building a custom shape with four equal corners, for the `shape` prop.                                                                                                            |
-| `screenShapeClipPath`, `screenShapeMaskImage`                                          | The CSS for an element that cannot be wrapped.                                                                                                                                    |
+| `screenShapeClipPath`                                                                  | The CSS for an element that cannot be wrapped.                                                                                                                                    |
 | `screenShapeGeometry`, `interpolateScreenShapeGeometry`, `screenShapeGeometryClipPath` | Placing a shape in part of an element and blending two shapes, such as the iPhone Duo switch in a recording.                                                                      |
+
+The entry has real device shapes only. It has no builder for a shape that is not a device, and no mask image (see [Decisions](#decisions)).
 
 `DeviceShape` only clips. It draws nothing and does not turn, so `DeviceScreen` inside it keeps its pointer mapping [observed: expo/universe#32682 turns only the bezel image for the same reason].
 
@@ -51,7 +53,7 @@ A client's current device name is only the default: iOS reports the placeholder 
 
 ## Clip path, not mask
 
-A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples of each superellipse corner, each corner sized as its share of the element's short side. A `mask-image` lands a few device pixels off at fractional element sizes, so the website moved from a mask to a clip path [observed: expo/universe#32698]. `screenShapeMaskImage` stays for decorative masks that turn with no device.
+A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples of each superellipse corner, each corner sized as its share of the element's short side. A `mask-image` lands a few device pixels off at fractional element sizes, so the website moved from a mask to a clip path [observed: expo/universe#32698].
 
 ## Displays and orientation
 
@@ -64,6 +66,7 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 ## Decisions
 
 - **The iPhone Duo cover shape is named `iPhoneDuoCover`**, after hub-client's display role, where the website named it `iPhoneDuoOuter`. Claude Code's choice; human review pending.
+- **The entry has device shapes only.** `uniformScreenShape` is internal: it builds the table. A shape that is not a device, such as the squircle of the expo.dev Demos page, stays in its app with its own code, and so does the mask image that draws it [confirmed] (Krystof Woldrich, 2026-11-10).
 - **The clip helpers stay public.** The website clips Framer Motion layers and a `<video>`, and blends the iPhone Duo shapes on the recording's video frames, which a wrapping component cannot do. Claude Code's choice; human review pending.
 - **`DeviceClient.displayCorners` stays.** It is the DeviceKit chrome corners for the iPhone Duo and is not part of this entry. Claude Code's choice; human review pending.
 
