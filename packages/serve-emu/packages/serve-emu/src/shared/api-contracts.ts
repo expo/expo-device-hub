@@ -1719,8 +1719,6 @@ function parseScreenshotMetadata(value: unknown): ScreenshotMetadata {
   const dimensions = {
     width: number(item.width, "metadata.width"),
     height: number(item.height, "metadata.height"),
-    displayId: number(item.displayId, "metadata.displayId"),
-    displayCount: number(item.displayCount, "metadata.displayCount"),
   };
   if (Object.values(dimensions).some((value) => !Number.isSafeInteger(value) || value < 0)) {
     fail("screenshot metadata numbers must be nonnegative integers");
@@ -1733,7 +1731,13 @@ function parseScreenshotMetadata(value: unknown): ScreenshotMetadata {
           ["portrait", "portrait-upside-down", "landscape-left", "landscape-right"] as const,
           "metadata.displayRotation",
         );
-  return { ...dimensions, displayRotation };
+  return {
+    ...dimensions,
+    displayRotation,
+    ...(item.screen === undefined
+      ? {}
+      : { screen: oneOf(item.screen, ["inner", "outer"] as const, "metadata.screen") }),
+  };
 }
 
 export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64Response {
