@@ -1,8 +1,7 @@
 import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { execFileSync, spawn, spawnSync, type ChildProcess } from "child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
+import { execFileSync, spawnSync } from "child_process";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { parseDetachState } from "./detach-state";
 import { freePortAsync } from "./helpers";
@@ -11,8 +10,7 @@ import type { ServeSimDeviceState } from "../state";
 const CLI_PATH = join(import.meta.dir, "../../dist/serve-sim.js");
 const FIXTURE = join(import.meta.dir, "../../dist/capability-loader/ServeSimLaunchFixture.app");
 const APP = "dev.expo.serve-sim.launch-fixture";
-const CHROME =
-  process.env.SERVE_SIM_CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+import { CHROME, Cdp, startTestBrowser } from "./browser-e2e";
 
 const udid = e2eDevice();
 const ready = udid !== null && existsSync(CLI_PATH) && existsSync(FIXTURE) && existsSync(CHROME);
@@ -34,60 +32,6 @@ function simctl(...args: string[]): string {
   });
 }
 
-class Cdp {
-  private nextId = 0;
-  private pending = new Map<number, (result: Record<string, unknown>) => void>();
-  readonly frameSessions: string[] = [];
-
-  private constructor(private readonly ws: WebSocket) {
-    ws.onmessage = (event) => {
-      const message = JSON.parse(String(event.data)) as {
-        id?: number;
-        method?: string;
-        params?: { sessionId?: string; targetInfo?: { type?: string } };
-        result?: Record<string, unknown>;
-      };
-      if (message.id !== undefined) this.pending.get(message.id)?.(message.result ?? {});
-      if (
-        message.method === "Target.attachedToTarget" &&
-        message.params?.targetInfo?.type === "iframe"
-      ) {
-        this.frameSessions.push(message.params.sessionId!);
-      }
-    };
-  }
-
-  static async connect(url: string): Promise<Cdp> {
-    const ws = new WebSocket(url);
-    await new Promise<void>((resolve, reject) => {
-      ws.onopen = () => resolve();
-      ws.onerror = () => reject(new Error(`CDP connection failed: ${url}`));
-    });
-    return new Cdp(ws);
-  }
-
-  send(method: string, params: object = {}, sessionId?: string): Promise<Record<string, unknown>> {
-    const id = ++this.nextId;
-    return new Promise((resolve) => {
-      this.pending.set(id, resolve);
-      this.ws.send(JSON.stringify({ id, method, params, sessionId }));
-    });
-  }
-
-  async evaluate<T>(expression: string, sessionId?: string): Promise<T> {
-    const reply = await this.send(
-      "Runtime.evaluate",
-      { expression, returnByValue: true, awaitPromise: true },
-      sessionId,
-    );
-    return (reply.result as { value: T }).value;
-  }
-
-  close(): void {
-    this.ws.close();
-  }
-}
-
 const STREAM_LAYER = `[...document.querySelectorAll("div")].find((d) => d.style.touchAction === "none" && d.getBoundingClientRect().width > 100)`;
 const HARDWARE_KEYBOARD_SWITCH = `document.querySelector('[role="switch"][aria-label="Hardware Keyboard"]')`;
 const TOOLS_BUTTON = `document.querySelector('[aria-label="Open tools panel"]')`;
@@ -97,8 +41,7 @@ const PASTE_MENU_ITEM = `[...document.querySelectorAll('[role="menuitem"]')].fin
 describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   let state: ServeSimDeviceState;
   let fixtureLog: string;
-  let chrome: ChildProcess;
-  let profile: string;
+  let browser: Awaited<ReturnType<typeof startTestBrowser>>;
   let cdp: Cdp;
   let parent: ReturnType<typeof Bun.serve>;
   let simUrl: string;
@@ -389,47 +332,8 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
         ),
     });
 
-    profile = mkdtempSync(join(tmpdir(), "serve-sim-chrome-"));
-    chrome = spawn(
-      CHROME,
-      [
-        "--headless=new",
-        "--remote-debugging-port=0",
-        `--user-data-dir=${profile}`,
-        "--window-size=1200,900",
-        "--no-first-run",
-        "about:blank",
-      ],
-      { stdio: ["ignore", "ignore", "pipe"] },
-    );
-    const browserUrl = await new Promise<string>((resolve, reject) => {
-      let output = "";
-      chrome.stderr!.on("data", (chunk) => {
-        output += chunk;
-        const match = output.match(/ws:\/\/\S+/);
-        if (match) resolve(match[0]);
-      });
-      chrome.on("exit", (code) =>
-        reject(
-          new Error(`Chrome exited before it opened a debugging port (exit=${code}).\n${output}`),
-        ),
-      );
-    });
-    let pageUrl: string | undefined;
-    const deadline = Date.now() + 15_000;
-    while (!pageUrl && Date.now() < deadline) {
-      const targets = (await (
-        await fetch(`http://127.0.0.1:${new URL(browserUrl).port}/json/list`)
-      ).json()) as Array<{ type: string; webSocketDebuggerUrl: string }>;
-      pageUrl = targets.find((target) => target.type === "page")?.webSocketDebuggerUrl;
-      if (!pageUrl) await Bun.sleep(100);
-    }
-    if (!pageUrl)
-      throw new Error(
-        `Chrome opened a debugging port but no page within 15s. Check that ${CHROME} starts headless on this machine.`,
-      );
-    cdp = await Cdp.connect(pageUrl);
-    await cdp.send("Page.enable");
+    browser = await startTestBrowser();
+    cdp = browser.cdp;
     await cdp.send("Target.setAutoAttach", {
       autoAttach: true,
       waitForDebuggerOnStart: false,
@@ -437,14 +341,12 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     });
   }, 180_000);
 
-  afterAll(() => {
+  afterAll(async () => {
     try {
       cli("ui", "hardware-keyboard", "on", "-d", udid!);
     } catch {}
-    cdp?.close();
-    chrome?.kill();
+    await browser?.close();
     parent?.stop(true);
-    if (profile) rmSync(profile, { recursive: true, force: true });
     try {
       cli("--kill", udid!);
     } catch {}

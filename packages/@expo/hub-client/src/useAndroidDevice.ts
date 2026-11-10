@@ -21,6 +21,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { type AccessibilityLoader, loadAndroidAccessibility } from "./accessibility";
 import { appendActivitySample } from "./activity";
 import { useActivityStatus } from "./useActivityStatus";
+import { useAndroidFold } from "./useAndroidFold";
 import {
   EMPTY_ANDROID_ACTIVITY,
   ANDROID_ACTIVITY_STALE_MS,
@@ -54,6 +55,9 @@ import { NO_CLIPBOARD } from "./device-clipboard";
 import { mergeAuthoritativeDeviceSetting } from "./device-setting-writes";
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from "./h264";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
+import { androidOrientationBackend, parseAndroidOrientation } from "./android-orientation";
+import { isLandscapeOrientation } from "./orientation";
+import { useDeviceOrientation } from "./useDeviceOrientation";
 import { androidMessageForKeyboardInput } from "./keyboard";
 import { MsePlayer } from "./mse-player";
 import {
@@ -76,14 +80,24 @@ import { type DeviceLocationBackend, useDeviceLocation } from "./useDeviceLocati
 import { useAppPermissions } from "./useAppPermissions";
 import { useStreamSettingsResource } from "./useStreamSettingsResource";
 import { useDeviceSettingsReadStatus } from "./useDeviceSettingsReadStatus";
-import { parseScreenRecordingStatus } from "./screen-recording";
+import {
+  parseScreenRecordingStatus,
+  recordingLockReason,
+  recordingOrientationUnavailable,
+} from "./screen-recording";
+import {
+  STREAM_DISCONNECTED_ERROR,
+  useScreenPresentation,
+  useSessionStatus,
+} from "./screen-presentation";
 import { fetchScreenshot } from "./screenshot";
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from "./session-token";
+import { resolveDeviceStreamMode } from "./stream-mode";
 import { type WebRtcIceServer, useWebRtcStream } from "./useWebRtcStream";
 import { PLAYBACK_STALL_POLL_MS, PLAYBACK_STALL_POLLS } from "./webrtc-playback-stall";
 import { presentedVideoFrameDelta } from "./video-frame-metadata";
+import { preserveVideoFrame } from "./video-frame-poster";
 import {
-  type ConnectionStatus,
   type DeviceAppearance,
   type DeviceClient,
   type DeviceCapabilities,
@@ -96,11 +110,13 @@ import {
   type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceLog,
+  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamEncoderSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamSettingCapabilities,
+  type DeviceStreamMode,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
   type ForegroundApp,
@@ -118,6 +134,8 @@ const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
+// How long an H.264 viewer waits for `/api` before it opens the video WebSocket anyway.
+const STREAM_METADATA_FALLBACK_MS = 3000;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 5000;
 // Match serve-sim's UI request deadline so an unreachable endpoint cannot hold the initial read.
@@ -132,7 +150,6 @@ const ANDROID_STREAM_SETTING_CAPABILITIES = {
 } as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
-
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
   return (
@@ -183,8 +200,45 @@ type ServeEmuStreamSettings =
 type ServeEmuApiInfo = {
   screenRecording?: unknown;
   size?: { width?: unknown; height?: unknown };
+  /** The display's current pose. Absent on servers that cannot report it. */
+  pose?: unknown;
   stream?: unknown;
+  viewerTransports?: unknown;
 };
+
+type ServeEmuViewerTransport = "websocket" | "webrtc";
+
+/**
+ * Read the video transports serve-emu's `/api` lists in `viewerTransports.available`.
+ * Returns null when an older serve-emu omits the list, or when it lists no known transport.
+ */
+export function parseServeEmuViewerTransports(
+  value: unknown,
+): readonly ServeEmuViewerTransport[] | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const available = (value as Record<string, unknown>).available;
+  if (!Array.isArray(available)) return null;
+  const known = (["websocket", "webrtc"] as const).filter((transport) =>
+    available.includes(transport),
+  );
+  return known.length > 0 ? known : null;
+}
+
+/**
+ * Viewer stream modes for serve-emu's stream contract. H.264 travels over the video WebSocket,
+ * which `--transport webrtc` refuses. WebRTC needs the host's own WebRTC settings for ICE.
+ * Without a `viewerTransports` list (older serve-emu), the WebSocket always carries video.
+ */
+export function androidModeAvailability(
+  settings: ServeEmuStreamSettings | null,
+  viewerTransports: readonly ServeEmuViewerTransport[] | null,
+): Record<DeviceStreamMode, boolean> {
+  return {
+    mjpeg: false,
+    h264: viewerTransports?.includes("websocket") ?? true,
+    webrtc: settings?.transport === "webrtc" && (viewerTransports?.includes("webrtc") ?? true),
+  };
+}
 
 function isIceServer(value: unknown): value is WebRtcIceServer {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -233,8 +287,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const socketProtocols = useMemo(() => sessionTokenProtocols("android", token), [token]);
 
-  const [status, setStatus] = useState<ConnectionStatus>("idle");
-  const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
@@ -266,6 +318,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [serverStreamSettings, setServerStreamSettings] = useState<ServeEmuStreamSettings | null>(
     null,
   );
+  const [serverViewerTransports, setServerViewerTransports] = useState<
+    readonly ServeEmuViewerTransport[] | null
+  >(null);
+  // Set when `/api` fails or does not answer in time, so H.264 video does not wait forever.
+  const [streamMetadataFailed, setStreamMetadataFailed] = useState(false);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
@@ -279,7 +336,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // a reconnect (last frame kept) rather than the initial connect.
   const [webRtcWasLive, setWebRtcWasLive] = useState(false);
   const [webRtcGraceExpired, setWebRtcGraceExpired] = useState(false);
-  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}`;
+  // A new token is a new connection: its stream has not been live yet either.
+  const deviceKey = `${baseUrl ?? ""}\0${targetDevice ?? ""}\0${token ?? ""}`;
   const [webRtcDeviceKey, setWebRtcDeviceKey] = useState(deviceKey);
   if (webRtcDeviceKey !== deviceKey) {
     // Reset per-device readiness during render: the previous device's flags
@@ -301,13 +359,35 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceScope = `${active ? "active" : "inactive"}\0${baseUrl ?? ""}\0${targetDevice ?? ""}`;
+  // A connected device's recording status is unknown until its first `/api` answer.
+  const initialRecording = active ? "unknown" : null;
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
-  }>({ scope: deviceScope, status: active ? "unknown" : null });
+  }>({ scope: deviceScope, status: initialRecording });
   if (recordingSnapshot.scope !== deviceScope) {
-    setRecordingSnapshot({ scope: deviceScope, status: active ? "unknown" : null });
+    setRecordingSnapshot({ scope: deviceScope, status: initialRecording });
   }
+  const screenRecording =
+    recordingSnapshot.scope === deviceScope ? recordingSnapshot.status : initialRecording;
+  // @ref LLP 0013#recording-lock — temporary until recordings survive rotation and stream changes
+  // Turning the device or changing the stream can end the host recording, so the three places
+  // that send those changes (`putStreamMode`, `updateStreamSettings` and the orientation
+  // backend) ignore them while it could break.
+  const recordingLock = recordingLockReason(screenRecording);
+  const recordingControlsLocked = recordingLock !== null;
+  const recordingLockedRef = useRef(recordingControlsLocked);
+  useLayoutEffect(() => {
+    recordingLockedRef.current = recordingControlsLocked;
+  }, [recordingControlsLocked]);
+  // Whether this server reports the display pose, and its last report. Null until the
+  // first `/api` answer for this device.
+  const [orientationReport, setOrientationReport] = useState<{
+    scope: string;
+    reports: boolean;
+    orientation: DeviceOrientation | null;
+  } | null>(null);
+  const orientationState = orientationReport?.scope === deviceScope ? orientationReport : null;
   const deviceScopeRef = useRef(deviceScope);
   const inputIdentity = useMemo(() => ({ deviceScope, token }), [deviceScope, token]);
   const committedInputIdentityRef = useRef(inputIdentity);
@@ -439,22 +519,49 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     send({ type: "key", keycode: KEYCODE_R, record: false });
   }, [send]);
 
-  // Rotate the emulator by locking user rotation to the opposite of the current
-  // aspect via `/api/orientation` (POST `adb shell cmd window user-rotation
-  // lock 0|1`). The streamed frame size tells which way the display currently
-  // faces; locking (rather than `auto`) turns it even when auto-rotate is off.
+  const orientationKind = orientationState ? (orientationState.reports ? "poses" : "legacy") : null;
+  // No backend before the first `/api` answer: the kind of server is not known yet.
+  const orientationBackend = useMemo(
+    () =>
+      orientationKind && baseUrl
+        ? androidOrientationBackend(
+            orientationKind,
+            sessionFetch,
+            deviceApiUrl(baseUrl, "/api/orientation", targetDevice),
+            () => !recordingLockedRef.current,
+          )
+        : null,
+    [orientationKind, baseUrl, targetDevice, sessionFetch],
+  );
+  const reportedOrientation = orientationState?.orientation ?? null;
+  const {
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationCapabilities,
+    setOrientation,
+    rotate: rotateOrientation,
+    acceptReport: acceptOrientationReport,
+  } = useDeviceOrientation(orientationBackend, reportedOrientation);
+  // @ref LLP 0013#orientation — the slower pose report joins `screen` only when it agrees with the frame
+  // serve-emu frames already show the display upright, so only the pose is added. The pose
+  // comes from a slower `/api` poll than the frame size, so it is added only when both agree;
+  // otherwise a turned frame would show in the box of the previous pose.
+  const orientedScreen = useMemo(
+    () =>
+      screen &&
+      reportedOrientation &&
+      isLandscapeOrientation(reportedOrientation) === screen.width > screen.height
+        ? { ...screen, orientation: reportedOrientation, framesUpright: true }
+        : screen,
+    [screen, reportedOrientation],
+  );
+  // Rotate steps to the next pose the server accepts: the same four as iOS, or portrait and
+  // landscape on an older server. Without a known pose it starts from the frame's aspect.
+  // Locking, rather than `auto`, turns the display even when auto-rotate is off.
   const rotate = useCallback(() => {
-    if (!baseUrl) return;
-    const next = screen && screen.width > screen.height ? "portrait" : "landscape";
-    const url = `${apiUrl(baseUrl, "/api/orientation")}${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ""
-    }`;
-    void sessionFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orientation: next }),
-    }).catch(() => {});
-  }, [baseUrl, targetDevice, screen, sessionFetch]);
+    rotateOrientation(screen && screen.width > screen.height ? "landscape_right" : "portrait");
+  }, [rotateOrientation, screen]);
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
@@ -676,6 +783,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       inputSource?: DeviceInputSource;
     }) => {
       if (
+        recordingLockedRef.current ||
         !streamSourceUrl ||
         streamSourceLoadingRef.current ||
         isStreamSwitchPending(streamSwitchRef.current)
@@ -843,16 +951,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     return () => clearTimeout(timer);
   }, [dispatchStreamSwitch, streamSwitch]);
 
-  // Feed the switch tracker from the connection status: a live stream that
-  // drops is the old session closing; the next live frame is the replacement.
-  useEffect(() => {
-    const live = status === "streaming";
-    const wasLive = streamLiveRef.current;
-    streamLiveRef.current = live;
-    if (wasLive && !live) dispatchStreamSwitch({ type: "stream-interrupted" });
-    else if (!wasLive && live) dispatchStreamSwitch({ type: "stream-live" });
-  }, [dispatchStreamSwitch, status]);
-
   // Stream options share one timer and pause while the page is hidden.
   useEffect(() => {
     if (!streamSettingsUrl && !streamSourceUrl) return;
@@ -877,23 +975,42 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // and so the peer uses the host's ICE servers/policy rather than client input.
   useEffect(() => {
     setServerStreamSettings(null);
+    setServerViewerTransports(null);
+    setStreamMetadataFailed(false);
     if (!active || !baseUrl) return;
 
     let cancelled = false;
     let polling = false;
     let controller: AbortController | null = null;
     const url = deviceApiUrl(baseUrl, "/api", targetDevice);
+    const markFailed = () => {
+      if (!cancelled) setStreamMetadataFailed(true);
+    };
+    const fallbackTimer = setTimeout(markFailed, STREAM_METADATA_FALLBACK_MS);
 
     const refresh = async () => {
       if (cancelled || polling) return;
       polling = true;
       controller = new AbortController();
+      const startedAt = performance.now();
       try {
-        const response = await sessionFetch(url, { cache: "no-store", signal: controller.signal });
-        if (!response.ok) return;
+        // A deadline on the fetch and its body read, as in `useIosDevice`, so a stalled read
+        // cannot hold `polling` and block every later poll.
+        const response = await sessionFetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(STREAM_METADATA_FALLBACK_MS),
+          ]),
+        });
+        if (!response.ok) {
+          markFailed();
+          return;
+        }
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: "websocket" };
+        const nextViewerTransports = parseServeEmuViewerTransports(info.viewerTransports);
         const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
         setRecordingSnapshot((current) =>
           current.scope === deviceScope && current.status === recordingStatus
@@ -903,6 +1020,21 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
         );
+        setServerViewerTransports((current) =>
+          JSON.stringify(current) === JSON.stringify(nextViewerTransports)
+            ? current
+            : nextViewerTransports,
+        );
+        const reports = info.pose !== undefined;
+        const orientation = parseAndroidOrientation(info.pose);
+        setOrientationReport((current) =>
+          current?.scope === deviceScope &&
+          current.reports === reports &&
+          current.orientation === orientation
+            ? current
+            : { scope: deviceScope, reports, orientation },
+        );
+        acceptOrientationReport(orientation, startedAt);
         const width = Number(info.size?.width);
         const height = Number(info.size?.height);
         if (width > 0 && height > 0) {
@@ -912,6 +1044,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
       } catch {
         // Device startup and temporary disconnects are expected; keep polling.
+        markFailed();
       } finally {
         polling = false;
         controller = null;
@@ -922,14 +1055,48 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const timer = setInterval(refresh, STREAM_METADATA_POLL_MS);
     return () => {
       cancelled = true;
+      clearTimeout(fallbackTimer);
       clearInterval(timer);
       controller?.abort();
     };
-  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, acceptOrientationReport]);
 
-  const webRtcRequested = streamMode === "webrtc";
-  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
-  const useWebRtc = webRtcRequested && serverStreamSettings?.transport === "webrtc";
+  const { h264: h264Available, webrtc: webRtcAvailable } = androidModeAvailability(
+    serverStreamSettings,
+    serverViewerTransports,
+  );
+  // Keyed on the flags, so an ICE-only change does not notify capability subscribers.
+  const modeAvailability = useMemo<Record<DeviceStreamMode, boolean>>(
+    () => ({ mjpeg: false, h264: h264Available, webrtc: webRtcAvailable }),
+    [h264Available, webRtcAvailable],
+  );
+  // Until `/api` answers, the transport is unknown: a `--transport webrtc` host refuses a video
+  // WebSocket, so no video starts before then. After that, preserve a supported viewer choice and
+  // map an unavailable one to a mode the host offers. If `/api` fails or does not answer in time,
+  // H.264 opens the video WebSocket as it did before the list existed. WebRTC keeps waiting,
+  // because it needs the host's ICE settings from `/api`.
+  const streamMetadataMissing = serverStreamSettings === null;
+  const waitingForStreamMetadata =
+    streamMetadataMissing && (streamMode === "webrtc" || !streamMetadataFailed);
+  const resolvedStreamMode = streamMetadataMissing
+    ? streamMode
+    : resolveDeviceStreamMode(streamMode, modeAvailability);
+  const useWebRtc = resolvedStreamMode === "webrtc" && serverStreamSettings?.transport === "webrtc";
+  // @ref LLP 0015#screen-sessions — a new device, server, token, or media element loads again
+  const screenSessionKey = active
+    ? JSON.stringify([baseUrl, targetDevice, token, useWebRtc ? "video" : "canvas"])
+    : null;
+  const { status, setStatus, error, setError } = useSessionStatus(screenSessionKey);
+
+  // Feed the switch tracker from the connection status: a live stream that
+  // drops is the old session closing; the next live frame is the replacement.
+  useEffect(() => {
+    const live = status === "streaming";
+    const wasLive = streamLiveRef.current;
+    streamLiveRef.current = live;
+    if (wasLive && !live) dispatchStreamSwitch({ type: "stream-interrupted" });
+    else if (!wasLive && live) dispatchStreamSwitch({ type: "stream-live" });
+  }, [dispatchStreamSwitch, status]);
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: "reset-video" });
   }, [send]);
@@ -947,31 +1114,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     )
       return;
     // Keep an existing poster until fresh video paints, but still detach a
-    // replacement stream that failed before its first paint.
-    if (!video.poster && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-      try {
-        const snapshot = document.createElement("canvas");
-        snapshot.width = video.videoWidth;
-        snapshot.height = video.videoHeight;
-        const context = snapshot.getContext("2d");
-        if (context) {
-          context.drawImage(video, 0, 0);
-          const poster = snapshot.toDataURL("image/png");
-          // Empty canvas serialization returns data:, rather than an image.
-          if (poster && poster !== "data:,") video.poster = poster;
-        }
-      } catch {
-        // Canvas capture is best effort; peer teardown still proceeds.
-      }
-    }
-    // Without a poster, keep the browser's existing frame attachment as a fallback.
-    if (video.poster) video.srcObject = null;
+    // replacement stream that failed before its first paint. Without a
+    // poster, keep the browser's existing frame attachment as a fallback.
+    if (preserveVideoFrame(video)) video.srcObject = null;
   }, [deviceScope, webRtcVideoElement]);
   // Source switches are committed on the server before the first replacement paint.
   const webRtcCaptureSource = pendingStreamSourceRef.current ?? streamSource;
   const {
     stream: webRtcStream,
     error: webRtcError,
+    retrying: webRtcRetrying,
     markFrameDecoded: markWebRtcFrameDecoded,
     restart: restartWebRtcStream,
     streamStats,
@@ -1018,7 +1170,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
-      if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current)) return;
+      if (
+        recordingLockedRef.current ||
+        streamSourceLoadingRef.current ||
+        isStreamSwitchPending(streamSwitchRef.current)
+      ) {
+        return;
+      }
       const write = writeStreamSettings(patch);
       if (!write || !useWebRtc) return;
       const request = ++streamSourceRequestRef.current;
@@ -1070,7 +1228,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       // Its bounded frame wait can outlast the ordinary reconnect grace period.
       setStatus("reconnecting");
       setError(null);
-    } else if (webRtcError) {
+    } else if (webRtcError && (webRtcWasLive || !webRtcRetrying)) {
+      // Before the first frame, a transport retry is no error: it stays `connecting` below.
       setStatus("error");
       setError(webRtcError);
     } else if (webRtcInputError) {
@@ -1083,11 +1242,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   }, [
     useWebRtc,
     webRtcError,
+    webRtcRetrying,
     webRtcGraceExpired,
     webRtcInputError,
     webRtcLive,
     webRtcWasLive,
     streamSwitch.phase,
+    setError,
+    setStatus,
   ]);
 
   // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — resume only the owned surface
@@ -1203,7 +1365,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus("idle");
       return;
     }
-    if (waitingForWebRtcMetadata) {
+    if (waitingForStreamMetadata) {
       setStatus("connecting");
       setError(null);
       return;
@@ -1470,7 +1632,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               graceTimer = null;
               if (cancelled || painted) return;
               setStatus("error");
-              setError((prev) => prev ?? "Disconnected — retrying…");
+              setError((prev) => prev ?? STREAM_DISCONNECTED_ERROR);
             }, STREAM_RECONNECT_GRACE_MS);
           }
         }
@@ -1535,7 +1697,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Reconnect only when the target device or server changes — not on every
     // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc, socketProtocols]);
+  }, [active, baseUrl, targetDevice, waitingForStreamMetadata, useWebRtc, socketProtocols]);
 
   // ── WebRTC input WebSocket ──
   // Video travels over the peer connection, but low-latency JSON input and
@@ -1615,7 +1777,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } catch {}
       if (wsRef.current === ws) wsRef.current = null;
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
+  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols, setError]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -2060,14 +2222,18 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, resetRead, settleRead]);
 
-  const webRtcAvailable = serverStreamSettings?.transport === "webrtc";
   const streamCapabilities = useMemo<DeviceStreamCapabilities>(
     () => ({
-      modeAvailability: { mjpeg: false, h264: true, webrtc: webRtcAvailable },
+      modeAvailability,
       httpCodecs: ANDROID_STREAM_CODECS,
       webRtcCodecs: ANDROID_STREAM_CODECS,
     }),
-    [webRtcAvailable],
+    [modeAvailability],
+  );
+  const { fold, foldCapabilities } = useAndroidFold(
+    active && baseUrl ? deviceApiUrl(baseUrl, "/api/fold", targetDevice) : null,
+    sessionFetch,
+    recordingControlsLocked,
   );
   const accessibilityAvailable = accessibilityLoader !== null;
   const permissionsAvailable = permissionsBackend !== null;
@@ -2083,23 +2249,40 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettings: ANDROID_STREAM_SETTING_CAPABILITIES,
       // serve-emu has no clipboard API.
       clipboard: false,
+      orientation: orientationCapabilities,
+      fold: foldCapabilities,
     }),
-    [cameraSupported, accessibilityAvailable, locationCapabilities, permissionsAvailable],
+    [
+      cameraSupported,
+      accessibilityAvailable,
+      locationCapabilities,
+      permissionsAvailable,
+      orientationCapabilities,
+      foldCapabilities,
+    ],
   );
+
+  const presentation = useScreenPresentation(screenSessionKey, status, error);
 
   return {
     platform: "android",
+    fold,
+    displays: null,
+    deviceModelUrl: null,
+    displayCorners: null,
     // The transport can stay live while the server stages new stream settings.
     // Show the pending change immediately without feeding it back into the
     // switch tracker, which must observe the actual interruption and recovery.
     status:
-      status === "streaming" && (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
+      presentation.status === "streaming" &&
+      (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
         ? "reconnecting"
-        : status,
-    error,
+        : presentation.status,
+    error: presentation.error,
+    framePresented: presentation.framePresented,
     // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
     inputError: webRtcInputError,
-    screen,
+    screen: orientedScreen,
     fps,
     devices,
     logs,
@@ -2137,12 +2320,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
     updateStreamSettings,
     streamSource,
-    screenRecording:
-      recordingSnapshot.scope === deviceScope
-        ? recordingSnapshot.status
-        : active
-          ? "unknown"
-          : null,
+    screenRecording,
+    recordingLock,
+    recordingControlsLocked,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
     setStreamSource,
@@ -2164,6 +2344,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     pressButton,
     reload,
     rotate,
+    orientation,
+    orientationPending,
+    orientationError,
+    orientationUnavailable: recordingOrientationUnavailable(recordingLock),
+    setOrientation,
     screenshot,
     appearance,
     setAppearance,

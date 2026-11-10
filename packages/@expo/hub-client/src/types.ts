@@ -19,38 +19,240 @@
 
 import { type CSSProperties } from "react";
 
+import { type FoldControlCommand, type FoldPose } from "./fold";
+
 export type DevicePlatform = "ios" | "android";
 
 /** Viewer-selected transport for the active device stream. */
 export type DeviceStreamMode = "mjpeg" | "h264" | "webrtc";
 
 /**
- * Lifecycle of a single connection:
+ * Lifecycle of one screen session. A session is one connection (server,
+ * device, token) with one surface (the flat screen, or the separate displays)
+ * and one media element kind; changing any of them starts a new session.
  *   idle         — nothing to connect to (no base URL / disabled)
- *   connecting   — socket opening, no frames yet
- *   reconnecting — a stream that was live lost its transport and is being
- *                  re-established; the last frame stays on screen meanwhile
- *                  (for example while serve-emu swaps the Android capture
- *                  source). Becomes `error` only when the outage outlives the
- *                  reconnect grace period. Android only.
+ *   connecting   — the session has not presented a frame yet. Consumers show
+ *                  loading UI. Becomes `error` after 30 s without a frame,
+ *                  while the client keeps retrying.
+ *   reconnecting — the session presented a frame and its stream is being
+ *                  re-established, for example after a WebRTC reconnect, a
+ *                  helper restart, or an Android capture-source switch. The
+ *                  last frame stays on screen meanwhile; consumers show no
+ *                  loading UI. Android reports `error` when the outage
+ *                  outlives its reconnect grace period; iOS after 30 s. The
+ *                  client keeps retrying in both cases.
  *   streaming    — frames are flowing
- *   error        — connection failed or dropped
+ *   error        — the connection failed, or its first frame did not come in time
  */
 export type ConnectionStatus = "idle" | "connecting" | "reconnecting" | "streaming" | "error";
 
-/** Device orientation, as reported by serve-sim's stream config. */
+/** How the device faces: serve-sim's stream config, or serve-emu's display rotation. */
 export type DeviceOrientation =
   | "portrait"
   | "portrait_upside_down"
   | "landscape_left"
   | "landscape_right";
 
-/** Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio. */
+/**
+ * A display of a foldable device, named by its role so that every platform
+ * uses the same identity: `cover` is the outside display that works while the
+ * device is closed, `inner` the main display that folds.
+ */
+export type DeviceDisplayId = "cover" | "inner";
+
+/**
+ * Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio.
+ * The same object names the display that it describes, so a size, an
+ * orientation, and a display always change together.
+ */
 export interface ScreenSize {
   width: number;
   height: number;
-  /** Last known orientation, when the backend reports it (serve-sim). */
+  /** Last known orientation, when the backend reports it (serve-sim, serve-emu). */
   orientation?: DeviceOrientation;
+  /**
+   * True when frames already show the display as it faces (serve-emu), so the client never
+   * turns the video. serve-sim can send raw portrait frames for a turned device instead.
+   */
+  framesUpright?: boolean;
+  /** Native input setup failed; video can continue without touch or keyboard. */
+  inputUnavailable?: boolean;
+  /**
+   * The display that this size and orientation describe, as native readback
+   * confirmed it. Set only for a foldable that reports it (the iPhone Duo).
+   */
+  display?: DeviceDisplayId;
+}
+
+/**
+ * Corner radii of the shown display's glass as the viewer sees it, clockwise
+ * from top left, each a fraction of the displayed width. serve-sim reads them
+ * from Xcode's DeviceKit profile; the iPhone Duo's cover, for example, is
+ * nearly square at the hinge and round at the outer edge.
+ */
+export interface DisplayCornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
+/**
+ * The fold controls a device offers; `false` for a device without them. A
+ * device without a hinge, a device whose hinge the backend cannot move, and
+ * a device whose fold state is not reported yet all report `false`.
+ */
+export type DeviceFoldCapabilities =
+  | false
+  | Readonly<{
+      /**
+       * The hinge angles that the device accepts, in degrees, as for
+       * {@link DeviceFold.angle}. `false` when the device applies poses only.
+       */
+      angle: Readonly<{ min: number; max: number }> | false;
+      /**
+       * The named poses that the device can apply, each with the hinge angle
+       * that it sets. A pose that is not listed is not offered.
+       */
+      poses: Readonly<Partial<Record<FoldPose, Readonly<{ angle: number }>>>>;
+      /** A persistent table state (Xcode's Table Mode); `DeviceFold.tableMode` is then present. */
+      tableMode: boolean;
+    }>;
+
+/**
+ * One step of a fold command, or a rotation, as the client handles it. Each
+ * event carries the command object that `setControl` queued, so a listener can
+ * match a step to its request. A command can end without an event of its own:
+ * while it waits in the queue, a newer command of the same control replaces it,
+ * and a pose command clears the whole queue. Such a command gets `requested`
+ * and nothing after it.
+ */
+export type FoldCommandEvent =
+  /** `setControl` queued the command; `angle`, `pose`, and `tableMode.enabled` already preview it. */
+  | { type: "requested"; command: FoldControlCommand }
+  /**
+   * The command went to the device. `display` is the display that the command
+   * makes active, when the command alone decides it.
+   */
+  | { type: "sent"; command: FoldControlCommand; display?: DeviceDisplayId }
+  /** The device answered the command. A rejection is followed by `failed`. */
+  | { type: "acknowledged"; command: FoldControlCommand; ok: boolean }
+  /**
+   * The preview of the acknowledged commands ends, and the fold shows what the
+   * device reports again. `observed` is true when the device reported the
+   * requested state. It is false when the iOS simulator's native readback did
+   * not reach that state within 500 ms of the command's config: the fold then
+   * shows the readback, not the request.
+   */
+  | { type: "confirmed"; observed: boolean }
+  /** A command failed, `error` says why, and the client dropped every unconfirmed command. */
+  | { type: "failed"; error: string }
+  /**
+   * `setControl` refused a command that `capabilities.fold` does not offer,
+   * before any `requested`. Commands already queued or sent go on.
+   */
+  | { type: "rejected"; command: FoldControlCommand; error: string }
+  /**
+   * The client left the helper session that owned the commands, for example
+   * for another device or a replaced helper at the same URL. It dropped every
+   * unconfirmed command without an error, and forgot `physical.pose`.
+   */
+  | { type: "reset" }
+  /**
+   * The viewer rotated the device, which clears its named pose, by
+   * `quarterTurns` (clockwise positive): one for Rotate, or the turns to the
+   * orientation that the viewer chose.
+   */
+  | { type: "rotated"; quarterTurns: number };
+
+/** The persistent table state of {@link DeviceFold}, present when `capabilities.fold.tableMode`. */
+export interface DeviceFoldTableMode {
+  /**
+   * The pending request while a command awaits confirmation, then the setting
+   * that the device reports; undefined until reported.
+   */
+  enabled?: boolean;
+  /** Whether the current pose allows it to be turned on; undefined until reported. */
+  available?: boolean;
+}
+
+/**
+ * How the device is held, apart from its hinge angle. Present when the backend
+ * reports it: the iOS adapter reports it together with `capabilities.fold`.
+ * Android emulators have no physical stance to report.
+ */
+export interface DeviceFoldPhysical {
+  /**
+   * The pose whose stance the device holds, which a later angle change keeps
+   * (Laptop stays on the table). Undefined follows `pose`; null is unknown,
+   * for example after a rotation.
+   */
+  pose?: FoldPose | null;
+  /**
+   * Lying face down with Table Mode, which makes the cover display active.
+   * Undefined while the backend has not reported enough to tell: a consumer
+   * then keeps what it last knew instead of treating the device as face up.
+   */
+  faceDown?: boolean;
+}
+
+/**
+ * Fold state and controls of a foldable device. Angles and poses show the
+ * pending request until its `confirmed` event, then the values that the
+ * device reports, which need not match the request. `DeviceClient.capabilities.fold` says which commands the
+ * device accepts.
+ */
+export interface DeviceFold {
+  /**
+   * Hinge angle in degrees, between the display sides of the two halves: 180
+   * is flat, a smaller angle folds the displays inward (0 is shut), and a
+   * fold-out hinge goes past 180. Undefined until reported.
+   */
+  angle?: number;
+  /** Named pose in effect, null for a custom angle, undefined until reported. */
+  pose?: FoldPose | null;
+  /** A fold command awaits the device's acknowledgement. */
+  pending: boolean;
+  /** The last failed fold command, cleared when the next one starts. */
+  error: string | null;
+  /** Present exactly when `capabilities.fold.tableMode` is true. */
+  tableMode?: DeviceFoldTableMode;
+  /** Present when the backend reports how the device is held. */
+  physical?: DeviceFoldPhysical;
+  /**
+   * Send a fold command that `capabilities.fold` offers. A command that it does
+   * not offer never reaches the device: `error` says why, and `observe` gets
+   * `rejected`. Commands already queued or sent go on.
+   */
+  setControl: (command: FoldControlCommand) => void;
+  /**
+   * Follow every fold command and rotation of this client, whichever control
+   * started it, as {@link FoldCommandEvent}s. Returns a function that stops
+   * the listener. Absent when the backend reports no command lifecycle.
+   */
+  observe?: (listener: (event: FoldCommandEvent) => void) => () => void;
+}
+
+/**
+ * One display of a device that streams each display on its own, such as the
+ * iPhone Duo's cover and inner display.
+ */
+export interface DeviceDisplay {
+  id: DeviceDisplayId;
+  /**
+   * The display that the device presents. The fold state elects it, so it
+   * follows a requested fold at once. `screen.display` is the display that
+   * native readback confirmed, and input addressed to a display waits for it.
+   */
+  active: boolean;
+  /**
+   * Ref callback for this display's paint target, an element of the client's
+   * {@link DeviceClient.videoKind}, as for {@link DeviceClient.attachVideo}.
+   * While any display has an element, the client streams each attached display
+   * and parks the flat stream; `status`, `error`, `fps`, and `streamStats` then
+   * follow the active display. Detaching every display resumes the flat stream.
+   */
+  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -229,6 +431,32 @@ export interface DeviceGeoFix {
  */
 export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
+/**
+ * Orientations that `setOrientation` can turn the device to. `false` when the backend cannot
+ * turn the device to one pose or cannot report the pose it shows (an older serve-emu server);
+ * `rotate` still works where the backend supports it.
+ */
+export type DeviceOrientationCapabilities =
+  | false
+  | Readonly<{ orientations: readonly DeviceOrientation[] }>;
+
+/**
+ * Why an orientation change cannot go out now. New reasons can be added, so handle unknown
+ * values.
+ *
+ * - `"recording-status-unknown"` and `"recording"` come from {@link DeviceClient.recordingLock}
+ *   (`"status-unknown"` and `"recording"`). A call is dropped silently: no request, no
+ *   `orientationPending` and no `orientationError`.
+ * - `"input-unavailable"`: serve-sim sends the pose over the helper's input socket, which is not
+ *   admitted or reports that the simulator cannot take input. The video stream does not matter.
+ *   A call still tries: the input queue keeps it for a short time and then reports an
+ *   `orientationError`.
+ */
+export type DeviceOrientationUnavailableReason =
+  | "recording-status-unknown"
+  | "recording"
+  | "input-unavailable";
+
 /** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
 export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
 
@@ -387,6 +615,10 @@ export interface DeviceCapabilities {
   permissions: boolean;
   /** Text clipboard actions, in order with keyboard input. */
   clipboard: DeviceClipboardCapabilities;
+  /** Orientations that `setOrientation` accepts. */
+  orientation: DeviceOrientationCapabilities;
+  /** The fold commands that `DeviceClient.fold` accepts. */
+  fold: DeviceFoldCapabilities;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -451,6 +683,12 @@ export type DeviceAppearance = "light" | "dark";
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
   phase: "begin" | "move" | "end";
+  /**
+   * The {@link DeviceDisplay} whose coordinates `x` and `y` use. Without it, the
+   * sample addresses the flat stream. A gesture that begins on a display other
+   * than `screen.display` is dropped until its end.
+   */
+  display?: DeviceDisplayId;
   /** An end that abandons unsent touch intent, e.g. conversion to a two-finger gesture. */
   cancelled?: boolean;
   /** 0..1 across the screen width. */
@@ -464,6 +702,8 @@ export interface TouchSample {
 /** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
 export interface MultiTouchSample {
   phase: "begin" | "move" | "end";
+  /** The display both points address, as for {@link TouchSample.display}. */
+  display?: DeviceDisplayId;
   a: { x: number; y: number };
   b: { x: number; y: number };
 }
@@ -497,6 +737,8 @@ export type HidKeyEvent = { type: "down" | "up"; usage: number };
  * device pans the view beneath it (e.g. a sheet rather than the map behind it).
  */
 export interface ScrollSample {
+  /** The display the pan addresses. A scroll on a display other than `screen.display` is dropped. */
+  display?: DeviceDisplayId;
   dx: number;
   dy: number;
   x: number;
@@ -565,6 +807,9 @@ export interface DeviceConnectionOptions {
 /** Which element the implementation paints into. */
 export type VideoSurfaceKind = "canvas" | "img" | "video";
 
+/** Why {@link DeviceClient.recordingLock} locks the controls. */
+export type DeviceRecordingLockReason = "status-unknown" | "recording";
+
 export type DeviceScreenRecordingStatus =
   | "unknown"
   | "waiting"
@@ -606,6 +851,15 @@ export interface DeviceClient {
   status: ConnectionStatus;
   error: string | null;
   /**
+   * Whether the current screen session (see {@link ConnectionStatus}) has
+   * presented a frame. It stays true while the session reconnects, and it can
+   * be true with `error` after the stream failed. Until it is true, the media
+   * element shows nothing of this session; it can still hold a previous
+   * session's frame. Outside `idle` and `error`, it is false exactly while
+   * `status` is `connecting`.
+   */
+  framePresented: boolean;
+  /**
    * An input-channel or hardware-keyboard setup error while video is available,
    * or null. Cleared when the input channel or setup recovers. iOS: serve-sim
    * refused the input socket (too many clients, or a full input queue) or its
@@ -616,8 +870,52 @@ export interface DeviceClient {
   inputError: string | null;
   /** Host recording status; unknown until metadata loads, null when no recording was requested. */
   screenRecording: DeviceScreenRecordingStatus | null;
+  /**
+   * Why a change could end the host recording now, or null when nothing can break it:
+   * `"status-unknown"` until the first recording status arrives, `"recording"` while it is
+   * waiting, recording or finalizing. Calls to `rotate`, `setOrientation`,
+   * `updateStreamSettings`, `setStreamSource`, `setGrpcImageMode`, `setGrpcEncoder` and
+   * `setGrpcInputSource` are silently ignored while it is set, so UIs can disable those controls
+   * and explain why from this one value. An orientation choice that was still waiting when the
+   * lock started is dropped the same way: it is cleared from `orientation`, without an
+   * `orientationError`. Only Android reports recordings today.
+   *
+   * Temporary: Android's recording restarts with the encoder. Once recordings survive rotation
+   * and stream changes, it is always null.
+   */
+  recordingLock: DeviceRecordingLockReason | null;
+  /**
+   * True while {@link recordingLock} is set. Once recordings survive rotation and stream
+   * changes, it is always false and then deprecated.
+   */
+  recordingControlsLocked: boolean;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
+  /**
+   * Fold state and controls of a foldable device, such as the iPhone Duo; null
+   * for a device that does not fold. `capabilities.fold` lists the commands
+   * that it accepts.
+   */
+  fold: DeviceFold | null;
+  /**
+   * The displays of a device that streams each display on its own, in the
+   * device's order; null for a device with one stream.
+   */
+  displays: readonly DeviceDisplay[] | null;
+  /**
+   * URL of a 3D model of this device that the backend serves, with this
+   * connection's session token. For the iPhone Duo it is Xcode's DeviceKit
+   * USDZ from the host's Xcode. Null when the backend has no model for the
+   * device.
+   */
+  deviceModelUrl: string | null;
+  /**
+   * The glass corners of the display that `screen` describes, for the flat
+   * view, oriented with the device; null keeps the presentation's generic
+   * shape for the platform. Set for the iPhone Duo, whose displays the
+   * generic iPhone shape cannot express.
+   */
+  displayCorners: DisplayCornerRadii | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
   /** Running devices the server exposes (may be a placeholder list). */
@@ -839,12 +1137,46 @@ export interface DeviceClient {
    */
   reload: () => void;
   /**
-   * Rotate the device. serve-sim sets the next orientation in the
-   * counterclockwise cycle over the helper's orientation channel; serve-emu
-   * locks the opposite portrait/landscape orientation via `POST
-   * /api/orientation`. A no-op if nothing is connected.
+   * Rotate the device to the next pose in `DEVICE_ORIENTATIONS` order, or clockwise on an
+   * iPhone Duo, as Xcode's Device Hub turns it. serve-sim sends it
+   * over the helper's orientation channel; serve-emu locks it via `POST /api/orientation`,
+   * like {@link setOrientation}. A serve-emu server that does not report its pose gets the
+   * opposite of the frame's portrait or landscape aspect. A no-op if nothing is connected.
    */
   rotate: () => void;
+  /**
+   * The pose the device is turned to: the last choice from {@link setOrientation} while it is
+   * pending and until the backend reports again, then the backend's report. Null when the
+   * backend reports no pose, also after a {@link rotate}; `capabilities.orientation` is then
+   * `false`. Unlike `screen.orientation`, it can lead the video frames.
+   */
+  orientation: DeviceOrientation | null;
+  /**
+   * True while the backend has not answered a {@link setOrientation} choice: serve-sim has not
+   * sent it yet, or serve-emu has not answered its `POST /api/orientation`.
+   */
+  orientationPending: boolean;
+  /** Last failed orientation change, cleared when the next one starts. */
+  orientationError: string | null;
+  /**
+   * Why {@link rotate} and {@link setOrientation} cannot turn the device now, or null when they
+   * can. Disable orientation controls while it is set. Android reports
+   * `"recording-status-unknown"` or `"recording"` while {@link recordingLock} is set, and those
+   * calls are dropped silently. iOS reports `"input-unavailable"` while the helper input socket
+   * cannot take input, and those calls still try and can fail with an `orientationError`. See
+   * {@link DeviceOrientationUnavailableReason} for each reason.
+   */
+  // @ref LLP 0013#orientation — iOS sends the pose over the input socket, Android over HTTP
+  orientationUnavailable: DeviceOrientationUnavailableReason | null;
+  /**
+   * Turn the device to one orientation, and show it in {@link orientation} at once.
+   * serve-sim sends it over the helper's orientation channel, and a later {@link rotate}
+   * continues the cycle from it; serve-emu locks the matching user rotation via
+   * `POST /api/orientation`, one request at a time, so the last choice wins and only its
+   * answer or failure is shown. Ignores values missing from `capabilities.orientation`. A
+   * foreground app that does not support the orientation can keep its layout.
+   */
+  setOrientation: (orientation: DeviceOrientation) => void;
   /**
    * Capture a still PNG of the device via the backend's `POST /api/screenshot`
    * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving
@@ -886,7 +1218,10 @@ export interface DeviceClient {
 /** A platform implementation of the connection half of the interface. */
 export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
 
-/** The client fields read by DeviceScreen. Full DeviceClient values remain valid inputs. */
+/**
+ * The client fields read by DeviceScreen, including the fold for its
+ * Option+Shift pose shortcuts. Full DeviceClient values remain valid inputs.
+ */
 export type DeviceScreenClient = Pick<
   DeviceClient,
   | "videoKind"
@@ -896,11 +1231,13 @@ export type DeviceScreenClient = Pick<
   | "cancelInput"
   | "sendScroll"
   | "sendKey"
+  | "fold"
   | "pasteText"
   | "capabilities"
   | "screen"
   | "status"
   | "error"
+  | "framePresented"
   | "inputError"
 >;
 

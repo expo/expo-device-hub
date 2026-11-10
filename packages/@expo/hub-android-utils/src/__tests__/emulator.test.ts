@@ -61,6 +61,7 @@ describe("buildEmulatorArgs", () => {
       "expo-emu-host-0",
       "-no-audio",
       "-no-window",
+      "-no-metrics",
       "-gpu",
       "auto",
       "-no-boot-anim",

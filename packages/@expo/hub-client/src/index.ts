@@ -8,6 +8,9 @@
  * - {@link useDeviceScreenClient} reads the inputs needed by {@link DeviceScreen}.
  * - {@link KeyboardCapture} + {@link useCoarsePointer} — phone-keyboard typing
  *   for touch clients, feeding `DeviceClient.sendKeyEvents`.
+ * - {@link useDeviceKeyboard} + {@link listenForInputCancellation} — the
+ *   keyboard and input-release handling of {@link DeviceScreen}, for a
+ *   consumer's own device surface, such as a 3D model fed by `displays`.
  *
  * See `./types.ts` for the full contract.
  */
@@ -15,7 +18,12 @@
 export * from "./types";
 export { resolveDeviceStreamMode } from "./stream-mode";
 export { areRecordingControlsLocked } from "./screen-recording";
+export { SCREEN_LOAD_TIMEOUT_MS } from "./screen-presentation";
+export { useVisibleTimeout } from "./visible-timeout";
 export { DeviceScreen } from "./DeviceScreen";
+export { useDeviceKeyboard } from "./useDeviceKeyboard";
+export { listenForInputCancellation } from "./input-cancellation";
+export { FOLD_POSES, type FoldControlCommand, type FoldPose } from "./fold";
 export {
   DeviceClientProvider,
   useDeviceClientSelector,
@@ -30,7 +38,13 @@ export {
   agentInteractionEndMs,
   agentInteractionPointsAt,
 } from "./agent-interaction-animation";
-export { displayScreen, streamGeometry } from "./orientation";
+export {
+  DEVICE_ORIENTATIONS,
+  displayDeltaForRawDelta,
+  displayPointForRawPoint,
+  displayScreen,
+  streamGeometry,
+} from "./orientation";
 export { useIosDeviceClient } from "./useIosDevice";
 export { useAndroidDeviceClient } from "./useAndroidDevice";
 export {

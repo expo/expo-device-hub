@@ -1,5 +1,50 @@
 # expo-device-hub
 
+## 0.22.1
+
+### Patch Changes
+
+- 6e4cd83: Keep the device sidebar and inspector in single-device mode, and hide all device lifecycle controls there: boot, create, Shut down, Start and Remove.
+
+## 0.22.0
+
+### Minor Changes
+
+- fced3d6: Allow foldable Android emulators to set hinge angles from 0 to 180 degrees through `/api/fold`, with device-range validation and confirmed readback. Fold status now includes the hinge range, and ambiguous rounded readings get time to settle before an angle write answers.
+- fced3d6: Expose Android emulator folding through `client.fold` and `capabilities.fold`, with angle controls and closed, book, and open presets in the existing dashboard. Controls honor recording locks and remain hidden unless the emulator reports a supported 0 to 180 degree hinge range.
+
+### Patch Changes
+
+- 0d95b3d: Try the Android scrcpy server download up to 3 times on a temporary failure, and let `SERVE_EMU_SCRCPY_BASE_URL` point the download at a mirror that keeps the GitHub release layout. If the mirror fails, the download falls back to GitHub.
+
+## 0.21.0
+
+### Minor Changes
+
+- c27ada7: Show one spinner while a device screen loads, on the device's own surface instead of a black screen, for iOS and Android and for the iPhone Duo's 2D and 3D previews. The status pill says "Loading" until the screen, or the 3D model with its first display frame, appears. A stream that drops after it loaded keeps its last frame and shows "Reconnecting" without a spinner. Stream errors appear as one notice over the screen, also over the 3D preview. A 3D model that does not load in 30 seconds while the tab is visible falls back to the flat screen until you select 3D again or switch the device.
+- 480a9cb: In a large window, the iPhone Duo's 3D model is about as large as the 2D preview, which uses the same 480 px short-side cap as other devices. In a smaller window the 3D stage shrinks to the stream area between the device name and the toolbar, and the model keeps a 32 px margin on each side, so there it is 64 px smaller than the 2D preview. Folding, rotating, or switching displays never resizes it, and the 2D preview keeps its size.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+
+## 0.20.0
+
+### Minor Changes
+
+- 91a29eb: Add an Orientation select to the dashboard's Device options, which appears once the client has a pose, from a pick or a report, and shows a pick right away. The select and Rotate are unavailable during an Android recording, and on iOS while the simulator cannot take input.
+- e262c36: serve-emu's `POST /api/orientation` now also accepts `portrait`, `landscape_left`, `portrait_upside_down` and `landscape_right`, counted from the natural display so tablets are named right, and returns the locked `pose`; `landscape` stays as an alias for `landscape_right`. `GET /api` and `/health` now report the shown pose as `pose`.
+- 8589ebf: serve-emu's `--transport webrtc` now makes WebRTC the only video transport, as serve-sim's does. A video WebSocket is refused with `stream_transport_locked` (HTTP 409 on the standalone server, close code 1008 through `createRouter`), the input-only `/ws?video=0` socket still works, and `/api` lists only `webrtc` in `viewerTransports.available`. The default `--transport websocket` still lets each viewer choose WebSocket or WebRTC.
+
+### Patch Changes
+
+- 0c8f2a8: The Hub's Android device frame now follows the pose the emulator reports, including upside down and both landscape sides.
+- a6b40fa: Add `recordingLock`, the reason a running Android recording locks rotation and stream changes, and `recordingControlsLocked`; calls to the locked controls are silently ignored meanwhile. `areRecordingControlsLocked` is deprecated in favor of `recordingLock`. Custom `DeviceClient` implementations and mocks must add these required members.
+- 20cc264: Fit the Hub viewer above the phone keyboard, add mobile keyboard and full-screen controls, group the inspector toggle with those controls, and give the device more room on small screens.
+- 20cc264: Show the device inspector in the left sidebar, below the device lists, and remove the right sidebar. Remove the toolbar Theme button, move the phone Keyboard toggle into the Clipboard group, and pin the phone Full screen button to the top-right corner.
+- 92f86cd: Disable Android emulator usage metrics collection explicitly when launching emulators, avoiding the metrics consent warning and future blocking prompt.
+
 ## 0.19.1
 
 ### Patch Changes

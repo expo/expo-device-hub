@@ -1,4 +1,4 @@
-import { withHostActionDeadline } from "./host-actions-utils";
+import { createSerialQueue, withHostActionDeadline } from "./host-actions-utils";
 import { timeStartup } from "./startup-timing";
 import { RECORDING_LEASE_MS } from "./recording-timeouts";
 import { US_KEYBOARD_MAP } from "./text-to-keys";
@@ -321,6 +321,7 @@ export class DeviceSession {
   private tableMode?: boolean;
   private hingePhysicalOrientation?: HingePhysicalOrientation;
   private hingeControlUpdate: Promise<void> = Promise.resolve();
+  private hingeScreenTransition?: { screenId: 1 | 3; expiresAt: number };
   private hingeControlled = false;
   private hingeRotated = false;
   private nativeScreen?: NativeScreenInfo;
@@ -399,10 +400,35 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(this.serverInput, new Set());
   }
 
-  /** Use the same native panel election as the live stream, including external folds. */
   async activeScreenId(): Promise<number> {
     await withHostActionDeadline(this.start(), "Screenshot capture startup");
-    return await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    const id = await withHostActionDeadline(this.capture.activeScreenId(), "Active display read");
+    await this.waitForCapture();
+    if (this.rebootSuspended) throw new Error("Screenshot capture is rebooting");
+    return id;
+  }
+
+  private readonly queueScreenshot = createSerialQueue();
+
+  screenshot(screenID: number, timeoutMs?: number, maxWidth = 0): Promise<Uint8Array> {
+    let expired = false;
+    const work = withDeviceSessionTask(this, () =>
+      this.queueScreenshot(async () => {
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        await this.start();
+        await this.waitForCapture();
+        if (expired) throw new Error("Screenshot request expired before capture started");
+        const png = await this.capture.screenshot(screenID, maxWidth);
+        await this.waitForCapture();
+        return png;
+      }),
+    );
+    // Only the caller times out. Retain the capture lease and serial queue until native work
+    // settles, so cleanup cannot race it and a retry cannot allocate another native buffer.
+    return withHostActionDeadline(work, "Screenshot capture", timeoutMs).finally(() => {
+      expired = true;
+    });
   }
 
   /** Begin capture. Throws if the device isn't booted. Idempotent. */
@@ -1699,6 +1725,7 @@ export class DeviceSession {
           )
             return;
           if (!this.canRunInputControl(generation)) return;
+          this.hingeScreenTransition = undefined;
           this.hingeRotated = true;
           // Only startup hydration advertises hinge support, after it reads the angle.
           const supportsHingeAngle =
@@ -2143,6 +2170,24 @@ export class DeviceSession {
       )
         return false;
       this.hingeControlled = true;
+      const targetScreen =
+        command.control === "pose"
+          ? command.value === "closed" || command.value === "tent"
+            ? 1
+            : 3
+          : command.control === "angle"
+            ? command.value <= 54
+              ? 1
+              : command.value >= 55
+                ? 3
+                : undefined
+            : undefined;
+      this.hingeScreenTransition =
+        this.supportsHingeAngle === true &&
+        targetScreen !== undefined &&
+        this.nativeScreen?.screenId !== targetScreen
+          ? { screenId: targetScreen, expiresAt: Date.now() + 2000 }
+          : undefined;
       const ok =
         command.control === "pose"
           ? await this.hid.setHingePose(command.value)
@@ -2164,6 +2209,7 @@ export class DeviceSession {
         this.saveHingeState();
         this.broadcastConfig();
       } else {
+        this.hingeScreenTransition = undefined;
         // A failed sequence can still move the hinge or change the active
         // panel. Recover actual state before the failure ack permits a retry.
         this.hingePose = null;
@@ -2953,6 +2999,15 @@ export class DeviceSession {
     const hid = this.hid;
     const screen = await this.capture.screenSize();
     if (this.phase !== "running" || hid !== this.hid) return false;
+    // CoreDevice can report the destination orientation on the departing panel
+    // before display election completes. Publish its geometry only with its ID,
+    // so the flat view changes rotation and glass corners in the same config.
+    if (this.waitingForHingeScreen()) {
+      if (screen.screenId === this.hingeScreenTransition?.screenId)
+        this.hingeScreenTransition = undefined;
+      else if (screen.screenId === this.nativeScreen?.screenId) return false;
+      else this.hingeScreenTransition = undefined;
+    }
     const previous = this.nativeScreen;
     let changed = false;
     if (this.routedHid !== hid || !previous || screen.screenId !== previous.screenId) {
@@ -3000,10 +3055,18 @@ export class DeviceSession {
   }
 
   private updateScreenSize(width: number, height: number): void {
+    if (this.waitingForHingeScreen()) return;
     if (!width || !height || (width === this.width && height === this.height)) return;
     this.width = width;
     this.height = height;
     this.broadcastConfig();
+  }
+
+  private waitingForHingeScreen(): boolean {
+    if (this.hingeScreenTransition && Date.now() >= this.hingeScreenTransition.expiresAt) {
+      this.hingeScreenTransition = undefined;
+    }
+    return this.hingeScreenTransition !== undefined;
   }
 
   private broadcastConfig(): void {

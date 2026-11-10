@@ -8,6 +8,7 @@ import { PermissionsSection } from "./PermissionsSection";
 import { SIDEBAR_SECTION_INSET } from "./CollapsibleSection";
 import { CurrentAppSection } from "./CurrentAppSection";
 import { DeviceOptionsSection } from "./DeviceOptionsSection";
+import { type FoldPreviewOption } from "./FoldSettings";
 import { EventsSection } from "./EventsSection";
 import { LocationSection } from "./LocationSection";
 import { LogsSection } from "./LogsSection";
@@ -46,6 +47,8 @@ export type LogSidebarProps = {
   onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
+  /** Viewer-local 2D/3D choices for an iPhone Duo. */
+  foldPreview?: FoldPreviewOption;
 };
 
 /** Props that feed the inspector sections, without the column chrome. */
@@ -70,6 +73,7 @@ export function InspectorSections({
   onRemove,
   clipboardRequest,
   onClipboardRequestHandled,
+  foldPreview,
 }: InspectorSectionsProps) {
   const deviceFrame = device
     ? {
@@ -85,12 +89,14 @@ export function InspectorSections({
     <>
       <CurrentAppSection client={client} />
       {(client?.capabilities.deviceSettings ||
+        client?.capabilities.fold ||
         client?.platform === "android" ||
         deviceFrame ||
         (client && (onShutdown || onRemoveDevice))) && (
         <DeviceOptionsSection
           client={client}
           deviceFrame={deviceFrame}
+          foldPreview={foldPreview}
           showDeviceSettings={client?.capabilities.deviceSettings ?? false}
           onShutdown={onShutdown}
           onRemove={onRemoveDevice}

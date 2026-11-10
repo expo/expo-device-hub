@@ -263,15 +263,42 @@ describe("complete API success contracts", () => {
     expect(
       parseFoldResponse({
         ok: true,
-        fold: { supported: true, posture: "half_opened", hingeAngle: 90 },
+        fold: {
+          supported: true,
+          posture: "half_opened",
+          hingeAngle: 90,
+          hingeRange: { min: 0, max: 180 },
+        },
       }).fold,
-    ).toEqual({ supported: true, posture: "half_opened", hingeAngle: 90 });
+    ).toEqual({
+      supported: true,
+      posture: "half_opened",
+      hingeAngle: 90,
+      hingeRange: { min: 0, max: 180 },
+    });
+    expect(
+      parseFoldResponse({
+        ok: true,
+        fold: { supported: false, posture: null, hingeAngle: null, hingeRange: null },
+      }).fold.hingeRange,
+    ).toBeNull();
     expect(() =>
       parseFoldResponse({
         ok: true,
-        fold: { supported: true, posture: "sideways", hingeAngle: 90 },
+        fold: { supported: true, posture: "sideways", hingeAngle: 90, hingeRange: null },
       }),
     ).toThrow();
+    expect(() =>
+      parseFoldResponse({
+        ok: true,
+        fold: {
+          supported: true,
+          posture: "opened",
+          hingeAngle: 180,
+          hingeRange: { min: "0", max: 180 },
+        },
+      }),
+    ).toThrow("fold.hingeRange.min");
     expect(
       parseOrientationResponse({
         ok: true,
@@ -283,6 +310,36 @@ describe("complete API success contracts", () => {
         },
       }).orientation,
     ).toMatchObject({ mode: "lock", rotation: 1, orientation: "landscape" });
+    expect(
+      parseOrientationResponse({
+        ok: true,
+        orientation: {
+          mode: "lock",
+          rotation: 3,
+          orientation: "landscape",
+          pose: "landscape_left",
+          raw: "lock 3",
+        },
+      }).orientation.pose,
+    ).toBe("landscape_left");
+    expect(
+      parseOrientationResponse({
+        ok: true,
+        orientation: { mode: "free", rotation: null, orientation: "auto", pose: null, raw: "free" },
+      }).orientation.pose,
+    ).toBeNull();
+    expect(() =>
+      parseOrientationResponse({
+        ok: true,
+        orientation: {
+          mode: "lock",
+          rotation: 1,
+          orientation: "landscape",
+          pose: "sideways",
+          raw: "",
+        },
+      }),
+    ).toThrow("orientation.pose is invalid");
     expect(
       parseOrientationResponse({
         ok: true,
@@ -616,6 +673,28 @@ describe("generic and detailed API contracts", () => {
     expect(parseApiSuccess("/api/screenshot", "POST", png)).toBe(png);
     expect(() => parseApiSuccess("/api/logcat", "GET", {})).toThrow(
       "streaming responses are not JSON API payloads",
+    );
+  });
+});
+
+describe("orientation in API info and health", () => {
+  const info = {
+    generation: 0,
+    serial: "emulator-5554",
+    device: "Pixel 8",
+    codec: "h264",
+    size: { width: 1080, height: 2400 },
+    status: "streaming",
+    clients: 0,
+    stream: { transport: "websocket" },
+  };
+
+  test("keeps a reported pose and null, and leaves it out for older servers", () => {
+    expect(parseApiInfoResponse({ ...info, pose: "landscape_left" }).pose).toBe("landscape_left");
+    expect(parseApiInfoResponse({ ...info, pose: null }).pose).toBeNull();
+    expect("pose" in parseApiInfoResponse(info)).toBe(false);
+    expect(() => parseApiInfoResponse({ ...info, pose: "landscape" })).toThrow(
+      "API info response.pose is invalid",
     );
   });
 });

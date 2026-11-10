@@ -17,6 +17,12 @@ export interface Invocation {
   timeoutMs?: number;
 }
 
+export function serveSimInvocation(binPath: string, args: string[]): Invocation {
+  if (binPath.endsWith(".ts")) return { file: "bun", args: [binPath, ...args] };
+  if (binPath.endsWith(".js")) return { file: "node", args: [binPath, ...args] };
+  return { file: binPath, args };
+}
+
 /**
  * `simctl` wedges on a busy or unwarmed simulator and never returns. Without a deadline a stuck
  * child holds its slot for the life of the process, so eight of them silence the channel for good.
@@ -24,7 +30,7 @@ export interface Invocation {
  */
 const DEFAULT_ACTION_TIMEOUT_MS = 120_000;
 
-function actionTimeoutMs(): number {
+export function actionTimeoutMs(): number {
   const configured = Number(process.env.SERVE_SIM_ACTION_TIMEOUT_MS);
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ACTION_TIMEOUT_MS;
 }
@@ -38,8 +44,11 @@ export class HostActionTimeoutError extends Error {
   }
 }
 
-export async function withHostActionDeadline<T>(work: Promise<T>, operation: string): Promise<T> {
-  const timeoutMs = actionTimeoutMs();
+export async function withHostActionDeadline<T>(
+  work: Promise<T>,
+  operation: string,
+  timeoutMs = actionTimeoutMs(),
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

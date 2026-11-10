@@ -19,7 +19,10 @@ export type WebRtcStreamSettings = {
 export type StreamSettings = { transport: "websocket" } | WebRtcStreamSettings;
 
 export type ViewerTransports = {
-  /** Initial transport selected by clients that have no viewer-local preference. */
+  /**
+   * Transport selected by clients that have no viewer-local preference. With `--transport webrtc`
+   * it is also the only video transport.
+   */
   default: StreamTransport;
   /** Video transports supported by the currently active encoded source. */
   available: StreamTransport[];
@@ -41,10 +44,22 @@ export const DEFAULT_WEBRTC_STREAM_SETTINGS: WebRtcStreamSettings = {
 
 export const DEFAULT_STREAM_SETTINGS: StreamSettings = { transport: "websocket" };
 
+/** Why a WebSocket video client is refused; serve-sim answers its HTTP streams with the same code. */
+export const STREAM_TRANSPORT_LOCKED = "stream_transport_locked";
+
+/**
+ * Whether a WebSocket may carry video. With `transport: "webrtc"`, WebRTC is the only video
+ * transport, as with serve-sim's `--transport webrtc`; a WebSocket still carries input. Without
+ * H.264 there is no WebRTC, so the WebSocket keeps the video.
+ */
+export function webSocketVideoAllowed(settings: StreamSettings, activeCodec: string): boolean {
+  return settings.transport !== "webrtc" || activeCodec !== "h264";
+}
+
 /**
  * Describe viewer-local transport choices without turning transport into a
- * device-session mutation. The configured transport remains the default only;
- * both video paths may coexist for different viewers.
+ * device-session mutation. With the default WebSocket transport, both video
+ * paths may coexist for different viewers; with WebRTC, only WebRTC is offered.
  */
 export function viewerTransportsFor(
   settings: StreamSettings,
@@ -53,7 +68,11 @@ export function viewerTransportsFor(
   const supportsWebRtc = activeCodec === "h264";
   return {
     default: supportsWebRtc ? settings.transport : "websocket",
-    available: supportsWebRtc ? [...STREAM_TRANSPORTS] : ["websocket"],
+    available: !supportsWebRtc
+      ? ["websocket"]
+      : webSocketVideoAllowed(settings, activeCodec)
+        ? [...STREAM_TRANSPORTS]
+        : ["webrtc"],
     webrtc: supportsWebRtc
       ? settings.transport === "webrtc"
         ? settings

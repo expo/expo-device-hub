@@ -9,6 +9,8 @@ let active = 1;
 let unavailable = false;
 let startupFailure = false;
 let renameFailure = false;
+let nativeFailure: Error | undefined;
+let nativeDisplay: number | undefined;
 const originalRename = fsPromises.rename;
 mock.module("fs/promises", () => ({
   ...fsPromises,
@@ -38,6 +40,8 @@ beforeEach(() => {
   unavailable = false;
   startupFailure = false;
   renameFailure = false;
+  nativeFailure = undefined;
+  nativeDisplay = undefined;
   sequence = [];
   process.env.SERVE_SIM_TEST_DEVICES_JSON = JSON.stringify({
     devices: {
@@ -55,6 +59,11 @@ mock.module("../../device-session", () => ({
     const args = [udid, settings];
     owners.push(args);
     return capture({
+      screenshot: async (display: number) => {
+        nativeDisplay = display;
+        if (nativeFailure) throw nativeFailure;
+        return Buffer.from(`PNG:${display}`);
+      },
       activeScreenId: async () => {
         if (unavailable) throw new Error("Simulator did not report its active display");
         const value = sequence.shift();
@@ -96,6 +105,7 @@ async function capture(extra = {}) {
   );
 }
 function displayArg() {
+  if (nativeDisplay !== undefined) return `--display=${nativeDisplay}`;
   return readFileSync(log, "utf8")
     .split("\n")
     .find((arg) => arg.startsWith("--display="));
@@ -124,7 +134,7 @@ test("refuses invalid display IDs", async () => {
   }
 });
 
-test("recaptures when the active display changes while simctl takes the screenshot", async () => {
+test("recaptures when the active display changes during native capture", async () => {
   active = 3;
   sequence = [1, 3, 3];
   expect((await capture()).exitCode).toBe(0);
@@ -170,7 +180,7 @@ test("publication failure removes an empty reservation and keeps existing valida
   const existingPath = join(directory, existingName);
   const previous = readFileSync(existingPath, "utf8");
   const before = readdirSync(directory).filter((name) => name.startsWith(".capture-"));
-  const noOutput = installShims({ xcrun: "#!/bin/sh\nexit 0\n" });
+  renameFailure = true;
   try {
     const failed = await capture();
     expect(failed.exitCode).toBe(1);
@@ -183,20 +193,23 @@ test("publication failure removes an empty reservation and keeps existing valida
     expect(readFileSync(existingPath, "utf8")).toBe(previous);
     expect(readdirSync(directory).filter((name) => name.startsWith(".capture-"))).toEqual(before);
   } finally {
-    noOutput.restore();
+    renameFailure = false;
   }
 });
 
-test("keeps the simctl failure and skips a second display query", async () => {
-  const failing = installShims({ xcrun: "#!/bin/sh\necho 'capture failed' >&2\nexit 1\n" });
-  sequence = [1, new Error("Must not query after simctl failed")];
+test("native capture failure skips a second display query and cleans its reservation", async () => {
+  nativeFailure = new Error("capture failed");
+  sequence = [1, new Error("Must not query after capture failed")];
   try {
-    expect(await capture()).toMatchObject({ exitCode: 1, stderr: "capture failed\n" });
+    expect(await capture()).toMatchObject({
+      exitCode: 1,
+      stderr: "Could not capture the screenshot. Check the host logs for details.",
+    });
     expect(sequence).toHaveLength(1);
     expect(existsSync(join(tmpdir(), "serve-sim-screenshots", names.at(-1)!))).toBe(false);
   } finally {
     sequence = [];
-    failing.restore();
+    nativeFailure = undefined;
   }
 });
 

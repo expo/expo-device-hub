@@ -30,6 +30,7 @@ function render(width: number, visualHeight = 667) {
         client={
           {
             status: "streaming",
+            framePresented: true,
             screen: { width: 375, height: 667 },
             deviceSettings: { appearance: "light" },
             deviceSettingsStatus: "ready",

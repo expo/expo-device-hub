@@ -1,7 +1,9 @@
+import { ScreenshotImageOptions } from "./screenshot-options";
 import { timeStartup } from "./startup-timing";
 import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
+import { installAppAsync } from "./app-install";
 import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import { CAPTURE_FIELDS } from "./capture/fields";
@@ -10,10 +12,11 @@ import {
   type HostActionResult,
   HostActionTimeoutError,
   type Invocation,
-  installAppInvocation,
   ok,
   runInvocation,
+  serveSimInvocation,
   redactHostPaths,
+  actionTimeoutMs,
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import {
@@ -36,6 +39,8 @@ import {
   UploadId,
   appendUploadChunkAsync,
   removeUploadAsync,
+  withStagedUploadSnapshotAsync,
+  getStagedUploadId,
   stagedUploadPath,
   reserveThumbnailPathAsync,
 } from "./upload-store";
@@ -69,6 +74,16 @@ const DeviceUdid = z
     /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
     "must be a simulator udid",
   );
+
+export const ScreenshotParams = z.object({
+  udid: Device,
+  fileName: ScreenshotName.optional(),
+  display: ScreenshotDisplay.optional(),
+  output: z.enum(["path", "binary"]).default("path"),
+  // The CLI infers positional arguments from catalog property order. Append new options.
+  ...ScreenshotImageOptions.shape,
+  automation: z.boolean().default(false),
+});
 const CaptureRequestId = z
   .string()
   .max(64)
@@ -370,7 +385,12 @@ const ACTION_SCHEMAS = {
   "app.install": z
     .object({ udid: Device })
     .and(FileSource)
-    .meta({ description: "Install an app from an .ipa file.", args: ["path"], upload: "path" }),
+    .meta({
+      description: "Install a simulator .app bundle or a .tar.gz/.tgz app archive.",
+      args: ["path"],
+      upload: "path",
+      uploadArchive: "tar.gz",
+    }),
   "app.launch": z
     .object({
       // Launch state and locks use simctl's canonical uppercase UDID.
@@ -420,16 +440,10 @@ const ACTION_SCHEMAS = {
   "file.readBase64": z
     .object({ path: ConfinedPath })
     .meta({ description: "Download a file from the simulator host.", output: "base64" }),
-  "screenshot.capture": z
-    .object({
-      udid: Device,
-      fileName: ScreenshotName.optional(),
-      display: ScreenshotDisplay.optional(),
-    })
-    .meta({
-      description: "Take a screenshot of the active display, or the specified simctl display ID.",
-      output: "path",
-    }),
+  "screenshot.capture": ScreenshotParams.meta({
+    description: "Take a screenshot of the active display, or the specified simctl display ID.",
+    output: "path",
+  }),
   "screenshot.thumbnail": z.object({ fileName: ScreenshotName }).meta({ hidden: true }),
   "upload.append": z
     .object({
@@ -480,6 +494,7 @@ const PROCEDURE_ACTIONS = [
   "app.openUrl",
   "app.approveUrlScheme",
   "app.launch",
+  "app.install",
   "upload.append",
   "upload.remove",
   "app.iconPath",
@@ -524,12 +539,6 @@ function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsF
     );
   }
   return result.data as ParamsFor<A>;
-}
-
-function serveSimInvocation(binPath: string, args: string[]): Invocation {
-  if (binPath.endsWith(".ts")) return { file: "bun", args: [binPath, ...args] };
-  if (binPath.endsWith(".js")) return { file: "node", args: [binPath, ...args] };
-  return { file: binPath, args };
 }
 
 function buildInvocation(action: InvocationAction, raw: unknown, binPath: string): Invocation {
@@ -755,7 +764,8 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 async function runProcedureAsync(
   action: ProcedureAction,
   raw: unknown,
-  streamSettings?: StreamSettings,
+  streamSettings: StreamSettings | undefined,
+  serveSimBinPath: string,
   deviceName?: (udid: string) => string | undefined,
 ): Promise<HostActionResult> {
   switch (action) {
@@ -806,6 +816,27 @@ async function runProcedureAsync(
         else if ("scheme" in p) await approveUrlScheme(p.udid, p.bundleId, p.scheme);
         else await stopApp(p.udid, p.bundleId);
         return ok();
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
+      }
+    }
+    case "app.install": {
+      const p = parseParams(action, raw);
+      const path = fileSourcePath(p);
+      const uploadId = "uploadId" in p ? p.uploadId : getStagedUploadId(path);
+      const deadline = Date.now() + actionTimeoutMs();
+      try {
+        return uploadId === undefined
+          ? await installAppAsync(p.udid, path, deadline, serveSimBinPath)
+          : await withStagedUploadSnapshotAsync(
+              uploadId,
+              (source) => installAppAsync(p.udid, source, deadline, serveSimBinPath),
+              deadline,
+            );
       } catch (error) {
         return {
           stdout: "",
@@ -936,15 +967,29 @@ async function runProcedureAsync(
     }
     case "screenshot.capture": {
       const p = parseParams(action, raw);
+      if (p.output === "binary")
+        throw new InvalidHostActionError("Binary screenshot output requires exec-ws.");
+      if (p.maxWidth !== undefined || p.format !== undefined || p.quality !== undefined)
+        throw new InvalidHostActionError("Screenshot image options require binary output.");
       let failure = "Could not resolve that simulator. Specify a booted simulator UDID.";
       try {
         const { resolveBootedDeviceAsync } = await import("./device");
         const { getScreenshotDisplayIdsAsync } = await import("./screenshot-display");
         p.udid = await resolveBootedDeviceAsync(p.udid);
-        const capture = (display: number, read?: () => Promise<number>) =>
+        const capture = (
+          display: number,
+          read?: () => Promise<number>,
+          native?: (display: number, timeoutMs?: number) => Promise<Uint8Array>,
+        ) =>
           captureScreenshotAsync(
-            { udid: p.udid, fileName: p.fileName ?? newScreenshotName(), display },
+            {
+              udid: p.udid,
+              fileName: p.fileName ?? newScreenshotName(),
+              display,
+              automation: p.automation,
+            },
             read,
+            native,
           );
         failure = "Could not capture the screenshot. Check the host logs for details.";
         if (p.display !== undefined) {
@@ -972,7 +1017,9 @@ async function runProcedureAsync(
             };
             const display = await read();
             selected = true;
-            return await capture(display, read);
+            return await capture(display, read, (id, timeoutMs) =>
+              session.screenshot(id, timeoutMs),
+            );
           });
         } catch (error) {
           // @ref LLP 0003#action-catalog — only a proven sole screen can bypass native election
@@ -1033,13 +1080,13 @@ export async function runHostActionAsync(
     const p = parseParams(action, params);
     result = await timeStartup(
       action,
-      () => runInvocation(installAppInvocation(p.udid, fileSourcePath(p))),
+      () => runProcedureAsync(action, params, streamSettings, binPath, deviceName),
       p.udid,
       { deviceName: deviceName?.(p.udid), isSuccessful: (value) => value.exitCode === 0 },
     );
   } else {
     result = await (isProcedureAction(action)
-      ? runProcedureAsync(action, params, streamSettings, deviceName)
+      ? runProcedureAsync(action, params, streamSettings, binPath, deviceName)
       : runInvocation(buildInvocation(action, params, binPath)));
   }
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave

@@ -92,8 +92,14 @@ function Controls() {
 ```
 
 Status and control changes update this component. FPS, metrics, and log changes do not.
-Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also reports
-`'reconnecting'` while restoring a stream. Read `error` for the last failure message.
+Status can be `'idle'`, `'connecting'`, `'reconnecting'`, `'streaming'` or `'error'`.
+`'connecting'` means that the screen has not shown a frame yet: show loading UI. It becomes
+`'error'` after 30 seconds without a frame, and the client continues to retry. After the
+first frame, a lost stream is `'reconnecting'`: the last frame stays, so show no loading UI.
+On iOS, a reconnect that lasts 30 seconds becomes `'error'`, and the client continues to retry.
+`framePresented` tells whether the screen has shown a frame. A new device, server, token,
+transport, or display surface starts again at `'connecting'`. Read `error` for the last
+failure message.
 
 ### Read device settings
 
@@ -124,6 +130,8 @@ Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input cha
 without updating for metrics or logs.
 `DeviceScreen` fills its parent, so give the parent a size and `position: relative`.
 `displayScreen` gives you the screen size after accounting for rotation.
+`DeviceScreen` draws no background, loading state, or error: draw them yourself, over
+it, from `status`, `error`, and `framePresented`.
 
 ```tsx
 import { DeviceScreen, displayScreen, useDeviceScreenClient } from "@expo/hub-client";
@@ -132,14 +140,102 @@ function Screen() {
   const client = useDeviceScreenClient();
   const screen = displayScreen(client.screen);
   const aspectRatio = screen ? `${screen.width} / ${screen.height}` : "9 / 19.5";
+  const loading = client.status !== "error" && client.status !== "idle" && !client.framePresented;
 
   return (
-    <div style={{ position: "relative", width: 360, aspectRatio }}>
+    <div style={{ position: "relative", width: 360, aspectRatio, background: "#eee" }}>
       <DeviceScreen client={client} />
+      {loading && <Spinner />}
+      {client.status === "error" && <p role="alert">{client.error}</p>}
     </div>
   );
 }
 ```
+
+### Fold a foldable device
+
+`client.fold` has the fold state of a foldable device, such as the iPhone Duo, and is
+`null` for other devices. `client.capabilities.fold` lists the commands that the device
+accepts: an angle range, the named poses with their hinge angles, and Table Mode. It is
+`false` when the device offers no fold commands. Send only what it lists.
+
+```tsx
+import { useDeviceClient } from "@expo/hub-client";
+
+function FoldButtons() {
+  const { fold, capabilities } = useDeviceClient();
+  const controls = capabilities.fold;
+  if (!fold || !controls) return null;
+  const range = controls.angle;
+
+  return (
+    <>
+      <span>
+        {fold.angle ?? "?"}° {fold.pose ?? "custom"} {fold.pending ? "(moving)" : ""}
+      </span>
+      {controls.poses.book && (
+        <button onClick={() => fold.setControl({ control: "pose", value: "book" })}>Book</button>
+      )}
+      {range && (
+        <button onClick={() => fold.setControl({ control: "angle", value: range.max })}>
+          Most open
+        </button>
+      )}
+      {controls.tableMode && fold.tableMode?.available && (
+        <button onClick={() => fold.setControl({ control: "tableMode", value: true })}>
+          Table Mode
+        </button>
+      )}
+    </>
+  );
+}
+```
+
+`fold.tableMode` and `fold.physical` are present only on a device that has them. The
+poses share one vocabulary, `FOLD_POSES`: `closed`, `open`, `laptop`, `book`, and
+`tent`. `fold.observe` reports the steps of each fold command, from its request to its
+outcome, whichever control sent it. A queued command that a newer one replaces gets only
+its request.
+
+### Show each display of a foldable
+
+On an iPhone Duo, `client.displays` lists the `cover` and the `inner` display. Attach
+one element per display, of the kind `client.videoKind` names, to stream each display
+yourself. While any display has an element, the client parks the flat stream, and
+`status` follows the active display. Send input to a display with its `id`, in that
+display's coordinates. The client drops a gesture that begins on a display that the
+device does not present (`client.screen.display`).
+
+```tsx
+import { useDeviceClient } from "@expo/hub-client";
+
+function Displays() {
+  const client = useDeviceClient();
+  // A tap in the middle of the inner display.
+  const tapInner = () => {
+    client.sendTouch({ phase: "begin", display: "inner", x: 0.5, y: 0.5 });
+    client.sendTouch({ phase: "end", display: "inner", x: 0.5, y: 0.5 });
+  };
+
+  return (
+    <>
+      {client.displays?.map((display) =>
+        client.videoKind === "video" ? (
+          <video key={display.id} ref={display.attachVideo} autoPlay muted playsInline />
+        ) : client.videoKind === "canvas" ? (
+          <canvas key={display.id} ref={display.attachVideo} />
+        ) : (
+          <img key={display.id} ref={display.attachVideo} alt="" />
+        ),
+      )}
+      <button onClick={tapInner}>Tap the inner display</button>
+    </>
+  );
+}
+```
+
+`deviceModelUrl` is a 3D model of the device, Xcode's for the iPhone Duo. The Hub's 3D
+preview uses it with `displays` and `fold.observe`.
 
 ### Show CPU usage
 
@@ -220,6 +316,17 @@ and each backend ignores the buttons its platform does not have.
 client.pressButton("home");
 
 client.rotate();
+// client.capabilities.orientation is false, or { orientations: DeviceOrientation[] } with the
+// poses that setOrientation accepts. client.orientation shows the choice at once, then the
+// backend's report; read client.orientationPending and client.orientationError like location.
+client.setOrientation("landscape_left");
+// client.screen.orientation is the pose of the shown frames. client.screen.framesUpright is
+// true when the backend already sends upright frames (serve-emu), so DeviceScreen never turns
+// them.
+// While an Android recording could break, client.recordingLock is "status-unknown" or
+// "recording" and rotate, setOrientation and the stream setters are silently ignored. Disable
+// those controls from it. client.orientationUnavailable gives the reason orientation cannot
+// change now, also while the iOS input socket cannot take input.
 client.reload(); // reload the running React Native bundle
 client.setAppearance("dark"); // 'light' | 'dark'; read it back from client.appearance
 

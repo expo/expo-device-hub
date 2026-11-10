@@ -27,7 +27,9 @@ import {
   type ClipboardRequest,
   type Device,
   type DeviceFrameAssets,
+  type FoldPreviewOption,
 } from "@expo/hub-components";
+import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -125,6 +127,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
 export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps }) {
   const scheme = useColorScheme();
   const viewport = useMobileViewport();
+  // @ref LLP 0013#single-device-sessions — a locked session keeps the sidebar but shows no device lifecycle controls.
   const singleDevice = dashboardSingleDevice();
   const hideBootDevice = !!singleDevice || dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
@@ -144,6 +147,11 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
   const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
   const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
+  const duoPreview = useDashboardStore((state) => state.duoPreview);
+  const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
+  // Xcode's model failed to load (or WebGL did) for this device; show the flat
+  // screen until the viewer picks 3D again, as serve-sim does.
+  const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === "mjpeg" ? "mjpeg" : streamMode === "h264" ? "h264" : "auto",
   );
@@ -167,24 +175,15 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     deviceId: string | null;
     request: ClipboardRequest;
   } | null>(null);
-  const [singleDeviceInspectorOpen, setSingleDeviceInspectorOpen] = useState(false);
-  const closeInspector = () => {
-    setSingleDeviceInspectorOpen(false);
-    sidebars.closeLeft();
-  };
   const clipboardRequest =
     clipboardFallback && clipboardFallback.deviceId === selectedId
       ? clipboardFallback.request
       : null;
-  useEffect(() => {
-    setClipboardFallback(null);
-    setSingleDeviceInspectorOpen(false);
-  }, [selectedId]);
+  useEffect(() => setClipboardFallback(null), [selectedId]);
   const handleClipboardFallback = (request: ClipboardRequest) => {
     if (selectedId !== useDashboardStore.getState().selectedDeviceId) return;
     setClipboardFallback({ deviceId: selectedId, request });
-    if (singleDevice) setSingleDeviceInspectorOpen(true);
-    else sidebars.openLeft();
+    sidebars.openLeft();
   };
 
   // Merge booted devices (from the server) with any the user added, deduped by
@@ -261,9 +260,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       target.kind === "new"
         ? [target.device.name, result.id]
         : [target.device.name, target.device.id, result.id];
-    // Pinned sessions follow discovery, including shutdowns outside this UI.
-    // An optimistic entry would otherwise keep the stopped device selected.
-    if (!singleDevice) trackAddedDevice(device, replacedIds);
+    trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
@@ -330,15 +327,35 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
 
+  const duoModelUnavailable = !!selected && duoModelUnavailableFor === selected.id;
+  // Like serve-sim, switching devices retries the model.
+  const selectedDeviceId = selected?.id ?? null;
+  useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
-  // boots) on load.
+  // boots) on load. An iPhone Duo streams both displays only while its 3D
+  // model is shown and attaches them; the flat screen streams otherwise.
   const client = useActiveDeviceClient(
     connectionStatus === "connected" && selected
       ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
     basePath(),
   );
+  // The 3D choices apply only to a device that can feed the model.
+  const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
+  const foldPreview: FoldPreviewOption = {
+    mode: duoPreview.mode,
+    onModeChange: (mode) => {
+      setDuoPreview({ mode });
+      // Selecting 3D retries loading the model.
+      setDuoModelUnavailableFor(null);
+    },
+    unavailable: duoModelUnavailable,
+    cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+    onCacheScreenOnFoldChange: (cacheScreenOnFold) => setDuoPreview({ cacheScreenOnFold }),
+    sizeMode: duoPreview.sizeMode,
+    onSizeModeChange: (sizeMode) => setDuoPreview({ sizeMode }),
+  };
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
   const agentDeviceIds = Object.keys(agentInteractions);
@@ -352,12 +369,13 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       client={client}
       showDeviceFrame={showDeviceFrame}
       onShowDeviceFrameChange={setShowDeviceFrame}
+      foldPreview={modelAvailable ? foldPreview : undefined}
       streamMode={streamMode}
       httpCodec={httpCodec}
       streamModeAvailability={selectedStreamModeAvailability}
       onStreamModeChange={handleStreamModeChange}
       onHttpCodecChange={setHttpCodec}
-      onShutdown={selected ? () => handleShutdown(selected) : undefined}
+      onShutdown={!singleDevice && selected ? () => handleShutdown(selected) : undefined}
       onRemove={!singleDevice && selected ? () => handleRemove(selected) : undefined}
       clipboardRequest={clipboardRequest}
       onClipboardRequestHandled={() => setClipboardFallback(null)}
@@ -393,34 +411,32 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         overflow: "hidden",
       }}
     >
-      {!singleDevice && (
-        <AnimatedDockedSidebar
-          side="left"
+      <AnimatedDockedSidebar
+        side="left"
+        width={sidebarWidth}
+        open={sidebars.leftDocked}
+        sidebarOpen={sidebars.leftOpen}
+        resizing={resizing}
+      >
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
+          selectedId={selectedId}
+          onSelect={selectDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          platform={platform}
           width={sidebarWidth}
-          open={sidebars.leftDocked}
-          sidebarOpen={sidebars.leftOpen}
-          resizing={resizing}
         >
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            agentDeviceIds={agentDeviceIds}
-            selectedId={selectedId}
-            onSelect={selectDevice}
-            onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          >
-            {inspector}
-          </Sidebar>
-        </AnimatedDockedSidebar>
-      )}
-      {!singleDevice && sidebars.leftDocked && (
+          {inspector}
+        </Sidebar>
+      </AnimatedDockedSidebar>
+      {sidebars.leftDocked && (
         <ResizeHandle
           side="left"
           offset={sidebarWidth}
@@ -441,6 +457,13 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
+          FoldableDeviceScreen={FoldableDeviceScreen}
+          foldPreview={{
+            mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
+            cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+            sizeMode: duoPreview.sizeMode,
+            onUnavailable: () => setDuoModelUnavailableFor(selected.id),
+          }}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
@@ -452,24 +475,6 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           platform={platform}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           singleDevice
-          onStart={
-            platform === "ios"
-              ? () =>
-                  handleAddDevice({
-                    kind: "recent",
-                    device: recent.simulators.find((device) => device.id === singleDevice) ?? {
-                      id: singleDevice,
-                      platform: "ios",
-                      name: "Session Simulator",
-                      version: "iOS",
-                      booted: false,
-                      physical: false,
-                      supported: true,
-                      deviceFrame: null,
-                    },
-                  })
-              : undefined
-          }
         />
       ) : (
         <EmptyState
@@ -480,24 +485,23 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
 
       <SidebarOverlay
         side="left"
-        open={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOverlay}
-        sidebarOpen={singleDevice ? singleDeviceInspectorOpen : sidebars.leftOpen}
+        open={sidebars.leftOverlay}
+        sidebarOpen={sidebars.leftOpen}
         topmost
-        onDismiss={closeInspector}
+        onDismiss={sidebars.closeLeft}
       >
         <Sidebar
-          showDeviceLists={!singleDevice}
-          simulators={singleDevice ? [] : simulators}
-          emulators={singleDevice ? [] : emulators}
-          recentSimulators={singleDevice ? [] : recentSimulators}
-          recentEmulators={singleDevice ? [] : recentEmulators}
-          simulatorOptions={singleDevice ? { runtimes: [] } : simulatorOptions}
-          emulatorOptions={singleDevice ? { runtimes: [] } : emulatorOptions}
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
           onAddDevice={hideBootDevice ? undefined : handleAddDevice}
-          onToggle={closeInspector}
+          onToggle={sidebars.closeLeft}
           // A phone's overlay is dismissed, so it shows an X. Desktop keeps the sidebar glyph.
           toggleIcon={viewport.mobile ? "close" : "sidebar"}
           topInset={viewport.mobile ? MOBILE_SIDEBAR_TOP_INSET : undefined}
@@ -512,18 +516,17 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
         </Sidebar>
       </SidebarOverlay>
 
-      {!singleDevice &&
-        floatingSidebarToggleVisible({
-          sidebarOpen: sidebars.leftOpen,
-          mobile: viewport.mobile,
-          keyboardRaised: viewport.keyboardRaised,
-        }) && (
-          <FloatingSidebarToggle
-            side="left"
-            top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
-            onClick={sidebars.openLeft}
-          />
-        )}
+      {floatingSidebarToggleVisible({
+        sidebarOpen: sidebars.leftOpen,
+        mobile: viewport.mobile,
+        keyboardRaised: viewport.keyboardRaised,
+      }) && (
+        <FloatingSidebarToggle
+          side="left"
+          top={viewport.mobile ? MOBILE_CORNER_BUTTON_TOP : undefined}
+          onClick={sidebars.openLeft}
+        />
+      )}
       {connectionBlocked &&
         createPortal(
           <ServerConnectionOverlay

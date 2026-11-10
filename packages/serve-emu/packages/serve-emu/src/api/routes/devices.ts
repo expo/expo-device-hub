@@ -3,7 +3,10 @@ import type { ContractApiRoute } from "./types.ts";
 import { readJsonBody } from "../body.ts";
 import { isEmulatorSerial } from "../../device-capabilities.ts";
 import {
+  isOrientationMode,
+  ORIENTATION_MODE_ERROR,
   parseDisplayDensityScale,
+  parseFoldRequest,
   parseFontScale,
   parseStreamModeRequest,
 } from "../../shared/api-contracts.ts";
@@ -113,9 +116,7 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "orientation payload");
         const orientation = body.orientation;
-        if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
-          invalid("orientation must be auto, portrait, or landscape");
-        }
+        if (!isOrientationMode(orientation)) invalid(ORIENTATION_MODE_ERROR);
         return Response.json({
           ok: true,
           orientation: await downstream("set orientation", () => deps.setOrientation(orientation)),
@@ -136,13 +137,10 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
       path: "/api/fold",
       handler: async ({ request, deps }) => {
         const body = await readObject(request, "fold payload");
-        const posture = body.posture;
-        if (posture !== "closed" && posture !== "opened") {
-          invalid("posture must be closed or opened");
-        }
+        const fold = parseInput(() => parseFoldRequest(body));
         return Response.json({
           ok: true,
-          fold: await downstream("set fold posture", () => deps.setFold(posture)),
+          fold: await downstream("set fold state", () => deps.setFold(fold)),
         });
       },
     },

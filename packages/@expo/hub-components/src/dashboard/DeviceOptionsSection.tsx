@@ -1,12 +1,10 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
-import {
-  areRecordingControlsLocked,
-  type DeviceClient,
-  type DeviceSettingKey,
-} from "@expo/hub-client";
+import { type DeviceClient, type DeviceOrientation, type DeviceSettingKey } from "@expo/hub-client";
 import { Select, type SelectOption } from "../primitives";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { rotationUnavailableText } from "./rotation-availability";
+import { FoldSettings, type FoldPreviewOption } from "./FoldSettings";
 import { KeyboardSection } from "./KeyboardSection";
 import { SidebarActionButton } from "./SidebarActionButton";
 import { SidebarRow, SidebarSwitch } from "./SidebarRow";
@@ -74,6 +72,13 @@ const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
   { value: "extra-large", label: "XL" },
 ];
 
+const ORIENTATION_OPTIONS: ReadonlyArray<SelectOption<DeviceOrientation>> = [
+  { value: "portrait", label: "Portrait" },
+  { value: "landscape_left", label: "Landscape left" },
+  { value: "landscape_right", label: "Landscape right" },
+  { value: "portrait_upside_down", label: "Upside down" },
+];
+
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: "reduce-motion", label: "Reduce motion" },
   { key: "bold-text", label: "Bold text" },
@@ -103,16 +108,20 @@ export type DeviceFrameOption = {
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
  * keyboard controls, the viewer-local device frame option, and device-level
  * actions (Android Back and Recents keys, shutting down or removing the device).
+ * A foldable leads with its fold controls, as serve-sim's settings do for the iPhone Duo.
  */
 export function DeviceOptionsSection({
   client,
   deviceFrame,
+  foldPreview,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
   deviceFrame?: DeviceFrameOption;
+  /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
+  foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
   /** Shut the device down on the host. */
@@ -121,15 +130,23 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
-  const recordingDisabledReason = !recordingControlsLocked
-    ? undefined
-    : client?.screenRecording === "unknown"
-      ? "Unavailable until recording status is known."
-      : "Unavailable because this would interrupt the recording.";
+  // Like serve-sim's settings, a failed fold command opens the section to show its error.
+  const foldError = client?.fold?.error ?? null;
+  useEffect(() => {
+    if (foldError) setOpen(true);
+  }, [foldError]);
+  const recordingLock = client?.recordingLock ?? null;
+  const recordingControlsLocked = recordingLock !== null;
+  const recordingDisabledReason =
+    recordingLock === null
+      ? undefined
+      : recordingLock === "status-unknown"
+        ? "Unavailable until recording status is known."
+        : "Unavailable because this would interrupt the recording.";
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
+  const orientationErrorId = useId();
   const settings = client?.deviceSettings ?? null;
   const settingsAvailable = client?.deviceSettingsStatus === "ready";
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
@@ -169,9 +186,28 @@ export function DeviceOptionsSection({
   }
 
   const keyboardVisible = showDeviceSettings && client?.platform === "ios";
+  const orientationCapabilities = client?.capabilities.orientation;
+  const orientationOptions = orientationCapabilities
+    ? ORIENTATION_OPTIONS.filter(({ value }) =>
+        orientationCapabilities.orientations.includes(value),
+      )
+    : [];
+  // The row appears once the client has a pose, from a pick or a report, and shows it: the last
+  // pick at once, then the device's report. Rotate still works before that.
+  const currentOrientation = client?.orientation ?? null;
+  const rotationUnavailable = rotationUnavailableText(client?.orientationUnavailable ?? null);
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {client?.fold && client.capabilities.fold && (
+        <FoldSettings
+          fold={client.fold}
+          controls={client.capabilities.fold}
+          disabledReason={recordingDisabledReason}
+          preview={foldPreview}
+        />
+      )}
+
       {showDeviceSettings &&
         visible("appearance") &&
         settingSelect("appearance", "Appearance", APPEARANCE_OPTIONS)}
@@ -245,6 +281,24 @@ export function DeviceOptionsSection({
             label="Force on-screen keyboard"
             descriptionId={onscreenKeyboardDescriptionId}
             onChange={(checked) => setValue("onscreen-keyboard", checked ? "on" : "off")}
+          />
+        </SidebarRow>
+      )}
+
+      {client && orientationOptions.length > 0 && currentOrientation && (
+        <SidebarRow
+          label="Orientation"
+          description={client.orientationError ?? undefined}
+          descriptionId={client.orientationError ? orientationErrorId : undefined}
+        >
+          <Select
+            ariaLabel="Orientation"
+            ariaDescribedBy={client.orientationError ? orientationErrorId : undefined}
+            options={orientationOptions}
+            value={currentOrientation}
+            disabled={rotationUnavailable !== undefined}
+            disabledReason={rotationUnavailable}
+            onChange={client.setOrientation}
           />
         </SidebarRow>
       )}

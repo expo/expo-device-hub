@@ -215,11 +215,41 @@ export type AvdStartResponse = ApiSuccess<{
 
 export type AvdStopResponse = ApiSuccess<{ serial: string }>;
 
-export type OrientationMode = "auto" | "portrait" | "landscape";
+/**
+ * How the display faces, named as serve-sim names iOS poses: by the interface orientation,
+ * like `UIInterfaceOrientation`. `landscape_left` has the bottom of the device on the left,
+ * so the device turned a quarter turn clockwise from portrait.
+ */
+export type ScreenOrientation = (typeof SCREEN_ORIENTATIONS)[number];
+export const SCREEN_ORIENTATIONS = [
+  "portrait",
+  "landscape_left",
+  "portrait_upside_down",
+  "landscape_right",
+] as const;
+/**
+ * `landscape` is `landscape_right`, the pose that rotation 1 shows on a phone, as before the
+ * four poses. `auto` follows the device sensor again.
+ */
+export type OrientationMode = "auto" | "landscape" | ScreenOrientation;
+export const ORIENTATION_MODES: readonly OrientationMode[] = [
+  "auto",
+  "landscape",
+  ...SCREEN_ORIENTATIONS,
+];
+export const ORIENTATION_MODE_ERROR = `orientation must be one of ${ORIENTATION_MODES.join(", ")}`;
+
+export function isOrientationMode(value: unknown): value is OrientationMode {
+  return (ORIENTATION_MODES as readonly unknown[]).includes(value);
+}
+
 export type OrientationStatus = {
   mode: "free" | "lock" | "unknown";
   rotation: number | null;
-  orientation: OrientationMode | "unknown";
+  /** `portrait` or `landscape` for a locked rotation, from the device's natural display. */
+  orientation: "auto" | "portrait" | "landscape" | "unknown";
+  /** The locked pose, or null when the rotation is free or unknown. Absent on older servers. */
+  pose?: ScreenOrientation | null;
   raw: string;
 };
 export type OrientationResponse = ApiSuccess<{ orientation: OrientationStatus }>;
@@ -229,8 +259,35 @@ export type FoldStatus = {
   supported: boolean;
   posture: FoldPosture | null;
   hingeAngle: number | null;
+  /**
+   * The angles the hinge moves through, from the emulator's hardware config;
+   * null without a hinge, or when serve-emu cannot read that config.
+   */
+  hingeRange: { min: number; max: number } | null;
 };
 export type FoldResponse = ApiSuccess<{ fold: FoldStatus }>;
+/** Fold or unfold fully, or move the hinge to an angle in degrees. */
+export type FoldRequest = { posture: "closed" | "opened" } | { hingeAngle: number };
+
+export function parseFoldRequest(body: Record<string, unknown>): FoldRequest {
+  if (body.hingeAngle === undefined) {
+    if (body.posture !== "closed" && body.posture !== "opened") {
+      throw new Error("posture must be closed or opened");
+    }
+    return { posture: body.posture };
+  }
+  if (body.posture !== undefined) throw new Error("set either posture or hingeAngle, not both");
+  // @ref LLP 0004#android-emulators — the 0–180° range serve-sim accepts for the iPhone Duo hinge
+  if (
+    typeof body.hingeAngle !== "number" ||
+    !Number.isFinite(body.hingeAngle) ||
+    body.hingeAngle < 0 ||
+    body.hingeAngle > 180
+  ) {
+    throw new Error("hingeAngle must be a number between 0 and 180");
+  }
+  return { hingeAngle: body.hingeAngle };
+}
 
 export type NightMode = "auto" | "dark" | "light";
 export type NightModeStatus = { mode: NightMode | "unknown"; raw: string };
@@ -523,6 +580,11 @@ export type HealthResponse = {
   grpcCapture?: GrpcCaptureDiagnostics | null;
   codec: string;
   size: DeviceSize;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
   clients: number;
   frames: number;
   sourceFps: number;
@@ -561,6 +623,11 @@ export type ApiInfoResponse = {
   stream: StreamSettings;
   /** Viewer-local transport choices. Optional while older servers remain supported. */
   viewerTransports?: ViewerTransports;
+  /**
+   * The pose the display shows now, or null before the first adb read. Absent on older
+   * servers. `GET /api/orientation` reports the lock policy instead.
+   */
+  pose?: ScreenOrientation | null;
 };
 
 export type EmptyResponse = ApiSuccess;
@@ -620,7 +687,7 @@ export type ApiContractMap = {
   };
   "/api/fold": {
     GET: EndpointContract<undefined, FoldResponse>;
-    POST: EndpointContract<{ posture: "closed" | "opened" }, FoldResponse>;
+    POST: EndpointContract<FoldRequest, FoldResponse>;
   };
   "/api/night-mode": {
     GET: EndpointContract<undefined, NightModeResponse>;
@@ -789,6 +856,14 @@ function oneOf<const Values extends readonly string[]>(
     : fail(`${name} is invalid`);
 }
 
+function nullableOneOf<const Values extends readonly string[]>(
+  value: unknown,
+  values: Values,
+  name: string,
+): Values[number] | null {
+  return value === null ? null : oneOf(value, values, name);
+}
+
 /** Parse the stable failure envelope; throws when a server violates the contract. */
 export function parseApiFailure(value: unknown): ApiFailure {
   try {
@@ -938,6 +1013,9 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
     ...(root.viewerTransports === undefined
       ? {}
       : { viewerTransports: parseViewerTransports(root.viewerTransports) }),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "API info response.pose") }),
   };
 }
 
@@ -1206,6 +1284,9 @@ function parseOrientationStatus(value: unknown): OrientationStatus {
       ["auto", "portrait", "landscape", "unknown"] as const,
       "orientation.orientation",
     ),
+    ...(item.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(item.pose, SCREEN_ORIENTATIONS, "orientation.pose") }),
     raw: string(item.raw, "orientation.raw"),
   };
 }
@@ -1229,8 +1310,13 @@ export function parseFoldResponse(value: unknown): FoldResponse {
           "fold.posture",
         );
   const hingeAngle = fold.hingeAngle === null ? null : number(fold.hingeAngle, "fold.hingeAngle");
+  const range = fold.hingeRange === null ? null : record(fold.hingeRange, "fold.hingeRange");
+  const hingeRange = range && {
+    min: number(range.min, "fold.hingeRange.min"),
+    max: number(range.max, "fold.hingeRange.max"),
+  };
   if (typeof fold.supported !== "boolean") fail("fold.supported must be a boolean");
-  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle } };
+  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle, hingeRange } };
 }
 
 export function parseNightModeResponse(value: unknown): NightModeResponse {
@@ -1866,6 +1952,9 @@ export function parseHealthResponse(value: unknown): HealthResponse {
         }),
     codec: string(root.codec, "health response.codec"),
     size: parseDeviceSize(root.size, "health response.size"),
+    ...(root.pose === undefined
+      ? {}
+      : { pose: nullableOneOf(root.pose, SCREEN_ORIENTATIONS, "health response.pose") }),
     clients: number(root.clients, "health response.clients"),
     frames: number(root.frames, "health response.frames"),
     sourceFps: number(root.sourceFps, "health response.sourceFps"),

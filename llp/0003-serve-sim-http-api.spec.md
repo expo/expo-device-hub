@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-26 (explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback)
+**Revised:** 2026-11-08 (HubClient set orientation; explicit orphan startup; prepared process handoff; rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest; settings and device actions; action catalog; active-display screenshots and observed hinge readback; automated screenshot activity; screenshot resizing and JPEG output)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -23,7 +23,7 @@ server's selected device.
 | `/healthz`, `/readyz`                                                                               | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting.                                                                                                                                                 |
 | `/`                                                                                                 | The preview page.                                                                                                                                                                                                                                                                                     |
 | `/api`                                                                                              | Current device and stream state, including `execToken`.                                                                                                                                                                                                                                               |
-| `/api/screenshot`                                                                                   | `POST`. A still PNG from the active display, or `?display=<screen ID>`.                                                                                                                                                                                                                               |
+| `/api/screenshot`                                                                                   | `POST`. A still image from the active display, or `?display=<screen ID>`. Defaults to native-resolution PNG; optional `maxWidth`, `format`, and JPEG `quality`.                                                                                                                                       |
 | `/api/apps/icon?bundleId=<id>`                                                                      | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard`                                                                                   | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard).                                                                                                                                          |
 | `/helper/<udid>/recording/video`                                                                    | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token.                                                                  |
@@ -435,27 +435,25 @@ physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
 
-The standalone preview and HubClient advance Rotate from requested poses, so
-rapid clicks or an app-declined pose do not repeat the same request. They ignore
-mismatched orientation readback for up to 1,500 ms after the latest request;
-its acknowledgement releases that protection early. Only orientation changes
-update the cursor; HubClient also reconciles a repeated changed readback that it
-deferred during the grace period once protection expires. An unchanged,
-previously reconciled pose does not reset an app-declined request. HubClient
-resets the cursor when the helper or capture session changes. The displayed
-screen remains server-owned
-[observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
+The standalone preview advances Rotate from requested poses, so rapid clicks or
+an app-declined pose do not repeat the same request. It ignores mismatched
+orientation readback for up to 1,500 ms after the latest request; its
+acknowledgement releases that protection early. The displayed screen remains
+server-owned [observed: `src/client/simulator/rotation-cursor.ts`].
 
-HubClient advances its cursor only after the browser socket's `send` returns.
-Queued Rotate clicks resolve their next pose at delivery, in queue order;
-expired or evicted clicks never advance it. Helpers advertising `inputAdmission`
-must send `0x83` or a valid `0x82` screen config before HubClient sends input.
-A screen config that establishes admission reconciles orientation before queued
-clicks flush, while an older initial config cannot overwrite newer sent poses
-during the grace period.
-Legacy helpers retain send-on-open compatibility. Browser submission does not
-prove native delivery or app acceptance
-[observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
+HubClient treats Rotate as a choice of the next pose after the one it shows, the
+same choice `setOrientation` makes, so `client.orientation` follows a click at
+once. Choices go out one at a time and the newest one wins, so a click that
+waits in the input queue behind another one replaces any later queued click.
+The send is the answer: a choice shows until readback that arrives after the
+send reports that pose, or until 1,500 ms have passed. A malformed readback is
+ignored. A choice that the input queue has not sent within its 1,500 ms age
+limit fails with `orientationError`
+[observed: `packages/@expo/hub-client/src/useDeviceOrientation.ts` and `useIosDevice.ts`].
+Helpers advertising `inputAdmission` must send `0x83` or a valid `0x82` screen
+config before HubClient sends input. Legacy helpers retain send-on-open
+compatibility. Browser submission does not prove native delivery or app
+acceptance [observed: `packages/@expo/hub-client/src/ws-send-queue.ts`].
 
 ### Printable key characters
 
@@ -528,6 +526,86 @@ Requests are serialized with app controls on the same device; another device can
 proceed independently. The preview UI has no storage editor. These actions are
 currently iOS Simulator only; serve-emu does not expose equivalent file actions.
 Android parity remains outside this serve-sim rollout.
+
+### Installing a simulator app
+
+`app.install` accepts a simulator `.app` bundle on the host or a gzip tar archive
+containing exactly one outer `.app` bundle. EAS `.tar.gz`/`.tgz` artifacts and
+extensionless staged gzip uploads are supported. The catalog advertises
+`uploadArchive: "tar.gz"`; clients can use it to package a local `.app` directory
+before uploading. Device `.ipa` builds and `.zip` archives are refused with an
+actionable Simulator-build error before installation. Regular files without a
+gzip header are also refused, including extensionless staged ZIP uploads.
+
+The preview classifies `.tar.gz` and `.tgz` files as app drops, streams them through
+`upload.append`, calls `app.install`, and removes the staged source on success or
+failure. Device `.ipa`/`.zip` drops are rejected before upload.
+
+The preview also accepts dropped `.app` directories when the browser exposes
+filesystem entries. It walks every directory batch before streaming a gzip tar
+through the same upload/install path. Only one folder is packed at a time per
+preview; ordinary file drops can proceed independently. Paths, entry count and
+uncompressed bytes share the host limits; the compressed upload is capped at
+500 MiB. Browser files expose no POSIX modes, so packing grants owner execution
+to Mach-O binaries and shebang scripts, with other files owner-readable/writable
+and directories owner-only. Browser drops cannot preserve symlink metadata or
+arbitrary executable modes; use an archive when those matter or a folder cannot
+be read [observed: `app-drop-folder.ts`, `use-media-drop.ts`, `drop.ts`].
+
+The preparation worker uses `multitars` after a bounded TAR-header gate. The gate
+rejects special entries that the parser would otherwise skip and caps individual
+PAX/GNU metadata records at 1 MiB before buffering them. Ambiguous numeric fields
+and malformed PAX records are refused so the gate and parser share record boundaries. Header accounting follows
+PAX size overrides, counts metadata headers toward the entry limit, and bounds the
+expanded stream including padding. Gzip is drained through its trailer before
+installation. Archive fixture generation uses a separate test-only `tar` dependency
+[observed: `app-archive-headers.ts`, `app-install-worker.ts`, `app-install.test.ts`].
+
+The pinned `multitars` patch reads only the payload size from PAX and GNU metadata
+headers. Their own modes and USTAR prefixes must not leak into the following file;
+explicit PAX values still apply. This preserves executable bits in node-tar archives
+and file paths in macOS tar archives. [observed: `patches/multitars@1.0.2.patch`,
+`app-archive-security.test.ts`]
+
+Archives extract into a private directory under the server's upload folder, preserving executable bits.
+Traversal, external links and special files are refused. Expanded contents are
+limited to 2 GiB and 100,000 entries. Install preparation runs in a killable CLI
+child, including source inspection, so a FIFO cannot block the serving process's
+filesystem pool. Installs are serialized and share one action deadline across
+queueing, preparation and installation. The parent waits for preparation to exit
+before removing temporary contents in a cleanup child, using the remaining action
+budget with at most ten additional seconds after the action deadline. Cleanup
+failures retain the original error and add a cleanup warning. A failed cleanup retains the same extraction path;
+preparation refuses to extract another tree into it. Upload pruning reclaims dead-server folders,
+including abandoned extraction trees, and exempts live extractions from age pruning until their deadline.
+
+Links are resolved against exact entry metadata as a complete graph before creation, independently of archive
+order. All parent directories are created before any links, so case or Unicode aliases cannot redirect
+later writes. Entries through link paths and conflicting entries are rejected.
+Directories remain owner-only, and executable owner bits are preserved. The
+uploaded source remains until the client removes it with `upload.remove`.
+
+App installation snapshots staged archive sources before waiting for extraction
+or simctl. Snapshot bytes are bounded to 2 GiB per process in addition to the
+upload staging ceiling; source removal/reset is blocked only while copying.
+Private snapshots are removed after success or failure and live under the server-owned
+upload folder, where dead-server pruning reclaims abandoned copies. They use a reserved
+private prefix encoding the action deadline and do not expire by age before that
+deadline, so long installs outlive ordinary upload retention without losing their source.
+After the deadline, ordinary age pruning applies even if the owner's PID has been
+reused by another process.
+Cleanup makes copied directories owner-writable without following links. A cleanup
+failure preserves the consumer result or original error, retains the on-disk byte
+reservation, and must be retried successfully before another snapshot is accepted.
+`upload.remove` also removes staged directories, including read-only bundles
+[observed: `removeUploadTreeAsync`, `removeSnapshotAsync` in `upload-store.ts`].
+
+Copying regular files and app directories shares the original action deadline.
+Staged app directories accept relative links that remain inside the bundle; absolute
+links, escaping link chains and cycles are rejected before copying. Targets must
+use exact measured entry names, so filesystem case or Unicode aliases cannot hide
+a link. Link validation
+uses the measured directory metadata, so it never follows a link into the host filesystem.
 
 ### Uploading an app fixture
 
@@ -672,7 +750,7 @@ The catalog leaves out actions with `hidden: true`: `server.*`, `reveal`,
 `screenshot.thumbnail`, `upload.*` and `actions.describe`. They still run when
 called.
 
-`screenshot.capture` takes `{udid, fileName?, display?}` and makes a file name
+`screenshot.capture` takes `{udid, fileName?, display?, output?, automation?}` and makes a file name
 when `fileName` is missing. `display` is a positive simctl screen ID. Known non-integrated ports are rejected
 before capture unless the profile declares exactly one screen, as on tvOS; an
 unknown profile leaves explicit selection available. A client
@@ -704,6 +782,34 @@ concurrent successful publication. Failed captures remove their
 temporary pixels and empty reservations, preserving an existing successful
 screenshot of the same name. [observed: `captureScreenshotAsync`]
 
+HTTP `POST /api/screenshot` also accepts an optional JSON body
+`{ "automation": true }` (at most 1 KiB). Empty bodies or omitted/false automation
+retain manual behavior. True requires the existing exec bearer token and skips
+manual artifact publication and screenshot activity on success/failure. Invalid
+JSON, unknown fields, and nonboolean values return 400 before capture; oversized
+bodies return 413. Binary exec-ws delegates through this same HTTP contract.
+[observed: `src/middleware.ts`, screenshot route and binary adapter]
+
+The optional `automation` flag defaults to `false`. Setting it to `true`
+suppresses the screenshot activity event on both success and failure, so periodic
+background thumbnails do not refresh the session's idle deadline. Omitted or
+`false` preserves manual activity. `actions.describe` exposes the boolean field
+so callers can check support before sending an automated capture.
+[observed: `src/host-actions.ts`, `src/event-log.ts`]
+
+The flag applies to both path and binary output. Binary dispatch carries it as
+a JSON body into the same HTTP capture implementation. Automated captures
+return PNG bytes without publishing a manual screenshot artifact; manual HTTP
+screenshots still publish artifacts and record activity. [observed: `src/middleware.ts`]
+
+Automated path captures skip the convenience Desktop copy and do not consume its
+copy-count limit. They keep the existing staging behavior. Manual captures keep
+their Desktop copy. The
+caller owns reading and removing its uniquely named staged file; a client
+timeout or closed exec socket does not cancel the host action, so it must wait
+for completion or host shutdown before removing a file the action may still write.
+[observed: `src/screenshot-store.ts`, `src/socket/server-control.ts`]
+
 Native screenshot startup and active-display reads use the configured host-action
 deadline. A timed-out one-shot releases its temporary session and stops native
 startup without waiting for the hung start promise; late continuations cannot
@@ -717,13 +823,48 @@ bundles on the event loop. [observed: `withScreenshotDeviceSession`,
 The HTTP `/api/screenshot` download follows the same native active-display
 selection and three-attempt handoff bound as `screenshot.capture`. Its optional
 `display` query selects an explicit panel without starting native capture. It
-keeps the existing PNG response, artifact headers, and temporary-file cleanup,
+defaults to native-resolution PNG and keeps the artifact headers. Native pixels
+stay in memory through display validation and delivery; only simctl capture uses a temporary file,
+which is cleaned up. The completed image response declares `Content-Length`,
 without the host action's Desktop copy. Default HTTP captures share the same
 one-shot session ownership. If native startup or display readback fails, an
 installed device profile confirming exactly one display permits a
 `simctl screenshot` fallback with that display ID. Unknown profiles and multi-display devices still
 require native panel election. [observed: `simMiddleware` screenshot route,
 `getScreenshotDisplayIdsAsync`]
+
+HTTP screenshot queries accept optional `maxWidth` (integer, 1–8192),
+`format` (`png` or `jpeg`), and `quality` (integer, 1–100; JPEG default 80).
+Width limiting preserves aspect ratio after rotation and never upscales.
+Native capture snapshots the pixels before Core Image scales them and encodes
+PNG; explicit-display and simctl fallback PNGs are resized after capture.
+JPEG responses convert that PNG and use `Content-Type: image/jpeg`; PNG
+responses use `image/png`. JPEG is lossy and does not preserve transparency.
+Collected session artifacts remain PNG at the requested size, including for
+JPEG responses. [observed: `ScreenshotImageOptions`, `ScreenshotEncoder`,
+`simMiddleware` screenshot route]
+
+An authenticated exec-ws client can request
+`{id, action: "screenshot.capture", params: {udid?, display?, output: "binary"}}`
+to receive image bytes in one binary response, without staging or Desktop copies.
+The same optional `maxWidth`, `format`, and `quality` fields belong in `params`;
+omitting them preserves native-resolution PNG.
+The first four bytes are the unsigned 32-bit request ID in network byte order;
+the remaining bytes are the requested PNG or JPEG. IDs must be integers from
+0 through 4294967295.
+Failures return the usual JSON `{id, error}` frame. Concurrent replies may arrive
+out of order. This request shares the HTTP screenshot route's device restrictions,
+display validation, artifact persistence and error handling, and the socket's
+eight-action admission limit. Device names resolve as for ordinary actions; the
+single-device policy still applies. `fileName` is only supported in path mode.
+`output` defaults to `"path"`, which still returns a staged path and rejects the
+image options. Output selection is specific to the screenshot action. `actions.describe` advertises the supported
+values in `screenshot.capture.properties.output.enum`; clients must check support
+first, since older servers may ignore the parameter and return the path as JSON.
+Binary output requires exec-ws; direct host-action execution rejects it rather
+than silently staging a file. A CLI `--output binary` option can map to this
+parameter; EAS CLI's path-based workflow does not switch automatically.
+[observed: `server-control.ts`, `simMiddleware`, `describeHostActions`]
 
 Capture errors return a generic message, except for the safe retry guidance
 when the active display keeps changing. Private native-startup and simctl

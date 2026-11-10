@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createApp } from "../src/middleware.ts";
 import { SCRCPY_DEFAULTS, type ScrcpySession, type StartOpts } from "../src/scrcpy.ts";
 import type { StreamSocket } from "../src/stream-socket.ts";
+import { readNoOrientation } from "./fixtures/orientation.ts";
 
 type CapturedStartOpts = StartOpts & {
   mode?: "scrcpy";
@@ -102,6 +103,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts.push(options);
           return fakeSession();
@@ -138,6 +140,7 @@ describe("stream settings HTTP API", () => {
         maxFps: 24,
       },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts.push(options);
           return fakeSession();
@@ -183,6 +186,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts.push(options);
           return fakeSession(
@@ -241,6 +245,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) =>
           fakeSession(
             options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
@@ -277,6 +282,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           return fakeSession();
@@ -317,7 +323,7 @@ describe("stream settings HTTP API", () => {
   test("PATCH requires an application/json body", async () => {
     const app = await createApp(
       { serial: "emulator-test" },
-      { startScrcpy: async () => fakeSession() },
+      { readOrientation: readNoOrientation, startScrcpy: async () => fakeSession() },
     );
 
     try {
@@ -338,6 +344,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test", maxSize: 960 },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts++;
           if (options.maxSize === 720) throw new Error("encoder rejected requested size");
@@ -383,6 +390,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           if (starts > 1) throw new Error(`capture start ${starts} failed`);
@@ -410,6 +418,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts++;
           const capture = fakeSession(
@@ -445,6 +454,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) => {
           starts++;
           if (starts === 1) return fakeSession();
@@ -491,6 +501,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           return fakeSession();
@@ -531,6 +542,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           if (starts === 1) return fakeSession();
@@ -577,6 +589,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           if (starts === 1) {
@@ -618,6 +631,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async (options: StartOpts) =>
           fakeSession(
             options.maxSize === 720 ? { width: 405, height: 720 } : { width: 1080, height: 1920 },
@@ -655,6 +669,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           if (starts === 1) return fakeSession();
@@ -694,7 +709,7 @@ describe("stream settings HTTP API", () => {
   test("PATCH returns service unavailable after the app has stopped", async () => {
     const app = await createApp(
       { serial: "emulator-test" },
-      { startScrcpy: async () => fakeSession() },
+      { readOrientation: readNoOrientation, startScrcpy: async () => fakeSession() },
     );
     await app.stop();
 
@@ -713,6 +728,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           return fakeSession();
@@ -746,7 +762,7 @@ describe("stream settings HTTP API", () => {
   test("device control handlers preserve request body transport errors", async () => {
     const app = await createApp(
       { serial: "emulator-test" },
-      { startScrcpy: async () => fakeSession() },
+      { readOrientation: readNoOrientation, startScrcpy: async () => fakeSession() },
     );
 
     try {
@@ -786,7 +802,7 @@ describe("stream settings HTTP API", () => {
   test("font scale rejects values that require numeric coercion", async () => {
     const app = await createApp(
       { serial: "emulator-test" },
-      { startScrcpy: async () => fakeSession() },
+      { readOrientation: readNoOrientation, startScrcpy: async () => fakeSession() },
     );
 
     try {
@@ -816,6 +832,7 @@ describe("stream settings HTTP API", () => {
     const app = await createApp(
       { serial: "emulator-test" },
       {
+        readOrientation: readNoOrientation,
         startScrcpy: async () => {
           starts++;
           if (starts === 1) return fakeSession();

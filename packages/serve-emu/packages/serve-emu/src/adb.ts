@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
-import { execBuffer, execText, type ExecResult } from "./exec.ts";
+import { execBuffer, execText, type ExecLane, type ExecResult } from "./exec.ts";
+import type {
+  OrientationMode,
+  OrientationStatus as ContractOrientationStatus,
+  ScreenOrientation,
+} from "./shared/api-contracts.ts";
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
 const ADB_MUTATION_TIMEOUT_MS = 5_000;
@@ -7,14 +12,9 @@ const ADB_SCREENSHOT_TIMEOUT_MS = 8_000;
 const EMU_CONSOLE_TIMEOUT_MS = 5_000;
 
 export type Device = { serial: string; state: string };
-export type OrientationMode = "auto" | "portrait" | "landscape";
 export type NightMode = "auto" | "dark" | "light";
-export type OrientationStatus = {
-  mode: "free" | "lock" | "unknown";
-  rotation: number | null;
-  orientation: OrientationMode | "unknown";
-  raw: string;
-};
+/** The contract's status; this server always reports `pose`. */
+export type OrientationStatus = ContractOrientationStatus & { pose: ScreenOrientation | null };
 export type FontScaleStatus = {
   scale: number;
   raw: string;
@@ -206,12 +206,12 @@ export type DisplayRotation = 0 | 1 | 2 | 3;
 export async function getDisplayRotation(
   serial: string,
   runExec: typeof execText = execText,
-  signal?: AbortSignal,
+  { signal, lane }: { signal?: AbortSignal; lane?: ExecLane } = {},
 ): Promise<DisplayRotation> {
   const r = await runExec("adb", ["-s", serial, "shell", "dumpsys", "window", "displays"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
     signal,
-    lane: "background",
+    lane,
   });
   if (execFailed(r)) {
     throw new Error(`dumpsys window displays failed: ${execFailure(r)}`);
@@ -236,34 +236,97 @@ export async function getDisplayRotation(
   return (value > 3 ? value / 90 : value) as DisplayRotation;
 }
 
-function orientationFromRotation(
-  mode: "free" | "lock" | "unknown",
-  rotation: number | null,
-): OrientationStatus["orientation"] {
-  if (mode === "free") return "auto";
-  if (rotation === 0 || rotation === 2) return "portrait";
-  if (rotation === 1 || rotation === 3) return "landscape";
-  return "unknown";
+type NaturalSize = { width: number; height: number };
+
+/**
+ * The size Android configures rotation from: the `wm size` override when one is set, else the
+ * physical size. An override can change the aspect, so the physical panel can name poses wrong.
+ */
+async function readNaturalSize(
+  serial: string,
+  runExec: typeof execText,
+  options?: { lane?: ExecLane },
+): Promise<NaturalSize> {
+  const { widthPx, heightPx } = await readEffectiveDisplaySize(serial, runExec, options);
+  return { width: widthPx, height: heightPx };
 }
 
-export async function getUserRotation(
-  serial: string,
-  runExec: typeof execText = execText,
-): Promise<OrientationStatus> {
+/**
+ * The poses in the order Android numbers its rotations. Rotation N shows the content turned
+ * N quarter turns clockwise, because the device turned N quarter turns counterclockwise
+ * (`Display.getRotation()`), so rotation 1 on a phone has the bottom on the right:
+ * `landscape_right` in serve-sim's names.
+ */
+const COUNTERCLOCKWISE_POSES = [
+  "portrait",
+  "landscape_right",
+  "portrait_upside_down",
+  "landscape_left",
+] as const satisfies readonly ScreenOrientation[];
+
+/** A display that is wider than tall at rotation 0, like a tablet's, starts one turn on. */
+function naturalOffset(natural: NaturalSize): number {
+  return natural.width > natural.height ? 1 : 0;
+}
+
+/** Name an Android display rotation from the device's natural display size. */
+export function screenOrientationForRotation(
+  rotation: DisplayRotation,
+  natural: NaturalSize,
+): ScreenOrientation {
+  return COUNTERCLOCKWISE_POSES[(naturalOffset(natural) + rotation) % 4];
+}
+
+export function rotationForScreenOrientation(
+  orientation: ScreenOrientation,
+  natural: NaturalSize,
+): DisplayRotation {
+  const index = COUNTERCLOCKWISE_POSES.indexOf(orientation);
+  return ((index - naturalOffset(natural) + 4) % 4) as DisplayRotation;
+}
+
+/** The lock status that `cmd window user-rotation` printed, named from the natural size. */
+export function orientationStatus(raw: string, natural: NaturalSize | null): OrientationStatus {
+  const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
+  if (!match) return { mode: "unknown", rotation: null, orientation: "unknown", pose: null, raw };
+  const mode = match[1] as "free" | "lock";
+  const rotation = match[2] === undefined ? null : Number(match[2]);
+  if (mode === "free") return { mode, rotation, orientation: "auto", pose: null, raw };
+  // A tablet locked at rotation 0 shows landscape, so the name needs the natural size.
+  if (rotation === null || rotation > 3 || !natural) {
+    return { mode, rotation, orientation: "unknown", pose: null, raw };
+  }
+  // The portrait poses sit at the even indexes of COUNTERCLOCKWISE_POSES.
+  const turns = naturalOffset(natural) + rotation;
+  return {
+    mode,
+    rotation,
+    orientation: turns % 2 === 0 ? "portrait" : "landscape",
+    pose: COUNTERCLOCKWISE_POSES[turns % 4],
+    raw,
+  };
+}
+
+async function readUserRotation(serial: string, runExec: typeof execText): Promise<string> {
   const r = await runExec("adb", ["-s", serial, "shell", "cmd", "window", "user-rotation"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
   });
   if (execFailed(r)) {
     throw new Error(`cmd window user-rotation failed: ${execFailure(r)}`);
   }
-  const raw = r.stdout.trim();
-  const match = raw.match(/^(free|lock)(?:\s+(\d+))?$/);
-  if (!match) {
-    return { mode: "unknown", rotation: null, orientation: "unknown", raw };
-  }
-  const mode = match[1] as "free" | "lock";
-  const rotation = match[2] === undefined ? null : Number(match[2]);
-  return { mode, rotation, orientation: orientationFromRotation(mode, rotation), raw };
+  return r.stdout.trim();
+}
+
+export async function getUserRotation(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<OrientationStatus> {
+  const [raw, natural] = await Promise.all([
+    readUserRotation(serial, runExec),
+    // Without the size a locked rotation is reported as unknown.
+    readNaturalSize(serial, runExec).catch(() => null),
+  ]);
+  return orientationStatus(raw, natural);
 }
 
 export async function setUserRotation(
@@ -271,17 +334,42 @@ export async function setUserRotation(
   orientation: OrientationMode,
   runExec: typeof execText = execText,
 ): Promise<OrientationStatus> {
-  const args =
-    orientation === "auto"
-      ? ["cmd", "window", "user-rotation", "free"]
-      : ["cmd", "window", "user-rotation", "lock", orientation === "portrait" ? "0" : "1"];
+  let args = ["cmd", "window", "user-rotation", "free"];
+  let natural: NaturalSize | null = null;
+  if (orientation !== "auto") {
+    const pose = orientation === "landscape" ? "landscape_right" : orientation;
+    // `wm size` runs before each lock: the natural size can change with the device.
+    natural = await readNaturalSize(serial, runExec);
+    args = [
+      "cmd",
+      "window",
+      "user-rotation",
+      "lock",
+      String(rotationForScreenOrientation(pose, natural)),
+    ];
+  }
   const r = await runExec("adb", ["-s", serial, "shell", ...args], {
     timeout: ADB_MUTATION_TIMEOUT_MS,
   });
   if (execFailed(r)) {
     throw new Error(`adb shell ${args.join(" ")} failed: ${execFailure(r)}`);
   }
-  return getUserRotation(serial, runExec);
+  return orientationStatus(await readUserRotation(serial, runExec), natural);
+}
+
+/**
+ * The pose the display shows now, from its rotation and effective size. Both reads use the
+ * background lane, because the reader polls them while the stream runs.
+ */
+export async function getDisplayOrientation(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<ScreenOrientation> {
+  const [natural, rotation] = await Promise.all([
+    readNaturalSize(serial, runExec, { lane: "background" }),
+    getDisplayRotation(serial, runExec, { lane: "background" }),
+  ]);
+  return screenOrientationForRotation(rotation, natural);
 }
 
 export async function getFontScale(
@@ -642,9 +730,11 @@ async function readDisplayDensity(
 export async function readEffectiveDisplaySize(
   serial: string,
   runExec: typeof execText = execText,
+  { lane }: { lane?: ExecLane } = {},
 ): Promise<{ widthPx: number; heightPx: number }> {
   const r = await runExec("adb", ["-s", serial, "shell", "wm", "size"], {
     timeout: ADB_QUERY_TIMEOUT_MS,
+    lane,
   });
   if (execFailed(r)) throw new Error(`wm size failed: ${execFailure(r)}`);
   const raw = r.stdout.trim();

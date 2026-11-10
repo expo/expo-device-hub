@@ -1,14 +1,19 @@
+import { ScreenshotImageOptions } from "./screenshot-options";
+import { convertScreenshot } from "./native";
 import { startDeviceInProcess, stopDeviceInProcess } from "./device-lifecycle";
 export { startDeviceInProcess } from "./device-lifecycle";
 export { gridDeviceState } from "./state";
 import { SingleDevicePolicy } from "./single-device";
 import { getScreenshotDisplayIdsAsync } from "./screenshot-display";
+import { ScreenshotParams } from "./host-actions";
 import {
   captureScreenshotFileAsync,
+  captureNativeScreenshotAsync,
   ScreenshotDisplay,
   SCREENSHOT_DISPLAY_CHANGED,
 } from "./screenshot-store";
 import { createReadinessReporter } from "./startup-timing";
+import { fileURLToPath } from "node:url";
 import { openSseStream } from "./sse-stream";
 import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
@@ -1230,7 +1235,14 @@ let _html: string | null = null;
  * Falls back to the literal `serve-sim` if we can't determine a usable path.
  */
 function serveSimBinPath(): string {
+  // Bun's embedded source paths exist virtually but cannot be exec'd by the OS.
+  if (import.meta.url.startsWith("file:///$bunfs/")) return process.execPath;
   try {
+    // A mounted middleware's argv[1] belongs to its host app, not this CLI.
+    for (const relative of ["./serve-sim.js", "../dist/serve-sim.js"]) {
+      const cli = fileURLToPath(new URL(relative, import.meta.url));
+      if (existsSync(cli)) return cli;
+    }
     const argv = process.argv;
     if (argv[1] && existsSync(argv[1])) return argv[1];
   } catch {}
@@ -2128,6 +2140,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const ALWAYS_GATED_PREFIX = "/network-capture";
 
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
+    const requestStarted = performance.now();
     const rawUrl: string = req.url ?? "";
     const qIndex = rawUrl.indexOf("?");
     const url = qIndex === -1 ? rawUrl : rawUrl.slice(0, qIndex);
@@ -2797,7 +2810,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // Still-PNG capture via `simctl io <udid> screenshot`. Consumed by the
+    // Still-PNG capture from native pixels (explicit displays use simctl). Consumed by the
     // Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
     // UI when it is served through a tunnel (on loopback it uses the
     // screenshot.capture host action instead). Uses the
@@ -2811,6 +2824,29 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end("method not allowed");
         return;
       }
+      let automated = false;
+      try {
+        const body = await readRequestBodyAsync(req, 1024);
+        const parsed = ScreenshotParams.pick({ automation: true })
+          .strict()
+          .safeParse(body?.length ? JSON.parse(body.toString("utf-8")) : {});
+        if (!parsed.success) throw new Error("Invalid screenshot request");
+        automated = parsed.data.automation;
+      } catch (error) {
+        const tooLarge = error instanceof RequestBodyTooLargeError;
+        res.writeHead(tooLarge ? 413 : 400, {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: tooLarge ? "Screenshot request is too large" : "Invalid screenshot request",
+          }),
+        );
+        return;
+      }
+      if (automated && !assertBearerAccess(req, res, execToken)) return;
       let udid = selectedDevice;
       if (udid && !isSimulatorUdid(udid)) {
         res.writeHead(400, {
@@ -2832,6 +2868,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end(JSON.stringify({ ok: false, error: "No booted simulator to screenshot" }));
         return;
       }
+      const imageQuery = new URL(rawUrl, "http://localhost").searchParams;
+      const imageOptions = ScreenshotImageOptions.safeParse({
+        maxWidth: imageQuery.has("maxWidth") ? Number(imageQuery.get("maxWidth")) : undefined,
+        format: imageQuery.get("format") ?? undefined,
+        quality: imageQuery.has("quality") ? Number(imageQuery.get("quality")) : undefined,
+      });
+      if (!imageOptions.success) {
+        res.writeHead(400, { "Cache-Control": "no-store", "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Invalid screenshot image options" }));
+        return;
+      }
+      const { maxWidth, format, quality } = imageOptions.data;
       const displayValue = new URL(rawUrl, "http://localhost").searchParams.get("display");
       const display =
         displayValue === null ? undefined : ScreenshotDisplay.safeParse(Number(displayValue));
@@ -2842,18 +2890,47 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       }
       udid = udid.toUpperCase();
       // HTTP downloads avoid staging and Desktop copies, but share panel election.
-      const file = join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
+      let file: string | undefined;
       try {
+        const captureStarted = performance.now();
+        let nativeDuration = 0;
         const screenId = display?.data;
-        const capture = (id: number, read?: () => Promise<number>) =>
-          captureScreenshotFileAsync({ udid, file, display: id, timeoutMs: 5_000 }, read);
-        const result =
+        const capture = async (id: number) => {
+          file ??= join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
+          const result = await captureScreenshotFileAsync({
+            udid,
+            file,
+            display: id,
+            timeoutMs: 5_000,
+          });
+          if (result.exitCode !== 0)
+            throw new Error(result.stderr || "Simulator screenshot failed");
+          const png = await readFile(file);
+          return maxWidth ? await convertScreenshot(png, maxWidth) : png;
+        };
+        const png =
           screenId !== undefined
             ? await capture(screenId)
             : await withScreenshotDeviceSession(udid, streamSettings, async (session) => {
                 const read = () => session.activeScreenId();
-                return await capture(await read(), read);
+                return Buffer.from(
+                  await captureNativeScreenshotAsync(
+                    await read(),
+                    read,
+                    async (id, timeoutMs) => {
+                      const started = performance.now();
+                      try {
+                        return await session.screenshot(id, timeoutMs, maxWidth);
+                      } finally {
+                        nativeDuration += performance.now() - started;
+                      }
+                    },
+                    5_000,
+                  ),
+                );
               }).catch(async (error) => {
+                if (error instanceof Error && error.message === SCREENSHOT_DISPLAY_CHANGED)
+                  throw error;
                 // A sole integrated display needs no native panel election. Never
                 // fall back on an unknown profile or a multi-display device.
                 if (!(await getBootedUdids())?.has(udid)) throw error;
@@ -2861,29 +2938,42 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
                 if (ids?.length !== 1) throw error;
                 return await capture(ids[0]!);
               });
-        if (result.exitCode !== 0) throw new Error(result.stderr || "simctl screenshot failed");
-        const png = await readFile(file);
-        const artifact = await saveScreenshotArtifact(png);
-        recordScreenshotEvent(udid, artifact);
+        const captureDuration = performance.now() - captureStarted;
+        const encodeStarted = performance.now();
+        const image = format === "jpeg" ? await convertScreenshot(png, 0, quality ?? 80) : png;
+        const encodeDuration = performance.now() - encodeStarted;
+        const artifactStarted = performance.now();
+        const artifact = automated
+          ? { status: "disabled" as const }
+          : await saveScreenshotArtifact(png);
+        if (!automated) recordScreenshotEvent(udid, artifact);
+        const artifactDuration = performance.now() - artifactStarted;
+        // Capture includes native queueing/PNG encoding; simctl also uses temporary-file I/O.
+        // Total stops before response delivery; durations overlap, so do not add them.
+        const serverTiming = `total;dur=${(performance.now() - requestStarted).toFixed(3)}, capture;dur=${captureDuration.toFixed(3)}, native;dur=${nativeDuration.toFixed(3)}, artifact;dur=${artifactDuration.toFixed(3)}, encode;dur=${encodeDuration.toFixed(3)}`;
         res.writeHead(200, {
           "Cache-Control": "no-store",
-          "Content-Type": "image/png",
+          "Content-Type": format === "jpeg" ? "image/jpeg" : "image/png",
+          "Content-Length": String(image.byteLength),
           // The route allows configured cross-origin callers, and they can only read custom headers listed here.
-          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}`,
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}, Server-Timing`,
+          "Server-Timing": serverTiming,
           ...screenshotArtifactHeaders(artifact),
         });
-        res.end(png);
+        res.end(image);
       } catch (err) {
         const stderr = (err as { stderr?: unknown }).stderr;
         const message =
           (typeof stderr === "string" && stderr.trim()) ||
           (err instanceof Error ? err.message : String(err));
         // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
-        console.error(`simctl screenshot failed for ${udid}:`, message);
-        recordScreenshotEvent(udid, {
-          status: "capture-failed",
-          error: "simctl screenshot failed",
-        });
+        console.error(`Simulator screenshot failed for ${udid}:`, message);
+        if (!automated) {
+          recordScreenshotEvent(udid, {
+            status: "capture-failed",
+            error: "simctl screenshot failed",
+          });
+        }
         res.writeHead(500, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
@@ -2899,7 +2989,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         );
       } finally {
         // Best-effort cleanup; the PNG is already in memory by now.
-        await unlink(file).catch(() => {});
+        if (file) await unlink(file).catch(() => {});
       }
       return;
     }
@@ -3449,6 +3539,35 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     corsOrigins,
     ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
+    async onScreenshotRequest(payload, request) {
+      const parsed = ScreenshotParams.omit({ fileName: true })
+        .partial({ udid: true })
+        .strict()
+        .safeParse(payload);
+      if (!parsed.success)
+        return Response.json({ error: "Invalid screenshot request" }, { status: 400 });
+      const url = new URL(`${base}/api/screenshot`, request.url);
+      if (parsed.data.udid !== undefined) {
+        const { resolveBootedDeviceAsync } = await import("./device");
+        // Enforce the same target policy as ordinary actions before resolving aliases.
+        policy?.resolveTarget(parsed.data.udid);
+        url.searchParams.set("device", await resolveBootedDeviceAsync(parsed.data.udid));
+      }
+      if (parsed.data.display !== undefined)
+        url.searchParams.set("display", String(parsed.data.display));
+      for (const key of ["maxWidth", "format", "quality"] as const) {
+        const value = parsed.data[key];
+        if (value !== undefined) url.searchParams.set(key, String(value));
+      }
+      return (await connectToFetch(
+        connectMiddleware,
+        new Request(url, {
+          method: "POST",
+          headers: { authorization: `Bearer ${execToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ automation: parsed.data.automation }),
+        }),
+      ))!;
+    },
     get unavailable() {
       return configuringSession || awaitingAdoption;
     },

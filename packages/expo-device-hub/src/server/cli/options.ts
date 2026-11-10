@@ -39,7 +39,7 @@ Options:
                              @expo/hub-client (repeatable). Accepts a subdomain wildcard, e.g.
                              https://*.expo.dev, as serve-sim does.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
-      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT})
+      --transport <transport> Preferred transport: ${TRANSPORTS.join(", ")} (default: ${DEFAULT_TRANSPORT}); webrtc allows only WebRTC video
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(", ")} (default: ${DEFAULT_WEBRTC_CODEC})
       --max-dimension <pixels> Maximum captured width or height; 0 keeps native resolution (0-4096)
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
@@ -54,7 +54,7 @@ Options:
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
       --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(", ")} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
-      --single-device <id>   Lock to one device (requires --platform); hide the device sidebar
+      --single-device <id>   Lock to one device (requires --platform); hide device lifecycle controls
       --hide-sidebar         Hide the device list and inspector sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown

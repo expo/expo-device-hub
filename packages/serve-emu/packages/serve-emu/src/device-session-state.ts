@@ -1,8 +1,14 @@
+import type { OrientationStatus } from "./adb.ts";
+import {
+  createDisplayOrientationReader,
+  type DisplayOrientationReader,
+} from "./display-orientation.ts";
 import type { Gesture } from "./input.ts";
 import type { GeoFix } from "./location.ts";
 import { LogcatHub } from "./logcat.ts";
 import { MetricsSampler } from "./metrics.ts";
 import { RoutePlayback, type RoutePlaybackClock } from "./route-playback.ts";
+import type { OrientationMode, ScreenOrientation } from "./shared/api-contracts.ts";
 import {
   SessionRecorder,
   SessionReplayConflictError,
@@ -19,6 +25,10 @@ type ReplayInputTarget = {
 type DeviceSessionStateOptions = {
   serial: string;
   applyLocation(serial: string, fix: GeoFix, signal: AbortSignal): Promise<void>;
+  /** Read the pose the display shows. */
+  readOrientation(serial: string): Promise<ScreenOrientation>;
+  /** Lock or free the rotation. */
+  applyRotation(serial: string, mode: OrientationMode): Promise<OrientationStatus>;
   recorder?: SessionRecorder;
   logcat?: LogcatHub;
   routeClock?: RoutePlaybackClock;
@@ -47,8 +57,12 @@ export class DeviceSessionState {
   readonly replayHandlers: ReplayHandlers;
 
   lastLocation: (GeoFix & { appliedAt: string }) | null = null;
+  /** The pose the display shows, for `/api` and `/health`. */
+  readonly orientation: DisplayOrientationReader;
 
   readonly #applyLocation: DeviceSessionStateOptions["applyLocation"];
+  readonly #applyRotation: DeviceSessionStateOptions["applyRotation"];
+  readonly #recordLock: (pose: ScreenOrientation | null) => void;
   readonly #now: () => number;
   readonly #owners = new Set<DeviceStateOwner>();
   readonly #inputTargets = new Map<DeviceStateOwner, ReplayInputTarget>();
@@ -58,6 +72,12 @@ export class DeviceSessionState {
   constructor(options: DeviceSessionStateOptions) {
     this.serial = options.serial;
     this.#applyLocation = options.applyLocation;
+    this.#applyRotation = options.applyRotation;
+    const display = createDisplayOrientationReader({
+      read: () => options.readOrientation(options.serial),
+    });
+    this.orientation = display.reader;
+    this.#recordLock = display.locked;
     this.#now = options.now ?? Date.now;
     this.recorder = options.recorder ?? new SessionRecorder();
     this.logcat = options.logcat ?? new LogcatHub(options.serial);
@@ -130,6 +150,16 @@ export class DeviceSessionState {
     signal: AbortSignal = this.signal,
   ): Promise<GeoFix & { appliedAt: string }> {
     return this.#setLocation(fix, signal, true);
+  }
+
+  /**
+   * Lock or free the rotation and record it, so `/api` right after a lock reports the locked
+   * pose instead of a read from before it.
+   */
+  async setOrientation(mode: OrientationMode): Promise<OrientationStatus> {
+    const status = await this.#applyRotation(this.serial, mode);
+    this.#recordLock(status.pose);
+    return status;
   }
 
   release(owner: DeviceStateOwner, reason: string): Promise<void> {

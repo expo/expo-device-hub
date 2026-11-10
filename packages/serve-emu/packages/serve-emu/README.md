@@ -100,6 +100,8 @@ bun run --filter serve-emu start
 
 `setup` downloads the pinned `scrcpy-server-v4.0` into `vendor/` and builds the browser UI. The CLI also runs the scrcpy setup lazily on first start, so you can skip the setup step for a quick local run.
 
+The download comes from the scrcpy GitHub release. To use a mirror, set `SERVE_EMU_SCRCPY_BASE_URL` to a base URL that keeps the release layout (`<base>/v4.0/scrcpy-server-v4.0`). A download that fails with a server or network error is tried up to 3 times. If the mirror fails, the download falls back to the GitHub release.
+
 ## CLI
 
 ```text
@@ -126,7 +128,7 @@ serve-emu --running-avds
 | `--max-size`                | `1280`               | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot`                                                |
 | `--key-frame-interval`      | `10`                 | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts                                                                   |
 | `--repeat-frame-ms`         | `0`                  | Re-encode the previous frame after N ms without screen changes (`16` ≈ steady 60fps on static screens, at extra CPU/bandwidth cost); `0` keeps the source default: 100ms for scrcpy and 500ms for `grpc-screenshot`               |
-| `--transport`               | `websocket`          | Initial browser video transport: `websocket` or `webrtc`. Each tab can switch independently in the UI                                                                                                                             |
+| `--transport`               | `websocket`          | Browser video transport: `websocket` or `webrtc`. With `websocket`, each tab can switch to WebRTC in the UI; `webrtc` allows only WebRTC video                                                                                    |
 | `--stun-url`                | public STUN defaults | Comma-separated STUN URL(s) for WebRTC ICE                                                                                                                                                                                        |
 | `--turn-url`                | none                 | Comma-separated TURN URL(s); requires both TURN credential flags                                                                                                                                                                  |
 | `--turn-username`           | none                 | TURN username                                                                                                                                                                                                                     |
@@ -425,11 +427,29 @@ curl -X POST "$BASE/api/orientation" \
   -H 'Content-Type: application/json' \
   -d '{"orientation":"landscape"}'
 
-# Emulator foldables report their current posture and hinge angle.
+# portrait, landscape_left, portrait_upside_down and landscape_right lock that pose.
+# The names are serve-sim's: landscape_left has the bottom of the device on the left.
+# Poses count from the device's natural display, so a tablet that starts wide reads
+# landscape_right at rotation 0. landscape is landscape_right, the pose that rotation 1
+# shows on a phone; auto follows the sensor. The answer's "pose" is the locked pose.
+# GET /api and /health report the current pose as "pose": null until the first
+# adb read succeeds, then the last successful read. serve-emu reads it again with adb
+# when a request finds a read older than a second. After a lock, the locked pose is the
+# reading for one second, and a read that started before the lock is discarded.
+
+# Emulator foldables report their current posture and hinge angle, and the
+# hingeRange of angles the AVD's hinge moves through (null when unknown).
+# Angle writes require a known hinge range; posture writes still work without it.
 curl "$BASE/api/fold"
 curl -X POST "$BASE/api/fold" \
   -H 'Content-Type: application/json' \
   -d '{"posture":"opened"}' # or "closed"
+# Or move the hinge to an angle from 0 (closed) to 180 (flat), as serve-sim's
+# iPhone Duo hinge does, within the AVD's hingeRange. Android derives the
+# posture from the angle.
+curl -X POST "$BASE/api/fold" \
+  -H 'Content-Type: application/json' \
+  -d '{"hingeAngle":90}'
 
 curl "$BASE/api/night-mode"
 curl -X POST "$BASE/api/night-mode" \
@@ -687,9 +707,12 @@ release failure is reported in `lastError`, including when replay was cancelled.
 
 Use `/ws?frame-meta=1` to receive a 24-byte `SEMU` v2 frame metadata header before each H.264 access unit: magic `SEMU` (4B), version=2 (1B), flags (1B, bit 0 = keyframe), reserved (2B), PTS (8B BE, µs), and the server send time (8B BE, epoch µs). Same-host clients can compare the send time against their own clock to measure transit and glass-to-glass latency. The bundled UI uses this mode to avoid per-frame NAL scans and to track PTS/keyframe/latency state.
 
-For H.264 sources, each browser tab can independently select WebSocket or
-WebRTC; `--transport` chooses only the initial selection for tabs without a
-saved preference. The server starts its WebRTC publisher lazily on the first
+For H.264 sources with the default `--transport websocket`, each browser tab
+can independently select WebSocket or WebRTC. `--transport webrtc` makes WebRTC
+the only video transport, as serve-sim's `--transport webrtc` does: a video
+WebSocket (`/ws` without `video=0`) is refused with `stream_transport_locked`
+(HTTP 409 on the standalone server, close code 1008 through `createRouter`), and
+`/api` lists only `webrtc` as available. The server starts its WebRTC publisher lazily on the first
 authenticated, same-origin `POST /webrtc/offer`, and releases a viewer through
 `POST /webrtc/close`. A WebRTC viewer keeps `/ws?video=0` open as a control-only
 socket, so input still travels through the active low-latency source control

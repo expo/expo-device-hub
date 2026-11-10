@@ -249,6 +249,13 @@ private func u32(_ v: Int) -> UInt32 {
         try await engine.resumeAfterReboot()
     }
 
+    @NodeMethod func screenshot(_ value: Int, _ maxWidth: Int = 0) async throws -> NodeTypedArray<UInt8> {
+        guard let screenID = UInt32(exactly: value), screenID > 0 else { throw Errors.invalidScreenID }
+        let data = try await engine.screenshot(screenID, maxWidth: maxWidth)
+        var buffer = try CaptureBuffer(initialCapacity: data.count)
+        return try buffer.setData(data)
+    }
+
     @NodeMethod func startRecording(_ outputDirectory: String) async throws {
         try await engine.startRecording(outputDirectory: outputDirectory)
     }
@@ -383,7 +390,15 @@ private func axQuery<T: Sendable>(
     }
 }
 
+private let screenshotConverter = ScreenshotEncoder()
+
 #NodeModule(exports: [
+    "convertScreenshot": try NodeFunction { (bytes: NodeTypedArray<UInt8>, maxWidth: Int, quality: Int?) async throws -> NodeTypedArray<UInt8> in
+        let input = try bytes.withUnsafeMutableRawBytes { Data($0) }
+        let data = try await screenshotConverter.convert(input, maxWidth: maxWidth, jpegQuality: quality)
+        var buffer = try CaptureBuffer(initialCapacity: data.count)
+        return try buffer.setData(data)
+    },
     "SimHID": SimHID.deferredConstructor,
     "SimCapture": SimCapture.deferredConstructor,
     // axDescribe(udid): Promise<string> — axe-shaped accessibility JSON.

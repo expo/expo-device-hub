@@ -953,6 +953,12 @@ export function SimulatorView({
           transform: `translate(-50%, -50%)${rotationTransform}`,
         }),
     transformOrigin: "center center",
+    // @ref LLP 0001#viewer-frame-placement — the server draws the picture top-left
+    // The WebRTC canvas can be shaped for another panel (iPhone Duo). serve-sim draws the
+    // picture from its top-left corner, so pinning the frame there shows the whole screen and
+    // leaves any unused columns or rows outside the box.
+    objectFit: "cover",
+    objectPosition: "0 0",
     cursor: FINGER_CURSOR,
     display: "block",
     userSelect: "none",

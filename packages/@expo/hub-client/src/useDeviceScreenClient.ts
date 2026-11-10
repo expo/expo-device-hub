@@ -10,11 +10,13 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     cancelInput,
     sendScroll,
     sendKey,
+    fold,
     pasteText,
     capabilities,
     screen,
     status,
     error,
+    framePresented,
     inputError,
   } = client;
   return {
@@ -25,11 +27,13 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     cancelInput,
     sendScroll,
     sendKey,
+    fold,
     pasteText,
     capabilities,
     screen,
     status,
     error,
+    framePresented,
     inputError,
   } satisfies DeviceScreenClient & Record<keyof DeviceScreenClient, unknown>;
 }

@@ -22,9 +22,16 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     platform,
     status: "streaming",
     error: null,
+    framePresented: true,
     inputError: null,
     screenRecording: null,
+    recordingLock: null,
+    recordingControlsLocked: false,
     screen: { width: 390, height: 844 },
+    fold: null,
+    displays: null,
+    deviceModelUrl: null,
+    displayCorners: null,
     fps: 60,
     devices: [],
     logs: [],
@@ -134,6 +141,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       accessibility: true,
       permissions: false,
       clipboard: false,
+      orientation: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -144,6 +152,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
       location: false,
+      fold: false,
     },
     foregroundApp: null,
     videoKind: "img",
@@ -153,6 +162,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
+    orientation: null,
+    orientationPending: false,
+    orientationError: null,
+    orientationUnavailable: null,
+    setOrientation: () => {},
     screenshot: async () => null,
     appearance: "light",
     setAppearance: () => {},
@@ -1169,6 +1183,116 @@ test("maps Android device options onto Network and S–XL selects", () => {
   expect(selectValue(html, "Text size")).toBe("M");
 });
 
+test("offers the client's orientations and shows the client's pose", () => {
+  const all = {
+    orientations: ["portrait", "landscape_left", "portrait_upside_down", "landscape_right"],
+  } as const;
+  const ios = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("ios"),
+        capabilities: { ...inspectorClient("ios").capabilities, orientation: all },
+        screen: { width: 844, height: 390, orientation: "landscape_right" },
+        orientation: "landscape_right",
+      }}
+    />,
+  );
+  expect(selectOptionLabels(ios, "Orientation")).toEqual([
+    "Portrait",
+    "Landscape left",
+    "Landscape right",
+    "Upside down",
+  ]);
+  expect(selectValue(ios, "Orientation")).toBe("Landscape right");
+
+  // A pick shows at once, before the frame turns.
+  const picked = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 390, height: 844, orientation: "portrait", framesUpright: true },
+        orientation: "portrait_upside_down",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(selectValue(picked, "Orientation")).toBe("Upside down");
+
+  // The client offers poses before it knows the shown one, so the select waits instead of guessing.
+  const unknownPose = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        capabilities: { ...inspectorClient("android").capabilities, orientation: all },
+        screen: { width: 844, height: 390 },
+      }}
+    />,
+  );
+  expect(unknownPose).not.toContain('aria-label="Orientation"');
+
+  // An older serve-emu reports no pose, so the client offers no poses, also after a Rotate.
+  const olderServer = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...inspectorClient("android"),
+        screen: { width: 390, height: 844 },
+        orientation: "landscape_right",
+        orientationPending: true,
+      }}
+    />,
+  );
+  expect(olderServer).not.toContain('aria-label="Orientation"');
+
+  const unsupported = renderToStaticMarkup(<LogSidebar client={inspectorClient("ios")} />);
+  expect(unsupported).not.toContain('aria-label="Orientation"');
+});
+
+test("disables the orientation select with the client's reason, as Rotate does", () => {
+  const ios = inspectorClient("ios");
+  const client = {
+    ...ios,
+    capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+    screen: { width: 390, height: 844, orientation: "portrait" },
+    orientation: "portrait",
+  } as const;
+  for (const [overrides, reason] of [
+    [{}, null],
+    [{ orientationUnavailable: "recording" }, "Rotation is unavailable while recording."],
+    [
+      { orientationUnavailable: "recording-status-unknown" },
+      "Rotation is unavailable until recording status is known.",
+    ],
+    [
+      { orientationUnavailable: "input-unavailable" },
+      "Rotation is unavailable until the simulator accepts input.",
+    ],
+    // The dashboard follows the client's reason, not the status or recording it sees.
+    [{ status: "reconnecting", recordingControlsLocked: true, screenRecording: "recording" }, null],
+  ] as const) {
+    const html = renderToStaticMarkup(<LogSidebar client={{ ...client, ...overrides }} />);
+    const select = selectMarkup(html, "Orientation");
+    expect(select.includes('disabled=""')).toBe(reason !== null);
+    if (reason) expect(html).toContain(`aria-description="${reason}"`);
+  }
+});
+
+test("shows why an orientation change failed", () => {
+  const ios = inspectorClient("ios");
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...ios,
+        capabilities: { ...ios.capabilities, orientation: { orientations: ["portrait"] } },
+        screen: { width: 390, height: 844, orientation: "portrait" },
+        orientation: "portrait",
+        orientationError: "The orientation was not sent.",
+      }}
+    />,
+  );
+  expect(html).toContain("The orientation was not sent.");
+});
+
 test("renders the Android display-size control the backend reports", () => {
   const client = {
     ...inspectorClient("android"),
@@ -1589,6 +1713,7 @@ test("keeps the frame option disabled with an explanation for unsupported device
         clipboard: false,
         streamSettings: false,
         location: false,
+        fold: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
@@ -1621,6 +1746,7 @@ test("shows only the viewer-local frame option while iOS device settings are una
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
@@ -1682,6 +1808,7 @@ test("keeps the Android on-screen keyboard row off iOS while device settings loa
       permissions: false,
       clipboard: false,
       streamSettings: false,
+      fold: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
@@ -1813,13 +1940,29 @@ test("shows the active hardware encoder and hides unresolved encoder names", () 
   ).not.toContain("Active encoder:");
 });
 
-test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed", null] as const)(
-  "recording state %s locks only capture and destructive device controls",
-  (screenRecording) => {
+test.each([
+  ["unknown", "status-unknown"],
+  ["waiting", "recording"],
+  ["recording", "recording"],
+  ["finalizing", "recording"],
+  ["complete", null],
+  ["failed", null],
+  [null, null],
+  // The dashboard follows the client's lock, not its own reading of the status.
+  ["recording", null],
+  ["unknown", null],
+  ["complete", "recording"],
+  ["recording", "status-unknown"],
+] as const)(
+  "with recording %s and recordingLock %s, the lock disables only capture and destructive device controls",
+  (screenRecording, recordingLock) => {
+    const locked = recordingLock !== null;
     const base = inspectorClient("android");
     const client: DeviceClient = {
       ...base,
       screenRecording,
+      recordingLock,
+      recordingControlsLocked: locked,
       deviceSettings: { ...base.deviceSettings, "display-size": "medium" },
       streamSource: {
         mode: "grpc-screenshot",
@@ -1833,11 +1976,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
         sessionGeneration: 0,
       },
     };
-    const locked =
-      screenRecording === "unknown" ||
-      screenRecording === "waiting" ||
-      screenRecording === "recording" ||
-      screenRecording === "finalizing";
+    const unknownReason = recordingLock === "status-unknown";
     const stream = renderToStaticMarkup(
       <StreamOptionsSection
         client={client}
@@ -1860,7 +1999,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
     expect(selectMarkup(stream, "Stream transport")).not.toContain('disabled=""');
     expect(stream).not.toContain("Capture settings are locked");
-    expect(stream.includes("until recording status is known")).toBe(screenRecording === "unknown");
+    expect(stream.includes("until recording status is known")).toBe(unknownReason);
     expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
     if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
 
@@ -1872,9 +2011,7 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
       const button = deviceOptions.slice(deviceOptions.lastIndexOf("<button", end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes("until recording status is known")).toBe(
-      screenRecording === "unknown",
-    );
+    expect(deviceOptions.includes("until recording status is known")).toBe(unknownReason);
     expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
       locked ? 2 : 0,
     );
@@ -1883,3 +2020,33 @@ test.each(["unknown", "waiting", "recording", "finalizing", "complete", "failed"
     }
   },
 );
+
+test("Android fold capabilities show the shared pose controls without Duo-only controls", () => {
+  const base = inspectorClient("android");
+  const client = {
+    ...base,
+    fold: { angle: 0, pose: "closed", pending: false, error: null, setControl: () => {} },
+    capabilities: {
+      ...base.capabilities,
+      fold: {
+        angle: { min: 0, max: 180 },
+        poses: { closed: { angle: 0 }, book: { angle: 90 }, open: { angle: 180 } },
+        tableMode: false,
+      },
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  expect(html).toContain('aria-label="Fold pose"');
+  expect(html).toContain("Fully folded");
+  expect(html).toContain('aria-label="Hinge angle"');
+  expect(html).not.toContain(">Table Mode<");
+  expect(html).not.toContain(">Preview mode<");
+  expect(html).not.toContain(">Folded<");
+  const locked = renderToStaticMarkup(
+    <LogSidebar client={{ ...client, recordingLock: "recording" }} />,
+  );
+  expect(locked.match(/<button[^>]*aria-label="Fold pose"[^>]*>/)?.[0]).toContain("disabled");
+  expect(locked).toContain("interrupt the recording");
+  const unsupported = renderToStaticMarkup(<LogSidebar client={base} />);
+  expect(unsupported).not.toContain('aria-label="Fold pose"');
+});

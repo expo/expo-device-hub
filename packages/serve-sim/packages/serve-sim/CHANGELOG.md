@@ -1,5 +1,49 @@
 # @expo/serve-sim
 
+## 0.14.0
+
+### Minor Changes
+
+- d0f7c95: Add optional screenshot resizing and JPEG output to the HTTP and binary WebSocket APIs. Full-resolution PNG remains the default.
+
+### Patch Changes
+
+- b66e959: Add an `automation` flag to screenshot captures so background session thumbnails do not count as user activity. Automated captures skip Desktop copies, and binary captures do not create manual screenshot artifacts.
+
+  The POST screenshot endpoint also accepts `automation: true` in its JSON body with the existing bearer token.
+
+## 0.13.3
+
+### Patch Changes
+
+- de14fb6: Show the whole iPhone Duo cover screen in the 2D WebRTC stream. The picture was stretched and its right edge was cut, which showed as a dark stripe. serve-sim now draws it from the top-left corner of the shared canvas, with black bars right after the picture, and the screen views pin the frame to the top-left.
+- 05edb0b: Add iPhone Duo support to the Hub: fold controls in the inspector, Option+Shift+1–5 pose shortcuts, and a live 3D model of the device that folds with the hinge, or its active display flat in 2D.
+- c3f073c: Fix Simulator app installation from uploads and preview drops.
+
+## 0.13.2
+
+### Patch Changes
+
+- 6f21cf8: Capture active-display screenshots from native Simulator pixels to reduce latency while keeping full resolution and orientation.
+- 6dd111c: Return native HTTP screenshots from memory with an explicit response length. Add an opt-in binary response mode for `screenshot.capture` over exec-ws to download a PNG in one request without staging or Desktop copies.
+
+## 0.13.1
+
+### Patch Changes
+
+- 5f000be: Fix the device jumping and scaling back when entering or leaving full screen on mobile. Keep transitions continuous when reversing direction before the animation finishes.
+
+  Keep the device in place, with its frame and screen aligned, while the phone keyboard changes the mobile preview size. Keep the phone keyboard open when leaving full screen.
+
+- a702c83: Fix the Home-button artwork appearing at the left edge of older iPhone and iPad device frames.
+- 1ce9814: Fit the mobile preview to the available screen space while keeping the existing floating controls. Hide the device name, live badge, and accessibility overlay button on small screens.
+
+  Hide the bottom action toolbar while the phone keyboard is open so the preview has more room.
+
+  Stack mobile preview controls in one vertical toolbar, including the keyboard toggle.
+
+  Keep the full device visible in presentation mode when the phone keyboard opens.
+
 ## 0.13.0
 
 ### Minor Changes

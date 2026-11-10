@@ -5,7 +5,8 @@
 **Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
-**Related:** LLP 0000, LLP 0003
+**Revised:** 2026-10-21 (input addressed to a display; the input notice shares the screen status layer; Claude Code, directed by Krystof Woldrich), 2026-10-29 (orientation; recording lock), 2026-11-02 (hub-client principle recorded, confirmed by Krystof Woldrich; Claude Code, directed by Krystof Woldrich), 2026-11-03 (dashboard orientation; hub-client is platform and UI agnostic, wording confirmed by Krystof Woldrich; the iPhone Duo's clockwise Rotate and its 3D view, from #248; Claude Code, directed by Krystof Woldrich), 2026-11-09 (single-device sessions keep the left sidebar and show no device lifecycle controls; Claude Code, directed by Krystof Woldrich)
+**Related:** LLP 0000, LLP 0003, LLP 0004
 
 ## Summary
 
@@ -84,11 +85,13 @@ Window blur, a hidden tab, page hide, unmount, or a real input-owner change canc
 - Converting a single touch to a two-finger gesture releases the admitted single touch without retaining its unsent prefix as a completed tap (`TouchSample.cancelled`). It also cancels pending single-touch movement and releases at the last forwarded single-touch point, while starting the pinch at the current two-finger positions.
 - Completed gesture `begin`/`end` pairs remain queued as completed actions, in their original order and with the original 1.5 s expiry. Incomplete gestures are removed before a synthetic release can turn them into completed taps.
 
+Touch, multi-touch, and scroll samples addressed to one of `DeviceClient.displays` follow the same owner, queues, and cancellation. The helper routes input to the display that native readback reports, so a gesture that begins on another display is dropped through its end, and so is a scroll on another display. [LLP 0004](0004-serve-sim-hinge-controls.explainer.md#3d-preview-in-the-hub) describes the display contract [observed: `dropsDisplayInput` and `sendScroll` in `useIosDevice.ts`].
+
 This differs from serve-sim's window-blur handler, which cancels paced keyboard work and releases held physical keys while retaining unsent socket messages. HubClient's full queue cancellation applies to the global abandonment events above, not to focus transfers within the page [observed: `client/client.tsx`'s `blur` handler and `utils/ws-send-queue.ts` in ServeSim; `cancelInput` in HubClient].
 
 ## Input feedback
 
-HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice in `hub-components`' `PhoneFrame` with design tokens, without hiding live media [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`]. Other consumers choose their own presentation.
+`@expo/hub-client` is platform and UI agnostic. It provides base primitives: state, commands, media attachment, and input mapping. Consumers decide how to show loading, errors, and other states [confirmed] (Krystof Woldrich, 2026-11-02). So HubClient exposes `error` and `inputError`; product notices and their styling belong to consumers, not hub-client components. `DeviceScreenClient` includes `inputError`, and the Hub renders its non-interactive input notice with design tokens, without hiding live media. `hub-components`' `PhoneFrame` draws it through `DeviceScreenStatus`, over the flat screen and the 3D stage; a stream error takes its place, because input needs a stream [observed: `useDeviceScreenClient.ts`, `PhoneFrame.tsx`, `DeviceScreenStatus.tsx`]. Other consumers choose their own presentation. The loading state follows the same rule ([LLP 0015](0015-hub-screen-loading.explainer.md#where-each-part-lives)).
 
 An Android input-only outage does not demote healthy WebRTC playback to an error. A failed peer still recovers and can reach an error after its reconnect grace [observed: `useAndroidDevice.ts` and its mounted restart tests].
 
@@ -148,16 +151,37 @@ Browser clipboard writes from toolbar Copy are serialized. An older write that h
 
 Clipboard fallbacks belong to the selected device and are discarded on a selection change. A new fallback clears an earlier inspector error. A new inspector Copy clears its previous result before reading, including on failure. Key warnings are shown even when React batches an action's start and completion. The toolbar wraps at narrow widths; its measured height reserves space below the stream [observed: `Dashboard.tsx`, `ClipboardSection.tsx`, `ClipboardToast.tsx`, `StreamPanel.tsx`].
 
+## Orientation
+
+`DeviceClient.setOrientation` turns the device to one pose from `capabilities.orientation`, on both platforms. Both use the same four poses, named as serve-sim names them [observed: `Orientation` in serve-sim `src/native.ts`; `COUNTERCLOCKWISE_POSES` in serve-emu `src/adb.ts`], and Rotate steps through them in `DEVICE_ORIENTATIONS` order [observed: `orientation.ts`]. One hook, `useDeviceOrientation`, holds the choice for both, as `useDeviceLocation` holds the location; each platform supplies a backend [observed: `useDeviceOrientation.ts`].
+
+- **Choice and answer**: `orientation` shows a choice at once, `orientationPending` stays true until the backend answers, and `orientationError` keeps the last failure, like `appearance` and `location`. Each device has one writer for the hook's life, so its requests run one at a time, also across a token change or after the device is selected again, and a choice made while one is in flight replaces the queued one; only the newest answer or failure is shown [observed: `latest-writer.ts`]. Another device does not wait for it. A retired backend's queued choice is dropped, while its request in flight finishes. Rotate chooses the pose after the one shown, which a choice updates at once, so two Rotate calls before a render step through two poses [observed: `useDeviceOrientation.ts`]. After the answer, the choice stays until a report that started after it shows that pose, or until the 1.5 s readback grace has passed, because a report can still show the pose from before the change and an app can keep its own orientation [observed: `useDeviceOrientation.ts`].
+- **Unavailable**: `orientationUnavailable` gives the reason a change cannot go out now, or null. iOS reports `input-unavailable` while the helper input socket is not admitted or the helper reports `inputUnavailable`, because the pose goes over that socket, and the input queue drops a choice after 1.5 s. The video stream does not matter: video can fail while input works, and the reverse. A call still tries and can fail with `orientationError`. Android sends over HTTP. New reasons can be added [observed: `useIosDevice.ts`, `useAndroidDevice.ts`].
+- **iOS** sends the pose through the input queue. The send is the answer. serve-sim pushes a report only when the pose changes, so the choice also ends when the readback grace ends. A choice that the queue has not sent within its 1.5 s age limit fails. Rotate is a choice of the next pose, as on Android ([LLP 0003](0003-serve-sim-http-api.spec.md#rotation-readback)) [observed: `useIosDevice.ts`]. An iPhone Duo steps through the poses clockwise, in `CLOCKWISE_ORIENTATIONS` order, as Xcode's Device Hub turns it. On the Duo, Rotate and `setOrientation` also turn the 3D view by the same quarter turns at once and forget the native preset. `useDeviceOrientation` reports each accepted choice with the pose before it (`onChoose`), so two choices before a render turn the view as far as the device, which a rotation clears; the Duo then waits for the rotation's readback before it follows the hinge again ([LLP 0004](0004-serve-sim-hinge-controls.explainer.md#live-pose-observation)) [observed: `turnDuo` and `clockwiseQuarterTurns` in `useIosDevice.ts`, `orientation.ts`, `onChoose` in `useDeviceOrientation.ts`].
+- **Android** sends `POST /api/orientation` with a 10 s timeout on the request's signal, which also ends the body read, as in the `/api` poll; a timeout is reported and not retried [observed: `android-orientation.ts`]. The answer's `pose` replaces the choice, and each `/api` poll is a report [observed: `useAndroidDevice.ts`].
+- **Older serve-emu servers** do not send `pose` in `GET /api`. HubClient then sets `capabilities.orientation` to `false`, keeps `orientation` null, also after a Rotate, and ignores `setOrientation`, because it cannot show which pose the device is in. Rotate still works: it alternates between `portrait` and `landscape_right`, sent as `portrait` and `landscape`, which lock rotation 0 and 1, from the last choice or, without one, from the frame's aspect. Before the first `/api` answer the kind of server is not known, so Rotate waits [observed: `useAndroidDevice.ts`, `android-orientation.ts`].
+- **`screen.framesUpright`**: serve-emu frames already show the display as it faces, so Android sets `framesUpright` and `DeviceScreen` never turns the video. serve-sim can send raw portrait frames for a turned simulator, which `DeviceScreen` turns [observed: `streamGeometry` in `orientation.ts`]. The reported pose comes from the 1.5 s `/api` poll, and the frame size changes first, so Android adds the pose to `screen` only while both show the same portrait or landscape shape [observed: `useAndroidDevice.ts`].
+- **Dashboard**: Device options shows an Orientation select while the client offers poses in `capabilities.orientation` and has a pose in `orientation`, from a pick or a report, so an older serve-emu server, which offers none, never shows it. The select shows `orientation`, so a pick appears at once, and `orientationError` under its label. The select and Rotate are disabled while `orientationUnavailable` is set, and show its reason as text; the dashboard does not check the platform, stream status or recording itself [observed: `DeviceOptionsSection.tsx`, `StreamControls.tsx`, `rotation-availability.ts` in `packages/@expo/hub-components/src/dashboard`].
+
 ## Single-device sessions
 
 The standalone Hub accepts `--platform ios|android --single-device <id>`; iOS
 requires a simulator UUID and Android requires an adb serial. Like the other
 standalone CLI options, its environment setting is ignored in plugin mode. The server
 propagates that startup identity to the backend and shell. Device discovery and
-agent activity expose only that ID. The dashboard does not mount its left
-sidebar, toggle, creation picker or delete action, and a missing device does not
-cause selection of another device
+agent activity expose only that ID. The dashboard keeps its left sidebar and
+toggle, so the sidebar lists only that device, above its inspector. It shows no
+device lifecycle controls: no boot or create picker, no Shut down, no Remove, and
+no Start in the missing-device view. A missing device does not cause selection
+of another device
 [observed: `packages/expo-device-hub/src/server/single-device.ts`, `src/Dashboard.tsx`].
+
+The left sidebar stays because it holds the inspector. Single-device mode first
+removed the whole left sidebar, when the inspector had its own right sidebar.
+Then the inspector moved into the left sidebar, and locked sessions lost it.
+The session is locked to one device, and the device lifecycle is managed outside
+the dashboard. [confirmed: Krystof Woldrich, 2026-11-09, single-device mode keeps
+the left sidebar and removes the device lifecycle controls from the dashboard]
 
 Boot, shutdown and remove share request parsing and one lifecycle policy check
 [observed: `src/server/index.ts`, `src/server/single-device.ts`].
@@ -168,15 +192,21 @@ passes serve-sim's single-device policy through without bypassing either token
 gate. The Android adapter pins omitted `device` parameters, rejects conflicting
 ones, and closes its fleet listing, selection and AVD launch/stop routes before
 calling the backend. AVD names are not accepted as lifecycle replacements for an
-adb serial. The missing-device view offers Start for the pinned iOS simulator, including
-when discovery has no recent entry. It uses the same pending/error presentation
-as the empty state and cannot select or create a different simulator. Android
-may reconnect under its original serial
-[observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`].
+adb serial. The server still accepts shutdown of the session device, and boot of
+the original iOS simulator, from clients other than the dashboard. Android may
+reconnect under its original serial
+[observed: `src/server/index.ts`, `src/server/serve-sim.ts`, `src/server/serve-emu.ts`,
+`allowsSessionDeviceAction` in `src/server/single-device.ts`].
 
 The [serve-sim policy](0003-serve-sim-http-api.spec.md#single-device-sessions)
 explains helper and control-channel restrictions. A single-device session is
 an application policy layered on authentication, not host-wide device isolation.
+
+## Recording lock
+
+On Android, turning the device or changing the stream can end the host screen recording. The Hub README says that rotation invalidates the recording and that the recording continues across a capture restart only when the encoder configuration is unchanged, and the Device options section disabled these controls "because this would interrupt the recording" before this lock moved into the client [observed: `packages/expo-device-hub/README.md`, `DeviceOptionsSection.tsx` on `main` before this change]. `DeviceClient.recordingLock` is `status-unknown` until the first recording status arrives and `recording` while it is waiting, recording or finalizing, and null otherwise; `recordingControlsLocked` is true while it is set, and `orientationUnavailable` reports it as `recording-status-unknown` or `recording` [observed: `recordingLockReason` and `recordingOrientationUnavailable` in `screen-recording.ts`]. `rotate`, `setOrientation`, `updateStreamSettings`, `setStreamSource` and the three gRPC setters are silently ignored meanwhile, so the Hub dashboard disables its controls and picks its explanation from this one value instead of checking the status itself [observed: `useAndroidDevice.ts`, `DeviceOptionsSection.tsx`, `StreamControls.tsx`, `StreamOptionsSection.tsx`]. Once recordings survive rotation and stream changes, `recordingLock` is always null and `recordingControlsLocked` always false, and `recordingControlsLocked` is then deprecated. The three places that send these changes check the lock: `putStreamMode`, `updateStreamSettings`, and the orientation backend, which `useDeviceOrientation` asks when a call comes and again when a waiting choice's turn comes. A direct call is ignored, and a choice that waited behind another request is cleared; neither sets an error [observed: `useAndroidDevice.ts`, `useDeviceOrientation.ts`]. iOS reports no recording and never locks.
+
+The lock is temporary. The team plans to record the screen in a way that survives rotation and stream changes; then this lock can go [confirmed: Krystof Woldrich, 2026-10-27].
 
 ## Hub shutdown
 
