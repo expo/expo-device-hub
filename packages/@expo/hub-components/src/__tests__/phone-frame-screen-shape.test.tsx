@@ -155,6 +155,25 @@ describe("PhoneFrame screen shape", () => {
     expect(frameStyle(markup)).not.toContain("border-radius");
   });
 
+  test("shows the whole stream rectangle when the server names no model, whatever the device is called", () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={{ ...IPHONE, model: null }}
+        client={
+          {
+            ...client({ width: 1206, height: 2622 }, "ios"),
+            devices: [{ id: "iphone", name: "iPhone 17 Pro", platform: "ios", current: true }],
+          } as DeviceClient
+        }
+        DeviceScreen={Screen}
+        DeviceShape={DeviceShape}
+        displayScreen={(value) => value ?? null}
+      />,
+    );
+    expect(markup).not.toContain("data-screen-shape");
+    expect(clipStyle(markup)).toBe("position:absolute;inset:0");
+  });
+
   test("shows the whole stream rectangle when the consumer does not pass DeviceShape", () => {
     const markup = render(IPHONE, { width: 1206, height: 2622 }, { shapes: false });
     expect(markup).not.toContain("data-screen-shape");

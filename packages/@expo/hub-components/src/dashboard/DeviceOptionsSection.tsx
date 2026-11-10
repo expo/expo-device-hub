@@ -92,6 +92,8 @@ const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
 export const NO_DEVICE_SHAPE_DESCRIPTION = "No device shape for selected device.";
 
+export const DEVICE_SHAPE_2D_ONLY_DESCRIPTION = "Applies to the 2D view only.";
+
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
@@ -145,7 +147,16 @@ export function DeviceOptionsSection({
       : recordingLock === "status-unknown"
         ? "Unavailable until recording status is known."
         : "Unavailable because this would interrupt the recording.";
-  const unavailableShapeDescriptionId = useId();
+  const shapeDescriptionId = useId();
+  // The 3D model draws its own device, so the screen shape applies to the 2D
+  // view only. The 3D view shows while 3D is chosen and its model loads.
+  // @ref LLP 0017#hub-dashboard — the shape option applies to the 2D view only
+  const shapeIn3D = foldPreview?.mode === "3d" && !foldPreview.unavailable;
+  const shapeDescription = !screenShape?.available
+    ? NO_DEVICE_SHAPE_DESCRIPTION
+    : shapeIn3D
+      ? DEVICE_SHAPE_2D_ONLY_DESCRIPTION
+      : undefined;
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
@@ -308,14 +319,14 @@ export function DeviceOptionsSection({
       {screenShape && (
         <SidebarRow
           label="Show device shape"
-          description={screenShape.available ? undefined : NO_DEVICE_SHAPE_DESCRIPTION}
-          descriptionId={screenShape.available ? undefined : unavailableShapeDescriptionId}
+          description={shapeDescription}
+          descriptionId={shapeDescription ? shapeDescriptionId : undefined}
         >
           <SidebarSwitch
             checked={screenShape.available && screenShape.visible}
-            disabled={!screenShape.available}
+            disabled={!screenShape.available || shapeIn3D}
             label="Show device shape"
-            descriptionId={screenShape.available ? undefined : unavailableShapeDescriptionId}
+            descriptionId={shapeDescription ? shapeDescriptionId : undefined}
             onChange={screenShape.onVisibleChange}
           />
         </SidebarRow>

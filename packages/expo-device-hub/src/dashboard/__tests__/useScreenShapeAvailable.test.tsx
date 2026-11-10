@@ -46,12 +46,13 @@ test("counts the iPhone Duo's own display corners as a shape", () => {
   );
 });
 
-test("falls back to the client's device name like the screen's DeviceShape", () => {
+test("is false when the server names no model, even if the device's name matches a shape", () => {
+  // A simulator that a user renamed "iPhone 17 Pro" is not an iPhone 17 Pro.
   const devices = [{ id: "sim", name: "iPhone 17 Pro", current: true }];
   expect(
     available({ platform: "ios", model: null }, {
       platform: "ios",
       devices,
     } as unknown as Partial<DeviceClient>),
-  ).toBe(true);
+  ).toBe(false);
 });

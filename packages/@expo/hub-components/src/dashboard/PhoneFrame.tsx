@@ -302,7 +302,10 @@ export function PhoneFrame({
           data-testid="device-screen-clip"
           client={client}
           platform={device.platform}
-          model={device.model}
+          // A device whose model the server cannot name has no shape: an empty
+          // model stops the fallback to the client's device name, which a user
+          // can rename.
+          model={device.model ?? ""}
           shape={showScreenShape ? undefined : null}
           aspectRatio={ratio}
           insetPx={SCREEN_SHAPE_INSET_PX}

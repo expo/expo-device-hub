@@ -83,6 +83,7 @@ export { DeviceSection, type DeviceSectionProps } from "./dashboard/DeviceSectio
 export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
+  DEVICE_SHAPE_2D_ONLY_DESCRIPTION,
   DeviceOptionsSection,
   NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
