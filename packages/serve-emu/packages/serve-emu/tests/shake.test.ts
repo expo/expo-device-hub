@@ -198,7 +198,9 @@ describe("shakeEmulator", () => {
   test("settling resolves when nothing runs and when a restore fails", async () => {
     await settleShakes();
     const { runExec } = fakeConsole(undefined, (args) =>
-      args.includes("set") && args.at(-1) === "0:9.77631:0.812349" ? result("KO: busy\r\n") : undefined,
+      args.includes("set") && args.at(-1) === "0:9.77631:0.812349"
+        ? result("KO: busy\r\n")
+        : undefined,
     );
     const shake = shakeEmulator("emulator-5574", runExec, noWait);
     await settleShakes(["emulator-5574"]);
