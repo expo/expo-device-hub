@@ -68,8 +68,9 @@ describe("screenshot capture", () => {
 });
 
 test.each([
-  { width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0 },
-  { width: 2622, height: 1206, displayRotation: "landscape-left", displayId: 3, displayCount: 2 },
+  { width: 0, height: 0, displayRotation: null },
+  { width: 2622, height: 1206, displayRotation: "landscape-left", screen: "inner" },
+  { width: 1206, height: 2622, displayRotation: "portrait", screen: "outer" },
 ])("keeps recognized screenshot metadata beside the original PNG", async (metadata) => {
   const shot = await fetchScreenshot(
     "",
@@ -86,14 +87,15 @@ test.each([
   "{",
   "null",
   "[]",
-  JSON.stringify({ width: -1, height: 0, displayRotation: null, displayId: 0, displayCount: 0 }),
+  JSON.stringify({ width: -1, height: 0, displayRotation: null }),
   JSON.stringify({
     width: 0,
     height: 0,
     displayRotation: "unknown",
-    displayId: 0,
-    displayCount: 0,
   }),
+  ...[0, null, true, "external"].map((screen) =>
+    JSON.stringify({ width: 0, height: 0, displayRotation: null, screen }),
+  ),
   "x".repeat(1025),
 ])("ignores invalid optional metadata without losing the PNG (%s)", async (header) => {
   const shot = await fetchScreenshot(
