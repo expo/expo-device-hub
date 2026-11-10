@@ -16,6 +16,7 @@ const commands = [
   { args: ["ca-debug", "blended", "on"], messages: [0x08] },
   { args: ["memory-warning"], messages: [0x09] },
   { args: ["software-keyboard"], messages: [0x0c] },
+  { args: ["shake"], messages: [0x14] },
 ];
 
 type InputTarget = {

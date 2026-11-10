@@ -221,6 +221,7 @@ const ACTION_SCHEMAS = {
   memoryWarning: z
     .object({ udid: Device })
     .meta({ description: "Send a memory warning to the device." }),
+  shake: z.object({ udid: Device }).meta({ description: "Shake the device." }),
   "caDebug.set": z
     .object({
       udid: Device,
@@ -619,6 +620,10 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     case "memoryWarning": {
       const p = parseParams(action, raw);
       return serveSim(["memory-warning", "-d", p.udid]);
+    }
+    case "shake": {
+      const p = parseParams(action, raw);
+      return serveSim(["shake", "-d", p.udid]);
     }
     case "caDebug.set": {
       const p = parseParams(action, raw);

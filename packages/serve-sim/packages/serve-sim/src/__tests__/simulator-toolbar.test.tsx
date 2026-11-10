@@ -127,4 +127,16 @@ describe("SimulatorToolbar.Button", () => {
     expect(html).toContain(">Clipboard</span>");
     expect(html).not.toContain('title="Clipboard"');
   });
+
+  test("ShakeButton names the shake action and shows its tooltip", () => {
+    const html = renderToStaticMarkup(
+      <SimulatorToolbar deviceUdid="booted" streaming>
+        <SimulatorToolbar.ShakeButton title="Shake" />
+      </SimulatorToolbar>,
+    );
+    expect(html).toContain('role="tooltip"');
+    expect(html).toContain('aria-label="Shake device"');
+    expect(html).toContain(">Shake</span>");
+    expect(html).toContain("<svg");
+  });
 });

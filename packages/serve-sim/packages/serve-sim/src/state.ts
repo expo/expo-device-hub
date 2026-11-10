@@ -39,6 +39,8 @@ export interface ServeSimDeviceState {
   inputPaste?: true;
   /** This helper acknowledges Copy's input barrier by request ID. Copy waits on an older one until it times out. */
   inputCopy?: true;
+  /** This helper shakes the device on input message `0x14`; an older one drops it. */
+  inputShake?: true;
   streamSettings?: StreamSettings;
   /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
@@ -88,6 +90,7 @@ export function inProcessServeSimState(
     inputAdmission: true,
     inputPaste: true,
     inputCopy: true,
+    inputShake: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
 }

@@ -1178,6 +1178,16 @@ async function memoryWarning(deviceArg?: string) {
   return sendHelperMessage(stateFile, helperMessage(0x09));
 }
 
+// Ask the helper to shake the device, like Simulator.app's Device → Shake.
+async function shake(deviceArg?: string) {
+  const stateFile = readDeviceState(deviceArg);
+  if (!stateFile) {
+    console.error("No serve-sim server running. Run `serve-sim` first.");
+    process.exit(1);
+  }
+  return sendHelperMessage(stateFile, helperMessage(0x14));
+}
+
 async function softwareKeyboard(deviceArg?: string) {
   const stateFile = readDeviceState(deviceArg);
   if (!stateFile) {
@@ -3441,6 +3451,12 @@ program
   .description("Simulate a memory warning on the device")
   .option(...deviceOpt)
   .action((opts) => memoryWarning(opts.device));
+
+program
+  .command("shake")
+  .description("Shake the device")
+  .option(...deviceOpt)
+  .action((opts) => shake(opts.device));
 
 program
   .command("software-keyboard")
