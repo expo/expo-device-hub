@@ -250,7 +250,7 @@ const AndroidDisplayScreenShapeModels: readonly {
         cover: AndroidScreenShapes.pixel9ProFoldCover,
         inner: AndroidScreenShapes.pixel9ProFoldInner,
       },
-      // The AVD profile starts with the hinge at 180°, open on the inner display.
+      // @ref LLP 0017#displays-and-orientation — the AVD profile starts open at 180°, on its inner display
       initialDisplay: "inner",
     },
   },
@@ -261,6 +261,7 @@ const AndroidDisplayScreenShapeModels: readonly {
         cover: AndroidScreenShapes.pixel10ProFoldCover,
         inner: AndroidScreenShapes.pixel10ProFoldInner,
       },
+      // Its AVD profile starts open too.
       initialDisplay: "inner",
     },
   },

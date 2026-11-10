@@ -10,7 +10,7 @@
 
 ## Summary
 
-`@expo/hub-client/shapes` gives a device screen the outline of the real device: the superellipse corners of each iPhone, iPad, and Pixel model, and one outline per display of the iPhone Duo. The expo.dev website and the Hub dashboard both use it, so a device looks the same in both places, live and in recordings.
+`@expo/hub-client/shapes` gives a device screen the outline of the real device: the superellipse corners of each iPhone, iPad, and Pixel model, and one outline per display of the iPhone Duo and the Pixel 9 Pro Fold and Pixel 10 Pro Fold. The expo.dev website and the Hub dashboard both use it, so a device looks the same in both places, live and in recordings.
 
 > **Provenance.** Claude Code wrote this draft while it implemented the entry point. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. File paths are relative to `packages/@expo/hub-client/src`.
 
