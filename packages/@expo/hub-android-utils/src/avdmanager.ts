@@ -7,13 +7,14 @@ import type { CreateDeviceOptions } from "./types";
 
 /**
  * Run `avdmanager list avd` and return its stdout, or `null` on failure.
- * Never throws.
+ * `signal` kills the child when the caller aborts. Never throws.
  */
 export async function runAvdmanagerListAvd(
   avdmanagerPath: string,
+  { signal }: { signal?: AbortSignal } = {},
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execSdkTool(avdmanagerPath, ["list", "avd"]);
+    const { stdout } = await execSdkTool(avdmanagerPath, ["list", "avd"], { signal });
     return result(stdout);
   } catch (error) {
     return result(null, reportError("[android-utils] Failed to run `avdmanager list avd`:", error));

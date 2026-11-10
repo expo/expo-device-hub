@@ -18,11 +18,14 @@ import { resolveAdbPath, resolveAvdmanagerPath } from "./sdk-paths";
 import type { AndroidDevice } from "./types";
 
 /**
- * How long `adb devices -l` may run. A wedged adb server accepts connections
- * but never answers, so without a limit every poll leaves another `adb` child
- * behind and the hub's device list, iOS included, never returns.
+ * How long one discovery cycle may take, across every `avdmanager` and `adb`
+ * call it makes. A wedged adb server accepts connections but never answers,
+ * so without a limit every poll leaves another child behind and the hub's
+ * device list, iOS included, never returns. `avdmanager` starts a JVM and can
+ * take a few seconds on a busy host, so the budget stays well above that while
+ * staying under the 15 s that T3 Code waits for the hub's device list.
  */
-const ADB_DEVICES_TIMEOUT_MS = 5_000;
+const LIST_DEVICES_TIMEOUT_MS = 10_000;
 
 /**
  * List the Android devices known to the SDK.
@@ -34,22 +37,23 @@ const ADB_DEVICES_TIMEOUT_MS = 5_000;
  * read, with the first invocation-specific failure in `error`.
  */
 export async function listDevices({
-  adbTimeoutMs = ADB_DEVICES_TIMEOUT_MS,
-}: { adbTimeoutMs?: number } = {}): Promise<AndroidUtilsResult<AndroidDevice[]>> {
+  timeoutMs = LIST_DEVICES_TIMEOUT_MS,
+}: { timeoutMs?: number } = {}): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
+    const signal = AbortSignal.timeout(timeoutMs);
     const env = process.env;
     const home = homedir();
     const avdmanager = resolveAvdmanagerPath(env, home);
     const adb = resolveAdbPath(env, home);
 
-    const avdList = await runAvdmanagerListAvd(avdmanager);
+    const avdList = await runAvdmanagerListAvd(avdmanager, { signal });
     if (avdList.error) return result([], avdList.error);
 
-    const adbList = await runAdbDevices(adb, { timeoutMs: adbTimeoutMs });
+    const adbList = await runAdbDevices(adb, { signal });
     if (adbList.error) return result([], adbList.error);
 
     const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
-    const connected = await inspectConnectedDevices(adb, adbList.value);
+    const connected = await inspectConnectedDevices(adb, adbList.value, signal);
     if (connected.error) return result([], connected.error);
 
     return await buildDevices(avdBlocks, connected.value);
@@ -62,13 +66,14 @@ export async function listDevices({
 async function inspectConnectedDevices(
   adb: string,
   adbStdout: string | null,
+  signal: AbortSignal,
 ): Promise<AndroidUtilsResult<ConnectedDevice[]>> {
   if (!adbStdout) return result([]);
 
   const online = parseAdbDevices(adbStdout).filter(isOnline);
   const connected: ConnectedDevice[] = [];
   for (const device of online) {
-    const inspected = await inspectDevice(adb, device.serial);
+    const inspected = await inspectDevice(adb, device.serial, signal);
     if (inspected.error) return result([], inspected.error);
     connected.push(inspected.value);
   }
@@ -78,8 +83,9 @@ async function inspectConnectedDevices(
 async function inspectDevice(
   adb: string,
   serial: string,
+  signal: AbortSignal,
 ): Promise<AndroidUtilsResult<ConnectedDevice>> {
-  const getprop = await runAdbGetprop(adb, serial);
+  const getprop = await runAdbGetprop(adb, serial, { signal });
   if (getprop.error) {
     return result({ serial, isEmulator: false, avdName: null, properties: {} }, getprop.error);
   }
@@ -88,7 +94,7 @@ async function inspectDevice(
   const isEmulator = isEmulatorProps(properties);
   let avdName: string | null = null;
   if (isEmulator) {
-    const named = await runAdbEmuAvdName(adb, serial);
+    const named = await runAdbEmuAvdName(adb, serial, { signal });
     if (named.error) {
       return result({ serial, isEmulator, avdName, properties }, named.error);
     }

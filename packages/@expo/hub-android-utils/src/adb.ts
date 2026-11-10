@@ -28,14 +28,17 @@ export async function runAdbDevices(
 
 /**
  * Run `adb -s <serial> shell getprop` and return its stdout, or `null` on
- * failure. Never throws.
+ * failure. `signal` kills the child when the caller aborts. Never throws.
  */
 export async function runAdbGetprop(
   adbPath: string,
   serial: string,
+  { signal }: { signal?: AbortSignal } = {},
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "shell", "getprop"]);
+    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "shell", "getprop"], {
+      signal,
+    });
     return result(stdout);
   } catch (error) {
     return result(
@@ -47,14 +50,18 @@ export async function runAdbGetprop(
 
 /**
  * Run `adb -s <serial> emu avd name` and return its stdout, or `null` on
- * failure. Only meaningful for emulators. Never throws.
+ * failure. Only meaningful for emulators. `signal` kills the child when the
+ * caller aborts. Never throws.
  */
 export async function runAdbEmuAvdName(
   adbPath: string,
   serial: string,
+  { signal }: { signal?: AbortSignal } = {},
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "emu", "avd", "name"]);
+    const { stdout } = await execFileAsync(adbPath, ["-s", serial, "emu", "avd", "name"], {
+      signal,
+    });
     return result(stdout);
   } catch (error) {
     return result(

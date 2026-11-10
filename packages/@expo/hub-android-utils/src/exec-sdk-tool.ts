@@ -9,14 +9,15 @@ const execFileAsync = promisify(execFile);
  * On Windows `avdmanager` and `sdkmanager` are `.bat` wrappers, which Node
  * refuses to spawn directly (`spawn EINVAL` since 18.20 / 20.12). Those run
  * through `cmd.exe` as one pre-quoted command line; native binaries such as
- * `adb` spawn as-is.
+ * `adb` spawn as-is. `signal` kills the child when the caller aborts.
  */
 export async function execSdkTool(
   toolPath: string,
   args: string[],
+  { signal }: { signal?: AbortSignal } = {},
 ): Promise<{ stdout: string; stderr: string }> {
-  if (!isBatchFile(toolPath)) return execFileAsync(toolPath, args);
-  return execFileAsync(buildBatchCommand(toolPath, args), [], { shell: true });
+  if (!isBatchFile(toolPath)) return execFileAsync(toolPath, args, { signal });
+  return execFileAsync(buildBatchCommand(toolPath, args), [], { shell: true, signal });
 }
 
 /** Whether `toolPath` is a Windows batch wrapper rather than a native binary. */
