@@ -510,6 +510,42 @@ describe("startServer shake", () => {
     }
   });
 
+  test("stopping one server does not cut another server's shake short", async () => {
+    const written: string[] = [];
+    const ok = (stdout: string): ExecResult<string> => ({
+      status: 0,
+      stdout,
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      error: null,
+    });
+    const runExec = (async (_cmd: string, args: string[]) => {
+      if (args.includes("get")) return ok("acceleration = 0:9.8:0\r\nOK\r\n");
+      written.push(args.at(-1)!);
+      return ok("OK\r\n");
+    }) as unknown as typeof execText;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstWait = true;
+    // Another server's shake on another emulator, in the same process.
+    const other = shakeEmulator("emulator-5614", runExec, async () => {
+      if (firstWait) {
+        firstWait = false;
+        await gate;
+      }
+    });
+    while (written.length === 0) await Bun.sleep(1);
+
+    const { started } = await startShakeServer("emulator-5612", async () => {});
+    await started.stop();
+    release();
+    await other;
+    expect(written).toHaveLength(6);
+  });
+
   test("records a shake unless asked not to", async () => {
     const shaken: string[] = [];
     const { captured, started } = await startShakeServer("emulator-5606", async (serial) => {

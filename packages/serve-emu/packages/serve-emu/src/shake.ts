@@ -37,6 +37,32 @@ export class ShakeUnsupportedError extends Error {
   }
 }
 
+/**
+ * One shake per device at a time for one server. A request during a running shake joins it, so
+ * overlapping requests record one shake. `onStart` runs once per burst, before it, so the caller
+ * records the shake ahead of any input that arrives during the burst, and replay keeps that
+ * order. `serials()` names the devices this server shakes now, so its stop settles only those.
+ */
+export function createShakeRunner(shake: (serial: string) => Promise<void>) {
+  const running = new Map<string, Promise<void>>();
+  return {
+    run(serial: string, onStart: () => void): Promise<void> {
+      if (!isEmulatorSerial(serial)) return Promise.reject(new ShakeUnsupportedError());
+      const current = running.get(serial);
+      if (current) return current;
+      onStart();
+      const done = shake(serial).finally(() => {
+        if (running.get(serial) === done) running.delete(serial);
+      });
+      running.set(serial, done);
+      return done;
+    },
+    serials(): string[] {
+      return [...running.keys()];
+    },
+  };
+}
+
 /** A `POST /api/shake` body that is not empty JSON `{}` or `{ "record": boolean }`. */
 export class ShakeRequestError extends Error {
   constructor(message: string) {

@@ -23,6 +23,11 @@ type FakeSocket = {
 
 async function renderClient(flags: { inputShake?: boolean }) {
   const sockets: FakeSocket[] = [];
+  // The input queue drops a message after 1.5 s; shorten that wait.
+  const realTimeout = globalThis.setTimeout;
+  stubGlobal("setTimeout", (callback: () => void, delay: number) =>
+    realTimeout(callback, delay === 1500 ? 10 : delay),
+  );
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   stubGlobal("window", {
     location: {
@@ -113,4 +118,20 @@ test("an older helper cannot shake and gets no shake message", async () => {
   await act(async () => client().shake());
 
   expect(tags(socket)).toEqual([]);
+});
+
+test("a shake the input socket never sends shows an error; a sent one does not", async () => {
+  const { client, admit } = await renderClient({ inputShake: true });
+
+  await act(async () => client().shake());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 60)));
+  expect(client().shakeError).toBe(
+    "The shake was not sent because simulator input is not connected. Try again.",
+  );
+
+  const socket = await admit();
+  await act(async () => client().shake());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 60)));
+  expect(tags(socket)).toContain(0x14);
+  expect(client().shakeError).toBeNull();
 });
