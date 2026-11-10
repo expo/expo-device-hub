@@ -573,7 +573,8 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
             applyRotation:
               dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
-            shake: shakeDevice,
+            // Replay shakes through the runner too, so a request joins them and stop settles them.
+            shake: (serial) => shakeRunner.run(serial),
           }),
     });
     context.registerCleanup(() =>
@@ -2227,9 +2228,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
         try {
           const { record } = await readShakeRequest(req);
           await runForContext(requestContext, (context) =>
-            shakeRunner.run(context.serial, () => {
-              if (record) context.recorder.recordShake("rest:shake");
-            }),
+            shakeRunner.run(context.serial, record ? context.recorder : undefined),
           );
           return Response.json({ ok: true });
         } catch (err) {

@@ -130,6 +130,10 @@ type ActiveReplay = {
 
 const EMPTY_ARRAY_BYTES = 2;
 
+function eventBytes(event: RecordedEvent): number {
+  return Buffer.byteLength(JSON.stringify(event), "utf8");
+}
+
 function cloneGesture(gesture: Gesture): Gesture {
   return gesture.type === "text"
     ? { type: "text", text: normalizeTextForControl(gesture.text) }
@@ -241,8 +245,29 @@ export class SessionRecorder {
     this.#record({ kind: "location", location, source });
   }
 
-  recordShake(source: string): void {
-    this.#record({ kind: "shake", source });
+  /** Record a shake when its burst starts. Returns the event ID, or null when nothing was recorded. */
+  recordShake(source: string): number | null {
+    return this.#record({ kind: "shake", source });
+  }
+
+  /**
+   * Remove an event whose action failed after it was recorded. The next event takes its time gap,
+   * so replay keeps the timing of the events around it.
+   */
+  discard(id: number): void {
+    const index = this.#events.findIndex((event) => event.id === id);
+    if (index === -1) return;
+    const removed = this.#events.splice(index, 1)[0]!;
+    this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
+    const next = this.#events[index];
+    if (next) {
+      const before = eventBytes(next);
+      next.delayMs += removed.delayMs;
+      this.#retainedBytes += eventBytes(next) - before;
+    } else {
+      const previous = this.#events[index - 1];
+      this.#lastEventMs = previous ? Date.parse(previous.at) : null;
+    }
   }
 
   clear(): SessionSummary {
@@ -493,8 +518,8 @@ export class SessionRecorder {
       | { kind: "gesture"; gesture: Gesture; source: string }
       | { kind: "location"; location: GeoFix; source: string }
       | { kind: "shake"; source: string },
-  ): void {
-    if (this.#closed || !this.#recording || this.#replaying) return;
+  ): number | null {
+    if (this.#closed || !this.#recording || this.#replaying) return null;
     const now = this.#clock.now();
     const delayMs = this.#lastEventMs !== null ? Math.max(0, now - this.#lastEventMs) : 0;
     this.#lastEventMs = now;
@@ -510,18 +535,18 @@ export class SessionRecorder {
         : event.kind === "location"
           ? { ...base, kind: "location", location: { ...event.location } }
           : { ...base, kind: "shake" };
-    const bytes = Buffer.byteLength(JSON.stringify(recorded), "utf8");
+    const bytes = eventBytes(recorded);
     if (EMPTY_ARRAY_BYTES + bytes > this.#maxBytes) {
       this.#droppedEvents++;
-      return;
+      return null;
     }
     this.#events.push(recorded);
     this.#retainedBytes += bytes + (this.#events.length > 1 ? 1 : 0);
     while (this.#events.length > this.#maxEvents || this.#retainedBytes > this.#maxBytes) {
       const removed = this.#events.shift()!;
-      this.#retainedBytes -=
-        Buffer.byteLength(JSON.stringify(removed), "utf8") + (this.#events.length > 0 ? 1 : 0);
+      this.#retainedBytes -= eventBytes(removed) + (this.#events.length > 0 ? 1 : 0);
       this.#droppedEvents++;
     }
+    return recorded.id;
   }
 }

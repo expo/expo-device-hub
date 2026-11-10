@@ -99,6 +99,39 @@ describe("middleware shake", () => {
     }
   });
 
+  test("a failed shake leaves no event, and a recording request joins an unrecorded burst", async () => {
+    let fail = true;
+    let release!: () => void;
+    let gate = Promise.resolve();
+    const app = await startApp("emulator-5616", {
+      shake: async () => {
+        if (fail) throw new Error("Emulator acceleration write failed: KO: busy");
+        await gate;
+      },
+    });
+    const events = async () =>
+      ((await (await app.handleRequest(request("/api/session"))).json()) as { events: unknown[] })
+        .events;
+    try {
+      expect((await app.handleRequest(post("/api/shake", {}))).status).toBe(400);
+      expect(await events()).toEqual([]);
+
+      fail = false;
+      gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const unrecorded = app.handleRequest(post("/api/shake", { record: false }));
+      await Bun.sleep(5);
+      const recorded = app.handleRequest(post("/api/shake", {}));
+      release();
+      expect((await unrecorded).status).toBe(200);
+      expect((await recorded).status).toBe(200);
+      expect(await events()).toMatchObject([{ kind: "shake", source: "rest:shake" }]);
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("an oversized shake body gets 413 and does not shake", async () => {
     const shaken: string[] = [];
     const app = await startApp("emulator-5610", {

@@ -380,3 +380,40 @@ describe("shake events", () => {
     expect(finished.replayStatus).toBe("completed");
   });
 });
+
+describe("discarding a failed action", () => {
+  test("removes the event, gives its time gap to the next one, and keeps the byte count", () => {
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now });
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 100;
+    const shake = recorder.recordShake("rest:shake");
+    now = 250;
+    recorder.recordGesture({ type: "back" }, "test");
+    expect(shake).not.toBeNull();
+
+    recorder.discard(shake!);
+
+    const events = recorder.snapshot().events;
+    expect(events.map((event) => [event.kind, event.delayMs])).toEqual([
+      ["gesture", 0],
+      ["gesture", 250],
+    ]);
+    expect(recorder.summary().retainedBytes).toBe(
+      Buffer.byteLength(JSON.stringify(events), "utf8"),
+    );
+  });
+
+  test("discarding the newest event times the next event from the one before", () => {
+    let now = 0;
+    const recorder = new SessionRecorder({ now: () => now });
+    recorder.recordGesture({ type: "home" }, "test");
+    now = 100;
+    const shake = recorder.recordShake("rest:shake");
+    recorder.discard(shake!);
+    now = 400;
+    recorder.recordGesture({ type: "back" }, "test");
+
+    expect(recorder.snapshot().events.map((event) => event.delayMs)).toEqual([0, 400]);
+  });
+});
