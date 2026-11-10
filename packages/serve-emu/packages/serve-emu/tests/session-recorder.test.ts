@@ -356,3 +356,27 @@ describe("SessionRecorder configuration", () => {
     expect(() => new SessionRecorder({ maxBytes: 1 })).toThrow("maxBytes");
   });
 });
+
+describe("shake events", () => {
+  test("records a shake, exports it, and replays it through the shake handler", async () => {
+    const recorder = new SessionRecorder({ now: clock(0, 10) });
+    recorder.recordShake("rest:shake");
+
+    expect(recorder.snapshot().events).toMatchObject([
+      { kind: "shake", source: "rest:shake", delayMs: 0 },
+    ]);
+    expect(recorder.export().events).toEqual(recorder.snapshot().events);
+
+    const shakes: AbortSignal[] = [];
+    const run = recorder.startReplay({
+      dispatchGesture: () => {},
+      setLocation: () => {},
+      shake: (signal) => {
+        shakes.push(signal);
+      },
+    });
+    const finished = await run.completion;
+    expect(shakes).toHaveLength(1);
+    expect(finished.replayStatus).toBe("completed");
+  });
+});

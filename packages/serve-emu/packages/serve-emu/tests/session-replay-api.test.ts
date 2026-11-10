@@ -16,6 +16,7 @@ import {
 const handlers: ReplayHandlers = {
   dispatchGesture: () => {},
   setLocation: () => {},
+  shake: () => {},
 };
 
 function immediateClock(now = 1_000): SessionReplayClock {

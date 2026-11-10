@@ -199,6 +199,19 @@ export function mapAndroidSessionEvent(
 ): DeviceEvent {
   if (event.kind === "gesture") return mapGesture(event, deviceSerial);
 
+  // The same row as serve-sim's shake event on iOS.
+  if (event.kind === "shake") {
+    return {
+      id: stableId(deviceSerial, event.id),
+      timestamp: event.at,
+      source: event.source,
+      kind: "shake",
+      action: "trigger",
+      message: "Shake",
+      details: { delayMs: event.delayMs },
+    };
+  }
+
   if (event.kind === "location") {
     const latitude = finiteNumber(event.location?.latitude);
     const longitude = finiteNumber(event.location?.longitude);

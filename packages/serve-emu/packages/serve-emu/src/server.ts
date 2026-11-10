@@ -83,7 +83,7 @@ import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { ControlInputError, ControlInputQueue } from "./control-input-queue.ts";
 import { availableStreamModesForSerial, isEmulatorSerial } from "./device-capabilities.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
-import { settleShakes, shakeEmulator } from "./shake.ts";
+import { readShakeRequest, settleShakes, shakeEmulator } from "./shake.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
 import { parseSessionReplayMultiplier, SessionReplayConflictError } from "./session-recorder.ts";
 import {
@@ -572,6 +572,7 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
               dependencies.readOrientation ?? ((serial) => getDisplayOrientation(serial)),
             applyRotation:
               dependencies.applyRotation ?? ((serial, mode) => setUserRotation(serial, mode)),
+            shake: shakeDevice,
           }),
     });
     context.registerCleanup(() =>
@@ -2222,9 +2223,12 @@ export async function startServer(opts: ServerOpts, dependencies: ServerDependen
 
       if (url.pathname === "/api/shake") {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
-        // The shake has no parameters, so the body is not read.
         try {
-          await runForContext(requestContext, (context) => shakeDevice(context.serial));
+          const { record } = await readShakeRequest(req);
+          await runForContext(requestContext, async (context) => {
+            await shakeDevice(context.serial);
+            if (record) context.recorder.recordShake("rest:shake");
+          });
           return Response.json({ ok: true });
         } catch (err) {
           return errorResponse(err);

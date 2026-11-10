@@ -39,6 +39,14 @@ function request(path: string, method = "GET"): Request {
   return new Request(`http://router.test${path}`, { method });
 }
 
+function post(path: string, body: unknown): Request {
+  return new Request(`http://router.test${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 /** An emulator console that records `sensor set acceleration` values and rests at 0:9.8:0. */
 function fakeConsole() {
   const written: string[] = [];
@@ -59,6 +67,33 @@ function fakeConsole() {
 }
 
 describe("middleware shake", () => {
+  test("records a shake unless asked not to, and a replay shakes again", async () => {
+    const shaken: string[] = [];
+    const app = await startApp("emulator-5604", {
+      shake: async (serial) => {
+        shaken.push(serial);
+      },
+    });
+    try {
+      expect((await app.handleRequest(post("/api/shake", {}))).status).toBe(200);
+      expect((await app.handleRequest(post("/api/shake", { record: false }))).status).toBe(200);
+      const invalid = await app.handleRequest(post("/api/shake", { record: "no" }));
+      expect(invalid.status).toBe(400);
+      expect(shaken).toHaveLength(2);
+
+      const session = (await (await app.handleRequest(request("/api/session"))).json()) as {
+        events: unknown[];
+      };
+      expect(session.events).toMatchObject([{ kind: "shake", source: "rest:shake" }]);
+
+      expect((await app.handleRequest(post("/api/session/replay", {}))).status).toBe(200);
+      while (shaken.length < 3) await Bun.sleep(1);
+      expect(shaken).toEqual(["emulator-5604", "emulator-5604", "emulator-5604"]);
+    } finally {
+      await app.stop();
+    }
+  });
+
   test("stop waits until a running shake restores the resting acceleration", async () => {
     const { written, runExec } = fakeConsole();
     let release!: () => void;

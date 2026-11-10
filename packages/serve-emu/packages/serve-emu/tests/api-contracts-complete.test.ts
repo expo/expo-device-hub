@@ -485,6 +485,18 @@ describe("complete API success contracts", () => {
     );
   });
 
+  test("parses a recorded shake", () => {
+    const shake = {
+      id: 9,
+      at: timestamp,
+      delayMs: 40,
+      source: "rest:shake",
+      kind: "shake" as const,
+    };
+    const parsed = parseSessionSnapshot({ ...sessionSnapshot, events: [shake] });
+    expect(parsed.events).toEqual([shake]);
+  });
+
   test("parses simple action, import, screenshot, and logcat payloads", () => {
     expect(parseEmptyResponse({ ok: true })).toEqual({ ok: true });
     expect(parseAppActionResponse({ ok: true, output: "started" })).toEqual({

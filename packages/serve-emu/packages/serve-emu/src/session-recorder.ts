@@ -17,6 +17,13 @@ export type RecordedEvent =
       source: string;
       kind: "location";
       location: GeoFix;
+    }
+  | {
+      id: number;
+      at: string;
+      delayMs: number;
+      source: string;
+      kind: "shake";
     };
 
 export type SessionSnapshot = {
@@ -69,6 +76,7 @@ export type ReplayHandlers = {
   finish?: (signal: AbortSignal) => Promise<void> | void;
   dispatchGesture: (gesture: Gesture, signal: AbortSignal) => Promise<void> | void;
   setLocation: (fix: GeoFix, signal: AbortSignal) => Promise<void> | void;
+  shake: (signal: AbortSignal) => Promise<void> | void;
 };
 
 export type SessionReplayClock = {
@@ -129,9 +137,9 @@ function cloneGesture(gesture: Gesture): Gesture {
 }
 
 function cloneEvent(event: RecordedEvent): RecordedEvent {
-  return event.kind === "gesture"
-    ? { ...event, gesture: cloneGesture(event.gesture) }
-    : { ...event, location: { ...event.location } };
+  if (event.kind === "gesture") return { ...event, gesture: cloneGesture(event.gesture) };
+  if (event.kind === "location") return { ...event, location: { ...event.location } };
+  return { ...event };
 }
 
 function abortReason(signal: AbortSignal): Error {
@@ -231,6 +239,10 @@ export class SessionRecorder {
 
   recordLocation(location: GeoFix, source: string): void {
     this.#record({ kind: "location", location, source });
+  }
+
+  recordShake(source: string): void {
+    this.#record({ kind: "shake", source });
   }
 
   clear(): SessionSummary {
@@ -337,6 +349,7 @@ export class SessionRecorder {
     handlers: {
       dispatchGesture: (gesture: Gesture) => Promise<void> | void;
       setLocation: (fix: GeoFix) => Promise<void> | void;
+      shake?: () => Promise<void> | void;
     },
     multiplier = 1,
   ): Promise<SessionSummary> {
@@ -362,8 +375,10 @@ export class SessionRecorder {
         if (this.#legacyStopReplay) break;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(cloneGesture(event.gesture));
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation({ ...event.location });
+        } else {
+          await handlers.shake?.();
         }
       }
       this.#replayCompletedAt = new Date(this.#clock.now()).toISOString();
@@ -429,8 +444,10 @@ export class SessionRecorder {
         this.#assertReplayActive(replay);
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture, replay.controller.signal);
-        } else {
+        } else if (event.kind === "location") {
           await handlers.setLocation(event.location, replay.controller.signal);
+        } else {
+          await handlers.shake(replay.controller.signal);
         }
         this.#assertReplayActive(replay);
       }
@@ -474,7 +491,8 @@ export class SessionRecorder {
   #record(
     event:
       | { kind: "gesture"; gesture: Gesture; source: string }
-      | { kind: "location"; location: GeoFix; source: string },
+      | { kind: "location"; location: GeoFix; source: string }
+      | { kind: "shake"; source: string },
   ): void {
     if (this.#closed || !this.#recording || this.#replaying) return;
     const now = this.#clock.now();
@@ -489,7 +507,9 @@ export class SessionRecorder {
     const recorded: RecordedEvent =
       event.kind === "gesture"
         ? { ...base, kind: "gesture", gesture: cloneGesture(event.gesture) }
-        : { ...base, kind: "location", location: { ...event.location } };
+        : event.kind === "location"
+          ? { ...base, kind: "location", location: { ...event.location } }
+          : { ...base, kind: "shake" };
     const bytes = Buffer.byteLength(JSON.stringify(recorded), "utf8");
     if (EMPTY_ARRAY_BYTES + bytes > this.#maxBytes) {
       this.#droppedEvents++;
