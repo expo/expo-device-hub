@@ -67,6 +67,11 @@ describe("previewConfigForState", () => {
     const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
     expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputCopy).toBe(true);
   });
+  test("advertises shake only for helpers that support it", () => {
+    expect(previewConfigForState(states[0]!, "/preview", "token-xyz").inputShake).toBeUndefined();
+    const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
+    expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputShake).toBe(true);
+  });
   test("returns the full client config shape with device-scoped endpoints", () => {
     const state = states[1]!;
     expect(previewConfigForState(state, "/preview", "token-xyz")).toEqual({

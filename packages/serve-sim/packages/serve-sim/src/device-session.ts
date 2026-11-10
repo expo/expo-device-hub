@@ -1768,6 +1768,10 @@ export class DeviceSession {
         this.recordHidEvent(tag, {});
         await this.hid.memoryWarning();
         break;
+      case 0x14:
+        this.recordHidEvent(tag, {});
+        await this.hid.shake();
+        break;
       case 0x0a: {
         const m = json<{ delta: number }>();
         if (m) {

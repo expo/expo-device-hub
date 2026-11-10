@@ -11,6 +11,7 @@ import {
   type HTMLAttributes,
   type ReactNode,
 } from "react";
+import { Vibrate } from "lucide-react";
 import { useCoarsePointer } from "../hooks/use-coarse-pointer.js";
 import { runHostAction, type ExecResult } from "../../socket/client-control";
 import type { SimulatorOrientation } from "../types.js";
@@ -527,6 +528,17 @@ const ClipboardButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(
   },
 );
 
+/** Shake the device, like Simulator.app's Device → Shake. The caller sends the shake. */
+const ShakeButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(
+  function ShakeButton(props, ref) {
+    return (
+      <ToolbarButton ref={ref} aria-label="Shake device" {...props}>
+        <Vibrate size={18} strokeWidth={2} />
+      </ToolbarButton>
+    );
+  },
+);
+
 const RotateButton = forwardRef<
   HTMLButtonElement,
   ToolbarButtonProps & { direction?: "left" | "right" }
@@ -577,6 +589,7 @@ type SimulatorToolbarCompound = typeof SimulatorToolbarRoot & {
   ScreenshotButton: typeof ScreenshotButton;
   RotateButton: typeof RotateButton;
   ClipboardButton: typeof ClipboardButton;
+  ShakeButton: typeof ShakeButton;
 };
 
 export const SimulatorToolbar = SimulatorToolbarRoot as SimulatorToolbarCompound;
@@ -587,3 +600,4 @@ SimulatorToolbar.HomeButton = HomeButton;
 SimulatorToolbar.ScreenshotButton = ScreenshotButton;
 SimulatorToolbar.RotateButton = RotateButton;
 SimulatorToolbar.ClipboardButton = ClipboardButton;
+SimulatorToolbar.ShakeButton = ShakeButton;

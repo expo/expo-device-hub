@@ -183,6 +183,9 @@ const addon = {
     async memoryWarning() {
       inputCalls.push("memoryWarning");
     }
+    async shake() {
+      inputCalls.push("shake");
+    }
     async softwareKeyboard() {
       inputCalls.push("softwareKeyboard");
       if (
@@ -274,6 +277,7 @@ const inputCommands: Array<{
   { name: "setHingePose", call: (hid) => hid.setHingePose("book"), result: true },
   { name: "setTableMode", call: (hid) => hid.setTableMode(true), result: true },
   { name: "memoryWarning", call: (hid) => hid.memoryWarning() },
+  { name: "shake", call: (hid) => hid.shake() },
   { name: "softwareKeyboard", call: (hid) => hid.softwareKeyboard() },
   { name: "caDebug", call: (hid) => hid.caDebug("color-blended-layers", true), result: true },
 ];

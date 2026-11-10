@@ -143,6 +143,10 @@ private func u32(_ v: Int) -> UInt32 {
         try await setup.run { await injector.simulateMemoryWarning() }
     }
 
+    @NodeMethod func shake() async throws {
+        try await setup.run { await injector.simulateShake() }
+    }
+
     @NodeMethod func softwareKeyboard() async throws {
         try await setup.run { await injector.toggleSoftwareKeyboard() }
     }

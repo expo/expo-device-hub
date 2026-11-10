@@ -10,6 +10,7 @@ declare global {
       inputAdmission?: true;
       inputPaste?: true;
       inputCopy?: true;
+      inputShake?: true;
       pid: number;
       port: number;
       device: string;

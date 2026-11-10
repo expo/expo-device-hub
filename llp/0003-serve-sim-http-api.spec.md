@@ -672,6 +672,17 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 
 - `softwareKeyboard.toggle`: `{udid}`. Shows or hides the on-screen keyboard, like ⌘K.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.
+- `shake`: `{udid}`. Shakes the device, like Simulator.app's Device → Shake.
+  The helper posts the Darwin notification `com.apple.UIKit.SimulatorShake`
+  through `-[SimDevice postDarwinNotification:error:]`. UIKit in the simulated
+  OS then sends the foreground app a shake motion event [observed: the string
+  in the iOS 18.6 and 26.5 runtimes' UIKitCore; `SimFeatureUIKitShakeDarwinNotification`
+  in CoreSimDeviceIO; Safari showed "Undo Typing" after `simctl notify_post`
+  on iOS 26.5, 2026-11-10]. HID tag `0x14` carries it. Helpers that accept the
+  tag advertise `inputShake: true` in their state record; an older helper
+  drops the tag. The preview toolbar shows a Shake button between Clipboard
+  and Rotate while the helper advertises the flag [observed: `client.tsx`,
+  `simulator-toolbar.tsx`].
 - `caDebug.set`: `{udid, option, value}`. `option` is a name from `src/ca-debug.ts`;
   `value` is `on` or `off`.
 - `hinge.get`: `{udid}`. Reads hinge state as JSON. New helpers advertise
@@ -686,8 +697,8 @@ plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.
 - `permissions.list`: `{udid, bundleId?}`. Returns the app permissions as JSON.
 
 Each action runs the matching `serve-sim` CLI command as a child process and replies
-with `{id, stdout, stderr, exitCode}`. `softwareKeyboard.toggle`, `memoryWarning`
-and `caDebug.set` send an input message and do not wait for the device to confirm it.
+with `{id, stdout, stderr, exitCode}`. `softwareKeyboard.toggle`, `memoryWarning`,
+`shake` and `caDebug.set` send an input message and do not wait for the device to confirm it.
 
 `serve-sim software-keyboard -d <device>` accepts a UDID or simulator name and
 requires an existing serve-sim server. After a literal state lookup, it matches
@@ -698,7 +709,7 @@ admission flag stay unchanged, including for legacy helpers [observed:
 `resolveDeviceMatches` in `src/device.ts`, `readDeviceState` and
 `softwareKeyboard` in `src/index.ts`].
 
-The CLI tap, gesture, button, rotate, CA debug and memory-warning senders reuse
+The CLI tap, gesture, button, rotate, CA debug, memory-warning and shake senders reuse
 this live-name selection and input admission path [observed: `sendHelperMessage`
 and its callers in `src/index.ts`].
 

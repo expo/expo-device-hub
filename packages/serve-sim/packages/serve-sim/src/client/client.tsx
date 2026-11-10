@@ -1353,6 +1353,7 @@ function AppWithConfig({
   // An older helper drops paste requests, so Command+V goes to it as plain keys.
   const pasteSupported = config.inputPaste === true;
   const copySupported = config.inputCopy === true;
+  const shakeSupported = config.inputShake === true;
 
   const simContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -2207,6 +2208,9 @@ function AppWithConfig({
                         <SimulatorToolbar.ClipboardButton title="Clipboard" {...trigger} />
                       )}
                     </ActionMenu>
+                  )}
+                  {shakeSupported && (
+                    <SimulatorToolbar.ShakeButton title="Shake" onClick={() => sendWs(0x14, {})} />
                   )}
                   <SimulatorToolbar.RotateButton
                     title="Rotate device"
