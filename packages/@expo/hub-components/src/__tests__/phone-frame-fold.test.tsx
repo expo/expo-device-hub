@@ -13,7 +13,6 @@ const device: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: null,
 };
 
 function client(

@@ -84,10 +84,9 @@ export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
   DeviceOptionsSection,
-  NO_DEVICE_FRAME_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
-  type DeviceFrameOption,
+  type ScreenShapeOption,
 } from "./dashboard/DeviceOptionsSection";
 export { ActivityCharts, ActivitySection } from "./dashboard/ActivitySection";
 export { AccessibilitySection } from "./dashboard/AccessibilitySection";
@@ -117,15 +116,6 @@ export {
   deviceScreenCornersClipPath,
   type ScreenCornerRadiiCqw,
 } from "./dashboard/deviceScreenClipPath";
-export {
-  deviceFrameLayout,
-  deviceFrameRotation,
-  type DeviceFrameAsset,
-  type DeviceFrameAssets,
-  type DeviceFrameLayout,
-  type DeviceFrameRect,
-  type DeviceFrameRotation,
-} from "./dashboard/deviceFrame";
 export { LogControls } from "./dashboard/LogControls";
 export { LogList } from "./dashboard/LogList";
 export { LogRow } from "./dashboard/LogRow";

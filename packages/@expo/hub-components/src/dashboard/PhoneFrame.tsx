@@ -13,11 +13,7 @@ import { bg } from "../primitives";
 import { AgentDeviceOverlay } from "./AgentDeviceOverlay";
 import { type Device } from "./data";
 import { DeviceScreenStatus, deviceScreenLoading } from "./DeviceScreenStatus";
-import {
-  deviceFramePresentation,
-  deviceViewportStyle,
-  type DeviceFrameAssets,
-} from "./deviceFrame";
+import { deviceViewportStyle } from "./deviceViewport";
 import {
   deviceScreenClipPath,
   deviceScreenCornersClipPath,
@@ -38,15 +34,6 @@ const SCREEN_SURFACE_STYLE: CSSProperties = {
 // A stream can paint up to about 0.75 CSS px short of its box, so a known screen
 // shape moves in by this much and the picture reaches past its edges.
 const SCREEN_SHAPE_INSET_PX = 1;
-
-const PRELOADED_FRAME_STYLE: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  width: 1,
-  height: 1,
-  opacity: 0,
-  pointerEvents: "none",
-};
 
 // Cap on the device's *short* side (portrait width / landscape height). Sizing
 // by the short side keeps the physical phone the same size across rotations:
@@ -101,10 +88,10 @@ const CONFIG: Record<
  * renderers, which draw neither.
  *
  * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
- * shrinking to the available height or panel width). Without artwork, the frame
- * adopts the stream's exact aspect ratio. With artwork, the calibrated opening
- * clips a centered, undistorted stream and may crop its edges to prevent leaks.
- * The iPhone Duo's 3D stage is capped at the flat Duo's long side on both axes.
+ * shrinking to the available height or panel width), with the stream's exact
+ * aspect ratio. The screen is clipped to its device shape, or shows the plain
+ * video rectangle when the viewer turns the shape off. The iPhone Duo's 3D stage
+ * is capped at the flat Duo's long side on both axes.
  */
 // @ref LLP 0013#input-feedback — consumers own input notices without replacing live media
 export function PhoneFrame({
@@ -118,8 +105,7 @@ export function PhoneFrame({
   DeviceShape,
   foldPreview,
   displayScreen,
-  showDeviceFrame = true,
-  deviceFrameAssets,
+  showScreenShape = true,
   onLoadingChange,
 }: {
   device: Device;
@@ -137,18 +123,18 @@ export function PhoneFrame({
   /**
    * Screen shape clip from `@expo/hub-client/shapes`, injected so that this
    * entry bundles the shape table only for a consumer that passes it. It gives
-   * a device with a known `model` its own screen corners when no frame artwork
-   * shows; without it, or for an unknown model, the screen keeps the
-   * platform's generic corners.
+   * a device with a known `model` its own screen corners; without it, or for an
+   * unknown model, the screen keeps the platform's generic corners.
    */
   DeviceShape?: ComponentType<DeviceShapeProps>;
   foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
-  /** Viewer-local preference. Ignored when the selected model has no frame. */
-  showDeviceFrame?: boolean;
-  /** Consumer-owned frame artwork so this shared component remains asset-system agnostic. */
-  deviceFrameAssets?: DeviceFrameAssets;
+  /**
+   * Viewer-local preference: clip the screen to its device shape. Off, the
+   * stream shows as the plain video rectangle. Defaults to on.
+   */
+  showScreenShape?: boolean;
   /** Whether the screen shows its first-load spinner, for a status label beside the frame. */
   onLoadingChange?: (loading: boolean) => void;
 }) {
@@ -251,8 +237,8 @@ export function PhoneFrame({
     </div>
   );
 
-  // The folding model draws its own device, so neither frame artwork nor the
-  // screen clip applies; the status layer and the agent overlay still cover the stage.
+  // The folding model draws its own device, so the screen clip does not apply;
+  // the status layer and the agent overlay still cover the stage.
   if (foldable && client && FoldableDeviceScreen && foldPreview) {
     const { mode: _mode, ...modelOptions } = foldPreview;
     return (
@@ -281,37 +267,24 @@ export function PhoneFrame({
     );
   }
 
-  const frameAsset =
-    showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
-  const framed = frameAsset
-    ? deviceFramePresentation({
-        asset: frameAsset,
-        orientation: client?.screen?.orientation,
-        displayRatio: ratio,
-        maxScreenShortSide: MAX_SHORT_SIDE,
-      })
-    : null;
-  const screenStyle: CSSProperties = framed
-    ? framed.screenStyle
-    : {
-        position: "absolute",
-        inset: 0,
-        // One responsive path clips both the stream and every overlay, which
-        // avoids fractional seams between separate composited masks.
-        clipPath: displayCorners
-          ? deviceScreenCornersClipPath(displayCorners, false)
-          : deviceScreenClipPath(radiusCqw, squircle),
-      };
+  const screenStyle: CSSProperties = {
+    position: "absolute",
+    inset: 0,
+    // One responsive path clips both the stream and every overlay, which
+    // avoids fractional seams between separate composited masks.
+    clipPath: showScreenShape
+      ? displayCorners
+        ? deviceScreenCornersClipPath(displayCorners, false)
+        : deviceScreenClipPath(radiusCqw, squircle)
+      : undefined,
+  };
 
   const screenContent = (
     <>
       {live && !client.framePresented ? (
         <div data-testid="device-screen-surface" style={SCREEN_SURFACE_STYLE} />
       ) : null}
-      <div
-        data-testid="device-frame-stream-cover"
-        style={framed ? framed.streamStyle : { position: "absolute", inset: 0 }}
-      >
+      <div data-testid="device-screen-stream" style={{ position: "absolute", inset: 0 }}>
         {deviceSurface}
       </div>
       {screenStatus}
@@ -322,10 +295,10 @@ export function PhoneFrame({
   return (
     <div
       data-testid="device-screen-frame"
-      data-device-frame-kind={framed ? device.deviceFrame : "none"}
-      data-display-corners={displayCorners ? "device" : undefined}
+      data-device-frame-kind="flat"
+      data-display-corners={showScreenShape && displayCorners ? "device" : undefined}
       data-agent-active={agentInteraction ? "true" : "false"}
-      style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
+      style={showScreenShape ? { ...wrapperStyle, borderRadius } : wrapperStyle}
       onPointerEnter={(event) => {
         if (event.pointerType === "mouse") setHovered(true);
       }}
@@ -333,16 +306,15 @@ export function PhoneFrame({
     >
       {DeviceShape ? (
         // A known model's screen shape replaces the generic clip in `screenStyle`;
-        // an unknown model keeps it, and frame artwork keeps its own opening. The
-        // element stays a DeviceShape either way, so toggling the artwork does not
+        // an unknown model keeps it. With the shape off, neither clips. The element
+        // stays a DeviceShape either way, so turning the shape on or off does not
         // remount the live screen inside it.
         <DeviceShape
           data-testid="device-screen-clip"
-          data-device-frame-screen={framed ? "true" : undefined}
           client={client}
           platform={device.platform}
           model={device.model}
-          shape={framed ? null : undefined}
+          shape={showScreenShape ? undefined : null}
           aspectRatio={ratio}
           insetPx={SCREEN_SHAPE_INSET_PX}
           style={screenStyle}
@@ -350,35 +322,10 @@ export function PhoneFrame({
           {screenContent}
         </DeviceShape>
       ) : (
-        <div
-          data-testid="device-screen-clip"
-          data-device-frame-screen={framed ? "true" : undefined}
-          style={screenStyle}
-        >
+        <div data-testid="device-screen-clip" style={screenStyle}>
           {screenContent}
         </div>
       )}
-      {deviceFrameAssets
-        ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
-            const asset = deviceFrameAssets[kind];
-            const active = !!framed && device.deviceFrame === kind;
-
-            return (
-              <img
-                key={kind}
-                data-testid={active ? "device-frame-artwork" : undefined}
-                data-device-frame-artwork-kind={kind}
-                src={asset.src}
-                alt=""
-                aria-hidden="true"
-                draggable={false}
-                decoding="async"
-                loading="eager"
-                style={active ? framed.artworkStyle : PRELOADED_FRAME_STYLE}
-              />
-            );
-          })
-        : null}
     </div>
   );
 }

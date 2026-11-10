@@ -34,7 +34,6 @@ function device(id: string): Device {
     booted: true,
     physical: false,
     supported: true,
-    deviceFrame: null,
   };
 }
 

@@ -17,16 +17,9 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from "@expo/hub-android-utils";
 import { listDevices as listAppleDevices } from "@expo/hub-apple-utils";
 
-import { type DeviceFrameProfileId } from "@expo/hub-components";
-
 import { type PlatformFilter } from "../platform-filter";
 import { androidDeviceModel, createAppleDeviceTypeNames } from "./device-models";
-import {
-  androidDeviceFrame,
-  appleDeviceFrame,
-  isSupportedAndroidDevice,
-  isSupportedAppleDevice,
-} from "./device-support";
+import { isSupportedAndroidDevice, isSupportedAppleDevice } from "./device-support";
 import { filterSessionDevices } from "./single-device";
 import { type SerializableError, toSerializableError } from "./utility-errors";
 
@@ -48,8 +41,6 @@ export interface HubDevice {
   physical: boolean;
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
-  /** Frame artwork available for this exact device model, or null when none is available. */
-  deviceFrame: DeviceFrameProfileId | null;
   /**
    * The exact hardware model, which picks the screen shape: the simulator device
    * type name on iOS, such as "iPhone 17 Pro", or the AVD hardware profile id on
@@ -105,7 +96,6 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           booted: device.state.toLowerCase() === "booted",
           physical: false,
           supported: isSupportedAppleDevice(device),
-          deviceFrame: appleDeviceFrame(device),
           model: device.deviceTypeIdentifier
             ? (deviceTypeNames.get(device.deviceTypeIdentifier) ?? null)
             : null,
@@ -134,7 +124,6 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         booted: device.booted,
         physical: device.type === "device",
         supported: isSupportedAndroidDevice(device),
-        deviceFrame: androidDeviceFrame(device),
         model: androidDeviceModel(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
       }))

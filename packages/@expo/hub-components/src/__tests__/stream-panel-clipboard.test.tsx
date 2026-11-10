@@ -67,7 +67,6 @@ for (const withFallback of [true, false]) {
               booted: true,
               physical: false,
               supported: true,
-              deviceFrame: null,
             }}
             client={
               {

@@ -11,7 +11,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type Device } from "../dashboard/data";
-import { type DeviceFrameAssets } from "../dashboard/deviceFrame";
 import { PhoneFrame } from "../dashboard/PhoneFrame";
 import { createGlobalStubs } from "./test-globals";
 
@@ -23,30 +22,6 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-const FRAME_ASSETS: DeviceFrameAssets = {
-  "android:pixel-9": {
-    src: "/pixel-9.png",
-    width: 1935,
-    height: 4096,
-    screen: { x: 95, y: 94, width: 1737, height: 3907 },
-    screenRadius: 236,
-  },
-  "android:pixel-10-pro": {
-    src: "/pixel.png",
-    width: 1250,
-    height: 2631,
-    screen: { x: 50, y: 48, width: 1138, height: 2532 },
-    screenRadius: 150,
-  },
-  "ios:iphone-17-pro": {
-    src: "/iphone.png",
-    width: 2620,
-    height: 5420,
-    screen: { x: 104, y: 88, width: 2412, height: 5244 },
-    screenRadius: 340,
-  },
-};
-
 const IPHONE: Device = {
   id: "iphone",
   name: "My iPhone",
@@ -55,7 +30,6 @@ const IPHONE: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: "ios:iphone-17-pro",
   model: "iPhone 17 Pro",
 };
 const PIXEL: Device = {
@@ -63,7 +37,6 @@ const PIXEL: Device = {
   id: "pixel",
   name: "Pixel_9_API_36",
   platform: "android",
-  deviceFrame: "android:pixel-9",
   model: "pixel_9",
 };
 
@@ -87,7 +60,7 @@ function Screen(_: DeviceScreenProps) {
 function render(
   device: Device,
   screen: DeviceClient["screen"],
-  options: { showDeviceFrame?: boolean; shapes?: boolean } = {},
+  options: { showScreenShape?: boolean; shapes?: boolean } = {},
 ) {
   return renderToStaticMarkup(
     <PhoneFrame
@@ -96,8 +69,7 @@ function render(
       DeviceScreen={Screen}
       DeviceShape={options.shapes === false ? undefined : DeviceShape}
       displayScreen={(value) => value ?? null}
-      showDeviceFrame={options.showDeviceFrame ?? false}
-      deviceFrameAssets={FRAME_ASSETS}
+      showScreenShape={options.showScreenShape}
     />,
   );
 }
@@ -106,8 +78,12 @@ function clipStyle(markup: string) {
   return markup.match(/data-testid="device-screen-clip"[^>]*style="([^"]*)"/)?.[1] ?? "";
 }
 
+function frameStyle(markup: string) {
+  return markup.match(/data-testid="device-screen-frame"[^>]*style="([^"]*)"/)?.[1] ?? "";
+}
+
 describe("PhoneFrame screen shape", () => {
-  test("clips a known model to its own screen shape without frame artwork", () => {
+  test("clips a known model to its own screen shape", () => {
     const markup = render(IPHONE, { width: 1206, height: 2622 });
     const expected = screenShapeClipPath(SCREEN_SHAPES.iPhone16Pro, {
       aspectRatio: 1206 / 2622,
@@ -130,7 +106,6 @@ describe("PhoneFrame screen shape", () => {
       ...IPHONE,
       id: "duo",
       name: "iPhone Duo",
-      deviceFrame: null,
       model: "iPhone Duo",
     };
     const corners = { topLeft: 0.02, topRight: 0.15, bottomRight: 0.15, bottomLeft: 0.02 };
@@ -142,7 +117,6 @@ describe("PhoneFrame screen shape", () => {
           DeviceScreen={Screen}
           DeviceShape={DeviceShape}
           displayScreen={(value) => value ?? null}
-          deviceFrameAssets={FRAME_ASSETS}
         />,
       );
     const cover = { width: 1398, height: 2034, display: "cover" } as const;
@@ -166,7 +140,6 @@ describe("PhoneFrame screen shape", () => {
           DeviceScreen={Screen}
           DeviceShape={DeviceShape}
           displayScreen={(value) => value ?? null}
-          deviceFrameAssets={FRAME_ASSETS}
         />,
       );
     expect(clipStyle(markup(false))).not.toContain("background-color");
@@ -187,7 +160,7 @@ describe("PhoneFrame screen shape", () => {
     expect(clipStyle(markup)).toContain("clip-path:shape(from");
   });
 
-  test("keeps the live screen mounted when the frame artwork is turned on and off", async () => {
+  test("keeps the live screen mounted when the screen shape is turned on and off", async () => {
     stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let mounts = 0;
     function CountingScreen(_: DeviceScreenProps) {
@@ -196,29 +169,56 @@ describe("PhoneFrame screen shape", () => {
       }, []);
       return null;
     }
-    const frame = (showDeviceFrame: boolean) => (
+    const frame = (showScreenShape: boolean) => (
       <PhoneFrame
         device={IPHONE}
         client={client({ width: 1206, height: 2622 }, "ios")}
         DeviceScreen={CountingScreen}
         DeviceShape={DeviceShape}
         displayScreen={(value) => value ?? null}
-        showDeviceFrame={showDeviceFrame}
-        deviceFrameAssets={FRAME_ASSETS}
+        showScreenShape={showScreenShape}
       />
     );
     await act(async () => {
-      renderer = create(frame(false));
+      renderer = create(frame(true));
     });
-    await act(async () => renderer!.update(frame(true)));
     await act(async () => renderer!.update(frame(false)));
+    await act(async () => renderer!.update(frame(true)));
     expect(mounts).toBe(1);
   });
 
-  test("leaves the screen under frame artwork to the artwork's opening", () => {
-    const markup = render(IPHONE, { width: 1206, height: 2622 }, { showDeviceFrame: true });
-    expect(markup).toContain('data-testid="device-frame-artwork"');
+  test("shows the plain video rectangle with the screen shape off", () => {
+    for (const markup of [
+      render(IPHONE, { width: 1206, height: 2622 }, { showScreenShape: false }),
+      render({ ...IPHONE, model: "iPhone SE (3rd generation)" }, null, { showScreenShape: false }),
+      render(IPHONE, { width: 1206, height: 2622 }, { showScreenShape: false, shapes: false }),
+    ]) {
+      expect(markup).not.toContain("data-screen-shape");
+      expect(clipStyle(markup)).toBe("position:absolute;inset:0");
+      expect(frameStyle(markup)).not.toContain("border-radius");
+    }
+  });
+
+  test("shows the iPhone Duo as a plain rectangle too, without its DeviceKit corners", () => {
+    const corners = { topLeft: 0.02, topRight: 0.15, bottomRight: 0.15, bottomLeft: 0.02 };
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={{ ...IPHONE, id: "duo", name: "iPhone Duo", model: "iPhone Duo" }}
+        client={
+          {
+            ...client({ width: 1398, height: 2034, display: "cover" }, "ios"),
+            displayCorners: corners,
+          } as DeviceClient
+        }
+        DeviceScreen={Screen}
+        DeviceShape={DeviceShape}
+        displayScreen={(value) => value ?? null}
+        showScreenShape={false}
+      />,
+    );
     expect(markup).not.toContain("data-screen-shape");
-    expect(clipStyle(markup)).not.toContain("polygon(");
+    expect(markup).not.toContain("data-display-corners");
+    expect(clipStyle(markup)).toBe("position:absolute;inset:0");
+    expect(frameStyle(markup)).not.toContain("border-radius");
   });
 });

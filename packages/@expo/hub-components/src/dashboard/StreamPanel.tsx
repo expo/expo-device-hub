@@ -24,7 +24,6 @@ import { type Device } from "./data";
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from "./DeviceTitle";
 import { deviceScreenLoading } from "./DeviceScreenStatus";
 import { type ClipboardRequest, ClipboardToaster, useClipboardToast } from "./ClipboardToast";
-import { type DeviceFrameAssets } from "./deviceFrame";
 import { PhoneFrame, type PhoneFrameFoldPreview } from "./PhoneFrame";
 import { ScreenshotToaster, useScreenshotToast } from "./ScreenshotToast";
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from "./StreamControls";
@@ -54,8 +53,7 @@ export function StreamPanel({
   foldPreview,
   displayScreen,
   framed = true,
-  showDeviceFrame = true,
-  deviceFrameAssets,
+  showScreenShape = true,
   onClipboardFallback,
 }: {
   device: Device;
@@ -75,10 +73,8 @@ export function StreamPanel({
    * disable this so the center view reaches every viewport edge unbroken.
    */
   framed?: boolean;
-  /** Viewer-local preference for displaying supported device artwork. */
-  showDeviceFrame?: boolean;
-  /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
-  deviceFrameAssets?: DeviceFrameAssets;
+  /** Viewer-local preference: clip the screen to its device shape, or show the plain video rectangle. */
+  showScreenShape?: boolean;
   /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
   onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
@@ -326,8 +322,7 @@ export function StreamPanel({
             DeviceShape={DeviceShape}
             foldPreview={foldPreview}
             displayScreen={displayScreen}
-            showDeviceFrame={showDeviceFrame}
-            deviceFrameAssets={deviceFrameAssets}
+            showScreenShape={showScreenShape}
             onLoadingChange={setScreenLoading}
           />
           {!viewport.mobile && (

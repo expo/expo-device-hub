@@ -90,36 +90,34 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
-export const NO_DEVICE_FRAME_DESCRIPTION = "No device frame for selected device.";
-
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
-export type DeviceFrameOption = {
-  available: boolean;
+/** The viewer-local screen shape option: the device shape, or the plain video rectangle. */
+export type ScreenShapeOption = {
   visible: boolean;
   onVisibleChange: (visible: boolean) => void;
 };
 
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
- * keyboard controls, the viewer-local device frame option, and device-level
+ * keyboard controls, the viewer-local screen shape option, and device-level
  * actions (Android Back and Recents keys, shutting down or removing the device).
  * A foldable leads with its fold controls, as serve-sim's settings do for the iPhone Duo.
  */
 export function DeviceOptionsSection({
   client,
-  deviceFrame,
+  screenShape,
   foldPreview,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
-  deviceFrame?: DeviceFrameOption;
+  screenShape?: ScreenShapeOption;
   /** Viewer-local 2D/3D choices for a foldable that the 3D model can show. */
   foldPreview?: FoldPreviewOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
@@ -143,7 +141,6 @@ export function DeviceOptionsSection({
       : recordingLock === "status-unknown"
         ? "Unavailable until recording status is known."
         : "Unavailable because this would interrupt the recording.";
-  const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
@@ -303,18 +300,12 @@ export function DeviceOptionsSection({
         </SidebarRow>
       )}
 
-      {deviceFrame && (
-        <SidebarRow
-          label="Show device frame"
-          description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
-          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
-        >
+      {screenShape && (
+        <SidebarRow label="Show device shape">
           <SidebarSwitch
-            checked={deviceFrame.available && deviceFrame.visible}
-            disabled={!deviceFrame.available}
-            label="Show device frame"
-            descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
-            onChange={deviceFrame.onVisibleChange}
+            checked={screenShape.visible}
+            label="Show device shape"
+            onChange={screenShape.onVisibleChange}
           />
         </SidebarRow>
       )}

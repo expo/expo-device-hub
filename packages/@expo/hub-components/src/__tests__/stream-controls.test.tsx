@@ -198,7 +198,6 @@ describe("StreamPanel", () => {
       booted: true,
       physical: false,
       supported: true,
-      deviceFrame: null,
     };
     const rotate = (overrides: Partial<DeviceClient>) =>
       buttonTags(
@@ -239,7 +238,6 @@ describe("StreamPanel", () => {
       booted: true,
       physical: false,
       supported: true,
-      deviceFrame: "ios:iphone-17-pro",
     };
     const toolbar = (
       clipboard: DeviceClient["capabilities"]["clipboard"],
@@ -298,7 +296,6 @@ describe("StreamPanel", () => {
           booted: true,
           physical: false,
           supported: true,
-          deviceFrame: "ios:iphone-17-pro",
         }}
         client={
           {
