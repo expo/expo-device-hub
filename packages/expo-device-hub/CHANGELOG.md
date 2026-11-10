@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.22.1
+
+### Patch Changes
+
+- 6e4cd83: Keep the device sidebar and inspector in single-device mode, and hide all device lifecycle controls there: boot, create, Shut down, Start and Remove.
+
 ## 0.22.0
 
 ### Minor Changes
