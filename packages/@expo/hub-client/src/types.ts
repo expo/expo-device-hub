@@ -841,8 +841,8 @@ export type ScreenshotMetadata = {
     | "landscape-left"
     | "landscape-right"
     | null;
-  displayId: number;
-  displayCount: number;
+  /** Two-panel device identity; omitted on single-display devices or when unknown. */
+  screen?: "inner" | "outer";
 };
 
 /**

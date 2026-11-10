@@ -50,8 +50,7 @@ function screenshotMetadata(headers: Headers): ScreenshotMetadata | undefined {
     if (
       !nonnegative(data.width) ||
       !nonnegative(data.height) ||
-      !nonnegative(data.displayId) ||
-      !nonnegative(data.displayCount)
+      (data.screen !== undefined && data.screen !== "inner" && data.screen !== "outer")
     )
       return;
     const rotation = data.displayRotation;
@@ -66,8 +65,7 @@ function screenshotMetadata(headers: Headers): ScreenshotMetadata | undefined {
     return {
       width: data.width,
       height: data.height,
-      displayId: data.displayId,
-      displayCount: data.displayCount,
+      ...(data.screen === undefined ? {} : { screen: data.screen }),
       displayRotation: rotation,
     };
   } catch {
