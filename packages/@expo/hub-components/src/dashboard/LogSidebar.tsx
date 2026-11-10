@@ -27,6 +27,11 @@ export type LogSidebarProps = {
   showScreenShape?: boolean;
   /** Change the viewer-local screen shape preference. */
   onShowScreenShapeChange?: (show: boolean) => void;
+  /**
+   * Whether the selected device has a known screen shape, which the consumer
+   * looks up in `@expo/hub-client/shapes`. Without one, the option is disabled.
+   */
+  screenShapeAvailable?: boolean;
   /** Viewer-selected simulator stream mode. */
   streamMode?: DeviceStreamMode;
   /** Viewer-selected HTTP codec. */
@@ -64,6 +69,7 @@ export function InspectorSections({
   device,
   showScreenShape = true,
   onShowScreenShapeChange,
+  screenShapeAvailable = false,
   streamMode,
   httpCodec,
   streamModeAvailability,
@@ -76,7 +82,11 @@ export function InspectorSections({
   foldPreview,
 }: InspectorSectionsProps) {
   const screenShape = device
-    ? { visible: showScreenShape, onVisibleChange: onShowScreenShapeChange ?? (() => {}) }
+    ? {
+        available: screenShapeAvailable,
+        visible: showScreenShape,
+        onVisibleChange: onShowScreenShapeChange ?? (() => {}),
+      }
     : undefined;
   // Physical devices cannot be deleted from the host.
   const onRemoveDevice = device?.physical ? undefined : onRemove;

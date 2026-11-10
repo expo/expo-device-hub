@@ -90,14 +90,18 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
+export const NO_DEVICE_SHAPE_DESCRIPTION = "No device shape for selected device.";
+
 export const NO_HARDWARE_KEYBOARD_DESCRIPTION =
   "This device has no hardware keyboard, so the on-screen keyboard always shows.";
 
 export const ONSCREEN_KEYBOARD_DESCRIPTION =
   "Keeps the on-screen keyboard visible while a hardware keyboard is attached. A device with no hardware keyboard always shows it.";
 
-/** The viewer-local screen shape option: the device shape, or the plain video rectangle. */
+/** The viewer-local screen shape option: the device shape, or the whole video rectangle. */
 export type ScreenShapeOption = {
+  /** Whether the selected device has a known shape. Without one, the option is off and disabled. */
+  available: boolean;
   visible: boolean;
   onVisibleChange: (visible: boolean) => void;
 };
@@ -141,6 +145,7 @@ export function DeviceOptionsSection({
       : recordingLock === "status-unknown"
         ? "Unavailable until recording status is known."
         : "Unavailable because this would interrupt the recording.";
+  const unavailableShapeDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const orientationErrorId = useId();
@@ -301,10 +306,16 @@ export function DeviceOptionsSection({
       )}
 
       {screenShape && (
-        <SidebarRow label="Show device shape">
+        <SidebarRow
+          label="Show device shape"
+          description={screenShape.available ? undefined : NO_DEVICE_SHAPE_DESCRIPTION}
+          descriptionId={screenShape.available ? undefined : unavailableShapeDescriptionId}
+        >
           <SidebarSwitch
-            checked={screenShape.visible}
+            checked={screenShape.available && screenShape.visible}
+            disabled={!screenShape.available}
             label="Show device shape"
+            descriptionId={screenShape.available ? undefined : unavailableShapeDescriptionId}
             onChange={screenShape.onVisibleChange}
           />
         </SidebarRow>

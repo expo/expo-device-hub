@@ -148,16 +148,18 @@ describe("PhoneFrame screen shape", () => {
     expect(markup(true)).not.toContain('data-testid="device-screen-surface"');
   });
 
-  test("keeps the generic corners for an unknown model", () => {
+  test("shows the whole stream rectangle for a model without a known shape", () => {
     const markup = render({ ...IPHONE, model: "iPhone SE (3rd generation)" }, null);
     expect(markup).not.toContain("data-screen-shape");
-    expect(clipStyle(markup)).toContain("clip-path:shape(from");
+    expect(clipStyle(markup)).toBe("position:absolute;inset:0");
+    expect(frameStyle(markup)).not.toContain("border-radius");
   });
 
-  test("keeps the generic corners when the consumer does not pass DeviceShape", () => {
+  test("shows the whole stream rectangle when the consumer does not pass DeviceShape", () => {
     const markup = render(IPHONE, { width: 1206, height: 2622 }, { shapes: false });
     expect(markup).not.toContain("data-screen-shape");
-    expect(clipStyle(markup)).toContain("clip-path:shape(from");
+    expect(clipStyle(markup)).toBe("position:absolute;inset:0");
+    expect(frameStyle(markup)).not.toContain("border-radius");
   });
 
   test("keeps the live screen mounted when the screen shape is turned on and off", async () => {

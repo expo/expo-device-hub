@@ -84,6 +84,7 @@ export { OutputSection } from "./dashboard/OutputSection";
 export { CurrentAppSection } from "./dashboard/CurrentAppSection";
 export {
   DeviceOptionsSection,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
   type ScreenShapeOption,

@@ -39,6 +39,7 @@ import { dashboardHideBootDevice } from "./boot-device";
 import { basePath } from "./dashboard/basePath";
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from "./dashboard/deviceActions";
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardStore";
+import { useScreenShapeAvailable } from "./dashboard/useScreenShapeAvailable";
 import {
   useHideUnsupportedDevices,
   visibleDevices,
@@ -314,6 +315,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       : null,
     basePath(),
   );
+  const screenShapeAvailable = useScreenShapeAvailable(client, selected);
   // The 3D choices apply only to a device that can feed the model.
   const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
@@ -342,6 +344,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       client={client}
       showScreenShape={showScreenShape}
       onShowScreenShapeChange={setShowScreenShape}
+      screenShapeAvailable={screenShapeAvailable}
       foldPreview={modelAvailable ? foldPreview : undefined}
       streamMode={streamMode}
       httpCodec={httpCodec}

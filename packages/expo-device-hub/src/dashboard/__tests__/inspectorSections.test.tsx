@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { type DeviceClient, type DevicePlatform } from "@expo/hub-client";
 import {
   type Device,
+  NO_DEVICE_SHAPE_DESCRIPTION,
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from "@expo/hub-components";
@@ -1499,6 +1500,7 @@ test("keeps sidebar appearance availability aligned without locking the viewer-l
           client={client}
           device={device(platform)}
           showScreenShape
+          screenShapeAvailable
           onShowScreenShapeChange={() => {}}
         />,
       );
@@ -1547,6 +1549,7 @@ test("shows an enabled viewer-local shape switch, on and off", () => {
         client={inspectorClient(platform)}
         device={device(platform)}
         showScreenShape
+        screenShapeAvailable
         onShowScreenShapeChange={() => {}}
       />,
     );
@@ -1555,6 +1558,7 @@ test("shows an enabled viewer-local shape switch, on and off", () => {
         client={inspectorClient(platform)}
         device={device(platform)}
         showScreenShape={false}
+        screenShapeAvailable
         onShowScreenShapeChange={() => {}}
       />,
     );
@@ -1572,6 +1576,7 @@ test("places the device shape option immediately above the hardware keyboard", (
       client={inspectorClient("ios")}
       device={device("ios")}
       showScreenShape
+      screenShapeAvailable
       onShowScreenShapeChange={() => {}}
     />,
   );
@@ -1684,7 +1689,7 @@ test("shows the Clipboard section only when the client can paste or copy", () =>
   expect(copyOnly).not.toContain(">Send</span>");
 });
 
-test("keeps the shape option enabled for an unsupported device without device settings", () => {
+test("keeps the shape option off and disabled, with an explanation, for a device without a known shape", () => {
   for (const platform of ["ios", "android"] as const) {
     const client = {
       ...inspectorClient(platform),
@@ -1711,8 +1716,9 @@ test("keeps the shape option enabled for an unsupported device without device se
     );
 
     expect(html).toContain('aria-label="Device options"');
-    expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="true"');
-    expect(switchMarkup(html, "Show device shape")).not.toContain('disabled=""');
+    expect(switchMarkup(html, "Show device shape")).toContain('aria-checked="false"');
+    expect(switchMarkup(html, "Show device shape")).toContain('disabled=""');
+    expect(html).toContain(NO_DEVICE_SHAPE_DESCRIPTION);
     expect(html).not.toContain(">Appearance</span>");
   }
 });
@@ -1739,6 +1745,7 @@ test("shows only the viewer-local shape option while iOS device settings are una
       client={client}
       device={device("ios")}
       showScreenShape
+      screenShapeAvailable
       onShowScreenShapeChange={() => {}}
     />,
   );

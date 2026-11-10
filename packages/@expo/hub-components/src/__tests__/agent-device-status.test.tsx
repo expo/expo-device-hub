@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { type DeviceClient } from "@expo/hub-client";
+import { DeviceShape } from "@expo/hub-client/shapes";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { DeviceListItem } from "../components/DeviceListItem";
@@ -119,7 +120,12 @@ describe("agent device status", () => {
 
   test("clips the stream and unshaped overlay with one shared iOS screen shape", () => {
     const markup = renderToStaticMarkup(
-      <PhoneFrame device={IPHONE} DeviceScreen={() => null} displayScreen={() => null} />,
+      <PhoneFrame
+        device={{ ...IPHONE, model: "iPhone 17 Pro" }}
+        DeviceScreen={() => null}
+        DeviceShape={DeviceShape}
+        displayScreen={() => null}
+      />,
     );
     const screenClipStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenClipTag = markup.slice(screenClipStart, markup.indexOf(">", screenClipStart) + 1);
@@ -131,7 +137,7 @@ describe("agent device status", () => {
     expect(screenClipTag).not.toContain("overflow:hidden");
     expect(screenClipTag).not.toContain("border-radius");
     expect(screenClipTag).not.toContain("corner-shape");
-    expect(screenClipTag).toContain("clip-path:shape(");
+    expect(screenClipTag).toContain("clip-path:polygon(");
     expect(frameTag).not.toContain("box-shadow");
     expect(overlayTag).not.toContain("overflow:hidden");
     expect(overlayTag).not.toContain("border-radius");
@@ -171,8 +177,9 @@ describe("agent device status", () => {
     const markup = (showScreenShape?: boolean) =>
       renderToStaticMarkup(
         <PhoneFrame
-          device={PIXEL}
+          device={{ ...PIXEL, model: "pixel_9" }}
           client={STREAMING_CLIENT}
+          DeviceShape={DeviceShape}
           showScreenShape={showScreenShape}
           DeviceScreen={StableDeviceScreen}
           displayScreen={() => null}
@@ -180,7 +187,7 @@ describe("agent device status", () => {
       );
     const shown = markup();
     const hidden = markup(false);
-    expect(shown).toContain("clip-path:shape(");
+    expect(shown).toContain("clip-path:polygon(");
     expect(hidden).not.toContain("clip-path");
     for (const frame of [shown, hidden]) {
       expect(frame).toContain('data-device-frame-kind="flat"');
