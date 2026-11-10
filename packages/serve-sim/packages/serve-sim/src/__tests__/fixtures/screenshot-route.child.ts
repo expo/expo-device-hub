@@ -193,8 +193,6 @@ test("real socket callback returns HTTP PNG bytes and validates device/display i
       width: 0,
       height: 0,
       displayRotation: null,
-      displayId: 0,
-      displayCount: 0,
     });
     expect(response!.headers.get("access-control-expose-headers")).toContain(
       "X-Expo-Screenshot-Metadata",

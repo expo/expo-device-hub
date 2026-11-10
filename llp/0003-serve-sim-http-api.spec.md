@@ -792,7 +792,11 @@ bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 
 Successful path-mode `screenshot.capture` replies add a `metadata` object beside
 the existing `stdout` path, `stderr`, and `exitCode`. The contract is
-`{width: 0, height: 0, displayRotation: null, displayId: 0, displayCount: 0}`:
+`{width: 0, height: 0, displayRotation: null}`. Optional `screen` identifies a
+two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
+omitted on single-display devices and when unknown; numeric display IDs remain
+internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
+The response contract is available through:
 zero numeric fields and null rotation mean unknown, not a zero-sized image.
 Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
 `landscape-right`. This initial contract layer returns defaults; the owning
