@@ -44,6 +44,7 @@ beforeAll(() => {
     "-Werror",
     "-Dproc_listpids=eg_test_listpids",
     "-Dproc_pidinfo=eg_test_pidinfo",
+    "-Dproc_pidpath=eg_test_pidpath",
     join(source, "boot-identity.c"),
     join(source, "tests/probe-visibility.c"),
     "-lproc",
@@ -101,4 +102,13 @@ test("sendmsg_x checks every destination before submitting a batch", () => {
       SERVE_SIM_EGRESS_POLICY_FILE: page,
     }),
   ).toContain("pointer faults passed");
+});
+
+test("probe ignores unrelated unavailable paths but rejects an unreadable Simulator candidate", () => {
+  expect(
+    run(visibilityProbe, [uid], { ...process.env, EG_TEST_PROBE_ERROR: "UNRELATED_PATH" }).trim(),
+  ).toBe("null");
+  expect(() =>
+    run(visibilityProbe, [uid], { ...process.env, EG_TEST_PROBE_ERROR: "CANDIDATE_PATH" }),
+  ).toThrow();
 });
