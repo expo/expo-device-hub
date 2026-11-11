@@ -13,6 +13,7 @@ const entries = readdirSync(stateDir());
 const camera = await import("../../capabilities/camera");
 const helper = await import("../../capabilities/camera/helper");
 const assets = await import("../../capabilities/camera/assets");
+const source = await import("../../capabilities/camera/source");
 const capabilities = await import("../../capabilities");
 
 assert.equal(camera.readCameraStatus, helper.readCameraStatus);
@@ -20,6 +21,8 @@ assert.equal(camera.stopCameraHelper, helper.stopCameraHelper);
 assert.equal(camera.sendCameraHelperCommand, helper.sendCameraHelperCommand);
 assert.equal(camera.locateCameraDylib, assets.locateCameraDylib);
 assert.equal(camera.buildCameraHelper, assets.buildCameraHelper);
+assert.equal(camera.detectMediaKind, source.detectMediaKind);
+assert.equal(camera.resolveSourceArg, source.resolveSourceArg);
 assert.deepEqual(capabilities.registeredCapabilities(), []);
 assert.deepEqual(
   events.map((event) => process.rawListeners(event)),
