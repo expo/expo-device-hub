@@ -305,8 +305,9 @@ test("a Shake press ends when the window loses focus, and a click alone is a sho
   await act(async () => button().props.onClick());
   expect(calls).toEqual(["start", "stop"]);
 
-  // A click with no pointer or key press before it, as a screen reader sends.
+  // Clicks with no pointer or key press before them, as a screen reader sends, each shake.
   await act(async () => button().props.onClick());
-  expect(calls).toEqual(["start", "stop", "start", "stop"]);
+  await act(async () => button().props.onClick());
+  expect(calls).toEqual(["start", "stop", "start", "stop", "start", "stop"]);
   expect(calls).not.toContain("client.shake");
 });

@@ -116,6 +116,8 @@ function useHoldPress(onPressStart?: () => void, onPressEnd?: () => void) {
       }
       start();
       finish();
+      // This click was the whole press, so no click follows it.
+      pressedBeforeClick.current = false;
     },
   };
 }
