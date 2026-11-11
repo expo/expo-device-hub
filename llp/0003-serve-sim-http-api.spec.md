@@ -790,6 +790,26 @@ JSON, unknown fields, and nonboolean values return 400 before capture; oversized
 bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 [observed: `src/middleware.ts`, screenshot route and binary adapter]
 
+Successful path-mode `screenshot.capture` replies add a `metadata` object beside
+the existing `stdout` path, `stderr`, and `exitCode`. The contract is
+`{width: 0, height: 0, displayRotation: null}`. Optional `screen` identifies a
+two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
+omitted on single-display devices and when unknown; numeric display IDs remain
+internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
+The response contract is available through:
+zero numeric fields and null rotation mean unknown, not a zero-sized image.
+Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
+`landscape-right`. This initial contract layer returns defaults; the owning
+capture source will supply known values from its maintained local state.
+[confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
+
+HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
+`X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
+framing remains unchanged. The contract adds no PNG parsing, file readback,
+sidecars, device queries, or opt-in environment variable. ServeEmu and client
+integration are separate changes. [observed: `src/host-actions.ts`,
+`src/middleware.ts`]
+
 The optional `automation` flag defaults to `false`. Setting it to `true`
 suppresses the screenshot activity event on both success and failure, so periodic
 background thumbnails do not refresh the session's idle deadline. Omitted or
