@@ -67,6 +67,7 @@ async function mount({ failedDetailReads = 0 } = {}) {
   });
   let foreground = "com.google.android.apps.nexuslauncher";
   const detailRequests: string[] = [];
+  let detailsGate: Promise<void> | null = null;
   stubGlobal("fetch", async (url: string) => {
     const parsed = new URL(url);
     if (parsed.pathname === "/api/foreground") {
@@ -87,6 +88,7 @@ async function mount({ failedDetailReads = 0 } = {}) {
     if (parsed.pathname === "/api/apps/icon") {
       const packageName = parsed.searchParams.get("packageName")!;
       detailRequests.push(packageName);
+      if (detailsGate) await detailsGate;
       if (failedDetailReads > 0) {
         failedDetailReads -= 1;
         return Response.json(
@@ -124,6 +126,16 @@ async function mount({ failedDetailReads = 0 } = {}) {
     detailRequests,
     retries,
     apps,
+    holdDetails: () => {
+      let release!: () => void;
+      detailsGate = new Promise<void>((resolve) => (release = resolve));
+      return async () => {
+        detailsGate = null;
+        release();
+        await settle();
+        await settle();
+      };
+    },
     retry: async () => {
       await act(async () => retries.shift()!());
       await settle();
@@ -175,8 +187,14 @@ test("Android reads the details again when a reinstall changes the build", async
   const harness = await mount();
   harness.apps["com.google.android.apps.nexuslauncher"]!.build = "908";
   harness.apps["com.google.android.apps.nexuslauncher"]!.label = "Pixel Launcher Beta";
+  const release = harness.holdDetails();
 
   await harness.poll();
+
+  // The old name stays while the new build's details load, instead of going blank.
+  expect(harness.client().foregroundApp).toMatchObject({ build: "908", label: "Pixel Launcher" });
+
+  await release();
 
   expect(harness.client().foregroundApp).toMatchObject({
     build: "908",

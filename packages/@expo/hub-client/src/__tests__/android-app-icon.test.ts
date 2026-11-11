@@ -160,11 +160,15 @@ describe("carryForwardAppDetails", () => {
     expect(carryForwardAppDetails({ id: "com.android.settings" }, next)).toBe(next);
   });
 
-  test("drops both when a reinstall changes the build of the same app", () => {
+  test("keeps both across a reinstall until the new build's details arrive", () => {
     const resolved = { ...settings, version: "16", build: "907" };
     const next = { id: "com.android.settings", version: "16", build: "908" };
 
-    expect(carryForwardAppDetails(resolved, next)).toBe(next);
+    expect(carryForwardAppDetails(resolved, next)).toEqual({
+      ...next,
+      iconDataUrl: settings.iconDataUrl,
+      label: settings.label,
+    });
   });
 
   test("drops both when the foreground app changes", () => {

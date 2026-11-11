@@ -49,7 +49,8 @@ export async function fetchAndroidAppDetails(
 
 /**
  * Names one installed build of the foreground app. A reinstall with a new
- * version or build can change the label and the icon, so it needs new details.
+ * version or build can change the label and the icon, so the details are read
+ * again when this key changes.
  */
 export function appBuildKey(app: ForegroundApp | null): string | null {
   return app ? JSON.stringify([app.id, app.version ?? null, app.build ?? null]) : null;
@@ -58,13 +59,14 @@ export function appBuildKey(app: ForegroundApp | null): string | null {
 /**
  * The foreground poll reports neither the icon nor the label, so each poll
  * would otherwise drop the resolved ones, and the details effect would not
- * refetch for the same build.
+ * refetch for the same build. After a reinstall of the same app, the old
+ * values stay until the details of the new build arrive.
  */
 export function carryForwardAppDetails(
   prev: ForegroundApp | null,
   next: ForegroundApp,
 ): ForegroundApp {
-  if (!prev || appBuildKey(prev) !== appBuildKey(next)) return next;
+  if (!prev || prev.id !== next.id) return next;
   const iconDataUrl = next.iconDataUrl || prev.iconDataUrl;
   const label = next.label || prev.label;
   return iconDataUrl === next.iconDataUrl && label === next.label

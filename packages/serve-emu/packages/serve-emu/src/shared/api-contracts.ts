@@ -1703,7 +1703,8 @@ export function parseAppIconResponse(value: unknown): AppIconResponse {
     ok: true,
     packageName: string(root.packageName, "app icon response.packageName"),
     icon: root.icon === null ? null : parseAppIcon(root.icon),
-    label: nullableString(root.label, "app icon response.label"),
+    // A serve-emu from before the label was added sends no `label`.
+    label: root.label === undefined ? null : nullableString(root.label, "app icon response.label"),
   };
 }
 
