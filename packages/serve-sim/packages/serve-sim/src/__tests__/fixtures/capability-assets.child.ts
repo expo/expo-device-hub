@@ -3,6 +3,7 @@ import { locatePasteboardTool } from "../../capabilities/clipboard/pasteboard";
 import { locatePasteboardReaderDylib } from "../../capabilities/clipboard/definition";
 import { locateAddon, locateProxyDylib } from "../../capabilities/network-capture/assets";
 import { serveSimVersion } from "../../capabilities/network-capture/version";
+import { locateCameraDylib, locateCameraHelper } from "../../capabilities/camera";
 import {
   capabilityAssetBaseDir,
   capabilityLoaderDir,
@@ -19,6 +20,8 @@ console.log(
     pasteboardReader: locatePasteboardReaderDylib(),
     networkDylib: locateProxyDylib(),
     networkAddon: locateAddon(),
+    cameraDylib: locateCameraDylib(),
+    cameraHelper: locateCameraHelper(),
     version: serveSimVersion(),
   }),
 );

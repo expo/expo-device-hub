@@ -42,7 +42,7 @@ mock.module("../../capabilities/runtime/manager", () => ({
     events.push("owner-released");
   },
 }));
-mock.module("../../camera-helper", () => ({ stopCameraHelper: () => {} }));
+mock.module("../../capabilities/camera", () => ({ stopCameraHelper: () => {} }));
 mock.module("../../state", () => ({
   clearServeSimState: (_udid: string, owner: number) => {
     expect(owner).toBe(4242);

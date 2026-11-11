@@ -1,8 +1,7 @@
 import { createHash } from "crypto";
 import { existsSync, readFileSync, unlinkSync } from "fs";
 import { join } from "path";
-import { sleepSync } from "./runtime";
-import { stateDir } from "./state";
+import { stateDir } from "../../state";
 
 export function cameraStateDir(): string {
   return join(stateDir(), "simcam");
@@ -162,7 +161,9 @@ export function stopCameraHelper(udid: string) {
     } catch {}
     // Give it a moment to clean up the shm region.
     const start = Date.now();
-    while (isProcessAlive(pid) && Date.now() - start < 1500) sleepSync(50);
+    while (isProcessAlive(pid) && Date.now() - start < 1500) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
   }
   try {
     unlinkSync(pf);

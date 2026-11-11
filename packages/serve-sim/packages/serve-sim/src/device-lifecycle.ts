@@ -2,7 +2,7 @@ import { bootDevice, confirmDeviceBooted, shutdownDevice } from "./device";
 import { retireDeviceSession } from "./device-session";
 import { captureRuntime } from "./capabilities/network-capture";
 import { releaseSession } from "./capabilities/runtime/manager";
-import { stopCameraHelper } from "./camera-helper";
+import { stopCameraHelper } from "./capabilities/camera";
 import {
   clearServeSimState,
   gridDeviceState,
