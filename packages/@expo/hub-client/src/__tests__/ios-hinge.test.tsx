@@ -512,6 +512,47 @@ function holdReadbackGrace() {
   return () => act(async () => graces.splice(0).forEach((callback) => callback()));
 }
 
+test("an external turn during an angle edit is applied when the edit releases the view", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "portrait"), deviceOrientation: "portrait" }),
+  );
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 75 }));
+  const requestId = socket.frames().findLast((frame) => frame.tag === 0x10)!.payload.requestId;
+  await act(async () =>
+    socket.push(0x82, { ...observed(75, "landscape-left"), deviceOrientation: "landscape-left" }),
+  );
+  expect(events.filter((event) => event.type === "rotated")).toEqual([]);
+  await act(async () => socket.push(0x90, { requestId, ok: true }));
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: 1 },
+  ]);
+});
+
+test("a named readback after an angle edit still turns a custom view", async () => {
+  installBrowser({ duo: true });
+  const { socket, client, events, observe } = await connect();
+  await act(async () =>
+    socket.push(0x82, { ...observed(0, "portrait"), deviceOrientation: "portrait" }),
+  );
+  await act(async () =>
+    socket.push(0x82, { ...observed(70, "landscape-left"), deviceOrientation: "landscape-left" }),
+  );
+  expect(client().fold?.physical?.pose).toBeNull();
+  observe();
+  await act(async () => client().fold!.setControl({ control: "angle", value: 0 }));
+  const requestId = socket.frames().findLast((frame) => frame.tag === 0x10)!.payload.requestId;
+  await act(async () =>
+    socket.push(0x82, { ...observed(0, "portrait"), deviceOrientation: "portrait" }),
+  );
+  await act(async () => socket.push(0x90, { requestId, ok: true }));
+  expect(events.filter((event) => event.type === "rotated")).toEqual([
+    { type: "rotated", quarterTurns: -1 },
+  ]);
+});
+
 test("turning Laptop to portrait keeps no physical pose when the readback reads as Book, until a later preset", async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

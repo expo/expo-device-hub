@@ -540,6 +540,67 @@ test("observed Duo keeps its clockwise physical turn from portrait", async () =>
   stop?.();
 });
 
+test("external Duo turns update the model without sending a rotation back", async () => {
+  const { client, helper } = await mount();
+  const config = {
+    supportsHingeAngle: true,
+    supportsPhysicalOrientation: true,
+    screenOrientation: "portrait",
+    deviceOrientation: "portrait",
+  };
+  await act(async () => helper().screen("portrait", config));
+  const turns: number[] = [];
+  const stop = client().fold?.observe?.((event) => {
+    if (event.type === "rotated") turns.push(event.quarterTurns);
+  });
+  await act(async () =>
+    helper().screen("portrait", { ...config, deviceOrientation: "landscape-left" }),
+  );
+  expect(turns).toEqual([1]);
+  expect(helper().rotations()).toEqual([]);
+  await act(async () => client().rotate());
+  expect(turns).toEqual([1, 1]);
+  await act(async () => helper().screen("portrait", { ...config, deviceOrientation: "pud" }));
+  expect(turns).toEqual([1, 1]);
+  stop?.();
+});
+
+for (const [actual, correction] of [
+  ["landscape-right", 2],
+  ["portrait", -1],
+] as const) {
+  test(`Duo reconciles native ${actual} after the local rotation grace`, async () => {
+    const { client, helper } = await mount();
+    const config = {
+      supportsHingeAngle: true,
+      supportsPhysicalOrientation: true,
+      deviceOrientation: "portrait",
+      observedDeviceState: { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false },
+    };
+    await act(async () => helper().screen("portrait", config));
+    const turns: number[] = [];
+    const stop = client().fold?.observe?.((event) => {
+      if (event.type === "rotated") turns.push(event.quarterTurns);
+    });
+    await act(async () => client().rotate());
+    const readback = {
+      ...config,
+      deviceOrientation: actual,
+      observedDeviceState: { ...config.observedDeviceState, physicalOrientation: actual },
+    };
+    await act(async () => helper().screen("portrait", readback));
+    expect(turns).toEqual([1]);
+    now = 2000;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    expect(turns).toEqual([1, correction]);
+    await act(async () => helper().screen("portrait", readback));
+    expect(turns).toEqual([1, correction]);
+    stop?.();
+  });
+}
+
 test("observed Duo choices target physical poses on both panels", async () => {
   const { client, helper } = await mount();
   for (const screenId of [1, 3]) {

@@ -90,9 +90,13 @@ rotations, including rotations made while that batch was pending. Unknown native
 fields alone do not invalidate the previous camera or release saved face-down
 framing. Each successful preset becomes the recovery baseline for later commands;
 rotations made after that preset was queued remain part of the view.
+Hub-client also emits a view rotation for external cardinal observations, without
+sending another device command. Local rotation readback reconciles the optimistic
+view after its grace, so a different observed pose cannot leave the model behind.
 [observed: `src/device-session.ts` `applyDeviceState`, `screenConfig`;
 `src/client/simulator/screen-config-state.ts` `previewScreenConfig`;
-`src/client/hooks/use-duo-framing.ts` `useDuoFraming`]
+`src/client/hooks/use-duo-framing.ts` `useDuoFraming`;
+`packages/@expo/hub-client/src/useIosDevice.ts`]
 
 The Hub's iOS client reads the same snapshot: when `observedDeviceState` is
 present, it replaces the command fields for the fold that the Hub shows, so a

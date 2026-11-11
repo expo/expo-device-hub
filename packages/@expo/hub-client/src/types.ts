@@ -164,7 +164,7 @@ export type FoldCommandEvent =
    */
   | { type: "reset" }
   /**
-   * The viewer rotated the device, which clears its named pose, by
+   * A local control or native observation rotated the device, which clears its named pose, by
    * `quarterTurns` (clockwise positive): one for Rotate, or the turns to the
    * orientation that the viewer chose.
    */
@@ -231,8 +231,8 @@ export interface DeviceFold {
    */
   setControl: (command: FoldControlCommand) => void;
   /**
-   * Follow every fold command and rotation of this client, whichever control
-   * started it, as {@link FoldCommandEvent}s. Returns a function that stops
+   * Follow this client's fold commands and local or observed physical rotations
+   * as {@link FoldCommandEvent}s. Returns a function that stops
    * the listener. Absent when the backend reports no command lifecycle.
    */
   observe?: (listener: (event: FoldCommandEvent) => void) => () => void;
