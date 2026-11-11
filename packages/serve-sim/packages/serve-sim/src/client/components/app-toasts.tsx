@@ -52,11 +52,16 @@ export function dismissInputSocketError(): void {
 export function UploadToastContent({
   toast,
   onDismiss,
+  onToggleDetails,
 }: {
   toast: UploadToast;
   onDismiss?: () => void;
+  onToggleDetails?: () => void;
 }) {
-  if (toast.status === "error") return <UploadErrorContent toast={toast} onDismiss={onDismiss} />;
+  if (toast.status === "error")
+    return (
+      <UploadErrorContent toast={toast} onDismiss={onDismiss} onToggleDetails={onToggleDetails} />
+    );
   const isUploading = toast.status === "uploading";
   const transferring = isUploading && toast.progress !== null;
   const pct = toast.progress != null ? Math.round(toast.progress * 100) : 0;
@@ -105,9 +110,18 @@ export function UploadToastContent({
 }
 
 // An error stays until dismissed: a title that names the file, then what to do next.
-function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismiss?: () => void }) {
+// The toast record holds whether Details is open, so sonner measures the new height.
+function UploadErrorContent({
+  toast,
+  onDismiss,
+  onToggleDetails,
+}: {
+  toast: UploadToast;
+  onDismiss?: () => void;
+  onToggleDetails?: () => void;
+}) {
   const { title, body, details } = describeUploadError(toast.name, toast.kind, toast.message);
-  const [open, setOpen] = useState(false);
+  const open = !!toast.detailsOpen;
   const [copied, setCopied] = useState(false);
   const detailsId = useId();
   useEffect(() => {
@@ -115,6 +129,7 @@ function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismis
     const timer = setTimeout(() => setCopied(false), 1500);
     return () => clearTimeout(timer);
   }, [copied]);
+  // Every title names the file.
   const at = title.indexOf(toast.name);
 
   return (
@@ -125,15 +140,9 @@ function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismis
       <div className="flex items-start gap-2 min-w-0">
         <CircleAlert aria-hidden="true" size={14} className="mt-px shrink-0 text-danger" />
         <span className="min-w-0 flex-1 wrap-anywhere text-[12.5px] leading-4 font-semibold">
-          {at < 0 ? (
-            title
-          ) : (
-            <>
-              {title.slice(0, at)}
-              <span className="font-mono text-[11.5px] font-medium">{toast.name}</span>
-              {title.slice(at + toast.name.length)}
-            </>
-          )}
+          {title.slice(0, at)}
+          <span className="font-mono text-[11.5px] font-medium">{toast.name}</span>
+          {title.slice(at + toast.name.length)}
         </span>
         <button
           type="button"
@@ -144,8 +153,9 @@ function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismis
           <X aria-hidden="true" size={14} />
         </button>
       </div>
+      {/* A host error shows its first line here; Details has the rest. */}
       <p
-        className={`ml-[22px] wrap-anywhere text-[12px] leading-[1.45] text-white/60 ${details ? "line-clamp-2" : ""}`}
+        className={`ml-[22px] wrap-anywhere text-[12px] leading-[1.45] text-white/60 ${details?.startsWith(body) ? "line-clamp-2" : ""}`}
       >
         {body}
       </p>
@@ -157,7 +167,7 @@ function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismis
               aria-expanded={open}
               aria-controls={detailsId}
               className="-ml-1.5 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
-              onClick={() => setOpen(!open)}
+              onClick={onToggleDetails}
             >
               <ChevronRight
                 aria-hidden="true"
@@ -171,9 +181,10 @@ function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismis
               className="-mr-1.5 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
               onClick={() =>
                 // Without clipboard access, show the text so it can be selected by hand.
-                void copyTextToClipboard(`${title}\n\n${details}`).then((ok) =>
-                  ok ? setCopied(true) : setOpen(true),
-                )
+                void copyTextToClipboard(`${title}\n\n${details}`).then((ok) => {
+                  if (ok) setCopied(true);
+                  else if (!open) onToggleDetails?.();
+                })
               }
             >
               {copied ? (

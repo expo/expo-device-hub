@@ -88,7 +88,7 @@ import { useGridDevices } from "./hooks/use-grid-devices";
 import { useStreamSettings } from "./hooks/use-stream-settings";
 import type { DeviceKitChromeDescriptor } from "./utils/grid";
 import { avccFallbackReducer, initialAvccFallback, AVCC_FRAME_TIMEOUT_MS } from "./avcc-fallback";
-import { fileExtension } from "./utils/drop";
+import { UNSUPPORTED_DROP } from "./utils/upload-error";
 import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
@@ -1675,10 +1675,7 @@ function AppWithConfig({
       uploads.update(id, { status: ok ? "success" : "error", message }),
     onUnsupported: (file) => {
       const id = uploads.add(file.name, "media");
-      uploads.update(id, {
-        status: "error",
-        message: `Unsupported: ${file.type || fileExtension(file)}`,
-      });
+      uploads.update(id, { status: "error", message: UNSUPPORTED_DROP });
     },
     onHostPathDrop: screenshot.dismiss,
   });

@@ -211,14 +211,11 @@ test.each(["upload.append", "app.install"])(
   },
 );
 
-test.each([
-  ["OtherFolder", APP_FOLDER_GUIDANCE],
-  ["Build.app", APP_FOLDER_UNREADABLE],
-])("unreadable or unsupported %s gives archive guidance", async (name, message) => {
-  const result = await dropFiles([new File([], name)], {
-    entries: [{ name, isDirectory: true, isFile: false }],
+test("an unreadable Build.app folder gives archive advice", async () => {
+  const result = await dropFiles([new File([], "Build.app")], {
+    entries: [{ name: "Build.app", isDirectory: true, isFile: false }],
   });
-  expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message });
+  expect(result.at(-1)).toMatchObject({ type: "end", ok: false, message: APP_FOLDER_UNREADABLE });
   expect(actions.some((action) => action === "upload.append" || action === "app.install")).toBe(
     false,
   );

@@ -12,6 +12,7 @@ export type UploadToast = {
   // (install/addmedia phase has no progress signal — the bar goes indeterminate).
   progress: number | null;
   message?: string;
+  detailsOpen?: boolean;
 };
 
 export function useUploadToasts() {
@@ -32,6 +33,12 @@ export function useUploadToasts() {
           onDismiss={() => {
             toastsRef.current.delete(toast.id);
             sonnerToast.dismiss(toast.id);
+          }}
+          // Sonner measures a toast only when its content is replaced, so Details re-renders it.
+          onToggleDetails={() => {
+            const next = { ...toast, detailsOpen: !toast.detailsOpen };
+            toastsRef.current.set(toast.id, next);
+            render(next);
           }}
         />
       ),
