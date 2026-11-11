@@ -10,6 +10,7 @@ import {
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from "@expo/hub-client";
+import { DeviceShape } from "@expo/hub-client/shapes";
 import {
   EmptyState,
   InspectorSections,
@@ -26,22 +27,19 @@ import {
   type AddDeviceTarget,
   type ClipboardRequest,
   type Device,
-  type DeviceFrameAssets,
   type FoldPreviewOption,
 } from "@expo/hub-components";
 import { FoldableDeviceScreen } from "@expo/hub-components/foldable";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import pixelDeviceFrame from "../assets/device-frames/google-pixel-10-pro.png";
-import pixel9DeviceFrame from "../assets/device-frames/pixel_9_obsidian.png";
-import iphoneDeviceFrame from "../assets/device-frames/iphone-17-pro-silver.png";
 import { dashboardSingleDevice } from "./single-device";
 import { AnimatedDockedSidebar } from "./dashboard/AnimatedDockedSidebar";
 import { dashboardHideBootDevice } from "./boot-device";
 import { basePath } from "./dashboard/basePath";
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from "./dashboard/deviceActions";
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from "./dashboard/dashboardStore";
+import { useScreenShapeAvailable } from "./dashboard/useScreenShapeAvailable";
 import {
   useHideUnsupportedDevices,
   visibleDevices,
@@ -77,30 +75,6 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
-
-const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
-  "android:pixel-9": {
-    src: String(pixel9DeviceFrame),
-    width: 1935,
-    height: 4096,
-    screen: { x: 95, y: 94, width: 1737, height: 3907 },
-    screenRadius: 236,
-  },
-  "android:pixel-10-pro": {
-    src: String(pixelDeviceFrame),
-    width: 1250,
-    height: 2631,
-    screen: { x: 50, y: 48, width: 1138, height: 2532 },
-    screenRadius: 150,
-  },
-  "ios:iphone-17-pro": {
-    src: String(iphoneDeviceFrame),
-    width: 2620,
-    height: 5420,
-    screen: { x: 104, y: 88, width: 2412, height: 5244 },
-    screenRadius: 340,
-  },
-};
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -145,8 +119,8 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
   const streamModeAvailability = useMemo<StreamModeAvailability>(browserStreamModeAvailability, []);
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
-  const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
-  const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
+  const showScreenShape = useDashboardStore((state) => state.showScreenShape);
+  const setShowScreenShape = useDashboardStore((state) => state.setShowScreenShape);
   const duoPreview = useDashboardStore((state) => state.duoPreview);
   const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
   // Xcode's model failed to load (or WebGL did) for this device; show the flat
@@ -251,7 +225,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
             physical: false,
             booted: true,
             supported: target.device.supported,
-            deviceFrame: target.device.deviceFrame,
+            model: target.device.model ?? null,
             lastUsedAt: Date.now(),
           }
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
@@ -341,6 +315,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
       : null,
     basePath(),
   );
+  const screenShapeAvailable = useScreenShapeAvailable(client, selected);
   // The 3D choices apply only to a device that can feed the model.
   const modelAvailable = !!client.fold && !!client.displays && !!client.deviceModelUrl;
   const foldPreview: FoldPreviewOption = {
@@ -367,8 +342,9 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
     <InspectorSections
       device={selected}
       client={client}
-      showDeviceFrame={showDeviceFrame}
-      onShowDeviceFrameChange={setShowDeviceFrame}
+      showScreenShape={showScreenShape}
+      onShowScreenShapeChange={setShowScreenShape}
+      screenShapeAvailable={screenShapeAvailable}
       foldPreview={modelAvailable ? foldPreview : undefined}
       streamMode={streamMode}
       httpCodec={httpCodec}
@@ -458,6 +434,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           FoldableDeviceScreen={FoldableDeviceScreen}
+          DeviceShape={DeviceShape}
           foldPreview={{
             mode: duoPreview.mode === "3d" && !duoModelUnavailable ? "3d" : "2d",
             cacheScreenOnFold: duoPreview.cacheScreenOnFold,
@@ -466,8 +443,7 @@ export default function Dashboard(_props: { dom?: import("expo/dom").DOMProps })
           }}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
-          showDeviceFrame={showDeviceFrame}
-          deviceFrameAssets={DEVICE_FRAME_ASSETS}
+          showScreenShape={showScreenShape}
           onClipboardFallback={handleClipboardFallback}
         />
       ) : singleDevice ? (

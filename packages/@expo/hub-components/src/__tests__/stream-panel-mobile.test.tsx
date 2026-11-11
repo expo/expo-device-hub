@@ -25,7 +25,6 @@ function render(width: number, visualHeight = 667) {
           booted: true,
           physical: false,
           supported: true,
-          deviceFrame: null,
         }}
         client={
           {

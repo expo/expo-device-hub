@@ -64,15 +64,14 @@ describe("device visibility policy", () => {
               value: "phone",
               label: "Phone",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
-            { value: "tablet", label: "Tablet", supported: false, deviceFrame: null },
+            { value: "tablet", label: "Tablet", supported: false },
           ],
         },
         {
           value: "unsupported-only",
           label: "Unsupported OS",
-          models: [{ value: "tv", label: "TV", supported: false, deviceFrame: null }],
+          models: [{ value: "tv", label: "TV", supported: false }],
         },
       ],
     };
@@ -87,7 +86,6 @@ describe("device visibility policy", () => {
               value: "phone",
               label: "Phone",
               supported: true,
-              deviceFrame: "ios:iphone-17-pro",
             },
           ],
         },
@@ -118,6 +116,5 @@ function device(id: string, supported: boolean): Device {
     booted: false,
     physical: false,
     supported,
-    deviceFrame: supported ? "ios:iphone-17-pro" : null,
   };
 }

@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Draft
-**Systems:** HubClient, HubComponents
+**Systems:** HubClient, HubComponents, Hub
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-11-05
 **Revised:** 2026-11-10
@@ -64,12 +64,21 @@ A shape is a CSS `clip-path` polygon in percentages of the element: 19 samples o
 - A landscape frame can only come from a sideways device. When the stream reports no orientation or an upright one for it, the shape counts it as `landscape_left` [observed: `simulatorDeviceRotation` in expo/universe#32682].
 - While the client reports no screen, such as while it reconnects or after the session ends, the shape keeps the last display and orientation [observed: `lastStreamScreen` in expo/universe#32890]. The kept screen belongs to the client's current device and model: another device, another model, or no client starts from the defaults.
 
+## Hub dashboard
+
+- The Hub server sends each device's `model`: the device type name from `simctl list runtimes` for a simulator, and `hw.device.name` for an emulator. A physical device has none [observed: `expo-device-hub/src/server/device-models.ts`].
+- The device list is polled every 500 ms, so the server reads the device type names once and again only for an unknown device type, at most once a minute [observed: `POLL_INTERVAL_MS` in `device-list-websocket.ts`].
+- `PhoneFrame` takes `DeviceShape` as an injected prop, like `DeviceScreen` and the three.js `FoldableDeviceScreen`, so a hub-components consumer that does not pass it does not bundle the shape table. A known shape clips the screen. A device without a known shape shows the whole stream rectangle, with no generic corners [confirmed] (Krystof Woldrich, 2026-11-10). The iPhone Duo's DeviceKit corners count as a known shape when its model is not in the table [observed: `hub-components/src/dashboard/PhoneFrame.tsx`].
+- The dashboard shows the screen shape and no device artwork. The frame PNGs of the iPhone 17 Pro, the Pixel 9, and the Pixel 10 Pro, and the "Show device frame" option, are gone. Shapes take their place: the Pixel 10 family has its own shapes in the table [confirmed] (Krystof Woldrich, 2026-11-10).
+- The inspector's "Show device shape" option turns the clip on and off for the viewer. Off, the screen is the whole video rectangle, also without the iPhone Duo DeviceKit corners [confirmed] (Krystof Woldrich, 2026-11-10). For a device without a known shape, the option is off and disabled, with "No device shape for selected device.", as the frame option was for a device without artwork [confirmed] (Krystof Woldrich, 2026-11-10). A device whose model the server cannot name counts as a device without a shape: the dashboard never falls back to the client's device name, which a user can rename [confirmed] (Krystof Woldrich, 2026-11-10). The Dashboard looks the shape up with `useScreenShape`, the same lookup that `DeviceShape` makes, so the option and the screen agree [observed: `expo-device-hub/src/dashboard/useScreenShapeAvailable.ts`]. The option applies to the 2D view only: in the iPhone Duo 3D view, where the model draws its own device, it is disabled with "Applies to the 2D view only." [confirmed] (Krystof Woldrich, 2026-11-10). The option is on by default and stays in memory only, as the frame option did [observed: `expo-device-hub/src/dashboard/dashboardStore.ts`]. `PhoneFrame` keeps the same `DeviceShape` element in both states, so the live screen does not mount again [observed: `__tests__/phone-frame-screen-shape.test.tsx` in hub-components].
+- No solid layer stays under a presented stream. A solid background under the clipped screen showed as a thin line along the shape's edge, because the browser blends the anti-aliased clipped edge of each layer [confirmed] (Krystof Woldrich, 2026-11-10, in the dashboard). The surface is its own layer, shown only until the stream presents its first frame, and a known shape moves in by 1px, because a stream can paint up to about 0.75px short of its box. The website made the same change [observed: expo/universe#32807].
+
 ## Decisions
 
 - **The iPhone Duo cover shape is named `iPhoneDuoCover`**, after hub-client's display role, where the website named it `iPhoneDuoOuter`. Claude Code's choice; human review pending.
 - **The entry has device shapes only.** `uniformScreenShape` is internal: it builds the table. A shape that is not a device, such as the squircle of the expo.dev Demos page, stays in its app with its own code, and so does the mask image that draws it [confirmed] (Krystof Woldrich, 2026-11-10).
 - **The clip helpers stay public.** The website clips Framer Motion layers and a `<video>`, and blends the iPhone Duo shapes on the recording's video frames, which a wrapping component cannot do. Claude Code's choice; human review pending.
-- **`DeviceClient.displayCorners` stays.** It is the DeviceKit chrome corners for the iPhone Duo and is not part of this entry. Claude Code's choice; human review pending.
+- **`DeviceClient.displayCorners` stays.** It is the DeviceKit chrome corners for the iPhone Duo and is not part of this entry. In the dashboard, a known shape wins over it, so the flat iPhone Duo shows the same measured shape as the website. Claude Code's choice; human review pending.
 
 ## Open questions
 

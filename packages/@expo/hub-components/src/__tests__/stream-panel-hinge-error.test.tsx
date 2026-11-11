@@ -26,7 +26,6 @@ test("a fold error is visible beside the stream without mounting the sidebar", (
         booted: true,
         physical: false,
         supported: true,
-        deviceFrame: null,
       }}
       client={client}
       DeviceScreen={() => <div />}
