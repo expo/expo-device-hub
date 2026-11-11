@@ -57,6 +57,7 @@ import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
 import {
+  isCardinalPhysicalOrientation,
   isHingeControlCommand,
   observedHingeState,
   hingeControlState,
@@ -1740,15 +1741,23 @@ export class DeviceSession {
         break;
       }
       case 0x07: {
-        const m = json<{ orientation: string }>();
+        const m = json<{ orientation: string; deviceOrientation?: unknown }>();
         if (!m) break;
         const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
+          const physical = m.deviceOrientation;
+          if (
+            physical !== undefined &&
+            (!isCardinalPhysicalOrientation(physical) || this.supportsPhysicalOrientation !== true)
+          )
+            return;
           if (
             !this.canRunInputControl(generation) ||
             value == null ||
-            !(await this.hid.orientation(value))
+            !(await (physical === undefined
+              ? this.hid.orientation(value)
+              : this.hid.setPhysicalOrientation(physical)))
           )
             return;
           if (!this.canRunInputControl(generation)) return;

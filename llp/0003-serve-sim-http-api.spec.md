@@ -419,6 +419,13 @@ keyboard that serve-sim automatically hid; it does not undo a manual toggle
 ### Rotation readback
 
 The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.
+New observed-pose helpers also accept an optional cardinal `deviceOrientation`
+(`portrait`, `pud`, `landscape-left`, `landscape-right`) on that frame. On a Duo
+advertising `supportsPhysicalOrientation: true`, this uses native physical control,
+independent of the active panel's mounting. Invalid or unsupported physical values
+are refused without running the legacy alternative. The command shares the existing
+hinge/input serial queue and send-as-answer behavior. Older packets retain their
+panel-relative semantics [observed: `src/device-session.ts` case `0x07`].
 Successful native delivery does not mean that the foreground app accepted the
 requested interface orientation. For regular devices, config `orientation`
 starts from native screen readback, then retains the last successfully delivered

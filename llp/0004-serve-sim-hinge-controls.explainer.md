@@ -61,6 +61,16 @@ does not block screen/input readiness or capture shutdown; registration completi
 after close immediately detaches its listener. Device classification is retained
 across reboot so a delayed Duo subscription still attaches its live observer.
 
+Ordinary iOS devices use `DisplayInfoProtocol.displayInfoUpdates`, whose parent
+orientation describes physical pose independently of each display's interface
+rotation. The motion manager reports no motion-state or spatial stream support
+on the tested ordinary iPhone, so the cached device profile selects this producer
+instead. Display events have no source timestamp; the observer records receipt
+time and retains the same boot/connection fence and cancellation drain. Missing
+or unknown pose clears the observation. This adds no screenshot-time query or
+orientation polling [observed: `CoreDeviceDisplayState.swift`, `CoreDeviceBridge.swift`;
+local iPhone 17 Pro, iOS 27.0, Xcode 27.1 diagnostic run, 2026-11-10].
+
 Local controls preview their requested pose while pending. After acknowledgement,
 the preview stays until native state matches or 500 ms elapses. Native display ID
 owns panel and input routing as soon as the command queue drains. Late native

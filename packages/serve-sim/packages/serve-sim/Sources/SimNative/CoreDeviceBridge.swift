@@ -31,10 +31,12 @@ actor CoreDeviceBridge {
         let id = UUID()
     }
     private final class DeviceStateObservation {
+        let isFoldable: Bool
         var token: DeviceStateToken?
         var connection: UUID?
         var task: Task<Void, Never>?
         var listeners: [UUID: @Sendable (DeviceStateSnapshot) -> Void] = [:]
+        init(isFoldable: Bool) { self.isFoldable = isFoldable }
     }
     private var deviceStateObservations: [String: DeviceStateObservation] = [:]
     private var observedDeviceStates: [String: ObservedDeviceState] = [:]
@@ -127,14 +129,14 @@ actor CoreDeviceBridge {
         }
     }
 
-    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
+    func subscribeDeviceState(udid: String, isFoldable: Bool = true, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
         while let previous = deviceStateObservations[udid], previous.listeners.isEmpty {
             await previous.task?.value
             if deviceStateObservations[udid] === previous { deviceStateObservations.removeValue(forKey: udid) }
         }
         guard !Task.isCancelled else { return {} }
         let id = UUID()
-        let observation = deviceStateObservations[udid] ?? DeviceStateObservation()
+        let observation = deviceStateObservations[udid] ?? DeviceStateObservation(isFoldable: isFoldable)
         let starts = observation.listeners.isEmpty
         observation.listeners[id] = onChange
         deviceStateObservations[udid] = observation
@@ -184,14 +186,18 @@ actor CoreDeviceBridge {
                 }
                 let supported: Bool
                 if let deviceStateConsumer { supported = try await deviceStateConsumer(udid, receive) }
-                else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
+                // @ref LLP 0004#live-pose-observation — ordinary devices have no motion-state stream
+                else if deviceStateObservations[udid]?.isFoldable == false {
+                    supported = try await consumeDisplayStateUpdates(udid: udid, onUpdate: receive)
+                } else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
                 guard supported else { return }
                 throw BridgeError.observationEnded
             } catch {
                 guard !Task.isCancelled, deviceStateObservations[udid]?.token == token else { return }
                 deviceStateObservations[udid]?.connection = nil
                 clearObservedDeviceState(udid: udid)
-                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN"] {
+                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN",
+                               "$s10CoreDevice21DisplayInfoCapabilityVN"] {
                     capabilities.removeValue(forKey: "\(udid):\(symbol)")
                 }
                 fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)

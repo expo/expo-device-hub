@@ -538,7 +538,7 @@ actor CaptureEngine {
         guard phase == .running, supportsDevicePose else { await onDetach(); return {} }
         let id = UUID()
         let unsubscribe: @Sendable () async -> Void
-        let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
+        let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, isFoldable: isFoldable, onChange: callback)
         unsubscribe = { await onDetach(); await removeListener() }
         guard phase == .running else {
             await unsubscribe()
