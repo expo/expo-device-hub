@@ -1,5 +1,15 @@
 # @expo/hub-client
 
+## 1.12.0
+
+### Minor Changes
+
+- 26f2adb: Add `@expo/hub-client/shapes`, a separate entry point that shows a device screen in the shape of its device. `DeviceShape` clips its children to the screen shape of the client's device and follows its display and orientation. `useScreenShape`, `resolveScreenShape`, and `SCREEN_SHAPES` look the shapes up, and `screenShapeClipPath` and the geometry helpers give the CSS for other elements. The table has iPhones from the iPhone X, iPads with rounded corners, the iPhone Duo's cover and inner display, the Pixel 9 and Pixel 10 families, and both displays of the Pixel 9 Pro Fold and the Pixel 10 Pro Fold. Apps that do not import the entry do not bundle it.
+
+### Patch Changes
+
+- 26f2adb: The iOS device client marks only the streamed simulator as `current` in `devices`. It marked every simulator with a running helper, so a consumer that names the current device could take another simulator's name.
+
 ## 1.11.0
 
 ### Minor Changes
