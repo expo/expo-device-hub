@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { Check, ChevronRight, CircleAlert, Copy, X } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 import type { ClipboardToast } from "../hooks/use-clipboard-toast";
 import { useCoarsePointer } from "../hooks/use-coarse-pointer";
 import type { UploadToast } from "../hooks/use-upload-toasts";
+import { copyTextToClipboard } from "../utils/share-link";
 import { installToastHoverGuard } from "../utils/toast-hover";
+import { describeUploadError } from "../utils/upload-error";
 
 const INPUT_SOCKET_ERROR_TOAST_ID = "simulator-input-error";
 
@@ -53,7 +56,7 @@ export function UploadToastContent({
   toast: UploadToast;
   onDismiss?: () => void;
 }) {
-  const isError = toast.status === "error";
+  if (toast.status === "error") return <UploadErrorContent toast={toast} onDismiss={onDismiss} />;
   const isUploading = toast.status === "uploading";
   const transferring = isUploading && toast.progress !== null;
   const pct = toast.progress != null ? Math.round(toast.progress * 100) : 0;
@@ -61,26 +64,21 @@ export function UploadToastContent({
   return (
     <div
       data-testid="upload-toast"
-      className={`flex w-[min(320px,calc(100vw-32px))] flex-col gap-1.5 px-3 py-2 bg-panel border border-white/12 rounded-lg text-white/90 text-[12px] font-mono shadow-[0_8px_24px_rgba(0,0,0,0.45)] ${isError ? "select-text cursor-text" : "select-none cursor-default"}`}
+      className="flex w-[min(320px,calc(100vw-32px))] flex-col gap-1.5 px-3 py-2 bg-panel border border-white/12 rounded-lg text-white/90 text-[12px] font-mono shadow-[0_8px_24px_rgba(0,0,0,0.45)] select-none cursor-default"
     >
       <div className="flex items-center gap-2 min-w-0">
         <span
           className="size-1.5 rounded-full shrink-0 [transition:background_0.3s]"
           style={{
-            background: isUploading
-              ? "#a5b4fc"
-              : toast.status === "success"
+            background:
+              toast.status === "success"
                 ? "#4ade80"
-                : "#f87171",
+                : isUploading
+                  ? "#a5b4fc"
+                  : "rgba(255,255,255,0.35)",
           }}
         />
-        <span
-          className={
-            isError
-              ? "min-w-0 flex-1 max-h-40 overflow-y-auto break-words whitespace-normal"
-              : "flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
-          }
-        >
+        <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           {toast.status === "queued" && `Waiting to upload ${toast.name}…`}
           {isUploading && transferring && `Uploading ${toast.name}… ${pct}%`}
           {isUploading &&
@@ -88,18 +86,7 @@ export function UploadToastContent({
             (toast.kind === "app" ? `Installing ${toast.name}…` : `Adding ${toast.name}…`)}
           {toast.status === "success" &&
             (toast.kind === "app" ? `Installed ${toast.name}` : `Added ${toast.name} to Photos`)}
-          {isError && `${toast.name}: ${toast.message ?? "Upload failed"}`}
         </span>
-        {isError && (
-          <button
-            type="button"
-            aria-label="Dismiss upload error"
-            className="shrink-0 px-1 hover:bg-white/10 rounded"
-            onClick={onDismiss}
-          >
-            ×
-          </button>
-        )}
       </div>
       {isUploading && (
         <div className="relative h-[3px] w-full bg-white/8 rounded-[2px] overflow-hidden">
@@ -112,6 +99,99 @@ export function UploadToastContent({
             <div className="serve-sim-toast-indeterminate absolute top-0 left-0 h-full w-[40%] bg-accent rounded-[2px]" />
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// An error stays until dismissed: a title that names the file, then what to do next.
+function UploadErrorContent({ toast, onDismiss }: { toast: UploadToast; onDismiss?: () => void }) {
+  const { title, body, details } = describeUploadError(toast.name, toast.kind, toast.message);
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const detailsId = useId();
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const at = title.indexOf(toast.name);
+
+  return (
+    <div
+      data-testid="upload-toast"
+      className="flex w-[min(320px,calc(100vw-32px))] flex-col gap-1 px-3 py-2.5 bg-panel border border-white/12 rounded-lg text-white/90 font-system shadow-[0_8px_24px_rgba(0,0,0,0.45)] select-text cursor-text"
+    >
+      <div className="flex items-start gap-2 min-w-0">
+        <CircleAlert aria-hidden="true" size={14} className="mt-px shrink-0 text-danger" />
+        <span className="min-w-0 flex-1 wrap-anywhere text-[12.5px] leading-4 font-semibold">
+          {at < 0 ? (
+            title
+          ) : (
+            <>
+              {title.slice(0, at)}
+              <span className="font-mono text-[11.5px] font-medium">{toast.name}</span>
+              {title.slice(at + toast.name.length)}
+            </>
+          )}
+        </span>
+        <button
+          type="button"
+          aria-label="Dismiss upload error"
+          className="-mt-0.5 -mr-1.5 grid size-5 shrink-0 cursor-pointer place-items-center rounded text-white/45 hover:bg-white/10 hover:text-white/80"
+          onClick={onDismiss}
+        >
+          <X aria-hidden="true" size={14} />
+        </button>
+      </div>
+      <p
+        className={`ml-[22px] wrap-anywhere text-[12px] leading-[1.45] text-white/60 ${details ? "line-clamp-2" : ""}`}
+      >
+        {body}
+      </p>
+      {details && (
+        <>
+          <div className="ml-[22px] flex items-center justify-between text-[11.5px] font-medium text-white/75">
+            <button
+              type="button"
+              aria-expanded={open}
+              aria-controls={detailsId}
+              className="-ml-1.5 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
+              onClick={() => setOpen(!open)}
+            >
+              <ChevronRight
+                aria-hidden="true"
+                size={12}
+                className={`transition-transform ${open ? "rotate-90" : ""}`}
+              />
+              Details
+            </button>
+            <button
+              type="button"
+              className="-mr-1.5 inline-flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 hover:bg-white/10"
+              onClick={() =>
+                // Without clipboard access, show the text so it can be selected by hand.
+                void copyTextToClipboard(`${title}\n\n${details}`).then((ok) =>
+                  ok ? setCopied(true) : setOpen(true),
+                )
+              }
+            >
+              {copied ? (
+                <Check aria-hidden="true" size={12} />
+              ) : (
+                <Copy aria-hidden="true" size={12} />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <pre
+            id={detailsId}
+            hidden={!open}
+            className="ml-[22px] max-h-32 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-md border border-white/8 bg-black/40 px-2 py-1.5 font-mono text-[11px] leading-normal text-white/60"
+          >
+            {details}
+          </pre>
+        </>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from "bun:test";
 import { untar, TarTypeFlag } from "multitars";
 import {
-  APP_FOLDER_GUIDANCE,
+  APP_FOLDER_UNREADABLE,
   packAppFolder,
   type AppFolderEntry,
 } from "../client/utils/app-drop-folder";
@@ -191,7 +191,7 @@ test.each(["directory", "file", "contents"])(
         },
       });
     await expect(uploadDroppedAppFolder(entry, "UDID", () => {})).rejects.toThrow(
-      `access denied.\n${APP_FOLDER_GUIDANCE}`,
+      `${APP_FOLDER_UNREADABLE}\naccess denied.`,
     );
     expect(calls.some((c) => c.action === "app.install")).toBe(false);
     expect(calls.at(-1)?.action).toBe("upload.remove");

@@ -6,6 +6,7 @@ import {
   ShareLinkToastContent,
   UploadToastContent,
 } from "../client/components/app-toasts";
+import { APP_FOLDER_GUIDANCE } from "../client/utils/app-drop-folder";
 
 describe("UploadToastContent", () => {
   test("labels a queued folder without showing upload progress", () => {
@@ -17,9 +18,11 @@ describe("UploadToastContent", () => {
     expect(html).toContain("Waiting to upload Two.app…");
     expect(html).not.toContain("0%");
     expect(html).not.toContain("serve-sim-toast-indeterminate");
+    // Red marks errors only.
+    expect(html).not.toContain("#f87171");
   });
 
-  test("shows full error guidance with an accessible dismissal", () => {
+  test("titles guidance with the file name and keeps an accessible dismissal", () => {
     const html = renderToStaticMarkup(
       <UploadToastContent
         toast={{
@@ -28,14 +31,36 @@ describe("UploadToastContent", () => {
           kind: "app",
           status: "error",
           progress: null,
-          message: "Drop a Simulator .app folder or a .tar.gz/.tgz archive.",
+          message: APP_FOLDER_GUIDANCE,
         }}
         onDismiss={() => {}}
       />,
     );
-    expect(html).toContain("whitespace-normal");
-    expect(html).not.toContain("text-ellipsis");
+    expect(html).toContain('font-medium">Photos</span> is not a Simulator app');
+    expect(html).toContain("Drop a Simulator .app folder or a .tar.gz archive.");
     expect(html).toContain('aria-label="Dismiss upload error"');
+    expect(html).not.toContain("text-ellipsis");
+    expect(html).not.toContain("Details");
+  });
+
+  test("keeps a multi-line host error under Details with a Copy button", () => {
+    const html = renderToStaticMarkup(
+      <UploadToastContent
+        toast={{
+          id: "f",
+          name: "App.app",
+          kind: "app",
+          status: "error",
+          progress: null,
+          message: "install failed\nsecond line",
+        }}
+      />,
+    );
+    expect(html).toContain("Could not install");
+    expect(html).toContain("line-clamp-2");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("Copy</button>");
+    expect(html).toMatch(/<pre[^>]*hidden=""[^>]*>install failed\nsecond line<\/pre>/);
   });
   test("renders determinate upload progress", () => {
     const html = renderToStaticMarkup(
