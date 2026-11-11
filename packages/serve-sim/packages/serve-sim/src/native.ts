@@ -1,4 +1,3 @@
-import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metadata";
 /**
  * Typed loader + wrapper for serve-sim-native.node — the in-process N-API addon
  * that replaces the spawned serve-sim-bin helper. HID is the first surface;
@@ -12,6 +11,7 @@ import { createRequire } from "module";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
+import { screenshotMetadata, type ScreenshotMetadata } from "./screenshot-metadata";
 import { DEFAULT_STREAM_ENCODER_SETTINGS, type StreamEncoderSettings } from "./stream-settings";
 import { readSenderStats, type SenderStats } from "./webrtc-sender-stats";
 import type { HingePhysicalOrientation } from "./hinge-control";

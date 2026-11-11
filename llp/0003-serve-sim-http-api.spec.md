@@ -791,15 +791,16 @@ bodies return 413. Binary exec-ws delegates through this same HTTP contract.
 [observed: `src/middleware.ts`, screenshot route and binary adapter]
 
 Successful path-mode `screenshot.capture` replies add a `metadata` object beside
-the existing `stdout` path, `stderr`, and `exitCode`. The contract is
+the existing `stdout` path, `stderr`, and `exitCode`. The object is
+`{width, height, displayRotation}` and defaults to
 `{width: 0, height: 0, displayRotation: null}`. Optional `screen` identifies a
 two-panel device as `"inner"` or `"outer"`, matching recording metadata. It is
 omitted on single-display devices and when unknown; numeric display IDs remain
 internal to capture and input routing. [confirmed: Hirbod, ENG-28925, 2026-11-10]
 Zero dimensions and null rotation mean unknown, not a zero-sized image.
 Rotation names are `portrait`, `portrait-upside-down`, `landscape-left`, and
-`landscape-right`. Unknown values retain these defaults; known values come from the owning
-capture source's maintained local state.
+`landscape-right`. Unknown values retain these defaults; each capture source fills
+known values together with its frame, as described below.
 [confirmed: Gabe Debes, 2026-11-08; observed: `src/screenshot-metadata.ts`]
 
 Native screenshot metadata is captured with the selected IOSurface: screen
