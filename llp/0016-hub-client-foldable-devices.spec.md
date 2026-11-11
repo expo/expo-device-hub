@@ -87,7 +87,7 @@ falls back to the last rotation command. `displayScreen` supplies physical
 framing, and `streamGeometry` maps interface pixels/input to that framing.
 When the interface orientation is unknown, the raw frame shape decides, as in
 the legacy rule: landscape pixels already face the framing, and portrait pixels
-are not turned. `homeIndicatorEdge` uses the same interface orientation.
+are taken as unturned content and turned to the framing. `homeIndicatorEdge` uses the same interface orientation.
 Duo retains its existing projected screen contract; these ordinary-device
 fields do not alter its geometry
 [observed: `simScreenSize` in `screen-config.ts`, `orientation.ts`].
