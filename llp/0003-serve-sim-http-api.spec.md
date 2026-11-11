@@ -815,9 +815,9 @@ parsing, or file readback. [observed: `Sources/SimNative/FrameCapture.swift`,
 
 HTTP `/api/screenshot` retains its PNG body and returns the same metadata in
 `X-Expo-Screenshot-Metadata`, exposed to allowed CORS callers. Binary exec-ws
-framing remains unchanged. The contract adds no PNG parsing, file readback,
-sidecars, device queries, or opt-in environment variable. ServeEmu and client
-integration are separate changes. [observed: `src/host-actions.ts`,
+framing remains unchanged. serve-sim adds no PNG parsing, file readback,
+sidecars, device queries, or opt-in environment variable for metadata.
+[observed: `src/host-actions.ts`,
 `src/middleware.ts`]
 
 ServeEmu returns the same object in PNG headers and its existing base64 JSON
